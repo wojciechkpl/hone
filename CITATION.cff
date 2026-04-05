@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: Hone
+message: "If you use Hone in your research or work, please cite it as below."
+type: software
+authors:
+  - given-names: Wojciech
+    family-names: Kowalinski
+    email: wojciech@hone.dev
+repository-code: "https://github.com/wojciechkpl/hone"
+url: "https://github.com/wojciechkpl/hone"
+license:
+  - MIT
+  - Apache-2.0
+version: 0.1.0
+date-released: "2026-04-05"
+keywords:
+  - ai
+  - coding-agent
+  - terminal
+  - rust
+  - llm
+  - mcp
+  - sandboxing
+abstract: >-
+  Hone is an open-source, privacy-first, terminal-native AI coding agent
+  built in Rust. It supports 75+ model providers, kernel-enforced sandboxing,
+  LSP integration, adaptive memory, and a client-server architecture with
+  remote access.

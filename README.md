@@ -16,7 +16,7 @@
 
 <p align="center">
   <img alt="Rust 1.85+" src="https://img.shields.io/badge/rust-1.85+-orange.svg">
-  <img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg">
+  <img alt="MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg">
   <img alt="Tests" src="https://img.shields.io/badge/tests-309%20passing-brightgreen.svg">
 </p>
 
@@ -275,7 +275,12 @@ See [CONTRIBUTING.md](docs/contributing.md) for detailed guidelines.
 
 ## License
 
-Licensed under Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+Licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT License ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
 
 ---
 
