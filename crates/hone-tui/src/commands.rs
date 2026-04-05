@@ -14,6 +14,8 @@ pub enum Command {
     Panel,
     /// Switch theme — argument is the theme name.
     ThemeSwitch(String),
+    /// Render a demo of all theme colors.
+    ThemePreview,
     /// A `/` prefixed word that was not recognised.
     Unknown(String),
 }
@@ -21,6 +23,7 @@ pub enum Command {
 /// All known command names for autocomplete.
 pub const COMMAND_NAMES: &[&str] = &[
     "model", "undo", "redo", "cost", "quit", "q", "help", "split", "panel", "theme",
+    "theme-preview",
 ];
 
 impl Command {
@@ -44,6 +47,7 @@ impl Command {
             "split" => Command::Split,
             "panel" => Command::Panel,
             "theme" => Command::ThemeSwitch(arg.to_string()),
+            "theme-preview" => Command::ThemePreview,
             other => Command::Unknown(other.to_string()),
         };
         Some(cmd)

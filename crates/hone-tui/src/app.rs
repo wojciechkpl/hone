@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hone_proto::AgentEvent;
 
@@ -10,6 +12,9 @@ use crate::{
     status::StatusInfo,
     theme::Theme,
 };
+
+/// Duration that the splash screen is shown before auto-dismissing.
+const SPLASH_DURATION: Duration = Duration::from_millis(600);
 
 /// High-level lifecycle state of the application.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,6 +41,9 @@ pub struct App {
     pub(crate) theme: Theme,
     pub(crate) show_help: bool,
     pub(crate) show_splash: bool,
+    pub(crate) splash_start: Option<Instant>,
+    pub(crate) preview_content: Option<String>,
+    pub(crate) preview_path: Option<String>,
 }
 
 impl App {
@@ -53,8 +61,17 @@ impl App {
             scroll_offset: 0,
             theme: Theme::detect(),
             show_help: false,
-            show_splash: false,
+            show_splash: true,
+            splash_start: Some(Instant::now()),
+            preview_content: None,
+            preview_path: None,
         }
+    }
+
+    /// Immediately dismiss the splash screen (for tests and resume scenarios).
+    pub fn skip_splash(&mut self) {
+        self.show_splash = false;
+        self.splash_start = None;
     }
 
     // -----------------------------------------------------------------------
@@ -105,9 +122,42 @@ impl App {
         self.scroll_offset
     }
 
+    pub fn show_splash(&self) -> bool {
+        self.show_splash
+    }
+
+    pub fn preview_content(&self) -> Option<&str> {
+        self.preview_content.as_deref()
+    }
+
+    pub fn preview_path(&self) -> Option<&str> {
+        self.preview_path.as_deref()
+    }
+
+    /// Set the file preview content and path directly (for testing and external use).
+    pub fn set_preview(&mut self, content: Option<String>, path: Option<String>) {
+        self.preview_content = content;
+        self.preview_path = path;
+    }
+
+    /// Set splash_start to a specific instant (for testing auto-dismiss).
+    pub fn set_splash_start(&mut self, start: std::time::Instant) {
+        self.splash_start = Some(start);
+    }
+
     /// Advance the animation by one tick (call at 100ms intervals).
     pub fn tick(&mut self) {
         self.animation.tick();
+
+        // Auto-dismiss splash after SPLASH_DURATION.
+        if self.show_splash {
+            if let Some(start) = self.splash_start {
+                if start.elapsed() >= SPLASH_DURATION {
+                    self.show_splash = false;
+                    self.splash_start = None;
+                }
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -246,6 +296,23 @@ impl App {
                     format!("Theme switched to: {name}"),
                 ));
             }
+            Command::ThemePreview => {
+                let t = &self.theme;
+                // Build a text-based color swatch as a System message.
+                let preview = format!(
+                    "Theme preview\n\
+                     \n\
+                     Accent:  \u{2588}\u{2588}\u{2588}\u{2588} hot  \u{2588}\u{2588}\u{2588}\u{2588} mid  \u{2588}\u{2588}\u{2588}\u{2588} deep\n\
+                     Surface: \u{2588}\u{2588}\u{2588}\u{2588} base \u{2588}\u{2588}\u{2588}\u{2588} raised \u{2588}\u{2588}\u{2588}\u{2588} overlay\n\
+                     Roles:   user | assistant | tool | error\n\
+                     Syntax:  fn let \"str\" 42 // comment Type\n\
+                     Diff:    + added  - removed  @@ hunk\n\
+                     Budget:  [\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}] low  [\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}] mid  [\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}] high\n\
+                     no_color: {}",
+                    t.no_color,
+                );
+                self.messages.push(DisplayMessage::new(DisplayRole::System, preview));
+            }
             Command::Unknown(name) => {
                 let msg = format!("Unknown command: /{name}  (type /help for help)");
                 self.messages
@@ -288,6 +355,15 @@ impl App {
                 } else {
                     result.to_string()
                 };
+
+                // If the result looks like file content (non-error, string value),
+                // store it in the preview pane.
+                if !is_error {
+                    if let Some(text) = result.as_str() {
+                        self.preview_content = Some(text.to_string());
+                    }
+                }
+
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::ToolResult, content));
             }

@@ -6,8 +6,11 @@ use hone_tui::{
     input::InputState,
     layout,
     message::DisplayRole,
+    render::root,
     theme::Theme,
 };
+use ratatui::backend::TestBackend;
+use ratatui::Terminal;
 
 // ---------------------------------------------------------------------------
 // InputState tests
@@ -406,4 +409,90 @@ fn test_page_up_down_scroll() {
     assert_eq!(app.scroll_offset(), 10);
     app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
     assert_eq!(app.scroll_offset(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7-10 tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_root_render_does_not_panic() {
+    let mut app = App::new();
+    app.skip_splash();
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| root::render(&app, frame))
+        .expect("draw");
+}
+
+#[test]
+fn test_too_small_terminal() {
+    let mut app = App::new();
+    app.skip_splash();
+    let backend = TestBackend::new(40, 10);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| root::render(&app, frame))
+        .expect("draw");
+}
+
+#[test]
+fn test_split_layout_render() {
+    let mut app = App::new();
+    app.skip_splash();
+    app.type_text("/split");
+    app.submit_input();
+    assert_eq!(*app.layout(), LayoutMode::SplitHorizontal { ratio: 50 });
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| root::render(&app, frame))
+        .expect("draw");
+}
+
+#[test]
+fn test_splash_auto_dismiss() {
+    use std::time::{Duration, Instant};
+
+    let mut app = App::new();
+    assert!(app.show_splash());
+
+    // Force splash_start to 700ms ago so the next tick triggers dismissal.
+    app.set_splash_start(Instant::now() - Duration::from_millis(700));
+
+    app.tick();
+    assert!(!app.show_splash(), "splash should be dismissed after 700ms");
+}
+
+#[test]
+fn test_skip_splash() {
+    let mut app = App::new();
+    assert!(app.show_splash());
+    app.skip_splash();
+    assert!(!app.show_splash());
+}
+
+#[test]
+fn test_file_preview_state() {
+    let mut app = App::new();
+    assert!(app.preview_content().is_none());
+    app.set_preview(Some("fn main() {}".to_string()), None);
+    assert_eq!(app.preview_content(), Some("fn main() {}"));
+}
+
+#[test]
+fn test_theme_preview_command() {
+    assert_eq!(Command::parse("/theme-preview"), Some(Command::ThemePreview));
+}
+
+#[test]
+fn test_theme_preview_command_pushes_system_message() {
+    let mut app = App::new();
+    app.type_text("/theme-preview");
+    app.submit_input();
+    let msgs = app.messages();
+    assert_eq!(msgs.len(), 1);
+    assert!(matches!(msgs[0].role, DisplayRole::System));
+    assert!(msgs[0].content.contains("Theme preview"));
 }
