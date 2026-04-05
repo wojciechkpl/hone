@@ -1,8 +1,10 @@
 use hone_proto::{AgentEvent, TokenUsage};
 use hone_tui::{
+    AnimationState, FocusTarget, LayoutMode,
     app::{App, AppState},
     commands::Command,
     input::InputState,
+    layout,
     message::DisplayRole,
     theme::Theme,
 };
@@ -263,12 +265,145 @@ fn test_app_submit_command_does_not_add_user_message() {
 fn test_default_theme() {
     use ratatui::style::Color;
     let theme = Theme::default();
-    // None of the colors should be plain Black (Color::Black)
-    assert_ne!(theme.user_color, Color::Black);
-    assert_ne!(theme.assistant_color, Color::Black);
-    assert_ne!(theme.system_color, Color::Black);
-    assert_ne!(theme.error_color, Color::Black);
-    assert_ne!(theme.tool_color, Color::Black);
-    // status_bg can be anything, just ensure Theme::default() doesn't panic
-    let _ = theme.status_bg;
+    assert_ne!(theme.role_user, Color::Black);
+    assert_ne!(theme.role_assistant, Color::Black);
+    assert_ne!(theme.role_system, Color::Black);
+    assert_ne!(theme.role_error, Color::Black);
+    assert_ne!(theme.role_tool, Color::Black);
+    assert_ne!(theme.surface_raised, Color::Black);
+    assert_eq!(theme.accent_hot, Color::Indexed(204));
+    assert!(!theme.no_color);
+}
+
+#[test]
+fn test_theme_crimson_accent() {
+    use ratatui::style::Color;
+    assert_eq!(Theme::crimson().accent_hot, Color::Indexed(204));
+    assert_eq!(Theme::crimson().accent_mid, Color::Indexed(197));
+}
+
+#[test]
+fn test_theme_minimal_no_color() {
+    let theme = Theme::minimal();
+    assert!(theme.no_color);
+    assert_eq!(theme.accent_hot, ratatui::style::Color::Reset);
+}
+
+#[test]
+fn test_theme_all_presets_construct() {
+    let _ = Theme::crimson();
+    let _ = Theme::neon();
+    let _ = Theme::chalk();
+    let _ = Theme::minimal();
+}
+
+// ---------------------------------------------------------------------------
+// Animation tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_app_tick_increments_frame() {
+    let mut app = App::new();
+    assert_eq!(app.animation().frame(), 0);
+    app.tick();
+    assert_eq!(app.animation().frame(), 1);
+    app.tick();
+    assert_eq!(app.animation().frame(), 2);
+}
+
+// ---------------------------------------------------------------------------
+// Layout tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_app_default_layout() {
+    let app = App::new();
+    assert_eq!(*app.layout(), LayoutMode::SinglePane);
+}
+
+// ---------------------------------------------------------------------------
+// New command tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_command_split() {
+    assert_eq!(Command::parse("/split"), Some(Command::Split));
+}
+
+#[test]
+fn test_command_panel() {
+    assert_eq!(Command::parse("/panel"), Some(Command::Panel));
+}
+
+#[test]
+fn test_command_theme() {
+    assert_eq!(
+        Command::parse("/theme neon"),
+        Some(Command::ThemeSwitch("neon".to_string()))
+    );
+}
+
+#[test]
+fn test_command_completions() {
+    let matches = Command::completions("mo");
+    assert!(matches.contains(&"model"));
+    assert!(!matches.contains(&"quit"));
+}
+
+// ---------------------------------------------------------------------------
+// App integration: new features
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_help_toggle() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut app = App::new();
+    assert!(!app.show_help());
+    app.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
+    assert!(app.show_help());
+    app.handle_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
+    assert!(!app.show_help());
+}
+
+#[test]
+fn test_tab_cycles_focus() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut app = App::new();
+    assert_eq!(*app.focus(), FocusTarget::Input);
+    app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(*app.focus(), FocusTarget::Conversation);
+    app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(*app.focus(), FocusTarget::Preview);
+    app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(*app.focus(), FocusTarget::Input);
+}
+
+#[test]
+fn test_split_command_toggles_layout() {
+    let mut app = App::new();
+    app.type_text("/split");
+    app.submit_input();
+    assert_eq!(*app.layout(), LayoutMode::SplitHorizontal { ratio: 50 });
+    app.type_text("/split");
+    app.submit_input();
+    assert_eq!(*app.layout(), LayoutMode::SinglePane);
+}
+
+#[test]
+fn test_theme_command_switches() {
+    let mut app = App::new();
+    app.type_text("/theme neon");
+    app.submit_input();
+    assert_eq!(app.theme().accent_hot, ratatui::style::Color::Indexed(197));
+}
+
+#[test]
+fn test_page_up_down_scroll() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut app = App::new();
+    assert_eq!(app.scroll_offset(), 0);
+    app.handle_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
+    assert_eq!(app.scroll_offset(), 10);
+    app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+    assert_eq!(app.scroll_offset(), 0);
 }

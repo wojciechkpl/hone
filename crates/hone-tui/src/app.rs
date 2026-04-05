@@ -2,10 +2,13 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hone_proto::AgentEvent;
 
 use crate::{
+    animation::AnimationState,
     commands::Command,
     input::InputState,
+    layout::{FocusTarget, LayoutMode},
     message::{DisplayMessage, DisplayRole},
     status::StatusInfo,
+    theme::Theme,
 };
 
 /// High-level lifecycle state of the application.
@@ -26,6 +29,13 @@ pub struct App {
     pub(crate) messages: Vec<DisplayMessage>,
     pub(crate) status: StatusInfo,
     pub(crate) should_quit: bool,
+    pub(crate) animation: AnimationState,
+    pub(crate) layout: LayoutMode,
+    pub(crate) focus: FocusTarget,
+    pub(crate) scroll_offset: usize,
+    pub(crate) theme: Theme,
+    pub(crate) show_help: bool,
+    pub(crate) show_splash: bool,
 }
 
 impl App {
@@ -37,6 +47,13 @@ impl App {
             messages: Vec::new(),
             status: StatusInfo::default(),
             should_quit: false,
+            animation: AnimationState::new(),
+            layout: LayoutMode::default(),
+            focus: FocusTarget::default(),
+            scroll_offset: 0,
+            theme: Theme::detect(),
+            show_help: false,
+            show_splash: false,
         }
     }
 
@@ -64,6 +81,35 @@ impl App {
         self.should_quit
     }
 
+    pub fn theme(&self) -> &Theme {
+        &self.theme
+    }
+
+    pub fn animation(&self) -> &AnimationState {
+        &self.animation
+    }
+
+    pub fn layout(&self) -> &LayoutMode {
+        &self.layout
+    }
+
+    pub fn focus(&self) -> &FocusTarget {
+        &self.focus
+    }
+
+    pub fn show_help(&self) -> bool {
+        self.show_help
+    }
+
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
+    }
+
+    /// Advance the animation by one tick (call at 100ms intervals).
+    pub fn tick(&mut self) {
+        self.animation.tick();
+    }
+
     // -----------------------------------------------------------------------
     // Keyboard handling
     // -----------------------------------------------------------------------
@@ -88,6 +134,18 @@ impl App {
             }
             KeyCode::Char(c) => {
                 self.input.insert_char(c);
+            }
+            KeyCode::F(1) => {
+                self.show_help = !self.show_help;
+            }
+            KeyCode::Tab => {
+                self.focus = self.focus.cycle();
+            }
+            KeyCode::PageUp => {
+                self.scroll_offset = self.scroll_offset.saturating_add(10);
+            }
+            KeyCode::PageDown => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(10);
             }
             _ => {}
         }
@@ -159,6 +217,34 @@ impl App {
             }
             Command::Undo | Command::Redo => {
                 // Not yet implemented — silently no-op.
+            }
+            Command::Split => {
+                self.layout = self.layout.toggle_split();
+            }
+            Command::Panel => {
+                self.layout = match self.layout {
+                    LayoutMode::BottomPanel => LayoutMode::SinglePane,
+                    _ => LayoutMode::BottomPanel,
+                };
+            }
+            Command::ThemeSwitch(name) => {
+                self.theme = match name.as_str() {
+                    "crimson" => Theme::crimson(),
+                    "neon" => Theme::neon(),
+                    "chalk" | "light" => Theme::chalk(),
+                    "minimal" => Theme::minimal(),
+                    _ => {
+                        self.messages.push(DisplayMessage::new(
+                            DisplayRole::Error,
+                            format!("Unknown theme: {name}  (try: crimson, neon, chalk, minimal)"),
+                        ));
+                        return;
+                    }
+                };
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::System,
+                    format!("Theme switched to: {name}"),
+                ));
             }
             Command::Unknown(name) => {
                 let msg = format!("Unknown command: /{name}  (type /help for help)");

@@ -8,9 +8,20 @@ pub enum Command {
     Cost,
     Quit,
     Help,
+    /// Toggle split-pane layout.
+    Split,
+    /// Toggle bottom tool output panel.
+    Panel,
+    /// Switch theme — argument is the theme name.
+    ThemeSwitch(String),
     /// A `/` prefixed word that was not recognised.
     Unknown(String),
 }
+
+/// All known command names for autocomplete.
+pub const COMMAND_NAMES: &[&str] = &[
+    "model", "undo", "redo", "cost", "quit", "q", "help", "split", "panel", "theme",
+];
 
 impl Command {
     /// Parse a raw input string into a `Command`.
@@ -30,8 +41,20 @@ impl Command {
             "cost" => Command::Cost,
             "quit" | "q" => Command::Quit,
             "help" => Command::Help,
+            "split" => Command::Split,
+            "panel" => Command::Panel,
+            "theme" => Command::ThemeSwitch(arg.to_string()),
             other => Command::Unknown(other.to_string()),
         };
         Some(cmd)
+    }
+
+    /// Return command names matching a prefix (for autocomplete).
+    pub fn completions(prefix: &str) -> Vec<&'static str> {
+        COMMAND_NAMES
+            .iter()
+            .filter(|name| name.starts_with(prefix))
+            .copied()
+            .collect()
     }
 }
