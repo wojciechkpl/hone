@@ -22,6 +22,10 @@ pub struct AgentConfig {
     pub model: ModelId,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
+    /// Maximum USD spend permitted for this session. `None` means unlimited.
+    pub budget_limit: Option<f64>,
+    /// Pricing rates for the current model, used to convert token counts to USD.
+    pub pricing: PricingEntry,
 }
 
 /// The orchestration core: manages the agent loop, context, tool dispatch, and cost tracking.
@@ -60,6 +64,8 @@ impl Agent {
         user_input: &str,
         events: mpsc::Sender<AgentEvent>,
     ) -> Result<TurnResult, AgentError> {
+        self.cost.check_budget(self.config.budget_limit)?;
+
         self.context.add_message(Message::user(user_input));
 
         let mut response_text = String::new();
@@ -99,16 +105,7 @@ impl Agent {
 
                     ProviderEvent::Usage(usage) => {
                         turn_usage = turn_usage + usage;
-                        // Use a zero-cost pricing entry — actual pricing can be
-                        // wired in from config later.  Cost tracking still sums
-                        // correctly once real pricing is configured.
-                        let dummy_pricing = PricingEntry {
-                            model: self.config.model.clone(),
-                            input_per_million: 0.0,
-                            output_per_million: 0.0,
-                            cache_read_per_million: None,
-                        };
-                        self.cost.add(usage, &dummy_pricing);
+                        self.cost.add(usage, &self.config.pricing);
                     }
 
                     ProviderEvent::Done => break,

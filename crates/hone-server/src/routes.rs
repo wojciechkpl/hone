@@ -8,12 +8,14 @@ use serde_json::json;
 
 use crate::error::ServerError;
 use crate::state::AppState;
+use crate::tunnel_routes::tunnel_router;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/health", get(health))
+        .merge(tunnel_router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware))
         .with_state(state)
 }

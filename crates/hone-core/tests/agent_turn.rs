@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use futures::{Stream, stream};
 use hone_core::{Agent, AgentConfig};
 use hone_proto::{
-    AgentEvent, Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, TokenUsage,
-    ToolCallRequest, ToolLayer,
+    AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
+    TokenUsage, ToolCallRequest, ToolLayer,
 };
 use hone_providers::{CompletionRequest, MockProvider, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
@@ -111,6 +111,13 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         model: ModelId::new("mock:test"),
         max_tokens: None,
         temperature: None,
+        budget_limit: None,
+        pricing: PricingEntry {
+            model: ModelId::new("mock:test"),
+            input_per_million: 0.0,
+            output_per_million: 0.0,
+            cache_read_per_million: None,
+        },
     }
 }
 
