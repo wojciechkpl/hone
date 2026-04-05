@@ -27,7 +27,7 @@
 - **Zero-cost at the hot path.** Layer 2 native tools are direct Rust function calls — no IPC, no serialization.
 - **Fail-closed security.** Sandbox setup failure aborts the operation, never silently degrades.
 - **Trait-boundary isolation.** Every external integration (model provider, LSP, MCP server) is behind a `dyn Trait` so it can be mocked in tests.
-- **Single writer, many readers.** The SQLite database uses WAL mode; only the daemon writes, clients read via the HTTP API.
+- **Single writer, many readers.** SQLite (sessions, memory) uses WAL mode; only the daemon writes, clients read via the HTTP API. PostgreSQL + pgvector (semantic index) handles concurrent reads/writes from multiple indexer workers.
 - **Privacy by default.** Network access requires explicit user opt-in; telemetry is opt-in and off by default.
 
 ---
@@ -77,7 +77,7 @@ hone/
 | `hone-sandbox` | Kernel sandbox setup and enforcement | `Sandbox` trait, `SandboxBuilder` |
 | `hone-tools` | Layer 2 native tools | `Tool` trait, tool registry |
 | `hone-mcp` | MCP client, JSON-RPC transport, lazy schema | `McpClient`, `McpTool` |
-| `hone-index` | AST parsing, embedding, semantic search | `SemanticIndex`, `IndexBuilder` |
+| `hone-index` | AST parsing, embedding, vector search (PostgreSQL + pgvector) | `SemanticIndex`, `IndexBuilder` |
 | `hone-memory` | Encrypted SQLite adaptive memory | `MemoryStore`, `Pattern` |
 | `hone-core` | Agent loop, session, context window management | `Agent`, `Session`, `ContextManager` |
 | `hone-recipes` | YAML recipe parsing and execution | `Recipe`, `RecipeRunner` |
@@ -413,7 +413,8 @@ sequenceDiagram
     participant Web as Web PWA
     participant Daemon as honed (HTTP/2+SSE)
     participant Core as Agent (per-session)
-    participant DB as SQLite (WAL)
+    participant SQLite as SQLite (sessions, memory)
+    participant PG as PostgreSQL + pgvector (index)
 
     CLI->>Daemon: POST /sessions {model, tools}
     Daemon->>Core: spawn Agent for session_id
@@ -421,6 +422,8 @@ sequenceDiagram
 
     CLI->>Daemon: POST /sessions/{id}/turns {input}
     Daemon->>Core: run_turn(input)
+    Core->>PG: semantic search for context
+    PG-->>Core: relevant symbols + embeddings
     Core-->>Daemon: AgentEvent stream
     Daemon-->>CLI: SSE: data: {event} \n\n
 
@@ -428,8 +431,8 @@ sequenceDiagram
     Note over Daemon,Web: Web UI observes same session
     Daemon-->>Web: SSE replay from session start
 
-    Core->>DB: persist turn (WAL write)
-    DB-->>Core: Ok
+    Core->>SQLite: persist turn (WAL write)
+    SQLite-->>Core: Ok
 ```
 
 ---
@@ -589,18 +592,18 @@ flowchart LR
 
 ## 9. Storage Architecture
 
-### SQLite with WAL mode — single file per user
+Hone uses a **dual-database strategy**: SQLite for local session/memory data (single-user, zero-ops) and PostgreSQL + pgvector for the semantic index (vector similarity search at scale).
+
+### 9.1 SQLite — Sessions & Adaptive Memory
+
+Local-first, single-file storage for data that benefits from zero configuration and offline access.
 
 ```
 ~/.local/share/hone/
-├── hone.db               # main database (WAL mode)
+├── hone.db               # sessions, turns, tool calls, memories (WAL mode)
 ├── hone.db-wal
-├── hone.db-shm
-├── index.db              # semantic index (separate file, large)
-└── index.db-wal
+└── hone.db-shm
 ```
-
-### Schema overview
 
 ```mermaid
 erDiagram
@@ -625,10 +628,10 @@ erDiagram
         text id PK
         text kind
         text content
+        text tags_json
         real weight
         integer last_accessed
         integer decay_at
-        blob embedding
     }
     TOOL_CALLS {
         text id PK
@@ -639,28 +642,105 @@ erDiagram
         integer duration_ms
         integer created_at
     }
-    INDEX_SYMBOLS {
-        text id PK
-        text file_path
-        integer line
-        integer col
-        text kind
-        text name
-        blob embedding
-        integer indexed_at
-    }
 
     SESSIONS ||--o{ TURNS : contains
     TURNS ||--o{ TOOL_CALLS : has
 ```
 
-### Crate: `sqlx` with compile-time query checking
+SQLite is accessed via `sqlx` with WAL mode. Migration files live in `crates/hone-memory/migrations/` and run automatically on startup via `sqlx::migrate!`.
 
-All queries use `sqlx::query!` or `sqlx::query_as!` macros for compile-time verification. Migration files live in `crates/hone-memory/migrations/` and `crates/hone-index/migrations/` and run automatically on startup via `sqlx::migrate!`.
-
-### Memory encryption
+#### Memory encryption
 
 `hone-memory` wraps SQLite via `sqlcipher` (behind a feature flag `encrypted-memory`). The encryption key is derived from a user passphrase using Argon2id and stored in the system keychain (via `keyring` crate).
+
+### 9.2 PostgreSQL + pgvector — Semantic Index
+
+The semantic index uses PostgreSQL with the `pgvector` extension for approximate nearest-neighbor (ANN) vector search over code embeddings.
+
+**Why PostgreSQL + pgvector instead of SQLite:**
+- **ANN indexing**: pgvector provides `ivfflat` and `hnsw` index types for sub-linear similarity search. SQLite has no native vector index support — a custom extension would be needed.
+- **Scalability**: Large monorepos can produce millions of symbols with embeddings. PostgreSQL handles this without WAL checkpoint pressure.
+- **Concurrent access**: Multiple `honed` daemon instances or background indexer workers can read/write concurrently without SQLite's single-writer bottleneck.
+- **Ecosystem**: pgvector is production-proven, actively maintained, and integrates naturally with embedding pipelines.
+
+#### Connection strategy
+
+```
+Development:  postgres://localhost:5432/hone_index  (local Docker or system install)
+Server mode:  Configurable via DATABASE_URL in config.toml or env var
+```
+
+The connection URL is configured in `[index]` section of `config.toml`:
+
+```toml
+[index]
+database_url = "postgres://localhost:5432/hone_index"
+embedding_dimensions = 384
+index_type = "hnsw"  # or "ivfflat"
+```
+
+#### Schema
+
+```mermaid
+erDiagram
+    INDEX_FILES {
+        text id PK "uuid v7"
+        text file_path "unique"
+        text content_hash "sha256"
+        integer indexed_at
+    }
+    INDEX_SYMBOLS {
+        text id PK "uuid v7"
+        text file_id FK
+        text name
+        text kind "function, struct, class, etc."
+        integer line
+        integer col
+        vector embedding "vector(384)"
+        integer indexed_at
+    }
+
+    INDEX_FILES ||--o{ INDEX_SYMBOLS : contains
+```
+
+```sql
+-- pgvector extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Symbols table with vector column
+CREATE TABLE index_symbols (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id     UUID NOT NULL REFERENCES index_files(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    line        INTEGER NOT NULL,
+    col         INTEGER NOT NULL,
+    embedding   vector(384),
+    indexed_at  BIGINT NOT NULL
+);
+
+-- HNSW index for fast ANN search
+CREATE INDEX idx_symbols_embedding ON index_symbols
+    USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+
+-- B-tree for file lookups and invalidation
+CREATE INDEX idx_symbols_file_id ON index_symbols (file_id);
+CREATE INDEX idx_symbols_name ON index_symbols (name);
+```
+
+#### Fallback for offline/local-only use
+
+When no PostgreSQL connection is available, `hone-index` falls back to the current in-memory `SemanticIndex` with regex-based symbol extraction and substring matching. This ensures the CLI works without any external dependencies — pgvector is only required for embedding-powered semantic search.
+
+```mermaid
+flowchart TD
+    START([Index query]) --> CHECK{PostgreSQL\navailable?}
+    CHECK -- Yes --> PG[pgvector ANN search\ncosine similarity]
+    CHECK -- No --> MEM[In-memory fallback\nsubstring matching]
+    PG --> RESULTS([SearchResult])
+    MEM --> RESULTS
+```
 
 ---
 
@@ -720,11 +800,13 @@ flowchart TD
 
 **Rationale:** Each provider has a different underlying stream type. Erasing to `BoxStream` avoids the monomorphisation explosion that would occur if `Agent` were generic over `P: ModelProvider`.
 
-### D4: Separate `index.db` from `hone.db`
+### D4: PostgreSQL + pgvector for semantic index, SQLite for everything else
 
-**Decision:** The semantic index lives in a separate SQLite file.
+**Decision:** The semantic index uses PostgreSQL with pgvector for vector storage and ANN search. Sessions, memories, and tool call logs remain in local SQLite.
 
-**Rationale:** Index rebuilds (potentially gigabytes of writes) would stress WAL checkpointing if co-located with the main database that holds session and memory data. Separate files allow independent backup, vacuuming, and deletion.
+**Rationale:** Embedding-based code search requires approximate nearest-neighbor queries over high-dimensional vectors. pgvector provides production-grade HNSW and IVFFlat indexes with sub-linear query time, which SQLite cannot match without a custom extension. PostgreSQL also handles concurrent writes from background indexer workers without SQLite's single-writer constraint. Sessions and memories stay in SQLite because they are inherently single-user, benefit from zero-ops local storage, and do not need vector search.
+
+**Trade-off:** PostgreSQL is a runtime dependency for full semantic search. Mitigated by an in-memory fallback that provides regex-based symbol search when no database connection is available, so the CLI works offline with no external dependencies.
 
 ### D5: Recipes as YAML, not Rust macros
 
