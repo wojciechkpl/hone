@@ -7,6 +7,8 @@ pub mod registry;
 pub mod router;
 pub mod traits;
 
+pub use adapters::claude_cli::ClaudeCliProvider;
+pub use adapters::gemini_cli::GeminiCliProvider;
 pub use error::ProviderError;
 pub use fallback::FallbackChain;
 pub use mock::MockProvider;

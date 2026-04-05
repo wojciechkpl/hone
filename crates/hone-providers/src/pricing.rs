@@ -34,6 +34,34 @@ impl PricingTable {
             cache_read_per_million: Some(0.08),
         });
 
+        // Claude CLI models (mirrors Anthropic pricing)
+        table.insert(PricingEntry {
+            model: ModelId::new("claude-cli:claude-opus-4-5"),
+            input_per_million: 15.0,
+            output_per_million: 75.0,
+            cache_read_per_million: Some(1.50),
+        });
+        table.insert(PricingEntry {
+            model: ModelId::new("claude-cli:claude-sonnet-4-5"),
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+            cache_read_per_million: Some(0.30),
+        });
+
+        // Gemini CLI models
+        table.insert(PricingEntry {
+            model: ModelId::new("gemini-cli:gemini-2.5-pro"),
+            input_per_million: 1.25,
+            output_per_million: 10.0,
+            cache_read_per_million: None,
+        });
+        table.insert(PricingEntry {
+            model: ModelId::new("gemini-cli:gemini-2.5-flash"),
+            input_per_million: 0.15,
+            output_per_million: 0.60,
+            cache_read_per_million: None,
+        });
+
         // OpenAI models
         table.insert(PricingEntry {
             model: ModelId::new("openai:gpt-4o"),
