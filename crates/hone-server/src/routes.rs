@@ -6,7 +6,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::json;
 
+use crate::collaborative_routes::collaborative_router;
 use crate::error::ServerError;
+use crate::governance_routes::governance_router;
 use crate::state::AppState;
 use crate::tunnel_routes::tunnel_router;
 
@@ -16,6 +18,8 @@ pub fn router(state: AppState) -> Router {
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/health", get(health))
         .merge(tunnel_router())
+        .merge(governance_router())
+        .merge(collaborative_router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware))
         .with_state(state)
 }

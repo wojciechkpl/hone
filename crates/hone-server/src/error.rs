@@ -11,6 +11,12 @@ pub enum ServerError {
     Unauthorized,
     #[error("Internal error: {0}")]
     Internal(String),
+    #[error("User {user_id} has already joined session {session_id}")]
+    AlreadyJoined { session_id: String, user_id: String },
+    #[error("User {user_id} is not a participant of session {session_id}")]
+    NotParticipant { session_id: String, user_id: String },
+    #[error("Forbidden: only the session owner can perform this action")]
+    Forbidden,
 }
 
 impl IntoResponse for ServerError {
@@ -24,6 +30,18 @@ impl IntoResponse for ServerError {
             ServerError::Internal(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal error: {msg}"),
+            ),
+            ServerError::AlreadyJoined { session_id, user_id } => (
+                StatusCode::CONFLICT,
+                format!("User {user_id} has already joined session {session_id}"),
+            ),
+            ServerError::NotParticipant { session_id, user_id } => (
+                StatusCode::NOT_FOUND,
+                format!("User {user_id} is not a participant of session {session_id}"),
+            ),
+            ServerError::Forbidden => (
+                StatusCode::FORBIDDEN,
+                "Forbidden: only the session owner can perform this action".to_owned(),
             ),
         };
 
