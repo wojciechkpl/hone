@@ -1,3 +1,4 @@
+pub mod acp;
 pub mod adapters;
 pub mod error;
 pub mod fallback;
@@ -7,6 +8,7 @@ pub mod registry;
 pub mod router;
 pub mod traits;
 
+pub use acp::AcpProvider;
 pub use adapters::claude_cli::ClaudeCliProvider;
 pub use adapters::gemini_cli::GeminiCliProvider;
 pub use error::ProviderError;
