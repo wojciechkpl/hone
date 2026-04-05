@@ -25,4 +25,7 @@ pub enum AgentError {
 
     #[error("context overflow: max {max_tokens} tokens")]
     ContextOverflow { max_tokens: u32 },
+
+    #[error("code mode error: {detail}")]
+    CodeMode { detail: String },
 }
