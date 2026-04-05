@@ -13,6 +13,7 @@ use crate::{
 };
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
+const MAX_TIMEOUT_MS: u64 = 300_000;
 
 /// Executes a shell command inside the sandbox and captures stdout/stderr.
 pub struct ShellTool;
@@ -53,7 +54,10 @@ impl Tool for ShellTool {
             })?
             .to_string();
 
-        let timeout_ms = input.get_u64("timeout_ms").unwrap_or(DEFAULT_TIMEOUT_MS);
+        let timeout_ms = input
+            .get_u64("timeout_ms")
+            .unwrap_or(DEFAULT_TIMEOUT_MS)
+            .min(MAX_TIMEOUT_MS);
 
         let mut cmd = Command::new("sh");
         cmd.arg("-c")

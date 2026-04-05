@@ -95,8 +95,7 @@ impl AcpTransport {
                     if let Some(error) = resp.error {
                         return Err(ProviderError::Stream {
                             provider: "acp".to_owned(),
-                            source: std::io::Error::new(
-                                std::io::ErrorKind::Other,
+                            source: std::io::Error::other(
                                 format!("JSON-RPC error {}: {}", error.code, error.message),
                             ),
                         });

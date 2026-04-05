@@ -47,6 +47,7 @@ async fn test_budget_cap_blocks_new_turn() {
         temperature: None,
         budget_limit: Some(TIGHT_BUDGET),
         pricing: real_pricing(),
+        working_dir: std::path::PathBuf::from("."),
     };
 
     let mut agent = Agent::new(config);

@@ -102,10 +102,7 @@ impl MemoryStore for InMemoryStore {
         // Apply weight decay and remove expired memories in one pass.
         self.memories.retain(|_, m| {
             m.weight *= factor;
-            match m.decay_at {
-                Some(t) if t <= now => false,
-                _ => true,
-            }
+            !matches!(m.decay_at, Some(t) if t <= now)
         });
 
         let removed = before.saturating_sub(self.memories.len()) as u32;

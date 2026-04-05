@@ -98,8 +98,8 @@ pub fn spawn_cli_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderE
             match lines.next_line().await {
                 Ok(Some(line)) => {
                     let trimmed = line.trim().to_owned();
-                    if !trimmed.is_empty() {
-                        if tx
+                    if !trimmed.is_empty()
+                        && tx
                             .send(ProviderEvent::Token { text: trimmed })
                             .await
                             .is_err()
@@ -107,7 +107,6 @@ pub fn spawn_cli_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderE
                             // Receiver dropped — stop reading.
                             return;
                         }
-                    }
                 }
                 Ok(None) => break, // EOF
                 Err(e) => {

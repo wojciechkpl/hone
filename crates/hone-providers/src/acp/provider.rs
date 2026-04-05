@@ -129,7 +129,11 @@ impl AcpProvider {
         // session/new
         let session_params = serde_json::to_value(SessionNewParams {
             cwd: std::env::current_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                .map_err(|e| ProviderError::Http {
+                    provider: "acp".to_owned(),
+                    status: 0,
+                    body: format!("failed to determine current directory: {e}"),
+                })?
                 .to_string_lossy()
                 .into_owned(),
         })?;
@@ -140,7 +144,11 @@ impl AcpProvider {
         let session_id = session_result
             .get("sessionId")
             .and_then(|v| v.as_str())
-            .unwrap_or("sess_default")
+            .ok_or_else(|| ProviderError::Http {
+                provider: "acp".to_owned(),
+                status: 0,
+                body: "ACP session/new response missing sessionId".to_owned(),
+            })?
             .to_owned();
 
         *state = Some(AcpState {

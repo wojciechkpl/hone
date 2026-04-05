@@ -39,8 +39,7 @@ pub fn detect_language(path: &Path) -> Language {
         let mut first_line = String::new();
         if reader.read_line(&mut first_line).is_ok() {
             let line = first_line.trim();
-            if line.starts_with("#!") {
-                let shebang = &line[2..];
+            if let Some(shebang) = line.strip_prefix("#!") {
                 if shebang.contains("python") {
                     return Language::Python;
                 }

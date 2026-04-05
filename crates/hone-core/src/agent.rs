@@ -9,7 +9,6 @@ use tokio::sync::mpsc;
 
 use crate::context::ContextManager;
 use crate::cost::CostAccumulator;
-use crate::dispatcher::ToolDispatcher;
 use crate::error::AgentError;
 use crate::turn::TurnResult;
 
@@ -26,6 +25,8 @@ pub struct AgentConfig {
     pub budget_limit: Option<f64>,
     /// Pricing rates for the current model, used to convert token counts to USD.
     pub pricing: PricingEntry,
+    /// Working directory passed to tool calls.
+    pub working_dir: std::path::PathBuf,
 }
 
 /// The orchestration core: manages the agent loop, context, tool dispatch, and cost tracking.
@@ -143,23 +144,6 @@ impl Agent {
             self.context.add_message(assistant_msg);
 
             // Dispatch each tool call and append the results to context.
-            let dispatcher = ToolDispatcher::new(
-                // ToolRegistry is not Clone; rebuild schemas only for dispatch.
-                // We hold the registry in config and borrow it here.
-                // Because ToolDispatcher takes ownership of a ToolRegistry, we
-                // need a different approach: keep the dispatcher as a field or
-                // borrow the registry differently.
-                //
-                // For now we work around by dispatching inline via the registry
-                // reference rather than constructing a ToolDispatcher.
-                // (ToolDispatcher is also tested separately.)
-                ToolRegistry::new(), // placeholder — we dispatch inline below
-                Arc::clone(&self.config.sandbox),
-                std::path::PathBuf::from("."),
-            );
-            // Suppress unused variable warning
-            drop(dispatcher);
-
             for call in &pending_tool_calls {
                 let _ = events
                     .send(AgentEvent::ToolCallStart {
@@ -178,7 +162,7 @@ impl Agent {
                     Some(t) => {
                         let ctx = hone_tools::ToolContext {
                             sandbox: Arc::clone(&self.config.sandbox),
-                            working_dir: std::path::PathBuf::from("."),
+                            working_dir: self.config.working_dir.clone(),
                         };
                         t.call(hone_tools::ToolInput::new(call.arguments.clone()), &ctx)
                             .await

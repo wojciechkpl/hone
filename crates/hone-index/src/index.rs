@@ -153,8 +153,8 @@ impl SemanticIndex {
 
         // Compact the symbols Vec in-place (preserve order).
         let mut write = 0usize;
-        for read in 0..self.symbols.len() {
-            if !to_remove[read] {
+        for (read, &removing) in to_remove.iter().enumerate() {
+            if !removing {
                 self.symbols.swap(write, read);
                 write += 1;
             }

@@ -23,7 +23,13 @@ pub enum ConfigError {
     Parse(String),
 
     #[error("Config extraction failed: {0}")]
-    Figment(#[from] figment::Error),
+    Figment(Box<figment::Error>),
+}
+
+impl From<figment::Error> for ConfigError {
+    fn from(e: figment::Error) -> Self {
+        ConfigError::Figment(Box::new(e))
+    }
 }
 
 // ── SandboxMode ───────────────────────────────────────────────────────────────
@@ -131,7 +137,7 @@ impl Default for ServerConfig {
 // ── Config ────────────────────────────────────────────────────────────────────
 
 /// Top-level Hone configuration.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Per-provider settings, keyed by provider name (e.g. "anthropic").
@@ -157,19 +163,6 @@ pub struct Config {
     /// Daemon/server settings.
     #[serde(default)]
     pub server: ServerConfig,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            providers: HashMap::new(),
-            default_model: None,
-            sandbox: SandboxConfig::default(),
-            routing: Vec::new(),
-            budget: None,
-            server: ServerConfig::default(),
-        }
-    }
 }
 
 impl Config {

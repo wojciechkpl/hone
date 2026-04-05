@@ -46,16 +46,13 @@ impl ModelProvider for FallbackChain {
 
         for provider in &self.providers {
             // Skip unavailable providers without even trying them.
-            match provider.health().await {
-                ProviderHealth::Unavailable { reason } => {
-                    last_err = Some(ProviderError::Http {
-                        provider: provider.id().to_owned(),
-                        status: 503,
-                        body: reason,
-                    });
-                    continue;
-                }
-                _ => {}
+            if let ProviderHealth::Unavailable { reason } = provider.health().await {
+                last_err = Some(ProviderError::Http {
+                    provider: provider.id().to_owned(),
+                    status: 503,
+                    body: reason,
+                });
+                continue;
             }
 
             match provider.complete(request.clone()).await {
@@ -84,10 +81,7 @@ impl ModelProvider for FallbackChain {
     async fn health(&self) -> ProviderHealth {
         // Healthy if any member is healthy.
         for provider in &self.providers {
-            match provider.health().await {
-                ProviderHealth::Healthy => return ProviderHealth::Healthy,
-                _ => {}
-            }
+            if provider.health().await == ProviderHealth::Healthy { return ProviderHealth::Healthy }
         }
         ProviderHealth::Degraded {
             reason: "all members unhealthy".to_owned(),
