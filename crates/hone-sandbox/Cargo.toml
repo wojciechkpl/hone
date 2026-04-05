@@ -1,0 +1,19 @@
+[package]
+name = "hone-sandbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Kernel-enforced sandboxing for Hone"
+
+[dependencies]
+hone-proto = { workspace = true }
+thiserror = { workspace = true }
+cfg-if = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

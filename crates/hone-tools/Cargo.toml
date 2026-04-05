@@ -1,0 +1,27 @@
+[package]
+name = "hone-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Layer 2 native tools for Hone (file, shell, git, LSP)"
+
+[dependencies]
+hone-proto = { workspace = true }
+hone-sandbox = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+git2 = { workspace = true }
+ignore = { workspace = true }
+globset = "0.4"
+similar = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+hone-proto = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+async-trait = { workspace = true }

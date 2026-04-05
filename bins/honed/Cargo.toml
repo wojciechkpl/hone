@@ -1,0 +1,20 @@
+[package]
+name = "honed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Hone daemon — HTTP/2 + SSE server"
+
+[[bin]]
+name = "honed"
+path = "src/main.rs"
+
+[dependencies]
+hone-server = { workspace = true }
+hone-config = { workspace = true }
+hone-recipes = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

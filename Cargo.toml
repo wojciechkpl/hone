@@ -1,0 +1,135 @@
+[workspace]
+members = [
+    "crates/hone-proto",
+    "crates/hone-config",
+    "crates/hone-sandbox",
+    "crates/hone-providers",
+    "crates/hone-tools",
+    "crates/hone-mcp",
+    "crates/hone-index",
+    "crates/hone-memory",
+    "crates/hone-core",
+    "crates/hone-recipes",
+    "crates/hone-server",
+    "crates/hone-tui",
+    "bins/hone",
+    "bins/honed",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+# Internal crates
+hone-proto = { path = "crates/hone-proto" }
+hone-config = { path = "crates/hone-config" }
+hone-sandbox = { path = "crates/hone-sandbox" }
+hone-providers = { path = "crates/hone-providers" }
+hone-tools = { path = "crates/hone-tools" }
+hone-mcp = { path = "crates/hone-mcp" }
+hone-index = { path = "crates/hone-index" }
+hone-memory = { path = "crates/hone-memory" }
+hone-core = { path = "crates/hone-core" }
+hone-recipes = { path = "crates/hone-recipes" }
+hone-server = { path = "crates/hone-server" }
+hone-tui = { path = "crates/hone-tui" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+tokio-util = { version = "0.7", features = ["codec"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# IDs and time
+uuid = { version = "1", features = ["v7", "serde"] }
+time = { version = "0.3", features = ["serde"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# HTTP
+axum = "0.8"
+hyper = { version = "1", features = ["http2"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Parsing
+tree-sitter = "0.24"
+pulldown-cmark = "0.12"
+toml = "0.8"
+serde_yaml = "0.9"
+
+# Git
+git2 = "0.19"
+
+# Config
+figment = { version = "0.10", features = ["toml", "env"] }
+
+# Security
+rustix = "0.38"
+keyring = "3"
+argon2 = "0.5"
+cfg-if = "1"
+
+# Search and filesystem
+rayon = "1"
+notify = "7"
+walkdir = "2"
+ignore = "0.4"
+similar = "2"
+
+# LSP and protocols
+lsp-types = "0.97"
+eventsource-stream = "0.2"
+
+# Token and cost
+tiktoken-rs = "0.6"
+
+# Recipe validation
+jsonschema = "0.18"
+
+# Testing
+proptest = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+mockall = "0.13"
+tempfile = "3"
+assert_cmd = "2"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[profile.release-debug]
+inherits = "release"
+debug = true
+strip = "none"
+
+[profile.test]
+opt-level = 1
