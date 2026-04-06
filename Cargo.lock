@@ -880,6 +880,7 @@ dependencies = [
  "hone-tools",
  "hone-tui",
  "ratatui",
+ "reqwest",
  "serde_json",
  "tokio",
  "tracing",

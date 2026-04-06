@@ -1,9 +1,6 @@
 use hone_proto::Message;
 
 /// Manages conversation history within a token budget.
-///
-/// For now the budget is tracked by message count only; actual token-based
-/// trimming is left for a future pass.
 pub struct ContextManager {
     max_context_tokens: u32,
     messages: Vec<Message>,
@@ -17,9 +14,50 @@ impl ContextManager {
         }
     }
 
-    /// Append a non-system message to the conversation history.
+    /// Append a message to the conversation history, trimming old messages if
+    /// the estimated token count exceeds the budget.
     pub fn add_message(&mut self, message: Message) {
         self.messages.push(message);
+        self.trim_to_budget();
+    }
+
+    /// Drop the oldest non-system messages until the estimated total fits
+    /// within `max_context_tokens`, then insert a marker so the model knows
+    /// context was trimmed.
+    fn trim_to_budget(&mut self) {
+        let estimates: Vec<u32> = self
+            .messages
+            .iter()
+            .map(estimate_message_tokens)
+            .collect();
+
+        let total_tokens: u32 = estimates.iter().sum();
+
+        if total_tokens <= self.max_context_tokens {
+            return;
+        }
+
+        // Keep the first message (system/context marker) and drop from index 1
+        // forward until we're under budget.
+        let mut drop_until = 1;
+        let mut freed = 0u32;
+        while total_tokens.saturating_sub(freed) > self.max_context_tokens
+            && drop_until < self.messages.len().saturating_sub(1)
+        {
+            freed += estimates[drop_until];
+            drop_until += 1;
+        }
+
+        if drop_until > 1 {
+            let dropped_count = drop_until - 1;
+            self.messages.drain(1..drop_until);
+            self.messages.insert(
+                1,
+                Message::system(format!(
+                    "[{dropped_count} earlier messages trimmed to fit context window]"
+                )),
+            );
+        }
     }
 
     /// Build the full message list for a completion request.
@@ -73,6 +111,13 @@ impl ContextManager {
     pub fn message_count(&self) -> usize {
         self.messages.len()
     }
+}
+
+/// Estimate the number of tokens in a message using a simple heuristic:
+/// ~4 characters per token plus a small overhead for role/formatting.
+fn estimate_message_tokens(msg: &Message) -> u32 {
+    let text_len = msg.content.as_text().len();
+    (text_len as u32 / 4).max(1) + 4
 }
 
 #[cfg(test)]

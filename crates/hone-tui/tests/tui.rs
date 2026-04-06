@@ -496,3 +496,51 @@ fn test_theme_preview_command_pushes_system_message() {
     assert!(matches!(msgs[0].role, DisplayRole::System));
     assert!(msgs[0].content.contains("Theme preview"));
 }
+
+// ---------------------------------------------------------------------------
+// Cost and active_tool tracking tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_cost_updates_on_done() {
+    let mut app = App::new();
+    app.handle_agent_event(AgentEvent::Token {
+        text: "Hello".to_string(),
+    });
+    app.handle_agent_event(AgentEvent::Done {
+        usage: TokenUsage {
+            input: 1000,
+            output: 500,
+            cache_read: 0,
+        },
+    });
+    // input: 1000 * $3/M = $0.003, output: 500 * $15/M = $0.0075 → total $0.0105
+    assert!(
+        app.status().session_cost_usd > 0.0,
+        "session_cost_usd should be positive after Done"
+    );
+    assert_eq!(app.status().token_count, 1500);
+}
+
+#[test]
+fn test_active_tool_tracked() {
+    let mut app = App::new();
+    app.handle_agent_event(AgentEvent::ToolCallStart {
+        id: "call_1".to_string(),
+        name: "read_file".to_string(),
+    });
+    assert_eq!(
+        app.status().active_tool.as_deref(),
+        Some("read_file"),
+        "active_tool should be set after ToolCallStart"
+    );
+    app.handle_agent_event(AgentEvent::ToolCallEnd {
+        id: "call_1".to_string(),
+        result: serde_json::json!("ok"),
+        is_error: false,
+    });
+    assert!(
+        app.status().active_tool.is_none(),
+        "active_tool should be cleared after ToolCallEnd"
+    );
+}

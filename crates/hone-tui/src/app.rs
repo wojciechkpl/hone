@@ -347,6 +347,7 @@ impl App {
             }
 
             AgentEvent::ToolCallStart { name, .. } => {
+                self.status.active_tool = Some(name.clone());
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::ToolCall { name },
                     String::new(),
@@ -354,6 +355,7 @@ impl App {
             }
 
             AgentEvent::ToolCallEnd { result, is_error, .. } => {
+                self.status.active_tool = None;
                 let content = if is_error {
                     format!("error: {result}")
                 } else {
@@ -380,6 +382,11 @@ impl App {
                     }
                 }
                 self.status.token_count += usage.total();
+                // Estimate cost: $3/M input, $15/M output (Sonnet pricing).
+                let cost =
+                    (usage.input as f64 * 3.0 + usage.output as f64 * 15.0) / 1_000_000.0;
+                self.status.session_cost_usd += cost;
+                self.status.active_tool = None;
                 self.state = AppState::Idle;
             }
 

@@ -16,7 +16,10 @@ use hone_proto::{AgentEvent, ModelId, PricingEntry};
 use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, MockProvider, ModelProvider,
     adapters::anthropic::AnthropicProvider,
+    adapters::ollama::OllamaProvider,
+    adapters::openai::OpenAiProvider,
 };
+use hone_recipes::Recipe;
 use hone_sandbox::NullSandbox;
 use hone_tools::{
     EditFileTool, GlobTool, GitCommitTool, GitDiffTool, GitStatusTool, ReadFileTool, ShellTool,
@@ -34,6 +37,8 @@ use tokio::sync::{Mutex, mpsc};
 struct CliArgs {
     model: Option<String>,
     one_shot: Option<String>,
+    recipe: Option<String>,
+    list_recipes: bool,
 }
 
 fn parse_args() -> CliArgs {
@@ -51,6 +56,8 @@ fn parse_args() -> CliArgs {
 
     let mut model: Option<String> = None;
     let mut one_shot: Option<String> = None;
+    let mut recipe: Option<String> = None;
+    let mut list_recipes = false;
     let mut i = 1usize;
 
     while i < args.len() {
@@ -61,10 +68,19 @@ fn parse_args() -> CliArgs {
                     model = Some(args[i].clone());
                 }
             }
+            "--recipe" => {
+                i += 1;
+                if i < args.len() {
+                    recipe = Some(args[i].clone());
+                }
+            }
+            "--list-recipes" => {
+                list_recipes = true;
+            }
             // Accepted but ignored flags for forward-compatibility.
-            "--recipe" | "--agent" | "--ephemeral" => {
+            "--agent" | "--ephemeral" => {
                 // Consume the next argument if the flag takes a value.
-                if matches!(args[i].as_str(), "--recipe" | "--agent") {
+                if args[i].as_str() == "--agent" {
                     i += 1;
                 }
             }
@@ -76,7 +92,7 @@ fn parse_args() -> CliArgs {
         i += 1;
     }
 
-    CliArgs { model, one_shot }
+    CliArgs { model, one_shot, recipe, list_recipes }
 }
 
 fn print_help() {
@@ -89,7 +105,8 @@ fn print_help() {
     println!();
     println!("Options:");
     println!("  -m, --model <ID>        Model ID to use (e.g. anthropic:claude-sonnet-4-5)");
-    println!("      --recipe <NAME>     Recipe name (reserved for future use)");
+    println!("      --recipe <NAME>     Run a named built-in recipe");
+    println!("      --list-recipes      List all available built-in recipes");
     println!("      --agent <NAME>      Agent name (reserved for future use)");
     println!("      --ephemeral         Ephemeral session (reserved for future use)");
     println!("  -h, --help              Print this help message");
@@ -98,6 +115,134 @@ fn print_help() {
     println!("Environment:");
     println!("  ANTHROPIC_API_KEY  Anthropic API key (enables tool use)");
     println!("  RUST_LOG           Tracing filter (e.g. RUST_LOG=debug)");
+}
+
+// ---------------------------------------------------------------------------
+// Built-in recipe loading
+// ---------------------------------------------------------------------------
+
+fn load_builtin_recipe(name: &str) -> Option<&'static str> {
+    match name {
+        "tdd-feature" => Some(include_str!(
+            "../../../crates/hone-recipes/recipes/tdd-feature.yaml"
+        )),
+        "bug-fix" => Some(include_str!(
+            "../../../crates/hone-recipes/recipes/bug-fix.yaml"
+        )),
+        "code-review" => Some(include_str!(
+            "../../../crates/hone-recipes/recipes/code-review.yaml"
+        )),
+        "refactor" => Some(include_str!(
+            "../../../crates/hone-recipes/recipes/refactor.yaml"
+        )),
+        _ => None,
+    }
+}
+
+fn list_builtin_recipes() {
+    println!("Available recipes:");
+    println!(
+        "  {:<16} Implement a feature using Test-Driven Development",
+        "tdd-feature"
+    );
+    println!(
+        "  {:<16} Fix a bug using systematic debugging with regression test",
+        "bug-fix"
+    );
+    println!(
+        "  {:<16} Perform a comprehensive code review",
+        "code-review"
+    );
+    println!(
+        "  {:<16} Safely refactor code with test verification at each step",
+        "refactor"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Recipe execution mode
+// ---------------------------------------------------------------------------
+
+async fn run_recipe(agent: Arc<Mutex<Agent>>, recipe_name: &str) -> Result<()> {
+    let yaml = load_builtin_recipe(recipe_name)
+        .ok_or_else(|| anyhow::anyhow!("unknown recipe: {recipe_name}"))?;
+
+    let recipe = Recipe::from_yaml(yaml)?;
+
+    println!("Running recipe: {} ({} steps)", recipe.name, recipe.steps.len());
+    if let Some(desc) = &recipe.description {
+        println!("  {desc}");
+    }
+    println!();
+
+    for (i, step) in recipe.steps.iter().enumerate() {
+        if step.when == Some(false) {
+            println!(
+                "[{}/{}] Skipping: {} (condition false)",
+                i + 1,
+                recipe.steps.len(),
+                step.name
+            );
+            continue;
+        }
+
+        println!("[{}/{}] {}", i + 1, recipe.steps.len(), step.name);
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        // Spawn a printer that drains events and writes to stdout.
+        let printer = tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                match event {
+                    AgentEvent::Token { text } => {
+                        print!("{text}");
+                        use io::Write;
+                        let _ = io::stdout().flush();
+                    }
+                    AgentEvent::ToolCallStart { name, .. } => {
+                        println!("\n  [tool: {name}]");
+                    }
+                    AgentEvent::Done { .. } => break,
+                    AgentEvent::Error { message } => {
+                        eprintln!("\n  error: {message}");
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        let prompt = step.prompt.clone();
+        {
+            let mut guard = agent.lock().await;
+            if let Err(e) = guard.run_turn(&prompt, tx).await {
+                eprintln!("  Step failed: {e}");
+            }
+        }
+        let _ = printer.await;
+        println!("\n");
+
+        // Run test command if configured.
+        if let Some(test_cmd) = &recipe.test_cmd {
+            println!("  Running tests: {test_cmd}");
+            let output = tokio::process::Command::new("sh")
+                .arg("-c")
+                .arg(test_cmd)
+                .output()
+                .await?;
+
+            if output.status.success() {
+                println!("  Tests passed.");
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                println!("  Tests FAILED:\n{stderr}");
+            }
+            println!();
+        }
+    }
+
+    println!("Recipe '{}' complete.", recipe.name);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +276,16 @@ async fn detect_provider() -> DetectedProvider {
         };
     }
 
+    // OpenAI API — supports tool calling.
+    if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
+        tracing::info!("provider: OpenAI API (tool use enabled)");
+        return DetectedProvider {
+            provider: Arc::new(OpenAiProvider::new(api_key)),
+            model_id: ModelId::new("openai:gpt-4o"),
+            supports_tools: true,
+        };
+    }
+
     // Fall back to CLI pass-through providers (no tool calling).
     if binary_on_path("claude").await {
         tracing::info!("provider: Claude CLI detected (no tool use)");
@@ -150,14 +305,30 @@ async fn detect_provider() -> DetectedProvider {
         };
     }
 
+    // Check if Ollama is running locally (no tool use, but real local inference).
+    if reqwest::Client::new()
+        .get("http://localhost:11434/api/tags")
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .is_ok()
+    {
+        tracing::info!("provider: Ollama (local, no tool use)");
+        return DetectedProvider {
+            provider: Arc::new(OllamaProvider::new("http://localhost:11434")),
+            model_id: ModelId::new("ollama:llama3.2"),
+            supports_tools: false,
+        };
+    }
+
     tracing::warn!(
-        "provider: no provider found (ANTHROPIC_API_KEY, claude, gemini) — \
-         falling back to MockProvider. Set ANTHROPIC_API_KEY for real completions."
+        "provider: no provider found (ANTHROPIC_API_KEY, OPENAI_API_KEY, claude, gemini, ollama) — \
+         falling back to MockProvider. Set ANTHROPIC_API_KEY or OPENAI_API_KEY for real completions."
     );
     DetectedProvider {
         provider: Arc::new(MockProvider::new(vec![
             "No AI provider found. ".to_owned(),
-            "Set ANTHROPIC_API_KEY or install the Claude CLI: https://claude.ai/download"
+            "Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or install the Claude CLI: https://claude.ai/download"
                 .to_owned(),
         ])),
         model_id: ModelId::new("mock:mock-model"),
@@ -365,6 +536,17 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| detected.model_id.clone());
 
     let agent = Arc::new(Mutex::new(build_agent(&detected, model_id.clone(), system_prompt)));
+
+    // --list-recipes: print available recipes and exit.
+    if cli.list_recipes {
+        list_builtin_recipes();
+        return Ok(());
+    }
+
+    // --recipe <name>: run a built-in recipe and exit.
+    if let Some(ref recipe_name) = cli.recipe {
+        return run_recipe(agent, recipe_name).await;
+    }
 
     // One-shot mode: run a single turn, print to stdout, and exit.
     if let Some(ref prompt) = cli.one_shot {
