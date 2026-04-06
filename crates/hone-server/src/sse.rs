@@ -17,6 +17,9 @@ pub fn encode_event(event: &AgentEvent, event_id: u64) -> String {
         AgentEvent::Done { .. } => "done",
         AgentEvent::Error { .. } => "error",
         AgentEvent::ApprovalRequired { .. } => "approval_required",
+        AgentEvent::PlanCreated { .. } => "plan_created",
+        AgentEvent::WorkerStarted { .. } => "worker_started",
+        AgentEvent::WorkerCompleted { .. } => "worker_completed",
     };
 
     let data = serde_json::to_string(event).unwrap_or_else(|_| "{}".to_owned());

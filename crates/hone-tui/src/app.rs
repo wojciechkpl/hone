@@ -402,6 +402,27 @@ impl App {
                     format!("Approval required: {description}"),
                 ));
             }
+
+            AgentEvent::PlanCreated { goal, subtask_count } => {
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::System,
+                    format!("Orchestrating: {goal} ({subtask_count} subtasks)"),
+                ));
+            }
+
+            AgentEvent::WorkerStarted { task_id, agent, description } => {
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::System,
+                    format!("[{task_id}] {agent}: {description}"),
+                ));
+            }
+
+            AgentEvent::WorkerCompleted { task_id, agent, status, cost_usd } => {
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::System,
+                    format!("[{task_id}] {agent}: {status} (${cost_usd:.4})"),
+                ));
+            }
         }
     }
 }

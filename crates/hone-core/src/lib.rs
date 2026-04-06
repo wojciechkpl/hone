@@ -1,7 +1,9 @@
 pub mod agent_def;
 pub mod agent_registry;
 pub mod audit;
+pub mod orchestrator;
 pub mod rbac;
+pub mod task_plan;
 mod agent;
 mod code_mode;
 mod context;
@@ -19,5 +21,7 @@ pub use context::ContextManager;
 pub use cost::CostAccumulator;
 pub use dispatcher::ToolDispatcher;
 pub use error::AgentError;
+pub use orchestrator::Orchestrator;
 pub use rbac::{RbacError, RbacPolicy, Role, ToolAccess};
+pub use task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
 pub use turn::TurnResult;

@@ -11,7 +11,7 @@ use crossterm::{
 };
 use futures::StreamExt;
 use hone_config::{Config, HoneMd};
-use hone_core::{Agent, AgentConfig};
+use hone_core::{Agent, AgentConfig, AgentRegistry, Orchestrator};
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
 use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, MockProvider, ModelProvider,
@@ -39,6 +39,7 @@ struct CliArgs {
     one_shot: Option<String>,
     recipe: Option<String>,
     list_recipes: bool,
+    orchestrate: bool,
 }
 
 fn parse_args() -> CliArgs {
@@ -58,6 +59,7 @@ fn parse_args() -> CliArgs {
     let mut one_shot: Option<String> = None;
     let mut recipe: Option<String> = None;
     let mut list_recipes = false;
+    let mut orchestrate = false;
     let mut i = 1usize;
 
     while i < args.len() {
@@ -77,6 +79,9 @@ fn parse_args() -> CliArgs {
             "--list-recipes" => {
                 list_recipes = true;
             }
+            "--orchestrate" => {
+                orchestrate = true;
+            }
             // Accepted but ignored flags for forward-compatibility.
             "--agent" | "--ephemeral" => {
                 // Consume the next argument if the flag takes a value.
@@ -92,7 +97,7 @@ fn parse_args() -> CliArgs {
         i += 1;
     }
 
-    CliArgs { model, one_shot, recipe, list_recipes }
+    CliArgs { model, one_shot, recipe, list_recipes, orchestrate }
 }
 
 fn print_help() {
@@ -107,6 +112,7 @@ fn print_help() {
     println!("  -m, --model <ID>        Model ID to use (e.g. anthropic:claude-sonnet-4-5)");
     println!("      --recipe <NAME>     Run a named built-in recipe");
     println!("      --list-recipes      List all available built-in recipes");
+    println!("      --orchestrate       Run prompt through the multi-agent orchestrator");
     println!("      --agent <NAME>      Agent name (reserved for future use)");
     println!("      --ephemeral         Ephemeral session (reserved for future use)");
     println!("  -h, --help              Print this help message");
@@ -456,6 +462,68 @@ fn spawn_agent_turn(
 }
 
 // ---------------------------------------------------------------------------
+// Orchestrate mode
+// ---------------------------------------------------------------------------
+
+async fn run_orchestrate(
+    lead_config: AgentConfig,
+    prompt: &str,
+) -> Result<()> {
+    let mut registry = AgentRegistry::new();
+    registry.load_builtins();
+
+    let mut orchestrator = Orchestrator::new(lead_config, registry, 4);
+
+    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+    let printer = tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                AgentEvent::Token { text } => {
+                    print!("{text}");
+                    use io::Write;
+                    let _ = io::stdout().flush();
+                }
+                AgentEvent::PlanCreated { goal, subtask_count } => {
+                    println!("\n[orchestrator] plan: {goal} ({subtask_count} subtasks)");
+                }
+                AgentEvent::WorkerStarted { task_id, agent, description } => {
+                    println!("[{task_id}] starting {agent}: {description}");
+                }
+                AgentEvent::WorkerCompleted { task_id, agent, status, cost_usd } => {
+                    println!("[{task_id}] {agent}: {status} (${cost_usd:.4})");
+                }
+                AgentEvent::Done { .. } => {}
+                AgentEvent::Error { message } => {
+                    eprintln!("\nerror: {message}");
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    match orchestrator.run(prompt, tx).await {
+        Ok(result) => {
+            let _ = printer.await;
+            println!("\n\n--- Final Response ---");
+            println!("{}", result.merged_response);
+            println!(
+                "\nTotal cost: ${:.6} | workers: {}",
+                result.total_cost_usd,
+                result.workers.len()
+            );
+        }
+        Err(e) => {
+            let _ = printer.await;
+            eprintln!("Orchestration failed: {e}");
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // One-shot mode
 // ---------------------------------------------------------------------------
 
@@ -535,7 +603,7 @@ async fn main() -> Result<()> {
         .map(ModelId::new)
         .unwrap_or_else(|| detected.model_id.clone());
 
-    let agent = Arc::new(Mutex::new(build_agent(&detected, model_id.clone(), system_prompt)));
+    let agent = Arc::new(Mutex::new(build_agent(&detected, model_id.clone(), system_prompt.clone())));
 
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -546,6 +614,38 @@ async fn main() -> Result<()> {
     // --recipe <name>: run a built-in recipe and exit.
     if let Some(ref recipe_name) = cli.recipe {
         return run_recipe(agent, recipe_name).await;
+    }
+
+    // Orchestrate mode: decompose → execute workers → merge.
+    if cli.orchestrate {
+        let prompt = cli
+            .one_shot
+            .clone()
+            .unwrap_or_else(|| "Please describe what you need help with.".to_owned());
+
+        let lead_config = AgentConfig {
+            provider: Arc::clone(&detected.provider),
+            tools: if detected.supports_tools {
+                build_tool_registry()
+            } else {
+                ToolRegistry::new()
+            },
+            sandbox: Arc::new(NullSandbox),
+            system_prompt: system_prompt.clone(),
+            model: model_id.clone(),
+            max_tokens: None,
+            temperature: None,
+            budget_limit: None,
+            pricing: PricingEntry {
+                model: model_id.clone(),
+                input_per_million: 3.0,
+                output_per_million: 15.0,
+                cache_read_per_million: None,
+            },
+            working_dir: std::env::current_dir().unwrap_or_default(),
+        };
+
+        return run_orchestrate(lead_config, &prompt).await;
     }
 
     // One-shot mode: run a single turn, print to stdout, and exit.

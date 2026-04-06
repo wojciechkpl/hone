@@ -44,4 +44,22 @@ pub enum AgentEvent {
         action: String,
         description: String,
     },
+    /// The lead agent produced a decomposition plan.
+    PlanCreated {
+        goal: String,
+        subtask_count: usize,
+    },
+    /// A worker agent started executing a subtask.
+    WorkerStarted {
+        task_id: String,
+        agent: String,
+        description: String,
+    },
+    /// A worker agent finished a subtask.
+    WorkerCompleted {
+        task_id: String,
+        agent: String,
+        status: String,
+        cost_usd: f64,
+    },
 }
