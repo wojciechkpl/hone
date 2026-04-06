@@ -19,6 +19,8 @@ hone-providers = { workspace = true }
 hone-proto = { workspace = true }
 hone-sandbox = { workspace = true }
 hone-tools = { workspace = true }
+hone-memory = { workspace = true }
+hone-index = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -27,6 +29,8 @@ crossterm = { workspace = true, features = ["event-stream"] }
 ratatui = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+walkdir = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

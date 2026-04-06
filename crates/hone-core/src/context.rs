@@ -1,4 +1,7 @@
+use std::sync::OnceLock;
+
 use hone_proto::Message;
+use tiktoken_rs::CoreBPE;
 
 /// Manages conversation history within a token budget.
 pub struct ContextManager {
@@ -62,43 +65,16 @@ impl ContextManager {
 
     /// Build the full message list for a completion request.
     ///
-    /// Always inserts a system message first (derived from `system_prompt`),
-    /// followed by all stored messages.  When the stored history would
-    /// overflow `max_context_tokens` (using a simple 4-chars-per-token
-    /// heuristic), older messages are dropped from the front until the budget
-    /// is satisfied — the system message is always retained.
+    /// Prepends a system message derived from `system_prompt`, then appends
+    /// all stored messages.  Budget enforcement is performed incrementally in
+    /// `add_message` / `trim_to_budget`; no secondary window is applied here
+    /// so that trim markers inserted by `trim_to_budget` are always visible
+    /// to the model.
     pub fn build_messages(&self, system_prompt: &str) -> Vec<Message> {
         let system = Message::system(system_prompt);
         let mut result = Vec::with_capacity(self.messages.len() + 1);
         result.push(system);
-
-        // Simple heuristic: count characters / 4 as tokens.
-        let system_tokens =
-            (system_prompt.len() as u32 / 4).max(1);
-
-        let available = self.max_context_tokens.saturating_sub(system_tokens);
-
-        // Walk messages from oldest to newest, dropping from the front when
-        // we would exceed the budget.
-        let mut start = 0;
-        let tokens_per_msg: Vec<u32> = self
-            .messages
-            .iter()
-            .map(|m| (m.content.as_text().len() as u32 / 4).max(1))
-            .collect();
-
-        let total_history: u32 = tokens_per_msg.iter().sum();
-        let mut running = total_history;
-
-        while running > available && start < self.messages.len() {
-            running = running.saturating_sub(tokens_per_msg[start]);
-            start += 1;
-        }
-
-        // Suppress unused-variable warning: available is intentional API
-        let _ = available;
-
-        result.extend_from_slice(&self.messages[start..]);
+        result.extend_from_slice(&self.messages);
         result
     }
 
@@ -113,11 +89,30 @@ impl ContextManager {
     }
 }
 
-/// Estimate the number of tokens in a message using a simple heuristic:
-/// ~4 characters per token plus a small overhead for role/formatting.
+/// Global BPE tokenizer, initialized once on first use.
+///
+/// `cl100k_base` is the tokenizer used by Claude and GPT-4 models.  Loading it
+/// takes ~10 ms and ~5 MB of memory; we pay that cost exactly once.
+static BPE: OnceLock<CoreBPE> = OnceLock::new();
+
+fn bpe() -> Option<&'static CoreBPE> {
+    BPE.get_or_init(|| {
+        tiktoken_rs::cl100k_base().expect("tiktoken cl100k_base data embedded in binary")
+    });
+    BPE.get()
+}
+
+/// Estimate the number of tokens in a message using tiktoken (`cl100k_base`).
+///
+/// Falls back to the 4-chars-per-token heuristic if the tokenizer cannot be
+/// loaded (should never happen — the BPE data is embedded at compile time).
+/// A per-message overhead of +4 tokens accounts for role/formatting framing.
 fn estimate_message_tokens(msg: &Message) -> u32 {
-    let text_len = msg.content.as_text().len();
-    (text_len as u32 / 4).max(1) + 4
+    let text = msg.content.as_text();
+    match bpe() {
+        Some(enc) => enc.encode_ordinary(&text.to_string()).len() as u32 + 4,
+        None => (text.len() as u32 / 4).max(1) + 4,
+    }
 }
 
 #[cfg(test)]

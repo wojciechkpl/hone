@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use clap::Parser;
 use crossterm::{
     event::{Event, EventStream, KeyCode},
     execute,
@@ -11,7 +12,12 @@ use crossterm::{
 };
 use futures::StreamExt;
 use hone_config::{Config, HoneMd};
-use hone_core::{Agent, AgentConfig, AgentRegistry, Orchestrator};
+use hone_core::{
+    Agent, AgentConfig, AgentRegistry, ComplexityClassifier, ComplexityTier, Orchestrator,
+    SelfRefineLoop, TestVerificationLoop,
+};
+use hone_index::SqliteIndex;
+use hone_memory::SqliteStore;
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
 use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, MockProvider, ModelProvider,
@@ -31,96 +37,38 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::{Mutex, mpsc};
 
 // ---------------------------------------------------------------------------
-// CLI argument parsing
+// CLI argument parsing via clap
 // ---------------------------------------------------------------------------
 
-struct CliArgs {
+#[derive(Parser)]
+#[command(name = "hone", version, about = "The universal terminal AI coding agent")]
+struct Cli {
+    /// Run a single prompt and exit (one-shot mode)
+    prompt: Option<String>,
+
+    /// Model ID to use (e.g. anthropic:claude-sonnet-4-5)
+    #[arg(short, long)]
     model: Option<String>,
-    one_shot: Option<String>,
+
+    /// Run a named built-in recipe
+    #[arg(long)]
     recipe: Option<String>,
+
+    /// List all available built-in recipes
+    #[arg(long)]
     list_recipes: bool,
+
+    /// Run prompt through the multi-agent orchestrator
+    #[arg(long)]
     orchestrate: bool,
-}
 
-fn parse_args() -> CliArgs {
-    let args: Vec<String> = std::env::args().collect();
+    /// Agent name (reserved for future use)
+    #[arg(long)]
+    agent: Option<String>,
 
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        print_help();
-        std::process::exit(0);
-    }
-
-    if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("hone {}", env!("CARGO_PKG_VERSION"));
-        std::process::exit(0);
-    }
-
-    let mut model: Option<String> = None;
-    let mut one_shot: Option<String> = None;
-    let mut recipe: Option<String> = None;
-    let mut list_recipes = false;
-    let mut orchestrate = false;
-    let mut i = 1usize;
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--model" | "-m" => {
-                i += 1;
-                if i < args.len() {
-                    model = Some(args[i].clone());
-                }
-            }
-            "--recipe" => {
-                i += 1;
-                if i < args.len() {
-                    recipe = Some(args[i].clone());
-                }
-            }
-            "--list-recipes" => {
-                list_recipes = true;
-            }
-            "--orchestrate" => {
-                orchestrate = true;
-            }
-            // Accepted but ignored flags for forward-compatibility.
-            "--agent" | "--ephemeral" => {
-                // Consume the next argument if the flag takes a value.
-                if args[i].as_str() == "--agent" {
-                    i += 1;
-                }
-            }
-            arg if !arg.starts_with('-') => {
-                one_shot = Some(arg.to_owned());
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-
-    CliArgs { model, one_shot, recipe, list_recipes, orchestrate }
-}
-
-fn print_help() {
-    println!("hone {}", env!("CARGO_PKG_VERSION"));
-    println!();
-    println!("Usage: hone [OPTIONS] [PROMPT]");
-    println!();
-    println!("Arguments:");
-    println!("  PROMPT  Run a single prompt and exit (one-shot mode)");
-    println!();
-    println!("Options:");
-    println!("  -m, --model <ID>        Model ID to use (e.g. anthropic:claude-sonnet-4-5)");
-    println!("      --recipe <NAME>     Run a named built-in recipe");
-    println!("      --list-recipes      List all available built-in recipes");
-    println!("      --orchestrate       Run prompt through the multi-agent orchestrator");
-    println!("      --agent <NAME>      Agent name (reserved for future use)");
-    println!("      --ephemeral         Ephemeral session (reserved for future use)");
-    println!("  -h, --help              Print this help message");
-    println!("  -V, --version           Print version");
-    println!();
-    println!("Environment:");
-    println!("  ANTHROPIC_API_KEY  Anthropic API key (enables tool use)");
-    println!("  RUST_LOG           Tracing filter (e.g. RUST_LOG=debug)");
+    /// Ephemeral session (no memory persistence)
+    #[arg(long)]
+    ephemeral: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -440,8 +388,44 @@ fn build_agent(
     Agent::new(config)
 }
 
+/// Build cheaply-cloneable config ingredients from provider + model + system prompt.
+fn build_config_ingredients(
+    detected: &DetectedProvider,
+    model_id: ModelId,
+    system_prompt: String,
+) -> ConfigIngredients {
+    ConfigIngredients {
+        provider: Arc::clone(&detected.provider),
+        model_id,
+        system_prompt,
+        supports_tools: detected.supports_tools,
+    }
+}
+
 // ---------------------------------------------------------------------------
-// Agent turn dispatch
+// Test-command detection
+// ---------------------------------------------------------------------------
+
+/// Return the test command appropriate for the current working directory, or
+/// `None` when no recognisable build system is found.
+fn detect_test_cmd() -> Option<String> {
+    if std::path::Path::new("Cargo.toml").exists() {
+        return Some("cargo test".to_string());
+    }
+    if std::path::Path::new("package.json").exists() {
+        return Some("npm test".to_string());
+    }
+    if std::path::Path::new("Makefile").exists() {
+        return Some("make test".to_string());
+    }
+    if std::path::Path::new("pyproject.toml").exists() {
+        return Some("pytest".to_string());
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// Agent turn dispatch — simple (direct)
 // ---------------------------------------------------------------------------
 
 fn spawn_agent_turn(
@@ -462,7 +446,120 @@ fn spawn_agent_turn(
 }
 
 // ---------------------------------------------------------------------------
-// Orchestrate mode
+// Agent turn dispatch — medium (agent + self-refine)
+// ---------------------------------------------------------------------------
+
+fn spawn_medium_turn(
+    agent: Arc<Mutex<Agent>>,
+    user_text: String,
+    tx: mpsc::Sender<AgentEvent>,
+) {
+    tokio::spawn(async move {
+        let mut guard = agent.lock().await;
+
+        let refine = SelfRefineLoop::new(2);
+        if let Err(e) = refine.run(&mut *guard, &user_text, tx.clone()).await {
+            let _ = tx
+                .send(AgentEvent::Error {
+                    message: e.to_string(),
+                })
+                .await;
+            return;
+        }
+
+        // After code generation: if a test command is available, run the
+        // verification loop so failures are fed back to the agent.
+        if let Some(test_cmd) = detect_test_cmd() {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            let loop_ = TestVerificationLoop::new(test_cmd, 3, cwd);
+            if let Err(e) = loop_.run(&mut *guard, tx.clone()).await {
+                tracing::warn!("test verification loop error: {e}");
+            }
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Agent turn dispatch — complex (orchestrator as spawned task)
+// ---------------------------------------------------------------------------
+
+/// Shared, cheaply-cloneable ingredients needed to build an `AgentConfig`.
+///
+/// `AgentConfig` itself cannot be cloned (it holds non-`Clone` internals), so
+/// we store the three parts that *are* cloneable and reconstruct the config
+/// inside the spawned task.
+#[derive(Clone)]
+struct ConfigIngredients {
+    provider: Arc<dyn ModelProvider>,
+    model_id: ModelId,
+    system_prompt: String,
+    supports_tools: bool,
+}
+
+impl ConfigIngredients {
+    fn build(&self) -> AgentConfig {
+        AgentConfig {
+            provider: Arc::clone(&self.provider),
+            tools: if self.supports_tools {
+                build_tool_registry()
+            } else {
+                ToolRegistry::new()
+            },
+            sandbox: Arc::new(NullSandbox),
+            system_prompt: self.system_prompt.clone(),
+            model: self.model_id.clone(),
+            max_tokens: None,
+            temperature: None,
+            budget_limit: None,
+            pricing: PricingEntry {
+                model: self.model_id.clone(),
+                input_per_million: 3.0,
+                output_per_million: 15.0,
+                cache_read_per_million: None,
+            },
+            working_dir: std::env::current_dir().unwrap_or_default(),
+        }
+    }
+}
+
+fn spawn_orchestrated_turn(
+    ingredients: ConfigIngredients,
+    user_text: String,
+    tx: mpsc::Sender<AgentEvent>,
+) {
+    tokio::spawn(async move {
+        let lead_config = ingredients.build();
+
+        let mut registry = AgentRegistry::new();
+        registry.load_builtins();
+
+        let mut orchestrator = Orchestrator::new(lead_config, registry, 4);
+
+        match orchestrator.run(&user_text, tx.clone()).await {
+            Ok(result) => {
+                let summary = format!(
+                    "\n\n--- Orchestration complete ---\n{}\n\nTotal cost: ${:.6} | workers: {}",
+                    result.merged_response,
+                    result.total_cost_usd,
+                    result.workers.len()
+                );
+                let _ = tx
+                    .send(AgentEvent::Token { text: summary })
+                    .await;
+            }
+            Err(e) => {
+                let _ = tx
+                    .send(AgentEvent::Error {
+                        message: format!("orchestration failed: {e}"),
+                    })
+                    .await;
+            }
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Orchestrate mode (blocking, for the --orchestrate one-shot path)
 // ---------------------------------------------------------------------------
 
 async fn run_orchestrate(
@@ -560,12 +657,119 @@ async fn run_one_shot(agent: Arc<Mutex<Agent>>, prompt: &str) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// SQLite persistence initialisation
+// ---------------------------------------------------------------------------
+
+/// Return `~/.local/share/hone` (or `/tmp/hone` as a fallback).
+fn data_dir() -> PathBuf {
+    std::env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(".local/share/hone"))
+        .unwrap_or_else(|| PathBuf::from("/tmp/hone"))
+}
+
+/// Initialise the memory and index SQLite stores.
+///
+/// Background indexing of the current directory is kicked off as a detached
+/// tokio task so it never blocks startup.  Any errors are logged as warnings.
+async fn init_persistence(ephemeral: bool) -> Result<()> {
+    if ephemeral {
+        tracing::info!("ephemeral mode: skipping persistence init");
+        return Ok(());
+    }
+
+    let dir = data_dir();
+    std::fs::create_dir_all(&dir)?;
+
+    // Memory store
+    let memory_path = dir.join("memory.db");
+    match SqliteStore::open(&memory_path).await {
+        Ok(_store) => {
+            tracing::info!(path = %memory_path.display(), "memory store initialised");
+        }
+        Err(e) => {
+            tracing::warn!("failed to open memory store: {e}");
+        }
+    }
+
+    // Index store — open, then index the cwd in the background.
+    let index_path = dir.join("index.db");
+    match SqliteIndex::open(&index_path).await {
+        Ok(index) => {
+            tracing::info!(path = %index_path.display(), "symbol index initialised");
+            let index = Arc::new(index);
+            let cwd = std::env::current_dir().unwrap_or_default();
+            tokio::spawn(async move {
+                // Walk .rs files in the cwd and feed them to SqliteIndex.
+                if let Err(e) = index_directory_bg(&index, &cwd).await {
+                    tracing::warn!("background indexing failed: {e}");
+                } else {
+                    tracing::info!("background indexing complete");
+                }
+            });
+        }
+        Err(e) => {
+            tracing::warn!("failed to open symbol index: {e}");
+        }
+    }
+
+    Ok(())
+}
+
+/// Walk `root` for `.rs` files and index them via `SqliteIndex::index_file`.
+///
+/// Hidden directories, `target/`, and non-UTF-8 paths are skipped silently.
+async fn index_directory_bg(index: &SqliteIndex, root: &std::path::Path) -> Result<()> {
+    fn is_skipped(entry: &walkdir::DirEntry) -> bool {
+        let name = entry.file_name().to_string_lossy();
+        if name.starts_with('.') {
+            return true;
+        }
+        if entry.file_type().is_dir() && (name == "target" || name == "node_modules") {
+            return true;
+        }
+        false
+    }
+
+    for entry in walkdir::WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|e| e.depth() == 0 || !is_skipped(e))
+    {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let path = entry.path();
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext != "rs" && ext != "py" {
+            continue;
+        }
+
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        if let Err(e) = index.index_file(path, &content).await {
+            tracing::debug!(path = %path.display(), "index_file error: {e}");
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // TUI event loop
 // ---------------------------------------------------------------------------
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = parse_args();
+    let cli = Cli::parse();
 
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -576,6 +780,11 @@ async fn main() -> Result<()> {
 
     if config.is_some() {
         tracing::info!("config loaded successfully");
+    }
+
+    // Initialise SQLite persistence (non-blocking; errors are warnings only).
+    if let Err(e) = init_persistence(cli.ephemeral).await {
+        tracing::warn!("persistence init failed: {e}");
     }
 
     // Build the system prompt, injecting any HONE.md sections.
@@ -616,40 +825,19 @@ async fn main() -> Result<()> {
         return run_recipe(agent, recipe_name).await;
     }
 
-    // Orchestrate mode: decompose → execute workers → merge.
+    // --orchestrate: full orchestrator for the supplied prompt (or a default).
     if cli.orchestrate {
         let prompt = cli
-            .one_shot
+            .prompt
             .clone()
             .unwrap_or_else(|| "Please describe what you need help with.".to_owned());
 
-        let lead_config = AgentConfig {
-            provider: Arc::clone(&detected.provider),
-            tools: if detected.supports_tools {
-                build_tool_registry()
-            } else {
-                ToolRegistry::new()
-            },
-            sandbox: Arc::new(NullSandbox),
-            system_prompt: system_prompt.clone(),
-            model: model_id.clone(),
-            max_tokens: None,
-            temperature: None,
-            budget_limit: None,
-            pricing: PricingEntry {
-                model: model_id.clone(),
-                input_per_million: 3.0,
-                output_per_million: 15.0,
-                cache_read_per_million: None,
-            },
-            working_dir: std::env::current_dir().unwrap_or_default(),
-        };
-
-        return run_orchestrate(lead_config, &prompt).await;
+        let ingredients = build_config_ingredients(&detected, model_id.clone(), system_prompt.clone());
+        return run_orchestrate(ingredients.build(), &prompt).await;
     }
 
     // One-shot mode: run a single turn, print to stdout, and exit.
-    if let Some(ref prompt) = cli.one_shot {
+    if let Some(ref prompt) = cli.prompt {
         return run_one_shot(agent, prompt).await;
     }
 
@@ -660,7 +848,10 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_tui(&mut terminal, agent, model_id).await;
+    // Build cloneable config ingredients shared by complex-tier spawned tasks.
+    let ingredients = build_config_ingredients(&detected, model_id.clone(), system_prompt.clone());
+
+    let result = run_tui(&mut terminal, agent, model_id, ingredients).await;
 
     // Always restore terminal even on error.
     disable_raw_mode()?;
@@ -674,6 +865,7 @@ async fn run_tui(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     agent: Arc<Mutex<Agent>>,
     model_id: ModelId,
+    ingredients: ConfigIngredients,
 ) -> Result<()> {
     let mut app = App::new();
 
@@ -717,11 +909,35 @@ async fn run_tui(
 
                             // Only spawn an AI turn for regular messages, not commands.
                             if !is_command && matches!(app.state(), AppState::WaitingForResponse) {
-                                spawn_agent_turn(
-                                    Arc::clone(&agent),
-                                    user_text,
-                                    agent_tx.clone(),
-                                );
+                                // Adaptive routing: classify complexity and pick the
+                                // appropriate execution strategy.
+                                let tier = ComplexityClassifier::classify(&user_text);
+                                match tier {
+                                    ComplexityTier::Simple => {
+                                        tracing::debug!("complexity: Simple — direct agent turn");
+                                        spawn_agent_turn(
+                                            Arc::clone(&agent),
+                                            user_text,
+                                            agent_tx.clone(),
+                                        );
+                                    }
+                                    ComplexityTier::Medium => {
+                                        tracing::debug!("complexity: Medium — self-refine turn");
+                                        spawn_medium_turn(
+                                            Arc::clone(&agent),
+                                            user_text,
+                                            agent_tx.clone(),
+                                        );
+                                    }
+                                    ComplexityTier::Complex => {
+                                        tracing::debug!("complexity: Complex — orchestrated turn");
+                                        spawn_orchestrated_turn(
+                                            ingredients.clone(),
+                                            user_text,
+                                            agent_tx.clone(),
+                                        );
+                                    }
+                                }
                             }
                         } else {
                             app.handle_key(key);
