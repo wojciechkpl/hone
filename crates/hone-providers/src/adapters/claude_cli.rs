@@ -1,12 +1,15 @@
 use std::pin::Pin;
+use std::process::Stdio;
 
 use async_trait::async_trait;
-use futures::Stream;
-use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth};
+use futures::{Stream, stream};
+use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, TokenUsage};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+use tokio::sync::mpsc;
 
 use crate::adapters::cli_common::{
-    check_binary_available, estimate_tokens_heuristic, messages_to_prompt, spawn_cli_stream,
+    check_binary_available, estimate_tokens_heuristic, messages_to_prompt,
 };
 use crate::error::ProviderError;
 use crate::traits::{CompletionRequest, ModelProvider};
@@ -84,14 +87,15 @@ impl ModelProvider for ClaudeCliProvider {
         let prompt = messages_to_prompt(&request.messages);
 
         let mut cmd = Command::new(&self.binary);
-        cmd.arg("--output-format")
+        cmd.arg("-p")
+            .arg("--output-format")
             .arg("stream-json")
+            .arg("--verbose")
             .arg("--model")
             .arg(&model_name)
-            .arg("-p")
             .arg(&prompt);
 
-        Ok(spawn_cli_stream(cmd))
+        Ok(spawn_claude_stream(cmd))
     }
 
     fn estimate_tokens(&self, messages: &[Message]) -> u32 {
@@ -101,4 +105,141 @@ impl ModelProvider for ClaudeCliProvider {
     async fn health(&self) -> ProviderHealth {
         check_binary_available(&self.binary).await
     }
+}
+
+/// Spawn a Claude CLI process and parse its stream-json output into ProviderEvents.
+///
+/// The Claude CLI stream-json format emits newline-delimited JSON objects with a `type` field:
+/// - `{"type":"assistant","message":{"content":[{"type":"text","text":"..."}],...}}` -> Token
+/// - `{"type":"result","result":"...","total_cost_usd":...,"usage":{...}}` -> Usage + Done
+/// Other types (system, rate_limit_event) are skipped.
+fn spawn_claude_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> {
+    let (tx, rx) = mpsc::channel::<ProviderEvent>(64);
+
+    tokio::spawn(async move {
+        let child_result = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn();
+
+        let mut child = match child_result {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx.send(ProviderEvent::Error {
+                    message: format!("failed to spawn claude: {e}"),
+                }).await;
+                let _ = tx.send(ProviderEvent::Done).await;
+                return;
+            }
+        };
+
+        let stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => {
+                let _ = tx.send(ProviderEvent::Error {
+                    message: "failed to capture claude stdout".to_owned(),
+                }).await;
+                let _ = tx.send(ProviderEvent::Done).await;
+                return;
+            }
+        };
+
+        let mut lines = BufReader::new(stdout).lines();
+        let mut last_text = String::new();
+
+        loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+
+                    let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+                        continue;
+                    };
+
+                    match json.get("type").and_then(|t| t.as_str()) {
+                        Some("assistant") => {
+                            // Extract text from content array
+                            if let Some(content) = json
+                                .get("message")
+                                .and_then(|m| m.get("content"))
+                                .and_then(|c| c.as_array())
+                            {
+                                for block in content {
+                                    if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                        if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                                            // Claude sends cumulative text — emit only the new part
+                                            if text.len() > last_text.len() && text.starts_with(&last_text) {
+                                                let new_part = &text[last_text.len()..];
+                                                if !new_part.is_empty() {
+                                                    let _ = tx.send(ProviderEvent::Token {
+                                                        text: new_part.to_owned(),
+                                                    }).await;
+                                                }
+                                            } else if text != last_text {
+                                                let _ = tx.send(ProviderEvent::Token {
+                                                    text: text.to_owned(),
+                                                }).await;
+                                            }
+                                            last_text = text.to_owned();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Some("result") => {
+                            // Extract usage if available
+                            if let Some(usage) = json.get("usage") {
+                                let input = usage.get("input_tokens")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0) as u32;
+                                let output = usage.get("output_tokens")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0) as u32;
+                                let cache_read = usage.get("cache_read_input_tokens")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0) as u32;
+                                let _ = tx.send(ProviderEvent::Usage(TokenUsage {
+                                    input,
+                                    output,
+                                    cache_read,
+                                })).await;
+                            }
+                            break;
+                        }
+                        _ => {
+                            // Skip system, rate_limit_event, etc.
+                        }
+                    }
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    let _ = tx.send(ProviderEvent::Error {
+                        message: format!("error reading claude output: {e}"),
+                    }).await;
+                    break;
+                }
+            }
+        }
+
+        // Wait for process to finish
+        match child.wait().await {
+            Ok(status) if !status.success() => {
+                let code = status.code().unwrap_or(-1);
+                let _ = tx.send(ProviderEvent::Error {
+                    message: format!("claude exited with status {code}"),
+                }).await;
+            }
+            _ => {}
+        }
+
+        let _ = tx.send(ProviderEvent::Done).await;
+    });
+
+    Box::pin(stream::unfold(rx, |mut rx| async move {
+        let event = rx.recv().await?;
+        Some((event, rx))
+    }))
 }
