@@ -177,11 +177,26 @@ fn render_input_area(app: &App, frame: &mut Frame, area: Rect) {
     let cursor_byte = app.input().cursor_position;
     let text_before_cursor = &app.input().buffer[..cursor_byte];
     let inner_width = area.width.saturating_sub(2) as usize;
-    let chars_before: usize = text_before_cursor.chars().count();
-    let cursor_row = (chars_before / inner_width.max(1)) as u16;
-    let cursor_col = (chars_before % inner_width.max(1)) as u16;
-    let x = area.x + 1 + cursor_col;
-    let y = area.y + 1 + cursor_row;
+
+    // Walk through the text before the cursor, tracking rows and columns.
+    // Each newline resets the column and advances the row. Within a line,
+    // wrapping occurs every `inner_width` characters.
+    let mut row: u16 = 0;
+    let mut col: usize = 0;
+    for ch in text_before_cursor.chars() {
+        if ch == '\n' {
+            row += 1;
+            col = 0;
+        } else {
+            col += 1;
+            if inner_width > 0 && col >= inner_width {
+                row += 1;
+                col = 0;
+            }
+        }
+    }
+    let x = area.x + 1 + col as u16;
+    let y = area.y + 1 + row;
     if y < area.bottom() && x < area.right() {
         frame.set_cursor_position((x, y));
     }

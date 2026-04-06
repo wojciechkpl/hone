@@ -88,26 +88,27 @@ impl<'a> Widget for InputWidget<'a> {
                 if row >= inner.height {
                     break;
                 }
-                // Chunk into screen-width segments.
-                let mut remaining = line_str;
+                // Chunk into screen-width segments based on character count,
+                // not byte count, to avoid splitting multi-byte characters.
+                let chars: Vec<char> = line_str.chars().collect();
+                let mut offset = 0;
                 loop {
                     if row >= inner.height {
                         break;
                     }
-                    let chunk_len = remaining.len().min(width);
-                    let chunk = &remaining[..chunk_len];
+                    let end = (offset + width).min(chars.len());
                     let y = inner.top() + row;
                     let mut x = inner.left();
-                    for ch in chunk.chars() {
+                    for &ch in &chars[offset..end] {
                         if x >= inner.right() {
                             break;
                         }
                         buf[(x, y)].set_char(ch).set_style(content_style);
                         x += 1;
                     }
-                    remaining = &remaining[chunk_len..];
+                    offset = end;
                     row += 1;
-                    if remaining.is_empty() {
+                    if offset >= chars.len() {
                         break;
                     }
                 }

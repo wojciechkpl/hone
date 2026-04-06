@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{Event, EventStream, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -295,63 +295,105 @@ async fn run_tui(
 
     let tick = Duration::from_millis(100);
 
+    // Use the async EventStream instead of blocking event::poll/read so we
+    // do not block the tokio runtime.
+    let mut events = EventStream::new();
+
     loop {
         terminal.draw(|frame| root::render(&app, frame))?;
 
-        // Wait up to `tick` for a crossterm event; treat timeout as a tick.
-        if event::poll(tick)? {
-            if let Event::Key(key) = event::read()? {
-                // Ctrl-C is handled inside handle_key, but also intercept
-                // here to ensure we always quit cleanly.
-                if key.code == KeyCode::Char('c')
-                    && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
-                {
-                    break;
-                }
+        tokio::select! {
+            // Async crossterm events
+            maybe_event = events.next() => {
+                match maybe_event {
+                    Some(Ok(Event::Key(key))) => {
+                        // Ctrl-C is handled inside handle_key, but also intercept
+                        // here to ensure we always quit cleanly.
+                        if key.code == KeyCode::Char('c')
+                            && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                        {
+                            break;
+                        }
 
-                if key.code == KeyCode::Enter
-                    && !app.input().is_empty()
-                    && matches!(app.state(), AppState::Idle | AppState::Error(_))
-                {
-                    // Check if this is a slash command BEFORE processing.
-                    let user_text = app.input().buffer.clone();
-                    let is_command = user_text.starts_with('/');
+                        if key.code == KeyCode::Enter
+                            && !app.input().is_empty()
+                            && matches!(app.state(), AppState::Idle | AppState::Error(_))
+                        {
+                            // Check if this is a slash command BEFORE processing.
+                            let user_text = app.input().buffer.clone();
+                            let is_command = user_text.starts_with('/');
 
-                    // Let the App update its own state.
-                    app.handle_key(key);
+                            // Let the App update its own state.
+                            app.handle_key(key);
 
-                    // Only spawn an AI turn for regular messages, not commands.
-                    if !is_command && matches!(app.state(), AppState::WaitingForResponse) {
-                        history.push(hone_proto::Message::user(user_text.as_str()));
-                        spawn_turn(
-                            Arc::clone(&provider),
-                            model_id.clone(),
-                            history.clone(),
-                            agent_tx.clone(),
-                        );
+                            // Only spawn an AI turn for regular messages, not commands.
+                            if !is_command && matches!(app.state(), AppState::WaitingForResponse) {
+                                history.push(hone_proto::Message::user(user_text.as_str()));
+                                spawn_turn(
+                                    Arc::clone(&provider),
+                                    model_id.clone(),
+                                    history.clone(),
+                                    agent_tx.clone(),
+                                );
+                            }
+                        } else {
+                            app.handle_key(key);
+                        }
+
+                        if app.should_quit() {
+                            break;
+                        }
                     }
-                } else {
-                    app.handle_key(key);
+                    Some(Ok(Event::Resize(_, _))) => {
+                        // Terminal resized; the next draw will pick up the new size.
+                    }
+                    Some(Err(_)) | None => {
+                        // Stream error or closed — exit gracefully.
+                        break;
+                    }
+                    _ => {}
                 }
+            }
 
-                if app.should_quit() {
-                    break;
+            // Agent events from the provider task
+            maybe_agent = agent_rx.recv() => {
+                if let Some(event) = maybe_agent {
+                    // Accumulate streaming tokens into the conversation history so the
+                    // next turn has full context.
+                    if let AgentEvent::Token { ref text } = event {
+                        match history.last_mut() {
+                            Some(m) if matches!(m.role, hone_proto::Role::Assistant) => {
+                                match &mut m.content {
+                                    hone_proto::Content::Text(s) => s.push_str(text),
+                                    hone_proto::Content::Parts(_) => {
+                                        history.push(hone_proto::Message::assistant(text.clone()));
+                                    }
+                                }
+                            }
+                            _ => {
+                                history.push(hone_proto::Message::assistant(text.clone()));
+                            }
+                        }
+                    }
+                    app.handle_agent_event(event);
                 }
+            }
+
+            // Tick timer for animations
+            _ = tokio::time::sleep(tick) => {
+                // Just a tick — animations and splash auto-dismiss.
             }
         }
 
-        // Drain all pending agent events.
+        // Also drain any remaining agent events that arrived while we were
+        // processing the select branch above.
         while let Ok(event) = agent_rx.try_recv() {
-            // Accumulate streaming tokens into the conversation history so the
-            // next turn has full context.
             if let AgentEvent::Token { ref text } = event {
                 match history.last_mut() {
                     Some(m) if matches!(m.role, hone_proto::Role::Assistant) => {
-                        // Append to the existing text content in place.
                         match &mut m.content {
                             hone_proto::Content::Text(s) => s.push_str(text),
                             hone_proto::Content::Parts(_) => {
-                                // Multi-part: fall back to a new assistant message.
                                 history.push(hone_proto::Message::assistant(text.clone()));
                             }
                         }
