@@ -868,10 +868,17 @@ name = "hone-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crossterm",
+ "futures",
  "hone-config",
  "hone-core",
+ "hone-proto",
+ "hone-providers",
  "hone-recipes",
+ "hone-sandbox",
+ "hone-tools",
  "hone-tui",
+ "ratatui",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -908,6 +915,7 @@ dependencies = [
  "mockall",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1082,6 +1090,7 @@ name = "honed"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "hone-config",
  "hone-recipes",
  "hone-server",

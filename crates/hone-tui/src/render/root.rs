@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::{
     app::App,
+    commands::Command,
     layout::LayoutMode,
     render::{
         conversation::ConversationWidget,
@@ -49,6 +50,9 @@ pub fn render(app: &App, frame: &mut Frame) {
     render_content_area(app, frame, chunks[1]);
     render_input_area(app, frame, chunks[2]);
     render_status_bar_area(app, frame, chunks[3]);
+
+    // Autocomplete dropdown above the input area
+    render_autocomplete(app, frame, chunks[2]);
 
     if app.show_help() {
         render_help_overlay(app, frame, area);
@@ -166,6 +170,21 @@ fn render_input_area(app: &App, frame: &mut Frame, area: Rect) {
         app.state(),
     );
     frame.render_widget(widget, area);
+
+    // Position the terminal cursor inside the input box so the user can see
+    // where they are typing. The input area has a 1-cell border on each side,
+    // so the content starts at (area.x + 1, area.y + 1).
+    let cursor_byte = app.input().cursor_position;
+    let text_before_cursor = &app.input().buffer[..cursor_byte];
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let chars_before: usize = text_before_cursor.chars().count();
+    let cursor_row = (chars_before / inner_width.max(1)) as u16;
+    let cursor_col = (chars_before % inner_width.max(1)) as u16;
+    let x = area.x + 1 + cursor_col;
+    let y = area.y + 1 + cursor_row;
+    if y < area.bottom() && x < area.right() {
+        frame.set_cursor_position((x, y));
+    }
 }
 
 fn render_status_bar_area(app: &App, frame: &mut Frame, area: Rect) {
@@ -173,6 +192,46 @@ fn render_status_bar_area(app: &App, frame: &mut Frame, area: Rect) {
     let para = Paragraph::new(line)
         .style(Style::default().bg(app.theme().surface_base));
     frame.render_widget(para, area);
+}
+
+fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
+    let buf = &app.input().buffer;
+    if !buf.starts_with('/') || buf.len() < 2 {
+        return;
+    }
+    let prefix = &buf[1..]; // strip leading /
+    let matches = Command::completions(prefix);
+    if matches.is_empty() || matches.len() == 1 && format!("/{}", matches[0]) == *buf {
+        return; // exact match or no matches — hide dropdown
+    }
+
+    let theme = app.theme();
+    let count = matches.len().min(8) as u16;
+    // Position the dropdown above the input area
+    let popup_y = input_area.y.saturating_sub(count);
+    let popup_width = 30u16.min(input_area.width);
+    let popup_area = Rect::new(input_area.x + 1, popup_y, popup_width, count);
+
+    // Clear the area first
+    use ratatui::widgets::Clear;
+    frame.render_widget(Clear, popup_area);
+
+    let bg = Style::default().bg(theme.surface_overlay).fg(theme.text_primary);
+    let items: Vec<Line<'static>> = matches
+        .iter()
+        .take(8)
+        .map(|name| {
+            Line::from(Span::styled(format!(" /{name}"), bg))
+        })
+        .collect();
+
+    let block = Block::default()
+        .borders(ratatui::widgets::Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(theme.surface_border))
+        .style(Style::default().bg(theme.surface_overlay));
+    let para = Paragraph::new(items).block(block);
+    frame.render_widget(para, popup_area);
 }
 
 fn render_help_overlay(app: &App, frame: &mut Frame, area: Rect) {
