@@ -10,6 +10,7 @@ Run these in an active session:
 
 | Command | Purpose |
 |---------|---------|
+| `/agent <name>` | Switch to a built-in or custom agent |
 | `/model <provider:model>` | Switch providers (e.g., `/model openai:gpt-4o`) |
 | `/budget <usd>` | Set spending limit for session |
 | `/context <tokens>` | Adjust context window size |
@@ -20,6 +21,7 @@ Run these in an active session:
 | `/shell <command>` | Run shell command with full output |
 | `/semantic-search <query>` | Find related code using vectors |
 | `/recipes list` | Show available recipes |
+| `/agents list` | Show available agents |
 | `/help` | Show all commands |
 | `/exit` or Ctrl+C | Quit session |
 
@@ -31,11 +33,12 @@ Run these when starting `hone`:
 
 | Flag | Example | Purpose |
 |------|---------|---------|
+| `--agent` | `hone --agent code-reviewer` | Use a specific agent |
 | `--model` | `hone --model openai:gpt-4o` | Choose model/provider |
 | `--dir` | `hone --dir ~/myproject` | Target a directory |
 | `--budget` | `hone --budget 5.00` | Max spend in USD |
 | `--context-window` | `hone --context-window 64000` | Limit context (tokens) |
-| `--recipe` | `hone --recipe scripts/refactor.yaml` | Run a recipe |
+| `--recipe` | `hone --recipe scripts/tdd-feature.yaml` | Run a recipe |
 | `--remote` | `hone --remote localhost:7777` | Connect to daemon |
 | `--ephemeral` / `-E` | `hone -E` | No memory saved |
 | `-i <prompt>` | `hone -i "Fix the bug"` | One-shot (no REPL) |
@@ -93,6 +96,35 @@ CLI flags override everything. Lowest priority wins if flag not set.
 
 ---
 
+## Built-in Agents (Quick Reference)
+
+Use these agents for specialized tasks:
+
+```bash
+hone --agent code-reviewer        # Code quality and security reviews
+hone --agent debugger              # Systematic bug investigation
+hone --agent security-auditor      # Vulnerability and secret scanning
+hone --agent performance-optimizer # Profiling and optimization
+hone --agent documentation-agent   # API docs and architecture diagrams
+hone --agent api-designer          # REST/GraphQL/gRPC design
+hone --agent tdd-workflow          # Test-Driven Development
+hone --agent rust-expert           # Rust best practices
+hone --agent python-expert         # Python best practices
+```
+
+Find an agent by keyword: `hone --agent "test-driven"` (matches `tdd-workflow`).
+
+## Built-in Recipes (Quick Reference)
+
+Use these recipes for structured workflows:
+
+```bash
+hone --recipe tdd-feature    # Implement feature with TDD (Red-Green-Refactor)
+hone --recipe bug-fix        # Fix a bug with regression test
+hone --recipe code-review    # Comprehensive code review
+hone --recipe refactor       # Refactor safely with test verification
+```
+
 ## Common Patterns: One-Liners
 
 Quick commands for common tasks:
@@ -100,31 +132,31 @@ Quick commands for common tasks:
 ### Fix a Bug
 
 ```bash
-hone --dir ~/myproject -i "The login form throws 'TypeError: cannot read password'. Fix it."
+hone --agent debugger -i "The login form throws 'TypeError: cannot read password'. Fix it."
+```
+
+### Code Review
+
+```bash
+hone --agent code-reviewer -i "Review this PR for security issues" --budget 2.00
+```
+
+### Implement a Feature (TDD)
+
+```bash
+hone --recipe tdd-feature
+```
+
+### Refactor Code
+
+```bash
+hone --recipe refactor
 ```
 
 ### Add a Feature
 
 ```bash
 hone --model anthropic:claude-opus-4-5 -i "Add dark mode toggle to Settings. Use Tailwind CSS."
-```
-
-### Write Tests
-
-```bash
-hone --dir ~/myproject -i "Generate pytest tests for src/auth.py"
-```
-
-### Code Review
-
-```bash
-hone -i "Review this PR for security issues" --budget 2.00
-```
-
-### Refactor
-
-```bash
-hone --recipe scripts/refactor-to-typescript.yaml
 ```
 
 ### Run on Remote Server

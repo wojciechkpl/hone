@@ -321,52 +321,241 @@ Agent: Should I run pytest to verify?
 
 Memory is encrypted and stored locally on your machine. Hone never uploads your code to the cloud.
 
+## Using Built-in Agents and Recipes
+
+Now that you understand the fundamentals, let's explore Hone's most powerful feature: built-in agents and recipes. These let you delegate specialized tasks to expert personas.
+
+### What's an Agent?
+
+An agent is a specialized AI persona. Instead of saying "fix this code," you can say "I want the security auditor to review this code." Each agent has:
+
+- **A name** (e.g., `code-reviewer`, `debugger`)
+- **Specialized tools** (file readers, shell, git, etc.)
+- **Expert knowledge** (system prompt encoded with best practices)
+- **A preferred model** (usually Sonnet for balanced speed/cost)
+
+### Built-in Agents
+
+Hone ships with 9 pre-trained agents:
+
+| Agent | Use When |
+|-------|----------|
+| `code-reviewer` | You want a security/quality review |
+| `debugger` | You're stuck on a bug |
+| `security-auditor` | You need vulnerability scanning |
+| `rust-expert` | You're writing Rust |
+| `python-expert` | You're writing Python |
+| `tdd-workflow` | You want to implement with TDD |
+| `api-designer` | You're designing an API |
+| `performance-optimizer` | You need to optimize code |
+| `documentation-agent` | You need to write docs |
+
+### Using an Agent
+
+```bash
+# Use a specific agent
+hone --agent code-reviewer -i "Review this code for security issues"
+
+# Find an agent by keyword
+hone --agent "test-driven" -i "Implement a new feature"
+# This finds "tdd-workflow" automatically
+
+# Use an agent in a recipe (we'll cover recipes next)
+hone --recipe tdd-feature --agent rust-expert
+```
+
+During the session, you can also switch agents:
+
+```
+/agent debugger
+```
+
+### What's a Recipe?
+
+A recipe is a structured workflow. Instead of manually running steps one by one, a recipe defines:
+
+1. What to do in each step
+2. The order to do them
+3. Whether to run tests at the end
+
+Hone ships with 4 built-in recipes:
+
+| Recipe | What It Does |
+|--------|-------------|
+| `tdd-feature` | Implement a feature with Red-Green-Refactor |
+| `bug-fix` | Fix a bug with a regression test |
+| `code-review` | Comprehensive code review (5 steps) |
+| `refactor` | Safely refactor with test verification |
+
+### Running a Recipe
+
+```bash
+# Run a built-in recipe
+hone --recipe tdd-feature
+hone --recipe bug-fix
+```
+
+Here's what a TDD feature run looks like:
+
+```
+Recipe: tdd-feature
+Step 1/5: Understand
+  Prompt: Read the relevant code and understand the current architecture...
+  Agent: [reads files, summarizes the codebase]
+  Continue? (y/n) y
+
+Step 2/5: Red
+  Prompt: Write failing tests that describe the desired behavior...
+  Agent: [writes tests, runs them to confirm failure]
+  Continue? (y/n) y
+
+Step 3/5: Green
+  Prompt: Write the minimum code to make tests pass...
+  Agent: [writes implementation]
+  Continue? (y/n) y
+
+Step 4/5: Refactor
+  Prompt: Refactor for clarity and quality...
+  Agent: [improves code]
+  Continue? (y/n) y
+
+Step 5/5: Verify
+  Prompt: Run all tests...
+  Agent: [runs full test suite, reports success]
+  
+Test command: cargo test
+Result: PASSED (all 12 tests)
+
+Recipe completed successfully.
+```
+
+### Combining Agents and Recipes
+
+You can use an agent with a recipe. For example, TDD in Rust:
+
+```bash
+hone --recipe tdd-feature --agent rust-expert
+```
+
+The `rust-expert` agent will apply Rust best practices (Arc, ownership, etc.) while following the TDD workflow.
+
+### Creating a Custom Agent
+
+If you find yourself doing the same type of work repeatedly, create a custom agent.
+
+Create `.hone/agents/my-agent.md`:
+
+```markdown
+---
+name: my-agent
+description: My custom agent for X
+tools: [read, write, shell, grep, glob]
+model: sonnet
+---
+
+You are a specialized agent for [your domain].
+
+## Process
+
+1. Understand the task
+2. Take action
+3. Verify results
+
+[Your system prompt...]
+```
+
+Then use it:
+
+```bash
+hone --agent my-agent -i "Your task"
+```
+
+See [Tools and MCP Guide](../tutorials/tools-and-mcp.md#agents) for detailed examples.
+
+---
+
 ## Common Workflows
 
-### Bug Fixing
+### Bug Fixing with the Debugger
 
-```
-You: There's a type error on line 42 of main.rs. Fix it.
-Agent: [reads file, identifies error, suggests fix, runs tests, commits]
-```
-
-**You do:** Approve or reject the fix.
-
-### Adding a Feature
-
-```
-You: Add a function to validate email addresses. Use regex for simplicity.
-Agent: [creates new function in utils.py, adds tests, shows diff, commits]
+```bash
+hone --agent debugger -i "The login form throws 'TypeError: cannot read password'. Fix it."
 ```
 
-**You do:** Review the code, request changes if needed.
+The debugger agent uses a systematic approach:
+1. Reproduce the bug
+2. Form hypotheses
+3. Test hypotheses
+4. Write the minimal fix
+5. Verify with a regression test
 
-### Code Review
+You review and approve the fix.
 
-```
-You: Review the code in pr_branch for security issues.
-Agent: [reads files, checks for SQL injection, hardcoded secrets, etc., reports findings]
-```
+### Code Review with Security Focus
 
-**You do:** Triage the findings, prioritize fixes.
-
-### Refactoring
-
-```
-You: Refactor the database module to use SQLAlchemy.
-Agent: [reads current code, designs new structure, updates imports, runs tests, commits]
+```bash
+hone --agent security-auditor -i "Review this code for vulnerabilities"
 ```
 
-**You do:** Approve step-by-step or request changes.
+The security auditor scans for:
+- SQL injection, XSS, command injection
+- Hardcoded secrets
+- Authentication/authorization flaws
+- Cryptography issues
+- Known CVEs in dependencies
 
-### Writing Tests
+### Implement a Feature with TDD
 
+```bash
+hone --recipe tdd-feature --agent rust-expert
 ```
-You: Write unit tests for the auth module (src/auth.py).
-Agent: [reads auth.py, writes comprehensive tests, runs pytest, commits]
+
+This combines the TDD workflow with Rust expertise. The agent:
+1. Understands the architecture
+2. Writes failing tests
+3. Implements the minimum code to pass
+4. Refactors for clarity
+5. Verifies all tests still pass
+
+### Refactor Code Safely
+
+```bash
+hone --recipe refactor
 ```
 
-**You do:** Review coverage, request additional tests if needed.
+The refactor recipe enforces test verification at each step:
+1. Establish a green baseline
+2. Plan the refactoring
+3. Execute changes one at a time
+4. Run tests after each change
+5. Report before/after metrics
+
+You approve each step incrementally.
+
+### Code Review (General)
+
+```bash
+hone --agent code-reviewer -i "Review this PR"
+```
+
+The code reviewer performs a systematic review:
+1. Understand the scope
+2. Check for correctness
+3. Check for security issues
+4. Check for performance issues
+5. Report findings in a table
+
+### Add Documentation
+
+```bash
+hone --agent documentation-agent -i "Generate API documentation"
+```
+
+The documentation agent can:
+- Generate API docs from code
+- Create architecture diagrams (Mermaid)
+- Write READMEs
+- Generate changelogs from git history
 
 ## Tips for Effective Prompting
 
@@ -472,7 +661,8 @@ Ask it to fix a simple bug or add a small feature. See how it works.
 Now that you understand the fundamentals:
 - **[Getting Started](../tutorials/getting-started.md)** — More detailed setup guide
 - **[Model Providers](../tutorials/providers.md)** — Deep dive into provider selection and cost
-- **[Tools and MCP](../tutorials/tools-and-mcp.md)** — How tools work, how to extend them
+- **[Tools and MCP](../tutorials/tools-and-mcp.md)** — How tools work, agents, how to extend them
+- **[Recipes Guide](../tutorials/recipes.md)** — Full recipe syntax and writing custom recipes
 
 ### 3. Set Up a Configuration
 

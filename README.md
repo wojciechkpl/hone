@@ -46,6 +46,66 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Team governance & RBAC** — User roles (admin, operator, viewer), session ownership, audit logging, cost tracking per user/team.
 - **Real-time cost tracking** — Token counting via tiktoken, live cost estimates, per-session breakdowns, budget enforcement.
 - **Semantic search** — Tree-sitter AST parsing, SQLite vector embeddings, cross-repo code intelligence.
+- **Built-in agents** — 9 specialized agent personas (code reviewer, debugger, security auditor, etc.) plus 4 recipe templates for common workflows.
+
+## Built-in Agents and Recipes
+
+Hone ships with 9 pre-configured agents and 4 recipe templates for common development tasks.
+
+### Built-in Agents
+
+Each agent is a specialized persona with curated tools and system prompts:
+
+| Agent | Description |
+|-------|-------------|
+| `code-reviewer` | Expert code reviewer for quality, security, performance, and maintainability |
+| `debugger` | Systematic debugging specialist using the scientific method |
+| `security-auditor` | Security auditor for vulnerability scanning, secret detection, and OWASP review |
+| `performance-optimizer` | Performance profiler and optimizer for database, API, memory, and rendering |
+| `documentation-agent` | Generates and maintains API docs, READMEs, architecture diagrams, and changelogs |
+| `api-designer` | REST, GraphQL, and gRPC API designer with OpenAPI spec generation |
+| `tdd-workflow` | Test-Driven Development workflow enforcing Red-Green-Refactor discipline |
+| `rust-expert` | Rust specialist for ownership, lifetimes, async with tokio, and idiomatic error handling |
+| `python-expert` | Python specialist for PEP 484 typing, pytest, async with asyncio, and FastAPI |
+
+### Built-in Recipes
+
+Recipes are multi-step YAML workflows that guide the agent through structured processes:
+
+| Recipe | Description |
+|--------|-------------|
+| `tdd-feature` | Implement a feature using Test-Driven Development (Red-Green-Refactor) |
+| `bug-fix` | Fix a bug using systematic debugging with regression test |
+| `code-review` | Perform a comprehensive code review covering correctness, security, and performance |
+| `refactor` | Safely refactor code with test verification at each step |
+
+### Using Built-in Agents and Recipes
+
+Agents can be referenced by name or description using the agent registry:
+
+```bash
+# Run using an agent's name
+hone --agent code-reviewer -i "Review this code for security issues"
+
+# Run a recipe
+hone --recipe tdd-feature
+hone --recipe bug-fix
+
+# Create a custom agent (see docs/tutorials/tools-and-mcp.md)
+cat > .hone/agents/my-agent.md << 'EOF'
+---
+name: my-agent
+description: My custom agent
+tools: [read, write, shell, grep]
+model: sonnet
+---
+You are my specialized agent...
+EOF
+```
+
+Custom agents can be placed in `.hone/agents/` (project-level) or `~/.config/hone/agents/` (user-level).
+
+For detailed information on how agents work and how to create custom ones, see [docs/tutorials/tools-and-mcp.md](docs/tutorials/tools-and-mcp.md#agents).
 
 ## Architecture
 

@@ -2,6 +2,105 @@
 
 Recipes are YAML files that define multi-step agent workflows. Each step runs a prompt through the model, and steps can depend on previous outputs.
 
+## Built-in Recipes
+
+Hone includes 4 bundled recipes for common development tasks:
+
+### tdd-feature
+
+Implement a feature using Test-Driven Development (Red-Green-Refactor):
+
+```yaml
+name: tdd-feature
+description: Implement a feature using Test-Driven Development
+steps:
+  - name: understand
+    prompt: "Read the relevant code and understand the current architecture. Summarize what you find."
+  - name: red
+    prompt: "Write failing tests that describe the desired behavior. Run them to confirm they fail."
+  - name: green
+    prompt: "Write the minimum code to make the tests pass. Do not add extra features."
+  - name: refactor
+    prompt: "Refactor the implementation for clarity and quality. All tests must still pass."
+  - name: verify
+    prompt: "Run all tests one final time. Report the results."
+test_cmd: "cargo test"
+```
+
+### bug-fix
+
+Fix a bug using systematic debugging with regression test:
+
+```yaml
+name: bug-fix
+description: Fix a bug using systematic debugging with regression test
+steps:
+  - name: reproduce
+    prompt: "Read the bug report and reproduce the issue. Identify the failing behavior."
+  - name: regression-test
+    prompt: "Write a regression test that captures the bug. Verify it fails."
+  - name: fix
+    prompt: "Write the minimal fix. Do not refactor surrounding code."
+  - name: verify
+    prompt: "Run all tests. The regression test should now pass along with all existing tests."
+test_cmd: "cargo test"
+```
+
+### code-review
+
+Perform a comprehensive code review:
+
+```yaml
+name: code-review
+description: Perform a comprehensive code review
+steps:
+  - name: overview
+    prompt: "Read the changed files. Understand the intent and scope of the changes."
+  - name: correctness
+    prompt: "Check for logical errors, edge cases, and off-by-one bugs."
+  - name: security
+    prompt: "Scan for injection vulnerabilities, secret leakage, and auth issues."
+  - name: performance
+    prompt: "Identify unnecessary allocations, N+1 queries, and hot-path issues."
+  - name: report
+    prompt: "Summarize findings in a table sorted by severity (CRITICAL > HIGH > MEDIUM > LOW > INFO)."
+```
+
+### refactor
+
+Safely refactor code with test verification at each step:
+
+```yaml
+name: refactor
+description: Safely refactor code with test verification at each step
+steps:
+  - name: baseline
+    prompt: "Run all existing tests to establish a green baseline. Report results."
+  - name: plan
+    prompt: "Analyze the code and create a refactoring plan. List each change and its purpose."
+  - name: execute
+    prompt: "Apply the refactoring changes one at a time. Run tests after each change."
+  - name: verify
+    prompt: "Run the full test suite. All tests must pass. Report before/after code metrics."
+test_cmd: "cargo test"
+```
+
+### Using Built-in Recipes
+
+```bash
+# Run a built-in recipe
+hone --recipe tdd-feature
+hone --recipe bug-fix
+hone --recipe code-review
+hone --recipe refactor
+
+# Run in non-interactive mode (useful for CI/CD)
+hone --recipe tdd-feature --non-interactive
+
+# Override the test command
+hone --recipe tdd-feature --test-cmd "pytest tests/"
+```
+
 ## What Are Recipes?
 
 A recipe automates a sequence of agent turns. Instead of typing prompts manually, you define them once in YAML and run them repeatedly.

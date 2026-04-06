@@ -348,6 +348,136 @@ await slack.send_message({
 
 Hone executes this generated code in a sandboxed subprocess, streaming results back.
 
+## Agents
+
+Agents are specialized personas that combine tools, system prompts, and model preferences. Hone ships with 9 built-in agents and supports custom agents.
+
+### What is an Agent?
+
+An agent is defined in Markdown with YAML frontmatter:
+
+```markdown
+---
+name: code-reviewer
+description: Expert code reviewer for quality, security, performance, and maintainability
+tools: [read, grep, glob, shell]
+model: sonnet
+memory: "This agent specializes in code quality reviews"
+sub_agents: []
+---
+
+You are a senior code reviewer. Perform systematic reviews following this process:
+
+## Review Process
+
+1. **Correctness** — Does the code do what it claims?
+2. **Security** — SQL injection, XSS, command injection, secret leakage
+3. **Performance** — Unnecessary allocations, N+1 queries, missing indexes
+4. **Maintainability** — Naming clarity, function length, file length
+5. **Tests** — Coverage of happy path, error paths, edge cases
+6. **Style** — Consistent with codebase conventions
+
+[Rest of system prompt...]
+```
+
+The YAML frontmatter defines:
+- `name` — Agent identifier (used with `--agent` flag)
+- `description` — One-line summary (used for discovery)
+- `tools` — List of available tools
+- `model` — Default model (e.g., "sonnet", "opus", "haiku")
+- `memory` — Optional contextual info
+- `sub_agents` — Other agents this one can delegate to
+
+The Markdown body becomes the system prompt.
+
+### Built-in Agents
+
+Hone includes 9 pre-configured agents:
+
+| Agent | Purpose |
+|-------|---------|
+| `code-reviewer` | Quality and security reviews |
+| `debugger` | Systematic bug investigation |
+| `security-auditor` | Vulnerability and secret scanning |
+| `performance-optimizer` | Profiling and optimization |
+| `documentation-agent` | API docs and architecture diagrams |
+| `api-designer` | REST/GraphQL/gRPC design |
+| `tdd-workflow` | Test-Driven Development coach |
+| `rust-expert` | Rust best practices |
+| `python-expert` | Python best practices |
+
+### Using Built-in Agents
+
+```bash
+# Use an agent by name
+hone --agent code-reviewer -i "Review this code"
+
+# Use an agent by searching its description
+hone --agent "test-driven" -i "Implement a feature"  # finds tdd-workflow
+```
+
+The agent registry automatically loads built-in agents and matches descriptions to agent names.
+
+### Creating Custom Agents
+
+Define a custom agent in `.hone/agents/my-agent.md`:
+
+```markdown
+---
+name: my-custom-agent
+description: My specialized agent for X
+tools: [read, write, shell, grep, glob]
+model: sonnet
+---
+
+You are a specialized agent for [your domain].
+
+## Process
+
+1. Understand the task
+2. Take action
+3. Verify results
+
+[Your system prompt continues...]
+```
+
+Place custom agents in:
+- Project level: `.hone/agents/*.md`
+- User level: `~/.config/hone/agents/*.md`
+
+Custom agents override built-in agents with the same name. Load them automatically:
+
+```bash
+cd /your/project
+hone --agent my-custom-agent
+```
+
+### Agent Registry
+
+The `AgentRegistry` loads agents at startup:
+
+```rust
+use hone_core::agent_registry::AgentRegistry;
+
+let mut registry = AgentRegistry::new();
+
+// Load built-in agents
+registry.load_builtins();
+
+// Load custom agents from a directory
+registry.load_from_dir(Path::new(".hone/agents"))?;
+
+// Find an agent by name
+if let Some(agent) = registry.get("code-reviewer") {
+    println!("Agent: {}", agent.description);
+}
+
+// Find by description (case-insensitive)
+if let Some(agent) = registry.find_by_description("test") {
+    println!("Found: {}", agent.name);  // might be "tdd-workflow"
+}
+```
+
 ## Layer 3: Skills (HONE.md)
 
 Markdown conventions parsed at startup. Zero runtime cost. Use this for system prompts, example workflows, and reusable prompts.

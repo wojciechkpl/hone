@@ -101,6 +101,75 @@ sequenceDiagram
 
 ---
 
+## 1b. Agents: Specialized Personas
+
+An **agent** is a specialized version of the AI with curated tools, context, and system prompts. Unlike recipes (which define "what to do step by step"), agents define "who the AI is."
+
+### What is an Agent?
+
+An agent is a Markdown file with YAML frontmatter:
+
+```markdown
+---
+name: code-reviewer
+description: Expert code reviewer for quality, security, performance, and maintainability
+tools: [read, grep, glob, shell]
+model: sonnet
+---
+
+You are a senior code reviewer. Perform systematic reviews following this process:
+
+## Review Process
+
+1. **Correctness** — Does the code do what it claims?
+2. **Security** — SQL injection, XSS, command injection, secret leakage
+3. **Performance** — Unnecessary allocations, N+1 queries
+...
+```
+
+The frontmatter metadata (`name`, `tools`, `model`) configures the agent. The Markdown body becomes the system prompt.
+
+### Agents vs. Recipes
+
+| Aspect | Agent | Recipe |
+|--------|-------|--------|
+| **Defines** | "Who are you?" | "What should I do?" |
+| **Scope** | A persona with tools and expertise | A sequence of steps to achieve a goal |
+| **Reusability** | Across many tasks | For a specific workflow |
+| **Example** | "I am a security auditor" | "Run tests, then refactor, then commit" |
+
+You can combine them: use the `tdd-workflow` agent with the `tdd-feature` recipe.
+
+### Built-in Agents
+
+Hone includes 9 agents:
+- `code-reviewer` — Quality and security reviews
+- `debugger` — Systematic bug investigation
+- `security-auditor` — Vulnerability scanning
+- `performance-optimizer` — Profiling and optimization
+- `documentation-agent` — API docs and diagrams
+- `api-designer` — REST/GraphQL/gRPC design
+- `tdd-workflow` — TDD coach
+- `rust-expert` — Rust best practices
+- `python-expert` — Python best practices
+
+### Custom Agents
+
+Define custom agents in `.hone/agents/my-agent.md` (project-level) or `~/.config/hone/agents/my-agent.md` (user-level). See [Tools and MCP Guide](../tutorials/tools-and-mcp.md#agents) for detailed instructions.
+
+### Discovery via Description
+
+The agent registry supports fuzzy matching on description:
+
+```bash
+hone --agent "test-driven"  # finds "tdd-workflow"
+hone --agent "code-quality"  # finds "code-reviewer"
+```
+
+This is powered by `AgentRegistry::find_by_description()`, which matches keywords case-insensitively.
+
+---
+
 ## 2. The Layered Tool Architecture
 
 Hone doesn't just call a remote model API. It has four distinct layers of tool execution, each with different trade-offs:
