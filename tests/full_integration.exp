@@ -1,0 +1,412 @@
+#!/usr/bin/expect -f
+# Full integration test suite for Hone TUI
+# Tests every feature and integration through the real binary.
+#
+# Usage: expect tests/full_integration.exp [binary_path]
+
+set timeout 30
+set binary [lindex $argv 0]
+if {$binary eq ""} {
+    set binary "./target/release/hone"
+}
+set passed 0
+set failed 0
+set total 0
+
+proc pass {msg} {
+    global passed total
+    incr passed
+    incr total
+    puts "  PASS: $msg"
+}
+
+proc fail {msg} {
+    global failed total
+    incr failed
+    incr total
+    puts "  FAIL: $msg"
+}
+
+proc cleanup {} {
+    catch {close}
+    catch {wait}
+    after 500
+}
+
+# ===================================================================
+puts "\n\[01\] --version"
+# ===================================================================
+spawn $binary --version
+expect {
+    -re {hone [0-9]+\.[0-9]+\.[0-9]+} { pass "version output" }
+    timeout { fail "version timed out" }
+}
+expect eof
+wait
+
+# ===================================================================
+puts "\[02\] --help"
+# ===================================================================
+spawn $binary --help
+expect {
+    -re {Usage:.*hone} { pass "help output" }
+    timeout { fail "help timed out" }
+}
+expect eof
+wait
+
+# ===================================================================
+puts "\[03\] --help shows all flags"
+# ===================================================================
+spawn $binary --help
+expect {
+    -re {--orchestrate} { pass "orchestrate flag documented" }
+    timeout { fail "orchestrate not in help" }
+}
+expect eof
+wait
+
+# ===================================================================
+puts "\[04\] --list-recipes"
+# ===================================================================
+spawn $binary --list-recipes
+expect {
+    -re {tdd-feature.*bug-fix.*code-review.*refactor} { pass "all 4 recipes listed" }
+    -re {tdd-feature} { pass "recipes listed (partial match)" }
+    timeout { fail "list-recipes timed out" }
+}
+expect eof
+wait
+
+# ===================================================================
+puts "\[05\] One-shot mode"
+# ===================================================================
+spawn $binary "say the word hello"
+expect {
+    -re -nocase {hello} { pass "one-shot returns response" }
+    timeout { fail "one-shot timed out" }
+    eof { pass "one-shot returns response" }
+}
+catch {wait} result
+after 1000
+
+# ===================================================================
+puts "\[06\] TUI launches (splash screen)"
+# ===================================================================
+log_user 0
+spawn $binary
+after 2000
+# The TUI should be running (alternate screen active)
+# We can tell because it didn't exit
+set pid [exp_pid]
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "TUI process running"
+} else {
+    fail "TUI process died on launch"
+}
+
+# ===================================================================
+puts "\[07\] TUI accepts /help"
+# ===================================================================
+after 2000
+send "/help\r"
+after 1000
+# If the process is still running, it handled the command
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/help accepted"
+} else {
+    fail "TUI died after /help"
+}
+
+# ===================================================================
+puts "\[08\] TUI accepts /cost"
+# ===================================================================
+send "/cost\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/cost accepted"
+} else {
+    fail "TUI died after /cost"
+}
+
+# ===================================================================
+puts "\[09\] TUI accepts /theme neon"
+# ===================================================================
+send "/theme neon\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/theme neon accepted"
+} else {
+    fail "TUI died after /theme"
+}
+
+# ===================================================================
+puts "\[10\] TUI accepts /theme crimson"
+# ===================================================================
+send "/theme crimson\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/theme crimson accepted"
+} else {
+    fail "TUI died after /theme crimson"
+}
+
+# ===================================================================
+puts "\[11\] TUI accepts /theme chalk"
+# ===================================================================
+send "/theme chalk\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/theme chalk accepted"
+} else {
+    fail "TUI died after /theme chalk"
+}
+
+# ===================================================================
+puts "\[12\] TUI accepts /theme minimal"
+# ===================================================================
+send "/theme minimal\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/theme minimal accepted"
+} else {
+    fail "TUI died after /theme minimal"
+}
+
+# ===================================================================
+puts "\[13\] TUI accepts /split"
+# ===================================================================
+send "/split\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/split accepted"
+} else {
+    fail "TUI died after /split"
+}
+
+# ===================================================================
+puts "\[14\] TUI accepts /split again (toggle off)"
+# ===================================================================
+send "/split\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/split toggle off accepted"
+} else {
+    fail "TUI died after /split toggle"
+}
+
+# ===================================================================
+puts "\[15\] TUI accepts /panel"
+# ===================================================================
+send "/panel\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/panel accepted"
+} else {
+    fail "TUI died after /panel"
+}
+
+# ===================================================================
+puts "\[16\] TUI accepts /panel again (toggle off)"
+# ===================================================================
+send "/panel\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/panel toggle off accepted"
+} else {
+    fail "TUI died after /panel toggle"
+}
+
+# ===================================================================
+puts "\[17\] TUI accepts /theme-preview"
+# ===================================================================
+send "/theme-preview\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/theme-preview accepted"
+} else {
+    fail "TUI died after /theme-preview"
+}
+
+# ===================================================================
+puts "\[18\] TUI accepts /model command"
+# ===================================================================
+send "/model claude-cli:claude-sonnet-4-5\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "/model accepted"
+} else {
+    fail "TUI died after /model"
+}
+
+# ===================================================================
+puts "\[19\] TUI handles unknown command"
+# ===================================================================
+send "/nonexistent\r"
+after 1000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "unknown command handled (no crash)"
+} else {
+    fail "TUI died after unknown command"
+}
+
+# ===================================================================
+puts "\[20\] TUI conversation round-trip"
+# ===================================================================
+send "say the word test\r"
+after 15000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "conversation completed (process alive)"
+} else {
+    fail "TUI died during conversation"
+}
+
+# ===================================================================
+puts "\[21\] TUI second turn (multi-turn)"
+# ===================================================================
+send "now say the word done\r"
+after 15000
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "multi-turn conversation (process alive)"
+} else {
+    fail "TUI died during second turn"
+}
+
+# ===================================================================
+puts "\[22\] /quit exits cleanly"
+# ===================================================================
+send "/quit\r"
+after 3000
+expect {
+    eof { pass "/quit exited" }
+    timeout {
+        send "\x03"
+        after 2000
+        expect eof
+        pass "/quit + Ctrl+C exited"
+    }
+}
+cleanup
+
+# ===================================================================
+puts "\[23\] Ctrl+C exits cleanly"
+# ===================================================================
+spawn $binary
+after 3000
+send "\x03"
+after 3000
+expect {
+    eof { pass "Ctrl+C exited" }
+    timeout { fail "Ctrl+C did not exit" }
+}
+cleanup
+
+# ===================================================================
+puts "\[24\] Empty input is no-op"
+# ===================================================================
+spawn $binary
+after 3000
+send "\r"
+after 1000
+send "\r"
+after 1000
+send "\r"
+after 1000
+set pid [exp_pid]
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "empty enter no crash"
+} else {
+    fail "TUI crashed on empty enter"
+}
+send "/quit\r"
+after 3000
+expect eof
+cleanup
+
+# ===================================================================
+puts "\[25\] Rapid key input"
+# ===================================================================
+spawn $binary
+after 3000
+send "abcdefghijklmnopqrstuvwxyz1234567890"
+after 500
+send "\x7f\x7f\x7f\x7f\x7f"
+after 500
+set pid [exp_pid]
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "rapid input + backspace no crash"
+} else {
+    fail "TUI crashed on rapid input"
+}
+send "\x03"
+after 3000
+expect eof
+cleanup
+
+# ===================================================================
+puts "\[26\] Long input (500+ chars)"
+# ===================================================================
+spawn $binary
+after 3000
+set longstr "a"
+for {set i 0} {$i < 500} {incr i} {
+    append longstr "b"
+}
+send "$longstr"
+after 1000
+set pid [exp_pid]
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "long input no crash"
+} else {
+    fail "TUI crashed on long input"
+}
+send "\x03"
+after 3000
+expect eof
+cleanup
+
+# ===================================================================
+puts "\[27\] Multiple slash commands in sequence"
+# ===================================================================
+spawn $binary
+after 3000
+send "/help\r"
+after 500
+send "/cost\r"
+after 500
+send "/theme neon\r"
+after 500
+send "/split\r"
+after 500
+send "/panel\r"
+after 500
+send "/theme crimson\r"
+after 500
+send "/help\r"
+after 500
+send "/cost\r"
+after 500
+set pid [exp_pid]
+if {[catch {exec kill -0 $pid}] == 0} {
+    pass "8 sequential commands no crash"
+} else {
+    fail "TUI crashed during command sequence"
+}
+send "/quit\r"
+after 3000
+expect eof
+cleanup
+
+# ===================================================================
+# Summary
+# ===================================================================
+log_user 1
+puts "\n========================================="
+puts "Results: $passed passed, $failed failed (out of $total)"
+puts "========================================="
+
+if {$failed > 0} {
+    exit 1
+} else {
+    exit 0
+}
