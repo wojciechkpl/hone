@@ -94,6 +94,10 @@ impl App {
         &self.status
     }
 
+    pub fn status_mut(&mut self) -> &mut StatusInfo {
+        &mut self.status
+    }
+
     pub fn should_quit(&self) -> bool {
         self.should_quit
     }

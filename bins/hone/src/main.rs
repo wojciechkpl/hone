@@ -285,6 +285,9 @@ async fn run_tui(
 ) -> Result<()> {
     let mut app = App::new();
 
+    // Show which model is active in the status bar.
+    app.status_mut().model = model_id.to_string();
+
     // Conversation history sent to the provider on each turn.
     let mut history: Vec<hone_proto::Message> = Vec::new();
 
@@ -310,23 +313,23 @@ async fn run_tui(
                     && !app.input().is_empty()
                     && matches!(app.state(), AppState::Idle | AppState::Error(_))
                 {
-                    // Capture the input text before handle_key clears it.
+                    // Check if this is a slash command BEFORE processing.
                     let user_text = app.input().buffer.clone();
+                    let is_command = user_text.starts_with('/');
 
-                    // Let the App update its own state (adds user message,
-                    // sets WaitingForResponse, clears input).
+                    // Let the App update its own state.
                     app.handle_key(key);
 
-                    // Append the user turn to history and kick off a provider
-                    // request in a background task.
-                    history.push(hone_proto::Message::user(user_text.as_str()));
-
-                    spawn_turn(
-                        Arc::clone(&provider),
-                        model_id.clone(),
-                        history.clone(),
-                        agent_tx.clone(),
-                    );
+                    // Only spawn an AI turn for regular messages, not commands.
+                    if !is_command && matches!(app.state(), AppState::WaitingForResponse) {
+                        history.push(hone_proto::Message::user(user_text.as_str()));
+                        spawn_turn(
+                            Arc::clone(&provider),
+                            model_id.clone(),
+                            history.clone(),
+                            agent_tx.clone(),
+                        );
+                    }
                 } else {
                     app.handle_key(key);
                 }
