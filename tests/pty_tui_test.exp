@@ -1,0 +1,151 @@
+#!/usr/bin/expect -f
+# PTY-based TUI integration tests for Hone
+#
+# Usage: expect tests/pty_tui_test.exp [path_to_hone_binary]
+
+set timeout 15
+set binary [lindex $argv 0]
+if {$binary eq ""} {
+    set binary "./target/release/hone"
+}
+set passed 0
+set failed 0
+
+proc pass {msg} {
+    global passed
+    incr passed
+    puts "  PASS: $msg"
+}
+
+proc fail {msg} {
+    global failed
+    incr failed
+    puts "  FAIL: $msg"
+}
+
+# ===================================================================
+puts "\[1/7\] Version flag"
+# ===================================================================
+spawn $binary --version
+expect {
+    -re {hone [0-9]+\.[0-9]+\.[0-9]+} { pass "prints version" }
+    timeout { fail "timed out" }
+}
+expect eof
+wait
+
+# ===================================================================
+puts "\[2/7\] Help flag"
+# ===================================================================
+spawn $binary --help
+expect {
+    -re {Usage:} { pass "prints usage" }
+    timeout { fail "timed out" }
+}
+expect eof
+wait
+
+# ===================================================================
+puts "\[3/7\] One-shot mode"
+# ===================================================================
+spawn $binary "say ok"
+expect {
+    eof { pass "one-shot completed" }
+    timeout { fail "one-shot timed out" }
+}
+wait
+sleep 1
+
+# ===================================================================
+puts "\[4/7\] TUI launches and exits with /quit"
+# ===================================================================
+log_user 0
+spawn $binary
+sleep 3
+send "/quit\r"
+sleep 3
+expect {
+    eof { pass "exited via /quit" }
+    timeout {
+        send "\x03"
+        sleep 2
+        expect eof
+        fail "/quit needed Ctrl+C fallback"
+    }
+}
+catch {wait} result
+sleep 1
+
+# ===================================================================
+puts "\[5/7\] TUI exits with Ctrl+C"
+# ===================================================================
+spawn $binary
+sleep 3
+send "\x03"
+sleep 3
+expect {
+    eof { pass "exited via Ctrl+C" }
+    timeout { fail "Ctrl+C did not exit" }
+}
+catch {wait} result
+sleep 1
+
+# ===================================================================
+puts "\[6/7\] Slash commands accepted without crash"
+# ===================================================================
+spawn $binary
+sleep 3
+send "/help\r"
+sleep 1
+send "/cost\r"
+sleep 1
+send "/theme neon\r"
+sleep 1
+send "/split\r"
+sleep 1
+send "/quit\r"
+sleep 3
+expect {
+    eof { pass "all commands accepted" }
+    timeout {
+        send "\x03"
+        sleep 2
+        expect eof
+        fail "commands needed Ctrl+C fallback"
+    }
+}
+catch {wait} result
+sleep 1
+
+# ===================================================================
+puts "\[7/7\] Conversation round-trip"
+# ===================================================================
+set timeout 30
+spawn $binary
+sleep 3
+send "say hello in one word\r"
+sleep 15
+send "/quit\r"
+sleep 3
+expect {
+    eof { pass "conversation completed" }
+    timeout {
+        send "\x03"
+        sleep 2
+        expect eof
+        pass "conversation completed (Ctrl+C exit)"
+    }
+}
+catch {wait} result
+
+# ===================================================================
+log_user 1
+puts "\n========================================="
+puts "Results: $passed passed, $failed failed"
+puts "========================================="
+
+if {$failed > 0} {
+    exit 1
+} else {
+    exit 0
+}

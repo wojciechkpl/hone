@@ -300,6 +300,10 @@ async fn run_tui(
     let mut events = EventStream::new();
 
     loop {
+        if app.should_quit() {
+            break;
+        }
+
         terminal.draw(|frame| root::render(&app, frame))?;
 
         tokio::select! {
