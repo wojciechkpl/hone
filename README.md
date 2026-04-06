@@ -50,7 +50,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 
 ## Built-in Agents and Recipes
 
-Hone ships with 9 pre-configured agents and 4 recipe templates for common development tasks.
+Hone ships with 12 pre-configured agents and 4 recipe templates for common development tasks.
 
 ### Built-in Agents
 
@@ -67,6 +67,9 @@ Each agent is a specialized persona with curated tools and system prompts:
 | `tdd-workflow` | Test-Driven Development workflow enforcing Red-Green-Refactor discipline |
 | `rust-expert` | Rust specialist for ownership, lifetimes, async with tokio, and idiomatic error handling |
 | `python-expert` | Python specialist for PEP 484 typing, pytest, async with asyncio, and FastAPI |
+| `researcher` | AI/ML research scientist for literature review, experiment design, and paper analysis |
+| `ml-engineer` | Machine learning engineer for model training, evaluation, deployment, and MLOps |
+| `data-engineer` | Data engineer for ETL pipelines, data warehousing, schema design, and data quality |
 
 ### Built-in Recipes
 

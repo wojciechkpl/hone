@@ -7,10 +7,13 @@ use crate::agent_def::{AgentDef, AgentDefError};
 const BUILTIN_AGENTS: &[&str] = &[
     include_str!("../agents/api-designer.md"),
     include_str!("../agents/code-reviewer.md"),
+    include_str!("../agents/data-engineer.md"),
     include_str!("../agents/debugger.md"),
     include_str!("../agents/documentation-agent.md"),
+    include_str!("../agents/ml-engineer.md"),
     include_str!("../agents/performance-optimizer.md"),
     include_str!("../agents/python-expert.md"),
+    include_str!("../agents/researcher.md"),
     include_str!("../agents/rust-expert.md"),
     include_str!("../agents/security-auditor.md"),
     include_str!("../agents/tdd-workflow.md"),
