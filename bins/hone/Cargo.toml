@@ -15,7 +15,14 @@ hone-core = { workspace = true }
 hone-tui = { workspace = true }
 hone-config = { workspace = true }
 hone-recipes = { workspace = true }
+hone-providers = { workspace = true }
+hone-proto = { workspace = true }
+hone-sandbox = { workspace = true }
+hone-tools = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+crossterm = { workspace = true }
+ratatui = { workspace = true }
+futures = { workspace = true }
