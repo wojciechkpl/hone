@@ -1,0 +1,13 @@
+name: code-review
+description: Perform a comprehensive code review
+steps:
+  - name: overview
+    prompt: "Read the changed files. Understand the intent and scope of the changes."
+  - name: correctness
+    prompt: "Check for logical errors, edge cases, and off-by-one bugs."
+  - name: security
+    prompt: "Scan for injection vulnerabilities, secret leakage, and auth issues."
+  - name: performance
+    prompt: "Identify unnecessary allocations, N+1 queries, and hot-path issues."
+  - name: report
+    prompt: "Summarize findings in a table sorted by severity (CRITICAL > HIGH > MEDIUM > LOW > INFO)."

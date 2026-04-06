@@ -1,0 +1,14 @@
+name: tdd-feature
+description: Implement a feature using Test-Driven Development
+steps:
+  - name: understand
+    prompt: "Read the relevant code and understand the current architecture. Summarize what you find."
+  - name: red
+    prompt: "Write failing tests that describe the desired behavior. Run them to confirm they fail."
+  - name: green
+    prompt: "Write the minimum code to make the tests pass. Do not add extra features."
+  - name: refactor
+    prompt: "Refactor the implementation for clarity and quality. All tests must still pass."
+  - name: verify
+    prompt: "Run all tests one final time. Report the results."
+test_cmd: "cargo test"

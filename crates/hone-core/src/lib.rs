@@ -1,3 +1,5 @@
+pub mod agent_def;
+pub mod agent_registry;
 pub mod audit;
 pub mod rbac;
 mod agent;
@@ -9,6 +11,8 @@ mod error;
 mod turn;
 
 pub use agent::{Agent, AgentConfig};
+pub use agent_def::{AgentDef, AgentDefError};
+pub use agent_registry::AgentRegistry;
 pub use audit::{AuditEntry, AuditError, AuditFilter, AuditKind, AuditLog, InMemoryAuditLog};
 pub use code_mode::{CodeModeOutput, CodeModeRunner};
 pub use context::ContextManager;

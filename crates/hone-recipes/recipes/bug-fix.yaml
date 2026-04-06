@@ -1,0 +1,12 @@
+name: bug-fix
+description: Fix a bug using systematic debugging with regression test
+steps:
+  - name: reproduce
+    prompt: "Read the bug report and reproduce the issue. Identify the failing behavior."
+  - name: regression-test
+    prompt: "Write a regression test that captures the bug. Verify it fails."
+  - name: fix
+    prompt: "Write the minimal fix. Do not refactor surrounding code."
+  - name: verify
+    prompt: "Run all tests. The regression test should now pass along with all existing tests."
+test_cmd: "cargo test"

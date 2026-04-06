@@ -1,0 +1,12 @@
+name: refactor
+description: Safely refactor code with test verification at each step
+steps:
+  - name: baseline
+    prompt: "Run all existing tests to establish a green baseline. Report results."
+  - name: plan
+    prompt: "Analyze the code and create a refactoring plan. List each change and its purpose."
+  - name: execute
+    prompt: "Apply the refactoring changes one at a time. Run tests after each change."
+  - name: verify
+    prompt: "Run the full test suite. All tests must pass. Report before/after code metrics."
+test_cmd: "cargo test"
