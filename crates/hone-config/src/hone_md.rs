@@ -104,4 +104,40 @@ mod unit_tests {
         assert_eq!(hone.sections.len(), 1);
         assert!(hone.sections.contains_key("REAL"));
     }
+
+    #[test]
+    fn test_hone_md_parse_and_inject() {
+        let md = "## TOOLS\n\nUse ripgrep for search.\n\n## STYLE\n\nPrefer short functions.\n";
+        let hone = HoneMd::parse(md);
+
+        // Build a system prompt by injecting every section.
+        let mut system_prompt = "You are Hone, an AI coding assistant.".to_string();
+        let mut section_keys: Vec<&String> = hone.sections.keys().collect();
+        section_keys.sort(); // deterministic order for assertions
+        for key in &section_keys {
+            let content = &hone.sections[*key];
+            system_prompt.push_str(&format!("\n\n## {key}\n{content}"));
+        }
+
+        assert!(
+            system_prompt.contains("You are Hone"),
+            "system prompt must contain base text"
+        );
+        assert!(
+            system_prompt.contains("## STYLE"),
+            "system prompt must contain STYLE section heading"
+        );
+        assert!(
+            system_prompt.contains("Prefer short functions"),
+            "system prompt must contain STYLE section content"
+        );
+        assert!(
+            system_prompt.contains("## TOOLS"),
+            "system prompt must contain TOOLS section heading"
+        );
+        assert!(
+            system_prompt.contains("Use ripgrep for search"),
+            "system prompt must contain TOOLS section content"
+        );
+    }
 }

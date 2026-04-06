@@ -59,26 +59,14 @@ impl Tool for ShellTool {
             .unwrap_or(DEFAULT_TIMEOUT_MS)
             .min(MAX_TIMEOUT_MS);
 
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c")
-            .arg(&command)
-            .current_dir(&ctx.working_dir)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-
-        // Ask the sandbox to apply any restrictions to the child process.
-        // NullSandbox is a no-op; real sandboxes may prepend a wrapper.
-        // Note: `restrict_child` takes `&mut std::process::Command`, but
-        // `tokio::process::Command` wraps it.  We build a temporary std
-        // command to run through the sandbox, then re-apply the args to
-        // our tokio command.
-        //
-        // For now we delegate the sandbox call via a std::process::Command
-        // probe — the NullSandbox does nothing, and more sophisticated
-        // backends should override `restrict_child` with a tokio-compatible
-        // path in the future.
+        // Build a std::process::Command first so we can pass it through
+        // restrict_child (which takes &mut std::process::Command).  The
+        // sandbox may rewrite the command entirely (e.g. prepend sandbox-exec),
+        // so we capture the final program and args afterwards and reconstruct a
+        // tokio::process::Command from them.
         let mut std_cmd = std::process::Command::new("sh");
         std_cmd.arg("-c").arg(&command);
+
         let policy = SandboxPolicyBuilder::new(SandboxMode::Manual)
             .build()
             .expect("manual policy with no constraints is always valid");
@@ -88,6 +76,21 @@ impl Tool for ShellTool {
                 tool: "shell".to_string(),
                 action: e.to_string(),
             })?;
+
+        // Reconstruct a tokio Command from the (possibly rewritten) std Command.
+        // We must read program/args before converting because Into<tokio::Command>
+        // is not available — tokio::process::Command has its own constructor.
+        let program = std_cmd.get_program().to_os_string();
+        let args: Vec<std::ffi::OsString> =
+            std_cmd.get_args().map(|a| a.to_os_string()).collect();
+
+        let mut cmd = Command::new(program);
+        for arg in &args {
+            cmd.arg(arg);
+        }
+        cmd.current_dir(&ctx.working_dir)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
 
         let duration = Duration::from_millis(timeout_ms);
         let result = timeout(duration, cmd.output()).await;

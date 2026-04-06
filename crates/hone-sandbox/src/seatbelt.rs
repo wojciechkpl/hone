@@ -73,13 +73,38 @@ fn escape_path(path: &Path) -> String {
 
 /// macOS Seatbelt sandbox backend.
 ///
-/// This implementation is a **stub**.  It can generate the profile string via
-/// [`SeatbeltProfile`] and validate that the profile is non-empty, but it does
-/// not yet call `sandbox_init(3)` or `sandbox-exec(1)` at runtime.
+/// Wraps child processes with `sandbox-exec -p <profile>` to enforce the
+/// policy at the kernel level.
 ///
 /// Available only on `target_os = "macos"`.
 #[cfg(target_os = "macos")]
 pub struct SeatbeltSandbox;
+
+#[cfg(target_os = "macos")]
+impl SeatbeltSandbox {
+    /// Build a `Command` that runs `program` under `sandbox-exec` with the
+    /// Seatbelt profile derived from `policy`.
+    ///
+    /// This is the preferred way to launch a sandboxed subprocess when you
+    /// control the initial `Command` construction.  [`restrict_child`] handles
+    /// the case where the caller has already partially constructed a `Command`.
+    ///
+    /// [`restrict_child`]: Sandbox::restrict_child
+    pub fn sandboxed_command(
+        program: &str,
+        policy: &SandboxPolicy,
+    ) -> Result<Command, SandboxError> {
+        let profile = SeatbeltProfile::from_policy(policy);
+        if profile.is_empty() {
+            return Err(SandboxError::PolicyNotMet {
+                reason: "generated empty seatbelt profile".to_string(),
+            });
+        }
+        let mut cmd = Command::new("sandbox-exec");
+        cmd.arg("-p").arg(profile).arg(program);
+        Ok(cmd)
+    }
+}
 
 #[cfg(target_os = "macos")]
 impl Sandbox for SeatbeltSandbox {
@@ -105,13 +130,29 @@ impl Sandbox for SeatbeltSandbox {
         policy: &SandboxPolicy,
     ) -> Result<(), SandboxError> {
         let profile = SeatbeltProfile::from_policy(policy);
+        if profile.is_empty() {
+            return Err(SandboxError::PolicyNotMet {
+                reason: "generated empty seatbelt profile".to_string(),
+            });
+        }
+
+        // Capture the original program and arguments from the existing command.
+        let program = cmd.get_program().to_os_string();
+        let args: Vec<std::ffi::OsString> =
+            cmd.get_args().map(|a| a.to_os_string()).collect();
+
+        // Rebuild the command as: sandbox-exec -p <profile> <original_program> <original_args>
+        *cmd = Command::new("sandbox-exec");
+        cmd.arg("-p").arg(&profile);
+        cmd.arg(&program);
+        for arg in &args {
+            cmd.arg(arg);
+        }
+
         tracing::debug!(
-            "SeatbeltSandbox: wrapping child with sandbox-exec (stub — profile not applied)"
+            profile_len = profile.len(),
+            "SeatbeltSandbox: wrapped child with sandbox-exec"
         );
-        // TODO: prepend `sandbox-exec -p <profile>` to the command.
-        // We store the profile in the command environment as a placeholder
-        // so callers can at least inspect what would have been applied.
-        let _ = (&profile, cmd);
         Ok(())
     }
 

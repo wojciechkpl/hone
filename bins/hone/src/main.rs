@@ -1,4 +1,5 @@
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,12 +10,22 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use futures::StreamExt;
-use hone_proto::{AgentEvent, ModelId, ProviderEvent, TokenUsage};
-use hone_providers::{ClaudeCliProvider, CompletionRequest, GeminiCliProvider, MockProvider, ModelProvider};
+use hone_config::{Config, HoneMd};
+use hone_core::{Agent, AgentConfig};
+use hone_proto::{AgentEvent, ModelId, PricingEntry};
+use hone_providers::{
+    ClaudeCliProvider, GeminiCliProvider, MockProvider, ModelProvider,
+    adapters::anthropic::AnthropicProvider,
+};
+use hone_sandbox::NullSandbox;
+use hone_tools::{
+    EditFileTool, GlobTool, GitCommitTool, GitDiffTool, GitStatusTool, ReadFileTool, ShellTool,
+    ToolRegistry, WriteFileTool,
+};
 use hone_tui::{App, AppState};
 use hone_tui::render::root;
 use ratatui::{Terminal, backend::CrosstermBackend};
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -77,7 +88,7 @@ fn print_help() {
     println!("  PROMPT  Run a single prompt and exit (one-shot mode)");
     println!();
     println!("Options:");
-    println!("  -m, --model <ID>        Model ID to use (e.g. claude-cli:claude-sonnet-4-5)");
+    println!("  -m, --model <ID>        Model ID to use (e.g. anthropic:claude-sonnet-4-5)");
     println!("      --recipe <NAME>     Recipe name (reserved for future use)");
     println!("      --agent <NAME>      Agent name (reserved for future use)");
     println!("      --ephemeral         Ephemeral session (reserved for future use)");
@@ -85,43 +96,22 @@ fn print_help() {
     println!("  -V, --version           Print version");
     println!();
     println!("Environment:");
-    println!("  RUST_LOG  Tracing filter (e.g. RUST_LOG=debug)");
+    println!("  ANTHROPIC_API_KEY  Anthropic API key (enables tool use)");
+    println!("  RUST_LOG           Tracing filter (e.g. RUST_LOG=debug)");
 }
 
 // ---------------------------------------------------------------------------
 // Provider detection
 // ---------------------------------------------------------------------------
 
-enum DetectedProvider {
-    Claude(ClaudeCliProvider),
-    Gemini(GeminiCliProvider),
-    Mock(MockProvider),
-}
-
-impl DetectedProvider {
-    fn model_id(&self) -> ModelId {
-        match self {
-            DetectedProvider::Claude(_) => ModelId::new("claude-cli:claude-sonnet-4-5"),
-            DetectedProvider::Gemini(_) => ModelId::new("gemini-cli:gemini-2.5-pro"),
-            DetectedProvider::Mock(_) => ModelId::new("mock:mock-model"),
-        }
-    }
-
-    async fn complete(
-        &self,
-        request: CompletionRequest,
-    ) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = ProviderEvent> + Send>>, hone_providers::ProviderError> {
-        match self {
-            DetectedProvider::Claude(p) => p.complete(request).await,
-            DetectedProvider::Gemini(p) => p.complete(request).await,
-            DetectedProvider::Mock(p) => p.complete(request).await,
-        }
-    }
+struct DetectedProvider {
+    provider: Arc<dyn ModelProvider>,
+    model_id: ModelId,
+    /// Whether this provider supports tool calling.
+    supports_tools: bool,
 }
 
 async fn binary_on_path(name: &str) -> bool {
-    // `which` is available on macOS and Linux; on Windows `where` would be
-    // needed, but Hone targets Unix only.
     tokio::process::Command::new("which")
         .arg(name)
         .output()
@@ -131,108 +121,203 @@ async fn binary_on_path(name: &str) -> bool {
 }
 
 async fn detect_provider() -> DetectedProvider {
+    // Prefer direct Anthropic API — supports tool calling.
+    if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
+        tracing::info!("provider: Anthropic API (tool use enabled)");
+        return DetectedProvider {
+            provider: Arc::new(AnthropicProvider::new(api_key)),
+            model_id: ModelId::new("anthropic:claude-sonnet-4-5"),
+            supports_tools: true,
+        };
+    }
+
+    // Fall back to CLI pass-through providers (no tool calling).
     if binary_on_path("claude").await {
-        tracing::info!("provider: Claude CLI detected");
-        return DetectedProvider::Claude(ClaudeCliProvider::new());
+        tracing::info!("provider: Claude CLI detected (no tool use)");
+        return DetectedProvider {
+            provider: Arc::new(ClaudeCliProvider::new()),
+            model_id: ModelId::new("claude-cli:claude-sonnet-4-5"),
+            supports_tools: false,
+        };
     }
 
     if binary_on_path("gemini").await {
-        tracing::info!("provider: Gemini CLI detected");
-        return DetectedProvider::Gemini(GeminiCliProvider::new());
+        tracing::info!("provider: Gemini CLI detected (no tool use)");
+        return DetectedProvider {
+            provider: Arc::new(GeminiCliProvider::new()),
+            model_id: ModelId::new("gemini-cli:gemini-2.5-pro"),
+            supports_tools: false,
+        };
     }
 
     tracing::warn!(
-        "provider: no CLI provider found (claude, gemini) — falling back to MockProvider. \
-         Install the Claude CLI (https://claude.ai/download) for real completions."
+        "provider: no provider found (ANTHROPIC_API_KEY, claude, gemini) — \
+         falling back to MockProvider. Set ANTHROPIC_API_KEY for real completions."
     );
-    DetectedProvider::Mock(MockProvider::new(vec![
-        "No AI provider found. ".to_owned(),
-        "Install the Claude CLI to get real completions: https://claude.ai/download".to_owned(),
-    ]))
-}
-
-// ---------------------------------------------------------------------------
-// One-shot mode: print the response to stdout without a TUI
-// ---------------------------------------------------------------------------
-
-async fn run_one_shot(provider: &DetectedProvider, model_id: ModelId, prompt: &str) -> Result<()> {
-    use hone_proto::Message;
-
-    let messages = vec![Message::user(prompt)];
-    let request = CompletionRequest::new(model_id, messages);
-
-    let mut stream = provider.complete(request).await?;
-
-    while let Some(event) = stream.next().await {
-        match event {
-            ProviderEvent::Token { text } => {
-                print!("{text}");
-                // Flush so streaming tokens appear in real time.
-                use io::Write;
-                let _ = io::stdout().flush();
-            }
-            ProviderEvent::Done | ProviderEvent::Error { .. } => break,
-            _ => {}
-        }
+    DetectedProvider {
+        provider: Arc::new(MockProvider::new(vec![
+            "No AI provider found. ".to_owned(),
+            "Set ANTHROPIC_API_KEY or install the Claude CLI: https://claude.ai/download"
+                .to_owned(),
+        ])),
+        model_id: ModelId::new("mock:mock-model"),
+        supports_tools: false,
     }
-
-    println!();
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// Agent turn: spawn a task that streams events back through mpsc
+// Tool registry
 // ---------------------------------------------------------------------------
 
-fn spawn_turn(
-    provider: Arc<DetectedProvider>,
+/// Build a `ToolRegistry` with all available native tools.
+fn build_tool_registry() -> ToolRegistry {
+    let mut registry = ToolRegistry::new();
+    registry.register(Box::new(ReadFileTool));
+    registry.register(Box::new(WriteFileTool));
+    registry.register(Box::new(EditFileTool));
+    registry.register(Box::new(GlobTool));
+    registry.register(Box::new(ShellTool));
+    registry.register(Box::new(GitStatusTool));
+    registry.register(Box::new(GitDiffTool));
+    registry.register(Box::new(GitCommitTool));
+    registry
+}
+
+// ---------------------------------------------------------------------------
+// Config and HONE.md loading
+// ---------------------------------------------------------------------------
+
+/// Load user-level and project-level config, plus HONE.md from the current
+/// directory.
+///
+/// Priority: project `.hone/config.toml` > `~/.config/hone/config.toml` >
+/// built-in defaults.  Errors at any layer are logged and silently skipped so
+/// that a missing or malformed config never prevents the binary from starting.
+async fn load_project_config() -> (Option<Config>, Option<HoneMd>) {
+    let user_config_path: Option<PathBuf> = std::env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(".config/hone/config.toml"));
+
+    let project_config_path = PathBuf::from(".hone/config.toml");
+    let hone_md_path = PathBuf::from("HONE.md");
+
+    let config = Config::load(
+        user_config_path.as_deref(),
+        if project_config_path.exists() {
+            Some(project_config_path.as_path())
+        } else {
+            None
+        },
+    )
+    .map_err(|e| {
+        tracing::warn!("Failed to load config: {e}");
+    })
+    .ok();
+
+    let hone_md = if hone_md_path.exists() {
+        std::fs::read_to_string(&hone_md_path)
+            .map_err(|e| tracing::warn!("Failed to read HONE.md: {e}"))
+            .ok()
+            .map(|content| HoneMd::parse(&content))
+    } else {
+        None
+    };
+
+    (config, hone_md)
+}
+
+// ---------------------------------------------------------------------------
+// Agent construction
+// ---------------------------------------------------------------------------
+
+fn build_agent(
+    detected: &DetectedProvider,
     model_id: ModelId,
-    messages: Vec<hone_proto::Message>,
+    system_prompt: String,
+) -> Agent {
+    // Only register tools when the provider can actually use them.
+    let tools = if detected.supports_tools {
+        build_tool_registry()
+    } else {
+        ToolRegistry::new()
+    };
+
+    let config = AgentConfig {
+        provider: Arc::clone(&detected.provider),
+        tools,
+        sandbox: Arc::new(NullSandbox),
+        system_prompt,
+        model: model_id.clone(),
+        max_tokens: None,
+        temperature: None,
+        budget_limit: None,
+        pricing: PricingEntry {
+            model: model_id.clone(),
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+            cache_read_per_million: None,
+        },
+        working_dir: std::env::current_dir().unwrap_or_default(),
+    };
+
+    Agent::new(config)
+}
+
+// ---------------------------------------------------------------------------
+// Agent turn dispatch
+// ---------------------------------------------------------------------------
+
+fn spawn_agent_turn(
+    agent: Arc<Mutex<Agent>>,
+    user_text: String,
     tx: mpsc::Sender<AgentEvent>,
 ) {
     tokio::spawn(async move {
-        let request = CompletionRequest::new(model_id, messages);
+        let mut guard = agent.lock().await;
+        if let Err(e) = guard.run_turn(&user_text, tx.clone()).await {
+            let _ = tx
+                .send(AgentEvent::Error {
+                    message: e.to_string(),
+                })
+                .await;
+        }
+    });
+}
 
-        let stream = match provider.complete(request).await {
-            Ok(s) => s,
-            Err(e) => {
-                let _ = tx
-                    .send(AgentEvent::Error {
-                        message: e.to_string(),
-                    })
-                    .await;
-                return;
-            }
-        };
+// ---------------------------------------------------------------------------
+// One-shot mode
+// ---------------------------------------------------------------------------
 
-        tokio::pin!(stream);
+async fn run_one_shot(agent: Arc<Mutex<Agent>>, prompt: &str) -> Result<()> {
+    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 
-        let mut usage = TokenUsage::default();
-
-        while let Some(event) = stream.next().await {
+    // Drain events and print tokens while the agent runs inline.
+    let printer = tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
             match event {
-                ProviderEvent::Token { text } => {
-                    let _ = tx.send(AgentEvent::Token { text }).await;
+                AgentEvent::Token { text } => {
+                    print!("{text}");
+                    use io::Write;
+                    let _ = io::stdout().flush();
                 }
-                ProviderEvent::Usage(u) => {
-                    usage = usage + u;
+                AgentEvent::Done { .. } => break,
+                AgentEvent::Error { message } => {
+                    eprintln!("\nerror: {message}");
+                    break;
                 }
-                ProviderEvent::Done => {
-                    let _ = tx.send(AgentEvent::Done { usage }).await;
-                    return;
-                }
-                ProviderEvent::Error { message } => {
-                    let _ = tx.send(AgentEvent::Error { message }).await;
-                    return;
-                }
-                // Tool calls are not supported by CLI providers yet.
-                ProviderEvent::ToolCall(_) => {}
+                _ => {}
             }
         }
-
-        // Stream ended without Done — send Done so the TUI exits WaitingForResponse.
-        let _ = tx.send(AgentEvent::Done { usage }).await;
     });
+
+    {
+        let mut guard = agent.lock().await;
+        guard.run_turn(prompt, tx).await?;
+    }
+
+    let _ = printer.await;
+    println!();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -248,17 +333,42 @@ async fn main() -> Result<()> {
         .with_writer(io::stderr)
         .init();
 
-    let provider = Arc::new(detect_provider().await);
+    let (config, hone_md) = load_project_config().await;
+
+    if config.is_some() {
+        tracing::info!("config loaded successfully");
+    }
+
+    // Build the system prompt, injecting any HONE.md sections.
+    let mut system_prompt = "You are Hone, an AI coding assistant.".to_string();
+    if let Some(ref md) = hone_md {
+        let mut keys: Vec<&String> = md.sections.keys().collect();
+        keys.sort(); // deterministic ordering
+        for key in keys {
+            let content = &md.sections[key];
+            system_prompt.push_str(&format!("\n\n## {key}\n{content}"));
+        }
+        tracing::info!(
+            sections = md.sections.len(),
+            "HONE.md loaded and injected into system prompt"
+        );
+    }
+
+    tracing::debug!(system_prompt_len = system_prompt.len(), "system prompt ready");
+
+    let detected = detect_provider().await;
 
     let model_id: ModelId = cli
         .model
         .as_deref()
         .map(ModelId::new)
-        .unwrap_or_else(|| provider.model_id());
+        .unwrap_or_else(|| detected.model_id.clone());
 
-    // One-shot mode: just print and exit.
+    let agent = Arc::new(Mutex::new(build_agent(&detected, model_id.clone(), system_prompt)));
+
+    // One-shot mode: run a single turn, print to stdout, and exit.
     if let Some(ref prompt) = cli.one_shot {
-        return run_one_shot(&provider, model_id, prompt).await;
+        return run_one_shot(agent, prompt).await;
     }
 
     // TUI mode.
@@ -268,9 +378,9 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_tui(&mut terminal, provider, model_id).await;
+    let result = run_tui(&mut terminal, agent, model_id).await;
 
-    // Always restore terminal even if we got an error.
+    // Always restore terminal even on error.
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
@@ -280,7 +390,7 @@ async fn main() -> Result<()> {
 
 async fn run_tui(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    provider: Arc<DetectedProvider>,
+    agent: Arc<Mutex<Agent>>,
     model_id: ModelId,
 ) -> Result<()> {
     let mut app = App::new();
@@ -288,15 +398,10 @@ async fn run_tui(
     // Show which model is active in the status bar.
     app.status_mut().model = model_id.to_string();
 
-    // Conversation history sent to the provider on each turn.
-    let mut history: Vec<hone_proto::Message> = Vec::new();
-
     let (agent_tx, mut agent_rx) = mpsc::channel::<AgentEvent>(256);
 
     let tick = Duration::from_millis(100);
 
-    // Use the async EventStream instead of blocking event::poll/read so we
-    // do not block the tokio runtime.
     let mut events = EventStream::new();
 
     loop {
@@ -311,8 +416,7 @@ async fn run_tui(
             maybe_event = events.next() => {
                 match maybe_event {
                     Some(Ok(Event::Key(key))) => {
-                        // Ctrl-C is handled inside handle_key, but also intercept
-                        // here to ensure we always quit cleanly.
+                        // Ctrl-C always quits cleanly.
                         if key.code == KeyCode::Char('c')
                             && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
                         {
@@ -323,7 +427,6 @@ async fn run_tui(
                             && !app.input().is_empty()
                             && matches!(app.state(), AppState::Idle | AppState::Error(_))
                         {
-                            // Check if this is a slash command BEFORE processing.
                             let user_text = app.input().buffer.clone();
                             let is_command = user_text.starts_with('/');
 
@@ -332,11 +435,9 @@ async fn run_tui(
 
                             // Only spawn an AI turn for regular messages, not commands.
                             if !is_command && matches!(app.state(), AppState::WaitingForResponse) {
-                                history.push(hone_proto::Message::user(user_text.as_str()));
-                                spawn_turn(
-                                    Arc::clone(&provider),
-                                    model_id.clone(),
-                                    history.clone(),
+                                spawn_agent_turn(
+                                    Arc::clone(&agent),
+                                    user_text,
                                     agent_tx.clone(),
                                 );
                             }
@@ -362,51 +463,16 @@ async fn run_tui(
             // Agent events from the provider task
             maybe_agent = agent_rx.recv() => {
                 if let Some(event) = maybe_agent {
-                    // Accumulate streaming tokens into the conversation history so the
-                    // next turn has full context.
-                    if let AgentEvent::Token { ref text } = event {
-                        match history.last_mut() {
-                            Some(m) if matches!(m.role, hone_proto::Role::Assistant) => {
-                                match &mut m.content {
-                                    hone_proto::Content::Text(s) => s.push_str(text),
-                                    hone_proto::Content::Parts(_) => {
-                                        history.push(hone_proto::Message::assistant(text.clone()));
-                                    }
-                                }
-                            }
-                            _ => {
-                                history.push(hone_proto::Message::assistant(text.clone()));
-                            }
-                        }
-                    }
                     app.handle_agent_event(event);
                 }
             }
 
             // Tick timer for animations
-            _ = tokio::time::sleep(tick) => {
-                // Just a tick — animations and splash auto-dismiss.
-            }
+            _ = tokio::time::sleep(tick) => {}
         }
 
-        // Also drain any remaining agent events that arrived while we were
-        // processing the select branch above.
+        // Drain any remaining agent events that arrived during the select branch.
         while let Ok(event) = agent_rx.try_recv() {
-            if let AgentEvent::Token { ref text } = event {
-                match history.last_mut() {
-                    Some(m) if matches!(m.role, hone_proto::Role::Assistant) => {
-                        match &mut m.content {
-                            hone_proto::Content::Text(s) => s.push_str(text),
-                            hone_proto::Content::Parts(_) => {
-                                history.push(hone_proto::Message::assistant(text.clone()));
-                            }
-                        }
-                    }
-                    _ => {
-                        history.push(hone_proto::Message::assistant(text.clone()));
-                    }
-                }
-            }
             app.handle_agent_event(event);
         }
 
