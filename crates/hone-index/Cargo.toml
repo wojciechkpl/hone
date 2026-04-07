@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Semantic indexer for Hone (tree-sitter + SQLite vectors)"
+description = "Semantic indexer for Hone (regex-based symbol extraction + SQLite)"
 
 [dependencies]
 hone-proto = { workspace = true }
@@ -14,9 +14,9 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }
-rayon = { workspace = true }
 walkdir = { workspace = true }
 tracing = { workspace = true }
+notify = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

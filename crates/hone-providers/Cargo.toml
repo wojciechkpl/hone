@@ -15,7 +15,6 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
-eventsource-stream = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

@@ -16,7 +16,7 @@ use hone_core::{
     Agent, AgentConfig, AgentRegistry, ComplexityClassifier, ComplexityTier, Orchestrator,
     SelfRefineLoop, TestVerificationLoop,
 };
-use hone_index::SqliteIndex;
+use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_memory::SqliteStore;
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
 use hone_providers::{
@@ -324,7 +324,6 @@ async fn load_project_config() -> (Option<Config>, Option<HoneMd>) {
         .map(|home| PathBuf::from(home).join(".config/hone/config.toml"));
 
     let project_config_path = PathBuf::from(".hone/config.toml");
-    let hone_md_path = PathBuf::from("HONE.md");
 
     let config = Config::load(
         user_config_path.as_deref(),
@@ -339,13 +338,14 @@ async fn load_project_config() -> (Option<Config>, Option<HoneMd>) {
     })
     .ok();
 
-    let hone_md = if hone_md_path.exists() {
-        std::fs::read_to_string(&hone_md_path)
-            .map_err(|e| tracing::warn!("Failed to read HONE.md: {e}"))
-            .ok()
-            .map(|content| HoneMd::parse(&content))
-    } else {
-        None
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let hone_md = {
+        let merged = HoneMd::load_hierarchical(&cwd);
+        if merged.sections.is_empty() {
+            None
+        } else {
+            Some(merged)
+        }
     };
 
     (config, hone_md)
@@ -671,11 +671,19 @@ fn data_dir() -> PathBuf {
 /// Initialise the memory and index SQLite stores.
 ///
 /// Background indexing of the current directory is kicked off as a detached
-/// tokio task so it never blocks startup.  Any errors are logged as warnings.
-async fn init_persistence(ephemeral: bool) -> Result<()> {
+/// tokio task so it never blocks startup.  A file watcher is also started so
+/// that subsequent edits are incrementally re-indexed.
+///
+/// Returns `Ok(Some(handle))` when the watcher started successfully.  The
+/// caller must keep the handle alive for the duration of the process;
+/// dropping it signals the watcher to exit.  Returns `Ok(None)` in ephemeral
+/// mode or when the index could not be opened.  Any errors are logged as
+/// warnings so that a persistence failure never prevents the binary from
+/// starting.
+async fn init_persistence(ephemeral: bool) -> Result<Option<WatcherHandle>> {
     if ephemeral {
         tracing::info!("ephemeral mode: skipping persistence init");
-        return Ok(());
+        return Ok(None);
     }
 
     let dir = data_dir();
@@ -692,28 +700,46 @@ async fn init_persistence(ephemeral: bool) -> Result<()> {
         }
     }
 
-    // Index store — open, then index the cwd in the background.
+    // Index store — open, run an initial full-directory index in a background
+    // task, then start the file watcher for incremental updates.
     let index_path = dir.join("index.db");
     match SqliteIndex::open(&index_path).await {
         Ok(index) => {
             tracing::info!(path = %index_path.display(), "symbol index initialised");
             let index = Arc::new(index);
             let cwd = std::env::current_dir().unwrap_or_default();
-            tokio::spawn(async move {
-                // Walk .rs files in the cwd and feed them to SqliteIndex.
-                if let Err(e) = index_directory_bg(&index, &cwd).await {
-                    tracing::warn!("background indexing failed: {e}");
-                } else {
-                    tracing::info!("background indexing complete");
+
+            // Initial full scan (detached — does not block startup).
+            {
+                let index_bg = Arc::clone(&index);
+                let cwd_bg = cwd.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = index_directory_bg(&index_bg, &cwd_bg).await {
+                        tracing::warn!("background indexing failed: {e}");
+                    } else {
+                        tracing::info!("background indexing complete");
+                    }
+                });
+            }
+
+            // File watcher for incremental re-indexing.
+            let watcher = IndexWatcher::new(Arc::clone(&index), cwd);
+            match watcher.spawn().await {
+                Ok(handle) => {
+                    tracing::info!("file watcher started");
+                    return Ok(Some(handle));
                 }
-            });
+                Err(e) => {
+                    tracing::warn!("file watcher failed to start: {e}");
+                }
+            }
         }
         Err(e) => {
             tracing::warn!("failed to open symbol index: {e}");
         }
     }
 
-    Ok(())
+    Ok(None)
 }
 
 /// Walk `root` for `.rs` files and index them via `SqliteIndex::index_file`.
@@ -783,9 +809,14 @@ async fn main() -> Result<()> {
     }
 
     // Initialise SQLite persistence (non-blocking; errors are warnings only).
-    if let Err(e) = init_persistence(cli.ephemeral).await {
-        tracing::warn!("persistence init failed: {e}");
-    }
+    // The returned handle keeps the file watcher alive for the process lifetime.
+    let _watcher_handle = match init_persistence(cli.ephemeral).await {
+        Ok(handle) => handle,
+        Err(e) => {
+            tracing::warn!("persistence init failed: {e}");
+            None
+        }
+    };
 
     // Build the system prompt, injecting any HONE.md sections.
     let mut system_prompt = "You are Hone, an AI coding assistant.".to_string();

@@ -5,6 +5,7 @@ pub mod parser;
 pub mod sqlite_index;
 pub mod types;
 pub mod walker;
+pub mod watcher;
 
 pub use error::IndexError;
 pub use index::SemanticIndex;
@@ -13,3 +14,4 @@ pub use parser::SymbolExtractor;
 pub use sqlite_index::SqliteIndex;
 pub use types::{SearchResult, Symbol, SymbolKind};
 pub use walker::walk_and_index;
+pub use watcher::{IndexWatcher, WatcherHandle};

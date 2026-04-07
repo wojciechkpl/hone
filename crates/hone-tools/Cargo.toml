@@ -17,8 +17,6 @@ tokio = { workspace = true }
 git2 = { workspace = true }
 ignore = { workspace = true }
 globset = "0.4"
-lsp-types = { workspace = true }
-similar = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
