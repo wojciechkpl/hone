@@ -20,6 +20,9 @@ pub enum ToolError {
 
     #[error("git error: {0}")]
     GitError(String),
+
+    #[error("{0}")]
+    Other(String),
 }
 
 impl From<git2::Error> for ToolError {

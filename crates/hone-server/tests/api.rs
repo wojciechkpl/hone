@@ -51,7 +51,7 @@ async fn test_get_session_returns_info() {
     let state = make_state();
 
     // Create a session via the store directly so we have its id.
-    let info = state.sessions.create().await;
+    let info = state.sessions.create_new().await.unwrap();
     let session_id = info.id.to_string();
 
     let app = router(state);
@@ -93,7 +93,7 @@ async fn test_get_missing_session_returns_404() {
 #[tokio::test]
 async fn test_delete_session() {
     let state = make_state();
-    let info = state.sessions.create().await;
+    let info = state.sessions.create_new().await.unwrap();
     let session_id = info.id.to_string();
 
     // DELETE the session.

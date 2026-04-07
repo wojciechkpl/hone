@@ -51,10 +51,12 @@ async fn health() -> impl IntoResponse {
     Json(json!({ "status": "ok" }))
 }
 
-async fn create_session(State(state): State<AppState>) -> impl IntoResponse {
-    let info = state.sessions.create().await;
+async fn create_session(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, ServerError> {
+    let info = state.sessions.create_new().await?;
     let body = Json(json!({ "session_id": info.id.to_string() }));
-    (StatusCode::CREATED, body)
+    Ok((StatusCode::CREATED, body))
 }
 
 async fn get_session(
@@ -64,7 +66,7 @@ async fn get_session(
     let info = state
         .sessions
         .get(&id)
-        .await
+        .await?
         .ok_or_else(|| ServerError::SessionNotFound { id: id.clone() })?;
 
     Ok(Json(info))
@@ -74,7 +76,7 @@ async fn delete_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ServerError> {
-    let deleted = state.sessions.delete(&id).await;
+    let deleted = state.sessions.delete(&id).await?;
     if deleted {
         Ok(StatusCode::NO_CONTENT)
     } else {

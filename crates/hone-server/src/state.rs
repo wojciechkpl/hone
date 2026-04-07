@@ -3,11 +3,12 @@ use std::sync::Arc;
 use crate::collaborative::CollaborativeStore;
 use crate::governance::GovernanceStore;
 use crate::session::SessionStore;
+use crate::session_storage::SessionStorage;
 use crate::tunnel::{MockTunnelManager, TunnelManager};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub sessions: SessionStore,
+    pub sessions: Arc<SessionStorage>,
     /// If `Some`, all requests must include a matching `Authorization: Bearer <token>` header.
     pub auth_token: Option<String>,
     pub tunnel_manager: Arc<dyn TunnelManager>,
@@ -18,7 +19,17 @@ pub struct AppState {
 impl AppState {
     pub fn new(auth_token: Option<String>) -> Self {
         Self {
-            sessions: SessionStore::new(),
+            sessions: Arc::new(SessionStorage::InMemory(SessionStore::new())),
+            auth_token,
+            tunnel_manager: Arc::new(MockTunnelManager::new()),
+            governance: GovernanceStore::new(),
+            collaborative: Arc::new(CollaborativeStore::new()),
+        }
+    }
+
+    pub fn with_sessions(auth_token: Option<String>, sessions: Arc<SessionStorage>) -> Self {
+        Self {
+            sessions,
             auth_token,
             tunnel_manager: Arc::new(MockTunnelManager::new()),
             governance: GovernanceStore::new(),
@@ -31,7 +42,7 @@ impl AppState {
         tunnel_manager: Arc<dyn TunnelManager>,
     ) -> Self {
         Self {
-            sessions: SessionStore::new(),
+            sessions: Arc::new(SessionStorage::InMemory(SessionStore::new())),
             auth_token,
             tunnel_manager,
             governance: GovernanceStore::new(),

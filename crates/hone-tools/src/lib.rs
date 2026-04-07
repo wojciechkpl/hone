@@ -15,7 +15,7 @@ pub use git::{
 pub use lsp::{
     AutoFixLoop, AutoFixResult, CodeAction, Diagnostic, DiagnosticSeverity, Language,
     LspBridge, LspCodeActionTool, LspDiagnosticsTool, LspHoverTool, MockLspBridge,
-    detect_language,
+    StdioLspBridge, detect_language,
 };
 pub use registry::ToolRegistry;
 pub use shell::ShellTool;

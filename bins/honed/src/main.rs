@@ -1,5 +1,9 @@
+use std::path::Path;
+use std::sync::Arc;
+
 use anyhow::Result;
-use hone_server::{AppState, router};
+use hone_server::{AppState, SessionStorage, SqliteSessionStore, router};
+use hone_server::session::SessionStore;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,6 +24,10 @@ async fn main() -> Result<()> {
         println!("Options:");
         println!("  -h, --help     Print this help message");
         println!("  -V, --version  Print version");
+        println!();
+        println!("Environment:");
+        println!("  HONE_AUTH_TOKEN    Bearer token required on every request");
+        println!("  HONE_SESSION_DB    Path to SQLite file for persistent sessions");
         return Ok(());
     }
 
@@ -37,7 +45,14 @@ async fn main() -> Result<()> {
 
     let auth_token = std::env::var("HONE_AUTH_TOKEN").ok();
 
-    let state = AppState::new(auth_token);
+    let sessions: Arc<SessionStorage> = if let Ok(db_path) = std::env::var("HONE_SESSION_DB") {
+        let store = SqliteSessionStore::open(Path::new(&db_path)).await?;
+        Arc::new(SessionStorage::Sqlite(store))
+    } else {
+        Arc::new(SessionStorage::InMemory(SessionStore::new()))
+    };
+
+    let state = AppState::with_sessions(auth_token, sessions);
     let app = router(state);
 
     let addr = format!("0.0.0.0:{port}");
