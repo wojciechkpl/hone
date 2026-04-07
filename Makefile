@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt clean release deny
+.PHONY: build test lint fmt clean release deny bench
 
 build:
 	cargo build
@@ -26,6 +26,9 @@ check: fmt-check lint test
 # Run the PTY integration tests (requires expect)
 pty-test:
 	expect tests/pty_tui_test.exp ./target/release/hone
+
+bench:
+	cargo bench --workspace
 
 deny:
 	cargo deny check

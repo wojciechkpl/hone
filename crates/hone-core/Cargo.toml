@@ -31,3 +31,8 @@ tiktoken-rs = { workspace = true }
 mockall = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+criterion = { workspace = true }
+
+[[bench]]
+name = "context_perf"
+harness = false

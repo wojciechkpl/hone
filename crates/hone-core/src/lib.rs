@@ -2,6 +2,7 @@ pub mod agent_def;
 pub mod agent_registry;
 pub mod audit;
 pub mod complexity;
+pub mod ensemble;
 pub mod orchestrator;
 pub mod rbac;
 pub mod reviewer;
@@ -17,6 +18,7 @@ mod error;
 mod turn;
 
 pub use agent::{Agent, AgentConfig};
+pub use ensemble::{AgentEnsemble, EnsembleResult};
 pub use agent_def::{AgentDef, AgentDefError};
 pub use agent_registry::AgentRegistry;
 pub use audit::{AuditEntry, AuditError, AuditFilter, AuditKind, AuditLog, InMemoryAuditLog};

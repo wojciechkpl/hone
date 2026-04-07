@@ -25,3 +25,8 @@ streaming-iterator = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+criterion = { workspace = true }
+
+[[bench]]
+name = "index_perf"
+harness = false
