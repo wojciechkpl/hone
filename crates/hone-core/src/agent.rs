@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use futures::StreamExt;
+use hone_memory::{Memory, MemoryQuery, MemoryStore};
 use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ProviderEvent, TokenUsage};
 use hone_providers::{CompletionRequest, ModelProvider};
 use hone_sandbox::Sandbox;
 use hone_tools::ToolRegistry;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 
 use crate::context::ContextManager;
 use crate::cost::CostAccumulator;
@@ -27,6 +28,10 @@ pub struct AgentConfig {
     pub pricing: PricingEntry,
     /// Working directory passed to tool calls.
     pub working_dir: std::path::PathBuf,
+    /// Optional persistent memory store. When set, relevant memories are
+    /// injected into the system prompt each turn, and the Q&A pair is recorded
+    /// after the turn completes.
+    pub memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
 }
 
 /// The orchestration core: manages the agent loop, context, tool dispatch, and cost tracking.
@@ -55,6 +60,62 @@ impl Agent {
         self.cost.total_usd()
     }
 
+    /// Query the memory store for entries relevant to `query` and format them
+    /// as an appendix for the system prompt.  Returns an empty string when no
+    /// store is configured or no relevant memories exist.
+    async fn fetch_relevant_memories(&self, query: &str) -> String {
+        let Some(store) = &self.config.memory_store else {
+            return String::new();
+        };
+
+        let memory_query = MemoryQuery {
+            text: query.to_string(),
+            limit: 5,
+        };
+
+        match store.lock().await.recall(&memory_query).await {
+            Ok(memories) if !memories.is_empty() => {
+                let mut prompt = String::from("\n\n## Relevant context from memory:\n");
+                for mem in &memories {
+                    prompt.push_str(&format!("- {}\n", mem.content));
+                }
+                prompt
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// Record the Q&A pair as a new memory entry (fire-and-forget; errors are
+    /// silently ignored so a store failure never breaks the agent loop).
+    async fn record_memory(&self, user_input: &str, response_text: &str) {
+        let Some(store) = &self.config.memory_store else {
+            return;
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+
+        // Generate a unique ID from timestamp nanos + a thread-local counter.
+        let id = {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+            format!("{:016x}-{:08x}", now.as_nanos() as u64, seq)
+        };
+
+        let memory = Memory {
+            id,
+            content: format!("Q: {user_input}\nA: {response_text}"),
+            tags: vec![],
+            weight: 1.0,
+            created_at: now.as_secs(),
+            decay_at: None,
+        };
+
+        let _ = store.lock().await.record(memory).await;
+    }
+
     /// Run a single conversation turn: stream tokens, dispatch any tool calls,
     /// and return a `TurnResult`.
     ///
@@ -67,6 +128,14 @@ impl Agent {
     ) -> Result<TurnResult, AgentError> {
         self.cost.check_budget(self.config.budget_limit)?;
 
+        // Inject relevant memories into the system prompt for this turn.
+        let memory_appendix = self.fetch_relevant_memories(user_input).await;
+        let effective_system_prompt = if memory_appendix.is_empty() {
+            self.config.system_prompt.clone()
+        } else {
+            format!("{}{}", self.config.system_prompt, memory_appendix)
+        };
+
         self.context.add_message(Message::user(user_input));
 
         let mut response_text = String::new();
@@ -78,7 +147,7 @@ impl Agent {
         loop {
             let messages = self
                 .context
-                .build_messages(&self.config.system_prompt);
+                .build_messages(&effective_system_prompt);
 
             let mut request = CompletionRequest::new(self.config.model.clone(), messages);
             request.temperature = self.config.temperature;
@@ -211,6 +280,9 @@ impl Agent {
         }
 
         let cost_usd = self.cost.total_usd();
+
+        // Persist Q&A pair to memory (fire-and-forget).
+        self.record_memory(user_input, &response_text).await;
 
         let _ = events
             .send(AgentEvent::Done { usage: turn_usage })

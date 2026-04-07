@@ -119,6 +119,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
             cache_read_per_million: None,
         },
         working_dir: std::path::PathBuf::from("."),
+        memory_store: None,
     }
 }
 

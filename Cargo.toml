@@ -97,6 +97,12 @@ ignore = "0.4"
 # Token and cost
 tiktoken-rs = "0.6"
 
+# AST parsing
+tree-sitter = "0.24"
+tree-sitter-rust = "0.23"
+tree-sitter-python = "0.23"
+streaming-iterator = "0.1"
+
 # Testing
 mockall = "0.13"
 tempfile = "3"

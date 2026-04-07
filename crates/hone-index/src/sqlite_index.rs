@@ -98,7 +98,7 @@ impl SqliteIndex {
             .to_str()
             .ok_or_else(|| std::io::Error::other("non-UTF-8 path"))?;
 
-        let extractor = SymbolExtractor::new();
+        let mut extractor = SymbolExtractor::new();
         let symbols = extractor.extract(path, content);
 
         let now = std::time::SystemTime::now()

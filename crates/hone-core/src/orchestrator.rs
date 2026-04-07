@@ -258,6 +258,7 @@ impl Orchestrator {
             budget_limit: self.lead_config.budget_limit,
             pricing: self.lead_config.pricing.clone(),
             working_dir: self.lead_config.working_dir.clone(),
+            memory_store: None,
         }
     }
 
@@ -287,6 +288,7 @@ impl Orchestrator {
             budget_limit: self.worker_budget,
             pricing: self.lead_config.pricing.clone(),
             working_dir: self.lead_config.working_dir.clone(),
+            memory_store: None,
         }
     }
 }

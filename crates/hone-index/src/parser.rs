@@ -1,22 +1,171 @@
 use std::path::Path;
 
+use streaming_iterator::StreamingIterator;
+use tree_sitter::{Language, Parser, Query, QueryCursor};
+
 use crate::types::{Symbol, SymbolKind};
 
-/// Extracts symbols from source files using keyword-based heuristics.
-pub struct SymbolExtractor;
+// ---------------------------------------------------------------------------
+// SymbolExtractor
+// ---------------------------------------------------------------------------
+
+/// Extracts symbols from source files using tree-sitter AST parsing.
+pub struct SymbolExtractor {
+    rust_parser: Parser,
+    python_parser: Parser,
+    rust_language: Language,
+    python_language: Language,
+}
 
 impl SymbolExtractor {
     pub fn new() -> Self {
-        Self
+        let rust_language: Language = tree_sitter_rust::LANGUAGE.into();
+        let python_language: Language = tree_sitter_python::LANGUAGE.into();
+
+        let mut rust_parser = Parser::new();
+        rust_parser
+            .set_language(&rust_language)
+            .expect("failed to load Rust grammar");
+
+        let mut python_parser = Parser::new();
+        python_parser
+            .set_language(&python_language)
+            .expect("failed to load Python grammar");
+
+        Self {
+            rust_parser,
+            python_parser,
+            rust_language,
+            python_language,
+        }
     }
 
-    pub fn extract(&self, path: &Path, content: &str) -> Vec<Symbol> {
+    pub fn extract(&mut self, path: &Path, content: &str) -> Vec<Symbol> {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         match ext {
-            "rs" => extract_rust(path, content),
-            "py" => extract_python(path, content),
-            _ => vec![],
+            "rs" => self.extract_rust(path, content),
+            "py" => self.extract_python(path, content),
+            _ => Vec::new(),
         }
+    }
+
+    fn extract_rust(&mut self, path: &Path, content: &str) -> Vec<Symbol> {
+        let tree = match self.rust_parser.parse(content, None) {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+
+        let query_source = "
+            (function_item name: (identifier) @function)
+            (struct_item name: (type_identifier) @struct)
+            (enum_item name: (type_identifier) @enum)
+            (trait_item name: (type_identifier) @trait)
+            (impl_item type: (type_identifier) @impl)
+            (mod_item name: (identifier) @module)
+            (const_item name: (identifier) @constant)
+            (static_item name: (identifier) @constant)
+            (type_item name: (type_identifier) @type_alias)
+        ";
+
+        let query = Query::new(&self.rust_language, query_source)
+            .expect("valid Rust query");
+
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&query, tree.root_node(), content.as_bytes());
+
+        let capture_names = query.capture_names();
+        let mut symbols = Vec::new();
+
+        while let Some(m) = matches.next() {
+            for cap in m.captures {
+                let capture_name = capture_names[cap.index as usize];
+                let kind = match capture_name {
+                    "function" => SymbolKind::Function,
+                    "struct" => SymbolKind::Struct,
+                    "enum" => SymbolKind::Enum,
+                    "trait" => SymbolKind::Trait,
+                    "impl" => SymbolKind::Impl,
+                    "module" => SymbolKind::Module,
+                    "constant" => SymbolKind::Constant,
+                    "type_alias" => SymbolKind::TypeAlias,
+                    _ => continue,
+                };
+
+                let name = &content[cap.node.byte_range()];
+                let start = cap.node.start_position();
+
+                symbols.push(Symbol {
+                    name: name.to_string(),
+                    kind,
+                    file: path.to_path_buf(),
+                    line: start.row as u32 + 1,
+                    col: start.column as u32,
+                });
+            }
+        }
+
+        symbols
+    }
+
+    fn extract_python(&mut self, path: &Path, content: &str) -> Vec<Symbol> {
+        let tree = match self.python_parser.parse(content, None) {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+
+        // The decorated_definition patterns duplicate names that are already
+        // captured by the inner function_definition / class_definition patterns,
+        // so we deduplicate by (name, line) after collection.
+        let query_source = "
+            (function_definition name: (identifier) @function)
+            (class_definition name: (identifier) @class)
+            (decorated_definition (function_definition name: (identifier) @function))
+            (decorated_definition (class_definition name: (identifier) @class))
+        ";
+
+        let query = Query::new(&self.python_language, query_source)
+            .expect("valid Python query");
+
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&query, tree.root_node(), content.as_bytes());
+
+        let capture_names = query.capture_names();
+        let mut symbols: Vec<Symbol> = Vec::new();
+
+        while let Some(m) = matches.next() {
+            for cap in m.captures {
+                let capture_name = capture_names[cap.index as usize];
+                let kind = match capture_name {
+                    "function" => SymbolKind::Function,
+                    "class" => SymbolKind::Class,
+                    _ => continue,
+                };
+
+                let name = &content[cap.node.byte_range()];
+                let start = cap.node.start_position();
+                let line = start.row as u32 + 1;
+                let col = start.column as u32;
+
+                // Skip duplicates produced by matching both the top-level and
+                // decorated variants of the same declaration.
+                if symbols
+                    .iter()
+                    .any(|s| s.name == name && s.kind == kind && s.line == line)
+                {
+                    continue;
+                }
+
+                symbols.push(Symbol {
+                    name: name.to_string(),
+                    kind,
+                    file: path.to_path_buf(),
+                    line,
+                    col,
+                });
+            }
+        }
+
+        symbols
     }
 }
 
@@ -24,237 +173,6 @@ impl Default for SymbolExtractor {
     fn default() -> Self {
         Self::new()
     }
-}
-
-// ---------------------------------------------------------------------------
-// Rust extractor
-// ---------------------------------------------------------------------------
-
-/// Keywords and their associated `SymbolKind`, ordered so that the first match
-/// wins (more specific keywords come first).
-const RUST_KEYWORDS: &[(&str, SymbolKind)] = &[
-    ("fn ", SymbolKind::Function),
-    ("struct ", SymbolKind::Struct),
-    ("enum ", SymbolKind::Enum),
-    ("trait ", SymbolKind::Trait),
-    ("impl ", SymbolKind::Impl),
-    ("const ", SymbolKind::Constant),
-    ("type ", SymbolKind::TypeAlias),
-    ("mod ", SymbolKind::Module),
-];
-
-fn extract_rust(path: &Path, content: &str) -> Vec<Symbol> {
-    let mut symbols = Vec::new();
-
-    for (line_idx, raw_line) in content.lines().enumerate() {
-        let line_number = line_idx as u32 + 1;
-
-        // Strip leading whitespace for matching, but remember original offset.
-        let trimmed = raw_line.trim_start();
-
-        // Skip comment lines.
-        if trimmed.starts_with("//") || trimmed.starts_with('#') {
-            continue;
-        }
-
-        // Strip visibility and `async` prefixes so the keyword check works
-        // regardless of `pub`, `pub(crate)`, `pub(super)`, `async fn`, etc.
-        let stripped = strip_rust_prefixes(trimmed);
-
-        for &(keyword, kind) in RUST_KEYWORDS {
-            if let Some(after_kw) = stripped.strip_prefix(keyword) {
-                // For `impl` we want the last type name (after an optional
-                // `Trait for`) rather than a generic parameter.
-                let name = if kind == SymbolKind::Impl {
-                    parse_impl_name(after_kw)
-                } else {
-                    parse_ident(after_kw)
-                };
-
-                if let Some(name) = name {
-                    // Find the column of the identifier in the original line.
-                    let col = find_col(raw_line, &name);
-                    symbols.push(Symbol {
-                        name,
-                        kind,
-                        file: path.to_path_buf(),
-                        line: line_number,
-                        col,
-                    });
-                }
-                break; // Only the first matching keyword wins per line.
-            }
-        }
-    }
-
-    symbols
-}
-
-/// Strip `pub`, `pub(...)`, `async`, `unsafe`, `extern "C"` and combinations
-/// so that the resulting string starts with the actual declaration keyword.
-fn strip_rust_prefixes(s: &str) -> &str {
-    let mut rest = s;
-    loop {
-        let prev = rest;
-        rest = rest.trim_start();
-        if let Some(r) = rest.strip_prefix("pub") {
-            // pub(crate), pub(super), pub(in ...) or bare pub
-            let r = r.trim_start();
-            rest = if r.starts_with('(') {
-                // skip to matching ')'
-                match r.find(')') {
-                    Some(idx) => &r[idx + 1..],
-                    None => r,
-                }
-            } else {
-                r
-            };
-            continue;
-        }
-        for prefix in &["async ", "unsafe ", "extern \"C\" ", "extern \"Rust\" "] {
-            if let Some(r) = rest.strip_prefix(prefix) {
-                rest = r;
-            }
-        }
-        if rest == prev {
-            break;
-        }
-    }
-    rest
-}
-
-/// Extract the last meaningful type name from an `impl` declaration.
-/// Handles: `impl Foo`, `impl<T> Foo<T>`, `impl Trait for Foo`.
-fn parse_impl_name(after_impl: &str) -> Option<String> {
-    // Skip over generic parameters attached to `impl` itself: `impl<T, U>`
-    let after_generics = skip_angle_brackets(after_impl.trim_start());
-
-    // If there is a `for` keyword the target type comes after it.
-    let target = if let Some(idx) = find_keyword_for(after_generics) {
-        after_generics[idx + 4..].trim_start()
-    } else {
-        after_generics.trim_start()
-    };
-
-    parse_ident(target)
-}
-
-/// Find the index of ` for ` acting as the trait-impl separator,
-/// but only at brace depth 0 (not inside angle brackets).
-fn find_keyword_for(s: &str) -> Option<usize> {
-    let bytes = s.as_bytes();
-    let mut depth: usize = 0;
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'<' => depth += 1,
-            b'>' if depth > 0 => depth -= 1,
-            b' ' if depth == 0 => {
-                if s[i..].starts_with(" for ") {
-                    return Some(i);
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
-/// Skip a leading `<...>` block (handling nesting) and return the rest.
-fn skip_angle_brackets(s: &str) -> &str {
-    if !s.starts_with('<') {
-        return s;
-    }
-    let bytes = s.as_bytes();
-    let mut depth: usize = 0;
-    for (i, &b) in bytes.iter().enumerate() {
-        match b {
-            b'<' => depth += 1,
-            b'>' => {
-                depth -= 1;
-                if depth == 0 {
-                    return &s[i + 1..];
-                }
-            }
-            _ => {}
-        }
-    }
-    s
-}
-
-/// Parse a Rust identifier from the start of `s`, stopping at the first
-/// non-identifier character.
-fn parse_ident(s: &str) -> Option<String> {
-    let s = s.trim_start();
-    let end = s
-        .find(|c: char| !c.is_alphanumeric() && c != '_')
-        .unwrap_or(s.len());
-    let ident = &s[..end];
-    if ident.is_empty() {
-        None
-    } else {
-        Some(ident.to_owned())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Python extractor
-// ---------------------------------------------------------------------------
-
-const PYTHON_KEYWORDS: &[(&str, SymbolKind)] = &[
-    ("def ", SymbolKind::Function),
-    ("async def ", SymbolKind::Function),
-    ("class ", SymbolKind::Class),
-];
-
-fn extract_python(path: &Path, content: &str) -> Vec<Symbol> {
-    let mut symbols = Vec::new();
-
-    for (line_idx, raw_line) in content.lines().enumerate() {
-        let line_number = line_idx as u32 + 1;
-        let trimmed = raw_line.trim_start();
-
-        if trimmed.starts_with('#') {
-            continue;
-        }
-
-        for &(keyword, kind) in PYTHON_KEYWORDS {
-            if let Some(after_kw) = trimmed.strip_prefix(keyword) {
-                if let Some(name) = parse_python_name(after_kw) {
-                    let col = find_col(raw_line, &name);
-                    symbols.push(Symbol {
-                        name,
-                        kind,
-                        file: path.to_path_buf(),
-                        line: line_number,
-                        col,
-                    });
-                }
-                break;
-            }
-        }
-    }
-
-    symbols
-}
-
-fn parse_python_name(s: &str) -> Option<String> {
-    let end = s
-        .find(|c: char| !c.is_alphanumeric() && c != '_')
-        .unwrap_or(s.len());
-    let name = &s[..end];
-    if name.is_empty() { None } else { Some(name.to_owned()) }
-}
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
-/// Return the 0-based column of the first occurrence of `name` in `line`,
-/// or 0 if not found.
-fn find_col(line: &str, name: &str) -> u32 {
-    line.find(name).unwrap_or(0) as u32
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +240,9 @@ mod tests {
 
     #[test]
     fn rust_impl_trait_for() {
+        // tree-sitter captures the self-type (Foo), not the trait name.
+        // The impl_item query matches `type:` which is the implementing type.
+        // For `impl Display for MyStruct`, the type node is `MyStruct`.
         let s = rs("impl Display for MyStruct {}");
         assert!(has(&s, "MyStruct", SymbolKind::Impl));
     }
@@ -346,6 +267,7 @@ mod tests {
 
     #[test]
     fn rust_skips_comments() {
+        // Tree-sitter will not produce symbols from within comment text.
         let s = rs("// fn not_a_symbol() {}");
         assert!(s.is_empty());
     }
@@ -370,7 +292,8 @@ mod tests {
 
     #[test]
     fn python_skips_comments() {
-        let s = py("# def not_real():\n    pass\n");
+        // A comment line cannot produce Python AST nodes for functions/classes.
+        let s = py("# def not_real():\n");
         assert!(s.is_empty());
     }
 

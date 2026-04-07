@@ -17,7 +17,6 @@ use hone_core::{
     SelfRefineLoop, TestVerificationLoop,
 };
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
-use hone_memory::SqliteStore;
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
 use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, MockProvider, ModelProvider,
@@ -27,9 +26,11 @@ use hone_providers::{
 };
 use hone_recipes::Recipe;
 use hone_sandbox::NullSandbox;
+use hone_memory::{MemoryStore, SqliteStore};
 use hone_tools::{
-    EditFileTool, GlobTool, GitCommitTool, GitDiffTool, GitStatusTool, ReadFileTool, ShellTool,
-    ToolRegistry, WriteFileTool,
+    EditFileTool, GlobTool, GitCommitTool, GitDiffTool, GitStatusTool, Language, LspBridge,
+    LspCodeActionTool, LspDiagnosticsTool, LspHoverTool, MockLspBridge, ReadFileTool, ShellTool,
+    StdioLspBridge, ToolRegistry, WriteFileTool,
 };
 use hone_tui::{App, AppState};
 use hone_tui::render::root;
@@ -279,6 +280,14 @@ async fn detect_provider() -> DetectedProvider {
         "provider: no provider found (ANTHROPIC_API_KEY, OPENAI_API_KEY, claude, gemini, ollama) — \
          falling back to MockProvider. Set ANTHROPIC_API_KEY or OPENAI_API_KEY for real completions."
     );
+    eprintln!(concat!(
+        "\nNo AI provider found. To use Hone:\n",
+        "  - Set ANTHROPIC_API_KEY for Anthropic API (with tool use)\n",
+        "  - Set OPENAI_API_KEY for OpenAI API (with tool use)\n",
+        "  - Install Claude CLI: https://claude.ai/download\n",
+        "  - Install Gemini CLI: https://github.com/google-gemini/gemini-cli\n",
+        "  - Or run Ollama locally on port 11434\n",
+    ));
     DetectedProvider {
         provider: Arc::new(MockProvider::new(vec![
             "No AI provider found. ".to_owned(),
@@ -294,8 +303,46 @@ async fn detect_provider() -> DetectedProvider {
 // Tool registry
 // ---------------------------------------------------------------------------
 
-/// Build a `ToolRegistry` with all available native tools.
-fn build_tool_registry() -> ToolRegistry {
+/// Detect the primary language of the current project from well-known manifest
+/// files in the working directory.
+fn detect_project_language() -> Language {
+    if std::path::Path::new("Cargo.toml").exists() {
+        Language::Rust
+    } else if std::path::Path::new("pyproject.toml").exists()
+        || std::path::Path::new("requirements.txt").exists()
+    {
+        Language::Python
+    } else if std::path::Path::new("package.json").exists() {
+        Language::TypeScript
+    } else if std::path::Path::new("go.mod").exists() {
+        Language::Go
+    } else {
+        Language::Unknown
+    }
+}
+
+/// Try to spawn a real LSP bridge for the project language.  Falls back to
+/// `MockLspBridge` when the language server binary is not installed, so tools
+/// are still registered but return empty results.
+async fn detect_lsp_bridge() -> Arc<dyn LspBridge> {
+    let lang = detect_project_language();
+    if lang != Language::Unknown {
+        match StdioLspBridge::for_language(lang).await {
+            Ok(bridge) => {
+                tracing::info!("LSP: spawned {:?} server", lang);
+                return Arc::new(bridge);
+            }
+            Err(e) => {
+                tracing::warn!("LSP: failed to spawn {:?} server: {e} — using mock", lang);
+            }
+        }
+    }
+    Arc::new(MockLspBridge::builder().build())
+}
+
+/// Build a `ToolRegistry` with all available native tools plus the three LSP
+/// tools backed by `lsp`.
+fn build_tool_registry(lsp: Arc<dyn LspBridge>) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
     registry.register(Box::new(ReadFileTool));
     registry.register(Box::new(WriteFileTool));
@@ -305,6 +352,9 @@ fn build_tool_registry() -> ToolRegistry {
     registry.register(Box::new(GitStatusTool));
     registry.register(Box::new(GitDiffTool));
     registry.register(Box::new(GitCommitTool));
+    registry.register(Box::new(LspDiagnosticsTool::new(Arc::clone(&lsp))));
+    registry.register(Box::new(LspHoverTool::new(Arc::clone(&lsp))));
+    registry.register(Box::new(LspCodeActionTool::new(lsp)));
     registry
 }
 
@@ -359,10 +409,12 @@ fn build_agent(
     detected: &DetectedProvider,
     model_id: ModelId,
     system_prompt: String,
+    lsp: Arc<dyn LspBridge>,
+    memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
 ) -> Agent {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
-        build_tool_registry()
+        build_tool_registry(lsp)
     } else {
         ToolRegistry::new()
     };
@@ -383,6 +435,7 @@ fn build_agent(
             cache_read_per_million: None,
         },
         working_dir: std::env::current_dir().unwrap_or_default(),
+        memory_store,
     };
 
     Agent::new(config)
@@ -393,12 +446,16 @@ fn build_config_ingredients(
     detected: &DetectedProvider,
     model_id: ModelId,
     system_prompt: String,
+    lsp: Arc<dyn LspBridge>,
+    memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
 ) -> ConfigIngredients {
     ConfigIngredients {
         provider: Arc::clone(&detected.provider),
         model_id,
         system_prompt,
         supports_tools: detected.supports_tools,
+        lsp,
+        memory_store,
     }
 }
 
@@ -486,14 +543,16 @@ fn spawn_medium_turn(
 /// Shared, cheaply-cloneable ingredients needed to build an `AgentConfig`.
 ///
 /// `AgentConfig` itself cannot be cloned (it holds non-`Clone` internals), so
-/// we store the three parts that *are* cloneable and reconstruct the config
-/// inside the spawned task.
+/// we store the parts that *are* cloneable and reconstruct the config inside
+/// the spawned task.
 #[derive(Clone)]
 struct ConfigIngredients {
     provider: Arc<dyn ModelProvider>,
     model_id: ModelId,
     system_prompt: String,
     supports_tools: bool,
+    lsp: Arc<dyn LspBridge>,
+    memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
 }
 
 impl ConfigIngredients {
@@ -501,7 +560,7 @@ impl ConfigIngredients {
         AgentConfig {
             provider: Arc::clone(&self.provider),
             tools: if self.supports_tools {
-                build_tool_registry()
+                build_tool_registry(Arc::clone(&self.lsp))
             } else {
                 ToolRegistry::new()
             },
@@ -518,6 +577,7 @@ impl ConfigIngredients {
                 cache_read_per_million: None,
             },
             working_dir: std::env::current_dir().unwrap_or_default(),
+            memory_store: self.memory_store.clone(),
         }
     }
 }
@@ -668,42 +728,57 @@ fn data_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/tmp/hone"))
 }
 
+/// Return type for `init_persistence`.
+struct PersistenceHandles {
+    /// The opened memory store, wrapped for shared async mutation.
+    memory: Option<Arc<Mutex<dyn MemoryStore>>>,
+    /// Keeps the file-watcher task alive.  Must be held for the process lifetime.
+    _watcher: Option<WatcherHandle>,
+}
+
 /// Initialise the memory and index SQLite stores.
 ///
 /// Background indexing of the current directory is kicked off as a detached
 /// tokio task so it never blocks startup.  A file watcher is also started so
 /// that subsequent edits are incrementally re-indexed.
 ///
-/// Returns `Ok(Some(handle))` when the watcher started successfully.  The
-/// caller must keep the handle alive for the duration of the process;
-/// dropping it signals the watcher to exit.  Returns `Ok(None)` in ephemeral
-/// mode or when the index could not be opened.  Any errors are logged as
-/// warnings so that a persistence failure never prevents the binary from
-/// starting.
-async fn init_persistence(ephemeral: bool) -> Result<Option<WatcherHandle>> {
+/// Returns `PersistenceHandles` with whatever stores opened successfully.
+/// Any errors are printed to stderr (as non-fatal warnings) so that a
+/// persistence failure never prevents the binary from starting.
+async fn init_persistence(ephemeral: bool) -> PersistenceHandles {
     if ephemeral {
         tracing::info!("ephemeral mode: skipping persistence init");
-        return Ok(None);
+        return PersistenceHandles { memory: None, _watcher: None };
     }
 
     let dir = data_dir();
-    std::fs::create_dir_all(&dir)?;
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        tracing::warn!("failed to create data dir {}: {e}", dir.display());
+        return PersistenceHandles { memory: None, _watcher: None };
+    }
 
     // Memory store
     let memory_path = dir.join("memory.db");
-    match SqliteStore::open(&memory_path).await {
-        Ok(_store) => {
+    let memory: Option<Arc<Mutex<dyn MemoryStore>>> = match SqliteStore::open(&memory_path).await {
+        Ok(store) => {
             tracing::info!(path = %memory_path.display(), "memory store initialised");
+            Some(Arc::new(Mutex::new(store)))
         }
         Err(e) => {
             tracing::warn!("failed to open memory store: {e}");
+            eprintln!(
+                "Failed to open memory store at {}: {e}\n\
+                 Hone will run without persistence. Use --ephemeral to suppress this warning.",
+                memory_path.display()
+            );
+            None
         }
-    }
+    };
 
     // Index store — open, run an initial full-directory index in a background
     // task, then start the file watcher for incremental updates.
     let index_path = dir.join("index.db");
-    match SqliteIndex::open(&index_path).await {
+    let watcher_handle = match SqliteIndex::open(&index_path).await {
         Ok(index) => {
             tracing::info!(path = %index_path.display(), "symbol index initialised");
             let index = Arc::new(index);
@@ -727,19 +802,21 @@ async fn init_persistence(ephemeral: bool) -> Result<Option<WatcherHandle>> {
             match watcher.spawn().await {
                 Ok(handle) => {
                     tracing::info!("file watcher started");
-                    return Ok(Some(handle));
+                    Some(handle)
                 }
                 Err(e) => {
                     tracing::warn!("file watcher failed to start: {e}");
+                    None
                 }
             }
         }
         Err(e) => {
             tracing::warn!("failed to open symbol index: {e}");
+            None
         }
-    }
+    };
 
-    Ok(None)
+    PersistenceHandles { memory, _watcher: watcher_handle }
 }
 
 /// Walk `root` for `.rs` files and index them via `SqliteIndex::index_file`.
@@ -809,14 +886,10 @@ async fn main() -> Result<()> {
     }
 
     // Initialise SQLite persistence (non-blocking; errors are warnings only).
-    // The returned handle keeps the file watcher alive for the process lifetime.
-    let _watcher_handle = match init_persistence(cli.ephemeral).await {
-        Ok(handle) => handle,
-        Err(e) => {
-            tracing::warn!("persistence init failed: {e}");
-            None
-        }
-    };
+    // The returned handles keep the memory store and file watcher alive for
+    // the process lifetime.
+    let persistence = init_persistence(cli.ephemeral).await;
+    let memory_store = persistence.memory.clone();
 
     // Build the system prompt, injecting any HONE.md sections.
     let mut system_prompt = "You are Hone, an AI coding assistant.".to_string();
@@ -837,13 +910,30 @@ async fn main() -> Result<()> {
 
     let detected = detect_provider().await;
 
-    let model_id: ModelId = cli
-        .model
-        .as_deref()
-        .map(ModelId::new)
-        .unwrap_or_else(|| detected.model_id.clone());
+    // Validate --model against known provider prefixes.
+    let model_id: ModelId = if let Some(ref m) = cli.model {
+        let known_prefixes = ["anthropic:", "openai:", "ollama:", "claude-cli:", "gemini-cli:"];
+        if !known_prefixes.iter().any(|p| m.starts_with(p)) {
+            eprintln!(
+                "Invalid model ID: '{m}'\nSupported model ID prefixes:\n  - anthropic:claude-...\n  - openai:gpt-... or openai:o3\n  - ollama:llama3.2 (etc)\n  - claude-cli:... (CLI pass-through)\n  - gemini-cli:..."
+            );
+        }
+        ModelId::new(m)
+    } else {
+        detected.model_id.clone()
+    };
 
-    let agent = Arc::new(Mutex::new(build_agent(&detected, model_id.clone(), system_prompt.clone())));
+    // Try to spawn an LSP bridge for the project language (falls back to mock
+    // if the language server binary is not installed).
+    let lsp = detect_lsp_bridge().await;
+
+    let agent = Arc::new(Mutex::new(build_agent(
+        &detected,
+        model_id.clone(),
+        system_prompt.clone(),
+        Arc::clone(&lsp),
+        memory_store.clone(),
+    )));
 
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -863,7 +953,13 @@ async fn main() -> Result<()> {
             .clone()
             .unwrap_or_else(|| "Please describe what you need help with.".to_owned());
 
-        let ingredients = build_config_ingredients(&detected, model_id.clone(), system_prompt.clone());
+        let ingredients = build_config_ingredients(
+            &detected,
+            model_id.clone(),
+            system_prompt.clone(),
+            Arc::clone(&lsp),
+            memory_store.clone(),
+        );
         return run_orchestrate(ingredients.build(), &prompt).await;
     }
 
@@ -880,7 +976,13 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Build cloneable config ingredients shared by complex-tier spawned tasks.
-    let ingredients = build_config_ingredients(&detected, model_id.clone(), system_prompt.clone());
+    let ingredients = build_config_ingredients(
+        &detected,
+        model_id.clone(),
+        system_prompt.clone(),
+        Arc::clone(&lsp),
+        memory_store.clone(),
+    );
 
     let result = run_tui(&mut terminal, agent, model_id, ingredients).await;
 

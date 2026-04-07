@@ -48,6 +48,7 @@ async fn test_budget_cap_blocks_new_turn() {
         budget_limit: Some(TIGHT_BUDGET),
         pricing: real_pricing(),
         working_dir: std::path::PathBuf::from("."),
+        memory_store: None,
     };
 
     let mut agent = Agent::new(config);
