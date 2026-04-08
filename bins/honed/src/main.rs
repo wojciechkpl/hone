@@ -30,7 +30,8 @@ async fn main() -> Result<()> {
         println!();
         println!("Environment:");
         println!("  HONE_AUTH_TOKEN    Bearer token required on every request");
-        println!("  HONE_SESSION_DB    Path to SQLite file for persistent sessions");
+        println!("  HONE_SESSION_DB    Path to SQLite file (default ~/.local/share/hone/sessions.db)");
+        println!("  HONE_EPHEMERAL     Disable session persistence entirely");
         return Ok(());
     }
 
@@ -48,11 +49,36 @@ async fn main() -> Result<()> {
 
     let auth_token = std::env::var("HONE_AUTH_TOKEN").ok();
 
-    let sessions: Arc<SessionStorage> = if let Ok(db_path) = std::env::var("HONE_SESSION_DB") {
+    // Session storage:
+    // - HONE_EPHEMERAL=1 forces in-memory only (no persistence)
+    // - HONE_SESSION_DB=<path> uses an explicit SQLite path
+    // - default: ~/.local/share/hone/sessions.db (created if absent)
+    let sessions: Arc<SessionStorage> = if std::env::var("HONE_EPHEMERAL").is_ok() {
+        tracing::info!("ephemeral mode: sessions stored in memory only");
+        Arc::new(SessionStorage::InMemory(SessionStore::new()))
+    } else if let Ok(db_path) = std::env::var("HONE_SESSION_DB") {
         let store = SqliteSessionStore::open(Path::new(&db_path)).await?;
+        tracing::info!("sessions persisted at {}", db_path);
         Arc::new(SessionStorage::Sqlite(store))
     } else {
-        Arc::new(SessionStorage::InMemory(SessionStore::new()))
+        // Default to ~/.local/share/hone/sessions.db
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        let dir = Path::new(&home).join(".local/share/hone");
+        let _ = std::fs::create_dir_all(&dir);
+        let db_path = dir.join("sessions.db");
+        match SqliteSessionStore::open(&db_path).await {
+            Ok(store) => {
+                tracing::info!("sessions persisted at {}", db_path.display());
+                Arc::new(SessionStorage::Sqlite(store))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "failed to open default session db {}: {e}; falling back to in-memory",
+                    db_path.display()
+                );
+                Arc::new(SessionStorage::InMemory(SessionStore::new()))
+            }
+        }
     };
 
     let tunnel_manager: Arc<dyn TunnelManager> = if BoreTunnelManager::is_available().await {

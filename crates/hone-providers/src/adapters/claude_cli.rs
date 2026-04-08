@@ -112,6 +112,7 @@ impl ModelProvider for ClaudeCliProvider {
 /// The Claude CLI stream-json format emits newline-delimited JSON objects with a `type` field:
 /// - `{"type":"assistant","message":{"content":[{"type":"text","text":"..."}],...}}` -> Token
 /// - `{"type":"result","result":"...","total_cost_usd":...,"usage":{...}}` -> Usage + Done
+///
 /// Other types (system, rate_limit_event) are skipped.
 fn spawn_claude_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> {
     let (tx, rx) = mpsc::channel::<ProviderEvent>(64);
