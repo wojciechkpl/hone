@@ -261,6 +261,22 @@ openai_api_key = "${OPENAI_API_KEY}"
 
 See docs/configuration.md for complete reference.
 
+### Agent ensemble (experimental)
+
+Run the same prompt through N parallel candidates with different temperatures,
+then pick the best response using the MASAI Ranker pattern:
+
+```bash
+hone --ensemble 3 "refactor this function for clarity"
+```
+
+Each candidate runs at a different temperature (0.0, 0.3, 0.5, …), maximising
+response diversity. A dedicated ranker agent (temperature 0.0) reads all
+candidates and selects the best one. Research shows ensemble+voting improves
+code quality by 5-8% at roughly N× token cost (arXiv 2406.11638).
+
+Up to five candidates are supported (`--ensemble 5`).
+
 ## CLI Reference
 
 | Command | Purpose |
@@ -269,6 +285,7 @@ See docs/configuration.md for complete reference.
 | `hone --model <name>` | Use a specific model |
 | `hone --dir <path>` | Target a specific directory |
 | `hone --recipe <path>` | Run a YAML recipe |
+| `hone --ensemble <N> <prompt>` | Run N candidates and pick the best (ensemble mode) |
 | `hone --remote <host:port>` | Connect to remote daemon |
 | `honed` | Start the HTTP/2 server daemon |
 | `honed --port 8080` | Listen on custom port |

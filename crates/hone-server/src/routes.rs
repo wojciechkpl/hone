@@ -1,8 +1,10 @@
-use axum::extract::{Path, Request, State};
+use std::collections::HashMap;
+
+use axum::extract::{Path, Query, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde_json::json;
 
@@ -16,7 +18,9 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
+        .route("/sessions/gc", delete(gc_sessions))
         .route("/health", get(health))
+        .route("/openapi.json", get(openapi_json))
         .merge(tunnel_router())
         .merge(governance_router())
         .merge(collaborative_router())
@@ -82,4 +86,36 @@ async fn delete_session(
     } else {
         Err(ServerError::SessionNotFound { id })
     }
+}
+
+#[derive(serde::Serialize)]
+pub struct GcResult {
+    pub removed: u32,
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+async fn gc_sessions(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<GcResult>, ServerError> {
+    let days: u64 = params
+        .get("older_than_days")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
+
+    let cutoff = now_unix().saturating_sub(days * 86_400);
+    let removed = state.sessions.gc(cutoff).await?;
+    Ok(Json(GcResult { removed }))
+}
+
+async fn openapi_json() -> Json<serde_json::Value> {
+    use utoipa::OpenApi as _;
+    let spec = crate::openapi::ApiDoc::openapi();
+    Json(serde_json::to_value(spec).unwrap_or_default())
 }

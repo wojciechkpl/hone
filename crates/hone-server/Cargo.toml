@@ -21,6 +21,7 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 sqlx = { workspace = true }
 uuid = { workspace = true }
+utoipa = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -3,16 +3,17 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+use utoipa::ToSchema;
 
 use crate::error::ServerError;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TunnelConfig {
     pub local_port: u16,
     pub auth_token: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TunnelInfo {
     pub url: String,
     pub local_port: u16,

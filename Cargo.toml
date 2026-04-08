@@ -103,6 +103,9 @@ tree-sitter-rust = "0.23"
 tree-sitter-python = "0.23"
 streaming-iterator = "0.1"
 
+# OpenAPI
+utoipa = { version = "5", features = ["axum_extras"] }
+
 # Testing
 mockall = "0.13"
 tempfile = "3"

@@ -13,8 +13,8 @@ use crossterm::{
 use futures::StreamExt;
 use hone_config::{Config, HoneMd};
 use hone_core::{
-    Agent, AgentConfig, AgentRegistry, ComplexityClassifier, ComplexityTier, Orchestrator,
-    SelfRefineLoop, TestVerificationLoop,
+    Agent, AgentConfig, AgentEnsemble, AgentRegistry, ComplexityClassifier, ComplexityTier,
+    Orchestrator, SelfRefineLoop, TestVerificationLoop,
 };
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
@@ -70,6 +70,11 @@ struct Cli {
     /// Ephemeral session (no memory persistence)
     #[arg(long)]
     ephemeral: bool,
+
+    /// Run N parallel candidates with varied temperatures and pick the best
+    /// response using the MASAI Ranker pattern (requires N >= 2)
+    #[arg(long, value_name = "N")]
+    ensemble: Option<u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -681,6 +686,88 @@ async fn run_orchestrate(
 }
 
 // ---------------------------------------------------------------------------
+// Ensemble mode
+// ---------------------------------------------------------------------------
+
+/// Run a prompt through N parallel candidates with varied temperatures, then
+/// let a ranker agent pick the best response (MASAI Ranker pattern).
+async fn run_ensemble(
+    ingredients: &ConfigIngredients,
+    prompt: &str,
+    n: u32,
+) -> Result<()> {
+    // Temperature ladder: diverse but bounded.  We only use as many slots as
+    // requested, so `--ensemble 2` picks the first two entries.
+    const TEMPS: [f32; 5] = [0.0, 0.3, 0.5, 0.7, 0.9];
+
+    let n = (n as usize).min(TEMPS.len());
+
+    let ing = Arc::new(ingredients.clone());
+
+    let candidate_factories: Vec<Box<dyn Fn() -> AgentConfig + Send + Sync>> = (0..n)
+        .map(|i| {
+            let ing = Arc::clone(&ing);
+            let temp = TEMPS[i];
+            let factory: Box<dyn Fn() -> AgentConfig + Send + Sync> =
+                Box::new(move || {
+                    let mut cfg = ing.build();
+                    cfg.temperature = Some(temp);
+                    cfg
+                });
+            factory
+        })
+        .collect();
+
+    let ing_ranker = Arc::clone(&ing);
+    let ranker_factory: Box<dyn Fn() -> AgentConfig + Send + Sync> =
+        Box::new(move || {
+            let mut cfg = ing_ranker.build();
+            cfg.temperature = Some(0.0);
+            cfg.system_prompt =
+                "You are a response ranker. Given a task and candidate responses, \
+                 pick the best one. Output ONLY the number of the best candidate \
+                 (e.g. 1, 2, or 3). Do not explain your choice."
+                    .to_string();
+            cfg
+        });
+
+    let ensemble = AgentEnsemble::new(candidate_factories, ranker_factory);
+
+    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+    let printer = tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                AgentEvent::Token { text } => {
+                    print!("{text}");
+                    use io::Write;
+                    let _ = io::stdout().flush();
+                }
+                AgentEvent::Done { .. } => break,
+                AgentEvent::Error { message } => {
+                    eprintln!("\nerror: {message}");
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let result = ensemble.run(prompt, tx).await?;
+    let _ = printer.await;
+
+    println!(
+        "\n\n[Ensemble: picked candidate {}/{} (${:.4} total)]\n\n{}",
+        result.winner_index + 1,
+        result.all_candidates.len(),
+        result.total_cost_usd,
+        result.winner.response,
+    );
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // One-shot mode
 // ---------------------------------------------------------------------------
 
@@ -944,6 +1031,32 @@ async fn main() -> Result<()> {
     // --recipe <name>: run a built-in recipe and exit.
     if let Some(ref recipe_name) = cli.recipe {
         return run_recipe(agent, recipe_name).await;
+    }
+
+    // --ensemble N: run N parallel candidates and pick the best.
+    if let Some(n) = cli.ensemble {
+        if n < 2 {
+            eprintln!("Error: --ensemble requires N >= 2");
+            return Ok(());
+        }
+
+        let prompt = match cli.prompt.as_deref() {
+            Some(p) if !p.is_empty() => p.to_owned(),
+            _ => {
+                eprintln!("Error: --ensemble requires a prompt (pass it as a positional argument)");
+                return Ok(());
+            }
+        };
+
+        let ingredients = build_config_ingredients(
+            &detected,
+            model_id.clone(),
+            system_prompt.clone(),
+            Arc::clone(&lsp),
+            memory_store.clone(),
+        );
+
+        return run_ensemble(&ingredients, &prompt, n).await;
     }
 
     // --orchestrate: full orchestrator for the supplied prompt (or a default).

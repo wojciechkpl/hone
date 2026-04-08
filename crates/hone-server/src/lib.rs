@@ -4,6 +4,8 @@ pub mod collaborative_routes;
 pub mod error;
 pub mod governance;
 pub mod governance_routes;
+pub mod openapi;
+pub mod rate_limit;
 pub mod routes;
 pub mod session;
 pub mod session_storage;
@@ -15,6 +17,8 @@ pub mod tunnel_routes;
 
 pub use collaborative::{CollaborativeStore, Participant, ParticipantRole};
 pub use governance::{GovernanceStore, ModelUsage, TeamMember, TeamPolicy, TeamUsage};
+pub use openapi::ApiDoc;
+pub use rate_limit::RateLimiter;
 pub use routes::router;
 pub use session_storage::SessionStorage;
 pub use sqlite_session::SqliteSessionStore;

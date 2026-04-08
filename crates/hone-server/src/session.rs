@@ -4,11 +4,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+use utoipa::ToSchema;
 
 use hone_proto::SessionId;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionInfo {
+    #[schema(value_type = String, format = "uuid")]
     pub id: SessionId,
     pub created_at: u64,
 }
@@ -55,6 +57,15 @@ impl SessionStore {
 
     pub async fn list(&self) -> Vec<SessionInfo> {
         self.sessions.read().await.values().cloned().collect()
+    }
+
+    /// Remove all sessions whose `created_at` is strictly less than `cutoff` (Unix seconds).
+    /// Returns the number of sessions removed.
+    pub async fn gc(&self, cutoff: u64) -> u32 {
+        let mut guard = self.sessions.write().await;
+        let before = guard.len();
+        guard.retain(|_, info| info.created_at >= cutoff);
+        (before - guard.len()) as u32
     }
 }
 

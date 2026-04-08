@@ -3,21 +3,22 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TeamUsage {
     pub total_tokens: u64,
     pub total_cost_usd: f64,
     pub by_model: HashMap<String, ModelUsage>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ModelUsage {
     pub tokens: u64,
     pub cost_usd: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TeamMember {
     pub id: String,
     pub name: String,
@@ -25,7 +26,7 @@ pub struct TeamMember {
     pub joined_at: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TeamPolicy {
     pub allowed_models: Vec<String>,
     pub spend_cap_usd: Option<f64>,

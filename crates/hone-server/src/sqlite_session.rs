@@ -83,6 +83,17 @@ impl SqliteSessionStore {
         Ok(result.rows_affected() > 0)
     }
 
+    /// Delete sessions created before `cutoff` (Unix seconds).
+    /// Returns the number of rows deleted.
+    pub async fn gc(&self, cutoff: u64) -> Result<u32, ServerError> {
+        let result = sqlx::query("DELETE FROM sessions WHERE created_at < ?1")
+            .bind(cutoff as i64)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        Ok(result.rows_affected() as u32)
+    }
+
     pub async fn list(&self) -> Result<Vec<SessionInfo>, ServerError> {
         let rows: Vec<(String, i64)> =
             sqlx::query_as("SELECT id, created_at FROM sessions ORDER BY created_at ASC")

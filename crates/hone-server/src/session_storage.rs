@@ -54,4 +54,13 @@ impl SessionStorage {
             Self::Sqlite(s) => s.list().await,
         }
     }
+
+    /// Remove sessions whose `created_at` is strictly less than `cutoff` (Unix seconds).
+    /// Returns the number of sessions removed.
+    pub async fn gc(&self, cutoff: u64) -> Result<u32, ServerError> {
+        match self {
+            Self::InMemory(s) => Ok(s.gc(cutoff).await),
+            Self::Sqlite(s) => s.gc(cutoff).await,
+        }
+    }
 }
