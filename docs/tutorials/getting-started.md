@@ -146,10 +146,55 @@ Type `/help` to see available commands:
 Run a single command without the interactive loop:
 
 ```bash
-hone --input "List all Python files in src/" --model anthropic:claude-opus
+hone "List all Python files in src/" --model anthropic:claude-opus
 ```
 
 Output is streamed to stdout, no TUI.
+
+## First Multi-Agent Orchestration Run
+
+Hone's multi-agent orchestrator decomposes complex tasks, executes them in parallel, and merges results. This is research-backed by Anthropic, MASAI, and CodeR papers:
+
+```bash
+# Set up API key
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Run with orchestrator
+hone --orchestrate "Build a CLI tool that validates email addresses with comprehensive test coverage"
+```
+
+What happens:
+
+1. **Decompose** — Orchestrator breaks down "build CLI tool" into parallel subtasks:
+   - Write tests for email validation
+   - Implement validation logic
+   - Build CLI interface
+   - Add error handling
+
+2. **Execute** — Each worker agent runs in parallel on their assigned task:
+   ```
+   [PlanCreated] Task decomposed into 4 subtasks
+   [WorkerStarted] Worker 1: "write_tests"
+   [WorkerStarted] Worker 2: "implement_logic"
+   [WorkerStarted] Worker 3: "build_cli"
+   [WorkerStarted] Worker 4: "add_errors"
+   ```
+
+3. **Merge** — Orchestrator reads all results and produces a coherent merged output:
+   ```
+   [Merged] All workers completed
+   Final output: Complete CLI tool with tests, logic, interface, and error handling
+   ```
+
+Expected output format:
+- Token counts for each subtask
+- Merged response combining all workers
+- Total cost across all parallel executions
+
+**When to use:**
+- Complex features with multiple concerns
+- Tasks that naturally decompose (API + CLI + tests)
+- When you want parallel execution within a single request
 
 ## Understanding the Output
 

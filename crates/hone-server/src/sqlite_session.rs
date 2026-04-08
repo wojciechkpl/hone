@@ -61,7 +61,7 @@ impl SqliteSessionStore {
                 .await
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-        Ok(row
+        row
             .map(|(id, created_at)| {
                 Uuid::parse_str(&id)
                     .map(|u| SessionInfo {
@@ -70,7 +70,7 @@ impl SqliteSessionStore {
                     })
                     .map_err(|e| ServerError::Internal(format!("corrupt session id: {e}")))
             })
-            .transpose()?)
+            .transpose()
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool, ServerError> {

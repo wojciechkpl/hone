@@ -22,6 +22,32 @@ flowchart TD
     Providers --> CLI["Claude CLI<br/>Pass-through"]
 ```
 
+## Provider Comparison
+
+Hone supports 5 working providers + ACP. Here's how they compare:
+
+| Provider | Tool Calling | Streaming | Cost | Best For |
+|----------|-------------|-----------|------|----------|
+| **Anthropic API** | Yes | Yes | $$ | Production (most capable) |
+| **OpenAI API** | Yes | Yes | $ | Budget-conscious teams |
+| **Ollama** | No | Yes | Free | Local/offline work |
+| **Claude CLI** | No | Yes | Subscription | Existing CLI users |
+| **Gemini CLI** | No | Yes | Free tier | No API key setup |
+| **ACP** | Yes | Yes | Subscription | Custom tool servers |
+
+## Provider Auto-Detection
+
+Hone automatically detects and prioritizes available providers in this order:
+
+1. `ANTHROPIC_API_KEY` env var → **Anthropic API**
+2. `OPENAI_API_KEY` env var → **OpenAI API**
+3. `claude` command available → **Claude CLI**
+4. `gemini` command available → **Gemini CLI**
+5. `OLLAMA_HOST` env var → **Ollama**
+6. Fallback → **Mock provider** (for testing)
+
+Override with `--model` or config file.
+
 ## Built-in Providers
 
 ### Anthropic API

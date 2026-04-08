@@ -595,6 +595,89 @@ Standard HTTP status codes are used throughout:
 
 ---
 
+## Utility Endpoints
+
+### GET /openapi.json
+
+Returns the OpenAPI 3.1 specification for the API. No authentication required.
+
+**Request:**
+```bash
+curl http://localhost:3117/openapi.json | jq
+```
+
+**Response:** `200 OK`
+```json
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Hone API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {...},
+    "/sessions": {...},
+    ...
+  }
+}
+```
+
+Use this endpoint to programmatically discover the API structure, validate client implementations, or generate client libraries.
+
+---
+
+### DELETE /sessions/gc
+
+Garbage collect sessions older than a specified number of days.
+
+**Request:**
+```bash
+curl -X DELETE "http://localhost:3117/sessions/gc?older_than_days=7"
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `older_than_days` | integer | 30 | Remove sessions older than N days |
+
+**Response:** `200 OK`
+```json
+{
+  "removed": 5
+}
+```
+
+**Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `removed` | integer | Number of sessions deleted |
+
+This endpoint is useful for periodic maintenance to clean up old sessions and free storage space. Can be called manually or via a scheduled task (cron, systemd timer, etc.).
+
+---
+
 ## Rate Limiting
 
-Rate limiting is not currently enforced. Future versions may implement per-token or per-team rate limits.
+All endpoints are rate-limited at **100 requests per minute per client**. The client is identified by the `X-Forwarded-For` header (when present), or the source IP address.
+
+When rate limit is exceeded, the server returns:
+
+```
+HTTP/1.1 429 Too Many Requests
+```
+
+```json
+{
+  "error": "rate limit exceeded"
+}
+```
+
+The `Retry-After` header indicates seconds until the next request can be made:
+
+```
+Retry-After: 45
+```
+
+Rate limits apply to all endpoints uniformly. For high-volume integrations, contact the server operator to discuss dedicated rate limits.

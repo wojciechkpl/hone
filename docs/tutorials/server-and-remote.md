@@ -340,6 +340,96 @@ The web UI provides:
 - Session history
 - Markdown rendering
 
+## Persistent Sessions with SQLite
+
+By default, sessions are stored in memory and lost when the daemon restarts. To persist sessions across restarts, configure a SQLite database:
+
+```bash
+HONE_SESSION_DB=~/.local/share/hone/sessions.db honed
+```
+
+Or via config.toml:
+
+```toml
+[storage]
+sessions_db = "~/.local/share/hone/sessions.db"
+```
+
+When `HONE_SESSION_DB` is set:
+- New sessions are persisted immediately
+- Sessions survive daemon restarts
+- Session history is queryable via the API
+
+Without this setting, sessions live only in memory for the duration of the daemon process.
+
+---
+
+## Real Bore Tunnel
+
+Hone can automatically use the [Bore](https://github.com/ekzhang/bore) CLI for reverse tunneling. Bore is simpler and lighter-weight than Cloudflare Tunnel or Ngrok.
+
+Install Bore:
+
+```bash
+cargo install bore-cli
+```
+
+Run the daemon — it auto-detects Bore on PATH:
+
+```bash
+honed
+```
+
+The daemon detects `bore` in PATH and uses `BoreTunnelManager` to spawn it as a subprocess. The tunnel URL is printed on startup:
+
+```
+Daemon started on http://localhost:7777
+Tunnel: https://tunnel-abc123.bore.pub
+Share this URL to allow remote access.
+```
+
+If `bore` is not on PATH, the daemon falls back to `MockTunnelManager` (local-only access). No error is thrown — tunneling is optional.
+
+---
+
+## Graceful Shutdown
+
+The daemon handles `SIGINT` and `SIGTERM` gracefully, draining in-flight requests before exiting:
+
+```bash
+# Start daemon
+honed
+
+# In another terminal, send signal
+kill -TERM <pid>
+```
+
+The daemon will:
+1. Stop accepting new requests
+2. Wait for in-flight requests to complete (with timeout)
+3. Close all active SSE connections gracefully
+4. Flush session data to disk (if persisted)
+5. Exit cleanly
+
+This ensures clients receive complete responses and no data is lost mid-operation.
+
+---
+
+## Rate Limiting
+
+All endpoints are rate-limited at **100 requests per minute per client** (identified by `X-Forwarded-For` or source IP). Clients exceeding the limit receive `429 Too Many Requests`.
+
+To configure rate limiting when embedding the server in your own application:
+
+```rust
+use hone_server::AppState;
+
+let state = AppState::default()
+    .with_rate_limiter(100, std::time::Duration::from_secs(60));
+```
+
+---
+
 ## Collaborative Sessions
 
 The daemon supports multiple users working in the same session (experimental).

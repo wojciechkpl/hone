@@ -2,6 +2,51 @@
 
 Hone implements defense-in-depth security using kernel sandboxing, network policies, and audit logging. This guide covers the sandbox architecture, threat model, and how to configure security policies.
 
+## Linux Landlock Sandbox
+
+On Linux kernel 5.13+, Hone enforces filesystem access via the **Landlock LSM** (Linux Security Module). The sandbox is configured per-tool using fine-grained access rules.
+
+```rust
+use hone_sandbox::{SandboxPolicyBuilder, SandboxMode};
+use std::path::PathBuf;
+
+let policy = SandboxPolicyBuilder::new(SandboxMode::Manual)
+    .allow_read(PathBuf::from("/tmp"))
+    .allow_write(PathBuf::from("/tmp/output"))
+    .build()?;
+```
+
+When a tool runs a subprocess, Landlock is applied via `pre_exec()` so the child cannot access files outside the policy:
+
+```bash
+# If tool reads /etc/passwd (not in allow_read)
+Agent calls: read_file(path="/etc/passwd")
+error: Permission denied (EACCES)
+```
+
+**Requirements:**
+- Linux kernel 5.13+ (Landlock upstreamed in this release)
+- Check kernel support: `cat /proc/sys/kernel/landlock/abi_version`
+  - Output >= 1 means Landlock is available
+  - No output or error means unavailable
+
+If Landlock is unavailable, `SandboxError::Unavailable` is returned and Hone falls back to `NullSandbox` with a warning:
+
+```
+warn: Landlock not available on this kernel (< 5.13)
+Fall back to NullSandbox — tool calls are not filesystem-sandboxed.
+```
+
+To require Landlock and fail if unavailable:
+
+```toml
+[sandbox]
+enforce = true  # fail if Landlock not available
+platform = "landlock"
+```
+
+---
+
 ## Sandbox Architecture Overview
 
 ```mermaid
@@ -352,6 +397,30 @@ In ephemeral mode:
 - No memories are recorded
 - Cost tracking is not saved
 - Useful for sensitive queries
+
+---
+
+## Memory Persistence and Encryption
+
+By default, session memories are stored in plaintext SQLite at `~/.local/share/hone/memory.db`:
+
+```bash
+ls -la ~/.local/share/hone/
+# memory.db            - unencrypted session memories
+# sessions.db          - unencrypted session metadata (if HONE_SESSION_DB set)
+```
+
+**Encryption via sqlcipher is on the roadmap** for future releases. Until then, for sensitive workloads use `--ephemeral` to disable persistence entirely:
+
+```bash
+hone --ephemeral -i "Sensitive query"
+```
+
+Or clear memories manually:
+
+```bash
+rm ~/.local/share/hone/memory.db
+```
 
 ## Threat Model Summary
 

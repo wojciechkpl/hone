@@ -144,7 +144,7 @@ hone -i "Switch to feature branch"
 
 #### LSP Bridge
 
-Language server integration for code intelligence.
+Language server integration for code intelligence. Hone now supports real LSP servers via stdio JSON-RPC. The `StdioLspBridge` auto-spawns a language server based on project type.
 
 ```bash
 hone -i "What does this function do?"
@@ -157,7 +157,43 @@ hone -i "Fix the type error on line 42"
 # Agent calls: lsp_code_action(file="main.rs", line=42)
 ```
 
-Supports all languages with LSP servers: Python, Rust, TypeScript, Go, Java, etc.
+**Supported Languages:**
+
+| Language | Server | Detection |
+|----------|--------|-----------|
+| Rust | rust-analyzer | Cargo.toml |
+| Python | pyright-langserver | pyproject.toml or requirements.txt |
+| TypeScript/JavaScript | typescript-language-server | package.json |
+| Go | gopls | go.mod |
+
+**Available LSP Tools:**
+- `lsp_diagnostics(file: str)` — get errors and warnings in a file
+- `lsp_hover(file: str, line: int, col: int)` — get hover information at a position
+- `lsp_code_actions(file: str, line: int)` — get available code actions
+
+If the language server binary is not installed, Hone falls back to `MockLspBridge` that returns empty results — the tools are still registered but inactive:
+
+```bash
+# If rust-analyzer not found:
+Agent calls: lsp_diagnostics(file="main.rs")
+result: []  # empty (server not available)
+```
+
+**Installation:**
+
+```bash
+# Rust
+rustup component add rust-analyzer
+
+# Python
+pip install pyright
+
+# TypeScript/JavaScript
+npm install -g typescript-language-server typescript
+
+# Go
+go install golang.org/x/tools/gopls@latest
+```
 
 #### Semantic Index
 

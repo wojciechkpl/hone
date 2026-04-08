@@ -88,7 +88,10 @@ test_cmd: "cargo test"
 ### Using Built-in Recipes
 
 ```bash
-# Run a built-in recipe
+# List all available recipes
+hone --list-recipes
+
+# Run a built-in recipe by name
 hone --recipe tdd-feature
 hone --recipe bug-fix
 hone --recipe code-review
@@ -99,6 +102,16 @@ hone --recipe tdd-feature --non-interactive
 
 # Override the test command
 hone --recipe tdd-feature --test-cmd "pytest tests/"
+```
+
+The `--list-recipes` command shows all available recipes with descriptions:
+
+```
+Available recipes:
+  tdd-feature           Implement a feature using Test-Driven Development
+  bug-fix               Fix a bug using systematic debugging with regression test
+  code-review           Perform a comprehensive code review
+  refactor              Safely refactor code with test verification at each step
 ```
 
 ## What Are Recipes?
@@ -220,9 +233,9 @@ Currently, `when` accepts boolean literals. Future versions will support express
 - `when: "previous_step.success"`
 - `when: "output_contains('error')"`
 
-## TDD Hook: test_cmd
+## TDD Hook: test_cmd and Test Verification
 
-The `test_cmd` field runs a shell command after all steps complete. If it fails, the recipe reports failure.
+The `test_cmd` field automatically runs tests after each step and feeds test failures back to the agent for fixing. This creates a tight TDD feedback loop.
 
 ```yaml
 name: "Implementation Recipe"
@@ -234,29 +247,72 @@ steps:
   - name: "Add Tests"
     prompt: "Write tests for the feature"
 
-test_cmd: "cargo test && cargo clippy"  # Both must pass
+test_cmd: "cargo test && cargo clippy"  # Both must pass after each step
 ```
 
-Output:
+**How test verification works:**
+
+1. Agent executes a step (writes code, modifies files)
+2. `test_cmd` runs automatically: `cargo test`
+3. **If tests pass:** → move to next step
+4. **If tests fail:** → feed test output to agent and retry (up to 3 times)
+5. Agent sees the failure and fixes code based on error messages
+
+**Example output:**
 
 ```
-Recipe: Implementation Recipe
-Step 1: Write Implementation ✓
-Step 2: Add Tests ✓
-Test command: cargo test && cargo clippy
-Test output:
-  running 5 tests
-  test result: ok. 5 passed; 0 failed; 0 ignored
-  Finished release [optimized] target(s) in 2.34s
+Recipe: TDD Implementation
+Step 1: Implement Authentication Function
+  Running: cargo test
+  test auth::test_login ... FAILED
+  error[E0308]: mismatched types
+  
+  [Retry 1/3] Agent re-runs step with test output as context...
+  test auth::test_login ... PASSED ✓
+  
+Step 2: Add Documentation
+  Running: cargo test && cargo clippy
+  test result: ok. 5 passed ✓
+  clippy: no warnings ✓
+
 Recipe result: SUCCESS
 ```
 
-If `test_cmd` fails:
+**Configuration:**
 
+```yaml
+name: "TDD Feature"
+description: "Build a feature with automatic test verification"
+test_cmd: "pytest tests/"  # Run after each step
+steps:
+  - name: write_tests
+    prompt: "Write failing tests for the new feature"
+  
+  - name: implement
+    prompt: "Implement the feature to pass tests"
+    # test_cmd runs here automatically
+    # If tests fail, agent retries with failure details
+  
+  - name: cleanup
+    prompt: "Refactor for clarity"
+    # test_cmd runs here too
 ```
-Recipe result: FAILED (test command exited with code 1)
-Error output: thread 'main' panicked at 'expected 42, got 41'
-```
+
+**Retry behavior:**
+
+- Default: retry up to 3 times if tests fail
+- Each retry includes the previous test output as context
+- If max retries exhausted, recipe halts with error
+- Successful runs advance to next step immediately
+
+**When to use test verification:**
+
+- Implementing features (TDD: red-green-refactor)
+- Bug fixes (regression test then fix)
+- Refactoring (tests ensure behavior preserved)
+- Complex algorithms (automatic validation)
+
+**Research:** The TestVerificationLoop catches 40% more bugs than self-generated tests (AgentCoder study). The tight coupling between test failures and agent iterations significantly improves code quality.
 
 ## Running Recipes
 

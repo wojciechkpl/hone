@@ -113,7 +113,7 @@ fn count_file_references(s: &str) -> usize {
     ];
 
     s.split_whitespace()
-        .map(|token| token.trim_end_matches(|c: char| matches!(c, ',' | '.' | ';' | ')' | '!')))
+        .map(|token| token.trim_end_matches([',', '.', ';', ')', '!']))
         .filter(|token| known_extensions.iter().any(|ext| token.ends_with(ext)))
         .count()
 }

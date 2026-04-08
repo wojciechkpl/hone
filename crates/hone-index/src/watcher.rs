@@ -241,7 +241,7 @@ async fn flush_pending(
     let ready: Vec<(PathBuf, EventKind)> = pending
         .iter()
         .filter(|(_, (deadline, _))| *deadline <= now)
-        .map(|(p, (_, k))| (p.clone(), k.clone()))
+        .map(|(p, (_, k))| (p.clone(), *k))
         .collect();
 
     for (path, kind) in ready {

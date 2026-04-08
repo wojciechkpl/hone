@@ -23,7 +23,7 @@ const CREATE_TABLE_SQL: &str = "
 ";
 
 fn to_io_err(e: impl std::fmt::Display) -> MemoryError {
-    MemoryError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+    MemoryError::Io(std::io::Error::other(e.to_string()))
 }
 
 fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
@@ -211,7 +211,7 @@ impl MemoryStore for SqliteStore {
         .map_err(to_io_err)?;
 
         let memories: Result<Vec<Memory>, MemoryError> =
-            rows.iter().map(|r| row_to_memory(r)).collect();
+            rows.iter().map(row_to_memory).collect();
         let memories = memories?;
 
         let json = serde_json::to_string_pretty(&memories)?;

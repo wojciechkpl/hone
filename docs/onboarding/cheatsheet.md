@@ -33,15 +33,18 @@ Run these when starting `hone`:
 
 | Flag | Example | Purpose |
 |------|---------|---------|
+| (prompt) | `hone "prompt"` | One-shot mode (no REPL) |
+| `--orchestrate` | `hone --orchestrate "..."` | Multi-agent orchestrator |
+| `--ensemble` | `hone --ensemble 3 "..."` | Run N candidates, rank best |
+| `--recipe` | `hone --recipe tdd-feature` | Run a built-in recipe |
+| `--list-recipes` | `hone --list-recipes` | List available recipes |
 | `--agent` | `hone --agent code-reviewer` | Use a specific agent |
 | `--model` | `hone --model openai:gpt-4o` | Choose model/provider |
 | `--dir` | `hone --dir ~/myproject` | Target a directory |
 | `--budget` | `hone --budget 5.00` | Max spend in USD |
 | `--context-window` | `hone --context-window 64000` | Limit context (tokens) |
-| `--recipe` | `hone --recipe scripts/tdd-feature.yaml` | Run a recipe |
 | `--remote` | `hone --remote localhost:7777` | Connect to daemon |
-| `--ephemeral` / `-E` | `hone -E` | No memory saved |
-| `-i <prompt>` | `hone -i "Fix the bug"` | One-shot (no REPL) |
+| `--ephemeral` | `hone --ephemeral` | No memory persistence |
 | `--config` | `hone --config ~/.config/hone/config.toml` | Custom config file |
 | `--help` | `hone --help` | Show all options |
 
@@ -124,6 +127,26 @@ hone --recipe bug-fix        # Fix a bug with regression test
 hone --recipe code-review    # Comprehensive code review
 hone --recipe refactor       # Refactor safely with test verification
 ```
+
+## Multi-Agent Features
+
+Hone supports advanced multi-agent patterns:
+
+```bash
+# Orchestrator: decompose complex tasks into parallel subtasks
+hone --orchestrate "Build a secure user authentication system with tests"
+
+# Ensemble: run 3 candidates with different temperatures, pick the best
+hone --ensemble 3 "Optimize this query for performance"
+
+# Complexity routing: auto-route Simple/Medium/Complex to right model
+hone "What's 2+2?"  # routes to fast/cheap model
+
+# Test-verify loop: agent runs tests after each change
+hone "Add a new feature" --recipe tdd-feature
+```
+
+---
 
 ## Common Patterns: One-Liners
 
