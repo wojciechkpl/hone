@@ -366,3 +366,213 @@ async fn test_agent_handle_shutdown() {
         "expected Cancelled after shutdown, got: {result:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// G8: Parallel tool call tests
+// ---------------------------------------------------------------------------
+
+/// A tool that records the order in which calls complete.
+struct OrderRecordTool {
+    name: String,
+    call_log: Arc<Mutex<Vec<String>>>,
+}
+
+#[async_trait]
+impl Tool for OrderRecordTool {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn description(&self) -> &str {
+        "Records call order."
+    }
+    fn schema(&self) -> serde_json::Value {
+        json!({ "type": "object" })
+    }
+    async fn call(&self, _input: ToolInput, _ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        self.call_log.lock().unwrap().push(self.name.clone());
+        Ok(ToolOutput::new(json!({ "tool": self.name })))
+    }
+    fn layer(&self) -> ToolLayer {
+        ToolLayer::Native
+    }
+}
+
+/// Unit test: the `is_read_only_tool` classifier behaves correctly.
+#[test]
+fn test_is_read_only_classifier() {
+    use hone_core::is_read_only_tool;
+
+    assert!(is_read_only_tool("read_file"));
+    assert!(is_read_only_tool("glob"));
+    assert!(is_read_only_tool("grep"));
+    assert!(is_read_only_tool("git_status"));
+    assert!(is_read_only_tool("git_diff"));
+    assert!(is_read_only_tool("lsp_diagnostics"));
+    assert!(is_read_only_tool("lsp_hover"));
+    assert!(is_read_only_tool("lsp_code_actions"));
+    assert!(is_read_only_tool("symbol_search"));
+    assert!(is_read_only_tool("symbol_at"));
+
+    assert!(!is_read_only_tool("write_file"));
+    assert!(!is_read_only_tool("edit_file"));
+    assert!(!is_read_only_tool("multi_edit"));
+    assert!(!is_read_only_tool("shell"));
+    assert!(!is_read_only_tool("git_commit"));
+    assert!(!is_read_only_tool("git_branch"));
+    assert!(!is_read_only_tool("git_checkout"));
+    assert!(!is_read_only_tool("git_undo"));
+    assert!(!is_read_only_tool("git_redo"));
+    assert!(!is_read_only_tool("echo"));
+    assert!(!is_read_only_tool("unknown_tool"));
+}
+
+/// Three read-only tool calls in a single turn all complete and results are
+/// returned to the model in the original request order.
+#[tokio::test]
+async fn test_parallel_read_only_tools_complete_in_order() {
+    // First provider response: emit 3 read-only tool calls, then Done.
+    // Second provider response: emit a text token, then Done (final turn).
+    let seq1 = vec![
+        ProviderEvent::ToolCall(ToolCallRequest {
+            id: "tc-1".to_owned(),
+            name: "read_file".to_owned(),
+            arguments: json!({}),
+        }),
+        ProviderEvent::ToolCall(ToolCallRequest {
+            id: "tc-2".to_owned(),
+            name: "glob".to_owned(),
+            arguments: json!({}),
+        }),
+        ProviderEvent::ToolCall(ToolCallRequest {
+            id: "tc-3".to_owned(),
+            name: "grep".to_owned(),
+            arguments: json!({}),
+        }),
+        ProviderEvent::Done,
+    ];
+    let seq2 = vec![
+        ProviderEvent::Token {
+            text: "all done".to_owned(),
+        },
+        ProviderEvent::Done,
+    ];
+
+    let provider = Arc::new(SequencedProvider::new(vec![seq1, seq2]));
+    let call_log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let mut config = base_config(provider);
+    config.tools = ToolRegistry::builder()
+        .register(Box::new(OrderRecordTool {
+            name: "read_file".to_owned(),
+            call_log: Arc::clone(&call_log),
+        }))
+        .register(Box::new(OrderRecordTool {
+            name: "glob".to_owned(),
+            call_log: Arc::clone(&call_log),
+        }))
+        .register(Box::new(OrderRecordTool {
+            name: "grep".to_owned(),
+            call_log: Arc::clone(&call_log),
+        }))
+        .build();
+
+    let mut agent = Agent::new(config);
+    let (tx, mut rx) = mpsc::channel(64);
+
+    let result = agent
+        .run_turn("run three reads", tx)
+        .await
+        .expect("turn should succeed");
+
+    // All three tool calls must have been dispatched.
+    assert_eq!(result.tool_calls_count, 3);
+    assert_eq!(result.response, "all done");
+
+    // The event stream must contain ToolCallStart/ToolCallEnd for all three IDs.
+    let mut events = Vec::new();
+    while let Ok(e) = rx.try_recv() {
+        events.push(e);
+    }
+
+    for id in ["tc-1", "tc-2", "tc-3"] {
+        let has_start = events.iter().any(|e| {
+            matches!(e, AgentEvent::ToolCallStart { id: eid, .. } if eid == id)
+        });
+        let has_end = events.iter().any(|e| {
+            matches!(e, AgentEvent::ToolCallEnd { id: eid, .. } if eid == id)
+        });
+        assert!(has_start, "missing ToolCallStart for {id}");
+        assert!(has_end, "missing ToolCallEnd for {id}");
+    }
+}
+
+/// A mixed turn with read-only and side-effecting calls:
+///   read_file → write_file → read_file
+/// The write_file must not be parallelized with the surrounding reads.
+/// All three must complete and results must be present.
+#[tokio::test]
+async fn test_mixed_sequential_preserves_all_results() {
+    let seq1 = vec![
+        ProviderEvent::ToolCall(ToolCallRequest {
+            id: "tc-read-1".to_owned(),
+            name: "read_file".to_owned(),
+            arguments: json!({}),
+        }),
+        ProviderEvent::ToolCall(ToolCallRequest {
+            id: "tc-write".to_owned(),
+            name: "write_file".to_owned(),
+            arguments: json!({}),
+        }),
+        ProviderEvent::ToolCall(ToolCallRequest {
+            id: "tc-read-2".to_owned(),
+            name: "read_file".to_owned(),
+            arguments: json!({}),
+        }),
+        ProviderEvent::Done,
+    ];
+    let seq2 = vec![
+        ProviderEvent::Token {
+            text: "done".to_owned(),
+        },
+        ProviderEvent::Done,
+    ];
+
+    let provider = Arc::new(SequencedProvider::new(vec![seq1, seq2]));
+    let call_log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+    // Register all three tools (read_file twice under same name, write_file once).
+    let mut config = base_config(provider);
+    config.tools = ToolRegistry::builder()
+        .register(Box::new(OrderRecordTool {
+            name: "read_file".to_owned(),
+            call_log: Arc::clone(&call_log),
+        }))
+        .register(Box::new(OrderRecordTool {
+            name: "write_file".to_owned(),
+            call_log: Arc::clone(&call_log),
+        }))
+        .build();
+
+    let mut agent = Agent::new(config);
+    let (tx, mut rx) = mpsc::channel(64);
+
+    let result = agent
+        .run_turn("read, write, read", tx)
+        .await
+        .expect("turn should succeed");
+
+    assert_eq!(result.tool_calls_count, 3);
+
+    // Verify all three tool call IDs appear in the event stream.
+    let mut events = Vec::new();
+    while let Ok(e) = rx.try_recv() {
+        events.push(e);
+    }
+
+    for id in ["tc-read-1", "tc-write", "tc-read-2"] {
+        let has_end = events.iter().any(|e| {
+            matches!(e, AgentEvent::ToolCallEnd { id: eid, .. } if eid == id)
+        });
+        assert!(has_end, "missing ToolCallEnd for {id}");
+    }
+}

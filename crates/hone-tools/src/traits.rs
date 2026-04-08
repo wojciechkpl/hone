@@ -51,6 +51,7 @@ impl ToolOutput {
 }
 
 /// Execution context passed to every tool call.
+#[derive(Clone)]
 pub struct ToolContext {
     /// The sandbox that constrains what the tool is allowed to do.
     pub sandbox: Arc<dyn Sandbox>,

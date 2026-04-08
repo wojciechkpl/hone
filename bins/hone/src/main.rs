@@ -17,7 +17,7 @@ use futures::StreamExt;
 use hone_config::{Config, HoneMd};
 use hone_core::{
     AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry, ComplexityClassifier, ComplexityTier,
-    Orchestrator, SelfRefineLoop, TestVerificationLoop,
+    Orchestrator, PlanStore, SelfRefineLoop, TestVerificationLoop,
 };
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
@@ -671,7 +671,9 @@ fn spawn_orchestrated_turn(
         let mut registry = AgentRegistry::new();
         registry.load_builtins();
 
-        let mut orchestrator = Orchestrator::new(lead_config, registry, 4);
+        let plan_store = PlanStore::default_for(&lead_config.working_dir);
+        let mut orchestrator = Orchestrator::new(lead_config, registry, 4)
+            .with_plan_store(plan_store);
 
         match orchestrator.run(&user_text, tx.clone()).await {
             Ok(result) => {
@@ -707,7 +709,9 @@ async fn run_orchestrate(
     let mut registry = AgentRegistry::new();
     registry.load_builtins();
 
-    let mut orchestrator = Orchestrator::new(lead_config, registry, 4);
+    let plan_store = PlanStore::default_for(&lead_config.working_dir);
+    let mut orchestrator = Orchestrator::new(lead_config, registry, 4)
+        .with_plan_store(plan_store);
 
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 

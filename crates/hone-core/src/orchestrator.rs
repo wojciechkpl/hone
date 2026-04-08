@@ -7,6 +7,7 @@ use tokio::task::JoinSet;
 use crate::agent::{Agent, AgentConfig};
 use crate::agent_registry::AgentRegistry;
 use crate::error::AgentError;
+use crate::plan_store::PlanStore;
 use crate::task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
 use hone_proto::{AgentEvent, TokenUsage};
 
@@ -16,6 +17,7 @@ pub struct Orchestrator {
     registry: AgentRegistry,
     max_workers: usize,
     worker_budget: Option<f64>,
+    plan_store: Option<PlanStore>,
 }
 
 impl Orchestrator {
@@ -25,12 +27,20 @@ impl Orchestrator {
             registry,
             max_workers,
             worker_budget: None,
+            plan_store: None,
         }
     }
 
     /// Override the per-worker budget (USD). Workers without a budget run unbounded.
     pub fn with_worker_budget(mut self, budget: f64) -> Self {
         self.worker_budget = Some(budget);
+        self
+    }
+
+    /// Attach a persistent plan store. When set, the plan is written to disk
+    /// after decomposition and again after all workers complete.
+    pub fn with_plan_store(mut self, store: PlanStore) -> Self {
+        self.plan_store = Some(store);
         self
     }
 
@@ -54,8 +64,22 @@ impl Orchestrator {
             })
             .await;
 
+        // Persist the initial plan (all subtasks pending) if a store is configured.
+        if let Some(ref store) = self.plan_store {
+            if let Err(e) = store.write_plan(&plan, &[]).await {
+                tracing::warn!("plan_store: failed to write initial plan: {e}");
+            }
+        }
+
         // 2. Execute subtasks in dependency order.
         let workers = self.execute_plan(plan.clone(), events.clone()).await;
+
+        // Persist final plan state with worker results.
+        if let Some(ref store) = self.plan_store {
+            if let Err(e) = store.write_plan(&plan, &workers).await {
+                tracing::warn!("plan_store: failed to write final plan: {e}");
+            }
+        }
 
         // 3. Merge all worker results into a single response.
         let merged = self.merge_results(&plan.goal, &workers, events.clone()).await;

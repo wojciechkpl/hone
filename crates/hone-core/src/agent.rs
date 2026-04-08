@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use hone_memory::{Memory, MemoryQuery, MemoryStore};
-use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ProviderEvent, TokenUsage};
+use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ProviderEvent, ToolCallRequest, TokenUsage};
 use hone_providers::{CompletionRequest, ModelProvider};
 use hone_sandbox::Sandbox;
-use hone_tools::ToolRegistry;
+use hone_tools::{ToolContext, ToolInput, ToolRegistry};
+use serde_json::Value;
 use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::task::JoinSet;
 
 use crate::context::ContextManager;
 use crate::cost::CostAccumulator;
@@ -235,67 +237,124 @@ impl Agent {
             };
             self.context.add_message(assistant_msg);
 
-            // Dispatch each tool call and append the results to context.
-            for call in &pending_tool_calls {
-                tracing::debug!(tool_name = %call.name, "tool dispatched");
-                let _ = events
-                    .send(AgentEvent::ToolCallStart {
-                        id: call.id.clone(),
-                        name: call.name.clone(),
-                    })
+            // Dispatch tool calls. Consecutive read-only calls are executed in
+            // parallel via a JoinSet to reduce wall-clock time; side-effecting
+            // calls are always dispatched sequentially to preserve safety.
+            let ctx = ToolContext {
+                sandbox: Arc::clone(&self.config.sandbox),
+                working_dir: self.config.working_dir.clone(),
+            };
+
+            let mut i = 0;
+            while i < pending_tool_calls.len() {
+                if is_read_only_tool(&pending_tool_calls[i].name) {
+                    // Find the end of the consecutive read-only run.
+                    let mut j = i;
+                    while j < pending_tool_calls.len()
+                        && is_read_only_tool(&pending_tool_calls[j].name)
+                    {
+                        j += 1;
+                    }
+
+                    // Execute [i..j] in parallel and collect results in order.
+                    let batch = pending_tool_calls[i..j].to_vec();
+                    let batch_results = dispatch_parallel(
+                        &self.config.tools,
+                        &ctx,
+                        batch.clone(),
+                        &events,
+                    )
                     .await;
 
-                tool_calls_count += 1;
+                    // Consume both vecs by value to avoid needing Clone on AgentError.
+                    for (call, result) in batch.into_iter().zip(batch_results.into_iter()) {
+                        tool_calls_count += 1;
+                        tracing::debug!(tool_name = %call.name, "tool dispatched (parallel)");
 
-                let tool = self.config.tools.get(&call.name).map(Arc::clone);
-                let result = match tool {
-                    None => Err(AgentError::ToolNotFound {
-                        name: call.name.clone(),
-                    }),
-                    Some(t) => {
-                        let ctx = hone_tools::ToolContext {
-                            sandbox: Arc::clone(&self.config.sandbox),
-                            working_dir: self.config.working_dir.clone(),
-                        };
-                        t.call(hone_tools::ToolInput::new(call.arguments.clone()), &ctx)
+                        match result {
+                            Ok(value) => {
+                                self.context.add_message(Message::tool_result(
+                                    call.id.clone(),
+                                    serde_json::to_string(&value).unwrap_or_default(),
+                                ));
+                            }
+                            Err(AgentError::ToolNotFound { name }) => {
+                                let err_val = serde_json::json!({
+                                    "error": format!("tool '{name}' not found")
+                                });
+                                self.context.add_message(Message::tool_result(
+                                    call.id.clone(),
+                                    serde_json::to_string(&err_val).unwrap_or_default(),
+                                ));
+                            }
+                            // Fatal errors are returned immediately with ownership.
+                            Err(e) => return Err(e),
+                        }
+                    }
+
+                    i = j;
+                } else {
+                    // Side-effecting call: dispatch sequentially.
+                    let call = &pending_tool_calls[i];
+                    tracing::debug!(tool_name = %call.name, "tool dispatched (sequential)");
+                    let _ = events
+                        .send(AgentEvent::ToolCallStart {
+                            id: call.id.clone(),
+                            name: call.name.clone(),
+                        })
+                        .await;
+
+                    tool_calls_count += 1;
+
+                    let tool = self.config.tools.get(&call.name).map(Arc::clone);
+                    let result = match tool {
+                        None => Err(AgentError::ToolNotFound {
+                            name: call.name.clone(),
+                        }),
+                        Some(t) => t
+                            .call(ToolInput::new(call.arguments.clone()), &ctx)
                             .await
                             .map_err(|e| AgentError::Tool {
                                 name: call.name.clone(),
                                 source: e,
-                            })
-                    }
-                };
+                            }),
+                    };
 
-                match result {
-                    Ok(output) => {
-                        let value = output.into_value();
-                        let _ = events
-                            .send(AgentEvent::ToolCallEnd {
-                                id: call.id.clone(),
-                                result: value.clone(),
-                                is_error: false,
-                            })
-                            .await;
-                        self.context.add_message(Message::tool_result(
-                            call.id.clone(),
-                            serde_json::to_string(&value).unwrap_or_default(),
-                        ));
+                    match result {
+                        Ok(output) => {
+                            let value = output.into_value();
+                            let _ = events
+                                .send(AgentEvent::ToolCallEnd {
+                                    id: call.id.clone(),
+                                    result: value.clone(),
+                                    is_error: false,
+                                })
+                                .await;
+                            self.context.add_message(Message::tool_result(
+                                call.id.clone(),
+                                serde_json::to_string(&value).unwrap_or_default(),
+                            ));
+                        }
+                        Err(AgentError::ToolNotFound { name }) => {
+                            let err_val = serde_json::json!({
+                                "error": format!("tool '{name}' not found")
+                            });
+                            let _ = events
+                                .send(AgentEvent::ToolCallEnd {
+                                    id: call.id.clone(),
+                                    result: err_val.clone(),
+                                    is_error: true,
+                                })
+                                .await;
+                            self.context.add_message(Message::tool_result(
+                                call.id.clone(),
+                                serde_json::to_string(&err_val).unwrap_or_default(),
+                            ));
+                        }
+                        Err(e) => return Err(e),
                     }
-                    Err(AgentError::ToolNotFound { name }) => {
-                        let err_val = serde_json::json!({ "error": format!("tool '{name}' not found") });
-                        let _ = events
-                            .send(AgentEvent::ToolCallEnd {
-                                id: call.id.clone(),
-                                result: err_val.clone(),
-                                is_error: true,
-                            })
-                            .await;
-                        self.context.add_message(Message::tool_result(
-                            call.id.clone(),
-                            serde_json::to_string(&err_val).unwrap_or_default(),
-                        ));
-                    }
-                    Err(e) => return Err(e),
+
+                    i += 1;
                 }
             }
 
@@ -325,6 +384,102 @@ impl Agent {
             tool_calls_count,
         })
     }
+}
+
+// ---------------------------------------------------------------------------
+// Parallel tool dispatch helpers
+// ---------------------------------------------------------------------------
+
+/// Returns `true` for tools that are safe to execute concurrently because they
+/// are read-only and produce no observable side-effects on the filesystem, the
+/// repository, or any external system.
+pub fn is_read_only_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "read_file"
+            | "glob"
+            | "grep"
+            | "git_status"
+            | "git_diff"
+            | "lsp_diagnostics"
+            | "lsp_hover"
+            | "lsp_code_actions"
+            | "symbol_search"
+            | "symbol_at"
+    )
+}
+
+/// Dispatch a batch of tool calls in parallel via a [`JoinSet`].
+///
+/// Results are returned in the **same order** as `calls`, regardless of
+/// completion order.  Each call emits `ToolCallStart` / `ToolCallEnd` events
+/// on `events`.
+async fn dispatch_parallel(
+    registry: &ToolRegistry,
+    ctx: &ToolContext,
+    calls: Vec<ToolCallRequest>,
+    events: &mpsc::Sender<AgentEvent>,
+) -> Vec<Result<Value, AgentError>> {
+    let mut join_set: JoinSet<(usize, Result<Value, AgentError>)> = JoinSet::new();
+
+    for (idx, call) in calls.into_iter().enumerate() {
+        let tool = registry.get(&call.name).map(Arc::clone);
+        let ctx_clone = ctx.clone();
+        let events_clone = events.clone();
+
+        join_set.spawn(async move {
+            let _ = events_clone
+                .send(AgentEvent::ToolCallStart {
+                    id: call.id.clone(),
+                    name: call.name.clone(),
+                })
+                .await;
+
+            let result: Result<Value, AgentError> = match tool {
+                None => Err(AgentError::ToolNotFound {
+                    name: call.name.clone(),
+                }),
+                Some(t) => t
+                    .call(ToolInput::new(call.arguments.clone()), &ctx_clone)
+                    .await
+                    .map(|o| o.into_value())
+                    .map_err(|e| AgentError::Tool {
+                        name: call.name.clone(),
+                        source: e,
+                    }),
+            };
+
+            let is_error = result.is_err();
+            let result_value = match &result {
+                Ok(v) => v.clone(),
+                Err(AgentError::ToolNotFound { name }) => {
+                    serde_json::json!({ "error": format!("tool '{name}' not found") })
+                }
+                Err(e) => serde_json::json!({ "error": e.to_string() }),
+            };
+
+            let _ = events_clone
+                .send(AgentEvent::ToolCallEnd {
+                    id: call.id.clone(),
+                    result: result_value,
+                    is_error,
+                })
+                .await;
+
+            (idx, result)
+        });
+    }
+
+    // Collect completions in any order, then sort by original index.
+    let mut indexed: Vec<(usize, Result<Value, AgentError>)> =
+        Vec::with_capacity(join_set.len());
+    while let Some(joined) = join_set.join_next().await {
+        if let Ok(pair) = joined {
+            indexed.push(pair);
+        }
+    }
+    indexed.sort_by_key(|(idx, _)| *idx);
+    indexed.into_iter().map(|(_, r)| r).collect()
 }
 
 // ---------------------------------------------------------------------------
