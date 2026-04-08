@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod bore_tunnel;
 pub mod collaborative;
 pub mod collaborative_routes;
 pub mod error;
@@ -23,4 +24,5 @@ pub use routes::router;
 pub use session_storage::SessionStorage;
 pub use sqlite_session::SqliteSessionStore;
 pub use state::AppState;
+pub use bore_tunnel::BoreTunnelManager;
 pub use tunnel::{MockTunnelManager, TunnelManager};

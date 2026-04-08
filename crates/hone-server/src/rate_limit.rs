@@ -2,6 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use axum::body::Body;
+use axum::extract::State;
+use axum::http::{Request, StatusCode};
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
 use tokio::sync::Mutex;
 
 /// Simple sliding-window rate limiter keyed by client identifier.
@@ -55,6 +60,30 @@ impl RateLimiter {
             !entries.is_empty()
         });
     }
+}
+
+/// Axum middleware that enforces the rate limit on incoming requests.
+///
+/// Uses the `X-Forwarded-For` header as the client identifier, falling back to
+/// `"default"` when the header is absent. Returns `429 Too Many Requests` once
+/// the client's budget is exhausted.
+pub async fn rate_limit_middleware(
+    State(limiter): State<RateLimiter>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let client_id = request
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("default")
+        .to_string();
+
+    if !limiter.check(&client_id).await {
+        return (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded").into_response();
+    }
+
+    next.run(request).await
 }
 
 #[cfg(test)]

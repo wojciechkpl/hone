@@ -11,6 +11,7 @@ use serde_json::json;
 use crate::collaborative_routes::collaborative_router;
 use crate::error::ServerError;
 use crate::governance_routes::governance_router;
+use crate::rate_limit::rate_limit_middleware;
 use crate::state::AppState;
 use crate::tunnel_routes::tunnel_router;
 
@@ -24,6 +25,12 @@ pub fn router(state: AppState) -> Router {
         .merge(tunnel_router())
         .merge(governance_router())
         .merge(collaborative_router())
+        // Rate limiting runs before auth so that brute-force attempts are also throttled.
+        // The generous default (100 req/min) means existing tests are never affected.
+        .layer(middleware::from_fn_with_state(
+            state.rate_limiter.clone(),
+            rate_limit_middleware,
+        ))
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware))
         .with_state(state)
 }

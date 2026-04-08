@@ -228,7 +228,7 @@ async fn binary_on_path(name: &str) -> bool {
 async fn detect_provider() -> DetectedProvider {
     // Prefer direct Anthropic API — supports tool calling.
     if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
-        tracing::info!("provider: Anthropic API (tool use enabled)");
+        tracing::info!(provider = "anthropic", api = "http", tools = true, "provider detected");
         return DetectedProvider {
             provider: Arc::new(AnthropicProvider::new(api_key)),
             model_id: ModelId::new("anthropic:claude-sonnet-4-5"),
@@ -238,7 +238,7 @@ async fn detect_provider() -> DetectedProvider {
 
     // OpenAI API — supports tool calling.
     if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
-        tracing::info!("provider: OpenAI API (tool use enabled)");
+        tracing::info!(provider = "openai", api = "http", tools = true, "provider detected");
         return DetectedProvider {
             provider: Arc::new(OpenAiProvider::new(api_key)),
             model_id: ModelId::new("openai:gpt-4o"),
@@ -248,7 +248,7 @@ async fn detect_provider() -> DetectedProvider {
 
     // Fall back to CLI pass-through providers (no tool calling).
     if binary_on_path("claude").await {
-        tracing::info!("provider: Claude CLI detected (no tool use)");
+        tracing::info!(provider = "claude-cli", api = "cli", tools = false, "provider detected");
         return DetectedProvider {
             provider: Arc::new(ClaudeCliProvider::new()),
             model_id: ModelId::new("claude-cli:claude-sonnet-4-5"),
@@ -257,7 +257,7 @@ async fn detect_provider() -> DetectedProvider {
     }
 
     if binary_on_path("gemini").await {
-        tracing::info!("provider: Gemini CLI detected (no tool use)");
+        tracing::info!(provider = "gemini-cli", api = "cli", tools = false, "provider detected");
         return DetectedProvider {
             provider: Arc::new(GeminiCliProvider::new()),
             model_id: ModelId::new("gemini-cli:gemini-2.5-pro"),
@@ -273,7 +273,7 @@ async fn detect_provider() -> DetectedProvider {
         .await
         .is_ok()
     {
-        tracing::info!("provider: Ollama (local, no tool use)");
+        tracing::info!(provider = "ollama", api = "http", tools = false, "provider detected");
         return DetectedProvider {
             provider: Arc::new(OllamaProvider::new("http://localhost:11434")),
             model_id: ModelId::new("ollama:llama3.2"),
@@ -1104,7 +1104,30 @@ async fn main() -> Result<()> {
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
+    if result.is_ok() {
+        eprintln!("\nHone session ended.");
+    }
+
     result
+}
+
+// ---------------------------------------------------------------------------
+// OS-signal helpers
+// ---------------------------------------------------------------------------
+
+/// Waits for the next SIGINT delivery on unix, or for the first Ctrl+C
+/// future to complete on non-unix platforms.  Using a helper function lets
+/// us place a single `_ = os_signal(...)` branch inside `tokio::select!`
+/// without needing `#[cfg(...)]` attributes inside the macro invocation,
+/// which the macro does not support.
+#[cfg(unix)]
+async fn os_signal(sigint: &mut tokio::signal::unix::Signal) {
+    sigint.recv().await;
+}
+
+#[cfg(not(unix))]
+async fn os_signal(_sigint: &mut ()) {
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 async fn run_tui(
@@ -1124,6 +1147,18 @@ async fn run_tui(
 
     let mut events = EventStream::new();
 
+    // Install a SIGINT handler so the process shuts down cleanly when the
+    // terminal sends Ctrl+C at the OS level (e.g. from a wrapper script).
+    //
+    // On unix we use `signal(SIGINT)` so we get a reusable stream; on other
+    // platforms the `os_signal` helper calls `tokio::signal::ctrl_c()` directly
+    // and the placeholder `()` value is never actually used.
+    #[cfg(unix)]
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+        .map_err(|e| anyhow::anyhow!("failed to install SIGINT handler: {e}"))?;
+    #[cfg(not(unix))]
+    let mut sigint = ();
+
     loop {
         if app.should_quit() {
             break;
@@ -1140,6 +1175,7 @@ async fn run_tui(
                         if key.code == KeyCode::Char('c')
                             && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
                         {
+                            tracing::info!("Ctrl+C key pressed, shutting down");
                             break;
                         }
 
@@ -1213,6 +1249,12 @@ async fn run_tui(
 
             // Tick timer for animations
             _ = tokio::time::sleep(tick) => {}
+
+            // OS-level SIGINT (e.g. from a parent process or wrapper script).
+            _ = os_signal(&mut sigint) => {
+                tracing::info!("SIGINT received, shutting down");
+                break;
+            }
         }
 
         // Drain any remaining agent events that arrived during the select branch.

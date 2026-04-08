@@ -2,8 +2,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
-use hone_server::{AppState, SessionStorage, SqliteSessionStore, router};
 use hone_server::session::SessionStore;
+use hone_server::tunnel::TunnelManager;
+use hone_server::{
+    AppState, BoreTunnelManager, MockTunnelManager, SessionStorage, SqliteSessionStore, router,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -52,14 +55,53 @@ async fn main() -> Result<()> {
         Arc::new(SessionStorage::InMemory(SessionStore::new()))
     };
 
-    let state = AppState::with_sessions(auth_token, sessions);
+    let tunnel_manager: Arc<dyn TunnelManager> = if BoreTunnelManager::is_available().await {
+        tracing::info!("using bore tunnel backend");
+        Arc::new(BoreTunnelManager::new())
+    } else {
+        tracing::info!("using mock tunnel backend (install bore CLI for real tunneling)");
+        Arc::new(MockTunnelManager::new())
+    };
+
+    let state = AppState::with_sessions(auth_token, sessions).with_tunnel(tunnel_manager);
     let app = router(state);
 
     let addr = format!("0.0.0.0:{port}");
     tracing::info!("honed listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
+    tracing::info!("honed stopped");
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            tracing::info!("SIGINT received, shutting down gracefully");
+        }
+        _ = terminate => {
+            tracing::info!("SIGTERM received, shutting down gracefully");
+        }
+    }
 }

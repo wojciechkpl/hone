@@ -294,6 +294,11 @@ impl ModelProvider for OpenAiProvider {
         ]
     }
 
+    #[tracing::instrument(skip(self, request), fields(
+        model = %request.model,
+        message_count = request.messages.len(),
+        tool_count = request.tools.len()
+    ))]
     async fn complete(
         &self,
         request: CompletionRequest,

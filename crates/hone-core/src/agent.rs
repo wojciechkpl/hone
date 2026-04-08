@@ -39,6 +39,8 @@ pub struct Agent {
     config: AgentConfig,
     context: ContextManager,
     cost: CostAccumulator,
+    /// Monotonically increasing counter of completed turns this session.
+    turn_count: u32,
 }
 
 impl Agent {
@@ -47,6 +49,7 @@ impl Agent {
             config,
             context: ContextManager::new(128_000),
             cost: CostAccumulator::new(),
+            turn_count: 0,
         }
     }
 
@@ -121,11 +124,19 @@ impl Agent {
     ///
     /// Events are sent on `events` as they arrive; the caller may drop the
     /// receiver at any time without causing this function to fail.
+    #[tracing::instrument(skip(self, events), fields(
+        model = %self.config.model,
+        turn = tracing::field::Empty
+    ))]
     pub async fn run_turn(
         &mut self,
         user_input: &str,
         events: mpsc::Sender<AgentEvent>,
     ) -> Result<TurnResult, AgentError> {
+        self.turn_count += 1;
+        tracing::Span::current().record("turn", self.turn_count);
+        tracing::debug!(turn_number = self.turn_count, "starting turn");
+
         self.cost.check_budget(self.config.budget_limit)?;
 
         // Inject relevant memories into the system prompt for this turn.
@@ -214,6 +225,7 @@ impl Agent {
 
             // Dispatch each tool call and append the results to context.
             for call in &pending_tool_calls {
+                tracing::debug!(tool_name = %call.name, "tool dispatched");
                 let _ = events
                     .send(AgentEvent::ToolCallStart {
                         id: call.id.clone(),
@@ -280,6 +292,12 @@ impl Agent {
         }
 
         let cost_usd = self.cost.total_usd();
+        tracing::debug!(
+            tokens = turn_usage.total(),
+            tool_calls = tool_calls_count,
+            cost_usd,
+            "turn completed"
+        );
 
         // Persist Q&A pair to memory (fire-and-forget).
         self.record_memory(user_input, &response_text).await;

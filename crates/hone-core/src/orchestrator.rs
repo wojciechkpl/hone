@@ -38,6 +38,7 @@ impl Orchestrator {
     // Public entry point
     // -----------------------------------------------------------------------
 
+    #[tracing::instrument(skip(self, events))]
     pub async fn run(
         &mut self,
         user_request: &str,
