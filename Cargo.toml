@@ -88,6 +88,8 @@ figment = { version = "0.10", features = ["toml", "env"] }
 # Security
 rustix = "0.38"
 cfg-if = "1"
+# Linux Landlock LSM sandbox (kernel 5.13+)
+landlock = "0.4"
 
 # Search and filesystem
 notify = "7"
