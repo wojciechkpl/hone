@@ -6,7 +6,7 @@ use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ProviderEvent, Toke
 use hone_providers::{CompletionRequest, ModelProvider};
 use hone_sandbox::Sandbox;
 use hone_tools::ToolRegistry;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use crate::context::ContextManager;
 use crate::cost::CostAccumulator;
@@ -324,5 +324,132 @@ impl Agent {
             cost_usd,
             tool_calls_count,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Actor pattern: AgentHandle
+// ---------------------------------------------------------------------------
+
+/// Commands sent through the agent actor's command channel.
+enum AgentCommand {
+    RunTurn {
+        user_input: String,
+        events: mpsc::Sender<AgentEvent>,
+        reply: oneshot::Sender<Result<TurnResult, AgentError>>,
+    },
+    SwapProvider {
+        provider: Arc<dyn ModelProvider>,
+    },
+    GetCost {
+        reply: oneshot::Sender<f64>,
+    },
+    GetContextTokens {
+        reply: oneshot::Sender<u32>,
+    },
+    Shutdown,
+}
+
+/// A cheap-to-clone handle to a background agent actor task.
+///
+/// All calls are serialized through a command channel so no `Mutex` is needed
+/// at the call site.  The actor owns the `Agent` exclusively and processes one
+/// command at a time.
+#[derive(Clone)]
+pub struct AgentHandle {
+    cmd_tx: mpsc::Sender<AgentCommand>,
+}
+
+impl AgentHandle {
+    /// Spawn an agent actor task and return a handle to it.
+    pub fn spawn(config: AgentConfig) -> Self {
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<AgentCommand>(32);
+
+        tokio::spawn(async move {
+            let mut agent = Agent::new(config);
+            while let Some(cmd) = cmd_rx.recv().await {
+                match cmd {
+                    AgentCommand::RunTurn {
+                        user_input,
+                        events,
+                        reply,
+                    } => {
+                        let result = agent.run_turn(&user_input, events).await;
+                        let _ = reply.send(result);
+                    }
+                    AgentCommand::SwapProvider { provider } => {
+                        agent.swap_provider(provider);
+                    }
+                    AgentCommand::GetCost { reply } => {
+                        let _ = reply.send(agent.session_cost());
+                    }
+                    AgentCommand::GetContextTokens { reply } => {
+                        let _ = reply.send(agent.context_token_count());
+                    }
+                    AgentCommand::Shutdown => break,
+                }
+            }
+        });
+
+        Self { cmd_tx }
+    }
+
+    /// Run a single conversation turn.  Awaits until the actor has finished
+    /// processing the turn and returns the result.
+    pub async fn run_turn(
+        &self,
+        user_input: impl Into<String>,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Result<TurnResult, AgentError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.cmd_tx
+            .send(AgentCommand::RunTurn {
+                user_input: user_input.into(),
+                events,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| AgentError::Cancelled)?;
+
+        reply_rx.await.map_err(|_| AgentError::Cancelled)?
+    }
+
+    /// Hot-swap the model provider used by the actor.
+    pub async fn swap_provider(
+        &self,
+        provider: Arc<dyn ModelProvider>,
+    ) -> Result<(), AgentError> {
+        self.cmd_tx
+            .send(AgentCommand::SwapProvider { provider })
+            .await
+            .map_err(|_| AgentError::Cancelled)
+    }
+
+    /// Return the total USD cost accumulated across all turns so far.
+    pub async fn session_cost(&self) -> f64 {
+        let (tx, rx) = oneshot::channel();
+        if self.cmd_tx.send(AgentCommand::GetCost { reply: tx }).await.is_err() {
+            return 0.0;
+        }
+        rx.await.unwrap_or(0.0)
+    }
+
+    /// Return the estimated token count of the current context window.
+    pub async fn context_tokens(&self) -> u32 {
+        let (tx, rx) = oneshot::channel();
+        if self.cmd_tx
+            .send(AgentCommand::GetContextTokens { reply: tx })
+            .await
+            .is_err()
+        {
+            return 0;
+        }
+        rx.await.unwrap_or(0)
+    }
+
+    /// Signal the actor to shut down.  The actor will finish processing any
+    /// in-flight command before terminating.
+    pub async fn shutdown(self) {
+        let _ = self.cmd_tx.send(AgentCommand::Shutdown).await;
     }
 }

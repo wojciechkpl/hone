@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use futures::{Stream, stream};
-use hone_core::{Agent, AgentConfig};
+use hone_core::{Agent, AgentConfig, AgentHandle};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
     TokenUsage, ToolCallRequest, ToolLayer,
@@ -272,4 +272,97 @@ async fn test_agent_tracks_cost() {
 
     // session_cost() is accessible and non-negative.
     assert!(agent.session_cost() >= 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// AgentHandle actor pattern tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_agent_handle_can_be_cloned() {
+    let provider = Arc::new(MockProvider::new(vec!["hello".to_owned()]));
+    let handle = AgentHandle::spawn(base_config(provider));
+
+    // Clone must be constructable and both point to the same actor.
+    let _clone = handle.clone();
+}
+
+#[tokio::test]
+async fn test_agent_handle_runs_turn() {
+    let provider = Arc::new(MockProvider::new(vec![
+        "hello".to_owned(),
+        " world".to_owned(),
+    ]));
+    let handle = AgentHandle::spawn(base_config(provider));
+    let (tx, _rx) = mpsc::channel(32);
+
+    let result = handle
+        .run_turn("hi", tx)
+        .await
+        .expect("turn should succeed");
+
+    assert_eq!(result.response, "hello world");
+    assert_eq!(result.tool_calls_count, 0);
+}
+
+#[tokio::test]
+async fn test_agent_handle_concurrent_clones_serialize() {
+    // Provide enough distinct responses for 3 sequential turns through the
+    // shared actor.  MockProvider repeats the last token once exhausted, so
+    // three distinct prefixes are enough.
+    let provider = Arc::new(SequencedProvider::new(vec![
+        vec![
+            ProviderEvent::Token { text: "one".to_owned() },
+            ProviderEvent::Done,
+        ],
+        vec![
+            ProviderEvent::Token { text: "two".to_owned() },
+            ProviderEvent::Done,
+        ],
+        vec![
+            ProviderEvent::Token { text: "three".to_owned() },
+            ProviderEvent::Done,
+        ],
+    ]));
+
+    let handle = AgentHandle::spawn(base_config(provider));
+
+    // Spawn 3 tasks that each hold a clone and call run_turn "concurrently".
+    // The actor serializes them, so all 3 must complete successfully.
+    let mut join_set = tokio::task::JoinSet::new();
+    for _ in 0..3 {
+        let h = handle.clone();
+        join_set.spawn(async move {
+            let (tx, _rx) = mpsc::channel(32);
+            h.run_turn("prompt", tx).await
+        });
+    }
+
+    let mut count = 0;
+    while let Some(res) = join_set.join_next().await {
+        res.expect("task did not panic")
+            .expect("turn should succeed");
+        count += 1;
+    }
+    assert_eq!(count, 3, "all three concurrent turns must complete");
+}
+
+#[tokio::test]
+async fn test_agent_handle_shutdown() {
+    let provider = Arc::new(MockProvider::new(vec!["ok".to_owned()]));
+    let handle = AgentHandle::spawn(base_config(provider));
+
+    // Shutdown the actor.
+    handle.clone().shutdown().await;
+
+    // Subsequent run_turn must return Cancelled because the command channel is
+    // closed after the actor exits.
+    let (tx, _rx) = mpsc::channel(32);
+    // Give the actor task a moment to process the Shutdown command.
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    let result = handle.run_turn("after shutdown", tx).await;
+    assert!(
+        matches!(result, Err(hone_core::AgentError::Cancelled)),
+        "expected Cancelled after shutdown, got: {result:?}"
+    );
 }

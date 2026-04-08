@@ -1,0 +1,21 @@
+name: Nightly Real-API Tests
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # Daily at 3 AM UTC
+  workflow_dispatch:
+
+jobs:
+  real-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85"
+      - uses: Swatinem/rust-cache@v2
+      - name: Run real-api tests
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: cargo test -p hone-providers --test real_api -- --ignored --nocapture

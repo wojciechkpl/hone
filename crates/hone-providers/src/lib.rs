@@ -9,8 +9,11 @@ pub mod router;
 pub mod traits;
 
 pub use acp::AcpProvider;
+pub use adapters::anthropic::AnthropicProvider;
 pub use adapters::claude_cli::ClaudeCliProvider;
 pub use adapters::gemini_cli::GeminiCliProvider;
+pub use adapters::ollama::OllamaProvider;
+pub use adapters::openai::OpenAiProvider;
 pub use error::ProviderError;
 pub use fallback::FallbackChain;
 pub use mock::MockProvider;

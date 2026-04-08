@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt clean release deny bench
+.PHONY: build test lint fmt clean release deny bench test-real
 
 build:
 	cargo build
@@ -32,6 +32,11 @@ bench:
 
 deny:
 	cargo deny check
+
+# Run real-API integration tests (requires API keys set in the environment)
+# Example: ANTHROPIC_API_KEY=sk-ant-... make test-real
+test-real:
+	cargo test --test real_api -- --ignored --nocapture
 
 # Install locally
 install:

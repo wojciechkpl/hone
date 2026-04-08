@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tokio::sync::mpsc;
 
-use crate::agent::Agent;
+use crate::agent::{Agent, AgentHandle};
 use crate::error::AgentError;
 use hone_proto::AgentEvent;
 
@@ -108,6 +108,65 @@ impl TestVerificationLoop {
                     "The tests failed with this output:\n\n{last_output}\n\nPlease fix the code to make the tests pass."
                 );
                 agent.run_turn(&fix_prompt, events.clone()).await?;
+            }
+        }
+
+        Ok(TestLoopResult {
+            iterations: self.max_iterations,
+            final_status: TestStatus::FailedAfterMax {
+                last_output: last_output.clone(),
+            },
+            test_output: last_output,
+        })
+    }
+
+    /// Run the verification loop against an [`AgentHandle`] actor.
+    ///
+    /// Semantics are identical to [`Self::run`]; fix-attempt turns are
+    /// dispatched through the handle's command channel.
+    pub async fn run_with_handle(
+        &self,
+        handle: &AgentHandle,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Result<TestLoopResult, AgentError> {
+        if self.test_cmd.is_empty() {
+            return Ok(TestLoopResult {
+                iterations: 0,
+                final_status: TestStatus::NoTestCommand,
+                test_output: String::new(),
+            });
+        }
+
+        let mut last_output = String::new();
+
+        for iteration in 1..=self.max_iterations {
+            let output = tokio::process::Command::new("sh")
+                .arg("-c")
+                .arg(&self.test_cmd)
+                .current_dir(&self.working_dir)
+                .output()
+                .await
+                .map_err(|e| AgentError::CodeMode {
+                    detail: format!("failed to run test command: {e}"),
+                })?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+            last_output = format!("{stdout}{stderr}");
+
+            if output.status.success() {
+                return Ok(TestLoopResult {
+                    iterations: iteration,
+                    final_status: TestStatus::Passed,
+                    test_output: last_output,
+                });
+            }
+
+            if iteration < self.max_iterations {
+                let fix_prompt = format!(
+                    "The tests failed with this output:\n\n{last_output}\n\nPlease fix the code to make the tests pass."
+                );
+                handle.run_turn(&fix_prompt, events.clone()).await?;
             }
         }
 

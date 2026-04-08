@@ -13,7 +13,7 @@ use crossterm::{
 use futures::StreamExt;
 use hone_config::{Config, HoneMd};
 use hone_core::{
-    Agent, AgentConfig, AgentEnsemble, AgentRegistry, ComplexityClassifier, ComplexityTier,
+    AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry, ComplexityClassifier, ComplexityTier,
     Orchestrator, SelfRefineLoop, TestVerificationLoop,
 };
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
@@ -123,7 +123,7 @@ fn list_builtin_recipes() {
 // Recipe execution mode
 // ---------------------------------------------------------------------------
 
-async fn run_recipe(agent: Arc<Mutex<Agent>>, recipe_name: &str) -> Result<()> {
+async fn run_recipe(agent: AgentHandle, recipe_name: &str) -> Result<()> {
     let yaml = load_builtin_recipe(recipe_name)
         .ok_or_else(|| anyhow::anyhow!("unknown recipe: {recipe_name}"))?;
 
@@ -173,11 +173,8 @@ async fn run_recipe(agent: Arc<Mutex<Agent>>, recipe_name: &str) -> Result<()> {
         });
 
         let prompt = step.prompt.clone();
-        {
-            let mut guard = agent.lock().await;
-            if let Err(e) = guard.run_turn(&prompt, tx).await {
-                eprintln!("  Step failed: {e}");
-            }
+        if let Err(e) = agent.run_turn(&prompt, tx).await {
+            eprintln!("  Step failed: {e}");
         }
         let _ = printer.await;
         println!("\n");
@@ -476,13 +473,12 @@ fn detect_test_cmd() -> Option<String> {
 // ---------------------------------------------------------------------------
 
 fn spawn_agent_turn(
-    agent: Arc<Mutex<Agent>>,
+    agent: AgentHandle,
     user_text: String,
     tx: mpsc::Sender<AgentEvent>,
 ) {
     tokio::spawn(async move {
-        let mut guard = agent.lock().await;
-        if let Err(e) = guard.run_turn(&user_text, tx.clone()).await {
+        if let Err(e) = agent.run_turn(&user_text, tx.clone()).await {
             let _ = tx
                 .send(AgentEvent::Error {
                     message: e.to_string(),
@@ -497,15 +493,13 @@ fn spawn_agent_turn(
 // ---------------------------------------------------------------------------
 
 fn spawn_medium_turn(
-    agent: Arc<Mutex<Agent>>,
+    agent: AgentHandle,
     user_text: String,
     tx: mpsc::Sender<AgentEvent>,
 ) {
     tokio::spawn(async move {
-        let mut guard = agent.lock().await;
-
         let refine = SelfRefineLoop::new(2);
-        if let Err(e) = refine.run(&mut *guard, &user_text, tx.clone()).await {
+        if let Err(e) = refine.run_with_handle(&agent, &user_text, tx.clone()).await {
             let _ = tx
                 .send(AgentEvent::Error {
                     message: e.to_string(),
@@ -519,7 +513,7 @@ fn spawn_medium_turn(
         if let Some(test_cmd) = detect_test_cmd() {
             let cwd = std::env::current_dir().unwrap_or_default();
             let loop_ = TestVerificationLoop::new(test_cmd, 3, cwd);
-            if let Err(e) = loop_.run(&mut *guard, tx.clone()).await {
+            if let Err(e) = loop_.run_with_handle(&agent, tx.clone()).await {
                 tracing::warn!("test verification loop error: {e}");
             }
         }
@@ -689,7 +683,7 @@ async fn run_ensemble(
 // One-shot mode
 // ---------------------------------------------------------------------------
 
-async fn run_one_shot(agent: Arc<Mutex<Agent>>, prompt: &str) -> Result<()> {
+async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 
     // Drain events and print tokens while the agent runs inline.
@@ -711,10 +705,7 @@ async fn run_one_shot(agent: Arc<Mutex<Agent>>, prompt: &str) -> Result<()> {
         }
     });
 
-    {
-        let mut guard = agent.lock().await;
-        guard.run_turn(prompt, tx).await?;
-    }
+    agent.run_turn(prompt, tx).await?;
 
     let _ = printer.await;
     println!();
@@ -941,7 +932,7 @@ async fn main() -> Result<()> {
         memory_store.clone(),
     );
 
-    let agent = Arc::new(Mutex::new(Agent::new(base_config.clone())));
+    let agent = AgentHandle::spawn(base_config.clone());
 
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -951,7 +942,7 @@ async fn main() -> Result<()> {
 
     // --recipe <name>: run a built-in recipe and exit.
     if let Some(ref recipe_name) = cli.recipe {
-        return run_recipe(agent, recipe_name).await;
+        return run_recipe(agent.clone(), recipe_name).await;
     }
 
     // --ensemble N: run N parallel candidates and pick the best.
@@ -984,7 +975,7 @@ async fn main() -> Result<()> {
 
     // One-shot mode: run a single turn, print to stdout, and exit.
     if let Some(ref prompt) = cli.prompt {
-        return run_one_shot(agent, prompt).await;
+        return run_one_shot(agent.clone(), prompt).await;
     }
 
     // TUI mode.
@@ -994,7 +985,7 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_tui(&mut terminal, agent, model_id, base_config).await;
+    let result = run_tui(&mut terminal, agent.clone(), model_id, base_config).await;
 
     // Always restore terminal even on error.
     disable_raw_mode()?;
@@ -1029,7 +1020,7 @@ async fn os_signal(_sigint: &mut ()) {
 
 async fn run_tui(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    agent: Arc<Mutex<Agent>>,
+    agent: AgentHandle,
     model_id: ModelId,
     base_config: AgentConfig,
 ) -> Result<()> {
@@ -1095,7 +1086,7 @@ async fn run_tui(
                                     ComplexityTier::Simple => {
                                         tracing::debug!("complexity: Simple — direct agent turn");
                                         spawn_agent_turn(
-                                            Arc::clone(&agent),
+                                            agent.clone(),
                                             user_text,
                                             agent_tx.clone(),
                                         );
@@ -1103,7 +1094,7 @@ async fn run_tui(
                                     ComplexityTier::Medium => {
                                         tracing::debug!("complexity: Medium — self-refine turn");
                                         spawn_medium_turn(
-                                            Arc::clone(&agent),
+                                            agent.clone(),
                                             user_text,
                                             agent_tx.clone(),
                                         );
@@ -1159,11 +1150,12 @@ async fn run_tui(
             app.handle_agent_event(event);
         }
 
-        // Refresh context-window stats in the status bar when the agent is idle.
-        // Using try_lock avoids stalling the event loop if a turn is still running.
-        if let Ok(guard) = agent.try_lock() {
-            app.status_mut().context_tokens = guard.context_token_count();
-            app.status_mut().context_limit = guard.context_token_limit();
+        // Refresh context-window stats in the status bar after every tick.
+        // The actor handles the query asynchronously so we don't stall the event
+        // loop — if the agent is busy the reply arrives on the next iteration.
+        {
+            let tokens = agent.context_tokens().await;
+            app.status_mut().context_tokens = tokens;
         }
 
         app.tick();

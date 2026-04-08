@@ -21,3 +21,4 @@ tracing = { workspace = true }
 mockall = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+wiremock = "0.6"

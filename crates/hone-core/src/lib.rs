@@ -17,7 +17,7 @@ mod dispatcher;
 mod error;
 mod turn;
 
-pub use agent::{Agent, AgentConfig};
+pub use agent::{Agent, AgentConfig, AgentHandle};
 pub use ensemble::{AgentEnsemble, EnsembleResult};
 pub use agent_def::{AgentDef, AgentDefError};
 pub use agent_registry::AgentRegistry;

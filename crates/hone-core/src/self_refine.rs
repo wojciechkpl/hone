@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::agent::Agent;
+use crate::agent::{Agent, AgentHandle};
 use crate::error::AgentError;
 use hone_proto::{AgentEvent, TokenUsage};
 
@@ -87,6 +87,54 @@ impl SelfRefineLoop {
 
             // Refine turn
             let refined = agent.run_turn(REFINE_PROMPT, events.clone()).await?;
+            total_usage = total_usage + refined.usage;
+            final_response = refined.response.clone();
+            rounds_completed += 1;
+        }
+
+        Ok(RefineResult {
+            rounds: rounds_completed,
+            final_response,
+            usage: total_usage,
+        })
+    }
+
+    /// Run the self-refinement loop against an [`AgentHandle`] actor.
+    ///
+    /// Semantics are identical to [`Self::run`]; each turn is dispatched
+    /// through the handle's command channel so the actor serializes them.
+    pub async fn run_with_handle(
+        &self,
+        handle: &AgentHandle,
+        initial_prompt: &str,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Result<RefineResult, AgentError> {
+        let mut total_usage = TokenUsage::default();
+
+        let initial = handle.run_turn(initial_prompt, events.clone()).await?;
+        total_usage = total_usage + initial.usage;
+        let mut final_response = initial.response;
+
+        if self.max_rounds <= 1 {
+            return Ok(RefineResult {
+                rounds: 1,
+                final_response,
+                usage: total_usage,
+            });
+        }
+
+        let mut rounds_completed = 1u32;
+
+        for _ in 2..=self.max_rounds {
+            let critique = handle.run_turn(CRITIQUE_PROMPT, events.clone()).await?;
+            total_usage = total_usage + critique.usage;
+            rounds_completed += 1;
+
+            if critique.response.contains(APPROVED_SENTINEL) {
+                break;
+            }
+
+            let refined = handle.run_turn(REFINE_PROMPT, events.clone()).await?;
             total_usage = total_usage + refined.usage;
             final_response = refined.response.clone();
             rounds_completed += 1;
