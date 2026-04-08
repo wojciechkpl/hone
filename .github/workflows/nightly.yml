@@ -19,3 +19,15 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: cargo test -p hone-providers --test real_api -- --ignored --nocapture
+
+      - name: Install Claude Code (for ACP testing)
+        run: |
+          # Skip for now — Claude Code installation requires interactive authentication.
+          # When an automated install flow is available, add it here.
+          echo "ACP binary install not yet automated"
+
+      - name: Run ACP integration tests
+        if: false  # Disabled until ACP binary install is automated in CI
+        env:
+          HONE_ACP_BIN: claude
+        run: cargo test -p hone-providers --test acp_real -- --ignored --nocapture

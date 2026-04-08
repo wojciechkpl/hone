@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt clean release deny bench test-real
+.PHONY: build test lint fmt clean release deny bench test-real test-acp
 
 build:
 	cargo build
@@ -37,6 +37,12 @@ deny:
 # Example: ANTHROPIC_API_KEY=sk-ant-... make test-real
 test-real:
 	cargo test --test real_api -- --ignored --nocapture
+
+# Run ACP integration tests against a real ACP binary.
+# Defaults to 'claude'; override with HONE_ACP_BIN=<binary>.
+# Example: HONE_ACP_BIN=gemini-acp make test-acp
+test-acp:
+	HONE_ACP_BIN=$${HONE_ACP_BIN:-claude} cargo test -p hone-providers --test acp_real -- --ignored --nocapture
 
 # Install locally
 install:
