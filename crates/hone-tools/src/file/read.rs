@@ -7,7 +7,7 @@ use crate::{
     traits::{Tool, ToolContext, ToolInput, ToolOutput},
 };
 
-/// Reads the full content of a file and returns it as a string.
+/// Reads file contents with optional line range, returning line-numbered output.
 pub struct ReadFileTool;
 
 #[async_trait]
@@ -17,7 +17,9 @@ impl Tool for ReadFileTool {
     }
 
     fn description(&self) -> &str {
-        "Read the entire content of a file and return it as a string."
+        "Read file contents with optional line range. Returns line-numbered content \
+         (1-indexed) and metadata including total line count. Use offset/limit for \
+         large files to avoid reading the whole file at once. Default limit: 500 lines."
     }
 
     fn schema(&self) -> Value {
@@ -26,7 +28,17 @@ impl Tool for ReadFileTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to the file to read. Relative paths are resolved against the working directory."
+                    "description": "Path to the file. Relative paths are resolved against the working directory."
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "1-indexed line number to start reading from. Default: 1.",
+                    "minimum": 1
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of lines to return. Default: 500. Files longer than limit are truncated.",
+                    "minimum": 1
                 }
             },
             "required": ["path"]
@@ -38,10 +50,44 @@ impl Tool for ReadFileTool {
             reason: "missing required field 'path'".to_string(),
         })?;
 
-        let path = ctx.working_dir.join(path_str);
-        let content = tokio::fs::read_to_string(&path).await?;
+        let offset = input.get_u64("offset").unwrap_or(1).max(1) as usize;
+        let limit = input.get_u64("limit").unwrap_or(500) as usize;
 
-        Ok(ToolOutput::new(json!({ "content": content })))
+        let path = ctx.working_dir.join(path_str);
+        let full_content = tokio::fs::read_to_string(&path).await?;
+
+        let all_lines: Vec<&str> = full_content.lines().collect();
+        let total_lines = all_lines.len();
+
+        let start_idx = offset.saturating_sub(1); // convert to 0-indexed
+        let end_idx = (start_idx + limit).min(total_lines);
+        let truncated = end_idx < total_lines;
+
+        // Format with line numbers: "   42 | content"
+        let max_line_width = if end_idx > 0 {
+            end_idx.to_string().len().max(4)
+        } else {
+            4
+        };
+
+        let mut formatted = String::new();
+        for (i, line) in all_lines[start_idx..end_idx].iter().enumerate() {
+            let line_num = start_idx + i + 1;
+            formatted.push_str(&format!(
+                "{:>width$} | {}\n",
+                line_num,
+                line,
+                width = max_line_width
+            ));
+        }
+
+        Ok(ToolOutput::new(json!({
+            "content": formatted,
+            "start_line": start_idx + 1,
+            "end_line": end_idx,
+            "total_lines": total_lines,
+            "truncated": truncated,
+        })))
     }
 
     fn layer(&self) -> ToolLayer {

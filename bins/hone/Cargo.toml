@@ -32,5 +32,8 @@ reqwest = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 walkdir = { workspace = true }
 
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+
 [dev-dependencies]
 serde_json = { workspace = true }

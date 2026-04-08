@@ -7,7 +7,7 @@ use crate::{
     traits::{Tool, ToolContext, ToolInput, ToolOutput},
 };
 
-/// Performs an exact string replacement in a file.
+/// Performs an exact string replacement in a file, enforcing uniqueness of `old_str`.
 pub struct EditFileTool;
 
 #[async_trait]
@@ -17,8 +17,9 @@ impl Tool for EditFileTool {
     }
 
     fn description(&self) -> &str {
-        "Replace the first occurrence of `old_str` with `new_str` in the specified file. \
-         Returns `applied: false` when `old_str` is not found."
+        "Replace old_str with new_str in the specified file. old_str must appear EXACTLY ONCE \
+         in the file — if it appears multiple times, include more surrounding context to make it unique. \
+         Returns applied: false when old_str is not found; errors when old_str is ambiguous."
     }
 
     fn schema(&self) -> Value {
@@ -31,7 +32,7 @@ impl Tool for EditFileTool {
                 },
                 "old_str": {
                     "type": "string",
-                    "description": "The exact string to search for."
+                    "description": "The exact string to search for. Must appear exactly once in the file."
                 },
                 "new_str": {
                     "type": "string",
@@ -62,12 +63,40 @@ impl Tool for EditFileTool {
         let path = ctx.working_dir.join(path_str);
         let original = tokio::fs::read_to_string(&path).await?;
 
-        if !original.contains(old_str) {
+        let count = original.matches(old_str).count();
+
+        if count == 0 {
             let path_out = path.to_string_lossy().into_owned();
-            return Ok(ToolOutput::new(json!({ "path": path_out, "applied": false })));
+            return Ok(ToolOutput::new(json!({
+                "path": path_out,
+                "applied": false,
+                "reason": "old_str not found in file"
+            })));
         }
 
-        // Replace only the first occurrence.
+        if count > 1 {
+            // Collect line numbers of all matches (cap at 10 for readability).
+            let mut line_numbers: Vec<usize> = Vec::new();
+            for (line_num, line) in original.lines().enumerate() {
+                if line.contains(old_str) {
+                    line_numbers.push(line_num + 1);
+                    if line_numbers.len() >= 10 {
+                        break;
+                    }
+                }
+            }
+
+            return Err(ToolError::InvalidInput {
+                reason: format!(
+                    "old_str appears {} times in {} (lines: {:?}). Include more surrounding context to make it unique.",
+                    count,
+                    path.display(),
+                    line_numbers,
+                ),
+            });
+        }
+
+        // Exactly one match — safe to apply.
         let updated = original.replacen(old_str, new_str, 1);
         tokio::fs::write(&path, updated.as_bytes()).await?;
 

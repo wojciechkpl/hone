@@ -1,3 +1,6 @@
+mod system_prompt;
+mod tools;
+
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -343,9 +346,9 @@ async fn detect_lsp_bridge() -> Arc<dyn LspBridge> {
 }
 
 /// Build a `ToolRegistry` with all available native tools plus the three LSP
-/// tools backed by `lsp`.
-fn build_tool_registry(lsp: Arc<dyn LspBridge>) -> ToolRegistry {
-    ToolRegistry::builder()
+/// tools backed by `lsp`, and optionally the symbol index tools.
+fn build_tool_registry(lsp: Arc<dyn LspBridge>, index: Option<Arc<SqliteIndex>>) -> ToolRegistry {
+    let mut builder = ToolRegistry::builder()
         .register(Box::new(ReadFileTool))
         .register(Box::new(WriteFileTool))
         .register(Box::new(EditFileTool))
@@ -356,8 +359,15 @@ fn build_tool_registry(lsp: Arc<dyn LspBridge>) -> ToolRegistry {
         .register(Box::new(GitCommitTool))
         .register(Box::new(LspDiagnosticsTool::new(Arc::clone(&lsp))))
         .register(Box::new(LspHoverTool::new(Arc::clone(&lsp))))
-        .register(Box::new(LspCodeActionTool::new(lsp)))
-        .build()
+        .register(Box::new(LspCodeActionTool::new(lsp)));
+
+    if let Some(idx) = index {
+        builder = builder
+            .register(Box::new(tools::SymbolSearchTool::new(Arc::clone(&idx))))
+            .register(Box::new(tools::SymbolAtTool::new(idx)));
+    }
+
+    builder.build()
 }
 
 // ---------------------------------------------------------------------------
@@ -416,11 +426,12 @@ fn build_agent_config(
     model_id: ModelId,
     system_prompt: String,
     lsp: Arc<dyn LspBridge>,
+    index: Option<Arc<SqliteIndex>>,
     memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
 ) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
-        build_tool_registry(lsp)
+        build_tool_registry(lsp, index)
     } else {
         ToolRegistry::new()
     };
@@ -728,6 +739,8 @@ fn data_dir() -> PathBuf {
 struct PersistenceHandles {
     /// The opened memory store, wrapped for shared async mutation.
     memory: Option<Arc<Mutex<dyn MemoryStore>>>,
+    /// The opened symbol index, shared with the tool registry.
+    index: Option<Arc<SqliteIndex>>,
     /// Keeps the file-watcher task alive.  Must be held for the process lifetime.
     _watcher: Option<WatcherHandle>,
 }
@@ -744,13 +757,13 @@ struct PersistenceHandles {
 async fn init_persistence(ephemeral: bool) -> PersistenceHandles {
     if ephemeral {
         tracing::info!("ephemeral mode: skipping persistence init");
-        return PersistenceHandles { memory: None, _watcher: None };
+        return PersistenceHandles { memory: None, index: None, _watcher: None };
     }
 
     let dir = data_dir();
     if let Err(e) = std::fs::create_dir_all(&dir) {
         tracing::warn!("failed to create data dir {}: {e}", dir.display());
-        return PersistenceHandles { memory: None, _watcher: None };
+        return PersistenceHandles { memory: None, index: None, _watcher: None };
     }
 
     // Memory store
@@ -774,7 +787,7 @@ async fn init_persistence(ephemeral: bool) -> PersistenceHandles {
     // Index store — open, run an initial full-directory index in a background
     // task, then start the file watcher for incremental updates.
     let index_path = dir.join("index.db");
-    let watcher_handle = match SqliteIndex::open(&index_path).await {
+    let (index_arc, watcher_handle) = match SqliteIndex::open(&index_path).await {
         Ok(index) => {
             tracing::info!(path = %index_path.display(), "symbol index initialised");
             let index = Arc::new(index);
@@ -795,7 +808,7 @@ async fn init_persistence(ephemeral: bool) -> PersistenceHandles {
 
             // File watcher for incremental re-indexing.
             let watcher = IndexWatcher::new(Arc::clone(&index), cwd);
-            match watcher.spawn().await {
+            let handle = match watcher.spawn().await {
                 Ok(handle) => {
                     tracing::info!("file watcher started");
                     Some(handle)
@@ -804,15 +817,16 @@ async fn init_persistence(ephemeral: bool) -> PersistenceHandles {
                     tracing::warn!("file watcher failed to start: {e}");
                     None
                 }
-            }
+            };
+            (Some(index), handle)
         }
         Err(e) => {
             tracing::warn!("failed to open symbol index: {e}");
-            None
+            (None, None)
         }
     };
 
-    PersistenceHandles { memory, _watcher: watcher_handle }
+    PersistenceHandles { memory, index: index_arc, _watcher: watcher_handle }
 }
 
 /// Walk `root` for `.rs` files and index them via `SqliteIndex::index_file`.
@@ -886,21 +900,28 @@ async fn main() -> Result<()> {
     // the process lifetime.
     let persistence = init_persistence(cli.ephemeral).await;
     let memory_store = persistence.memory.clone();
+    let index = persistence.index.clone();
 
     // Build the system prompt, injecting any HONE.md sections.
-    let mut system_prompt = "You are Hone, an AI coding assistant.".to_string();
+    let hone_md_sections: Vec<(String, String)> = hone_md
+        .as_ref()
+        .map(|md| {
+            let mut pairs: Vec<(String, String)> = md
+                .sections
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            pairs.sort_by(|a, b| a.0.cmp(&b.0)); // deterministic ordering
+            pairs
+        })
+        .unwrap_or_default();
     if let Some(ref md) = hone_md {
-        let mut keys: Vec<&String> = md.sections.keys().collect();
-        keys.sort(); // deterministic ordering
-        for key in keys {
-            let content = &md.sections[key];
-            system_prompt.push_str(&format!("\n\n## {key}\n{content}"));
-        }
         tracing::info!(
             sections = md.sections.len(),
             "HONE.md loaded and injected into system prompt"
         );
     }
+    let system_prompt = system_prompt::build_system_prompt(&hone_md_sections);
 
     tracing::debug!(system_prompt_len = system_prompt.len(), "system prompt ready");
 
@@ -929,6 +950,7 @@ async fn main() -> Result<()> {
         model_id.clone(),
         system_prompt.clone(),
         Arc::clone(&lsp),
+        index,
         memory_store.clone(),
     );
 
