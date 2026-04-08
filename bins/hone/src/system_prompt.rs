@@ -31,6 +31,9 @@ Use tools deliberately. Every tool call costs a round-trip; don't chain calls yo
 when looking for a specific function, type, or constant.
 - **symbol_at**: Find the symbol enclosing a specific file/line position. Use after grep or \
 diagnostics to understand what function contains a given line without reading the whole file.
+- **grep**: Search file contents for a regex pattern. Returns {file, line, content} matches. \
+Honors .gitignore. Use for content queries: all usages of a symbol, TODO comments, config key \
+references, etc. Prefer this over read_file + manual search.
 
 ### Reading code
 
@@ -46,6 +49,11 @@ locate files when you don't know the exact path.
 in the file — the tool errors if it appears multiple times. If you get an ambiguity error, \
 include more surrounding lines to make old_str unique. If applied is false, the string was \
 not found; re-read the file to get the current content before retrying.
+- **multi_edit**: Apply multiple edits across one or more files in a single tool call. Pass an \
+array of {path, old_str, new_str} objects. All edits are validated before any file is written — \
+if any edit is ambiguous or not found, no changes are committed. Use this when a single logical \
+change touches several locations (e.g., rename a symbol, update multiple call sites). Prefer \
+this over multiple sequential edit_file calls to reduce round-trips.
 - **write_file**: Create a new file or fully overwrite an existing one. Only use this for new \
 files or complete rewrites — prefer edit_file for targeted changes.
 

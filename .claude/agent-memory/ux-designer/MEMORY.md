@@ -1,0 +1,1 @@
+- [Hone TUI Design Context](project_hone_tui.md) — Brand palette, accent rules, spec location, key structural decisions for the Ratatui TUI

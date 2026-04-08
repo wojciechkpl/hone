@@ -31,9 +31,9 @@ use hone_recipes::Recipe;
 use hone_sandbox::NullSandbox;
 use hone_memory::{MemoryStore, SqliteStore};
 use hone_tools::{
-    EditFileTool, GlobTool, GitCommitTool, GitDiffTool, GitStatusTool, Language, LspBridge,
-    LspCodeActionTool, LspDiagnosticsTool, LspHoverTool, MockLspBridge, ReadFileTool, ShellTool,
-    StdioLspBridge, ToolRegistry, WriteFileTool,
+    EditFileTool, GlobTool, GrepTool, GitCommitTool, GitDiffTool, GitStatusTool, Language,
+    LspBridge, LspCodeActionTool, LspDiagnosticsTool, LspHoverTool, MockLspBridge, MultiEditTool,
+    ReadFileTool, ShellTool, StdioLspBridge, ToolRegistry, WriteFileTool,
 };
 use hone_tui::{App, AppState};
 use hone_tui::render::root;
@@ -352,7 +352,9 @@ fn build_tool_registry(lsp: Arc<dyn LspBridge>, index: Option<Arc<SqliteIndex>>)
         .register(Box::new(ReadFileTool))
         .register(Box::new(WriteFileTool))
         .register(Box::new(EditFileTool))
+        .register(Box::new(MultiEditTool))
         .register(Box::new(GlobTool))
+        .register(Box::new(GrepTool))
         .register(Box::new(ShellTool))
         .register(Box::new(GitStatusTool))
         .register(Box::new(GitDiffTool))
@@ -480,6 +482,73 @@ fn detect_test_cmd() -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
+// Test verification helper — runs after any code-modifying turn
+// ---------------------------------------------------------------------------
+
+/// Run the test-verification loop if a test command is detectable and the
+/// current turn actually called a code-modifying tool.
+///
+/// Only `write_file`, `edit_file`, and `multi_edit` are considered
+/// code-modifying.  Pure Q&A turns (no tool calls, or only read/shell calls)
+/// are intentionally skipped so tests don't run after every message.
+async fn maybe_run_test_verification(
+    handle: &AgentHandle,
+    tx: &mpsc::Sender<AgentEvent>,
+    tools_used: &[String],
+) {
+    const CODE_MODIFYING: &[&str] = &["write_file", "edit_file", "multi_edit"];
+
+    let touched_code = tools_used
+        .iter()
+        .any(|name| CODE_MODIFYING.contains(&name.as_str()));
+
+    if !touched_code {
+        tracing::debug!(
+            tools = ?tools_used,
+            "test verification skipped (no code-modifying tool used)"
+        );
+        return;
+    }
+
+    let Some(test_cmd) = detect_test_cmd() else {
+        tracing::debug!("test verification skipped (no test command detected)");
+        return;
+    };
+
+    tracing::info!(
+        tools = ?tools_used,
+        cmd = %test_cmd,
+        "test verification triggered"
+    );
+
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let test_loop = TestVerificationLoop::new(test_cmd, 3, cwd);
+
+    match test_loop.run_with_handle(handle, tx.clone()).await {
+        Ok(result) => match result.final_status {
+            hone_core::TestStatus::Passed => {
+                tracing::info!(
+                    iterations = result.iterations,
+                    "tests passed after {} iteration(s)",
+                    result.iterations
+                );
+            }
+            hone_core::TestStatus::FailedAfterMax { .. } => {
+                tracing::warn!(
+                    iterations = result.iterations,
+                    "test verification gave up after {} iteration(s)",
+                    result.iterations
+                );
+            }
+            hone_core::TestStatus::NoTestCommand => {}
+        },
+        Err(e) => {
+            tracing::warn!("test verification failed: {e}");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Agent turn dispatch — simple (direct)
 // ---------------------------------------------------------------------------
 
@@ -489,13 +558,37 @@ fn spawn_agent_turn(
     tx: mpsc::Sender<AgentEvent>,
 ) {
     tokio::spawn(async move {
-        if let Err(e) = agent.run_turn(&user_text, tx.clone()).await {
-            let _ = tx
-                .send(AgentEvent::Error {
-                    message: e.to_string(),
-                })
-                .await;
+        // Use an intermediate channel so we can observe events before
+        // forwarding them to the caller and track which tools were used.
+        let (inner_tx, mut inner_rx) = mpsc::channel::<AgentEvent>(256);
+
+        let agent_clone = agent.clone();
+        let turn_task = tokio::spawn(async move {
+            agent_clone.run_turn(&user_text, inner_tx).await
+        });
+
+        let mut tools_used: Vec<String> = Vec::new();
+
+        while let Some(event) = inner_rx.recv().await {
+            if let AgentEvent::ToolCallStart { ref name, .. } = event {
+                tools_used.push(name.clone());
+            }
+            let is_terminal = matches!(
+                event,
+                AgentEvent::Done { .. } | AgentEvent::Error { .. }
+            );
+            let _ = tx.send(event).await;
+            if is_terminal {
+                break;
+            }
         }
+
+        // Drain the turn task result (errors were already forwarded through
+        // the event channel above).
+        let _ = turn_task.await;
+
+        // After the turn completes, run test verification if applicable.
+        maybe_run_test_verification(&agent, &tx, &tools_used).await;
     });
 }
 
@@ -509,25 +602,59 @@ fn spawn_medium_turn(
     tx: mpsc::Sender<AgentEvent>,
 ) {
     tokio::spawn(async move {
-        let refine = SelfRefineLoop::new(2);
-        if let Err(e) = refine.run_with_handle(&agent, &user_text, tx.clone()).await {
-            let _ = tx
-                .send(AgentEvent::Error {
-                    message: e.to_string(),
-                })
-                .await;
+        // Use an intermediate channel to observe events and track tool usage.
+        let (inner_tx, mut inner_rx) = mpsc::channel::<AgentEvent>(256);
+
+        let agent_clone = agent.clone();
+        let user_text_clone = user_text.clone();
+        let refine_task = tokio::spawn(async move {
+            let refine = SelfRefineLoop::new(2);
+            refine
+                .run_with_handle(&agent_clone, &user_text_clone, inner_tx)
+                .await
+        });
+
+        let mut tools_used: Vec<String> = Vec::new();
+        let mut had_error = false;
+
+        while let Some(event) = inner_rx.recv().await {
+            if let AgentEvent::ToolCallStart { ref name, .. } = event {
+                tools_used.push(name.clone());
+            }
+            let is_terminal = matches!(
+                event,
+                AgentEvent::Done { .. } | AgentEvent::Error { .. }
+            );
+            if matches!(event, AgentEvent::Error { .. }) {
+                had_error = true;
+            }
+            let _ = tx.send(event).await;
+            if is_terminal {
+                break;
+            }
+        }
+
+        // Surface any error that the refine task returned but wasn't forwarded.
+        if let Ok(Err(e)) = refine_task.await {
+            if !had_error {
+                let _ = tx
+                    .send(AgentEvent::Error {
+                        message: e.to_string(),
+                    })
+                    .await;
+            }
             return;
         }
 
-        // After code generation: if a test command is available, run the
-        // verification loop so failures are fed back to the agent.
-        if let Some(test_cmd) = detect_test_cmd() {
-            let cwd = std::env::current_dir().unwrap_or_default();
-            let loop_ = TestVerificationLoop::new(test_cmd, 3, cwd);
-            if let Err(e) = loop_.run_with_handle(&agent, tx.clone()).await {
-                tracing::warn!("test verification loop error: {e}");
-            }
+        if had_error {
+            return;
         }
+
+        // After the self-refine turn completes, run test verification.
+        // This replaces the previous unconditional detect_test_cmd call and
+        // respects the code-modifying tool guard, so Q&A turns don't trigger
+        // an unnecessary test run.
+        maybe_run_test_verification(&agent, &tx, &tools_used).await;
     });
 }
 

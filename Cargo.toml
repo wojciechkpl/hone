@@ -95,6 +95,7 @@ landlock = "0.4"
 notify = "7"
 walkdir = "2"
 ignore = "0.4"
+regex = "1"
 
 # Token and cost
 tiktoken-rs = "0.6"

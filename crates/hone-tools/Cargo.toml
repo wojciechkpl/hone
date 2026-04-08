@@ -16,6 +16,7 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 git2 = { workspace = true }
 ignore = { workspace = true }
+regex = { workspace = true }
 globset = "0.4"
 tracing = { workspace = true }
 
