@@ -87,6 +87,12 @@ impl ContextManager {
     pub fn message_count(&self) -> usize {
         self.messages.len()
     }
+
+    /// Estimated total token count of all stored messages (excludes the system
+    /// prompt, which is supplied at build time and not stored here).
+    pub fn total_tokens(&self) -> u32 {
+        self.messages.iter().map(estimate_message_tokens).sum()
+    }
 }
 
 /// Global BPE tokenizer, initialized once on first use.

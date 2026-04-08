@@ -24,6 +24,9 @@ pub enum ConfigError {
 
     #[error("Config extraction failed: {0}")]
     Figment(Box<figment::Error>),
+
+    #[error("invalid config at {path}: {reason}")]
+    InvalidField { path: PathBuf, reason: String },
 }
 
 impl From<figment::Error> for ConfigError {
@@ -178,6 +181,19 @@ impl Config {
         global_path: Option<&Path>,
         project_path: Option<&Path>,
     ) -> Result<Self, ConfigError> {
+        // Pre-validate each file with toml::from_str so that parse errors are
+        // wrapped with the originating file path before handing off to Figment.
+        for path in [global_path, project_path].into_iter().flatten() {
+            let raw = std::fs::read_to_string(path).map_err(|source| ConfigError::Io {
+                path: path.to_path_buf(),
+                source,
+            })?;
+            toml::from_str::<Config>(&raw).map_err(|e| ConfigError::InvalidField {
+                path: path.to_path_buf(),
+                reason: e.to_string(),
+            })?;
+        }
+
         let mut figment = Figment::from(Serialized::defaults(Config::default()));
 
         if let Some(path) = global_path {

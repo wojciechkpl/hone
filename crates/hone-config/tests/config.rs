@@ -1,4 +1,4 @@
-use hone_config::{Config, HoneMd, SandboxMode};
+use hone_config::{Config, ConfigError, HoneMd, SandboxMode};
 use std::path::PathBuf;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -303,4 +303,28 @@ fn test_load_with_no_files_returns_defaults() {
     let cfg = Config::load(None, None).expect("load with no files should return defaults");
     assert_eq!(cfg.server.host, "127.0.0.1");
     assert_eq!(cfg.server.port, 3117);
+}
+
+#[test]
+fn test_config_error_includes_file_path() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let bad_path = tmp.path().join("bad.toml");
+
+    // Write intentionally malformed TOML so parsing fails.
+    std::fs::write(&bad_path, b"[server\nthis is not valid toml{{{{").unwrap();
+
+    let err = Config::load(Some(&bad_path), None)
+        .expect_err("malformed TOML should produce an error");
+
+    let err_msg = err.to_string();
+    assert!(
+        err_msg.contains(bad_path.to_string_lossy().as_ref()),
+        "error message should contain the file path; got: {err_msg}"
+    );
+    assert!(
+        matches!(err, ConfigError::InvalidField { .. }),
+        "expected ConfigError::InvalidField, got: {err:?}"
+    );
 }

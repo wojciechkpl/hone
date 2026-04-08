@@ -94,8 +94,9 @@ mod tests {
     }
 
     fn make_dispatcher() -> ToolDispatcher {
-        let mut registry = ToolRegistry::new();
-        registry.register(Box::new(EchoTool));
+        let registry = ToolRegistry::builder()
+            .register(Box::new(EchoTool))
+            .build();
         ToolDispatcher::new(
             registry,
             Arc::new(NullSandbox),

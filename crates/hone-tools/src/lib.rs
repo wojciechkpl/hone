@@ -17,6 +17,6 @@ pub use lsp::{
     LspBridge, LspCodeActionTool, LspDiagnosticsTool, LspHoverTool, MockLspBridge,
     StdioLspBridge, detect_language,
 };
-pub use registry::ToolRegistry;
+pub use registry::{ToolRegistry, ToolRegistryBuilder};
 pub use shell::ShellTool;
 pub use traits::{Tool, ToolContext, ToolInput, ToolOutput};

@@ -348,19 +348,19 @@ async fn detect_lsp_bridge() -> Arc<dyn LspBridge> {
 /// Build a `ToolRegistry` with all available native tools plus the three LSP
 /// tools backed by `lsp`.
 fn build_tool_registry(lsp: Arc<dyn LspBridge>) -> ToolRegistry {
-    let mut registry = ToolRegistry::new();
-    registry.register(Box::new(ReadFileTool));
-    registry.register(Box::new(WriteFileTool));
-    registry.register(Box::new(EditFileTool));
-    registry.register(Box::new(GlobTool));
-    registry.register(Box::new(ShellTool));
-    registry.register(Box::new(GitStatusTool));
-    registry.register(Box::new(GitDiffTool));
-    registry.register(Box::new(GitCommitTool));
-    registry.register(Box::new(LspDiagnosticsTool::new(Arc::clone(&lsp))));
-    registry.register(Box::new(LspHoverTool::new(Arc::clone(&lsp))));
-    registry.register(Box::new(LspCodeActionTool::new(lsp)));
-    registry
+    ToolRegistry::builder()
+        .register(Box::new(ReadFileTool))
+        .register(Box::new(WriteFileTool))
+        .register(Box::new(EditFileTool))
+        .register(Box::new(GlobTool))
+        .register(Box::new(ShellTool))
+        .register(Box::new(GitStatusTool))
+        .register(Box::new(GitDiffTool))
+        .register(Box::new(GitCommitTool))
+        .register(Box::new(LspDiagnosticsTool::new(Arc::clone(&lsp))))
+        .register(Box::new(LspHoverTool::new(Arc::clone(&lsp))))
+        .register(Box::new(LspCodeActionTool::new(lsp)))
+        .build()
 }
 
 // ---------------------------------------------------------------------------
@@ -410,13 +410,17 @@ async fn load_project_config() -> (Option<Config>, Option<HoneMd>) {
 // Agent construction
 // ---------------------------------------------------------------------------
 
-fn build_agent(
+/// Build an `AgentConfig` from the detected provider + model + system prompt.
+///
+/// The returned config is `Clone`; callers may clone it freely to spawn
+/// orchestrators, ensembles, or additional agents without rebuilding.
+fn build_agent_config(
     detected: &DetectedProvider,
     model_id: ModelId,
     system_prompt: String,
     lsp: Arc<dyn LspBridge>,
     memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
-) -> Agent {
+) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
         build_tool_registry(lsp)
@@ -424,7 +428,7 @@ fn build_agent(
         ToolRegistry::new()
     };
 
-    let config = AgentConfig {
+    AgentConfig {
         provider: Arc::clone(&detected.provider),
         tools,
         sandbox: Arc::new(NullSandbox),
@@ -441,28 +445,9 @@ fn build_agent(
         },
         working_dir: std::env::current_dir().unwrap_or_default(),
         memory_store,
-    };
-
-    Agent::new(config)
-}
-
-/// Build cheaply-cloneable config ingredients from provider + model + system prompt.
-fn build_config_ingredients(
-    detected: &DetectedProvider,
-    model_id: ModelId,
-    system_prompt: String,
-    lsp: Arc<dyn LspBridge>,
-    memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
-) -> ConfigIngredients {
-    ConfigIngredients {
-        provider: Arc::clone(&detected.provider),
-        model_id,
-        system_prompt,
-        supports_tools: detected.supports_tools,
-        lsp,
-        memory_store,
     }
 }
+
 
 // ---------------------------------------------------------------------------
 // Test-command detection
@@ -545,56 +530,12 @@ fn spawn_medium_turn(
 // Agent turn dispatch — complex (orchestrator as spawned task)
 // ---------------------------------------------------------------------------
 
-/// Shared, cheaply-cloneable ingredients needed to build an `AgentConfig`.
-///
-/// `AgentConfig` itself cannot be cloned (it holds non-`Clone` internals), so
-/// we store the parts that *are* cloneable and reconstruct the config inside
-/// the spawned task.
-#[derive(Clone)]
-struct ConfigIngredients {
-    provider: Arc<dyn ModelProvider>,
-    model_id: ModelId,
-    system_prompt: String,
-    supports_tools: bool,
-    lsp: Arc<dyn LspBridge>,
-    memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
-}
-
-impl ConfigIngredients {
-    fn build(&self) -> AgentConfig {
-        AgentConfig {
-            provider: Arc::clone(&self.provider),
-            tools: if self.supports_tools {
-                build_tool_registry(Arc::clone(&self.lsp))
-            } else {
-                ToolRegistry::new()
-            },
-            sandbox: Arc::new(NullSandbox),
-            system_prompt: self.system_prompt.clone(),
-            model: self.model_id.clone(),
-            max_tokens: None,
-            temperature: None,
-            budget_limit: None,
-            pricing: PricingEntry {
-                model: self.model_id.clone(),
-                input_per_million: 3.0,
-                output_per_million: 15.0,
-                cache_read_per_million: None,
-            },
-            working_dir: std::env::current_dir().unwrap_or_default(),
-            memory_store: self.memory_store.clone(),
-        }
-    }
-}
-
 fn spawn_orchestrated_turn(
-    ingredients: ConfigIngredients,
+    lead_config: AgentConfig,
     user_text: String,
     tx: mpsc::Sender<AgentEvent>,
 ) {
     tokio::spawn(async move {
-        let lead_config = ingredients.build();
-
         let mut registry = AgentRegistry::new();
         registry.load_builtins();
 
@@ -692,7 +633,7 @@ async fn run_orchestrate(
 /// Run a prompt through N parallel candidates with varied temperatures, then
 /// let a ranker agent pick the best response (MASAI Ranker pattern).
 async fn run_ensemble(
-    ingredients: &ConfigIngredients,
+    base_config: &AgentConfig,
     prompt: &str,
     n: u32,
 ) -> Result<()> {
@@ -701,37 +642,14 @@ async fn run_ensemble(
     const TEMPS: [f32; 5] = [0.0, 0.3, 0.5, 0.7, 0.9];
 
     let n = (n as usize).min(TEMPS.len());
+    let temperatures: Vec<f32> = TEMPS[..n].to_vec();
 
-    let ing = Arc::new(ingredients.clone());
-
-    let candidate_factories: Vec<Box<dyn Fn() -> AgentConfig + Send + Sync>> = (0..n)
-        .map(|i| {
-            let ing = Arc::clone(&ing);
-            let temp = TEMPS[i];
-            let factory: Box<dyn Fn() -> AgentConfig + Send + Sync> =
-                Box::new(move || {
-                    let mut cfg = ing.build();
-                    cfg.temperature = Some(temp);
-                    cfg
-                });
-            factory
-        })
-        .collect();
-
-    let ing_ranker = Arc::clone(&ing);
-    let ranker_factory: Box<dyn Fn() -> AgentConfig + Send + Sync> =
-        Box::new(move || {
-            let mut cfg = ing_ranker.build();
-            cfg.temperature = Some(0.0);
-            cfg.system_prompt =
-                "You are a response ranker. Given a task and candidate responses, \
-                 pick the best one. Output ONLY the number of the best candidate \
-                 (e.g. 1, 2, or 3). Do not explain your choice."
-                    .to_string();
-            cfg
-        });
-
-    let ensemble = AgentEnsemble::new(candidate_factories, ranker_factory);
+    // AgentEnsemble clones the prototype once per candidate (applying the
+    // per-slot temperature) and once more for the ranker (at 0.0).  All share
+    // the same system prompt; the ranker prompt is assembled by the ensemble
+    // from the candidate responses, so the system prompt here just sets the
+    // overall assistant persona.
+    let ensemble = AgentEnsemble::new(base_config.clone(), temperatures);
 
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 
@@ -1014,13 +932,16 @@ async fn main() -> Result<()> {
     // if the language server binary is not installed).
     let lsp = detect_lsp_bridge().await;
 
-    let agent = Arc::new(Mutex::new(build_agent(
+    // Build a single clonable config; share it across all code paths.
+    let base_config = build_agent_config(
         &detected,
         model_id.clone(),
         system_prompt.clone(),
         Arc::clone(&lsp),
         memory_store.clone(),
-    )));
+    );
+
+    let agent = Arc::new(Mutex::new(Agent::new(base_config.clone())));
 
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -1048,15 +969,7 @@ async fn main() -> Result<()> {
             }
         };
 
-        let ingredients = build_config_ingredients(
-            &detected,
-            model_id.clone(),
-            system_prompt.clone(),
-            Arc::clone(&lsp),
-            memory_store.clone(),
-        );
-
-        return run_ensemble(&ingredients, &prompt, n).await;
+        return run_ensemble(&base_config, &prompt, n).await;
     }
 
     // --orchestrate: full orchestrator for the supplied prompt (or a default).
@@ -1066,14 +979,7 @@ async fn main() -> Result<()> {
             .clone()
             .unwrap_or_else(|| "Please describe what you need help with.".to_owned());
 
-        let ingredients = build_config_ingredients(
-            &detected,
-            model_id.clone(),
-            system_prompt.clone(),
-            Arc::clone(&lsp),
-            memory_store.clone(),
-        );
-        return run_orchestrate(ingredients.build(), &prompt).await;
+        return run_orchestrate(base_config, &prompt).await;
     }
 
     // One-shot mode: run a single turn, print to stdout, and exit.
@@ -1088,16 +994,7 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Build cloneable config ingredients shared by complex-tier spawned tasks.
-    let ingredients = build_config_ingredients(
-        &detected,
-        model_id.clone(),
-        system_prompt.clone(),
-        Arc::clone(&lsp),
-        memory_store.clone(),
-    );
-
-    let result = run_tui(&mut terminal, agent, model_id, ingredients).await;
+    let result = run_tui(&mut terminal, agent, model_id, base_config).await;
 
     // Always restore terminal even on error.
     disable_raw_mode()?;
@@ -1134,7 +1031,7 @@ async fn run_tui(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     agent: Arc<Mutex<Agent>>,
     model_id: ModelId,
-    ingredients: ConfigIngredients,
+    base_config: AgentConfig,
 ) -> Result<()> {
     let mut app = App::new();
 
@@ -1214,7 +1111,7 @@ async fn run_tui(
                                     ComplexityTier::Complex => {
                                         tracing::debug!("complexity: Complex — orchestrated turn");
                                         spawn_orchestrated_turn(
-                                            ingredients.clone(),
+                                            base_config.clone(),
                                             user_text,
                                             agent_tx.clone(),
                                         );
@@ -1260,6 +1157,13 @@ async fn run_tui(
         // Drain any remaining agent events that arrived during the select branch.
         while let Ok(event) = agent_rx.try_recv() {
             app.handle_agent_event(event);
+        }
+
+        // Refresh context-window stats in the status bar when the agent is idle.
+        // Using try_lock avoids stalling the event loop if a turn is still running.
+        if let Ok(guard) = agent.try_lock() {
+            app.status_mut().context_tokens = guard.context_token_count();
+            app.status_mut().context_limit = guard.context_token_limit();
         }
 
         app.tick();

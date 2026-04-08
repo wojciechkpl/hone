@@ -20,18 +20,15 @@ use hone_proto::AgentEvent;
 /// An ensemble that generates N candidate responses in parallel and selects
 /// the best one using a ranker agent.
 ///
-/// Because [`AgentConfig`] is not `Clone` (it holds `Box<dyn Tool>` values),
-/// callers supply factory closures rather than pre-built configs.  Each
-/// factory is called once per ensemble run to construct the corresponding
-/// agent.
+/// Construct with a prototype [`AgentConfig`] and a list of temperatures —
+/// one temperature per candidate slot.  The ranker always runs at temperature
+/// 0.0 for deterministic selection.
 pub struct AgentEnsemble {
-    /// One factory per candidate slot.  Different closures may produce configs
-    /// with different temperatures, system prompts, or models, enabling
-    /// diverse candidate generation.
-    candidate_factories: Vec<Box<dyn Fn() -> AgentConfig + Send + Sync>>,
-    /// Factory for the ranker agent.  Typically lower temperature than the
-    /// candidates so its selection is deterministic.
-    ranker_factory: Box<dyn Fn() -> AgentConfig + Send + Sync>,
+    /// Base configuration cloned once per candidate.
+    prototype: AgentConfig,
+    /// One temperature per candidate slot.  `len()` determines how many
+    /// candidates are spawned.
+    temperatures: Vec<f32>,
 }
 
 /// The result of a completed ensemble run.
@@ -42,7 +39,7 @@ pub struct EnsembleResult {
     /// Zero-based index into `all_candidates` of the winning candidate.
     pub winner_index: usize,
     /// All successfully completed candidate responses (in collection order,
-    /// which may differ from the factory order due to parallel scheduling).
+    /// which may differ from the slot order due to parallel scheduling).
     pub all_candidates: Vec<TurnResult>,
     /// The raw text emitted by the ranker agent.
     pub ranker_response: String,
@@ -57,16 +54,13 @@ pub struct EnsembleResult {
 impl AgentEnsemble {
     /// Create an ensemble.
     ///
-    /// * `candidate_factories` — one closure per candidate; called at run-time
-    ///   to produce each agent's config.
-    /// * `ranker_factory` — closure that produces the ranker's config.
-    pub fn new(
-        candidate_factories: Vec<Box<dyn Fn() -> AgentConfig + Send + Sync>>,
-        ranker_factory: Box<dyn Fn() -> AgentConfig + Send + Sync>,
-    ) -> Self {
+    /// * `prototype` — base config cloned for every candidate and the ranker.
+    /// * `temperatures` — temperature for each candidate slot; determines
+    ///   how many candidates are run.
+    pub fn new(prototype: AgentConfig, temperatures: Vec<f32>) -> Self {
         Self {
-            candidate_factories,
-            ranker_factory,
+            prototype,
+            temperatures,
         }
     }
 
@@ -79,13 +73,16 @@ impl AgentEnsemble {
         prompt: &str,
         events: mpsc::Sender<AgentEvent>,
     ) -> Result<EnsembleResult, AgentError> {
+        let n = self.temperatures.len();
+
         // ----------------------------------------------------------------
         // 1. Spawn all candidates concurrently.
         // ----------------------------------------------------------------
         let mut join_set: JoinSet<(usize, Result<TurnResult, AgentError>)> = JoinSet::new();
 
-        for (i, factory) in self.candidate_factories.iter().enumerate() {
-            let config = factory();
+        for (i, &temp) in self.temperatures.iter().enumerate() {
+            let mut config = self.prototype.clone();
+            config.temperature = Some(temp);
             let prompt_owned = prompt.to_owned();
             let fwd_tx = events.clone();
 
@@ -110,8 +107,7 @@ impl AgentEnsemble {
         // 2. Collect successful candidates; preserve original slot order
         //    so the ranker's "Candidate N" numbering is stable.
         // ----------------------------------------------------------------
-        let mut slot_results: Vec<Option<TurnResult>> =
-            (0..self.candidate_factories.len()).map(|_| None).collect();
+        let mut slot_results: Vec<Option<TurnResult>> = (0..n).map(|_| None).collect();
 
         while let Some(join_outcome) = join_set.join_next().await {
             if let Ok((slot, Ok(result))) = join_outcome {
@@ -150,7 +146,9 @@ impl AgentEnsemble {
         // ----------------------------------------------------------------
         // 4. Run the ranker; collect its token stream internally.
         // ----------------------------------------------------------------
-        let ranker_config = (self.ranker_factory)();
+        let mut ranker_config = self.prototype.clone();
+        ranker_config.temperature = Some(0.0);
+
         let mut ranker = Agent::new(ranker_config);
         let (ranker_tx, mut ranker_rx) = mpsc::channel(256);
 

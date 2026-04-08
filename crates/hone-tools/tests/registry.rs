@@ -34,8 +34,9 @@ impl hone_tools::Tool for DummyTool {
 
 #[test]
 fn test_register_and_get() {
-    let mut registry = ToolRegistry::new();
-    registry.register(Box::new(ReadFileTool));
+    let registry = ToolRegistry::builder()
+        .register(Box::new(ReadFileTool))
+        .build();
 
     let tool = registry.get("read_file").expect("should find read_file");
     assert_eq!(tool.name(), "read_file");
@@ -49,10 +50,11 @@ fn test_get_missing_returns_none() {
 
 #[test]
 fn test_schemas_returns_all() {
-    let mut registry = ToolRegistry::new();
-    registry.register(Box::new(DummyTool { name: "tool_a" }));
-    registry.register(Box::new(DummyTool { name: "tool_b" }));
-    registry.register(Box::new(DummyTool { name: "tool_c" }));
+    let registry = ToolRegistry::builder()
+        .register(Box::new(DummyTool { name: "tool_a" }))
+        .register(Box::new(DummyTool { name: "tool_b" }))
+        .register(Box::new(DummyTool { name: "tool_c" }))
+        .build();
 
     let schemas = registry.schemas();
     assert_eq!(schemas.len(), 3);
@@ -60,10 +62,11 @@ fn test_schemas_returns_all() {
 
 #[test]
 fn test_names_returns_all() {
-    let mut registry = ToolRegistry::new();
-    registry.register(Box::new(WriteFileTool));
-    registry.register(Box::new(GlobTool));
-    registry.register(Box::new(ReadFileTool));
+    let registry = ToolRegistry::builder()
+        .register(Box::new(WriteFileTool))
+        .register(Box::new(GlobTool))
+        .register(Box::new(ReadFileTool))
+        .build();
 
     let mut names = registry.names();
     names.sort_unstable();
@@ -72,4 +75,15 @@ fn test_names_returns_all() {
     assert!(names.contains(&"write_file"));
     assert!(names.contains(&"glob"));
     assert_eq!(names.len(), 3);
+}
+
+#[test]
+fn test_registry_is_clone() {
+    let registry = ToolRegistry::builder()
+        .register(Box::new(ReadFileTool))
+        .build();
+
+    let cloned = registry.clone();
+    assert_eq!(cloned.len(), 1);
+    assert!(cloned.get("read_file").is_some());
 }

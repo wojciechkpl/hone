@@ -7,6 +7,10 @@ pub struct StatusInfo {
     pub token_count: u32,
     pub budget_usd: Option<f64>,
     pub active_tool: Option<String>,
+    /// Estimated tokens currently in the context window.
+    pub context_tokens: u32,
+    /// Maximum context window size for the active model.
+    pub context_limit: u32,
 }
 
 impl Default for StatusInfo {
@@ -18,7 +22,25 @@ impl Default for StatusInfo {
             token_count: 0,
             budget_usd: None,
             active_tool: None,
+            context_tokens: 0,
+            context_limit: 128_000,
         }
+    }
+}
+
+impl StatusInfo {
+    /// Format the context window usage as "42k / 200k".
+    pub fn format_context(&self) -> String {
+        fn fmt_k(n: u32) -> String {
+            if n >= 1_000_000 {
+                format!("{:.0}M", n as f64 / 1_000_000.0)
+            } else if n >= 1_000 {
+                format!("{:.0}k", n as f64 / 1_000.0)
+            } else {
+                format!("{n}")
+            }
+        }
+        format!("{} / {}", fmt_k(self.context_tokens), fmt_k(self.context_limit))
     }
 }
 

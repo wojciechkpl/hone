@@ -1,6 +1,43 @@
 use hone_core::ContextManager;
 use hone_proto::{Message, Role};
 
+// ---------------------------------------------------------------------------
+// D2 regression test: long sessions must trigger trimming via ContextManager
+// ---------------------------------------------------------------------------
+
+/// Each message body is ~100 chars ≈ 25 tokens + 4 overhead = ~29 tokens each.
+/// max_tokens=500 / 29 ≈ 17 messages max.  After 50 messages the context must
+/// have been trimmed.  The first stored message (index 0 in `messages`) acts as
+/// a pseudo-system message; `build_messages` prepends the real system message
+/// on top of that, so the system prompt always survives.
+#[test]
+fn test_long_session_triggers_trim() {
+    let mut ctx = ContextManager::new(500);
+
+    // The system-like context seed (not the build-time system prompt).
+    ctx.add_message(Message::system("You are a helpful assistant."));
+
+    let body = "a".repeat(100); // ~25 tokens + 4 overhead
+    for _ in 0..50 {
+        ctx.add_message(Message::user(body.clone()));
+    }
+
+    // Trimming must have occurred: fewer than 51 stored messages (system + 50 user).
+    assert!(
+        ctx.message_count() < 51,
+        "expected context to be trimmed below 51 messages, got {}",
+        ctx.message_count()
+    );
+
+    // The system message must be present in the built output.
+    let built = ctx.build_messages("You are a helpful assistant.");
+    assert_eq!(
+        built[0].role,
+        Role::System,
+        "system prompt must always be the first message"
+    );
+}
+
 #[test]
 fn test_add_and_retrieve_messages() {
     let mut ctx = ContextManager::new(8192);

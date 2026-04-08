@@ -178,7 +178,9 @@ async fn test_tool_call_dispatched() {
     let provider = Arc::new(SequencedProvider::new(vec![seq1, seq2]));
 
     let mut config = base_config(provider);
-    config.tools.register(Box::new(EchoTool));
+    config.tools = ToolRegistry::builder()
+        .register(Box::new(EchoTool))
+        .build();
 
     let mut agent = Agent::new(config);
     let (tx, mut rx) = mpsc::channel(64);

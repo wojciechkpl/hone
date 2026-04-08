@@ -14,6 +14,7 @@ use crate::error::AgentError;
 use crate::turn::TurnResult;
 
 /// Configuration for creating an `Agent`.
+#[derive(Clone)]
 pub struct AgentConfig {
     pub provider: Arc<dyn ModelProvider>,
     pub tools: ToolRegistry,
@@ -61,6 +62,17 @@ impl Agent {
     /// Total USD cost accumulated across all turns this session.
     pub fn session_cost(&self) -> f64 {
         self.cost.total_usd()
+    }
+
+    /// Estimated token count of the current context window (stored messages
+    /// only; the system prompt is not counted here).
+    pub fn context_token_count(&self) -> u32 {
+        self.context.total_tokens()
+    }
+
+    /// The configured maximum context token budget for this agent.
+    pub fn context_token_limit(&self) -> u32 {
+        self.config.max_tokens.unwrap_or(128_000)
     }
 
     /// Query the memory store for entries relevant to `query` and format them
@@ -235,7 +247,7 @@ impl Agent {
 
                 tool_calls_count += 1;
 
-                let tool = self.config.tools.get(&call.name);
+                let tool = self.config.tools.get(&call.name).map(Arc::clone);
                 let result = match tool {
                     None => Err(AgentError::ToolNotFound {
                         name: call.name.clone(),

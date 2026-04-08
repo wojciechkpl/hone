@@ -65,6 +65,7 @@ pub fn render_status_bar(status: &StatusInfo, theme: &Theme, anim: &AnimationSta
 
     let tokens_span = Span::styled(format!("{} tokens", status.format_tokens()), secondary);
     let cost_span = Span::styled(status.format_cost(), secondary);
+    let context_span = Span::styled(status.format_context(), secondary);
 
     let elapsed_span = Span::styled(anim.format_elapsed(), muted);
 
@@ -75,6 +76,8 @@ pub fn render_status_bar(status: &StatusInfo, theme: &Theme, anim: &AnimationSta
         tokens_span,
         sep.clone(),
         cost_span,
+        sep.clone(),
+        context_span,
         Span::styled(" ", muted),
     ];
 
