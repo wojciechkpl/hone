@@ -135,13 +135,7 @@ impl Agent {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
 
-        // Generate a unique ID from timestamp nanos + a thread-local counter.
-        let id = {
-            use std::sync::atomic::{AtomicU64, Ordering};
-            static COUNTER: AtomicU64 = AtomicU64::new(0);
-            let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
-            format!("{:016x}-{:08x}", now.as_nanos() as u64, seq)
-        };
+        let id = uuid::Uuid::now_v7().to_string();
 
         let memory = Memory {
             id,

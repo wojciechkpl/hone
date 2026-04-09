@@ -165,19 +165,8 @@ async fn test_file_hash_invalidation_on_file_change() {
     std::fs::write(&file_path, original).unwrap();
 
     let correct_hash = {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
         let content = std::fs::read(&file_path).unwrap();
-        let mut h = DefaultHasher::new();
-        content.hash(&mut h);
-        let p = h.finish();
-        let mut out = [0u8; 32];
-        for i in 0..4usize {
-            let seg = p.wrapping_add(i as u64).to_le_bytes();
-            out[i * 8..(i + 1) * 8].copy_from_slice(&seg);
-        }
-        out
+        *blake3::hash(&content).as_bytes()
     };
 
     let tag = InvalidationTag::FileHash {

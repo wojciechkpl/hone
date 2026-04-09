@@ -6,6 +6,10 @@ use hone_proto::ModelId;
 use crate::traits::ModelProvider;
 
 /// Thread-safe registry of model providers, supporting hot-swap.
+///
+/// Uses `std::sync::RwLock` with poison recovery: if a thread panics while
+/// holding the lock, subsequent accesses recover the inner data instead of
+/// cascading the panic across every caller.
 pub struct ProviderRegistry {
     providers: RwLock<HashMap<String, Arc<dyn ModelProvider>>>,
 }
@@ -22,7 +26,7 @@ impl ProviderRegistry {
         let id = provider.id().to_owned();
         self.providers
             .write()
-            .expect("registry lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .insert(id, provider);
     }
 
@@ -30,7 +34,7 @@ impl ProviderRegistry {
     pub fn get(&self, id: &str) -> Option<Arc<dyn ModelProvider>> {
         self.providers
             .read()
-            .expect("registry lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .get(id)
             .cloned()
     }
@@ -48,7 +52,7 @@ impl ProviderRegistry {
     ///
     /// Does nothing if `old_id` is not currently registered.
     pub fn swap(&self, old_id: &str, new: Arc<dyn ModelProvider>) {
-        let mut map = self.providers.write().expect("registry lock poisoned");
+        let mut map = self.providers.write().unwrap_or_else(|e| e.into_inner());
         if map.contains_key(old_id) {
             map.remove(old_id);
             let new_id = new.id().to_owned();
@@ -60,7 +64,7 @@ impl ProviderRegistry {
     pub fn all(&self) -> Vec<Arc<dyn ModelProvider>> {
         self.providers
             .read()
-            .expect("registry lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .values()
             .cloned()
             .collect()

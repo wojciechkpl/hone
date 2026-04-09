@@ -87,6 +87,9 @@ git2 = "0.19"
 # Config
 figment = { version = "0.10", features = ["toml", "env"] }
 
+# Hashing
+blake3 = "1"
+
 # Security
 rustix = "0.38"
 cfg-if = "1"

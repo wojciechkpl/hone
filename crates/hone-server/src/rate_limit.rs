@@ -2,9 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use std::net::SocketAddr;
+
 use axum::body::Body;
-use axum::extract::State;
-use axum::http::{Request, StatusCode};
+use axum::extract::{ConnectInfo, State};
+use axum::http::Request;
+use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use tokio::sync::Mutex;
@@ -64,20 +67,24 @@ impl RateLimiter {
 
 /// Axum middleware that enforces the rate limit on incoming requests.
 ///
-/// Uses the `X-Forwarded-For` header as the client identifier, falling back to
-/// `"default"` when the header is absent. Returns `429 Too Many Requests` once
-/// the client's budget is exhausted.
+/// Uses the peer socket address (`ConnectInfo<SocketAddr>`) as the client
+/// identifier — this cannot be spoofed by the client. Falls back to
+/// `"unknown"` only when `ConnectInfo` is not available (which should not
+/// happen when the server is started with `into_make_service_with_connect_info`).
+///
+/// Returns `429 Too Many Requests` once the client's budget is exhausted.
 pub async fn rate_limit_middleware(
     State(limiter): State<RateLimiter>,
     request: Request<Body>,
     next: Next,
 ) -> Response {
+    // Extract the peer IP from ConnectInfo (set by into_make_service_with_connect_info).
+    // This cannot be spoofed by the client, unlike X-Forwarded-For.
     let client_id = request
-        .headers()
-        .get("x-forwarded-for")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("default")
-        .to_string();
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
 
     if !limiter.check(&client_id).await {
         return (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded").into_response();

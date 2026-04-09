@@ -181,28 +181,9 @@ async fn test_file_hash_invalidation_on_file_change() {
     let original = b"original content";
     std::fs::write(&file_path, original).unwrap();
 
-    // Hash the original content via the same algorithm used in InvalidationTag.
-    // We need the hash to match what InvalidationTag::FileHash will produce
-    // when it reads the file. The easiest way: write the tag with the correct
-    // hash by letting CacheKey::from_bytes hash the file bytes, then build
-    // the tag with the same bytes manually.
-    //
-    // For the test we fabricate a hash that matches *original* by reading the
-    // file ourselves with the same hasher.
     let correct_hash = {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
         let content = std::fs::read(&file_path).unwrap();
-        let mut h = DefaultHasher::new();
-        content.hash(&mut h);
-        let p = h.finish();
-        let mut out = [0u8; 32];
-        for i in 0..4 {
-            let seg = p.wrapping_add(i as u64).to_le_bytes();
-            out[i as usize * 8..(i as usize + 1) * 8].copy_from_slice(&seg);
-        }
-        out
+        *blake3::hash(&content).as_bytes()
     };
 
     let tag = InvalidationTag::FileHash {

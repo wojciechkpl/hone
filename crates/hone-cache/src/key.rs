@@ -7,46 +7,22 @@ pub struct CacheKey {
     /// Logical namespace, e.g. "tool:read_file", "tool:grep", "llm:replay".
     /// Used for targeted invalidation (drop all entries under a namespace).
     pub namespace: String,
-    /// 32-byte content hash. Uses DefaultHasher twice to fill 32 bytes.
-    /// v1 uses non-cryptographic hashing — collision resistance is sufficient.
+    /// 32-byte content hash (blake3). Deterministic and portable across
+    /// Rust versions and platforms.
     pub hash: [u8; 32],
     /// Invalidation policy attached to this key.
     pub invalidator: InvalidationTag,
 }
 
 impl CacheKey {
-    /// Build a key from a namespace and raw bytes. Hashes with DefaultHasher
-    /// four times to fill 32 bytes (v1 uses non-cryptographic hashing).
+    /// Build a key from a namespace and raw bytes using blake3 for a
+    /// deterministic, portable 32-byte hash.
     pub fn from_bytes(
         namespace: impl Into<String>,
         bytes: &[u8],
         invalidator: InvalidationTag,
     ) -> Self {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut h1 = DefaultHasher::new();
-        bytes.hash(&mut h1);
-        let p1 = h1.finish();
-
-        let mut h2 = DefaultHasher::new();
-        (bytes, p1).hash(&mut h2);
-        let p2 = h2.finish();
-
-        let mut h3 = DefaultHasher::new();
-        (bytes, p2).hash(&mut h3);
-        let p3 = h3.finish();
-
-        let mut h4 = DefaultHasher::new();
-        (bytes, p3).hash(&mut h4);
-        let p4 = h4.finish();
-
-        let mut hash = [0u8; 32];
-        hash[0..8].copy_from_slice(&p1.to_le_bytes());
-        hash[8..16].copy_from_slice(&p2.to_le_bytes());
-        hash[16..24].copy_from_slice(&p3.to_le_bytes());
-        hash[24..32].copy_from_slice(&p4.to_le_bytes());
-
+        let hash: [u8; 32] = *blake3::hash(bytes).as_bytes();
         Self {
             namespace: namespace.into(),
             hash,
@@ -111,38 +87,17 @@ impl InvalidationTag {
 }
 
 fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut h = DefaultHasher::new();
-    bytes.hash(&mut h);
-    let p = h.finish();
-
-    let mut out = [0u8; 32];
-    for i in 0..4 {
-        let segment = p.wrapping_add(i as u64).to_le_bytes();
-        out[i * 8..(i + 1) * 8].copy_from_slice(&segment);
-    }
-    out
+    *blake3::hash(bytes).as_bytes()
 }
 
-fn current_git_sha(repo: &std::path::Path) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if sha.is_empty() {
-        None
-    } else {
-        Some(sha)
-    }
+/// Read the current HEAD SHA using libgit2 instead of spawning a `git`
+/// subprocess. This avoids blocking the Tokio runtime when called from
+/// async contexts (libgit2 is pure in-process I/O).
+fn current_git_sha(repo_path: &std::path::Path) -> Option<String> {
+    let repo = git2::Repository::discover(repo_path).ok()?;
+    let head = repo.head().ok()?;
+    let oid = head.target()?;
+    Some(oid.to_string())
 }
 
 #[cfg(test)]
