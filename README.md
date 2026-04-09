@@ -216,6 +216,9 @@ The binaries are in `target/release/`. Hone is self-contained—no external depe
 # Use auto-detected provider (priority: ANTHROPIC > OPENAI > Claude CLI > Gemini CLI > Ollama)
 ANTHROPIC_API_KEY=sk-... hone "build a CLI tool that..."
 
+# Use a custom OpenAI-compatible endpoint (DeepSeek, Qwen, Kimi, OpenRouter, etc.)
+OPENAI_API_KEY=sk-... HONE_OPENAI_BASE_URL=https://api.deepseek.com HONE_OPENAI_MODEL=deepseek-coder hone "analyze this code"
+
 # Multi-agent orchestration: decompose task, execute in parallel, merge results
 hone --orchestrate "refactor the authentication module for security"
 
@@ -310,6 +313,21 @@ default = "anthropic"
 anthropic_api_key = "${ANTHROPIC_API_KEY}"
 openai_api_key = "${OPENAI_API_KEY}"
 ```
+
+### Environment Variables
+
+Hone respects the following environment variables for provider setup:
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `ANTHROPIC_API_KEY` | Anthropic API key for direct Claude access | `sk-ant-...` |
+| `OPENAI_API_KEY` | OpenAI API key (or compatible endpoint) | `sk-...` |
+| `HONE_OPENAI_BASE_URL` | Override OpenAI endpoint for custom providers | `https://api.deepseek.com` |
+| `HONE_OPENAI_MODEL` | Override model name for custom endpoints | `deepseek-coder`, `qwen-max`, `claude-3-sonnet` |
+
+The provider auto-detection order is: **ANTHROPIC > OPENAI (+ custom endpoints) > Claude CLI > Gemini CLI > Ollama**.
+
+When `HONE_OPENAI_BASE_URL` is set, Hone treats any `OPENAI_API_KEY` as a token for that endpoint, allowing drop-in access to DeepSeek, Qwen, Kimi, OpenRouter, and other OpenAI-compatible services.
 
 See docs/configuration.md for complete reference.
 

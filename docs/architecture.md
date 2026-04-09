@@ -774,6 +774,22 @@ flowchart TD
     E[Secret leakage via\nenv vars] -->|mitigated by| ENV[Explicit env allowlist\nin SandboxPolicy]
 ```
 
+### Security hardening (Phase 1–2)
+
+Recent security improvements include:
+
+- **Path traversal prevention:** All file tools use `resolve_within_working_dir()` to canonicalize paths and reject `..` escapes.
+- **Shell command classification:** Command intent classifier detects compound shell operators (`;`, `&&`, `||`, `|`, `$()`, backticks) and escalates to `Destructive` intent, requiring explicit user approval.
+- **Real Seatbelt sandboxing (macOS):** `sandbox_init(3)` FFI is now functional, applying kernel-enforced Seatbelt profiles. Path canonicalization handles macOS symlinks (`/tmp` → `/private/tmp`). Dyld compatibility via global `file-read*` rules. Process fork/exec support for child processes.
+- **Landlock on Linux (fully implemented):** Landlock LSM (Linux 5.13+) enforces fine-grained filesystem access via `landlock_create_ruleset()`. Seccomp-BPF fallback for older kernels.
+- **CLI prompts via stdin:** Sensitive input (API keys, prompts in one-shot mode) is now piped via stdin instead of CLI args to avoid exposure in `ps` output.
+- **Shell injection fix:** `check_binary_available()` now validates binary names with a denylist of metacharacters (`/`, `;`, `&`, `|`) instead of using `sh -c`.
+- **Rate limiter using peer IP:** Server-side rate limiting now uses the actual peer socket address instead of the spoofable `X-Forwarded-For` header.
+- **RwLock poison recovery:** Provider registry uses `unwrap_or_else(|e| e.into_inner())` to recover state after panic instead of cascading the failure.
+- **Memory IDs with UUID v7:** Session and memory IDs now use `uuid::v7` (sortable) instead of truncated timestamps.
+- **Cache keys with blake3:** Tool result cache uses blake3 hashing for integrity instead of the non-cryptographic `DefaultHasher`.
+- **Git SHA via libgit2:** `hone-cache` resolves HEAD SHA using the `git2` crate (pure in-process I/O) instead of spawning a subprocess.
+
 ---
 
 ## 11. Key Design Decisions

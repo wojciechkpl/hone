@@ -73,13 +73,22 @@ timeout_secs = 30
 - `claude-sonnet-4` — 200K context, fast general-purpose
 - `claude-haiku-3-5` — 200K context, cheapest, good for simple tasks
 
-### OpenAI API
+### OpenAI API (and Compatible Endpoints)
 
-Compatible alternative.
+Use OpenAI or any OpenAI-compatible endpoint (DeepSeek, Qwen, Kimi, OpenRouter, etc.).
 
 ```bash
 export OPENAI_API_KEY="sk-..."
 hone --model openai:gpt-4o
+```
+
+**For custom endpoints (DeepSeek, Qwen, Kimi, OpenRouter):**
+
+```bash
+export OPENAI_API_KEY="your-api-key"
+export HONE_OPENAI_BASE_URL="https://api.deepseek.com"
+export HONE_OPENAI_MODEL="deepseek-coder"
+hone
 ```
 
 **Configuration:**
@@ -91,10 +100,16 @@ base_url = "https://api.openai.com/v1"
 timeout_secs = 30
 ```
 
-**Available models:**
+**OpenAI available models:**
 - `gpt-4o` — Latest, most capable
 - `gpt-4-turbo` — Previous gen
 - `gpt-3.5-turbo` — Fast, cheap
+
+**Custom endpoint examples:**
+- **DeepSeek:** `https://api.deepseek.com`, model `deepseek-coder`
+- **Qwen (via DeepSeek):** `https://api.deepseek.com`, model `qwen-max`
+- **OpenRouter:** `https://openrouter.ai/api/v1`, any supported model
+- **Self-hosted vLLM:** `http://localhost:8000/v1`, your model name
 
 ### Ollama (Local Models)
 

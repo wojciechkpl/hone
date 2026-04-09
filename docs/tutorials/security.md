@@ -30,11 +30,11 @@ error: Permission denied (EACCES)
   - Output >= 1 means Landlock is available
   - No output or error means unavailable
 
-If Landlock is unavailable, `SandboxError::Unavailable` is returned and Hone falls back to `NullSandbox` with a warning:
+If Landlock is unavailable, `SandboxError::Unavailable` is returned and the operation is aborted (fail-closed design):
 
 ```
-warn: Landlock not available on this kernel (< 5.13)
-Fall back to NullSandbox — tool calls are not filesystem-sandboxed.
+error: Landlock not available on this kernel (< 5.13)
+Set [sandbox] enforce = false to disable sandboxing (not recommended).
 ```
 
 To require Landlock and fail if unavailable:
