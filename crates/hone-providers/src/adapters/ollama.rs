@@ -75,6 +75,10 @@ pub fn parse_ndjson_line(line: &str) -> Vec<ProviderEvent> {
         let completion_tokens = value["eval_count"].as_u64().unwrap_or(0) as u32;
 
         if prompt_tokens > 0 || completion_tokens > 0 {
+            // Ollama's local KV cache is not exposed via the wire protocol.
+            // `prompt_eval_count` reflects tokens actually evaluated (cache hits
+            // reduce this), but Ollama does not report cache_read/cache_write
+            // counts separately, so we leave cache_read as 0.
             events.push(ProviderEvent::Usage(TokenUsage {
                 input: prompt_tokens,
                 output: completion_tokens,

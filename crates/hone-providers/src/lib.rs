@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod adapters;
+pub mod caching_provider;
 pub mod error;
 pub mod fallback;
 pub mod mock;
@@ -14,6 +15,7 @@ pub use adapters::claude_cli::ClaudeCliProvider;
 pub use adapters::gemini_cli::GeminiCliProvider;
 pub use adapters::ollama::OllamaProvider;
 pub use adapters::openai::OpenAiProvider;
+pub use caching_provider::{CacheStats, CachingProvider};
 pub use error::ProviderError;
 pub use fallback::FallbackChain;
 pub use mock::MockProvider;

@@ -1057,7 +1057,15 @@ async fn main() -> Result<()> {
 
     tracing::debug!(system_prompt_len = system_prompt.len(), "system prompt ready");
 
-    let detected = detect_provider().await;
+    let mut detected = detect_provider().await;
+
+    // Opt-in local response cache: set HONE_CACHE=1 (or any value) to wrap
+    // the inner provider with an LRU cache. Useful for development/testing
+    // and retry scenarios where the exact same request may repeat.
+    if std::env::var("HONE_CACHE").is_ok() {
+        tracing::info!("local response cache enabled (HONE_CACHE set)");
+        detected.provider = Arc::new(hone_providers::CachingProvider::new(detected.provider, 100));
+    }
 
     // Validate --model against known provider prefixes.
     let model_id: ModelId = if let Some(ref m) = cli.model {

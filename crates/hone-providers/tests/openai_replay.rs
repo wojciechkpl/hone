@@ -5,6 +5,55 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 // ---------------------------------------------------------------------------
+// Cached tokens: prompt_tokens_details.cached_tokens populates cache_read
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_openai_parses_cached_tokens() {
+    let server = MockServer::start().await;
+    let body = concat!(
+        "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n",
+        "\n",
+        "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],",
+        "\"usage\":{\"prompt_tokens\":1500,\"completion_tokens\":1,\"total_tokens\":1501,",
+        "\"prompt_tokens_details\":{\"cached_tokens\":1024}}}\n",
+        "\n",
+        "data: [DONE]\n",
+        "\n",
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiProvider::with_base_url("test-key", server.uri());
+    let req = CompletionRequest::new(
+        ModelId::new("openai:gpt-4o"),
+        vec![Message::user("hi")],
+    );
+    let stream = provider.complete(req).await.unwrap();
+    let events: Vec<ProviderEvent> = stream.collect().await;
+
+    let usage = events
+        .iter()
+        .find_map(|e| match e {
+            ProviderEvent::Usage(u) => Some(u),
+            _ => None,
+        })
+        .expect("expected Usage event");
+
+    assert_eq!(usage.input, 1500);
+    assert_eq!(usage.cache_read, 1024);
+    assert_eq!(usage.output, 1);
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

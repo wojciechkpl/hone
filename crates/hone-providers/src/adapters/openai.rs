@@ -185,10 +185,17 @@ pub fn parse_sse_chunk(data: &str, tool_states: &mut HashMap<usize, ToolCallStat
         let input = usage["prompt_tokens"].as_u64().unwrap_or(0) as u32;
         let output = usage["completion_tokens"].as_u64().unwrap_or(0) as u32;
         if input > 0 || output > 0 {
+            // OpenAI automatic prompt caching: cached_tokens reflects the number of
+            // prompt tokens served from cache (kicks in for inputs >1024 tokens).
+            let cached = usage
+                .get("prompt_tokens_details")
+                .and_then(|d| d.get("cached_tokens"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32;
             events.push(ProviderEvent::Usage(TokenUsage {
                 input,
                 output,
-                cache_read: 0,
+                cache_read: cached,
             }));
         }
     }
