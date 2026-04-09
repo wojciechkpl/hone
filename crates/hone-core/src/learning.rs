@@ -201,6 +201,7 @@ impl AdaptiveClassifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hone_memory::InMemoryStore;
 
     #[test]
     fn test_outcome_round_trip() {
@@ -227,5 +228,127 @@ mod tests {
     fn test_outcome_parse_failure() {
         let parsed = OutcomeRecord::from_content("not an outcome");
         assert!(parsed.is_none());
+    }
+
+    fn make_classifier() -> AdaptiveClassifier {
+        let store = InMemoryStore::new();
+        AdaptiveClassifier::new(Arc::new(Mutex::new(store)))
+    }
+
+    fn outcome(tier: ComplexityTier, success: bool) -> OutcomeRecord {
+        OutcomeRecord {
+            tier,
+            model: "test:model".to_string(),
+            success,
+            cost_usd: 0.01,
+            total_tokens: 1000,
+            task_summary: "test task".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_suggest_tier_returns_none_below_minimum_history() {
+        let classifier = make_classifier();
+
+        // Record only 3 outcomes — below the 5 minimum.
+        for _ in 0..3 {
+            classifier
+                .record_outcome(outcome(ComplexityTier::Simple, true))
+                .await;
+        }
+
+        let result = classifier.suggest_tier("fix a typo").await;
+        assert_eq!(result, None, "should return None with < 5 outcomes");
+    }
+
+    #[tokio::test]
+    async fn test_suggest_tier_downgrades_medium_to_simple() {
+        let classifier = make_classifier();
+
+        // Record 5 successful Simple outcomes — > 80% success rate.
+        for _ in 0..5 {
+            classifier
+                .record_outcome(outcome(ComplexityTier::Simple, true))
+                .await;
+        }
+
+        // "update the version" is classified as Medium by rule-based classifier
+        // (contains "update" → Simple, but let's use a Medium-classified task).
+        // Use a task that the rule-based classifier classifies as Medium.
+        let result = classifier.suggest_tier("check the code quality").await;
+        // The rule-based classifier returns Medium for this.
+        // With high Simple success, it should downgrade to Simple.
+        assert_eq!(
+            result,
+            Some(ComplexityTier::Simple),
+            "should downgrade Medium → Simple when Simple has high success rate"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_suggest_tier_upgrades_simple_to_medium() {
+        let classifier = make_classifier();
+
+        // Record 5 Simple outcomes with low success rate (1 success, 4 failures).
+        classifier
+            .record_outcome(outcome(ComplexityTier::Simple, true))
+            .await;
+        for _ in 0..4 {
+            classifier
+                .record_outcome(outcome(ComplexityTier::Simple, false))
+                .await;
+        }
+
+        // "fix typo" is classified as Simple by rule-based classifier.
+        let result = classifier.suggest_tier("fix typo in readme").await;
+        assert_eq!(
+            result,
+            Some(ComplexityTier::Medium),
+            "should upgrade Simple → Medium when Simple has low success rate"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_suggest_tier_no_override_at_moderate_rate() {
+        let classifier = make_classifier();
+
+        // Record 5 Simple outcomes with 60% success (3 success, 2 failures).
+        for _ in 0..3 {
+            classifier
+                .record_outcome(outcome(ComplexityTier::Simple, true))
+                .await;
+        }
+        for _ in 0..2 {
+            classifier
+                .record_outcome(outcome(ComplexityTier::Simple, false))
+                .await;
+        }
+
+        let result = classifier.suggest_tier("fix typo").await;
+        assert_eq!(
+            result, None,
+            "60% success rate is between thresholds — no override"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_suggest_tier_does_not_override_complex() {
+        let classifier = make_classifier();
+
+        // High Simple success rate.
+        for _ in 0..5 {
+            classifier
+                .record_outcome(outcome(ComplexityTier::Simple, true))
+                .await;
+        }
+
+        // "refactor multiple modules across the codebase" → Complex.
+        let result = classifier
+            .suggest_tier("refactor multiple modules across the codebase")
+            .await;
+        assert_eq!(
+            result, None,
+            "should not override Complex tier even with high Simple success"
+        );
     }
 }

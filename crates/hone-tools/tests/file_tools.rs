@@ -752,3 +752,131 @@ async fn test_edit_file_verification_succeeds() {
     let on_disk = std::fs::read_to_string(dir.path().join("verify_edit.txt")).unwrap();
     assert_eq!(on_disk, "after edit");
 }
+
+// ---------------------------------------------------------------------------
+// Path traversal prevention (resolve_within_working_dir)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_read_file_rejects_dotdot_escape() {
+    let dir = TempDir::new().unwrap();
+    let tool = ReadFileTool;
+    let ctx = make_ctx(&dir);
+    let input = ToolInput::new(json!({ "path": "../../etc/passwd" }));
+
+    let err = tool.call(input, &ctx).await.expect_err("dotdot escape should be rejected");
+    match err {
+        hone_tools::ToolError::InvalidInput { reason } => {
+            assert!(
+                reason.contains("outside") || reason.contains("working directory"),
+                "error should mention path escape; got: {reason}"
+            );
+        }
+        other => panic!("expected InvalidInput for path traversal, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_write_file_rejects_absolute_escape() {
+    let dir = TempDir::new().unwrap();
+    let tool = WriteFileTool;
+    let ctx = make_ctx(&dir);
+    let input = ToolInput::new(json!({ "path": "/tmp/hone_escape_test.txt", "content": "pwned" }));
+
+    let err = tool.call(input, &ctx).await.expect_err("absolute path outside working dir should be rejected");
+    match err {
+        hone_tools::ToolError::InvalidInput { reason } => {
+            assert!(
+                reason.contains("outside") || reason.contains("working directory"),
+                "error should mention path escape; got: {reason}"
+            );
+        }
+        other => panic!("expected InvalidInput for absolute escape, got: {other:?}"),
+    }
+    // Verify the file was NOT created.
+    assert!(
+        !std::path::Path::new("/tmp/hone_escape_test.txt").exists(),
+        "escaped file should not have been created"
+    );
+}
+
+#[tokio::test]
+async fn test_read_file_accepts_nested_path_inside_working_dir() {
+    let dir = TempDir::new().unwrap();
+    let sub = dir.path().join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    std::fs::write(sub.join("inner.txt"), "nested content").unwrap();
+
+    let tool = ReadFileTool;
+    let ctx = make_ctx(&dir);
+    let input = ToolInput::new(json!({ "path": "sub/inner.txt" }));
+
+    let output = tool.call(input, &ctx).await.expect("nested path inside working dir should succeed");
+    assert!(output.0["content"].as_str().unwrap().contains("nested content"));
+}
+
+#[tokio::test]
+async fn test_edit_file_rejects_dotdot_in_middle() {
+    let dir = TempDir::new().unwrap();
+    let sub = dir.path().join("sub");
+    std::fs::create_dir(&sub).unwrap();
+
+    let tool = EditFileTool;
+    let ctx = make_ctx(&dir);
+    // Attempt to escape via sub/../../../etc/passwd
+    let input = ToolInput::new(json!({
+        "path": "sub/../../../etc/passwd",
+        "old_str": "root",
+        "new_str": "pwned"
+    }));
+
+    let err = tool.call(input, &ctx).await.expect_err("dotdot escape via middle should be rejected");
+    match err {
+        hone_tools::ToolError::InvalidInput { reason } => {
+            assert!(
+                reason.contains("outside") || reason.contains("working directory"),
+                "error should mention path escape; got: {reason}"
+            );
+        }
+        // IoError is also acceptable if the path doesn't resolve
+        _ => {}
+    }
+}
+
+#[tokio::test]
+async fn test_glob_rejects_dotdot_path() {
+    let dir = TempDir::new().unwrap();
+    let tool = GlobTool;
+    let ctx = make_ctx(&dir);
+    let input = ToolInput::new(json!({ "pattern": "*.txt", "path": "../../" }));
+
+    let err = tool.call(input, &ctx).await.expect_err("dotdot path in glob should be rejected");
+    match err {
+        hone_tools::ToolError::InvalidInput { reason } => {
+            assert!(
+                reason.contains("outside") || reason.contains("working directory"),
+                "error should mention path escape; got: {reason}"
+            );
+        }
+        other => panic!("expected InvalidInput, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_grep_rejects_dotdot_path() {
+    let dir = TempDir::new().unwrap();
+    let tool = GrepTool;
+    let ctx = make_ctx(&dir);
+    let input = ToolInput::new(json!({ "pattern": "root", "path": "../../../etc" }));
+
+    let err = tool.call(input, &ctx).await.expect_err("dotdot path in grep should be rejected");
+    match err {
+        hone_tools::ToolError::InvalidInput { reason } => {
+            assert!(
+                reason.contains("outside") || reason.contains("working directory"),
+                "error should mention path escape; got: {reason}"
+            );
+        }
+        other => panic!("expected InvalidInput, got: {other:?}"),
+    }
+}

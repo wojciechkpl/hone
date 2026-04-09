@@ -12,15 +12,7 @@ fn health_request() -> Request<Body> {
         .unwrap()
 }
 
-fn health_request_with_ip(ip: &str) -> Request<Body> {
-    Request::builder()
-        .uri("/health")
-        .header("x-forwarded-for", ip)
-        .body(Body::empty())
-        .unwrap()
-}
-
-/// 5 requests under a 100/min limit all return 200.
+/// Requests under the limit all return 200.
 #[tokio::test]
 async fn test_rate_limit_middleware_allows_under_limit() {
     let limiter = RateLimiter::new(100, Duration::from_secs(60));
@@ -37,20 +29,17 @@ async fn test_rate_limit_middleware_allows_under_limit() {
     }
 }
 
-/// The 3rd request with the same IP is rejected when limit is 2/min.
+/// When ConnectInfo is absent (no real TCP connection), all requests share
+/// the "unknown" fallback bucket. The 3rd request past a limit of 2 is rejected.
 #[tokio::test]
 async fn test_rate_limit_middleware_blocks_over_limit() {
     let limiter = RateLimiter::new(2, Duration::from_secs(60));
     let state = AppState::new(None).with_rate_limiter(limiter);
-    let ip = "10.0.0.1";
 
-    // First two requests must succeed.
+    // First two requests succeed (same "unknown" bucket).
     for i in 1..=2 {
         let app = router(state.clone());
-        let response = app
-            .oneshot(health_request_with_ip(ip))
-            .await
-            .unwrap();
+        let response = app.oneshot(health_request()).await.unwrap();
         assert_eq!(
             response.status(),
             StatusCode::OK,
@@ -60,10 +49,7 @@ async fn test_rate_limit_middleware_blocks_over_limit() {
 
     // Third request must be rejected.
     let app = router(state.clone());
-    let response = app
-        .oneshot(health_request_with_ip(ip))
-        .await
-        .unwrap();
+    let response = app.oneshot(health_request()).await.unwrap();
     assert_eq!(
         response.status(),
         StatusCode::TOO_MANY_REQUESTS,
@@ -71,36 +57,51 @@ async fn test_rate_limit_middleware_blocks_over_limit() {
     );
 }
 
-/// Different client IPs have independent budgets.
+/// Per-client isolation is tested at the RateLimiter level (not middleware)
+/// because `tower::ServiceExt::oneshot` does not populate ConnectInfo.
+/// The middleware correctly delegates to RateLimiter::check which is
+/// thoroughly tested in the inline unit tests in rate_limit.rs.
 #[tokio::test]
-async fn test_rate_limit_middleware_different_clients_independent() {
+async fn test_rate_limiter_per_client_isolation() {
+    let limiter = RateLimiter::new(1, Duration::from_secs(60));
+
+    // Client A exhausts its budget.
+    assert!(limiter.check("192.168.1.1").await, "A first ok");
+    assert!(!limiter.check("192.168.1.1").await, "A second blocked");
+
+    // Client B still has its own budget.
+    assert!(limiter.check("192.168.1.2").await, "B first ok");
+    assert!(!limiter.check("192.168.1.2").await, "B second blocked");
+}
+
+/// Without ConnectInfo, the middleware falls back to "unknown" — all
+/// requests share one bucket regardless of X-Forwarded-For.
+#[tokio::test]
+async fn test_rate_limit_middleware_ignores_forwarded_for() {
     let limiter = RateLimiter::new(1, Duration::from_secs(60));
     let state = AppState::new(None).with_rate_limiter(limiter);
 
-    // client A exhausts its budget.
+    // First request with "IP A" via X-Forwarded-For.
     let app = router(state.clone());
-    let r1 = app
-        .oneshot(health_request_with_ip("192.168.1.1"))
-        .await
+    let req = Request::builder()
+        .uri("/health")
+        .header("x-forwarded-for", "10.0.0.1")
+        .body(Body::empty())
         .unwrap();
-    assert_eq!(r1.status(), StatusCode::OK, "client A first request ok");
+    let r1 = app.oneshot(req).await.unwrap();
+    assert_eq!(r1.status(), StatusCode::OK);
 
+    // Second request with "IP B" — still hits the same "unknown" bucket.
     let app = router(state.clone());
-    let r2 = app
-        .oneshot(health_request_with_ip("192.168.1.1"))
-        .await
+    let req = Request::builder()
+        .uri("/health")
+        .header("x-forwarded-for", "10.0.0.2")
+        .body(Body::empty())
         .unwrap();
+    let r2 = app.oneshot(req).await.unwrap();
     assert_eq!(
         r2.status(),
         StatusCode::TOO_MANY_REQUESTS,
-        "client A second request blocked"
+        "X-Forwarded-For should NOT create separate buckets — all share 'unknown'"
     );
-
-    // client B still has its own fresh budget.
-    let app = router(state.clone());
-    let r3 = app
-        .oneshot(health_request_with_ip("192.168.1.2"))
-        .await
-        .unwrap();
-    assert_eq!(r3.status(), StatusCode::OK, "client B first request ok");
 }

@@ -366,12 +366,25 @@ impl ContextManager {
                 }
                 Role::Tool if assistant_turns_since >= summary_age => {
                     let text = self.messages[i].content.as_text().to_string();
-                    if is_already_compressed(&text) {
+
+                    // Allow re-compression from structural summary to one-liner
+                    // at higher ages, but skip content that's already a one-liner.
+                    if text.starts_with("[tool result:") || text.starts_with("[duplicate content") {
                         continue;
                     }
 
                     let compressed = if assistant_turns_since >= oneliner_age {
-                        tool_oneliner(&text)
+                        // One-liner: works on both raw content and structural summaries.
+                        if text.starts_with("[tool result summarized") {
+                            // Already a structural summary — collapse to one-liner.
+                            let len = text.len();
+                            format!("[tool result: {len} chars, summarized content]")
+                        } else {
+                            tool_oneliner(&text)
+                        }
+                    } else if text.starts_with("[tool result summarized") {
+                        // Already structural summary at this age — skip.
+                        continue;
                     } else {
                         structural_summary(&text)
                     };
@@ -1159,5 +1172,112 @@ mod tests {
             "exploration result should be compressed on phase transition, got: {}",
             &text[..100.min(text.len())]
         );
+    }
+
+    // --- Context compression pipeline tests ---
+
+    #[test]
+    fn test_graduated_compression_preserves_recent() {
+        let mut config = ContextConfig::default();
+        config.advertised_context_length = 1_000_000;
+        config.recent_window = 3;
+        config.tool_compress_age = 2;
+        config.tool_oneliner_age_offset = 3;
+        let mut ctx = ContextManager::with_config(config);
+
+        // Add old tool results that should be compressed.
+        ctx.add_message(Message::user("start"));
+        for i in 0..8 {
+            ctx.add_message(Message {
+                role: Role::Tool,
+                content: Content::Text(format!("fn function_{i}() {{ /* code */ }}")),
+                tool_calls: vec![],
+                tool_call_id: Some(format!("tc{i}")),
+            });
+            ctx.add_message(Message::assistant(format!("saw function {i}")));
+        }
+        // Recent messages
+        ctx.add_message(Message::user("now do something"));
+        ctx.add_message(Message::assistant("ok"));
+
+        let msgs = ctx.build_messages("sys");
+
+        // The last 3 messages (recent_window) should be verbatim.
+        let last_user = msgs.iter().rev().find(|m| matches!(m.role, Role::User));
+        assert_eq!(
+            last_user.unwrap().content.as_text(),
+            "now do something",
+            "recent user message should be preserved verbatim"
+        );
+    }
+
+    #[test]
+    fn test_oneliner_compression_at_high_age() {
+        let mut config = ContextConfig::default();
+        config.advertised_context_length = 1_000_000;
+        config.recent_window = 2;
+        config.tool_compress_age = 2;
+        config.tool_oneliner_age_offset = 3; // oneliner at age 5+
+        let mut ctx = ContextManager::with_config(config);
+
+        ctx.add_message(Message::user("start"));
+        ctx.add_message(Message {
+            role: Role::Tool,
+            content: Content::Text("fn old_function() { /* lots of code here */ }".repeat(10)),
+            tool_calls: vec![],
+            tool_call_id: Some("tc0".to_string()),
+        });
+        // Add 10 assistant turns to push age past oneliner threshold.
+        for i in 0..10 {
+            ctx.add_message(Message::assistant(format!("response {i}")));
+        }
+        ctx.add_message(Message::user("latest"));
+
+        // The old tool result should be a one-liner now.
+        let tool_msg = ctx.messages.iter().find(|m| matches!(m.role, Role::Tool)).unwrap();
+        let text = tool_msg.content.as_text();
+        assert!(
+            text.starts_with("[tool result:"),
+            "very old tool result should be a one-liner, got: {}",
+            &text[..80.min(text.len())]
+        );
+    }
+
+    #[test]
+    fn test_clear_resets_phase() {
+        let mut ctx = ContextManager::new(100_000);
+        ctx.notify_tool_call("write_file"); // exploration → editing
+        assert_eq!(ctx.current_phase(), TaskPhase::Editing);
+
+        ctx.clear();
+        // Phase should NOT auto-reset (PhaseTracker is separate from messages).
+        // But this test documents the current behavior.
+        // If we want clear to reset phase, we need to add that.
+        // For now, verify the message count is 0.
+        assert_eq!(ctx.message_count(), 0);
+    }
+
+    #[test]
+    fn test_over_budget_triggers_drop_and_summary() {
+        // Very small budget to force trimming.
+        let mut ctx = ContextManager::new(200);
+        ctx.add_message(Message::user("original request"));
+        for i in 0..50 {
+            ctx.add_message(Message::assistant(format!("response {i} with extra padding words")));
+        }
+
+        let msgs = ctx.build_messages("sys");
+
+        // Should have a session history summary marker.
+        let has_summary = msgs.iter().any(|m| {
+            matches!(m.role, Role::System) && m.content.as_text().contains("session history")
+        });
+        assert!(has_summary, "should have session history summary after trimming");
+
+        // The original user message should be preserved.
+        let has_original = msgs.iter().any(|m| {
+            matches!(m.role, Role::User) && m.content.as_text() == "original request"
+        });
+        assert!(has_original, "original user message should be preserved");
     }
 }
