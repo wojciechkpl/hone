@@ -1,4 +1,5 @@
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use futures::{Stream, stream};
@@ -11,11 +12,16 @@ use crate::traits::{CompletionRequest, ModelProvider};
 ///
 /// Emits a configurable sequence of `ProviderEvent`s followed by `Done`.
 /// Never touches the network.
+///
+/// The last `CompletionRequest` received by `complete()` is stored in
+/// `last_request` so tests can assert on what was sent.
 pub struct MockProvider {
     id: String,
     tokens: Vec<String>,
     tool_calls: Vec<ToolCallRequest>,
     usage: Option<TokenUsage>,
+    /// Captures the most recent `CompletionRequest` passed to `complete()`.
+    pub last_request: Arc<Mutex<Option<CompletionRequest>>>,
 }
 
 impl MockProvider {
@@ -26,6 +32,7 @@ impl MockProvider {
             tokens,
             tool_calls: Vec::new(),
             usage: None,
+            last_request: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -45,6 +52,7 @@ impl MockProvider {
             tokens: Vec::new(),
             tool_calls: vec![call],
             usage: None,
+            last_request: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -102,8 +110,9 @@ impl ModelProvider for MockProvider {
 
     async fn complete(
         &self,
-        _request: CompletionRequest,
+        request: CompletionRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
+        *self.last_request.lock().unwrap() = Some(request);
         let events = self.build_events();
         Ok(Box::pin(stream::iter(events)))
     }

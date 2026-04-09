@@ -1,5 +1,6 @@
 pub mod agent_def;
 pub mod agent_registry;
+pub mod metrics;
 pub mod recovery;
 pub mod retry;
 pub mod audit;
@@ -21,6 +22,7 @@ mod error;
 mod turn;
 
 pub use agent::{Agent, AgentConfig, AgentHandle, is_read_only_tool};
+pub use metrics::{ContextMetrics, MetricsSnapshot};
 pub use ensemble::{AgentEnsemble, EnsembleResult};
 pub use agent_def::{AgentDef, AgentDefError};
 pub use agent_registry::AgentRegistry;

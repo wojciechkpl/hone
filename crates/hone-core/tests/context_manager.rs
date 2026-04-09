@@ -280,3 +280,155 @@ fn test_recent_tool_results_not_compressed() {
         "recent tool result should NOT be compressed (only 2 turns old, threshold is 5)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Item 1: Content-hashed dedup tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_duplicate_tool_results_replaced_with_pointer() {
+    let mut ctx = ContextManager::new(100_000);
+    ctx.add_message(Message::system("sys"));
+    ctx.add_message(Message::user("read the file"));
+
+    // Add a tool result with substantial content.
+    let content = "x".repeat(1000);
+    let tool_msg = Message {
+        role: Role::Tool,
+        content: Content::Text(content.clone()),
+        tool_calls: vec![],
+        tool_call_id: Some("call_1".to_string()),
+    };
+    ctx.add_message(tool_msg);
+
+    // Add the same content again (simulates re-reading the same file).
+    let tool_msg2 = Message {
+        role: Role::Tool,
+        content: Content::Text(content.clone()),
+        tool_calls: vec![],
+        tool_call_id: Some("call_2".to_string()),
+    };
+    ctx.add_message(tool_msg2);
+
+    let built = ctx.build_messages("sys");
+
+    // First tool message has full content.
+    let first_tool = built
+        .iter()
+        .find(|m| matches!(m.role, Role::Tool) && m.content.as_text().len() > 500);
+    assert!(first_tool.is_some(), "first tool message should have full content");
+
+    // Count total tool messages.
+    let tool_count = built.iter().filter(|m| matches!(m.role, Role::Tool)).count();
+    assert!(tool_count >= 2);
+
+    // At least one tool message should be a dedup pointer.
+    let has_pointer = built
+        .iter()
+        .any(|m| matches!(m.role, Role::Tool) && m.content.as_text().contains("duplicate content"));
+    assert!(has_pointer, "second occurrence should be replaced with pointer");
+}
+
+#[test]
+fn test_small_tool_results_not_deduped() {
+    let mut ctx = ContextManager::new(100_000);
+    let small = "small content".to_string();
+    for _ in 0..3 {
+        ctx.add_message(Message {
+            role: Role::Tool,
+            content: Content::Text(small.clone()),
+            tool_calls: vec![],
+            tool_call_id: None,
+        });
+    }
+    let built = ctx.build_messages("sys");
+    let has_pointer = built
+        .iter()
+        .any(|m| m.content.as_text().contains("duplicate content"));
+    assert!(!has_pointer, "small content should not be deduped");
+}
+
+#[test]
+fn test_different_tool_results_not_deduped() {
+    let mut ctx = ContextManager::new(100_000);
+    ctx.add_message(Message {
+        role: Role::Tool,
+        content: Content::Text("a".repeat(1000)),
+        tool_calls: vec![],
+        tool_call_id: None,
+    });
+    ctx.add_message(Message {
+        role: Role::Tool,
+        content: Content::Text("b".repeat(1000)),
+        tool_calls: vec![],
+        tool_call_id: None,
+    });
+    let built = ctx.build_messages("sys");
+    let has_pointer = built
+        .iter()
+        .any(|m| m.content.as_text().contains("duplicate content"));
+    assert!(!has_pointer, "different content should not be deduped");
+}
+
+// ---------------------------------------------------------------------------
+// Item 2: "Lost in the Middle" ordering and RECENT_WINDOW protection tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_message_ordering_respects_lost_in_the_middle() {
+    let mut ctx = ContextManager::new(100_000);
+    ctx.add_message(Message::system("sys"));
+    ctx.add_message(Message::user("original request"));
+    for i in 0..5 {
+        ctx.add_message(Message::assistant(format!("response {i}")));
+    }
+    ctx.add_message(Message::user("most recent query"));
+
+    let built = ctx.build_messages("sys");
+
+    // First message should be the system prompt.
+    assert!(
+        matches!(built.first().map(|m| &m.role), Some(Role::System)),
+        "first message must be the system prompt"
+    );
+
+    // Last message should be the most recent user query.
+    assert_eq!(
+        built.last().unwrap().content.as_text(),
+        "most recent query",
+        "most recent query should be the last message"
+    );
+    assert!(
+        matches!(built.last().map(|m| &m.role), Some(Role::User)),
+        "last message must be a user message"
+    );
+}
+
+#[test]
+fn test_recent_messages_never_compressed() {
+    let mut ctx = ContextManager::new(10_000);
+    for i in 0..20 {
+        ctx.add_message(Message::user(format!("msg {i}")));
+    }
+    let recent = Message {
+        role: Role::Tool,
+        content: Content::Text("x".repeat(500)),
+        tool_calls: vec![],
+        tool_call_id: None,
+    };
+    ctx.add_message(recent);
+    for _ in 0..2 {
+        ctx.add_message(Message::assistant("recent assistant".to_string()));
+    }
+
+    // The recent tool result should NOT be compressed (it's within RECENT_WINDOW).
+    let built = ctx.build_messages("sys");
+    let tool_msg = built.iter().find(|m| matches!(m.role, Role::Tool));
+    if let Some(m) = tool_msg {
+        assert!(
+            m.content.as_text().len() >= 400,
+            "recent tool result should not be compressed, got: {}",
+            m.content.as_text()
+        );
+    }
+}

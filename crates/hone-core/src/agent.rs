@@ -13,6 +13,7 @@ use tokio::task::JoinSet;
 use crate::context::ContextManager;
 use crate::cost::CostAccumulator;
 use crate::error::AgentError;
+use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
 use crate::turn::TurnResult;
@@ -50,15 +51,20 @@ pub struct Agent {
     cost: CostAccumulator,
     /// Monotonically increasing counter of completed turns this session.
     turn_count: u32,
+    metrics: Arc<ContextMetrics>,
 }
 
 impl Agent {
     pub fn new(config: AgentConfig) -> Self {
+        let metrics = Arc::new(ContextMetrics::new());
+        let context = ContextManager::new(128_000)
+            .with_metrics(Arc::clone(&metrics));
         Self {
             config,
-            context: ContextManager::new(128_000),
+            context,
             cost: CostAccumulator::new(),
             turn_count: 0,
+            metrics,
         }
     }
 
@@ -81,6 +87,16 @@ impl Agent {
     /// The configured maximum context token budget for this agent.
     pub fn context_token_limit(&self) -> u32 {
         self.config.max_tokens.unwrap_or(128_000)
+    }
+
+    /// Shared reference to the session metrics accumulator.
+    pub fn metrics(&self) -> &Arc<ContextMetrics> {
+        &self.metrics
+    }
+
+    /// Snapshot of all context management metrics accumulated so far.
+    pub fn metrics_snapshot(&self) -> MetricsSnapshot {
+        self.metrics.snapshot()
     }
 
     /// Query the memory store for entries relevant to `query` and format them
@@ -159,13 +175,8 @@ impl Agent {
 
         self.cost.check_budget(self.config.budget_limit)?;
 
-        // Inject relevant memories into the system prompt for this turn.
-        let memory_appendix = self.fetch_relevant_memories(user_input).await;
-        let effective_system_prompt = if memory_appendix.is_empty() {
-            self.config.system_prompt.clone()
-        } else {
-            format!("{}{}", self.config.system_prompt, memory_appendix)
-        };
+        // Fetch memories before adding the user message so the query is clean.
+        let memories = self.fetch_relevant_memories(user_input).await;
 
         self.context.add_message(Message::user(user_input));
 
@@ -176,9 +187,30 @@ impl Agent {
         // We loop so that tool call → model follow-up cycles are handled
         // transparently.
         loop {
-            let messages = self
+            // Build the base message list with the STABLE system prompt.
+            // Memories are injected as a separate system-role message right
+            // after the base system prompt, so the prefix stays cache-friendly.
+            let mut messages = self
                 .context
-                .build_messages(&effective_system_prompt);
+                .build_messages(&self.config.system_prompt);
+
+            if !memories.is_empty() {
+                let memory_msg = Message {
+                    role: hone_proto::Role::System,
+                    content: hone_proto::Content::Text(format!(
+                        "# Relevant Memories\n\n{}",
+                        memories
+                    )),
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                };
+                // Insert right after the base system prompt (always index 0).
+                if messages.first().is_some_and(|m| matches!(m.role, hone_proto::Role::System)) {
+                    messages.insert(1, memory_msg);
+                } else {
+                    messages.insert(0, memory_msg);
+                }
+            }
 
             let mut request = CompletionRequest::new(self.config.model.clone(), messages);
             request.temperature = self.config.temperature;
@@ -390,6 +422,14 @@ impl Agent {
             cost_usd,
             "turn completed"
         );
+
+        // Record per-turn token usage in metrics.
+        self.metrics.record_turn_tokens(turn_usage.input, turn_usage.output);
+        // Record cache hits (cache_read maps to Anthropic's cache_read_input_tokens).
+        // Cache writes are not yet tracked separately in TokenUsage.
+        if turn_usage.cache_read > 0 {
+            self.metrics.record_cache(turn_usage.cache_read, 0);
+        }
 
         // Persist Q&A pair to memory (fire-and-forget).
         self.record_memory(user_input, &response_text).await;

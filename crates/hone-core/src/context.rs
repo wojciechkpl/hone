@@ -1,8 +1,18 @@
-use std::collections::HashSet;
-use std::sync::OnceLock;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, OnceLock};
 
 use hone_proto::{Content, Message, Role};
 use tiktoken_rs::CoreBPE;
+
+use crate::metrics::ContextMetrics;
+
+/// Number of most-recent messages that are never compressed or dropped.
+///
+/// Keeping fresh tail context verbatim improves answer quality per "Lost in
+/// the Middle" research (Liu et al., TACL 2024): LLMs attend most strongly to
+/// the start and end of the context window.
+const RECENT_WINDOW: usize = 3;
 
 /// Manages conversation history within a token budget.
 pub struct ContextManager {
@@ -12,6 +22,12 @@ pub struct ContextManager {
     // one trim_to_budget pass so we can emit a single summary marker.
     dropped_count: usize,
     dropped_role_hints: Vec<String>,
+    /// Optional metrics sink. When set, trim and compression events are recorded.
+    metrics: Option<Arc<ContextMetrics>>,
+    /// Maps content hash → first message index (in `self.messages`) that had
+    /// that hash.  Used to detect duplicate tool results (e.g., the same file
+    /// read twice) and replace later occurrences with a lightweight pointer.
+    content_hashes: HashMap<u64, usize>,
 }
 
 impl ContextManager {
@@ -21,12 +37,56 @@ impl ContextManager {
             messages: Vec::new(),
             dropped_count: 0,
             dropped_role_hints: Vec::new(),
+            metrics: None,
+            content_hashes: HashMap::new(),
         }
+    }
+
+    /// Attach a metrics sink. Trim and compression events will be recorded on it.
+    pub fn with_metrics(mut self, metrics: Arc<ContextMetrics>) -> Self {
+        self.metrics = Some(metrics);
+        self
     }
 
     /// Append a message to the conversation history, trimming old messages if
     /// the estimated token count exceeds the budget.
+    ///
+    /// Tool messages whose content matches a previously seen hash are replaced
+    /// with a lightweight pointer to save tokens.
     pub fn add_message(&mut self, message: Message) {
+        let idx = self.messages.len();
+
+        // Dedup: for Tool messages with substantial content, check whether we
+        // have already seen identical content.  If so, replace the incoming
+        // message with a one-line pointer instead of storing the full text again.
+        let message = if matches!(message.role, Role::Tool) {
+            let text = message.content.as_text();
+            if text.len() > 500 {
+                let hash = hash_content(&text);
+                if let Some(&first_idx) = self.content_hashes.get(&hash) {
+                    // Duplicate detected — replace content with a pointer.
+                    let summary = format!(
+                        "[duplicate content: identical to tool result at message {first_idx} (hash {:016x})]",
+                        hash
+                    );
+                    if let Some(m) = &self.metrics {
+                        m.record_dedup_hit();
+                    }
+                    Message {
+                        content: Content::Text(summary),
+                        ..message
+                    }
+                } else {
+                    self.content_hashes.insert(hash, idx);
+                    message
+                }
+            } else {
+                message
+            }
+        } else {
+            message
+        };
+
         self.messages.push(message);
         self.trim_to_budget();
     }
@@ -52,6 +112,7 @@ impl ContextManager {
         }
 
         // Step 2: drop oldest non-preserved messages until under budget.
+        let dropped_before = self.dropped_count;
         loop {
             if self.total_tokens() <= self.max_context_tokens {
                 break;
@@ -61,7 +122,9 @@ impl ContextManager {
             // each removal.
             let preserved = preserved_indices(&self.messages);
 
-            let drop_idx = (0..self.messages.len())
+            // Never drop from the protected tail (RECENT_WINDOW most-recent messages).
+            let protected_from = self.messages.len().saturating_sub(RECENT_WINDOW);
+            let drop_idx = (0..protected_from)
                 .find(|i| !preserved.contains(i) && !is_summary_marker_at(&self.messages, *i));
 
             let Some(idx) = drop_idx else {
@@ -71,6 +134,14 @@ impl ContextManager {
 
             let removed = self.messages.remove(idx);
             self.record_dropped_message(removed);
+        }
+
+        // Record trim event if any messages were dropped in this pass.
+        let newly_dropped = self.dropped_count - dropped_before;
+        if newly_dropped > 0 {
+            if let Some(m) = &self.metrics {
+                m.record_trim(newly_dropped as u32);
+            }
         }
 
         // Step 3: emit a summary marker for everything we dropped this pass.
@@ -83,9 +154,15 @@ impl ContextManager {
     /// Compressed content keeps the first 80 chars of the original output plus
     /// a header indicating the original length, so the model knows the result
     /// existed but is not spending tokens on stale detail.
+    ///
+    /// Messages in the protected tail (`RECENT_WINDOW` most-recent messages) are
+    /// never compressed, preserving fresh context at the end of the window.
     fn compress_old_tool_results(&mut self, max_age_turns: usize) {
+        // The last RECENT_WINDOW messages are sacred — never compress them.
+        let protected_from = self.messages.len().saturating_sub(RECENT_WINDOW);
+
         let mut assistant_turns_since = 0usize;
-        for i in (0..self.messages.len()).rev() {
+        for i in (0..protected_from).rev() {
             match self.messages[i].role {
                 Role::Assistant => {
                     assistant_turns_since += 1;
@@ -103,6 +180,9 @@ impl ContextManager {
                         &text[..preview_end]
                     );
                     self.messages[i].content = Content::Text(summary);
+                    if let Some(m) = &self.metrics {
+                        m.record_compression();
+                    }
                 }
                 _ => {}
             }
@@ -224,6 +304,16 @@ fn is_summary_marker_at(messages: &[Message], idx: usize) -> bool {
         }
         _ => false,
     }
+}
+
+/// Compute a 64-bit hash of a string for content-identity comparisons.
+///
+/// Uses `DefaultHasher` — non-cryptographic but fast and stable within a
+/// single process run, which is all we need for dedup within a session.
+fn hash_content(text: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Global BPE tokenizer, initialized once on first use.

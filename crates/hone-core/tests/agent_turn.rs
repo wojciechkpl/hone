@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use futures::{Stream, stream};
 use hone_core::{Agent, AgentConfig, AgentHandle};
+use hone_memory::{InMemoryStore, Memory, MemoryStore};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
     TokenUsage, ToolCallRequest, ToolLayer,
@@ -12,7 +13,7 @@ use hone_providers::{CompletionRequest, MockProvider, ModelProvider, ProviderErr
 use hone_sandbox::NullSandbox;
 use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput, ToolRegistry};
 use serde_json::json;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex as TokioMutex, mpsc};
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -815,4 +816,238 @@ async fn test_tool_recovery_retries_once_on_transient() {
     // Note: call_count here is from the outer `tool` Arc, not the one in the
     // registry — so we verify via the response text instead.
     let _ = call_count; // suppress unused-variable lint
+}
+
+// ---------------------------------------------------------------------------
+// Context metrics and stable system prompt tests
+// ---------------------------------------------------------------------------
+
+/// A provider that records the system prompt text from every `complete()` call.
+struct SystemPromptCapture {
+    captured: Arc<Mutex<Vec<String>>>,
+    response_token: String,
+}
+
+impl SystemPromptCapture {
+    fn new(response_token: impl Into<String>) -> (Self, Arc<Mutex<Vec<String>>>) {
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        (
+            Self {
+                captured: Arc::clone(&captured),
+                response_token: response_token.into(),
+            },
+            captured,
+        )
+    }
+}
+
+#[async_trait]
+impl ModelProvider for SystemPromptCapture {
+    fn id(&self) -> &str {
+        "capture-mock"
+    }
+
+    fn display_name(&self) -> &str {
+        "Capture Mock"
+    }
+
+    fn supported_models(&self) -> Vec<ModelInfo> {
+        vec![ModelInfo {
+            id: ModelId::new("mock:test"),
+            display_name: "Test Model".to_owned(),
+            context_length: 4096,
+            supports_tools: false,
+            supports_streaming: true,
+        }]
+    }
+
+    async fn complete(
+        &self,
+        request: CompletionRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
+        // Extract and record the system prompt (first system-role message).
+        let system_text = request
+            .messages
+            .iter()
+            .find(|m| matches!(m.role, hone_proto::Role::System))
+            .map(|m| m.content.as_text().to_owned())
+            .unwrap_or_default();
+        self.captured.lock().unwrap().push(system_text);
+
+        let events = vec![
+            ProviderEvent::Token { text: self.response_token.clone() },
+            ProviderEvent::Done,
+        ];
+        Ok(Box::pin(stream::iter(events)))
+    }
+
+    fn estimate_tokens(&self, _messages: &[Message]) -> u32 {
+        10
+    }
+
+    async fn health(&self) -> ProviderHealth {
+        ProviderHealth::Healthy
+    }
+}
+
+/// The base system prompt must be byte-identical on every `complete()` call
+/// across multiple turns. Stable prefixes are required for prompt cache reuse.
+#[tokio::test]
+async fn test_system_prompt_stable_across_turns() {
+    let (provider, captured) =
+        SystemPromptCapture::new("response");
+    let provider = Arc::new(provider);
+
+    let mut agent = Agent::new(base_config(provider));
+
+    for i in 1..=3u32 {
+        let (tx, _rx) = mpsc::channel(32);
+        agent
+            .run_turn(&format!("turn {i}"), tx)
+            .await
+            .expect("turn should succeed");
+    }
+
+    let prompts = captured.lock().unwrap();
+    assert_eq!(prompts.len(), 3, "expected 3 complete() calls");
+
+    // All three system prompts must be byte-identical.
+    let first = &prompts[0];
+    for (i, p) in prompts.iter().enumerate() {
+        assert_eq!(
+            p, first,
+            "system prompt differed on call {i}: got {p:?}, expected {first:?}"
+        );
+    }
+}
+
+/// When a memory store is configured with pre-seeded memories, the messages
+/// sent to the provider must include a system-role memory block distinct from
+/// the base system prompt.
+#[tokio::test]
+async fn test_memories_injected_as_separate_message() {
+    // Seed the store with a memory whose content contains the query text so
+    // the substring-based relevance scorer will surface it.
+    let query_text = "snake_case convention";
+    let store = {
+        let mut s = InMemoryStore::new();
+        s.record(Memory {
+            id: "mem-1".to_owned(),
+            content: format!("project uses {query_text} for identifiers"),
+            tags: vec![],
+            weight: 1.0,
+            created_at: 0,
+            decay_at: None,
+        })
+        .await
+        .unwrap();
+        s
+    };
+
+    let last_req = Arc::new(Mutex::new(None::<CompletionRequest>));
+    let last_req_clone = Arc::clone(&last_req);
+
+    // Build a minimal provider that captures the full request.
+    struct CapturingProvider {
+        last_req: Arc<Mutex<Option<CompletionRequest>>>,
+    }
+
+    #[async_trait]
+    impl ModelProvider for CapturingProvider {
+        fn id(&self) -> &str { "capturing" }
+        fn display_name(&self) -> &str { "Capturing" }
+        fn supported_models(&self) -> Vec<ModelInfo> {
+            vec![ModelInfo {
+                id: ModelId::new("mock:test"),
+                display_name: "Test".to_owned(),
+                context_length: 4096,
+                supports_tools: false,
+                supports_streaming: true,
+            }]
+        }
+        async fn complete(
+            &self,
+            request: CompletionRequest,
+        ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
+            *self.last_req.lock().unwrap() = Some(request);
+            Ok(Box::pin(stream::iter(vec![
+                ProviderEvent::Token { text: "ok".to_owned() },
+                ProviderEvent::Done,
+            ])))
+        }
+        fn estimate_tokens(&self, _: &[Message]) -> u32 { 10 }
+        async fn health(&self) -> ProviderHealth { ProviderHealth::Healthy }
+    }
+
+    let provider = Arc::new(CapturingProvider { last_req: last_req_clone });
+
+    let mut config = base_config(provider);
+    config.memory_store = Some(Arc::new(TokioMutex::new(store)));
+
+    let mut agent = Agent::new(config);
+    let (tx, _rx) = mpsc::channel(32);
+
+    // The query text is a substring of the memory content, so the scorer will recall it.
+    agent
+        .run_turn(query_text, tx)
+        .await
+        .expect("turn should succeed");
+
+    let req = last_req.lock().unwrap().clone().expect("request was captured");
+
+    // The request must contain at least two system-role messages:
+    // [0] base system prompt, [1] memory block.
+    let system_msgs: Vec<_> = req
+        .messages
+        .iter()
+        .filter(|m| matches!(m.role, hone_proto::Role::System))
+        .collect();
+
+    assert!(
+        system_msgs.len() >= 2,
+        "expected at least 2 system messages (base + memory), got {}",
+        system_msgs.len()
+    );
+
+    // The second system message should contain our seeded memory text.
+    let memory_block = system_msgs[1].content.as_text();
+    assert!(
+        memory_block.contains("snake_case convention"),
+        "memory block did not contain expected memory text; got: {memory_block:?}"
+    );
+
+    // The first system message must be the unmodified base system prompt.
+    let base = system_msgs[0].content.as_text();
+    assert_eq!(
+        base, "You are a helpful assistant.",
+        "base system prompt was modified"
+    );
+}
+
+/// After a turn that reports token usage, the agent's metrics snapshot must
+/// reflect non-zero input and output token counts.
+#[tokio::test]
+async fn test_metrics_record_tokens() {
+    let events = vec![
+        ProviderEvent::Token { text: "hello".to_owned() },
+        ProviderEvent::Usage(TokenUsage {
+            input: 42,
+            output: 17,
+            cache_read: 0,
+        }),
+        ProviderEvent::Done,
+    ];
+    let provider = Arc::new(SequencedProvider::new(vec![events]));
+
+    let mut agent = Agent::new(base_config(provider));
+    let (tx, _rx) = mpsc::channel(32);
+
+    agent
+        .run_turn("hello", tx)
+        .await
+        .expect("turn should succeed");
+
+    let snap = agent.metrics_snapshot();
+    assert_eq!(snap.input_tokens, 42, "input_tokens mismatch");
+    assert_eq!(snap.output_tokens, 17, "output_tokens mismatch");
 }
