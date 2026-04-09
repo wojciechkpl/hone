@@ -65,13 +65,9 @@ impl Tool for ShellTool {
                 });
             }
             validation::ValidationResult::RequireApproval(reason) => {
-                // For v1, log a warning and proceed. A future version can gate
-                // on an approval mechanism.
-                tracing::warn!(
-                    command = %command,
-                    reason = %reason,
-                    "command requires approval but v1 policy auto-approves with warning"
-                );
+                return Err(ToolError::InvalidInput {
+                    reason: format!("command blocked (requires approval): {reason}"),
+                });
             }
         }
 

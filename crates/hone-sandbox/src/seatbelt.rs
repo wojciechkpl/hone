@@ -3,6 +3,29 @@ use std::process::Command;
 
 use crate::{Sandbox, SandboxError, SandboxHandle, SandboxPlatform, SandboxPolicy};
 
+#[cfg(target_os = "macos")]
+unsafe extern "C" {
+    /// `int sandbox_init(const char *profile, uint64_t flags, char **errorbuf)`
+    ///
+    /// Apply a Seatbelt sandbox profile to the current process.
+    /// Returns 0 on success, -1 on failure (with `errorbuf` set).
+    fn sandbox_init(
+        profile: *const std::ffi::c_char,
+        flags: u64,
+        errorbuf: *mut *mut std::ffi::c_char,
+    ) -> std::ffi::c_int;
+
+    /// `void sandbox_free_error(char *errorbuf)`
+    ///
+    /// Free the error buffer allocated by `sandbox_init`.
+    fn sandbox_free_error(errorbuf: *mut std::ffi::c_char);
+}
+
+/// Flag for `sandbox_init`: interpret the first argument as a profile string
+/// (not a profile name).
+#[cfg(target_os = "macos")]
+const SANDBOX_NAMED: u64 = 0x0001;
+
 /// Generates Apple Seatbelt (TinyScheme-based) profile strings from a
 /// [`SandboxPolicy`].
 ///
@@ -110,17 +133,48 @@ impl SeatbeltSandbox {
 impl Sandbox for SeatbeltSandbox {
     fn apply(&self, policy: &SandboxPolicy) -> Result<SandboxHandle, SandboxError> {
         let profile = SeatbeltProfile::from_policy(policy);
-        tracing::debug!(
-            profile_len = profile.len(),
-            "SeatbeltSandbox: generated profile (apply stub)"
-        );
-        // TODO: call sandbox_init(3) with the generated profile.
-        // For now, just validate the profile is non-empty as a smoke test.
         if profile.is_empty() {
             return Err(SandboxError::PolicyNotMet {
                 reason: "generated empty seatbelt profile".to_string(),
             });
         }
+
+        tracing::debug!(
+            profile_len = profile.len(),
+            "SeatbeltSandbox: applying profile via sandbox_init(3)"
+        );
+
+        let c_profile = std::ffi::CString::new(profile).map_err(|_| {
+            SandboxError::PolicyNotMet {
+                reason: "seatbelt profile contains interior NUL byte".to_string(),
+            }
+        })?;
+
+        // SAFETY: `sandbox_init` is a macOS system call that applies a sandbox
+        // profile to the current process. We pass a valid CString pointer, the
+        // SANDBOX_NAMED flag (profile string, not name), and a pointer to
+        // receive any error message. The error buffer is freed with
+        // `sandbox_free_error` if non-null.
+        unsafe {
+            let mut errorbuf: *mut std::ffi::c_char = std::ptr::null_mut();
+            let ret = sandbox_init(c_profile.as_ptr(), SANDBOX_NAMED, &mut errorbuf);
+            if ret != 0 {
+                let msg = if !errorbuf.is_null() {
+                    let err = std::ffi::CStr::from_ptr(errorbuf)
+                        .to_string_lossy()
+                        .into_owned();
+                    sandbox_free_error(errorbuf);
+                    err
+                } else {
+                    "sandbox_init failed with unknown error".to_string()
+                };
+                return Err(SandboxError::PolicyNotMet {
+                    reason: format!("sandbox_init(3) failed: {msg}"),
+                });
+            }
+        }
+
+        tracing::info!("SeatbeltSandbox: profile applied to current process");
         Ok(SandboxHandle::new())
     }
 

@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 use crate::{
     error::ToolError,
+    file::resolve_within_working_dir,
     traits::{Tool, ToolContext, ToolInput, ToolOutput},
 };
 
@@ -82,7 +83,7 @@ impl Tool for GrepTool {
         let include_arg = input.get_str("include").map(|s| s.to_string());
 
         let search_root = match path_arg.as_deref() {
-            Some(p) => ctx.working_dir.join(p),
+            Some(p) => resolve_within_working_dir(&ctx.working_dir, p)?,
             None => ctx.working_dir.clone(),
         };
 

@@ -29,7 +29,7 @@ use hone_providers::{
     adapters::openai::OpenAiProvider,
 };
 use hone_recipes::Recipe;
-use hone_sandbox::NullSandbox;
+use hone_sandbox::SandboxBuilder;
 use hone_memory::{MemoryStore, SqliteStore};
 use hone_tools::{
     EditFileTool, GlobTool, GrepTool, GitCommitTool, GitDiffTool, GitStatusTool, Language,
@@ -469,7 +469,7 @@ fn build_agent_config(
     AgentConfig {
         provider: Arc::clone(&detected.provider),
         tools,
-        sandbox: Arc::new(NullSandbox),
+        sandbox: Arc::from(SandboxBuilder::detect()),
         system_prompt,
         model: model_id.clone(),
         max_tokens: None,

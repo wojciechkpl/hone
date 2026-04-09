@@ -8,10 +8,19 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 
 /// Check if a CLI binary is available on PATH.
+///
+/// Uses `which` directly instead of `sh -c "command -v ..."` to avoid
+/// shell metacharacter injection if `binary` ever comes from config.
 pub async fn check_binary_available(binary: &str) -> ProviderHealth {
-    let result = Command::new("sh")
-        .arg("-c")
-        .arg(format!("command -v {binary}"))
+    // Reject names that look like paths or contain shell metacharacters.
+    if binary.is_empty() || binary.contains(|c: char| matches!(c, '/' | '\0' | ';' | '&' | '|')) {
+        return ProviderHealth::Unavailable {
+            reason: format!("invalid binary name: '{binary}'"),
+        };
+    }
+
+    let result = Command::new("which")
+        .arg(binary)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -53,6 +62,110 @@ pub fn messages_to_prompt(messages: &[Message]) -> String {
 pub fn estimate_tokens_heuristic(messages: &[Message]) -> u32 {
     let total_chars: usize = messages.iter().map(|m| m.content.as_text().len()).sum();
     ((total_chars / 4) as u32).max(1)
+}
+
+/// Spawn a CLI process, pipe `prompt` via stdin, and return a stream of
+/// `ProviderEvent`s parsed from stdout.
+///
+/// The prompt is written to stdin (then closed) instead of being passed as a
+/// CLI argument to avoid OS arg-length limits and exposure in `ps` output.
+///
+/// Each non-empty line of stdout becomes a `Token` event. When the process
+/// exits with a non-zero status an `Error` event is emitted before the final
+/// `Done`.
+pub fn spawn_cli_stream_with_stdin(mut cmd: Command, prompt: String) -> Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> {
+    let (tx, rx) = mpsc::channel::<ProviderEvent>(64);
+
+    tokio::spawn(async move {
+        let child_result = cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
+
+        let mut child = match child_result {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx
+                    .send(ProviderEvent::Error {
+                        message: format!("failed to spawn process: {e}"),
+                    })
+                    .await;
+                let _ = tx.send(ProviderEvent::Done).await;
+                return;
+            }
+        };
+
+        // Pipe prompt via stdin and close.
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+                let _ = tx
+                    .send(ProviderEvent::Error {
+                        message: format!("failed to write prompt to stdin: {e}"),
+                    })
+                    .await;
+                let _ = tx.send(ProviderEvent::Done).await;
+                return;
+            }
+            drop(stdin);
+        }
+
+        let stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => {
+                let _ = tx
+                    .send(ProviderEvent::Error {
+                        message: "failed to capture process stdout".to_owned(),
+                    })
+                    .await;
+                let _ = tx.send(ProviderEvent::Done).await;
+                return;
+            }
+        };
+
+        let mut lines = BufReader::new(stdout).lines();
+
+        loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    let trimmed = line.trim().to_owned();
+                    if !trimmed.is_empty()
+                        && tx
+                            .send(ProviderEvent::Token { text: trimmed })
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    let _ = tx
+                        .send(ProviderEvent::Error {
+                            message: format!("error reading process output: {e}"),
+                        })
+                        .await;
+                    break;
+                }
+            }
+        }
+
+        match child.wait().await {
+            Ok(status) if !status.success() => {
+                let code = status.code().unwrap_or(-1);
+                let _ = tx
+                    .send(ProviderEvent::Error {
+                        message: format!("process exited with status {code}"),
+                    })
+                    .await;
+            }
+            _ => {}
+        }
+
+        let _ = tx.send(ProviderEvent::Done).await;
+    });
+
+    Box::pin(stream::unfold(rx, |mut rx| async move {
+        let event = rx.recv().await?;
+        Some((event, rx))
+    }))
 }
 
 /// Spawn a CLI process and return a stream of `ProviderEvent`s parsed from stdout.

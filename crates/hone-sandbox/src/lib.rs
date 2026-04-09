@@ -14,7 +14,7 @@
 //!
 //! ## Quick start
 //!
-//! ```rust
+//! ```rust,no_run
 //! use hone_sandbox::{Sandbox, SandboxBuilder, SandboxMode, SandboxPolicyBuilder};
 //! use std::path::PathBuf;
 //!
@@ -26,6 +26,7 @@
 //!     .unwrap();
 //!
 //! let sandbox = SandboxBuilder::detect();
+//! // apply() calls sandbox_init(3) on macOS — irreversible for the process.
 //! let _handle = sandbox.apply(&policy).unwrap();
 //! ```
 //!

@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{
     error::ToolError,
+    file::resolve_within_working_dir,
     traits::{Tool, ToolContext, ToolInput, ToolOutput},
 };
 
@@ -60,7 +61,7 @@ impl Tool for EditFileTool {
                 reason: "missing required field 'new_str'".to_string(),
             })?;
 
-        let path = ctx.working_dir.join(path_str);
+        let path = resolve_within_working_dir(&ctx.working_dir, path_str)?;
         let original = tokio::fs::read_to_string(&path).await?;
 
         let count = original.matches(old_str).count();

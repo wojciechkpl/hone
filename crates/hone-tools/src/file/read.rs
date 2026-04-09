@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{
     error::ToolError,
+    file::resolve_within_working_dir,
     traits::{Tool, ToolContext, ToolInput, ToolOutput},
 };
 
@@ -53,7 +54,7 @@ impl Tool for ReadFileTool {
         let offset = input.get_u64("offset").unwrap_or(1).max(1) as usize;
         let limit = input.get_u64("limit").unwrap_or(500) as usize;
 
-        let path = ctx.working_dir.join(path_str);
+        let path = resolve_within_working_dir(&ctx.working_dir, path_str)?;
         let full_content = tokio::fs::read_to_string(&path).await?;
 
         let all_lines: Vec<&str> = full_content.lines().collect();

@@ -6,7 +6,7 @@ use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth};
 use tokio::process::Command;
 
 use crate::adapters::cli_common::{
-    check_binary_available, estimate_tokens_heuristic, messages_to_prompt, spawn_cli_stream,
+    check_binary_available, estimate_tokens_heuristic, messages_to_prompt, spawn_cli_stream_with_stdin,
 };
 use crate::error::ProviderError;
 use crate::traits::{CompletionRequest, ModelProvider};
@@ -77,9 +77,9 @@ impl ModelProvider for GeminiCliProvider {
         let prompt = messages_to_prompt(&request.messages);
 
         let mut cmd = Command::new(&self.binary);
-        cmd.arg("-m").arg(&model_name).arg(&prompt);
+        cmd.arg("-m").arg(&model_name);
 
-        Ok(spawn_cli_stream(cmd))
+        Ok(spawn_cli_stream_with_stdin(cmd, prompt))
     }
 
     fn estimate_tokens(&self, messages: &[Message]) -> u32 {

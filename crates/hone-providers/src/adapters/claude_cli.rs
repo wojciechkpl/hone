@@ -92,10 +92,9 @@ impl ModelProvider for ClaudeCliProvider {
             .arg("stream-json")
             .arg("--verbose")
             .arg("--model")
-            .arg(&model_name)
-            .arg(&prompt);
+            .arg(&model_name);
 
-        Ok(spawn_claude_stream(cmd))
+        Ok(spawn_claude_stream_with_stdin(cmd, prompt))
     }
 
     fn estimate_tokens(&self, messages: &[Message]) -> u32 {
@@ -109,16 +108,20 @@ impl ModelProvider for ClaudeCliProvider {
 
 /// Spawn a Claude CLI process and parse its stream-json output into ProviderEvents.
 ///
+/// The prompt is piped via stdin instead of passed as a CLI argument to avoid
+/// OS arg-length limits and exposure in `ps` output.
+///
 /// The Claude CLI stream-json format emits newline-delimited JSON objects with a `type` field:
 /// - `{"type":"assistant","message":{"content":[{"type":"text","text":"..."}],...}}` -> Token
 /// - `{"type":"result","result":"...","total_cost_usd":...,"usage":{...}}` -> Usage + Done
 ///
 /// Other types (system, rate_limit_event) are skipped.
-fn spawn_claude_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> {
+fn spawn_claude_stream_with_stdin(mut cmd: Command, prompt: String) -> Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> {
     let (tx, rx) = mpsc::channel::<ProviderEvent>(64);
 
     tokio::spawn(async move {
         let child_result = cmd
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn();
@@ -133,6 +136,19 @@ fn spawn_claude_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderEv
                 return;
             }
         };
+
+        // Pipe the prompt via stdin and close to signal EOF.
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+                let _ = tx.send(ProviderEvent::Error {
+                    message: format!("failed to write prompt to stdin: {e}"),
+                }).await;
+                let _ = tx.send(ProviderEvent::Done).await;
+                return;
+            }
+            drop(stdin); // Close stdin so the CLI knows input is complete.
+        }
 
         let stdout = match child.stdout.take() {
             Some(s) => s,

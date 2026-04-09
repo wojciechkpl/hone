@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{
     error::ToolError,
+    file::resolve_within_working_dir,
     traits::{Tool, ToolContext, ToolInput, ToolOutput},
 };
 
@@ -138,7 +139,7 @@ impl Tool for MultiEditTool {
         let mut results: Vec<Value> = vec![Value::Null; parsed.len()];
 
         for path_str in &file_order {
-            let path = ctx.working_dir.join(path_str);
+            let path = resolve_within_working_dir(&ctx.working_dir, path_str)?;
             let original = tokio::fs::read_to_string(&path).await.map_err(|e| {
                 ToolError::Other(format!("failed to read {}: {e}", path.display()))
             })?;
@@ -180,7 +181,9 @@ impl Tool for MultiEditTool {
 
         // All edits validated — now write atomically.
         for (path_str, content) in &new_contents {
-            let path = ctx.working_dir.join(path_str);
+            // Path was already validated in the read loop above, but re-resolve
+            // for the write path to be safe.
+            let path = resolve_within_working_dir(&ctx.working_dir, path_str)?;
             tokio::fs::write(&path, content.as_bytes())
                 .await
                 .map_err(|e| {

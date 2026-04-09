@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{
     error::ToolError,
+    file::resolve_within_working_dir,
     traits::{Tool, ToolContext, ToolInput, ToolOutput},
 };
 
@@ -48,7 +49,7 @@ impl Tool for WriteFileTool {
                 reason: "missing required field 'content'".to_string(),
             })?;
 
-        let path = ctx.working_dir.join(path_str);
+        let path = resolve_within_working_dir(&ctx.working_dir, path_str)?;
 
         // Create parent directories if they don't exist.
         if let Some(parent) = path.parent() {
