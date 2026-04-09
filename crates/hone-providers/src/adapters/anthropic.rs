@@ -127,6 +127,15 @@ fn convert_tool(tool: &ToolSchema) -> Value {
     })
 }
 
+fn convert_tool_cached(tool: &ToolSchema) -> Value {
+    json!({
+        "name": tool.name,
+        "description": tool.description,
+        "input_schema": tool.parameters,
+        "cache_control": { "type": "ephemeral" },
+    })
+}
+
 /// Builds the Anthropic API request body from a `CompletionRequest`.
 /// Returns `(body, system_message)` where `system_message` is extracted separately.
 pub fn build_request_body(request: &CompletionRequest) -> Value {
@@ -143,7 +152,15 @@ pub fn build_request_body(request: &CompletionRequest) -> Value {
         .filter_map(convert_message)
         .collect();
 
-    let tools: Vec<Value> = request.tools.iter().map(convert_tool).collect();
+    // Apply cache_control to the last tool so Anthropic caches all tool schemas.
+    let tools: Vec<Value> = match request.tools.len() {
+        0 => Vec::new(),
+        n => {
+            let mut v: Vec<Value> = request.tools[..n - 1].iter().map(convert_tool).collect();
+            v.push(convert_tool_cached(&request.tools[n - 1]));
+            v
+        }
+    };
 
     let model_name = request.model.model_name();
     let max_tokens = request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
@@ -155,8 +172,14 @@ pub fn build_request_body(request: &CompletionRequest) -> Value {
         "stream": true,
     });
 
+    // Emit system as an array of text blocks with cache_control on the last block.
+    // This enables Anthropic prompt caching for the stable system prefix.
     if let Some(system) = system_text {
-        body["system"] = Value::String(system);
+        body["system"] = json!([{
+            "type": "text",
+            "text": system,
+            "cache_control": { "type": "ephemeral" },
+        }]);
     }
 
     if !tools.is_empty() {

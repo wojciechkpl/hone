@@ -72,9 +72,12 @@ fn test_extract_system_message() {
 
     let body = build_request_body(&request);
 
-    // System must be extracted to the top-level field
+    // System must be extracted to the top-level field as an array of text blocks
+    // (required for Anthropic prompt caching via cache_control breakpoints).
+    let system_arr = body["system"].as_array().expect("system must be an array");
+    assert!(!system_arr.is_empty());
     assert_eq!(
-        body["system"].as_str().unwrap(),
+        system_arr[0]["text"].as_str().unwrap(),
         "You are a helpful assistant."
     );
 
@@ -280,4 +283,121 @@ fn test_extract_sse_events_ignores_empty_data() {
     let chunk = "event: ping\n\n";
     let pairs = extract_sse_events(chunk);
     assert!(pairs.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Prompt caching — cache_control breakpoints
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_request_has_cache_control_on_system() {
+    let request = make_request(vec![
+        Message::system("long system prompt with lots of content"),
+        Message::user("hi"),
+    ]);
+
+    let body = build_request_body(&request);
+
+    // System must be an array so that cache_control can be attached.
+    let system = body.get("system").expect("system field must be present");
+    assert!(system.is_array(), "system must be an array for cache_control support");
+
+    let arr = system.as_array().unwrap();
+    assert!(!arr.is_empty());
+
+    let last = arr.last().unwrap();
+    assert!(
+        last.get("cache_control").is_some(),
+        "last system block must have cache_control"
+    );
+    assert_eq!(
+        last["cache_control"]["type"].as_str(),
+        Some("ephemeral"),
+        "cache_control type must be ephemeral"
+    );
+}
+
+#[test]
+fn test_request_has_cache_control_on_tools_when_present() {
+    let request = CompletionRequest {
+        model: ModelId::new("anthropic:claude-sonnet-4-5"),
+        messages: vec![Message::user("hi")],
+        tools: vec![
+            ToolSchema {
+                name: "read_file".to_owned(),
+                description: "read a file".to_owned(),
+                parameters: serde_json::json!({"type": "object"}),
+            },
+            ToolSchema {
+                name: "write_file".to_owned(),
+                description: "write a file".to_owned(),
+                parameters: serde_json::json!({"type": "object"}),
+            },
+        ],
+        temperature: None,
+        max_tokens: None,
+        stop: Vec::new(),
+    };
+
+    let body = build_request_body(&request);
+    let tools = body.get("tools").expect("tools field must be present").as_array().unwrap();
+    assert_eq!(tools.len(), 2);
+
+    // First tool must NOT have cache_control (only the last one gets the breakpoint).
+    assert!(
+        tools[0].get("cache_control").is_none(),
+        "first tool must not have cache_control"
+    );
+
+    // Last tool must have cache_control.
+    assert!(
+        tools[1].get("cache_control").is_some(),
+        "last tool must have cache_control"
+    );
+    assert_eq!(
+        tools[1]["cache_control"]["type"].as_str(),
+        Some("ephemeral"),
+        "last tool cache_control type must be ephemeral"
+    );
+}
+
+#[test]
+fn test_request_without_tools_still_valid() {
+    let request = make_request(vec![Message::user("hi")]);
+    let body = build_request_body(&request);
+
+    // tools field must be absent when no tools are provided.
+    assert!(
+        body.get("tools").is_none() || body["tools"].as_array().map_or(true, |a| a.is_empty()),
+        "tools field must be absent or empty when no tools are provided"
+    );
+
+    // messages must be present.
+    assert!(body.get("messages").is_some(), "messages must always be present");
+}
+
+#[test]
+fn test_single_tool_gets_cache_control() {
+    let request = CompletionRequest {
+        model: ModelId::new("anthropic:claude-sonnet-4-5"),
+        messages: vec![Message::user("hi")],
+        tools: vec![ToolSchema {
+            name: "list_files".to_owned(),
+            description: "list files".to_owned(),
+            parameters: serde_json::json!({"type": "object"}),
+        }],
+        temperature: None,
+        max_tokens: None,
+        stop: Vec::new(),
+    };
+
+    let body = build_request_body(&request);
+    let tools = body["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 1);
+
+    // A single tool is also the last tool, so it must have cache_control.
+    assert!(
+        tools[0].get("cache_control").is_some(),
+        "the only tool must have cache_control when it is also the last"
+    );
 }

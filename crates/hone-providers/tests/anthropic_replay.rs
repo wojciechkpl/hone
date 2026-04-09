@@ -185,3 +185,56 @@ async fn test_anthropic_rate_limit_429() {
         "expected rate-limit error, got: {err_str}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Prompt caching — cache_read_input_tokens is surfaced in TokenUsage
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_anthropic_parses_cache_read_tokens() {
+    let server = MockServer::start().await;
+    let body = include_str!("fixtures/anthropic_cached.sse");
+
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", "test-key"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = AnthropicProvider::with_base_url("test-key", server.uri());
+    let stream = provider.complete(make_request()).await.unwrap();
+    let events: Vec<ProviderEvent> = stream.collect().await;
+
+    // Sum cache_read across all Usage events.
+    let total_cache_read: u32 = events.iter().fold(0u32, |acc, e| match e {
+        ProviderEvent::Usage(u) => acc + u.cache_read,
+        _ => acc,
+    });
+
+    assert_eq!(
+        total_cache_read, 3000,
+        "expected cache_read=3000 from the cached fixture, got {total_cache_read}"
+    );
+
+    // The non-cached portion is billed as regular input tokens.
+    let total_input: u32 = events.iter().fold(0u32, |acc, e| match e {
+        ProviderEvent::Usage(u) => acc + u.input,
+        _ => acc,
+    });
+
+    assert_eq!(
+        total_input, 50,
+        "expected input_tokens=50 from the cached fixture, got {total_input}"
+    );
+
+    // Done must be present.
+    assert!(
+        events.iter().any(|e| matches!(e, ProviderEvent::Done)),
+        "expected a Done event in the stream"
+    );
+}
