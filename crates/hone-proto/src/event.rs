@@ -62,4 +62,11 @@ pub enum AgentEvent {
         status: String,
         cost_usd: f64,
     },
+    /// Budget progress update from the orchestrator.
+    BudgetProgress {
+        spent_usd: f64,
+        budget_usd: Option<f64>,
+        workers_completed: usize,
+        workers_total: usize,
+    },
 }

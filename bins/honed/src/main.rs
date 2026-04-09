@@ -90,6 +90,29 @@ async fn main() -> Result<()> {
     };
 
     let state = AppState::with_sessions(auth_token, sessions).with_tunnel(tunnel_manager);
+
+    // Background session GC: purge sessions older than 30 days every hour.
+    {
+        let sessions = Arc::clone(&state.sessions);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+            interval.tick().await; // skip the immediate first tick
+            loop {
+                interval.tick().await;
+                let cutoff = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+                    .saturating_sub(30 * 86_400);
+                match sessions.gc(cutoff).await {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!(removed = n, "session GC: purged expired sessions"),
+                    Err(e) => tracing::warn!("session GC failed: {e}"),
+                }
+            }
+        });
+    }
+
     let app = router(state);
 
     let addr = format!("0.0.0.0:{port}");

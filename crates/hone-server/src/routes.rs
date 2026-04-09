@@ -11,6 +11,7 @@ use serde_json::json;
 use crate::collaborative_routes::collaborative_router;
 use crate::error::ServerError;
 use crate::governance_routes::governance_router;
+use crate::session::SessionInfo;
 use crate::rate_limit::rate_limit_middleware;
 use crate::state::AppState;
 use crate::tunnel_routes::tunnel_router;
@@ -58,11 +59,24 @@ async fn auth_middleware(
     }
 }
 
-async fn health() -> impl IntoResponse {
+#[utoipa::path(
+    get, path = "/health",
+    tag = "system",
+    responses((status = 200, description = "Service is healthy", body = serde_json::Value))
+)]
+pub(crate) async fn health() -> impl IntoResponse {
     Json(json!({ "status": "ok" }))
 }
 
-async fn create_session(
+#[utoipa::path(
+    post, path = "/sessions",
+    tag = "sessions",
+    responses(
+        (status = 201, description = "Session created", body = serde_json::Value),
+        (status = 401, description = "Unauthorized"),
+    )
+)]
+pub(crate) async fn create_session(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, ServerError> {
     let info = state.sessions.create_new().await?;
@@ -70,7 +84,16 @@ async fn create_session(
     Ok((StatusCode::CREATED, body))
 }
 
-async fn get_session(
+#[utoipa::path(
+    get, path = "/sessions/{id}",
+    tag = "sessions",
+    params(("id" = String, Path, description = "Session ID (UUID)")),
+    responses(
+        (status = 200, description = "Session info", body = SessionInfo),
+        (status = 404, description = "Session not found"),
+    )
+)]
+pub(crate) async fn get_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ServerError> {
@@ -83,7 +106,16 @@ async fn get_session(
     Ok(Json(info))
 }
 
-async fn delete_session(
+#[utoipa::path(
+    delete, path = "/sessions/{id}",
+    tag = "sessions",
+    params(("id" = String, Path, description = "Session ID (UUID)")),
+    responses(
+        (status = 204, description = "Session deleted"),
+        (status = 404, description = "Session not found"),
+    )
+)]
+pub(crate) async fn delete_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ServerError> {
@@ -95,7 +127,7 @@ async fn delete_session(
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct GcResult {
     pub removed: u32,
 }
@@ -107,7 +139,15 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
-async fn gc_sessions(
+#[utoipa::path(
+    delete, path = "/sessions/gc",
+    tag = "sessions",
+    params(("older_than_days" = Option<u64>, Query, description = "Delete sessions older than N days (default: 30)")),
+    responses(
+        (status = 200, description = "GC completed", body = GcResult),
+    )
+)]
+pub(crate) async fn gc_sessions(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<GcResult>, ServerError> {

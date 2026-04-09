@@ -423,6 +423,14 @@ impl App {
                     format!("[{task_id}] {agent}: {status} (${cost_usd:.4})"),
                 ));
             }
+
+            AgentEvent::BudgetProgress { spent_usd, budget_usd, workers_completed, workers_total } => {
+                self.status.session_cost_usd = spent_usd;
+                if budget_usd.is_some() {
+                    self.status.budget_usd = budget_usd;
+                }
+                self.status.mode = format!("orchestrator {workers_completed}/{workers_total}");
+            }
         }
     }
 }

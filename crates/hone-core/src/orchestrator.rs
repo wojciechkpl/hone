@@ -17,6 +17,7 @@ pub struct Orchestrator {
     registry: AgentRegistry,
     max_workers: usize,
     worker_budget: Option<f64>,
+    total_budget: Option<f64>,
     plan_store: Option<PlanStore>,
 }
 
@@ -27,6 +28,7 @@ impl Orchestrator {
             registry,
             max_workers,
             worker_budget: None,
+            total_budget: None,
             plan_store: None,
         }
     }
@@ -34,6 +36,13 @@ impl Orchestrator {
     /// Override the per-worker budget (USD). Workers without a budget run unbounded.
     pub fn with_worker_budget(mut self, budget: f64) -> Self {
         self.worker_budget = Some(budget);
+        self
+    }
+
+    /// Set the total budget across all workers (USD). When exceeded, remaining
+    /// workers are skipped with a `BudgetExceeded` status.
+    pub fn with_total_budget(mut self, budget: f64) -> Self {
+        self.total_budget = Some(budget);
         self
     }
 
@@ -153,11 +162,40 @@ impl Orchestrator {
         plan: TaskPlan,
         events: mpsc::Sender<AgentEvent>,
     ) -> Vec<WorkerResult> {
+        let total_tasks = plan.subtasks.len();
         let mut pending: VecDeque<SubTask> = plan.subtasks.into_iter().collect();
         let mut completed: HashSet<String> = HashSet::new();
         let mut results: Vec<WorkerResult> = Vec::new();
+        let mut spent_usd: f64 = 0.0;
 
         while !pending.is_empty() {
+            // Check total budget before starting next batch.
+            if let Some(total) = self.total_budget {
+                if spent_usd >= total {
+                    tracing::warn!(
+                        spent = spent_usd,
+                        budget = total,
+                        remaining = pending.len(),
+                        "orchestrator total budget exceeded — skipping remaining tasks"
+                    );
+                    // Mark remaining tasks as budget-exceeded.
+                    for task in pending {
+                        results.push(WorkerResult {
+                            task_id: task.id,
+                            agent: task.agent,
+                            status: WorkerStatus::Failed(format!(
+                                "skipped: total budget ${:.4} exceeded (spent ${:.4})",
+                                total, spent_usd
+                            )),
+                            response: String::new(),
+                            usage: TokenUsage::default(),
+                            cost_usd: 0.0,
+                        });
+                    }
+                    break;
+                }
+            }
+
             // Gather tasks whose dependencies are all satisfied.
             let mut ready: Vec<SubTask> = Vec::new();
             let mut still_waiting: VecDeque<SubTask> = VecDeque::new();
@@ -176,7 +214,6 @@ impl Orchestrator {
             pending = still_waiting;
 
             if ready.is_empty() {
-                // No progress possible — dependency cycle or missing dep. Stop.
                 break;
             }
 
@@ -188,7 +225,8 @@ impl Orchestrator {
                     let task = task.clone();
                     let events = events.clone();
                     let worker_config = self.build_worker_config(&task);
-                    let worker_budget = self.worker_budget;
+                    // Per-task budget from the plan overrides the default worker budget.
+                    let effective_budget = task.budget_usd.or(self.worker_budget);
 
                     let _ = events
                         .send(AgentEvent::WorkerStarted {
@@ -199,18 +237,28 @@ impl Orchestrator {
                         .await;
 
                     set.spawn(async move {
-                        run_worker(task, worker_config, worker_budget, events).await
+                        run_worker(task, worker_config, effective_budget, events).await
                     });
                 }
 
                 while let Some(res) = set.join_next().await {
                     match res {
                         Ok(worker_result) => {
+                            spent_usd += worker_result.cost_usd;
                             completed.insert(worker_result.task_id.clone());
                             results.push(worker_result);
+
+                            // Emit budget progress.
+                            let _ = events
+                                .send(AgentEvent::BudgetProgress {
+                                    spent_usd,
+                                    budget_usd: self.total_budget,
+                                    workers_completed: results.len(),
+                                    workers_total: total_tasks,
+                                })
+                                .await;
                         }
                         Err(join_err) => {
-                            // JoinError — treat as failed worker with unknown id.
                             results.push(WorkerResult {
                                 task_id: "unknown".to_owned(),
                                 agent: "unknown".to_owned(),
@@ -345,12 +393,18 @@ impl Orchestrator {
 
 async fn run_worker(
     task: SubTask,
-    config: AgentConfig,
-    _worker_budget: Option<f64>,
+    mut config: AgentConfig,
+    worker_budget: Option<f64>,
     events: mpsc::Sender<AgentEvent>,
 ) -> WorkerResult {
     let task_id = task.id.clone();
     let agent_name = task.agent.clone();
+
+    // Apply the effective budget to the agent config so the agent's
+    // CostAccumulator will enforce it during the turn.
+    if worker_budget.is_some() {
+        config.budget_limit = worker_budget;
+    }
 
     let mut agent = Agent::new(config);
     let prompt = format!("{}\n\n{}", task.description, task.context);

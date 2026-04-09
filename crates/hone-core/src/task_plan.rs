@@ -56,3 +56,33 @@ pub struct OrchestratorResult {
     pub workers: Vec<WorkerResult>,
     pub total_cost_usd: f64,
 }
+
+impl OrchestratorResult {
+    /// Format a per-worker budget breakdown for display.
+    pub fn budget_summary(&self) -> String {
+        let mut lines = Vec::new();
+        for w in &self.workers {
+            let status = match &w.status {
+                WorkerStatus::Completed => "ok".to_owned(),
+                WorkerStatus::Failed(msg) => {
+                    if msg.contains("budget") {
+                        "BUDGET".to_owned()
+                    } else {
+                        "FAIL".to_owned()
+                    }
+                }
+            };
+            lines.push(format!(
+                "  [{}] {}/{}: ${:.4} ({} in, {} out)",
+                status,
+                w.task_id,
+                w.agent,
+                w.cost_usd,
+                w.usage.input,
+                w.usage.output,
+            ));
+        }
+        lines.push(format!("  Total: ${:.4}", self.total_cost_usd));
+        lines.join("\n")
+    }
+}
