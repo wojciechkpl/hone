@@ -1119,6 +1119,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "hone-cache"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "hone-cli"
 version = "0.1.0"
 dependencies = [
@@ -1127,6 +1141,7 @@ dependencies = [
  "clap",
  "crossterm",
  "futures",
+ "hone-cache",
  "hone-config",
  "hone-core",
  "hone-index",

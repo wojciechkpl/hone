@@ -14,6 +14,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use futures::StreamExt;
+use hone_cache::{SqliteBackend, ToolResultCache};
 use hone_config::{Config, HoneMd};
 use hone_core::{
     AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry, ComplexityClassifier, ComplexityTier,
@@ -347,26 +348,52 @@ async fn detect_lsp_bridge() -> Arc<dyn LspBridge> {
 
 /// Build a `ToolRegistry` with all available native tools plus the three LSP
 /// tools backed by `lsp`, and optionally the symbol index tools.
-fn build_tool_registry(lsp: Arc<dyn LspBridge>, index: Option<Arc<SqliteIndex>>) -> ToolRegistry {
+///
+/// When `cache` is `Some`, read-only tools are wrapped with
+/// [`CachingToolWrapper`] so that repeated identical calls are served from the
+/// SQLite-backed tool-result cache.  Write tools, shell, and git_commit are
+/// registered unwrapped — the wrapper's `is_cacheable` guard would bypass the
+/// cache anyway, but wrapping them is unnecessary overhead.
+fn build_tool_registry(
+    lsp: Arc<dyn LspBridge>,
+    index: Option<Arc<SqliteIndex>>,
+    cache: Option<Arc<ToolResultCache>>,
+) -> ToolRegistry {
+    // Wrap a tool with the cache layer when caching is enabled.
+    // The wrapper is a transparent pass-through for non-cacheable tools, but
+    // we only wrap tools that are in the cacheable set to keep the hot path
+    // clean for write tools.
+    let wrap = |tool: Box<dyn hone_tools::Tool>| -> Box<dyn hone_tools::Tool> {
+        match &cache {
+            Some(c) => Box::new(tools::CachingToolWrapper::new(
+                Arc::from(tool),
+                Arc::clone(c),
+            )),
+            None => tool,
+        }
+    };
+
     let mut builder = ToolRegistry::builder()
-        .register(Box::new(ReadFileTool))
+        // Cacheable read-only tools — wrapped when cache is enabled.
+        .register(wrap(Box::new(ReadFileTool)))
+        .register(wrap(Box::new(GlobTool)))
+        .register(wrap(Box::new(GrepTool)))
+        .register(wrap(Box::new(GitStatusTool)))
+        .register(wrap(Box::new(GitDiffTool)))
+        .register(wrap(Box::new(LspDiagnosticsTool::new(Arc::clone(&lsp)))))
+        .register(wrap(Box::new(LspHoverTool::new(Arc::clone(&lsp)))))
+        .register(wrap(Box::new(LspCodeActionTool::new(Arc::clone(&lsp)))))
+        // Write / mutating tools — never cached.
         .register(Box::new(WriteFileTool))
         .register(Box::new(EditFileTool))
         .register(Box::new(MultiEditTool))
-        .register(Box::new(GlobTool))
-        .register(Box::new(GrepTool))
         .register(Box::new(ShellTool))
-        .register(Box::new(GitStatusTool))
-        .register(Box::new(GitDiffTool))
-        .register(Box::new(GitCommitTool))
-        .register(Box::new(LspDiagnosticsTool::new(Arc::clone(&lsp))))
-        .register(Box::new(LspHoverTool::new(Arc::clone(&lsp))))
-        .register(Box::new(LspCodeActionTool::new(lsp)));
+        .register(Box::new(GitCommitTool));
 
     if let Some(idx) = index {
         builder = builder
-            .register(Box::new(tools::SymbolSearchTool::new(Arc::clone(&idx))))
-            .register(Box::new(tools::SymbolAtTool::new(idx)));
+            .register(wrap(Box::new(tools::SymbolSearchTool::new(Arc::clone(&idx)))))
+            .register(wrap(Box::new(tools::SymbolAtTool::new(idx))));
     }
 
     builder.build()
@@ -430,10 +457,11 @@ fn build_agent_config(
     lsp: Arc<dyn LspBridge>,
     index: Option<Arc<SqliteIndex>>,
     memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
+    tool_cache: Option<Arc<ToolResultCache>>,
 ) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
-        build_tool_registry(lsp, index)
+        build_tool_registry(lsp, index, tool_cache)
     } else {
         ToolRegistry::new()
     };
@@ -1034,6 +1062,34 @@ async fn main() -> Result<()> {
     let memory_store = persistence.memory.clone();
     let index = persistence.index.clone();
 
+    // Tool-result cache: ON by default, disable with HONE_TOOL_CACHE=0.
+    //
+    // Stored at ~/.local/share/hone/tool-cache.db alongside the other SQLite
+    // databases.  A failure to open the cache is non-fatal — the agent runs
+    // uncached and logs a warning.
+    let tool_cache: Option<Arc<ToolResultCache>> = if std::env::var("HONE_TOOL_CACHE")
+        .map(|v| v != "0")
+        .unwrap_or(true)
+    {
+        let cache_path = data_dir().join("tool-cache.db");
+        match SqliteBackend::open(&cache_path).await {
+            Ok(backend) => {
+                tracing::info!(path = %cache_path.display(), "tool cache initialised");
+                Some(Arc::new(ToolResultCache::new(Arc::new(backend))))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    path = %cache_path.display(),
+                    "failed to open tool cache: {e} — running without tool cache"
+                );
+                None
+            }
+        }
+    } else {
+        tracing::info!("tool cache disabled (HONE_TOOL_CACHE=0)");
+        None
+    };
+
     // Build the system prompt, injecting any HONE.md sections.
     let hone_md_sections: Vec<(String, String)> = hone_md
         .as_ref()
@@ -1092,6 +1148,7 @@ async fn main() -> Result<()> {
         Arc::clone(&lsp),
         index,
         memory_store.clone(),
+        tool_cache,
     );
 
     let agent = AgentHandle::spawn(base_config.clone());
