@@ -59,6 +59,9 @@ fn test_task_plan_serialization() {
                 agent: "tdd-workflow".to_owned(),
                 context: "Use TDD approach".to_owned(),
                 depends_on: vec![],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
             },
             SubTask {
                 id: "2".to_owned(),
@@ -66,6 +69,9 @@ fn test_task_plan_serialization() {
                 agent: "rust-expert".to_owned(),
                 context: "Make tests pass".to_owned(),
                 depends_on: vec!["1".to_owned()],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
             },
         ],
     };
@@ -190,6 +196,9 @@ async fn test_dependency_ordering_logic() {
                 agent: "debugger".to_owned(),
                 context: String::new(),
                 depends_on: vec![],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
             },
             SubTask {
                 id: "B".to_owned(),
@@ -197,6 +206,9 @@ async fn test_dependency_ordering_logic() {
                 agent: "debugger".to_owned(),
                 context: String::new(),
                 depends_on: vec!["A".to_owned()],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
             },
         ],
     };
@@ -230,6 +242,9 @@ async fn test_max_workers_respected() {
             agent: "debugger".to_owned(),
             context: String::new(),
             depends_on: vec![],
+            acceptance_tests: vec![],
+            budget_usd: None,
+            scope: vec![],
         })
         .collect();
 
@@ -249,4 +264,60 @@ async fn test_max_workers_respected() {
     for r in &results {
         assert_eq!(r.status, WorkerStatus::Completed);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Item 1 new tests: SubTask extension serialization
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_subtask_serialization_with_new_fields() {
+    let task = SubTask {
+        id: "task-1".to_owned(),
+        description: "Implement the auth module".to_owned(),
+        agent: "rust-expert".to_owned(),
+        context: "Use JWT tokens".to_owned(),
+        depends_on: vec!["task-0".to_owned()],
+        acceptance_tests: vec![
+            "All existing tests pass".to_owned(),
+            "New integration test passes".to_owned(),
+        ],
+        budget_usd: Some(0.50),
+        scope: vec!["src/auth.rs".to_owned(), "src/auth/jwt.rs".to_owned()],
+    };
+
+    let json = serde_json::to_string(&task).expect("serialization should succeed");
+    let roundtripped: SubTask =
+        serde_json::from_str(&json).expect("deserialization should succeed");
+
+    assert_eq!(roundtripped.id, task.id);
+    assert_eq!(roundtripped.description, task.description);
+    assert_eq!(roundtripped.agent, task.agent);
+    assert_eq!(roundtripped.context, task.context);
+    assert_eq!(roundtripped.depends_on, task.depends_on);
+    assert_eq!(roundtripped.acceptance_tests, task.acceptance_tests);
+    assert_eq!(roundtripped.budget_usd, task.budget_usd);
+    assert_eq!(roundtripped.scope, task.scope);
+}
+
+#[test]
+fn test_subtask_backwards_compat() {
+    // Old-format JSON without the new fields — serde(default) must fill them.
+    let old_json = r#"{
+        "id": "1",
+        "description": "do a thing",
+        "agent": "debugger",
+        "context": "some context",
+        "depends_on": ["0"]
+    }"#;
+
+    let task: SubTask =
+        serde_json::from_str(old_json).expect("old-format JSON should deserialize");
+
+    assert_eq!(task.id, "1");
+    assert_eq!(task.agent, "debugger");
+    assert_eq!(task.depends_on, vec!["0"]);
+    assert!(task.acceptance_tests.is_empty(), "acceptance_tests should default to empty");
+    assert!(task.budget_usd.is_none(), "budget_usd should default to None");
+    assert!(task.scope.is_empty(), "scope should default to empty");
 }

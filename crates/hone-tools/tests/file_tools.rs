@@ -710,3 +710,45 @@ async fn test_grep_invalid_regex_errors() {
         other => panic!("expected InvalidInput, got: {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Write / edit verification (G10)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_write_file_verification_succeeds_on_normal_write() {
+    let dir = TempDir::new().unwrap();
+    let tool = WriteFileTool;
+    let ctx = make_ctx(&dir);
+    let input = ToolInput::new(json!({ "path": "verified.txt", "content": "verified content" }));
+
+    // A successful write should pass verification silently and return the expected output.
+    let output = tool.call(input, &ctx).await.expect("write with verification should succeed");
+    assert_eq!(output.0["bytes_written"], 16);
+
+    // Confirm the file on disk has the correct content.
+    let on_disk = std::fs::read_to_string(dir.path().join("verified.txt")).unwrap();
+    assert_eq!(on_disk, "verified content");
+}
+
+#[tokio::test]
+async fn test_edit_file_verification_succeeds() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("verify_edit.txt"), "before edit").unwrap();
+
+    let tool = EditFileTool;
+    let ctx = make_ctx(&dir);
+    let input = ToolInput::new(json!({
+        "path": "verify_edit.txt",
+        "old_str": "before edit",
+        "new_str": "after edit"
+    }));
+
+    // A successful edit should pass verification silently and report applied: true.
+    let output = tool.call(input, &ctx).await.expect("edit with verification should succeed");
+    assert_eq!(output.0["applied"], true);
+
+    // Confirm the file on disk has the updated content.
+    let on_disk = std::fs::read_to_string(dir.path().join("verify_edit.txt")).unwrap();
+    assert_eq!(on_disk, "after edit");
+}

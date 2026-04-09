@@ -79,6 +79,12 @@ fn render_plan_markdown(plan: &TaskPlan, results: &[WorkerResult]) -> String {
         if !task.depends_on.is_empty() {
             out.push_str(&format!("  - depends on: {:?}\n", task.depends_on));
         }
+        if !task.acceptance_tests.is_empty() {
+            out.push_str("  - acceptance criteria:\n");
+            for (i, test) in task.acceptance_tests.iter().enumerate() {
+                out.push_str(&format!("    {}. {}\n", i + 1, test));
+            }
+        }
         if let Some(WorkerStatus::Failed(reason)) = status {
             out.push_str(&format!("  - FAILED: {reason}\n"));
         }
@@ -114,6 +120,9 @@ mod tests {
                 agent: "rust-expert".into(),
                 context: String::new(),
                 depends_on: vec![],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
             }],
         };
         store.write_plan(&plan, &[]).await.unwrap();
@@ -135,6 +144,9 @@ mod tests {
                 agent: "rust-expert".into(),
                 context: String::new(),
                 depends_on: vec![],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
             }],
         };
         let results = vec![WorkerResult {
@@ -163,6 +175,9 @@ mod tests {
                 agent: "rust-expert".into(),
                 context: String::new(),
                 depends_on: vec![],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
             }],
         };
         let results = vec![WorkerResult {

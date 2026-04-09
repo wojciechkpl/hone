@@ -1,5 +1,5 @@
 use hone_core::ContextManager;
-use hone_proto::{Message, Role};
+use hone_proto::{Content, Message, Role};
 
 // ---------------------------------------------------------------------------
 // D2 regression test: long sessions must trigger trimming via ContextManager
@@ -102,6 +102,9 @@ fn test_context_trims_when_over_budget() {
     );
 }
 
+/// Smart compaction inserts a "[session history: …]" marker instead of the old
+/// "[N earlier messages trimmed …]" text.  Both use system-role messages so
+/// the model receives them as context.
 #[test]
 fn test_context_inserts_trim_marker() {
     let mut ctx = ContextManager::new(100);
@@ -110,12 +113,12 @@ fn test_context_inserts_trim_marker() {
     for _ in 0..20 {
         ctx.add_message(Message::user(long_text.clone()));
     }
-    // The trim marker should appear somewhere in the built messages.
+    // The session-history marker should appear somewhere in the built messages.
     let built = ctx.build_messages("");
     let has_trim_marker = built
         .iter()
-        .any(|m| m.content.as_text().contains("trimmed"));
-    assert!(has_trim_marker, "expected a trim marker in the message history");
+        .any(|m| m.content.as_text().contains("session history"));
+    assert!(has_trim_marker, "expected a session history marker in the message history");
 }
 
 #[test]
@@ -132,4 +135,148 @@ fn test_context_keeps_recent_messages() {
     let built = ctx.build_messages("");
     let has_last = built.iter().any(|m| m.content.as_text().contains(last_msg));
     assert!(has_last, "the most recently added message should survive trimming");
+}
+
+// ---------------------------------------------------------------------------
+// G12: Smart context compaction — new tests
+// ---------------------------------------------------------------------------
+
+/// The system prompt stored in self.messages and the first user message must
+/// survive even when many subsequent messages push the context over budget.
+#[test]
+fn test_preserves_system_prompt_and_first_user_message() {
+    // Budget is tight enough to force drops but large enough to hold the seed
+    // messages plus a few recents.
+    //
+    // Each `"system prompt" × 5` ≈ 13 chars per repeat × 5 = 65 chars ≈ ~16 + 4 = ~20 tokens.
+    // Each assistant response: "response NN" × 10 ≈ 110 chars → ~28 + 4 = ~32 tokens.
+    // Budget 300 tokens: keeps ~9 messages.  We add 30 → must trim.
+    let mut ctx = ContextManager::new(300);
+    ctx.add_message(Message::system("system prompt".repeat(5)));
+    ctx.add_message(Message::user("original request".repeat(5)));
+
+    for i in 0..30 {
+        ctx.add_message(Message::assistant(format!("response {i}").repeat(10)));
+    }
+
+    let built = ctx.build_messages("system prompt");
+
+    // build_messages always prepends the live system prompt at index 0.
+    assert!(
+        matches!(built.first().map(|m| &m.role), Some(Role::System)),
+        "build_messages must start with a system message"
+    );
+
+    // The stored system-prompt seed must survive in the body.
+    let has_seed_system = built.iter().skip(1).any(|m| {
+        matches!(m.role, Role::System)
+            && m.content.as_text().contains("system prompt")
+            && !m.content.as_text().starts_with("[session history:")
+    });
+    assert!(has_seed_system, "stored system message (seed) should be preserved");
+
+    // The first user message must survive.
+    let has_original = built
+        .iter()
+        .any(|m| matches!(m.role, Role::User) && m.content.as_text().contains("original request"));
+    assert!(has_original, "first user message should be preserved");
+}
+
+/// After trimming, a "[session history: …]" summary marker must appear in the
+/// built message list.
+#[test]
+fn test_summary_marker_inserted_after_trim() {
+    // ~5 tokens per short message; budget=200 → ~40 messages fit.
+    // We add 100 assistant messages → must trim.
+    let mut ctx = ContextManager::new(200);
+    ctx.add_message(Message::system("sys"));
+    ctx.add_message(Message::user("original request"));
+
+    for i in 0..100 {
+        ctx.add_message(Message::assistant(format!("response {i}").repeat(5)));
+    }
+
+    let built = ctx.build_messages("sys");
+    let has_summary = built.iter().any(|m| {
+        matches!(m.role, Role::System) && m.content.as_text().contains("session history")
+    });
+    assert!(has_summary, "should have inserted session history summary after trimming");
+}
+
+/// Tool results older than 5 assistant turns should be compressed even when
+/// the token budget is large enough that no messages are dropped.
+#[test]
+fn test_old_tool_results_compressed() {
+    // Large budget: no messages will be dropped, but tool compression still runs.
+    let mut ctx = ContextManager::new(100_000);
+    ctx.add_message(Message::system("sys"));
+    ctx.add_message(Message::user("request"));
+
+    let long_tool_output = "x".repeat(500);
+    ctx.add_message(Message {
+        role: Role::Tool,
+        content: Content::Text(long_tool_output.clone()),
+        tool_calls: vec![],
+        tool_call_id: Some("call_1".to_string()),
+    });
+
+    // Add 10 assistant messages so the tool result ages past the 5-turn threshold.
+    for i in 0..10 {
+        ctx.add_message(Message::assistant(format!("a{i}")));
+    }
+
+    // Adding one more message triggers trim_to_budget → compress_old_tool_results.
+    ctx.add_message(Message::user("more"));
+
+    let built = ctx.build_messages("sys");
+
+    // The original 500-char tool output must have been compressed.
+    let still_has_full_output = built.iter().any(|m| {
+        matches!(m.role, Role::Tool) && m.content.as_text().len() >= 400
+    });
+    assert!(
+        !still_has_full_output,
+        "old tool result (500 chars) should have been compressed to a short summary"
+    );
+
+    // The compressed placeholder must be present.
+    let has_compressed_placeholder = built.iter().any(|m| {
+        matches!(m.role, Role::Tool) && m.content.as_text().contains("tool result compressed")
+    });
+    assert!(
+        has_compressed_placeholder,
+        "a compressed-tool-result placeholder should appear in built messages"
+    );
+}
+
+/// A tool result that is only a few assistant turns old (below the threshold)
+/// must NOT be compressed.
+#[test]
+fn test_recent_tool_results_not_compressed() {
+    let mut ctx = ContextManager::new(100_000);
+    ctx.add_message(Message::system("sys"));
+    ctx.add_message(Message::user("request"));
+
+    let tool_output = "y".repeat(300);
+    ctx.add_message(Message {
+        role: Role::Tool,
+        content: Content::Text(tool_output.clone()),
+        tool_calls: vec![],
+        tool_call_id: Some("call_2".to_string()),
+    });
+
+    // Only 2 assistant turns — below the 5-turn threshold.
+    ctx.add_message(Message::assistant("a1"));
+    ctx.add_message(Message::assistant("a2"));
+    ctx.add_message(Message::user("follow up"));
+
+    let built = ctx.build_messages("sys");
+
+    let still_has_full_output = built.iter().any(|m| {
+        matches!(m.role, Role::Tool) && m.content.as_text().len() >= 200
+    });
+    assert!(
+        still_has_full_output,
+        "recent tool result should NOT be compressed (only 2 turns old, threshold is 5)"
+    );
 }

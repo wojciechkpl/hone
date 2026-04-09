@@ -1,12 +1,17 @@
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use hone_proto::Message;
+use hone_proto::{Content, Message, Role};
 use tiktoken_rs::CoreBPE;
 
 /// Manages conversation history within a token budget.
 pub struct ContextManager {
     max_context_tokens: u32,
     messages: Vec<Message>,
+    // State for smart compaction: accumulates dropped message metadata across
+    // one trim_to_budget pass so we can emit a single summary marker.
+    dropped_count: usize,
+    dropped_role_hints: Vec<String>,
 }
 
 impl ContextManager {
@@ -14,6 +19,8 @@ impl ContextManager {
         Self {
             max_context_tokens,
             messages: Vec::new(),
+            dropped_count: 0,
+            dropped_role_hints: Vec::new(),
         }
     }
 
@@ -24,43 +31,131 @@ impl ContextManager {
         self.trim_to_budget();
     }
 
-    /// Drop the oldest non-system messages until the estimated total fits
-    /// within `max_context_tokens`, then insert a marker so the model knows
-    /// context was trimmed.
+    /// Preservation-aware compaction.
+    ///
+    /// 1. Always preserve the first stored system message (index 0 if present)
+    ///    and the first user message — these are the most critical anchors.
+    /// 2. Compress old tool results (older than 5 assistant turns) to a short
+    ///    summary — runs unconditionally every call so stale results are always
+    ///    shrunk even when the budget is not yet exhausted.
+    /// 3. Drop the oldest non-preserved, non-summary messages until under
+    ///    budget, recording what was dropped.
+    /// 4. Flush a synthetic "[session history: …]" system message so the model
+    ///    knows context was compacted.
     fn trim_to_budget(&mut self) {
-        let estimates: Vec<u32> = self
-            .messages
-            .iter()
-            .map(estimate_message_tokens)
-            .collect();
+        // Step 1: compress stale tool results unconditionally — this runs even
+        // when we are under budget so old outputs are always shrunk proactively.
+        self.compress_old_tool_results(5);
 
-        let total_tokens: u32 = estimates.iter().sum();
-
-        if total_tokens <= self.max_context_tokens {
+        if self.total_tokens() <= self.max_context_tokens {
             return;
         }
 
-        // Keep the first message (system/context marker) and drop from index 1
-        // forward until we're under budget.
-        let mut drop_until = 1;
-        let mut freed = 0u32;
-        while total_tokens.saturating_sub(freed) > self.max_context_tokens
-            && drop_until < self.messages.len().saturating_sub(1)
-        {
-            freed += estimates[drop_until];
-            drop_until += 1;
+        // Step 2: drop oldest non-preserved messages until under budget.
+        loop {
+            if self.total_tokens() <= self.max_context_tokens {
+                break;
+            }
+
+            // Recompute preserved set each iteration because indices shift after
+            // each removal.
+            let preserved = preserved_indices(&self.messages);
+
+            let drop_idx = (0..self.messages.len())
+                .find(|i| !preserved.contains(i) && !is_summary_marker_at(&self.messages, *i));
+
+            let Some(idx) = drop_idx else {
+                // Nothing left to drop (everything is preserved or a marker).
+                break;
+            };
+
+            let removed = self.messages.remove(idx);
+            self.record_dropped_message(removed);
         }
 
-        if drop_until > 1 {
-            let dropped_count = drop_until - 1;
-            self.messages.drain(1..drop_until);
-            self.messages.insert(
-                1,
-                Message::system(format!(
-                    "[{dropped_count} earlier messages trimmed to fit context window]"
-                )),
-            );
+        // Step 3: emit a summary marker for everything we dropped this pass.
+        self.flush_dropped_summary();
+    }
+
+    /// Compress tool-result messages whose "age" (measured by how many
+    /// assistant turns have elapsed since them) is ≥ `max_age_turns`.
+    ///
+    /// Compressed content keeps the first 80 chars of the original output plus
+    /// a header indicating the original length, so the model knows the result
+    /// existed but is not spending tokens on stale detail.
+    fn compress_old_tool_results(&mut self, max_age_turns: usize) {
+        let mut assistant_turns_since = 0usize;
+        for i in (0..self.messages.len()).rev() {
+            match self.messages[i].role {
+                Role::Assistant => {
+                    assistant_turns_since += 1;
+                }
+                Role::Tool if assistant_turns_since >= max_age_turns => {
+                    let text = self.messages[i].content.as_text().to_string();
+                    if text.starts_with("[tool result compressed") {
+                        // Already compressed — skip.
+                        continue;
+                    }
+                    let preview_end = 80.min(text.len());
+                    let summary = format!(
+                        "[tool result compressed, original {} chars: {}…]",
+                        text.len(),
+                        &text[..preview_end]
+                    );
+                    self.messages[i].content = Content::Text(summary);
+                }
+                _ => {}
+            }
         }
+    }
+
+    /// Record metadata about a message we are about to drop.
+    fn record_dropped_message(&mut self, msg: Message) {
+        self.dropped_count += 1;
+        let role_hint = format!("{:?}", msg.role).to_lowercase();
+        self.dropped_role_hints.push(role_hint);
+    }
+
+    /// Emit a "[session history: …]" system message summarising every message
+    /// dropped in this trim pass.  Replaces any existing summary marker to
+    /// avoid duplicates.
+    fn flush_dropped_summary(&mut self) {
+        if self.dropped_count == 0 {
+            return;
+        }
+
+        let summary = format!(
+            "[session history: {} earlier messages compressed to fit context window — {}]",
+            self.dropped_count,
+            self.dropped_role_hints.join(", ")
+        );
+
+        // Remove any pre-existing summary marker first.
+        if let Some(existing) = (0..self.messages.len()).find(|i| is_summary_marker_at(&self.messages, *i)) {
+            self.messages.remove(existing);
+        }
+
+        // Insert after the first stored system message (index 0) if one is
+        // present; otherwise at the front.
+        let insert_at =
+            if self.messages.first().is_some_and(|m| matches!(m.role, Role::System)) {
+                1
+            } else {
+                0
+            };
+
+        self.messages.insert(
+            insert_at,
+            Message {
+                role: Role::System,
+                content: Content::Text(summary),
+                tool_calls: vec![],
+                tool_call_id: None,
+            },
+        );
+
+        self.dropped_count = 0;
+        self.dropped_role_hints.clear();
     }
 
     /// Build the full message list for a completion request.
@@ -92,6 +187,42 @@ impl ContextManager {
     /// prompt, which is supplied at build time and not stored here).
     pub fn total_tokens(&self) -> u32 {
         self.messages.iter().map(estimate_message_tokens).sum()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Free functions (no self borrow — avoids lifetime conflicts inside closures)
+// ---------------------------------------------------------------------------
+
+/// Returns the indices of messages that must never be dropped:
+/// - The first non-summary stored system message (typically the context seed).
+/// - The first user message (the original request).
+fn preserved_indices(messages: &[Message]) -> HashSet<usize> {
+    let mut preserved = HashSet::new();
+
+    // First system message that is NOT our synthetic summary marker.
+    if let Some(idx) = messages.iter().position(|m| {
+        matches!(m.role, Role::System) && !m.content.as_text().starts_with("[session history:")
+    }) {
+        preserved.insert(idx);
+    }
+
+    // First user message — the original request.
+    if let Some(idx) = messages.iter().position(|m| matches!(m.role, Role::User)) {
+        preserved.insert(idx);
+    }
+
+    preserved
+}
+
+/// Returns `true` if the message at `idx` is the synthetic session-history
+/// summary marker inserted by `flush_dropped_summary`.
+fn is_summary_marker_at(messages: &[Message], idx: usize) -> bool {
+    match messages.get(idx) {
+        Some(msg) if matches!(msg.role, Role::System) => {
+            msg.content.as_text().starts_with("[session history:")
+        }
+        _ => false,
     }
 }
 

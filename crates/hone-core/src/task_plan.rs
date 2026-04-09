@@ -7,8 +7,20 @@ pub struct SubTask {
     pub id: String,
     pub description: String,
     pub agent: String,
+    #[serde(default)]
     pub context: String,
+    #[serde(default)]
     pub depends_on: Vec<String>,
+    /// Explicit acceptance criteria for this subtask.
+    /// Workers are expected to verify these before reporting completion.
+    #[serde(default)]
+    pub acceptance_tests: Vec<String>,
+    /// Maximum spend in USD. None means no per-task cap (session budget still applies).
+    #[serde(default)]
+    pub budget_usd: Option<f64>,
+    /// Files the worker is allowed to modify. Empty = no restriction.
+    #[serde(default)]
+    pub scope: Vec<String>,
 }
 
 /// The full decomposition of a user request into subtasks.

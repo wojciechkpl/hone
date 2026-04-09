@@ -115,12 +115,15 @@ impl Orchestrator {
             "You are a lead agent. Decompose the user's request into subtasks for specialist agents.\n\n\
              Available agents:\n{agent_list}\n\n\
              Output ONLY a JSON object (no markdown, no explanation):\n\
-             {{\"goal\": \"...\", \"subtasks\": [{{\"id\": \"1\", \"description\": \"...\", \"agent\": \"agent-name\", \"context\": \"\", \"depends_on\": []}}]}}\n\n\
+             {{\"goal\": \"...\", \"subtasks\": [{{\"id\": \"1\", \"description\": \"...\", \"agent\": \"agent-name\", \"context\": \"\", \"depends_on\": [], \"acceptance_tests\": [], \"budget_usd\": null, \"scope\": []}}]}}\n\n\
              Rules:\n\
              - Maximum 5 subtasks\n\
              - Use agent names from the list above\n\
              - If the task is simple, use just 1 subtask\n\
-             - Identify dependencies between subtasks (use id strings)\n\n\
+             - Identify dependencies between subtasks (use id strings)\n\
+             - Populate acceptance_tests with 1-3 concrete, verifiable success criteria when the task has clear deliverables\n\
+             - Populate scope with file paths the worker is allowed to modify when scope can be bounded; leave empty for broad tasks\n\
+             - Set budget_usd if the subtask has a known cost ceiling; omit (null) otherwise\n\n\
              User request: {user_request}"
         );
 
@@ -289,16 +292,32 @@ impl Orchestrator {
 
     fn build_worker_config(&self, task: &SubTask) -> AgentConfig {
         // Look up the agent definition; fall back to the lead system prompt.
-        let system_prompt = match self.registry.get(&task.agent) {
-            Some(def) => format!(
-                "{}\n\n## Task\n{}\n\n## Context\n{}",
-                def.system_prompt, task.description, task.context
-            ),
-            None => format!(
-                "{}\n\n## Task\n{}\n\n## Context\n{}",
-                self.lead_config.system_prompt, task.description, task.context
-            ),
+        let base = match self.registry.get(&task.agent) {
+            Some(def) => def.system_prompt.as_str(),
+            None => self.lead_config.system_prompt.as_str(),
         };
+
+        let mut system_prompt = format!(
+            "{base}\n\n## Task\n{}\n\n## Context\n{}",
+            task.description, task.context
+        );
+
+        if !task.acceptance_tests.is_empty() {
+            system_prompt.push_str("\n\n## Acceptance Criteria\n");
+            for (i, test) in task.acceptance_tests.iter().enumerate() {
+                system_prompt.push_str(&format!("{}. {}\n", i + 1, test));
+            }
+            system_prompt
+                .push_str("\nVerify all criteria are met before reporting completion.\n");
+        }
+
+        if !task.scope.is_empty() {
+            system_prompt.push_str("\n\n## Scope\n");
+            system_prompt.push_str("You may only modify these files:\n");
+            for path in &task.scope {
+                system_prompt.push_str(&format!("- {path}\n"));
+            }
+        }
 
         // Workers get a fresh empty tool registry — they are specialist agents
         // focused on reasoning tasks. ToolRegistry does not implement Clone.
@@ -422,6 +441,9 @@ fn single_subtask_plan(request: &str, registry: &AgentRegistry) -> TaskPlan {
             agent: agent_name,
             context: String::new(),
             depends_on: Vec::new(),
+            acceptance_tests: Vec::new(),
+            budget_usd: None,
+            scope: Vec::new(),
         }],
     }
 }

@@ -1,5 +1,7 @@
 pub mod agent_def;
 pub mod agent_registry;
+pub mod recovery;
+pub mod retry;
 pub mod audit;
 pub mod complexity;
 pub mod ensemble;
@@ -35,5 +37,9 @@ pub use rbac::{RbacError, RbacPolicy, Role, ToolAccess};
 pub use reviewer::{ReviewIssue, ReviewResult, ReviewSeverity, ReviewerAgent};
 pub use self_refine::{RefineResult, SelfRefineLoop};
 pub use task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
-pub use test_loop::{TestLoopResult, TestStatus, TestVerificationLoop};
+pub use test_loop::{
+    GreenCommands, GreenContract, GreenLevel, TestLoopResult, TestStatus, TestVerificationLoop,
+};
+pub use recovery::{FailureScenario, RecoveryAction};
+pub use retry::{is_transient_error, retry, RetryConfig};
 pub use turn::TurnResult;

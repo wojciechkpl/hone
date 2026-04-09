@@ -19,4 +19,5 @@ pub use lsp::{
 };
 pub use registry::{ToolRegistry, ToolRegistryBuilder};
 pub use shell::ShellTool;
+pub use shell::validation::{CommandIntent, ValidationResult};
 pub use traits::{Tool, ToolContext, ToolInput, ToolOutput};

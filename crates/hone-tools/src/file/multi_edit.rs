@@ -186,6 +186,20 @@ impl Tool for MultiEditTool {
                 .map_err(|e| {
                     ToolError::Other(format!("failed to write {}: {e}", path.display()))
                 })?;
+
+            // Read back and verify the written content matches what was intended.
+            let verification = tokio::fs::read_to_string(&path).await.map_err(|e| {
+                ToolError::Other(format!(
+                    "failed to verify write for {}: {e}",
+                    path.display()
+                ))
+            })?;
+            if &verification != content {
+                return Err(ToolError::Other(format!(
+                    "write verification failed: content written to {} does not match expected",
+                    path.display()
+                )));
+            }
         }
 
         Ok(ToolOutput::new(json!({

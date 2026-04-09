@@ -1,3 +1,5 @@
+pub mod validation;
+
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -53,6 +55,25 @@ impl Tool for ShellTool {
                 reason: "missing required field 'command'".to_string(),
             })?
             .to_string();
+
+        // Validate the command before executing.
+        match validation::validate_command(&command) {
+            validation::ValidationResult::Allow => {}
+            validation::ValidationResult::Block(reason) => {
+                return Err(ToolError::InvalidInput {
+                    reason: format!("command blocked: {reason}"),
+                });
+            }
+            validation::ValidationResult::RequireApproval(reason) => {
+                // For v1, log a warning and proceed. A future version can gate
+                // on an approval mechanism.
+                tracing::warn!(
+                    command = %command,
+                    reason = %reason,
+                    "command requires approval but v1 policy auto-approves with warning"
+                );
+            }
+        }
 
         let timeout_ms = input
             .get_u64("timeout_ms")

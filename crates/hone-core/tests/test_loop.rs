@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use hone_core::{Agent, AgentConfig, TestStatus, TestVerificationLoop};
+use hone_core::{Agent, AgentConfig, GreenCommands, GreenContract, GreenLevel, TestStatus, TestVerificationLoop};
 use hone_proto::{ModelId, PricingEntry};
 use hone_providers::MockProvider;
 use hone_sandbox::NullSandbox;
@@ -145,4 +145,96 @@ async fn test_verification_loop_gives_up_after_max() {
 
     assert_eq!(result.iterations, 3);
     assert!(matches!(result.final_status, TestStatus::FailedAfterMax { .. }));
+}
+
+// ---------------------------------------------------------------------------
+// Item 2 new tests: GreenLevel, GreenCommands, GreenContract
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_green_level_escalates_correctly() {
+    assert_eq!(GreenLevel::TargetedTests.escalate(), Some(GreenLevel::Package));
+    assert_eq!(GreenLevel::Package.escalate(), Some(GreenLevel::Workspace));
+    assert_eq!(GreenLevel::Workspace.escalate(), Some(GreenLevel::MergeReady));
+    assert_eq!(GreenLevel::MergeReady.escalate(), None);
+}
+
+#[test]
+fn test_green_commands_detect_rust_project() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::write(tmp.path().join("Cargo.toml"), "[package]\nname = \"x\"\n")
+        .expect("write Cargo.toml");
+
+    let cmds = GreenCommands::detect(tmp.path());
+
+    assert!(cmds.targeted.is_none(), "targeted requires a test name — should be None");
+    assert_eq!(cmds.package.as_deref(), Some("cargo test --lib"));
+    assert_eq!(cmds.workspace.as_deref(), Some("cargo test --workspace"));
+    assert!(
+        cmds.merge_ready.as_deref().unwrap().contains("cargo test --workspace"),
+        "merge_ready should include workspace tests"
+    );
+    assert!(
+        cmds.merge_ready.as_deref().unwrap().contains("cargo clippy"),
+        "merge_ready should include clippy"
+    );
+}
+
+#[test]
+fn test_green_commands_detect_node_project() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::write(tmp.path().join("package.json"), "{\"name\":\"x\"}")
+        .expect("write package.json");
+
+    let cmds = GreenCommands::detect(tmp.path());
+
+    assert!(cmds.targeted.is_none());
+    assert_eq!(cmds.package.as_deref(), Some("npm test"));
+    assert!(
+        cmds.merge_ready.as_deref().unwrap().contains("npm run lint"),
+        "merge_ready should include lint"
+    );
+}
+
+#[tokio::test]
+async fn test_green_contract_runs_package_by_default() {
+    // Verify backwards compat: TestVerificationLoop::new(cmd, iterations, dir)
+    // behaves identically to before — pass immediately, 1 iteration, Passed status.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (_, cmd) = script_that_exits(&tmp, &[0]);
+
+    let mut agent = make_agent("ok");
+    let (tx, _rx) = mpsc::channel(32);
+
+    // Use the legacy constructor.
+    let loop_ = TestVerificationLoop::new(cmd, 3, tmp.path().to_owned());
+    let result = loop_.run(&mut agent, tx).await.expect("loop should succeed");
+
+    assert_eq!(result.iterations, 1);
+    assert!(matches!(result.final_status, TestStatus::Passed));
+}
+
+#[tokio::test]
+async fn test_green_contract_no_command_returns_no_test_command() {
+    // A contract with no commands at any level should return NoTestCommand.
+    let tmp = tempfile::tempdir().expect("tempdir");
+
+    let contract = GreenContract {
+        required_level: GreenLevel::Package,
+        current_level: GreenLevel::Package,
+        commands: GreenCommands {
+            targeted: None,
+            package: None,
+            workspace: None,
+            merge_ready: None,
+        },
+    };
+
+    let mut agent = make_agent("ok");
+    let (tx, _rx) = mpsc::channel(32);
+
+    let loop_ = TestVerificationLoop::with_contract(contract, 3, tmp.path().to_owned());
+    let result = loop_.run(&mut agent, tx).await.expect("loop should succeed");
+
+    assert!(matches!(result.final_status, TestStatus::NoTestCommand));
 }

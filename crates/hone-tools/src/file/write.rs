@@ -58,6 +58,17 @@ impl Tool for WriteFileTool {
         let bytes = content.as_bytes();
         tokio::fs::write(&path, bytes).await?;
 
+        // Read back and verify the written content matches what was intended.
+        let verification = tokio::fs::read_to_string(&path).await.map_err(|e| {
+            ToolError::Other(format!("failed to verify write: {e}"))
+        })?;
+        if verification != content {
+            return Err(ToolError::Other(format!(
+                "write verification failed: content written to {} does not match expected",
+                path.display()
+            )));
+        }
+
         let path_out = path.to_string_lossy().into_owned();
         Ok(ToolOutput::new(
             json!({ "path": path_out, "bytes_written": bytes.len() }),
