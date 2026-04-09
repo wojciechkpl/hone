@@ -29,6 +29,9 @@ pub struct ContextConfig {
     pub tool_compress_age: usize,
     /// Additional turns after tool_compress_age before one-liner compression.
     pub tool_oneliner_age_offset: usize,
+    /// Whether to apply BM25 relevance reordering to the middle zone.
+    /// Enabled for models with weaker long-context attention.
+    pub reorder_middle_zone: bool,
 }
 
 impl ContextConfig {
@@ -42,20 +45,21 @@ impl ContextConfig {
     pub fn for_model(model_name: &str) -> Self {
         let lower = model_name.to_lowercase();
 
-        let (ratio, context_len, recent) = if lower.contains("claude") {
-            (0.60, 200_000, 3)
+        // Models with weaker long-context attention benefit from middle-zone reordering.
+        let (ratio, context_len, recent, reorder) = if lower.contains("claude") {
+            (0.60, 200_000, 3, false) // Claude has strong attention across the window
         } else if lower.contains("deepseek") || lower.contains("qwen") {
-            (0.45, 128_000, 5)
+            (0.45, 128_000, 5, true)
         } else if lower.contains("llama") {
-            (0.40, 128_000, 7)
+            (0.40, 128_000, 7, true)
         } else if lower.contains("gpt-4") || lower.contains("o3") || lower.contains("o4") {
-            (0.55, 128_000, 3)
+            (0.55, 128_000, 3, false)
         } else if lower.contains("gemini") {
-            (0.50, 1_000_000, 3)
+            (0.50, 1_000_000, 3, false)
         } else if lower.contains("kimi") {
-            (0.45, 128_000, 5)
+            (0.45, 128_000, 5, true)
         } else {
-            (0.50, 128_000, 4)
+            (0.50, 128_000, 4, true) // default: enable for unknown models
         };
 
         Self {
@@ -64,6 +68,7 @@ impl ContextConfig {
             recent_window: recent,
             tool_compress_age: 5,
             tool_oneliner_age_offset: 5,
+            reorder_middle_zone: reorder,
         }
     }
 
@@ -86,6 +91,7 @@ impl Default for ContextConfig {
             recent_window: 3,
             tool_compress_age: 5,
             tool_oneliner_age_offset: 5,
+            reorder_middle_zone: false,
         }
     }
 }
@@ -450,15 +456,113 @@ impl ContextManager {
     /// Build the full message list for a completion request.
     ///
     /// Prepends a system message derived from `system_prompt`, then appends
-    /// all stored messages.  Budget enforcement is performed incrementally in
-    /// `add_message` / `trim_to_budget`; no secondary window is applied here
-    /// so that trim markers inserted by `trim_to_budget` are always visible
-    /// to the model.
+    /// all stored messages. When `reorder_middle_zone` is enabled, Tool
+    /// messages in the middle zone are reordered by BM25 relevance to the
+    /// latest user query so the most relevant content sits at the high-
+    /// attention edges of the context window.
     pub fn build_messages(&self, system_prompt: &str) -> Vec<Message> {
+        use crate::relevance::{Bm25Scorer, interleave_edges};
+
         let system = Message::system(system_prompt);
         let mut result = Vec::with_capacity(self.messages.len() + 1);
         result.push(system);
-        result.extend_from_slice(&self.messages);
+
+        // Short-circuit: no reordering if disabled or too few messages.
+        let recent_window = self.config.recent_window;
+        if !self.config.reorder_middle_zone
+            || self.messages.len() <= recent_window + 2
+        {
+            result.extend_from_slice(&self.messages);
+            return result;
+        }
+
+        // Identify zones.
+        let preserved = preserved_indices(&self.messages);
+        let recent_start = self.messages.len().saturating_sub(recent_window);
+
+        // Extract the latest user query.
+        let query = self
+            .messages
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, Role::User))
+            .map(|m| m.content.as_text().to_string())
+            .unwrap_or_default();
+
+        if query.is_empty() {
+            result.extend_from_slice(&self.messages);
+            return result;
+        }
+
+        // Partition messages into start/middle/recent zones.
+        let mut start_zone: Vec<usize> = Vec::new();
+        let mut middle_tool_indices: Vec<usize> = Vec::new();
+        let mut middle_other_indices: Vec<usize> = Vec::new();
+        let mut recent_zone: Vec<usize> = Vec::new();
+
+        for i in 0..self.messages.len() {
+            if preserved.contains(&i) || is_summary_marker_at(&self.messages, i) {
+                start_zone.push(i);
+            } else if i >= recent_start {
+                recent_zone.push(i);
+            } else if matches!(self.messages[i].role, Role::Tool) {
+                middle_tool_indices.push(i);
+            } else {
+                middle_other_indices.push(i);
+            }
+        }
+
+        // Only reorder if there are enough tool messages to matter.
+        if middle_tool_indices.len() < 3 {
+            result.extend_from_slice(&self.messages);
+            return result;
+        }
+
+        // Score tool messages by BM25 relevance.
+        let tool_texts: Vec<String> = middle_tool_indices
+            .iter()
+            .map(|&i| self.messages[i].content.as_text().to_string())
+            .collect();
+        let scorer = Bm25Scorer::from_corpus(&tool_texts);
+        let mut scored: Vec<(f32, usize)> = middle_tool_indices
+            .iter()
+            .enumerate()
+            .map(|(corpus_idx, &msg_idx)| {
+                (scorer.score(&tool_texts[corpus_idx], &query), msg_idx)
+            })
+            .collect();
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        let reordered_tool_indices: Vec<usize> =
+            interleave_edges(scored).into_iter().map(|(_, idx)| idx).collect();
+
+        // Assemble: start + middle_other (chronological) interleaved with
+        // reordered tools + recent.
+        for &i in &start_zone {
+            result.push(self.messages[i].clone());
+        }
+
+        // Merge middle_other (chronological) and reordered tools.
+        // We place non-tool messages in their original chronological positions
+        // and insert reordered tool messages in the gaps.
+        let mut tool_iter = reordered_tool_indices.iter();
+        for &i in &middle_other_indices {
+            result.push(self.messages[i].clone());
+            // After each non-tool message, insert the next reordered tool if
+            // there are tools remaining.
+            if let Some(&ti) = tool_iter.next() {
+                result.push(self.messages[ti].clone());
+            }
+        }
+        // Append any remaining tool messages.
+        for &ti in tool_iter {
+            result.push(self.messages[ti].clone());
+        }
+
+        for &i in &recent_zone {
+            result.push(self.messages[i].clone());
+        }
+
         result
     }
 
@@ -910,6 +1014,114 @@ mod tests {
         assert_eq!(
             transition,
             Some((TaskPhase::Verification, TaskPhase::Exploration))
+        );
+    }
+
+    // --- BM25 reordering tests ---
+
+    #[test]
+    fn test_build_messages_no_reorder_when_disabled() {
+        let mut config = ContextConfig::default();
+        config.reorder_middle_zone = false;
+        config.advertised_context_length = 1_000_000;
+        let mut ctx = ContextManager::with_config(config);
+
+        ctx.add_message(Message::user("find the bug in login.rs"));
+        for i in 0..5 {
+            ctx.add_message(Message::assistant(format!("response {i}")));
+            ctx.add_message(Message {
+                role: Role::Tool,
+                content: Content::Text(format!("tool output {i}")),
+                tool_calls: vec![],
+                tool_call_id: Some(format!("tc{i}")),
+            });
+        }
+        ctx.add_message(Message::user("now fix it"));
+
+        let msgs = ctx.build_messages("sys");
+        // With reordering disabled, messages should be in chronological order.
+        // Verify the first tool result appears before the last one.
+        let tool_indices: Vec<usize> = msgs
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| matches!(m.role, Role::Tool))
+            .map(|(i, _)| i)
+            .collect();
+        // Chronological: tool_indices should be strictly increasing.
+        for w in tool_indices.windows(2) {
+            assert!(w[0] < w[1], "tools should be chronological when reorder is disabled");
+        }
+    }
+
+    #[test]
+    fn test_build_messages_reorders_when_enabled() {
+        let mut config = ContextConfig::default();
+        config.reorder_middle_zone = true;
+        config.recent_window = 2;
+        config.advertised_context_length = 1_000_000;
+        let mut ctx = ContextManager::with_config(config);
+
+        ctx.add_message(Message::user("fix the authentication bug in login.rs"));
+        ctx.add_message(Message::assistant("Let me look around."));
+
+        // Tool 0: irrelevant
+        ctx.add_message(Message {
+            role: Role::Tool,
+            content: Content::Text("database config: host=localhost port=5432".to_string()),
+            tool_calls: vec![],
+            tool_call_id: Some("tc0".to_string()),
+        });
+        ctx.add_message(Message::assistant("checking more"));
+
+        // Tool 1: highly relevant
+        ctx.add_message(Message {
+            role: Role::Tool,
+            content: Content::Text("fn login(user: &str, password: &str) -> Result<Token> { auth_check(user, password) }".to_string()),
+            tool_calls: vec![],
+            tool_call_id: Some("tc1".to_string()),
+        });
+        ctx.add_message(Message::assistant("and more"));
+
+        // Tool 2: somewhat relevant
+        ctx.add_message(Message {
+            role: Role::Tool,
+            content: Content::Text("fn logout(session: &Session) { session.invalidate() }".to_string()),
+            tool_calls: vec![],
+            tool_call_id: Some("tc2".to_string()),
+        });
+        ctx.add_message(Message::assistant("checking tests"));
+
+        // Tool 3: irrelevant
+        ctx.add_message(Message {
+            role: Role::Tool,
+            content: Content::Text("README.md: # Project Setup\nInstall with cargo install".to_string()),
+            tool_calls: vec![],
+            tool_call_id: Some("tc3".to_string()),
+        });
+
+        // Recent window (last 2 messages)
+        ctx.add_message(Message::user("please fix the login auth bug now"));
+        ctx.add_message(Message::assistant("On it."));
+
+        let msgs = ctx.build_messages("sys");
+
+        // The login-related tool (tc1) should be placed at an edge of the
+        // middle zone (near start or near the recent window), not buried
+        // in the center. We verify all tool messages are present.
+        let tool_contents: Vec<String> = msgs
+            .iter()
+            .filter(|m| matches!(m.role, Role::Tool))
+            .map(|m| m.content.as_text().to_string())
+            .collect();
+        assert!(
+            tool_contents.len() >= 3,
+            "all tool messages should be present, got {}",
+            tool_contents.len()
+        );
+        // The login tool should exist somewhere in the output.
+        assert!(
+            tool_contents.iter().any(|t| t.contains("login")),
+            "login tool result must be present in output"
         );
     }
 

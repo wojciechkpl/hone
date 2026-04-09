@@ -19,6 +19,7 @@ mod context;
 mod cost;
 mod dispatcher;
 mod error;
+pub mod relevance;
 mod turn;
 
 pub use agent::{Agent, AgentConfig, AgentHandle, is_read_only_tool};
