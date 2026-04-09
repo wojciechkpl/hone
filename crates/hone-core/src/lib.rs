@@ -13,6 +13,7 @@ pub mod reviewer;
 pub mod self_refine;
 pub mod task_plan;
 pub mod test_loop;
+pub mod learning;
 mod agent;
 mod code_mode;
 mod context;
