@@ -34,8 +34,8 @@
 //!
 //! | Platform | Backend                         |
 //! |----------|---------------------------------|
-//! | macOS    | [`SeatbeltSandbox`] (stub)       |
-//! | Linux    | [`LandlockSandbox`] (stub)       |
+//! | macOS    | [`SeatbeltSandbox`] (`sandbox_init(3)` + `sandbox-exec`) |
+//! | Linux    | [`LandlockSandbox`] (kernel 5.13+ LSM) |
 //! | Fallback | [`ContainerSandbox`] / [`NullSandbox`] |
 
 mod builder;

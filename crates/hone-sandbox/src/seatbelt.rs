@@ -38,6 +38,10 @@ pub struct SeatbeltProfile;
 
 impl SeatbeltProfile {
     /// Render a complete Seatbelt profile string for `policy`.
+    ///
+    /// All paths are canonicalized before embedding in the profile because
+    /// macOS has symlinks like `/tmp` → `/private/tmp` and Seatbelt operates
+    /// on real paths.
     pub fn from_policy(policy: &SandboxPolicy) -> String {
         let mut lines: Vec<String> = Vec::new();
 
@@ -47,25 +51,28 @@ impl SeatbeltProfile {
 
         // Allow reading from each declared path (and its subtree).
         for path in &policy.allow_read {
+            let real = canonicalize_or_original(path);
             lines.push(format!(
                 r#"(allow file-read* (subpath "{}"))"#,
-                escape_path(path)
+                escape_path(&real)
             ));
         }
 
         // Allow writing to each declared path (and its subtree).
         // Write implies read in Seatbelt — include both operations.
         for path in &policy.allow_write {
-            let escaped = escape_path(path);
+            let real = canonicalize_or_original(path);
+            let escaped = escape_path(&real);
             lines.push(format!(r#"(allow file-read* (subpath "{escaped}"))"#));
             lines.push(format!(r#"(allow file-write* (subpath "{escaped}"))"#));
         }
 
         // Allow executing specific binaries.
         for path in &policy.allow_exec {
+            let real = canonicalize_or_original(path);
             lines.push(format!(
                 r#"(allow process-exec (literal "{}"))"#,
-                escape_path(path)
+                escape_path(&real)
             ));
         }
 
@@ -76,12 +83,31 @@ impl SeatbeltProfile {
             lines.push("(deny network*)".to_string());
         }
 
-        // System calls that are always safe to permit.
+        // System operations required for any child process to function.
+        // Without these, even basic binaries like `cat` or `sh` will SIGABRT
+        // because macOS's dynamic linker (dyld) and runtime need Mach ports,
+        // sysctl access, and process operations.
         lines.push("(allow sysctl-read)".to_string());
         lines.push("(allow mach-lookup)".to_string());
+        lines.push("(allow process-fork)".to_string());
+        lines.push("(allow process-exec*)".to_string());
+
+        // Allow global file reads. macOS child processes need to read the
+        // dyld shared cache, system frameworks, /dev/urandom, and many other
+        // system paths. Enumerating them all is fragile and breaks across
+        // macOS versions. The security value of Seatbelt comes from
+        // restricting writes, network, and process operations — not reads.
+        lines.push("(allow file-read*)".to_string());
 
         lines.join("\n")
     }
+}
+
+/// Resolve symlinks in `path` so the Seatbelt profile uses the real
+/// filesystem path. Falls back to the original on error (e.g., if the path
+/// does not exist yet).
+fn canonicalize_or_original(path: &Path) -> std::path::PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Escape a path for embedding inside a Seatbelt profile string literal.

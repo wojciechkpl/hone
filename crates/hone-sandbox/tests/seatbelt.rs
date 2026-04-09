@@ -132,4 +132,74 @@ mod macos_tests {
             "target program must be forwarded as an arg; got: {args:?}"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Integration tests — actually run sandboxed child processes
+    // -----------------------------------------------------------------------
+
+    /// Test that a sandboxed child with write access to /tmp can create files.
+    #[test]
+    fn test_restrict_child_allows_write_to_permitted_dir() {
+        use std::process::Command;
+
+        let test_file = "/tmp/hone_seatbelt_test_write.txt";
+        let _ = std::fs::remove_file(test_file);
+
+        let policy = SandboxPolicyBuilder::new(SandboxMode::Manual)
+            .allow_write(PathBuf::from("/tmp"))
+            .build()
+            .expect("policy");
+
+        let sandbox = SeatbeltSandbox;
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", &format!("echo seatbelt_ok > {test_file}")]);
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+
+        sandbox.restrict_child(&mut cmd, &policy).expect("restrict_child");
+
+        let status = cmd.status().expect("spawn child");
+        let content = std::fs::read_to_string(test_file).ok();
+        let _ = std::fs::remove_file(test_file);
+
+        assert!(
+            status.success(),
+            "write to allowed /tmp should succeed (status: {})",
+            status,
+        );
+        assert_eq!(
+            content.as_deref().map(str::trim),
+            Some("seatbelt_ok"),
+        );
+    }
+
+    /// Test that network access is blocked when policy disables it.
+    /// Uses `curl --connect-timeout 1` to a public IP; the sandbox should
+    /// cause it to fail immediately.
+    #[test]
+    fn test_restrict_child_blocks_network() {
+        use std::process::Command;
+
+        let policy = SandboxPolicyBuilder::new(SandboxMode::Manual)
+            .allow_write(PathBuf::from("/tmp"))
+            .build()
+            .expect("policy");
+
+        let sandbox = SeatbeltSandbox;
+        let mut cmd = Command::new("curl");
+        cmd.args(["--connect-timeout", "2", "http://1.1.1.1"]);
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+
+        sandbox.restrict_child(&mut cmd, &policy).expect("restrict_child");
+
+        let status = cmd.status().expect("spawn child");
+
+        // Network denied → curl should fail.
+        assert!(
+            !status.success(),
+            "curl should be blocked when network is denied (status: {})",
+            status,
+        );
+    }
 }

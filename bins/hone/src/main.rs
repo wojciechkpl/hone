@@ -229,20 +229,46 @@ async fn binary_on_path(name: &str) -> bool {
 async fn detect_provider() -> DetectedProvider {
     // Prefer direct Anthropic API — supports tool calling.
     if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
-        tracing::info!(provider = "anthropic", api = "http", tools = true, "provider detected");
-        return DetectedProvider {
-            provider: Arc::new(AnthropicProvider::new(api_key)),
-            model_id: ModelId::new("anthropic:claude-sonnet-4-5"),
-            supports_tools: true,
-        };
+        if api_key.trim().is_empty() {
+            eprintln!("\x1b[1;33mWarning:\x1b[0m ANTHROPIC_API_KEY is set but empty. Skipping Anthropic provider.");
+        } else if !api_key.starts_with("sk-ant-") {
+            eprintln!("\x1b[1;33mWarning:\x1b[0m ANTHROPIC_API_KEY doesn't start with 'sk-ant-'. Is this correct?");
+            tracing::info!(provider = "anthropic", api = "http", tools = true, "provider detected (non-standard key format)");
+            return DetectedProvider {
+                provider: Arc::new(AnthropicProvider::new(api_key)),
+                model_id: ModelId::new("anthropic:claude-sonnet-4-5"),
+                supports_tools: true,
+            };
+        } else {
+            tracing::info!(provider = "anthropic", api = "http", tools = true, "provider detected");
+            return DetectedProvider {
+                provider: Arc::new(AnthropicProvider::new(api_key)),
+                model_id: ModelId::new("anthropic:claude-sonnet-4-5"),
+                supports_tools: true,
+            };
+        }
     }
 
-    // OpenAI API — supports tool calling.
+    // OpenAI API (or any OpenAI-compatible endpoint) — supports tool calling.
+    // Set HONE_OPENAI_BASE_URL to point at DeepSeek, Qwen, Kimi, OpenRouter, etc.
+    // Set HONE_OPENAI_MODEL to override the default model name for that endpoint.
     if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
-        tracing::info!(provider = "openai", api = "http", tools = true, "provider detected");
+        let provider = if let Ok(base_url) = std::env::var("HONE_OPENAI_BASE_URL") {
+            tracing::info!(
+                provider = "openai-compat",
+                base_url = %base_url,
+                tools = true,
+                "provider detected (custom endpoint)"
+            );
+            OpenAiProvider::with_base_url(api_key, base_url)
+        } else {
+            tracing::info!(provider = "openai", api = "http", tools = true, "provider detected");
+            OpenAiProvider::new(api_key)
+        };
+        let model_name = std::env::var("HONE_OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".into());
         return DetectedProvider {
-            provider: Arc::new(OpenAiProvider::new(api_key)),
-            model_id: ModelId::new("openai:gpt-4o"),
+            provider: Arc::new(provider),
+            model_id: ModelId::new(&format!("openai:{model_name}")),
             supports_tools: true,
         };
     }
@@ -250,6 +276,10 @@ async fn detect_provider() -> DetectedProvider {
     // Fall back to CLI pass-through providers (no tool calling).
     if binary_on_path("claude").await {
         tracing::info!(provider = "claude-cli", api = "cli", tools = false, "provider detected");
+        eprintln!(
+            "\x1b[1;33mNote:\x1b[0m Using Claude CLI (no tool calling). \
+             For full agent capabilities, set ANTHROPIC_API_KEY instead."
+        );
         return DetectedProvider {
             provider: Arc::new(ClaudeCliProvider::new()),
             model_id: ModelId::new("claude-cli:claude-sonnet-4-5"),
@@ -259,6 +289,10 @@ async fn detect_provider() -> DetectedProvider {
 
     if binary_on_path("gemini").await {
         tracing::info!(provider = "gemini-cli", api = "cli", tools = false, "provider detected");
+        eprintln!(
+            "\x1b[1;33mNote:\x1b[0m Using Gemini CLI (no tool calling). \
+             For full agent capabilities, set OPENAI_API_KEY or ANTHROPIC_API_KEY instead."
+        );
         return DetectedProvider {
             provider: Arc::new(GeminiCliProvider::new()),
             model_id: ModelId::new("gemini-cli:gemini-2.5-pro"),
@@ -282,22 +316,24 @@ async fn detect_provider() -> DetectedProvider {
         };
     }
 
-    tracing::warn!(
-        "provider: no provider found (ANTHROPIC_API_KEY, OPENAI_API_KEY, claude, gemini, ollama) — \
-         falling back to MockProvider. Set ANTHROPIC_API_KEY or OPENAI_API_KEY for real completions."
-    );
-    eprintln!(concat!(
-        "\nNo AI provider found. To use Hone:\n",
-        "  - Set ANTHROPIC_API_KEY for Anthropic API (with tool use)\n",
-        "  - Set OPENAI_API_KEY for OpenAI API (with tool use)\n",
-        "  - Install Claude CLI: https://claude.ai/download\n",
-        "  - Install Gemini CLI: https://github.com/google-gemini/gemini-cli\n",
-        "  - Or run Ollama locally on port 11434\n",
-    ));
+    tracing::warn!("no AI provider found — falling back to MockProvider");
+    eprintln!("\n\x1b[1;33mNo AI provider detected.\x1b[0m Hone checked the following (in order):\n");
+    eprintln!("  1. \x1b[1mAnthropic API\x1b[0m    — ANTHROPIC_API_KEY not set");
+    eprintln!("                         export ANTHROPIC_API_KEY=sk-ant-...");
+    eprintln!("  2. \x1b[1mOpenAI API\x1b[0m        — OPENAI_API_KEY not set");
+    eprintln!("                         export OPENAI_API_KEY=sk-...");
+    eprintln!("                         Tip: set HONE_OPENAI_BASE_URL for DeepSeek/Qwen/Kimi/OpenRouter");
+    eprintln!("  3. \x1b[1mClaude CLI\x1b[0m        — 'claude' not found on PATH");
+    eprintln!("                         Install: https://claude.ai/download");
+    eprintln!("  4. \x1b[1mGemini CLI\x1b[0m        — 'gemini' not found on PATH");
+    eprintln!("                         Install: https://github.com/google-gemini/gemini-cli");
+    eprintln!("  5. \x1b[1mOllama\x1b[0m            — localhost:11434 not responding");
+    eprintln!("                         Install: https://ollama.com  then: ollama serve");
+    eprintln!();
+    eprintln!("Set one of the above and re-run hone.\n");
     DetectedProvider {
         provider: Arc::new(MockProvider::new(vec![
-            "No AI provider found. ".to_owned(),
-            "Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or install the Claude CLI: https://claude.ai/download"
+            "No AI provider found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or install a CLI provider."
                 .to_owned(),
         ])),
         model_id: ModelId::new("mock:mock-model"),
@@ -1127,9 +1163,16 @@ async fn main() -> Result<()> {
     let model_id: ModelId = if let Some(ref m) = cli.model {
         let known_prefixes = ["anthropic:", "openai:", "ollama:", "claude-cli:", "gemini-cli:"];
         if !known_prefixes.iter().any(|p| m.starts_with(p)) {
-            eprintln!(
-                "Invalid model ID: '{m}'\nSupported model ID prefixes:\n  - anthropic:claude-...\n  - openai:gpt-... or openai:o3\n  - ollama:llama3.2 (etc)\n  - claude-cli:... (CLI pass-through)\n  - gemini-cli:..."
-            );
+            eprintln!("\x1b[1;31mError:\x1b[0m invalid model ID '{m}'");
+            eprintln!();
+            eprintln!("Model IDs must start with a provider prefix:");
+            eprintln!("  anthropic:claude-sonnet-4-5");
+            eprintln!("  openai:gpt-4o");
+            eprintln!("  openai:deepseek-coder      (with HONE_OPENAI_BASE_URL)");
+            eprintln!("  ollama:llama3.2");
+            eprintln!("  claude-cli:claude-sonnet-4-5");
+            eprintln!("  gemini-cli:gemini-2.5-pro");
+            std::process::exit(1);
         }
         ModelId::new(m)
     } else {
