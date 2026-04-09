@@ -24,6 +24,8 @@ pub struct ContextMetrics {
     tool_results_compressed: AtomicU64,
     /// Number of duplicate file reads avoided via hash dedup.
     dedup_hits: AtomicU64,
+    /// Number of phase transition compactions triggered.
+    phase_transitions: AtomicU64,
 }
 
 impl ContextMetrics {
@@ -54,6 +56,10 @@ impl ContextMetrics {
         self.dedup_hits.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn record_phase_transition(&self) {
+        self.phase_transitions.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> MetricsSnapshot {
         MetricsSnapshot {
             input_tokens: self.input_tokens.load(Ordering::Relaxed),
@@ -64,6 +70,7 @@ impl ContextMetrics {
             messages_dropped: self.messages_dropped.load(Ordering::Relaxed),
             tool_results_compressed: self.tool_results_compressed.load(Ordering::Relaxed),
             dedup_hits: self.dedup_hits.load(Ordering::Relaxed),
+            phase_transitions: self.phase_transitions.load(Ordering::Relaxed),
         }
     }
 }
@@ -78,6 +85,7 @@ pub struct MetricsSnapshot {
     pub messages_dropped: u64,
     pub tool_results_compressed: u64,
     pub dedup_hits: u64,
+    pub phase_transitions: u64,
 }
 
 impl MetricsSnapshot {
@@ -100,7 +108,7 @@ impl MetricsSnapshot {
 
     pub fn format_summary(&self) -> String {
         format!(
-            "input={} out={} cache_hit_rate={:.1}% trims={} dropped={} compressed={} dedup={}",
+            "input={} out={} cache_hit_rate={:.1}% trims={} dropped={} compressed={} dedup={} phases={}",
             self.input_tokens,
             self.output_tokens,
             self.cache_hit_rate() * 100.0,
@@ -108,6 +116,7 @@ impl MetricsSnapshot {
             self.messages_dropped,
             self.tool_results_compressed,
             self.dedup_hits,
+            self.phase_transitions,
         )
     }
 }

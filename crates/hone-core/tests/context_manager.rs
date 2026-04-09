@@ -239,9 +239,13 @@ fn test_old_tool_results_compressed() {
         "old tool result (500 chars) should have been compressed to a short summary"
     );
 
-    // The compressed placeholder must be present.
+    // The compressed placeholder must be present (graduated compression may
+    // produce "tool result summarized" or "[tool result:" depending on age).
     let has_compressed_placeholder = built.iter().any(|m| {
-        matches!(m.role, Role::Tool) && m.content.as_text().contains("tool result compressed")
+        matches!(m.role, Role::Tool) && {
+            let t = m.content.as_text();
+            t.contains("tool result summarized") || t.contains("[tool result:")
+        }
     });
     assert!(
         has_compressed_placeholder,

@@ -7,38 +7,211 @@ use tiktoken_rs::CoreBPE;
 
 use crate::metrics::ContextMetrics;
 
-/// Number of most-recent messages that are never compressed or dropped.
+// ---------------------------------------------------------------------------
+// ContextConfig — model-aware budget and window configuration
+// ---------------------------------------------------------------------------
+
+/// Configuration for context window management, tuned per model.
 ///
-/// Keeping fresh tail context verbatim improves answer quality per "Lost in
-/// the Middle" research (Liu et al., TACL 2024): LLMs attend most strongly to
-/// the start and end of the context window.
-const RECENT_WINDOW: usize = 3;
+/// Research shows models' effective context is significantly less than their
+/// advertised window (RULER benchmark). Using the full window degrades quality
+/// non-linearly. This config caps the usable budget at a model-appropriate
+/// fraction.
+#[derive(Debug, Clone)]
+pub struct ContextConfig {
+    /// Fraction of advertised window to actually use (0.0–1.0).
+    pub effective_budget_ratio: f32,
+    /// Advertised context length from ModelInfo.
+    pub advertised_context_length: u32,
+    /// Number of recent messages protected from compression/drop.
+    pub recent_window: usize,
+    /// Assistant-turn age threshold for structural summary compression.
+    pub tool_compress_age: usize,
+    /// Additional turns after tool_compress_age before one-liner compression.
+    pub tool_oneliner_age_offset: usize,
+}
+
+impl ContextConfig {
+    /// Build a config tuned for the given model name.
+    ///
+    /// Budget ratios based on RULER and Needle-in-a-Haystack research:
+    /// - Claude: effective at ~60% of advertised 200K
+    /// - DeepSeek/Qwen: effective at ~45% of advertised 128K
+    /// - Llama: effective at ~40% of advertised 128K
+    /// - Default: 50% for unknown models
+    pub fn for_model(model_name: &str) -> Self {
+        let lower = model_name.to_lowercase();
+
+        let (ratio, context_len, recent) = if lower.contains("claude") {
+            (0.60, 200_000, 3)
+        } else if lower.contains("deepseek") || lower.contains("qwen") {
+            (0.45, 128_000, 5)
+        } else if lower.contains("llama") {
+            (0.40, 128_000, 7)
+        } else if lower.contains("gpt-4") || lower.contains("o3") || lower.contains("o4") {
+            (0.55, 128_000, 3)
+        } else if lower.contains("gemini") {
+            (0.50, 1_000_000, 3)
+        } else if lower.contains("kimi") {
+            (0.45, 128_000, 5)
+        } else {
+            (0.50, 128_000, 4)
+        };
+
+        Self {
+            effective_budget_ratio: ratio,
+            advertised_context_length: context_len,
+            recent_window: recent,
+            tool_compress_age: 5,
+            tool_oneliner_age_offset: 5,
+        }
+    }
+
+    /// Effective token budget (advertised * ratio).
+    pub fn effective_budget(&self) -> u32 {
+        (self.advertised_context_length as f32 * self.effective_budget_ratio) as u32
+    }
+
+    /// Age threshold at which tool results become one-liners.
+    pub fn tool_oneliner_age(&self) -> usize {
+        self.tool_compress_age + self.tool_oneliner_age_offset
+    }
+}
+
+impl Default for ContextConfig {
+    fn default() -> Self {
+        Self {
+            effective_budget_ratio: 1.0,
+            advertised_context_length: 128_000,
+            recent_window: 3,
+            tool_compress_age: 5,
+            tool_oneliner_age_offset: 5,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase detection
+// ---------------------------------------------------------------------------
+
+/// Task phase for adaptive context management.
+///
+/// Agentless (Xia et al., 2024) showed that resetting context between
+/// localization and repair phases improves SWE-bench scores. Phase-aware
+/// compaction gives a similar benefit without full context reset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskPhase {
+    /// Mostly read tools: read_file, grep, glob, git_status.
+    Exploration,
+    /// Write tools appear: write_file, edit_file, multi_edit, shell (writes).
+    Editing,
+    /// Test execution: shell with test commands.
+    Verification,
+}
+
+/// Tracks the current task phase and triggers compaction on transitions.
+#[derive(Debug)]
+pub struct PhaseTracker {
+    current_phase: TaskPhase,
+    consecutive_read_tools: u32,
+}
+
+impl PhaseTracker {
+    fn new() -> Self {
+        Self {
+            current_phase: TaskPhase::Exploration,
+            consecutive_read_tools: 0,
+        }
+    }
+
+    /// Observe a tool call and return the new phase if a transition occurred.
+    fn observe_tool(&mut self, tool_name: &str) -> Option<(TaskPhase, TaskPhase)> {
+        let old = self.current_phase;
+
+        if is_test_tool(tool_name) {
+            self.consecutive_read_tools = 0;
+            if old != TaskPhase::Verification {
+                self.current_phase = TaskPhase::Verification;
+                return Some((old, TaskPhase::Verification));
+            }
+        } else if is_write_tool(tool_name) {
+            self.consecutive_read_tools = 0;
+            if old == TaskPhase::Exploration {
+                self.current_phase = TaskPhase::Editing;
+                return Some((old, TaskPhase::Editing));
+            }
+        } else {
+            // Read tool
+            self.consecutive_read_tools += 1;
+            if old == TaskPhase::Verification && self.consecutive_read_tools >= 3 {
+                self.current_phase = TaskPhase::Exploration;
+                self.consecutive_read_tools = 0;
+                return Some((old, TaskPhase::Exploration));
+            }
+        }
+
+        None
+    }
+
+    pub fn current_phase(&self) -> TaskPhase {
+        self.current_phase
+    }
+}
+
+fn is_write_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "write_file" | "edit_file" | "multi_edit" | "apply_diff"
+    )
+}
+
+fn is_test_tool(name: &str) -> bool {
+    name == "run_tests"
+}
+
+// ---------------------------------------------------------------------------
+// ContextManager
+// ---------------------------------------------------------------------------
 
 /// Manages conversation history within a token budget.
 pub struct ContextManager {
+    config: ContextConfig,
     max_context_tokens: u32,
     messages: Vec<Message>,
-    // State for smart compaction: accumulates dropped message metadata across
-    // one trim_to_budget pass so we can emit a single summary marker.
     dropped_count: usize,
     dropped_role_hints: Vec<String>,
-    /// Optional metrics sink. When set, trim and compression events are recorded.
     metrics: Option<Arc<ContextMetrics>>,
-    /// Maps content hash → first message index (in `self.messages`) that had
-    /// that hash.  Used to detect duplicate tool results (e.g., the same file
-    /// read twice) and replace later occurrences with a lightweight pointer.
     content_hashes: HashMap<u64, usize>,
+    phase_tracker: PhaseTracker,
 }
 
 impl ContextManager {
+    /// Create with a raw token budget (backwards-compatible).
     pub fn new(max_context_tokens: u32) -> Self {
         Self {
+            config: ContextConfig::default(),
             max_context_tokens,
             messages: Vec::new(),
             dropped_count: 0,
             dropped_role_hints: Vec::new(),
             metrics: None,
             content_hashes: HashMap::new(),
+            phase_tracker: PhaseTracker::new(),
+        }
+    }
+
+    /// Create with a model-aware config.
+    pub fn with_config(config: ContextConfig) -> Self {
+        let budget = config.effective_budget();
+        Self {
+            config,
+            max_context_tokens: budget,
+            messages: Vec::new(),
+            dropped_count: 0,
+            dropped_role_hints: Vec::new(),
+            metrics: None,
+            content_hashes: HashMap::new(),
+            phase_tracker: PhaseTracker::new(),
         }
     }
 
@@ -46,6 +219,29 @@ impl ContextManager {
     pub fn with_metrics(mut self, metrics: Arc<ContextMetrics>) -> Self {
         self.metrics = Some(metrics);
         self
+    }
+
+    /// Notify the context manager about a tool call (for phase tracking).
+    ///
+    /// Call this before adding the tool result message. If a phase transition
+    /// occurs (e.g., exploration → editing), exploration results are
+    /// aggressively compacted.
+    pub fn notify_tool_call(&mut self, tool_name: &str) {
+        if let Some((from, to)) = self.phase_tracker.observe_tool(tool_name) {
+            if from == TaskPhase::Exploration
+                && (to == TaskPhase::Editing || to == TaskPhase::Verification)
+            {
+                self.force_compress_exploration_results();
+                if let Some(m) = &self.metrics {
+                    m.record_phase_transition();
+                }
+            }
+        }
+    }
+
+    /// Current task phase.
+    pub fn current_phase(&self) -> TaskPhase {
+        self.phase_tracker.current_phase()
     }
 
     /// Append a message to the conversation history, trimming old messages if
@@ -103,9 +299,8 @@ impl ContextManager {
     /// 4. Flush a synthetic "[session history: …]" system message so the model
     ///    knows context was compacted.
     fn trim_to_budget(&mut self) {
-        // Step 1: compress stale tool results unconditionally — this runs even
-        // when we are under budget so old outputs are always shrunk proactively.
-        self.compress_old_tool_results(5);
+        // Step 1: graduated compression — runs unconditionally.
+        self.compress_old_tool_results();
 
         if self.total_tokens() <= self.max_context_tokens {
             return;
@@ -113,22 +308,18 @@ impl ContextManager {
 
         // Step 2: drop oldest non-preserved messages until under budget.
         let dropped_before = self.dropped_count;
+        let recent_window = self.config.recent_window;
         loop {
             if self.total_tokens() <= self.max_context_tokens {
                 break;
             }
 
-            // Recompute preserved set each iteration because indices shift after
-            // each removal.
             let preserved = preserved_indices(&self.messages);
-
-            // Never drop from the protected tail (RECENT_WINDOW most-recent messages).
-            let protected_from = self.messages.len().saturating_sub(RECENT_WINDOW);
+            let protected_from = self.messages.len().saturating_sub(recent_window);
             let drop_idx = (0..protected_from)
                 .find(|i| !preserved.contains(i) && !is_summary_marker_at(&self.messages, *i));
 
             let Some(idx) = drop_idx else {
-                // Nothing left to drop (everything is preserved or a marker).
                 break;
             };
 
@@ -136,7 +327,6 @@ impl ContextManager {
             self.record_dropped_message(removed);
         }
 
-        // Record trim event if any messages were dropped in this pass.
         let newly_dropped = self.dropped_count - dropped_before;
         if newly_dropped > 0 {
             if let Some(m) = &self.metrics {
@@ -144,22 +334,23 @@ impl ContextManager {
             }
         }
 
-        // Step 3: emit a summary marker for everything we dropped this pass.
+        // Step 3: emit a summary marker.
         self.flush_dropped_summary();
     }
 
-    /// Compress tool-result messages whose "age" (measured by how many
-    /// assistant turns have elapsed since them) is ≥ `max_age_turns`.
+    /// Graduated tool result compression.
     ///
-    /// Compressed content keeps the first 80 chars of the original output plus
-    /// a header indicating the original length, so the model knows the result
-    /// existed but is not spending tokens on stale detail.
+    /// Three tiers based on assistant-turn age:
+    /// - **Full** (age < tool_compress_age): no compression
+    /// - **Structural summary** (age tool_compress_age..tool_oneliner_age):
+    ///   extract code signatures, test PASS/FAIL lines, or grep paths
+    /// - **One-liner** (age >= tool_oneliner_age): single line with char count
     ///
-    /// Messages in the protected tail (`RECENT_WINDOW` most-recent messages) are
-    /// never compressed, preserving fresh context at the end of the window.
-    fn compress_old_tool_results(&mut self, max_age_turns: usize) {
-        // The last RECENT_WINDOW messages are sacred — never compress them.
-        let protected_from = self.messages.len().saturating_sub(RECENT_WINDOW);
+    /// Messages in the protected recent window are never compressed.
+    fn compress_old_tool_results(&mut self) {
+        let protected_from = self.messages.len().saturating_sub(self.config.recent_window);
+        let summary_age = self.config.tool_compress_age;
+        let oneliner_age = self.config.tool_oneliner_age();
 
         let mut assistant_turns_since = 0usize;
         for i in (0..protected_from).rev() {
@@ -167,24 +358,42 @@ impl ContextManager {
                 Role::Assistant => {
                     assistant_turns_since += 1;
                 }
-                Role::Tool if assistant_turns_since >= max_age_turns => {
+                Role::Tool if assistant_turns_since >= summary_age => {
                     let text = self.messages[i].content.as_text().to_string();
-                    if text.starts_with("[tool result compressed") {
-                        // Already compressed — skip.
+                    if is_already_compressed(&text) {
                         continue;
                     }
-                    let preview_end = 80.min(text.len());
-                    let summary = format!(
-                        "[tool result compressed, original {} chars: {}…]",
-                        text.len(),
-                        &text[..preview_end]
-                    );
-                    self.messages[i].content = Content::Text(summary);
+
+                    let compressed = if assistant_turns_since >= oneliner_age {
+                        tool_oneliner(&text)
+                    } else {
+                        structural_summary(&text)
+                    };
+
+                    self.messages[i].content = Content::Text(compressed);
                     if let Some(m) = &self.metrics {
                         m.record_compression();
                     }
                 }
                 _ => {}
+            }
+        }
+    }
+
+    /// Force-compress all exploration tool results outside the recent window.
+    /// Called on phase transitions (exploration → editing/verification).
+    fn force_compress_exploration_results(&mut self) {
+        let protected_from = self.messages.len().saturating_sub(self.config.recent_window);
+
+        for i in 0..protected_from {
+            if matches!(self.messages[i].role, Role::Tool) {
+                let text = self.messages[i].content.as_text().to_string();
+                if !is_already_compressed(&text) && text.len() > 200 {
+                    self.messages[i].content = Content::Text(structural_summary(&text));
+                    if let Some(m) = &self.metrics {
+                        m.record_compression();
+                    }
+                }
             }
         }
     }
@@ -268,6 +477,198 @@ impl ContextManager {
     pub fn total_tokens(&self) -> u32 {
         self.messages.iter().map(estimate_message_tokens).sum()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Graduated compression helpers
+// ---------------------------------------------------------------------------
+
+/// Check if text is already compressed by a previous pass.
+fn is_already_compressed(text: &str) -> bool {
+    text.starts_with("[tool result")
+        || text.starts_with("[duplicate content")
+        || text.starts_with("[session history")
+}
+
+/// Produce a structural summary that preserves key information.
+///
+/// Detects content type heuristically and extracts:
+/// - Code: function/struct/enum/class/impl signatures
+/// - Test output: PASS/FAIL lines + first error
+/// - Grep results: file:line paths
+/// - Default: first 200 chars
+fn structural_summary(text: &str) -> String {
+    let len = text.len();
+    let sample = &text[..500.min(len)];
+
+    if looks_like_test_output(sample) {
+        let lines: Vec<&str> = text.lines().collect();
+        let mut kept: Vec<&str> = Vec::new();
+        let mut first_error = true;
+        for line in &lines {
+            let trimmed = line.trim();
+            if trimmed.contains("PASS")
+                || trimmed.contains("FAIL")
+                || trimmed.contains("test result")
+                || trimmed.starts_with("ok.")
+                || trimmed.starts_with("not ok")
+            {
+                kept.push(line);
+            } else if first_error
+                && (trimmed.contains("error")
+                    || trimmed.contains("Error")
+                    || trimmed.contains("panic"))
+            {
+                kept.push(line);
+                first_error = false;
+            }
+            if kept.len() >= 15 {
+                break;
+            }
+        }
+        if kept.is_empty() {
+            return format!(
+                "[tool result summarized, {} chars: {}...]",
+                len,
+                &text[..200.min(len)]
+            );
+        }
+        format!(
+            "[tool result summarized, {} chars, test output:\n{}]",
+            len,
+            kept.join("\n")
+        )
+    } else if looks_like_code(sample) {
+        let lines: Vec<&str> = text.lines().collect();
+        let sigs: Vec<&str> = lines
+            .iter()
+            .filter(|l| {
+                let t = l.trim();
+                t.starts_with("fn ")
+                    || t.starts_with("pub fn ")
+                    || t.starts_with("pub(crate) fn ")
+                    || t.starts_with("async fn ")
+                    || t.starts_with("pub async fn ")
+                    || t.starts_with("struct ")
+                    || t.starts_with("pub struct ")
+                    || t.starts_with("enum ")
+                    || t.starts_with("pub enum ")
+                    || t.starts_with("impl ")
+                    || t.starts_with("trait ")
+                    || t.starts_with("pub trait ")
+                    || t.starts_with("mod ")
+                    || t.starts_with("pub mod ")
+                    || t.starts_with("use ")
+                    || t.starts_with("def ")
+                    || t.starts_with("class ")
+                    || t.starts_with("function ")
+                    || t.starts_with("export ")
+            })
+            .take(20)
+            .copied()
+            .collect();
+        if sigs.is_empty() {
+            return format!(
+                "[tool result summarized, {} chars: {}...]",
+                len,
+                &text[..200.min(len)]
+            );
+        }
+        format!(
+            "[tool result summarized, {} chars, {} signatures:\n{}]",
+            len,
+            sigs.len(),
+            sigs.join("\n")
+        )
+    } else if looks_like_grep_result(sample) {
+        let path_strings: Vec<String> = text
+            .lines()
+            .filter(|l| l.contains(':') && !l.starts_with('['))
+            .take(20)
+            .map(|l| {
+                let parts: Vec<&str> = l.splitn(3, ':').collect();
+                if parts.len() >= 2 {
+                    format!("{}:{}", parts[0], parts[1])
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect();
+        format!(
+            "[tool result summarized, {} chars, grep {} matches:\n{}]",
+            len,
+            path_strings.len(),
+            path_strings.join("\n")
+        )
+    } else {
+        let safe_end = safe_char_boundary(text, 200);
+        format!(
+            "[tool result summarized, {} chars: {}...]",
+            len,
+            &text[..safe_end]
+        )
+    }
+}
+
+/// Produce a one-liner description for very old tool results.
+fn tool_oneliner(text: &str) -> String {
+    let len = text.len();
+    let descriptor = if looks_like_test_output(&text[..500.min(len)]) {
+        let pass = text.matches("PASS").count() + text.matches(" ok").count();
+        let fail = text.matches("FAIL").count() + text.matches("FAILED").count();
+        format!("test output ({pass} passed, {fail} failed)")
+    } else if looks_like_code(&text[..500.min(len)]) {
+        let fns = text.lines().filter(|l| {
+            let t = l.trim();
+            t.starts_with("fn ") || t.starts_with("pub fn ") || t.starts_with("def ")
+                || t.starts_with("function ")
+        }).count();
+        format!("code ({fns} functions)")
+    } else if looks_like_grep_result(&text[..500.min(len)]) {
+        let matches = text.lines().filter(|l| l.contains(':')).count();
+        format!("grep ({matches} matches)")
+    } else {
+        "text content".to_string()
+    };
+    format!("[tool result: {len} chars, {descriptor}]")
+}
+
+fn looks_like_code(sample: &str) -> bool {
+    sample.contains("fn ")
+        || sample.contains("def ")
+        || sample.contains("function ")
+        || sample.contains("class ")
+        || sample.contains("struct ")
+        || sample.contains("impl ")
+}
+
+fn looks_like_test_output(sample: &str) -> bool {
+    (sample.contains("PASS") || sample.contains("FAIL") || sample.contains("test result"))
+        && (sample.contains("test") || sample.contains("Test"))
+}
+
+fn looks_like_grep_result(sample: &str) -> bool {
+    let lines: Vec<&str> = sample.lines().take(10).collect();
+    if lines.is_empty() {
+        return false;
+    }
+    let colon_lines = lines.iter().filter(|l| {
+        let parts: Vec<&str> = l.splitn(3, ':').collect();
+        parts.len() >= 2 && parts[0].contains('.')
+    }).count();
+    colon_lines as f32 / lines.len() as f32 > 0.5
+}
+
+/// Find a safe UTF-8 char boundary at or before `max_bytes`.
+fn safe_char_boundary(text: &str, max_bytes: usize) -> usize {
+    if max_bytes >= text.len() {
+        return text.len();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +756,6 @@ mod tests {
         ctx.add_message(Message::user("how are you?"));
 
         let messages = ctx.build_messages("You are a helpful assistant.");
-        // system + 3 stored
         assert_eq!(messages.len(), 4);
     }
 
@@ -387,5 +787,165 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].role, Role::System);
         assert_eq!(messages[0].content.as_text(), "Be concise.");
+    }
+
+    // --- ContextConfig tests ---
+
+    #[test]
+    fn test_config_for_claude() {
+        let cfg = ContextConfig::for_model("claude-sonnet-4-5");
+        assert!((cfg.effective_budget_ratio - 0.60).abs() < 0.01);
+        assert_eq!(cfg.recent_window, 3);
+        assert_eq!(cfg.effective_budget(), 120_000);
+    }
+
+    #[test]
+    fn test_config_for_deepseek() {
+        let cfg = ContextConfig::for_model("deepseek-v3");
+        assert!((cfg.effective_budget_ratio - 0.45).abs() < 0.01);
+        assert_eq!(cfg.recent_window, 5);
+    }
+
+    #[test]
+    fn test_config_for_llama() {
+        let cfg = ContextConfig::for_model("ollama:llama3.2");
+        assert!((cfg.effective_budget_ratio - 0.40).abs() < 0.01);
+        assert_eq!(cfg.recent_window, 7);
+    }
+
+    #[test]
+    fn test_config_default_for_unknown() {
+        let cfg = ContextConfig::for_model("some-unknown-model");
+        assert!((cfg.effective_budget_ratio - 0.50).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_with_config_uses_effective_budget() {
+        let cfg = ContextConfig::for_model("claude-sonnet-4-5");
+        let ctx = ContextManager::with_config(cfg);
+        assert_eq!(ctx.max_context_tokens, 120_000);
+    }
+
+    // --- Graduated compression tests ---
+
+    #[test]
+    fn test_structural_summary_on_code() {
+        let code = "use std::io;\n\npub fn main() {\n    println!(\"hello\");\n}\n\nstruct Foo {\n    bar: i32,\n}\n";
+        let summary = structural_summary(code);
+        assert!(summary.contains("pub fn main"));
+        assert!(summary.contains("struct Foo"));
+        assert!(summary.contains("summarized"));
+    }
+
+    #[test]
+    fn test_structural_summary_on_test_output() {
+        let output = "running 5 tests\ntest foo ... ok\ntest bar ... FAILED\ntest baz ... ok\n\ntest result: FAILED. 4 passed; 1 failed;\n";
+        let summary = structural_summary(output);
+        assert!(summary.contains("FAILED"));
+        assert!(summary.contains("test result"));
+    }
+
+    #[test]
+    fn test_tool_oneliner() {
+        let code = "pub fn hello() {}\npub fn world() {}\ndef extra() {}\n";
+        let oneliner = tool_oneliner(code);
+        assert!(oneliner.starts_with("[tool result:"));
+        assert!(oneliner.contains("code"));
+    }
+
+    #[test]
+    fn test_safe_char_boundary_on_ascii() {
+        assert_eq!(safe_char_boundary("hello world", 5), 5);
+        assert_eq!(safe_char_boundary("hi", 10), 2);
+    }
+
+    #[test]
+    fn test_safe_char_boundary_on_multibyte() {
+        let text = "héllo"; // é is 2 bytes
+        let boundary = safe_char_boundary(text, 2);
+        // Should not split the é
+        assert!(text.is_char_boundary(boundary));
+    }
+
+    // --- Phase detection tests ---
+
+    #[test]
+    fn test_phase_tracker_starts_exploration() {
+        let tracker = PhaseTracker::new();
+        assert_eq!(tracker.current_phase(), TaskPhase::Exploration);
+    }
+
+    #[test]
+    fn test_phase_transitions_to_editing() {
+        let mut tracker = PhaseTracker::new();
+        assert!(tracker.observe_tool("read_file").is_none());
+        assert!(tracker.observe_tool("grep").is_none());
+        let transition = tracker.observe_tool("write_file");
+        assert_eq!(
+            transition,
+            Some((TaskPhase::Exploration, TaskPhase::Editing))
+        );
+        assert_eq!(tracker.current_phase(), TaskPhase::Editing);
+    }
+
+    #[test]
+    fn test_phase_transitions_to_verification() {
+        let mut tracker = PhaseTracker::new();
+        tracker.observe_tool("write_file"); // exploration -> editing
+        let transition = tracker.observe_tool("run_tests");
+        assert_eq!(
+            transition,
+            Some((TaskPhase::Editing, TaskPhase::Verification))
+        );
+    }
+
+    #[test]
+    fn test_phase_returns_to_exploration_after_reads() {
+        let mut tracker = PhaseTracker::new();
+        tracker.observe_tool("write_file"); // -> editing
+        tracker.observe_tool("run_tests"); // -> verification
+        tracker.observe_tool("read_file");
+        tracker.observe_tool("grep");
+        let transition = tracker.observe_tool("glob");
+        assert_eq!(
+            transition,
+            Some((TaskPhase::Verification, TaskPhase::Exploration))
+        );
+    }
+
+    #[test]
+    fn test_notify_tool_call_compacts_on_transition() {
+        // Use recent_window=1 so the tool result is outside the protected tail.
+        let mut config = ContextConfig::default();
+        config.recent_window = 1;
+        config.advertised_context_length = 1_000_000;
+        let mut ctx = ContextManager::with_config(config);
+
+        // Add exploration tool results
+        ctx.add_message(Message::user("find the bug"));
+        ctx.add_message(Message::assistant("Let me read the file."));
+        let big_content = "x".repeat(500);
+        ctx.add_message(Message {
+            role: Role::Tool,
+            content: Content::Text(big_content.clone()),
+            tool_calls: vec![],
+            tool_call_id: Some("tc1".to_string()),
+        });
+        ctx.add_message(Message::assistant("I see the issue."));
+        // Add padding to push tool result out of recent window
+        ctx.add_message(Message::user("ok fix it"));
+        ctx.add_message(Message::assistant("Sure, writing now."));
+
+        // Trigger phase transition
+        ctx.notify_tool_call("write_file");
+
+        // The tool result should have been compressed
+        let tool_msg = ctx.messages.iter().find(|m| matches!(m.role, Role::Tool)).unwrap();
+        let text = tool_msg.content.as_text();
+        assert!(
+            text.contains("summarized") || text.contains("[tool result"),
+            "exploration result should be compressed on phase transition, got: {}",
+            &text[..100.min(text.len())]
+        );
     }
 }

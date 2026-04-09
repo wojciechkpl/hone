@@ -57,7 +57,8 @@ pub struct Agent {
 impl Agent {
     pub fn new(config: AgentConfig) -> Self {
         let metrics = Arc::new(ContextMetrics::new());
-        let context = ContextManager::new(128_000)
+        let context_config = crate::context::ContextConfig::for_model(config.model.model_name());
+        let context = ContextManager::with_config(context_config)
             .with_metrics(Arc::clone(&metrics));
         Self {
             config,

@@ -29,7 +29,7 @@ pub use agent_registry::AgentRegistry;
 pub use audit::{AuditEntry, AuditError, AuditFilter, AuditKind, AuditLog, InMemoryAuditLog};
 pub use code_mode::{CodeModeOutput, CodeModeRunner};
 pub use complexity::{ComplexityClassifier, ComplexityTier};
-pub use context::ContextManager;
+pub use context::{ContextConfig, ContextManager, TaskPhase};
 pub use cost::CostAccumulator;
 pub use dispatcher::ToolDispatcher;
 pub use error::AgentError;
