@@ -95,6 +95,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         },
         working_dir: PathBuf::from("."),
         memory_store: None,
+        retry_config: hone_core::RetryConfig::default(),
     }
 }
 

@@ -455,6 +455,7 @@ fn build_agent_config(
         },
         working_dir: std::env::current_dir().unwrap_or_default(),
         memory_store,
+        retry_config: hone_core::RetryConfig::default(),
     }
 }
 

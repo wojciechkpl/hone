@@ -49,6 +49,7 @@ async fn test_budget_cap_blocks_new_turn() {
         pricing: real_pricing(),
         working_dir: std::path::PathBuf::from("."),
         memory_store: None,
+        retry_config: hone_core::RetryConfig::default(),
     };
 
     let mut agent = Agent::new(config);

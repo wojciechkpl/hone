@@ -80,6 +80,7 @@ impl ReviewerAgent {
             pricing: base_config.pricing,
             working_dir: base_config.working_dir,
             memory_store: None,
+            retry_config: base_config.retry_config,
         };
 
         Self { agent_config }
@@ -108,6 +109,7 @@ impl ReviewerAgent {
             pricing: self.agent_config.pricing.clone(),
             working_dir: self.agent_config.working_dir.clone(),
             memory_store: None,
+            retry_config: self.agent_config.retry_config.clone(),
         });
 
         let turn = agent.run_turn(context, events).await?;

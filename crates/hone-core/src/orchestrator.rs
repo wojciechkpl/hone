@@ -287,6 +287,7 @@ impl Orchestrator {
             pricing: self.lead_config.pricing.clone(),
             working_dir: self.lead_config.working_dir.clone(),
             memory_store: None,
+            retry_config: self.lead_config.retry_config.clone(),
         }
     }
 
@@ -333,6 +334,7 @@ impl Orchestrator {
             pricing: self.lead_config.pricing.clone(),
             working_dir: self.lead_config.working_dir.clone(),
             memory_store: None,
+            retry_config: self.lead_config.retry_config.clone(),
         }
     }
 }

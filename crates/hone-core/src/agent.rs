@@ -3,9 +3,9 @@ use std::sync::Arc;
 use futures::StreamExt;
 use hone_memory::{Memory, MemoryQuery, MemoryStore};
 use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ProviderEvent, ToolCallRequest, TokenUsage};
-use hone_providers::{CompletionRequest, ModelProvider};
+use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
 use hone_sandbox::Sandbox;
-use hone_tools::{ToolContext, ToolInput, ToolRegistry};
+use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput, ToolRegistry};
 use serde_json::Value;
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::task::JoinSet;
@@ -13,6 +13,8 @@ use tokio::task::JoinSet;
 use crate::context::ContextManager;
 use crate::cost::CostAccumulator;
 use crate::error::AgentError;
+use crate::recovery::{FailureScenario, RecoveryAction};
+use crate::retry::{RetryConfig, is_transient_error, retry};
 use crate::turn::TurnResult;
 
 /// Configuration for creating an `Agent`.
@@ -35,6 +37,10 @@ pub struct AgentConfig {
     /// injected into the system prompt each turn, and the Q&A pair is recorded
     /// after the turn completes.
     pub memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
+    /// Retry policy applied to transient provider errors (network timeouts,
+    /// 429s, 502/503s) before surfacing the error to the model.
+    /// Default: 3 attempts with exponential backoff starting at 500 ms.
+    pub retry_config: RetryConfig,
 }
 
 /// The orchestration core: manages the agent loop, context, tool dispatch, and cost tracking.
@@ -179,7 +185,19 @@ impl Agent {
             request.max_tokens = self.config.max_tokens;
             request.tools = self.config.tools.schemas();
 
-            let mut stream = self.config.provider.complete(request).await?;
+            let retry_cfg = self.config.retry_config.clone();
+            let provider = Arc::clone(&self.config.provider);
+            let request_clone = request.clone();
+            let mut stream = retry(
+                &retry_cfg,
+                || {
+                    let req = request_clone.clone();
+                    let prov = Arc::clone(&provider);
+                    async move { prov.complete(req).await }
+                },
+                |e: &ProviderError| is_transient_error(&e.to_string()),
+            )
+            .await?;
 
             // Collect any tool calls from this streaming response so we can
             // process them after the stream is exhausted.
@@ -311,13 +329,16 @@ impl Agent {
                         None => Err(AgentError::ToolNotFound {
                             name: call.name.clone(),
                         }),
-                        Some(t) => t
-                            .call(ToolInput::new(call.arguments.clone()), &ctx)
-                            .await
-                            .map_err(|e| AgentError::Tool {
-                                name: call.name.clone(),
-                                source: e,
-                            }),
+                        Some(t) => dispatch_with_recovery(
+                            t,
+                            ToolInput::new(call.arguments.clone()),
+                            &ctx,
+                        )
+                        .await
+                        .map_err(|e| AgentError::Tool {
+                            name: call.name.clone(),
+                            source: e,
+                        }),
                     };
 
                     match result {
@@ -383,6 +404,42 @@ impl Agent {
             cost_usd,
             tool_calls_count,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Recovery-aware sequential tool dispatch
+// ---------------------------------------------------------------------------
+
+/// Dispatch a single tool call with one automatic recovery attempt for
+/// classified transient failures.
+///
+/// On the first error, the failure is classified by [`FailureScenario`].  If
+/// the recommended action is [`RecoveryAction::RetryAfter`], the call sleeps
+/// for the specified duration and retries exactly once.  All other scenarios
+/// (Escalate, RunCommandThenRetry, GiveUp) fall through immediately so the
+/// error is fed to the model.
+async fn dispatch_with_recovery(
+    tool: Arc<dyn Tool>,
+    input: ToolInput,
+    ctx: &ToolContext,
+) -> Result<ToolOutput, ToolError> {
+    match tool.call(input.clone(), ctx).await {
+        Ok(output) => Ok(output),
+        Err(e) => {
+            let scenario = FailureScenario::classify(&e.to_string());
+            if let RecoveryAction::RetryAfter(duration) = scenario.recommended_action() {
+                tracing::info!(
+                    scenario = ?scenario,
+                    delay_ms = duration.as_millis(),
+                    "auto-retrying failed tool after classified recovery"
+                );
+                tokio::time::sleep(duration).await;
+                tool.call(input, ctx).await
+            } else {
+                Err(e)
+            }
+        }
     }
 }
 
