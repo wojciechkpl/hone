@@ -169,6 +169,68 @@ analyze-ci: ## Show results with 95% bootstrap confidence intervals (slow)
 
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# SWE-bench targets
+# ---------------------------------------------------------------------------
+
+PYTHON := $(BENCH_DIR)/.venv/bin/python
+SWEBENCH_DATASET ?= princeton-nlp/SWE-bench_Lite
+SWEBENCH_LIMIT ?=
+SWEBENCH_TIMEOUT ?= 300
+SWEBENCH_WORKERS ?= 2
+
+swebench-dry-run: build ## Run SWE-bench inference on 3 tasks (quick validation)
+	OPENAI_API_KEY=$(OPENAI_API_KEY) \
+	HONE_OPENAI_BASE_URL=$(HONE_OPENAI_BASE_URL) \
+	HONE_OPENAI_MODEL=$(HONE_OPENAI_MODEL) \
+		$(PYTHON) $(BENCH_DIR)/swebench_inference.py \
+			--dataset $(SWEBENCH_DATASET) \
+			--model $(HONE_OPENAI_MODEL) \
+			--limit 3 \
+			--timeout $(SWEBENCH_TIMEOUT)
+
+swebench-lite: build ## Run full SWE-bench Lite (300 tasks)
+	OPENAI_API_KEY=$(OPENAI_API_KEY) \
+	HONE_OPENAI_BASE_URL=$(HONE_OPENAI_BASE_URL) \
+	HONE_OPENAI_MODEL=$(HONE_OPENAI_MODEL) \
+		$(PYTHON) $(BENCH_DIR)/swebench_inference.py \
+			--dataset princeton-nlp/SWE-bench_Lite \
+			--model $(HONE_OPENAI_MODEL) \
+			$(if $(SWEBENCH_LIMIT),--limit $(SWEBENCH_LIMIT)) \
+			--timeout $(SWEBENCH_TIMEOUT)
+
+swebench-verified: build ## Run full SWE-bench Verified (500 tasks, headline run)
+	OPENAI_API_KEY=$(OPENAI_API_KEY) \
+	HONE_OPENAI_BASE_URL=$(HONE_OPENAI_BASE_URL) \
+	HONE_OPENAI_MODEL=$(HONE_OPENAI_MODEL) \
+		$(PYTHON) $(BENCH_DIR)/swebench_inference.py \
+			--dataset princeton-nlp/SWE-bench_Verified \
+			--model $(HONE_OPENAI_MODEL) \
+			$(if $(SWEBENCH_LIMIT),--limit $(SWEBENCH_LIMIT)) \
+			--timeout $(SWEBENCH_TIMEOUT)
+
+swebench-resume: build ## Resume an interrupted SWE-bench run
+	OPENAI_API_KEY=$(OPENAI_API_KEY) \
+	HONE_OPENAI_BASE_URL=$(HONE_OPENAI_BASE_URL) \
+	HONE_OPENAI_MODEL=$(HONE_OPENAI_MODEL) \
+		$(PYTHON) $(BENCH_DIR)/swebench_inference.py \
+			--dataset $(SWEBENCH_DATASET) \
+			--model $(HONE_OPENAI_MODEL) \
+			--resume \
+			--timeout $(SWEBENCH_TIMEOUT)
+
+swebench-evaluate: ## Evaluate predictions (requires Docker)
+	@if [ -z "$(PREDICTIONS)" ]; then \
+		echo "Usage: make swebench-evaluate PREDICTIONS=path/to/predictions.jsonl"; \
+		exit 1; \
+	fi
+	$(PYTHON) $(BENCH_DIR)/swebench_evaluate.py \
+		--predictions $(PREDICTIONS) \
+		--dataset $(SWEBENCH_DATASET) \
+		--max-workers $(SWEBENCH_WORKERS)
+
+# ---------------------------------------------------------------------------
+
 clean-results: ## Remove all result directories (DESTRUCTIVE — prompts for confirmation)
 	@echo "WARNING: This will delete all benchmark results under $(RESULTS_DIR)/"
 	@read -p "Type 'yes' to confirm: " confirm; \
