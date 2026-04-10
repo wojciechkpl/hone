@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -44,6 +46,92 @@ pub struct AgentConfig {
     pub retry_config: RetryConfig,
 }
 
+// ---------------------------------------------------------------------------
+// Tool dispatch guards
+// ---------------------------------------------------------------------------
+
+/// Per-turn guard state for tool dispatch heuristics.
+///
+/// Tracks which files have been read in the current turn and how many
+/// consecutive write-like calls have been made without an intervening
+/// read or shell call.  Reset at the start of every `run_turn` call.
+#[derive(Default)]
+struct TurnGuards {
+    /// Canonical paths of files that have been read (via `read_file`) at
+    /// least once during the current turn.
+    files_read: HashSet<PathBuf>,
+    /// Number of consecutive edit/write calls without an intervening read
+    /// or shell call.
+    consecutive_edits: u32,
+}
+
+impl TurnGuards {
+    fn reset(&mut self) {
+        self.files_read.clear();
+        self.consecutive_edits = 0;
+    }
+
+    /// Record a read_file call so we know the file has been read.
+    fn record_read(&mut self, path: &str) {
+        self.files_read.insert(PathBuf::from(path));
+    }
+
+    /// Returns `true` when `path` has NOT been read yet this turn.
+    fn needs_read_before_edit(&self, path: &str) -> bool {
+        !self.files_read.contains(&PathBuf::from(path))
+    }
+
+    /// Increment the consecutive-edit counter.  Returns the new count.
+    fn record_edit(&mut self) -> u32 {
+        self.consecutive_edits += 1;
+        self.consecutive_edits
+    }
+
+    /// A read_file or shell call resets the consecutive-edit run.
+    fn break_edit_streak(&mut self) {
+        self.consecutive_edits = 0;
+    }
+}
+
+/// Whether a tool name is an edit/write operation for guard purposes.
+fn is_edit_tool(name: &str) -> bool {
+    matches!(name, "edit_file" | "write_file" | "multi_edit")
+}
+
+/// Extract the primary file path argument from a tool call for guard tracking.
+///
+/// Returns `None` when the path cannot be determined (so guards degrade
+/// gracefully rather than blocking on unknown argument shapes).
+fn extract_file_path(name: &str, args: &Value) -> Option<String> {
+    let obj = args.as_object()?;
+    match name {
+        "read_file" | "edit_file" | "write_file" => {
+            obj.get("path")
+                .or_else(|| obj.get("file_path"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        }
+        "multi_edit" => {
+            // multi_edit accepts an array of edits; track the first path.
+            obj.get("edits")
+                .and_then(Value::as_array)
+                .and_then(|arr| arr.first())
+                .and_then(|e| e.get("path").or_else(|| e.get("file_path")))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        }
+        _ => None,
+    }
+}
+
+/// Detect whether any project-level test runner marker is present in the
+/// working directory, for the test-after-edit hint.
+fn has_test_runner_marker(working_dir: &std::path::Path) -> bool {
+    ["Cargo.toml", "pyproject.toml", "package.json", "Makefile"]
+        .iter()
+        .any(|f| working_dir.join(f).exists())
+}
+
 /// The orchestration core: manages the agent loop, context, tool dispatch, and cost tracking.
 pub struct Agent {
     config: AgentConfig,
@@ -52,6 +140,8 @@ pub struct Agent {
     /// Monotonically increasing counter of completed turns this session.
     turn_count: u32,
     metrics: Arc<ContextMetrics>,
+    /// Per-turn guard state (reset at the top of each `run_turn` call).
+    guards: TurnGuards,
 }
 
 impl Agent {
@@ -66,6 +156,7 @@ impl Agent {
             cost: CostAccumulator::new(),
             turn_count: 0,
             metrics,
+            guards: TurnGuards::default(),
         }
     }
 
@@ -172,6 +263,9 @@ impl Agent {
         self.turn_count += 1;
         tracing::Span::current().record("turn", self.turn_count);
         tracing::debug!(turn_number = self.turn_count, "starting turn");
+
+        // Reset per-turn guard state for each new turn.
+        self.guards.reset();
 
         self.cost.check_budget(self.config.budget_limit)?;
 
@@ -321,6 +415,17 @@ impl Agent {
                         tool_calls_count += 1;
                         tracing::debug!(tool_name = %call.name, "tool dispatched (parallel)");
 
+                        // Guard: record read_file calls so we know which files
+                        // have been read before any subsequent edit.
+                        if call.name == "read_file" {
+                            if let Some(path) = extract_file_path(&call.name, &call.arguments) {
+                                self.guards.record_read(&path);
+                            }
+                        }
+                        // Any read or shell call in the parallel path resets the
+                        // consecutive-edit counter.
+                        self.guards.break_edit_streak();
+
                         match result {
                             Ok(value) => {
                                 self.context.add_message(Message::tool_result(
@@ -347,6 +452,85 @@ impl Agent {
                     // Side-effecting call: dispatch sequentially.
                     let call = &pending_tool_calls[i];
                     tracing::debug!(tool_name = %call.name, "tool dispatched (sequential)");
+
+                    // ----------------------------------------------------------
+                    // Guard 1: Must-read-before-edit
+                    // If the agent tries to edit a file it hasn't read yet this
+                    // turn, automatically inject a read_file call first and feed
+                    // its result back before proceeding with the edit.
+                    // ----------------------------------------------------------
+                    if is_edit_tool(&call.name) {
+                        if let Some(file_path) = extract_file_path(&call.name, &call.arguments) {
+                            if self.guards.needs_read_before_edit(&file_path) {
+                                tracing::debug!(
+                                    file = %file_path,
+                                    edit_tool = %call.name,
+                                    "guard: injecting read_file before edit on unread file"
+                                );
+
+                                // Synthesise a read_file call.
+                                let read_args =
+                                    serde_json::json!({ "path": file_path });
+                                let read_input = ToolInput::new(read_args);
+
+                                if let Some(read_tool) = self.config.tools.get("read_file").map(Arc::clone) {
+                                    match read_tool.call(read_input, &ctx).await {
+                                        Ok(read_output) => {
+                                            // Record the read so the guard doesn't fire again.
+                                            self.guards.record_read(&file_path);
+                                            // Inject the read result into context as a synthetic
+                                            // tool result so the model has the file content.
+                                            let read_val = read_output.into_value();
+                                            let synthetic_id =
+                                                format!("guard-read-{}", uuid::Uuid::now_v7());
+                                            self.context.add_message(Message::tool_result(
+                                                synthetic_id,
+                                                format!(
+                                                    "(guard: auto-read '{}' before edit)\n{}",
+                                                    file_path,
+                                                    serde_json::to_string(&read_val)
+                                                        .unwrap_or_default()
+                                                ),
+                                            ));
+                                        }
+                                        Err(err) => {
+                                            tracing::debug!(
+                                                file = %file_path,
+                                                error = %err,
+                                                "guard: read_file injection failed; proceeding with edit"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ----------------------------------------------------------
+                    // Guard 3: Max consecutive edits without a read or shell call.
+                    // If the agent has made 3+ consecutive edits, inject a hint
+                    // message before processing this call.
+                    // ----------------------------------------------------------
+                    if is_edit_tool(&call.name) {
+                        let streak = self.guards.record_edit();
+                        if streak >= 3 {
+                            tracing::debug!(
+                                streak,
+                                "guard: 3+ consecutive edits without verification"
+                            );
+                            let hint_id = format!("guard-edit-streak-{}", uuid::Uuid::now_v7());
+                            self.context.add_message(Message::tool_result(
+                                hint_id,
+                                "(guard) You've made 3 edits without verifying. \
+                                 Consider reading the file or running tests before continuing."
+                                    .to_owned(),
+                            ));
+                        }
+                    } else {
+                        // Shell or any other non-edit sequential call resets the streak.
+                        self.guards.break_edit_streak();
+                    }
+
                     let _ = events
                         .send(AgentEvent::ToolCallStart {
                             id: call.id.clone(),
@@ -376,6 +560,36 @@ impl Agent {
                     match result {
                         Ok(output) => {
                             let value = output.into_value();
+
+                            // --------------------------------------------------
+                            // Guard 2: Test-after-edit hint
+                            // After any edit/write call, if a test-runner marker
+                            // exists in the working directory, append a hint to
+                            // the tool result suggesting the agent run tests.
+                            // --------------------------------------------------
+                            let augmented_value = if is_edit_tool(&call.name)
+                                && has_test_runner_marker(&self.config.working_dir)
+                            {
+                                tracing::debug!(
+                                    tool = %call.name,
+                                    "guard: appending test hint to edit result"
+                                );
+                                let mut hint_obj = serde_json::Map::new();
+                                hint_obj.insert("result".to_owned(), value.clone());
+                                hint_obj.insert(
+                                    "hint".to_owned(),
+                                    serde_json::Value::String(
+                                        "Edit applied. Consider running the relevant tests to \
+                                         verify correctness (e.g. shell: python -m pytest or \
+                                         cargo test on the affected module)."
+                                            .to_owned(),
+                                    ),
+                                );
+                                serde_json::Value::Object(hint_obj)
+                            } else {
+                                value.clone()
+                            };
+
                             let _ = events
                                 .send(AgentEvent::ToolCallEnd {
                                     id: call.id.clone(),
@@ -385,7 +599,7 @@ impl Agent {
                                 .await;
                             self.context.add_message(Message::tool_result(
                                 call.id.clone(),
-                                serde_json::to_string(&value).unwrap_or_default(),
+                                serde_json::to_string(&augmented_value).unwrap_or_default(),
                             ));
                         }
                         Err(AgentError::ToolNotFound { name }) => {

@@ -75,17 +75,172 @@ def clone_repo(repo: str, base_commit: str, work_dir: Path) -> Path:
     return repo_dir
 
 
+STRUCTURED_PROMPT_TEMPLATE = """\
+You are an expert software engineer fixing a bug in a real open-source repository.
+
+## Issue
+{problem_statement}
+
+## Relevant Files (pre-localized)
+The following files are most likely to contain the bug. Read them first before exploring further.
+
+{file_context}
+
+## Workflow
+Follow these phases in order:
+
+### Phase 1: Understand
+- Read the issue carefully. Identify what behavior is expected vs actual.
+- Note any file paths, function names, or error messages mentioned.
+
+### Phase 2: Localize
+- Use grep/glob to find the relevant files and functions.
+- Read the specific code sections that are likely buggy.
+- Do NOT edit any files yet.
+
+### Phase 3: Fix
+- Make the minimal edit needed to fix the issue.
+- Only edit files directly related to the bug.
+- Do NOT modify test files.
+- Do NOT add new tests.
+
+### Phase 4: Verify
+- After editing, re-read the changed file to confirm the fix looks correct.
+- Check for syntax errors or obvious mistakes.
+
+## Rules
+- Make minimal changes. Do not refactor unrelated code.
+- If you cannot find the bug after reading 5 files, focus on the most likely candidate and attempt a fix.
+- Do not explain your changes at the end — just make the fix.
+"""
+
+LOCALIZATION_PROMPT_TEMPLATE = """\
+Given this repository file tree and issue description, list the top 5 most likely files \
+that need to be fixed to resolve the issue. Return ONLY file paths, one per line, \
+with no explanation or commentary.
+
+## Issue
+{problem_statement}
+
+## Repository File Tree
+{file_tree}
+"""
+
+
+def get_file_tree(repo_dir: Path) -> str:
+    """Return a filtered list of Python source files in the repo (max 200)."""
+    result = subprocess.run(
+        ["find", ".", "-name", "*.py", "-not", "-path", "./.git/*"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    lines = [l.strip() for l in result.stdout.splitlines() if l.strip()]
+    lines.sort()
+    return "\n".join(lines[:200])
+
+
+def localize_files(
+    repo_dir: Path,
+    problem_statement: str,
+    hone_binary: str,
+    model: str,
+    env: dict,
+    timeout_secs: int = 60,
+) -> list[str]:
+    """
+    Stage 1 localization: ask the model for the top 5 likely buggy files.
+
+    Runs hone with a short, focused prompt and parses the response as a list of
+    file paths.  Returns an empty list on any failure so the caller can
+    gracefully degrade.
+    """
+    file_tree = get_file_tree(repo_dir)
+    localization_prompt = LOCALIZATION_PROMPT_TEMPLATE.format(
+        problem_statement=problem_statement,
+        file_tree=file_tree,
+    )
+
+    try:
+        result = subprocess.run(
+            [hone_binary, "--model", f"openai:{model}", localization_prompt],
+            cwd=repo_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_secs,
+        )
+    except subprocess.TimeoutExpired:
+        return []
+
+    if result.returncode != 0:
+        return []
+
+    # Parse the model output: extract lines that look like file paths.
+    candidates: list[str] = []
+    for line in result.stdout.splitlines():
+        line = line.strip().lstrip("- ").strip()
+        if not line or line.startswith("#"):
+            continue
+        # Normalise: strip leading "./"
+        if line.startswith("./"):
+            line = line[2:]
+        # Only accept paths that exist in the repo.
+        if (repo_dir / line).exists():
+            candidates.append(line)
+        if len(candidates) >= 5:
+            break
+
+    return candidates
+
+
+def read_file_truncated(path: Path, max_lines: int = 200) -> str:
+    """Read a file and return up to max_lines lines with a truncation notice."""
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return f"(could not read {path})"
+    if len(lines) <= max_lines:
+        return "\n".join(lines)
+    return "\n".join(lines[:max_lines]) + f"\n... (truncated at {max_lines} lines)"
+
+
+def build_file_context(repo_dir: Path, localized_paths: list[str]) -> str:
+    """Render the pre-read file contents for inclusion in the agent prompt."""
+    if not localized_paths:
+        return "(no files pre-localized)"
+    parts: list[str] = []
+    for rel_path in localized_paths:
+        abs_path = repo_dir / rel_path
+        content = read_file_truncated(abs_path)
+        parts.append(f"### {rel_path}\n```python\n{content}\n```")
+    return "\n\n".join(parts)
+
+
 def run_hone(repo_dir: Path, problem_statement: str, hone_binary: str, model: str,
              timeout_secs: int = 300) -> tuple[str, float, bool]:
-    """Run Hone on a task and return (patch, cost_usd, success)."""
+    """Run Hone on a task and return (patch, elapsed_secs, success)."""
     env = os.environ.copy()
     env["HONE_OPENAI_MODEL"] = env.get("HONE_OPENAI_MODEL", model)
 
-    prompt = (
-        f"You are fixing a bug in this repository. Here is the issue:\n\n"
-        f"{problem_statement}\n\n"
-        f"Find and fix the bug. Edit only the files necessary to resolve the issue. "
-        f"Do not add tests. Do not modify test files."
+    # ------------------------------------------------------------------
+    # Change 2: Two-stage localization
+    # Run a cheap localization call first to identify the top 5 candidate
+    # files, then pre-read their content into the main agent prompt.
+    # ------------------------------------------------------------------
+    localized_paths = localize_files(
+        repo_dir, problem_statement, hone_binary, model, env,
+        timeout_secs=min(60, timeout_secs // 5),
+    )
+    file_context = build_file_context(repo_dir, localized_paths)
+
+    # ------------------------------------------------------------------
+    # Change 1: Structured 4-phase SWE-bench prompt
+    # ------------------------------------------------------------------
+    prompt = STRUCTURED_PROMPT_TEMPLATE.format(
+        problem_statement=problem_statement,
+        file_context=file_context,
     )
 
     start = time.time()
