@@ -1,0 +1,20 @@
+{
+  "run": "v1-baseline",
+  "date": "2026-04-10",
+  "model": "deepseek/deepseek-chat (DeepSeek V3)",
+  "provider": "OpenRouter",
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "total_tasks": 300,
+  "patches_generated": 226,
+  "empty_patches": 74,
+  "evaluated": 226,
+  "completed_evaluation": 205,
+  "docker_errors": 21,
+  "resolved": 58,
+  "unresolved": 147,
+  "resolve_rate_of_evaluated": 0.283,
+  "resolve_rate_overall": 0.193,
+  "total_cost_usd": 8.56,
+  "cost_per_task_usd": 0.029,
+  "cost_per_resolved_usd": 0.148
+}
