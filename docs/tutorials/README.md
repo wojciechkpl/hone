@@ -15,7 +15,7 @@ Start here if you're new to Hone:
 
 - **[Getting Started](getting-started.md)** — Prerequisites, building from source, first interactive session, one-shot mode, understanding output (token streaming, tool calls, cost tracking)
 
-- **[Providers](providers.md)** — Configuring Anthropic API, OpenAI, Ollama (local), CLI pass-through tools, ACP, hot-swapping providers, fallback chains, model routing rules, pricing tables, cost tracking, health checks, custom timeouts
+- **[Providers](providers.md)** — Configuring Anthropic API, OpenAI (and custom endpoints like DeepSeek, OpenRouter, Qwen), Ollama (local), CLI pass-through tools, ACP, hot-swapping providers, fallback chains, model routing rules, pricing tables, cost tracking, health checks, custom timeouts
 
 - **[Tools and MCP](tools-and-mcp.md)** — Layer architecture (L0–L3), native tools (file, shell, git, LSP, semantic index), MCP integration (JSON-RPC, external tools), Code Mode (agent-generated orchestration), skills (HONE.md conventions), tool registry and dispatch, writing custom tools
 
@@ -25,7 +25,7 @@ Start here if you're new to Hone:
 
 - **[Server and Remote](server-and-remote.md)** — Starting the daemon (`honed`), REST API overview (sessions, turns, SSE events), real-time streaming with Server-Sent Events, tunnel support (Cloudflare, Ngrok), authentication (bearer tokens), collaborative sessions, health checks, running multiple daemons, systemd integration
 
-- **[Security](security.md)** — Sandbox architecture (Seatbelt on macOS, Landlock on Linux, seccomp on containers), SandboxPolicy (file/network restrictions), network deny-by-default, RBAC roles and policies, audit logging, memory encryption, ephemeral mode, threat model, best practices, troubleshooting
+- **[Security](security.md)** — Hardened sandbox architecture (Seatbelt on macOS, Landlock on Linux, seccomp on containers), path traversal prevention, shell command classification, SandboxPolicy (file/network restrictions), network deny-by-default, RBAC roles and policies, audit logging, memory encryption (AES-256-GCM with Argon2id), ephemeral mode, threat model, best practices, troubleshooting
 
 ## Learning Paths
 
@@ -48,10 +48,11 @@ You can now automate complex tasks via YAML recipes.
 
 1. [Getting Started](getting-started.md) — Set up
 2. [Server and Remote](server-and-remote.md) — Run the daemon
-3. [Security](security.md) — Configure sandboxes and RBAC
-4. [Providers](providers.md) — Set up cost tracking and fallback chains
+3. [Security](security.md) — Configure sandboxes, RBAC, memory encryption, and audit logging
+4. [Providers](providers.md) — Set up cost tracking, fallback chains, and custom endpoints
+5. [Configuration](../configuration.md) — Fine-tune context optimization and budgets
 
-You can now deploy Hone as a multi-user HTTP service with audit logging and access control.
+You can now deploy Hone as a multi-user HTTP service with audit logging, access control, and encrypted memory.
 
 ### Path 4: Custom Integration (90 min)
 

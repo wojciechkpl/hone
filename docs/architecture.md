@@ -17,8 +17,10 @@
 7. [Error Handling Strategy](#7-error-handling-strategy)
 8. [Async Runtime & Patterns](#8-async-runtime--patterns)
 9. [Storage Architecture](#9-storage-architecture)
-10. [Security Model](#10-security-model)
-11. [Key Design Decisions](#11-key-design-decisions)
+10. [Context Optimization](#10-context-optimization)
+11. [Memory Encryption](#11-memory-encryption)
+12. [Security Model](#12-security-model)
+13. [Key Design Decisions](#13-key-design-decisions)
 
 ---
 
@@ -592,7 +594,11 @@ flowchart LR
 
 ## 9. Storage Architecture
 
-Hone uses a **dual-database strategy**: SQLite for local session/memory data (single-user, zero-ops) and PostgreSQL + pgvector for the semantic index (vector similarity search at scale).
+Hone uses a **dual-database strategy**:
+- **SQLite** for local session/memory data (single-user, zero-ops, optionally encrypted)
+- **PostgreSQL + pgvector** for semantic index (vector similarity search, concurrent access)
+
+This separation ensures the CLI works offline without external dependencies, while allowing production deployments to leverage PostgreSQL's scalability and vector search capabilities.
 
 ### 9.1 SQLite — Sessions & Adaptive Memory
 
@@ -744,7 +750,179 @@ flowchart TD
 
 ---
 
-## 10. Security Model
+## 10. Context Optimization
+
+### Problem
+
+Model context windows are finite and expensive. A 200K context window costs millions of tokens at scale. Hone minimizes token usage while preserving code comprehension through four techniques:
+
+1. **Model-aware token budgets** — Each model family has a learned budget profile based on task complexity.
+2. **BM25 reordering** — Given a set of candidate context (memories, file snippets, search results), BM25 ranking brings the most relevant items to the front.
+3. **Graduated compression** — Context is progressively summarized (code comments → summaries → hashes) to preserve key information with fewer tokens.
+4. **Phase detection** — Hone identifies conversation phases (exploration, implementation, testing, refactoring) and adjusts context strategy accordingly.
+
+### Token Budget Calculation
+
+```rust
+pub struct TokenBudget {
+    pub context_window_size: u32,          // e.g., 200_000 for claude-opus-4-5
+    pub reserved_for_output: u32,          // e.g., 4_000
+    pub reserved_for_system_prompt: u32,   // e.g., 2_000
+    pub safety_margin: f32,                // e.g., 0.1 (10% buffer)
+}
+
+impl TokenBudget {
+    pub fn available_for_context(&self) -> u32 {
+        let usable = self.context_window_size - self.reserved_for_output - self.reserved_for_system_prompt;
+        ((usable as f32) * (1.0 - self.safety_margin)) as u32
+    }
+}
+```
+
+**Example:** claude-opus-4-5 (200K context):
+- Context window: 200,000 tokens
+- Reserved for output: 4,000 tokens
+- Reserved for system prompt: 2,000 tokens
+- Safety margin: 10%
+- Available for context: ~177,400 tokens
+
+### BM25 Reordering
+
+When the agent has multiple pieces of context (memories, code snippets, search results), BM25 ranking reorders them by relevance to the current query:
+
+```rust
+pub trait ContextRanker {
+    fn rank(&self, query: &str, candidates: Vec<ContextItem>) -> Vec<RankedItem>;
+}
+
+pub struct BM25Ranker { /* implements TF-IDF with length normalization */ }
+```
+
+**Example workflow:**
+1. Agent receives: `"Add error handling to the auth module"`
+2. Retrieves 50 candidate context items (memories, code snippets, LSP results)
+3. BM25 ranks them: items matching "error", "handling", "auth" bubble to top
+4. Only top-K items (e.g., 30) are included in the context window
+5. Result: 60% fewer tokens, same coverage
+
+### Graduated Compression
+
+As context items age or become less relevant, they are progressively compressed:
+
+```
+Phase 1: Full code (e.g., 100 tokens per function)
+Phase 2: Code + summary (50 tokens code, 20 tokens summary = 70 total)
+Phase 3: Summary only (20 tokens)
+Phase 4: Compressed reference (5 tokens: hash + title)
+```
+
+Example:
+```rust
+// Phase 1: Full code
+fn validate_email(email: &str) -> Result<(), EmailError> {
+    if email.len() < 3 { return Err(EmailError::TooShort); }
+    if !email.contains('@') { return Err(EmailError::InvalidFormat); }
+    let parts: Vec<&str> = email.split('@').collect();
+    if parts.len() != 2 { return Err(EmailError::InvalidFormat); }
+    if parts[1].len() < 3 { return Err(EmailError::InvalidDomain); }
+    Ok(())
+}
+
+// Phase 2: Code + summary
+fn validate_email(email: &str) -> Result<(), EmailError> { /* ... 40 lines ... */ }
+// Validates email: checks length, presence of @, domain validity.
+
+// Phase 3: Summary only
+// Function: validate_email. Validates email: length >= 3, has @, domain valid.
+
+// Phase 4: Reference
+// ref:email_validation (hash_abc123)
+```
+
+### Phase Detection
+
+Hone detects conversation phases and adjusts context strategy:
+
+| Phase | Characteristics | Context Strategy |
+|-------|-----------------|------------------|
+| **Exploration** | Questions, analysis, no code changes | Keep search results, memories; drop old code |
+| **Implementation** | Writing new code, modifying files | Keep implementation context; compress exploration results |
+| **Testing** | Running tests, debugging failures | Keep test failures and logs; compress implementation details |
+| **Refactoring** | Improving existing code | Keep full code for area being refactored; compress unrelated context |
+
+Example:
+```
+Turn 1-3: "What's in this repo?" → Exploration phase
+         Context: recent memories, file structure, no code
+Turn 4-8: "Implement auth module" → Implementation phase
+         Context: auth spec, test template, security patterns
+Turn 9-12: "Tests failing" → Testing phase
+         Context: test failures, error logs, relevant code
+Turn 13+: "Refactor X for performance" → Refactoring phase
+         Context: full X implementation, performance patterns, benchmarks
+```
+
+---
+
+## 11. Memory Encryption
+
+Hone optionally encrypts session data using **AES-256-GCM** with **Argon2id** key derivation:
+
+```bash
+# Build with encryption support
+cargo build --features encrypted-memory
+
+# Initialize encryption (stores key in system keychain)
+hone --init-encryption
+# Enter passphrase: ****
+# Keychain updated. Encryption enabled.
+```
+
+### Encryption Details
+
+- **Cipher:** AES-256-GCM (authenticated encryption, prevents tampering)
+- **Key derivation:** Argon2id with user passphrase
+  - Time cost: 3 iterations
+  - Memory cost: 64 MB
+  - Parallelism: 4 threads
+  - Salt: 16 random bytes (unique per user)
+- **Key storage:** System keychain (keyring crate)
+  - macOS: Keychain Services API
+  - Linux: Secret Service or pass
+  - Windows: DPAPI (future)
+- **Scope:** SQLite database (`~/.local/share/hone/memory.db`)
+  - Encrypted at rest via SQLCipher
+  - Per-record nonces prevent replay attacks
+
+### Threat Model
+
+Encrypted memory protects against:
+- **Disk theft:** If the computer is stolen, session memories cannot be read without the passphrase.
+- **Malware with filesystem access:** Cannot extract plaintext memories without keychain access.
+- **Accidental exposure:** If the database file is copied to shared storage, it remains encrypted.
+
+**Does NOT protect against:**
+- **Keyloggers or screen recording:** If attacker has real-time access to your computer.
+- **Compromised keychain:** If the system keychain is breached or the passphrase is weak.
+- **Memory-resident attacks:** Decrypted data in RAM can be extracted by privileged processes.
+
+### Ephemeral Mode
+
+For sensitive queries, use ephemeral mode to disable all persistence:
+
+```bash
+hone --ephemeral -i "Analyze this sensitive document"
+```
+
+In ephemeral mode:
+- No session data is persisted
+- No memories are recorded
+- Cost tracking is not saved
+- All data is discarded when the session ends
+
+---
+
+## 12. Security Model
 
 ### Sandbox platform matrix
 
@@ -774,25 +952,33 @@ flowchart TD
     E[Secret leakage via\nenv vars] -->|mitigated by| ENV[Explicit env allowlist\nin SandboxPolicy]
 ```
 
-### Security hardening (Phase 1–2)
+### Security Hardening (Phase 2 Complete)
 
 Recent security improvements include:
 
-- **Path traversal prevention:** All file tools use `resolve_within_working_dir()` to canonicalize paths and reject `..` escapes.
-- **Shell command classification:** Command intent classifier detects compound shell operators (`;`, `&&`, `||`, `|`, `$()`, backticks) and escalates to `Destructive` intent, requiring explicit user approval.
-- **Real Seatbelt sandboxing (macOS):** `sandbox_init(3)` FFI is now functional, applying kernel-enforced Seatbelt profiles. Path canonicalization handles macOS symlinks (`/tmp` → `/private/tmp`). Dyld compatibility via global `file-read*` rules. Process fork/exec support for child processes.
-- **Landlock on Linux (fully implemented):** Landlock LSM (Linux 5.13+) enforces fine-grained filesystem access via `landlock_create_ruleset()`. Seccomp-BPF fallback for older kernels.
-- **CLI prompts via stdin:** Sensitive input (API keys, prompts in one-shot mode) is now piped via stdin instead of CLI args to avoid exposure in `ps` output.
-- **Shell injection fix:** `check_binary_available()` now validates binary names with a denylist of metacharacters (`/`, `;`, `&`, `|`) instead of using `sh -c`.
-- **Rate limiter using peer IP:** Server-side rate limiting now uses the actual peer socket address instead of the spoofable `X-Forwarded-For` header.
-- **RwLock poison recovery:** Provider registry uses `unwrap_or_else(|e| e.into_inner())` to recover state after panic instead of cascading the failure.
-- **Memory IDs with UUID v7:** Session and memory IDs now use `uuid::v7` (sortable) instead of truncated timestamps.
-- **Cache keys with blake3:** Tool result cache uses blake3 hashing for integrity instead of the non-cryptographic `DefaultHasher`.
-- **Git SHA via libgit2:** `hone-cache` resolves HEAD SHA using the `git2` crate (pure in-process I/O) instead of spawning a subprocess.
+**Access Control & Path Safety:**
+- **Path traversal prevention:** All file tools use `resolve_within_working_dir()` to canonicalize paths and reject `..` escapes. Symlink targets validated to be in allowlist at execution time (prevents TOCTOU exploits).
+- **Shell command classification:** Intent classifier detects compound shell operators (`;`, `&&`, `||`, `|`, `$()`, backticks) and escalates `Destructive` commands to require explicit user approval. Prevents shell injection via model-generated code.
+- **Binary validation:** `check_binary_available()` now validates binary names with metacharacter denylist instead of dangerous `sh -c` execution.
+
+**Kernel Sandboxing:**
+- **Real Seatbelt sandboxing (macOS):** `sandbox_init(3)` FFI fully functional. Path canonicalization handles macOS symlinks (`/tmp` → `/private/tmp`). Dyld compatibility via global `file-read*` rules. Process fork/exec support for child sandboxing.
+- **Landlock on Linux (fully implemented):** Landlock LSM (Linux 5.13+) enforces fine-grained filesystem access via `landlock_create_ruleset()`. Seccomp-BPF fallback for older kernels. No silent degradation—fail-closed on unavailability.
+
+**Credential Protection:**
+- **CLI stdin prompts:** Sensitive input (API keys, prompts in one-shot mode) piped via stdin instead of CLI args to avoid exposure in `ps` output.
+- **Env var allowlisting:** Explicit environment variable whitelist per tool. API keys not passed to untrusted tools.
+
+**Infrastructure:**
+- **Rate limiter using peer IP:** Server-side rate limiting uses actual peer socket address, not spoofable `X-Forwarded-For` header.
+- **RwLock poison recovery:** Provider registry uses `unwrap_or_else(|e| e.into_inner())` to recover state after panic.
+- **Memory IDs with UUID v7:** Session and memory IDs use sortable UUID v7 instead of truncated timestamps.
+- **Cache keys with blake3:** Tool result cache uses blake3 (cryptographic hash) instead of non-cryptographic `DefaultHasher`.
+- **Git SHA via libgit2:** HEAD resolution uses pure `git2` crate (in-process I/O) instead of subprocess spawning.
 
 ---
 
-## 11. Key Design Decisions
+## 13. Key Design Decisions
 
 ### D1: Workspace over monolith
 

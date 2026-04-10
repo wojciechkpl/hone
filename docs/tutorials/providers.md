@@ -29,7 +29,7 @@ Hone supports 5 working providers + ACP. Here's how they compare:
 | Provider | Tool Calling | Streaming | Cost | Best For |
 |----------|-------------|-----------|------|----------|
 | **Anthropic API** | Yes | Yes | $$ | Production (most capable) |
-| **OpenAI API** | Yes | Yes | $ | Budget-conscious teams |
+| **OpenAI API + compatible** | Yes | Yes | $ | Budget-conscious teams, custom endpoints |
 | **Ollama** | No | Yes | Free | Local/offline work |
 | **Claude CLI** | No | Yes | Subscription | Existing CLI users |
 | **Gemini CLI** | No | Yes | Free tier | No API key setup |

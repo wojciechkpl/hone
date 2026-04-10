@@ -72,23 +72,28 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 
 - **Multi-agent orchestration** — Decompose complex tasks via research-backed patterns (Anthropic, MASAI, CodeR). Orchestrator-worker pipeline with message merging.
 - **Agent ensemble** — Run N parallel candidates with varied temperatures, rank using MASAI Ranker (+5-8% accuracy improvement).
-- **Adaptive complexity routing** — Auto-classify requests as Simple/Medium/Complex and route to appropriate model.
+- **Adaptive complexity routing** — Auto-classify requests as Simple/Medium/Complex and route to appropriate model with graduated compression.
+- **Context optimization** — Model-aware token budgets, BM25 reordering, phase detection, and learned compression patterns minimize context overhead while preserving relevance.
+- **Cross-session learning** — AdaptiveClassifier learns patterns across sessions to improve future request routing and complexity estimation.
 - **Test-verification loop** — AgentCoder pattern that runs tests after each iteration (+40% bugs caught early).
 - **Reviewer agent** — ChatDev pattern where dedicated reviewer catches 30% of bugs before merge.
 - **Self-refine loop** — Iterative improvement (NeurIPS 2023, +8-15% quality gain).
 - **Universal model support** — Anthropic, OpenAI, Azure, Ollama, local providers, CLI pass-through (ACP) with tool delegation. 75+ adapters.
-- **Kernel-enforced sandboxing** — Seatbelt on macOS, Landlock on Linux 5.13+, seccomp elsewhere. Code execution is isolated and auditable.
+- **Kernel-enforced sandboxing** — Seatbelt on macOS, Landlock on Linux 5.13+, seccomp elsewhere. Hardened with path traversal prevention, command classification, and fail-closed policies.
+- **Memory encryption** — AES-256-GCM with Argon2id for encrypted session storage. Opt-in via `--features encrypted-memory`. Keys stored in system keychain.
 - **Layered tool architecture** — Native Rust layer (Layer 2) for zero-cost file/shell/git/LSP. MCP client for external integrations (Layer 1). Skills in markdown (Layer 3). Tool decorators for cost tracking and governance (Layer 4).
 - **Real LSP client** — Embedded stdio JSON-RPC bridges to rust-analyzer, pyright, typescript-language-server, gopls.
-- **SQLite persistence** — Memory and index stored across sessions, incremental indexing via file watcher.
-- **Adaptive memory** — Encrypted SQLite with pattern learning. Hone remembers what worked, what failed, and why. Memory is local-first, private by default.
+- **Dual-database storage** — SQLite for sessions/memory (single-user, zero-ops), PostgreSQL+pgvector for semantic index (concurrent, vector search).
+- **Adaptive memory** — Pattern learning across sessions. Hone remembers what worked, what failed, and why. Memory is local-first, private by default.
 - **OpenAPI 3.1 spec generation** — GET /openapi.json for automated API documentation.
 - **Rate limiting** — Sliding window middleware per IP/user.
+- **Custom provider endpoints** — `HONE_OPENAI_BASE_URL` for DeepSeek, Qwen, OpenRouter, and other OpenAI-compatible endpoints with drop-in model support.
+- **Multi-agent budget tracking** — Per-turn, per-session, per-user token accounting with live cost estimates and configurable limits.
 - **Real bore tunnel** — Automatic SSH tunnel when bore CLI installed.
 - **Client-server architecture** — hone CLI for local use, honed daemon for remote access. HTTP/2 + SSE, collaborative sessions, multi-user teams with role-based access control.
 - **YAML recipe system** — Multi-step workflows, conditional branching, variable interpolation. Recipes compose tools and agents into reproducible tasks.
 - **Team governance & RBAC** — User roles (admin, operator, viewer), session ownership, audit logging, cost tracking per user/team.
-- **Real-time cost tracking** — Token counting via tiktoken, live cost estimates, per-session breakdowns, budget enforcement.
+- **Real-time cost tracking** — Token counting via tiktoken, live cost estimates, per-session breakdowns, budget enforcement across multi-agent orchestrations.
 - **Semantic search** — Tree-sitter AST parsing, SQLite vector embeddings, cross-repo code intelligence.
 - **Built-in agents** — 12 specialized agent personas (code reviewer, debugger, security auditor, ML engineer, etc.) plus 4 recipe templates for common workflows.
 
@@ -156,15 +161,17 @@ For detailed information on how agents work and how to create custom ones, see [
 
 ## Benchmarks
 
-### Performance (local, `cargo bench`)
+### Performance (local, `cargo bench` on M-series)
 
 | Benchmark | Result | Notes |
 |-----------|--------|-------|
-| Token estimation (tiktoken) | ~4.2ms | First call; subsequent cached via OnceLock |
+| Token estimation (tiktoken) | ~10ms | First call; cached via OnceLock; optimized for batches |
 | Build messages (50 msgs) | 1.67 us | Effectively free |
 | Symbol extraction (tree-sitter) | 2.19 ms | ~550ms for a 50K LOC repo |
 | Symbol search (in-memory) | 1.00 us | Sub-microsecond |
-| TUI render (50 messages) | 92 us | < 0.1% of 100ms frame budget |
+| TUI render (50 messages) | ~92 us | < 0.1% of 100ms frame budget |
+| CLI startup (warm) | <10ms | Binary size 12MB, cached in page cache |
+| Memory footprint (idle) | ~8MB | 6x under PRD target |
 
 ### Coding Tasks (mini-benchmark, DeepSeek V3 via OpenRouter)
 
@@ -177,13 +184,15 @@ For detailed information on how agents work and how to create custom ones, see [
 
 ### SWE-bench Lite (in progress)
 
-Full SWE-bench Lite (300 real GitHub issues) running on DeepSeek V3. Results pending.
+Full SWE-bench Lite (300 real GitHub issues) running on DeepSeek V3. Evaluation requires Docker for isolated test execution.
 
 ```bash
 # Run benchmarks yourself
 make -C benchmarks swebench-dry-run    # 3 tasks, ~$0.01
 make -C benchmarks swebench-lite       # 300 tasks, ~$5-15
 ```
+
+See [docs/benchmarks.md](docs/benchmarks.md) for detailed performance analysis and reproduction instructions.
 
 ## Architecture
 
@@ -394,7 +403,7 @@ The provider auto-detection order is: **ANTHROPIC > OPENAI (+ custom endpoints) 
 
 When `HONE_OPENAI_BASE_URL` is set, Hone treats any `OPENAI_API_KEY` as a token for that endpoint, allowing drop-in access to DeepSeek, Qwen, Kimi, OpenRouter, and other OpenAI-compatible services.
 
-See docs/configuration.md for complete reference.
+See [docs/configuration.md](docs/configuration.md) for complete reference.
 
 ### Agent ensemble (experimental)
 
@@ -456,16 +465,27 @@ Binaries:
 
 ## Documentation
 
-- **[Architecture](docs/architecture.md)** — Layer design, crate dependencies, data flow
-- **[Configuration](docs/configuration.md)** — Config hierarchy, HONE.md conventions, security policies
-- **[API Reference](docs/api.md)** — HTTP/2 + SSE endpoints, authentication, rate limits
-- **[Recipes](docs/recipes.md)** — YAML schema, tool reference, examples
-- **[Security Model](docs/security.md)** — Sandboxing, audit logging, team governance
+**Core Documentation:**
+- **[README](README.md)** — Features, installation, quick start, benchmarks
+- **[CHANGELOG](CHANGELOG.md)** — Recent changes, improvements, security hardening (Phase 2 complete)
+- **[Architecture](docs/architecture.md)** — Layer design, crate dependencies, data flow, context optimization, memory encryption, security model
+- **[Configuration](docs/configuration.md)** — Config hierarchy, all options, examples, environment variables
+- **[Benchmarks](docs/benchmarks.md)** — Performance analysis, microbenchmarks, SWE-bench results
+
+**User Guides (in [docs/tutorials/](docs/tutorials/)):**
+- **[Getting Started](docs/tutorials/getting-started.md)** — Installation, first session, understanding output
+- **[Providers](docs/tutorials/providers.md)** — Model providers, hot-swapping, custom endpoints (OpenRouter, DeepSeek, etc.)
+- **[Security](docs/tutorials/security.md)** — Sandboxing (Seatbelt/Landlock), RBAC, audit logging, memory encryption
+- **[Tools & MCP](docs/tutorials/tools-and-mcp.md)** — Layer architecture, native tools, MCP integration
+- **[Recipes](docs/tutorials/recipes.md)** — YAML workflows, multi-step automation
+- **[Server & Remote](docs/tutorials/server-and-remote.md)** — Running the daemon, HTTP API, multi-user setup
+
+**For Contributors:**
 - **[Contributing](docs/contributing.md)** — Build, test, commit conventions
 
 ## Testing
 
-Hone passes 576 tests with zero clippy warnings.
+Hone passes **210+ unit tests** across 13 crates with zero clippy warnings.
 
 ```bash
 # Run all tests
@@ -482,6 +502,9 @@ cargo test --test '*'
 
 # Benchmarks
 cargo bench
+
+# View coverage (requires tarpaulin)
+cargo tarpaulin --out Html
 ```
 
 ## Contributing

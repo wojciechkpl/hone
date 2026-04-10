@@ -196,6 +196,36 @@ Expected output format:
 - Tasks that naturally decompose (API + CLI + tests)
 - When you want parallel execution within a single request
 
+## Context Window Management
+
+Hone automatically optimizes context to stay within model limits while preserving code relevance:
+
+```bash
+# View context optimization details
+hone --debug-context
+```
+
+**What happens behind the scenes:**
+
+1. **Model-aware budgets** — Each model has a learned token budget. claude-opus-4-5 has 200K context; hone reserves 4K for output, 2K for system prompt, leaving ~177K for conversation.
+
+2. **Automatic reranking** — When context gets large, Hone uses BM25 ranking to keep the most relevant code snippets and memories at the front of the context window.
+
+3. **Graduated compression** — Old or less relevant items are progressively summarized: full code → code + summary → summary only → compressed reference.
+
+4. **Phase detection** — Hone adapts context strategy based on conversation phase (exploration, implementation, testing, refactoring).
+
+**Example:** Adding error handling to a 500-line authentication module:
+- Turn 1-3: Exploration phase. Context shows file structure, not full code.
+- Turn 4-8: Implementation phase. Context includes auth spec, test template, security patterns.
+- Turn 9+: Testing phase. Context focuses on test failures and relevant code.
+
+Set a custom context limit:
+
+```bash
+hone --context-limit 32000  # tokens
+```
+
 ## Understanding the Output
 
 ### Token Streaming
@@ -247,13 +277,33 @@ hone --budget 5.00  # max $5 per session
 
 When you hit the limit, the session stops.
 
+## Memory and Encryption
+
+For sensitive sessions, Hone can encrypt all memories and session data:
+
+```bash
+# Build with encryption support
+cargo build --features encrypted-memory
+
+# Initialize encryption (stores key in system keychain)
+hone --init-encryption
+# Enter passphrase: ****
+
+# Run in ephemeral mode (no data saved)
+hone --ephemeral
+```
+
+See [Security Guide](security.md) for memory encryption and ephemeral mode.
+
 ## Next Steps
 
-- **Configure providers:** See [Providers Guide](providers.md) for hot-swapping, fallback chains, and pricing tables.
+- **Configure providers:** See [Providers Guide](providers.md) for hot-swapping, custom endpoints (DeepSeek, OpenRouter), fallback chains, and pricing tables.
+- **Context optimization:** Hone automatically optimizes context using BM25 reranking and graduated compression. See [Configuration](../configuration.md) for tuning.
 - **Write recipes:** See [Recipes Guide](recipes.md) to automate multi-step workflows.
-- **Run the daemon:** See [Server Guide](server-and-remote.md) to use Hone as a persistent HTTP service.
-- **Custom tools:** See [Tools Guide](tools-and-mcp.md) to integrate external MCP servers.
-- **Security:** See [Security Guide](security.md) for sandbox policies and audit logging.
+- **Run the daemon:** See [Server Guide](server-and-remote.md) to use Hone as a persistent HTTP service with RBAC.
+- **Custom tools:** See [Tools Guide](tools-and-mcp.md) to integrate external MCP servers and custom tools.
+- **Security:** See [Security Guide](security.md) for sandbox policies, audit logging, and memory encryption.
+- **Architecture:** See [Architecture Guide](../architecture.md) for deep dives into context optimization, memory encryption, and security hardening.
 
 ## Troubleshooting
 
