@@ -87,7 +87,7 @@ def main():
         run_id=args.run_id,
         timeout=args.timeout,
         namespace=None,
-        rewrite_reports=True,
+        rewrite_reports=False,
         modal=False,
         report_dir=report_dir,
     )
