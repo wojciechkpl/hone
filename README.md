@@ -323,11 +323,11 @@ hone --ephemeral
 ### Remote Daemon
 
 ```bash
-# Start the daemon (listens on localhost:7070 by default)
+# Start the daemon (listens on localhost:3117 by default)
 honed --config ~/.config/hone/config.toml
 
 # Connect from another terminal
-hone --remote localhost:7070
+hone --remote localhost:3117
 ```
 
 ### Create a Recipe
