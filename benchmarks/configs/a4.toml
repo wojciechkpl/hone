@@ -1,0 +1,35 @@
+# A4 — + G4: Grep tool
+#
+# Adds the GrepTool, letting the model search file contents with regex patterns
+# rather than reading whole files to find relevant code.  Major token savings
+# on large repos; improves navigation accuracy.
+
+[scaffold]
+name    = "a4"
+tag     = "+G1,G2,G3,G4"
+description = "A3 + grep tool"
+
+edit_uniqueness   = true   # G1
+line_aware_read   = true   # G2
+multi_edit        = true   # G3
+grep_tool         = true   # G4 — NEW
+symbol_search     = false
+real_system_prompt = false
+plan_first        = false
+parallel_tools    = false
+test_verify       = false
+file_verify       = false
+tool_retry        = false
+context_compaction = false
+
+[benchmark]
+suite        = "aider_polyglot"
+max_turns    = 30
+per_task_usd = 0.50
+temperature  = 0.0
+top_p        = 1.0
+max_tokens   = 8192
+
+[model]
+default_model    = "deepseek-chat"
+default_base_url = "https://api.deepseek.com"

@@ -1,0 +1,43 @@
+# A8 — + G9-G12: Full scaffold (all improvements)
+#
+# G9:  Test verification loop — run the test suite after each edit, retry on
+#      failure (up to a configured budget).
+# G10: File verification after write — re-read written files to confirm the
+#      on-disk content matches the intended edit.
+# G11: Retry on tool error — catch transient tool failures and retry with
+#      exponential back-off before surfacing as a task failure.
+# G12: Context compaction — sliding-window summarisation to stay within the
+#      model's context limit on long tasks.
+#
+# This is the full Hone scaffold as of the benchmark sprint.
+# Use this config for the headline SWE-bench Verified run (on Sonnet).
+
+[scaffold]
+name    = "a8"
+tag     = "+G1,G2,G3,G4,G5,G6,G7,G8,G9,G10,G11,G12"
+description = "Full scaffold — all 12 improvements enabled"
+
+edit_uniqueness    = true   # G1
+line_aware_read    = true   # G2
+multi_edit         = true   # G3
+grep_tool          = true   # G4
+symbol_search      = true   # G5
+real_system_prompt = true   # G6
+plan_first         = true   # G7
+parallel_tools     = true   # G8
+test_verify        = true   # G9 — NEW
+file_verify        = true   # G10 — NEW
+tool_retry         = true   # G11 — NEW
+context_compaction = true   # G12 — NEW
+
+[benchmark]
+suite        = "aider_polyglot"
+max_turns    = 30
+per_task_usd = 0.50
+temperature  = 0.0
+top_p        = 1.0
+max_tokens   = 8192
+
+[model]
+default_model    = "deepseek-chat"
+default_base_url = "https://api.deepseek.com"

@@ -1,0 +1,35 @@
+# A6 — + G6: Full production system prompt
+#
+# Replaces the generic placeholder system prompt with the full Hone production
+# prompt (tool guidance, coding conventions, edit discipline, error recovery).
+# Expected to be one of the largest single deltas in the ablation.
+
+[scaffold]
+name    = "a6"
+tag     = "+G1,G2,G3,G4,G5,G6"
+description = "A5 + real production system prompt"
+
+edit_uniqueness    = true   # G1
+line_aware_read    = true   # G2
+multi_edit         = true   # G3
+grep_tool          = true   # G4
+symbol_search      = true   # G5
+real_system_prompt = true   # G6 — NEW
+plan_first         = false
+parallel_tools     = false
+test_verify        = false
+file_verify        = false
+tool_retry         = false
+context_compaction = false
+
+[benchmark]
+suite        = "aider_polyglot"
+max_turns    = 30
+per_task_usd = 0.50
+temperature  = 0.0
+top_p        = 1.0
+max_tokens   = 8192
+
+[model]
+default_model    = "deepseek-chat"
+default_base_url = "https://api.deepseek.com"

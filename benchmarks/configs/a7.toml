@@ -1,0 +1,36 @@
+# A7 — + G7+G8: Plan-first workflow and parallel tool dispatch
+#
+# G7: The agent must emit a structured plan before writing any code.
+#     Forces decomposition of complex tasks, reduces hallucinated edits.
+# G8: The agent may dispatch multiple independent tool calls in a single turn
+#     (parallel tool dispatch), reducing total turns on multi-file tasks.
+
+[scaffold]
+name    = "a7"
+tag     = "+G1,G2,G3,G4,G5,G6,G7,G8"
+description = "A6 + plan-first workflow + parallel tool dispatch"
+
+edit_uniqueness    = true   # G1
+line_aware_read    = true   # G2
+multi_edit         = true   # G3
+grep_tool          = true   # G4
+symbol_search      = true   # G5
+real_system_prompt = true   # G6
+plan_first         = true   # G7 — NEW
+parallel_tools     = true   # G8 — NEW
+test_verify        = false
+file_verify        = false
+tool_retry         = false
+context_compaction = false
+
+[benchmark]
+suite        = "aider_polyglot"
+max_turns    = 30
+per_task_usd = 0.50
+temperature  = 0.0
+top_p        = 1.0
+max_tokens   = 8192
+
+[model]
+default_model    = "deepseek-chat"
+default_base_url = "https://api.deepseek.com"

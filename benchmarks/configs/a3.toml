@@ -1,0 +1,34 @@
+# A3 — + G3: Multi-edit tool
+#
+# Adds the MultiEditTool allowing the model to issue multiple targeted edits
+# to a single file in one tool call, reducing round-trips and context overhead.
+
+[scaffold]
+name    = "a3"
+tag     = "+G1,G2,G3"
+description = "A2 + multi-edit tool"
+
+edit_uniqueness   = true   # G1
+line_aware_read   = true   # G2
+multi_edit        = true   # G3 — NEW
+grep_tool         = false
+symbol_search     = false
+real_system_prompt = false
+plan_first        = false
+parallel_tools    = false
+test_verify       = false
+file_verify       = false
+tool_retry        = false
+context_compaction = false
+
+[benchmark]
+suite        = "aider_polyglot"
+max_turns    = 30
+per_task_usd = 0.50
+temperature  = 0.0
+top_p        = 1.0
+max_tokens   = 8192
+
+[model]
+default_model    = "deepseek-chat"
+default_base_url = "https://api.deepseek.com"

@@ -1,0 +1,34 @@
+# A1 — + G1: Edit uniqueness enforcement
+#
+# Adds rejection of ambiguous edit patterns that match more than one location.
+# Expected delta: reduces "wrong location edited" failures.
+
+[scaffold]
+name    = "a1"
+tag     = "+G1"
+description = "A0 + edit uniqueness enforcement"
+
+edit_uniqueness   = true   # G1 — NEW
+line_aware_read   = false
+multi_edit        = false
+grep_tool         = false
+symbol_search     = false
+real_system_prompt = false
+plan_first        = false
+parallel_tools    = false
+test_verify       = false
+file_verify       = false
+tool_retry        = false
+context_compaction = false
+
+[benchmark]
+suite        = "aider_polyglot"
+max_turns    = 30
+per_task_usd = 0.50
+temperature  = 0.0
+top_p        = 1.0
+max_tokens   = 8192
+
+[model]
+default_model    = "deepseek-chat"
+default_base_url = "https://api.deepseek.com"

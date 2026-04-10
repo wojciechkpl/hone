@@ -1,0 +1,35 @@
+# A5 — + G5: Symbol search (LSP-backed index)
+#
+# Adds SymbolSearchTool and SymbolAtTool backed by the SQLite symbol index.
+# The model can navigate to definitions, find references, and resolve symbols
+# without reading entire files — critical for multi-file refactors.
+
+[scaffold]
+name    = "a5"
+tag     = "+G1,G2,G3,G4,G5"
+description = "A4 + symbol search"
+
+edit_uniqueness   = true   # G1
+line_aware_read   = true   # G2
+multi_edit        = true   # G3
+grep_tool         = true   # G4
+symbol_search     = true   # G5 — NEW
+real_system_prompt = false
+plan_first        = false
+parallel_tools    = false
+test_verify       = false
+file_verify       = false
+tool_retry        = false
+context_compaction = false
+
+[benchmark]
+suite        = "aider_polyglot"
+max_turns    = 30
+per_task_usd = 0.50
+temperature  = 0.0
+top_p        = 1.0
+max_tokens   = 8192
+
+[model]
+default_model    = "deepseek-chat"
+default_base_url = "https://api.deepseek.com"

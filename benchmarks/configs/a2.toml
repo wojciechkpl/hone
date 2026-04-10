@@ -1,0 +1,35 @@
+# A2 — + G2: Line-aware read with offset/limit
+#
+# ReadFileTool now accepts offset and limit parameters, letting the model
+# read only the relevant slice of large files instead of loading the whole file.
+# Reduces token waste and context pressure on long files.
+
+[scaffold]
+name    = "a2"
+tag     = "+G1,G2"
+description = "A1 + line-aware read with offset/limit"
+
+edit_uniqueness   = true   # G1
+line_aware_read   = true   # G2 — NEW
+multi_edit        = false
+grep_tool         = false
+symbol_search     = false
+real_system_prompt = false
+plan_first        = false
+parallel_tools    = false
+test_verify       = false
+file_verify       = false
+tool_retry        = false
+context_compaction = false
+
+[benchmark]
+suite        = "aider_polyglot"
+max_turns    = 30
+per_task_usd = 0.50
+temperature  = 0.0
+top_p        = 1.0
+max_tokens   = 8192
+
+[model]
+default_model    = "deepseek-chat"
+default_base_url = "https://api.deepseek.com"

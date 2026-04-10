@@ -1,0 +1,64 @@
+# A0 — Baseline scaffold
+#
+# Pre-sprint state: generic system prompt, whole-file read, first-match edit.
+# No uniqueness enforcement, no grep, no symbol search, no plan-first workflow.
+# This is the control point for all ablation deltas.
+#
+# Corresponds to: Hone at commit 9082a32 (initial commit) behaviour
+
+[scaffold]
+name    = "a0"
+tag     = "baseline"
+description = "Baseline — no scaffold improvements"
+
+# G1: Edit uniqueness enforcement (reject ambiguous edits)
+edit_uniqueness = false
+
+# G2: Line-aware read with offset/limit parameters
+line_aware_read = false
+
+# G3: Multi-edit tool (batch edits in a single tool call)
+multi_edit = false
+
+# G4: Grep tool
+grep_tool = false
+
+# G5: Symbol search (LSP-backed index)
+symbol_search = false
+
+# G6: Full production system prompt
+real_system_prompt = false
+
+# G7: Plan-first workflow (agent must produce a plan before coding)
+plan_first = false
+
+# G8: Parallel tool dispatch
+parallel_tools = false
+
+# G9: Test verification loop (run tests, retry on failure)
+test_verify = false
+
+# G10: File verification after write
+file_verify = false
+
+# G11: Retry on tool error
+tool_retry = false
+
+# G12: Context compaction (sliding window / summarisation)
+context_compaction = false
+
+[benchmark]
+# Primary ablation benchmark — Aider polyglot (225 tasks, 6 languages)
+suite        = "aider_polyglot"
+max_turns    = 30
+per_task_usd = 0.50
+temperature  = 0.0
+top_p        = 1.0
+max_tokens   = 8192
+
+[model]
+# Default cheap model for ablations.
+# Pin exact ID for reproducibility — never use an alias like "latest".
+default_model = "deepseek-chat"
+# Override via env: OPENAI_API_KEY + HONE_OPENAI_BASE_URL + HONE_OPENAI_MODEL
+default_base_url = "https://api.deepseek.com"
