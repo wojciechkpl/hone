@@ -29,9 +29,19 @@ async fn main() -> Result<()> {
         println!("  -V, --version  Print version");
         println!();
         println!("Environment:");
-        println!("  HONE_AUTH_TOKEN    Bearer token required on every request");
+        println!("  HONE_AUTH_TOKEN    Bearer token for auth (sent as: Authorization: Bearer <token>)");
         println!("  HONE_SESSION_DB    Path to SQLite file (default ~/.local/share/hone/sessions.db)");
         println!("  HONE_EPHEMERAL     Disable session persistence entirely");
+        println!();
+        println!("Endpoints:");
+        println!("  POST   /sessions           Create a new session");
+        println!("  GET    /sessions/{{id}}      Get session info");
+        println!("  DELETE /sessions/{{id}}      Delete a session");
+        println!("  DELETE /sessions/gc         Purge old sessions (?older_than_days=30)");
+        println!("  GET    /health             Health check");
+        println!("  GET    /openapi.json       OpenAPI 3.1 specification");
+        println!();
+        println!("Session GC runs automatically every hour (purges sessions older than 30 days).");
         return Ok(());
     }
 

@@ -23,7 +23,7 @@ use hone_core::{
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
 use hone_providers::{
-    ClaudeCliProvider, GeminiCliProvider, MockProvider, ModelProvider,
+    ClaudeCliProvider, GeminiCliProvider, ModelProvider,
     adapters::anthropic::AnthropicProvider,
     adapters::ollama::OllamaProvider,
     adapters::openai::OpenAiProvider,
@@ -67,7 +67,7 @@ struct Cli {
     #[arg(long)]
     orchestrate: bool,
 
-    /// Agent name (reserved for future use)
+    /// Use a named agent persona (e.g. code-reviewer, debugger, security-auditor)
     #[arg(long)]
     agent: Option<String>,
 
@@ -331,14 +331,7 @@ async fn detect_provider() -> DetectedProvider {
     eprintln!("                         Install: https://ollama.com  then: ollama serve");
     eprintln!();
     eprintln!("Set one of the above and re-run hone.\n");
-    DetectedProvider {
-        provider: Arc::new(MockProvider::new(vec![
-            "No AI provider found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or install a CLI provider."
-                .to_owned(),
-        ])),
-        model_id: ModelId::new("mock:mock-model"),
-        supports_tools: false,
-    }
+    std::process::exit(1);
 }
 
 // ---------------------------------------------------------------------------
