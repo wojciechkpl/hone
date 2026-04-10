@@ -142,12 +142,20 @@ This bypasses the claude CLI subprocess and uses the direct HTTP provider.
 
 **Result: 8/10 (80%) pass rate.** Both failures are test harness environment issues (missing pytest module, temp dir module resolution), not agent capability gaps.
 
-### SWE-bench Lite (300 tasks, in progress)
+### SWE-bench Lite Harness (300 tasks, in progress)
 
-Full SWE-bench Lite inference running on DeepSeek V3 via OpenRouter. Evaluation requires Docker for test execution in isolated containers.
+Full SWE-bench Lite benchmark suite running on DeepSeek V3 via OpenRouter. The harness includes:
+- `benchmarks/swebench_inference.py` — Issue resolution via hone CLI
+- `benchmarks/swebench_evaluate.py` — Docker-isolated test evaluation
+- Makefile targets for dry-run (3 tasks), lite (300 tasks), and verified modes
+
+Evaluation requires Docker for test execution in isolated containers.
 
 ```bash
-# Reproduce
+# Dry-run (3 tasks, ~$0.01)
+make -C benchmarks swebench-dry-run
+
+# Full run (300 tasks, ~$5-15)
 OPENAI_API_KEY=... HONE_OPENAI_BASE_URL=https://openrouter.ai/api \
   HONE_OPENAI_MODEL=deepseek/deepseek-chat \
   python benchmarks/swebench_inference.py --dataset princeton-nlp/SWE-bench_Lite

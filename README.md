@@ -284,6 +284,16 @@ The binaries are in `target/release/`. Hone is self-contained—no external depe
 
 ## Quick Start
 
+### First Time Setup
+
+Run the interactive configuration wizard to set up your provider and API keys:
+
+```bash
+hone configure
+```
+
+This guides you through selecting a model provider, entering API keys, and choosing a default model. Configuration is saved to `~/.config/hone/config.toml`.
+
 ### One-Shot Execution with Full Tool Use
 
 ```bash
@@ -316,7 +326,31 @@ hone --dir ~/projects/my-app
 # Use a specific model
 hone --model gpt-4o
 
-# Ephemeral mode (no memory saved)
+# Ephemeral mode (no session saved, memory not persisted)
+hone --ephemeral
+```
+
+### Named Session Management
+
+Sessions are automatically saved after each turn and can be resumed later:
+
+```bash
+# List all saved sessions
+hone session list
+
+# Resume a previous session
+hone session resume my-session
+
+# Rename a session
+hone session rename old-name new-name
+
+# Delete a session
+hone session delete old-name
+
+# Start a new session with a specific name
+hone --session my-project
+
+# Disable auto-save for this session (ephemeral mode)
 hone --ephemeral
 ```
 
@@ -425,13 +459,19 @@ Up to five candidates are supported (`--ensemble 5`).
 
 | Command | Purpose |
 |---------|---------|
+| `hone configure` | Interactive setup wizard for providers, API keys, and models |
 | `hone` | Start interactive CLI session |
 | `hone "prompt"` | One-shot mode: single prompt and exit |
 | `hone --orchestrate "prompt"` | Multi-agent orchestrator (decompose-execute-merge) |
 | `hone --ensemble N "prompt"` | Run N candidates with varied temperatures, rank the best |
 | `hone --recipe <name>` | Run a built-in recipe (tdd-feature, bug-fix, code-review, refactor) |
 | `hone --list-recipes` | List all available recipes |
-| `hone --ephemeral` | No memory persistence for this session |
+| `hone --session NAME` | Start named session (auto-saved after each turn) |
+| `hone --ephemeral` | No session/memory persistence for this run |
+| `hone session list` | List all saved sessions |
+| `hone session resume NAME` | Resume a previous session |
+| `hone session rename OLD NEW` | Rename a session |
+| `hone session delete NAME` | Delete a session |
 | `hone --model <name>` | Use a specific model |
 | `hone --dir <path>` | Target a specific directory |
 | `hone --remote <host:port>` | Connect to remote daemon |

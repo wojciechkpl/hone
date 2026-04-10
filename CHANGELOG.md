@@ -8,16 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- **Named session management** — `hone session list/resume/rename/delete` commands for persistent named conversations. Sessions auto-save after each turn. `--session NAME` flag to start a named session. `--ephemeral` flag disables saving. Implementation: `bins/hone/src/session.rs`.
+- **Interactive configure wizard** — `hone configure` guides users through provider selection, API key entry, and model selection. Writes `~/.config/hone/config.toml`. Implementation: `bins/hone/src/configure.rs`.
+- **UX improvements** — NO_COLOR environment variable support for disabling colored output. Ollama model verification during configuration. Ensemble mode validates 2-10 candidate count. Provider capability warnings for --orchestrate and --ensemble modes.
 - **Context optimization** — Model-aware token budgets, BM25 reordering for relevance, graduated compression strategies, and phase detection to minimize context overhead while preserving code comprehension.
 - **Memory encryption** — AES-256-GCM symmetric encryption with Argon2id key derivation for encrypted session storage. Opt-in via `--features encrypted-memory`. Encryption keys stored in system keychain.
 - **Cross-session learning** — AdaptiveClassifier learns patterns across sessions to improve request routing, complexity estimation, and tool selection. Patterns persist in encrypted memory.
 - **Multi-agent budget tracking** — Unified token accounting across orchestrated agents. Per-turn, per-session, and per-user cost tracking with enforcement and rollback on budget exhaustion.
-- **SWE-bench benchmark harness** — Full benchmarking pipeline for SWE-bench Lite (300 real GitHub issues). Supports dry-runs for development and evaluation via Docker-isolated test execution.
+- **SWE-bench benchmark harness** — Full benchmarking pipeline for SWE-bench Lite (300 real GitHub issues). `benchmarks/swebench_inference.py` and `swebench_evaluate.py` with Makefile targets for swebench-dry-run, swebench-lite, and swebench-verified. Supports evaluation via Docker-isolated test execution.
 - **Custom OpenAI-compatible endpoints** — `HONE_OPENAI_BASE_URL` and `HONE_OPENAI_MODEL` environment variables for drop-in support of DeepSeek, Qwen, Kimi, OpenRouter, and other OpenAI-compatible services.
 - **Better startup error messages** — Clearer diagnostics for missing API keys, sandbox unavailability, configuration errors, and provider health checks.
 
 ### Changed
 
+- **Exit code 1 on missing provider** — Hone now returns exit code 1 when no provider is configured (was silently falling back to MockProvider). Users must configure a provider via `hone configure` or environment variables.
 - **Security hardening (Phase 2 complete)**:
   - **Path traversal prevention** — All file tools use `resolve_within_working_dir()` to canonicalize paths and reject `..` escapes.
   - **Shell command classification** — New intent classifier detects compound shell operators (`;`, `&&`, `||`, `|`, `$()`, backticks) and escalates destructive commands to require explicit user approval.

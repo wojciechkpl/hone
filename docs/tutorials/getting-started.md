@@ -29,27 +29,44 @@ export PATH="$PWD/target/release:$PATH"
 hone --version
 ```
 
-## First Run
+## First Run: Configure
 
-Start an interactive session:
+Before starting your first session, run the interactive configuration wizard:
+
+```bash
+hone configure
+```
+
+This guides you step-by-step through:
+1. Selecting a model provider (Anthropic, OpenAI, DeepSeek, OpenRouter, Ollama, etc.)
+2. Entering your API key (securely via stdin, not command-line args)
+3. Choosing your default model from that provider
+4. Writing the configuration to `~/.config/hone/config.toml`
+
+Configuration is one-time. Your provider and model are remembered for future sessions.
+
+## Starting Your First Session
+
+After configuration, start an interactive session:
 
 ```bash
 hone
 ```
 
-This launches the terminal UI. The first prompt asks you to choose a model provider.
+This launches the terminal UI. You can:
+- Type prompts and press Enter
+- Press `?` at any time for help
+- Type `Ctrl+C` to quit
 
-```
-Select provider:
-1. Anthropic (requires API key)
-2. OpenAI (requires API key)
-3. Ollama (local models)
-4. ... (75+ other options)
-```
+Your session is automatically saved with a default name. You can resume it later or create a named session:
 
-Press `?` at any time for help. Type `Ctrl+C` to quit.
+```bash
+hone --session my-project
+```
 
 ## Choosing a Model Provider
+
+The `hone configure` wizard guides you through provider selection. The available providers are:
 
 Hone supports multiple model providers. Choose based on your needs:
 
@@ -140,6 +157,62 @@ Type `/help` to see available commands:
 /export <path>            — save session to JSON
 /quit                     — exit
 ```
+
+## Session Management
+
+Sessions are named conversations that persist across runs. Hone automatically saves your sessions after each turn.
+
+### Listing and Managing Sessions
+
+```bash
+# See all your saved sessions
+hone session list
+```
+
+Output example:
+```
+id                              created_at           updated_at           name             messages
+──────────────────────────────  ───────────────────  ───────────────────  ───────────────  ────────
+550e8400-e29b-41d4-a716-4467   2026-04-09 15:22:33  2026-04-09 15:45:12  my-project       42
+550e8400-e29b-41d4-a716-4468   2026-04-09 14:10:00  2026-04-09 14:10:00  debug-session    5
+```
+
+### Resuming a Previous Session
+
+```bash
+# Resume a session by name
+hone session resume my-project
+```
+
+All prior messages and context are restored. The session is updated with any new turns.
+
+### Renaming and Deleting Sessions
+
+```bash
+# Rename a session
+hone session rename old-name new-name
+
+# Delete a session (irreversible)
+hone session delete my-old-session
+```
+
+### Starting a Named Session
+
+```bash
+# Start a new session with a specific name (auto-created if doesn't exist)
+hone --session debug-session
+```
+
+### Ephemeral (No-Save) Mode
+
+To run without saving:
+
+```bash
+# Session won't be saved after this run
+hone --ephemeral
+```
+
+This is useful for sensitive work, one-off queries, or testing.
 
 ## One-Shot Mode
 
