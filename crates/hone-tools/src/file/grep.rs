@@ -29,10 +29,13 @@ impl Tool for GrepTool {
 
     fn description(&self) -> &str {
         "Search file contents for a regex pattern. Returns matching lines with \
-         file path and line number. Honors .gitignore and .ignore files. Use this \
-         to find all uses of a symbol, all TODO comments, all references to a \
-         config key, etc. Prefer this over read_file + manual search for content \
-         queries."
+         file path and line number. Honors .gitignore and .ignore files.\n\n\
+         WHEN TO USE: To find which files contain a function/class/variable name. \
+         To locate error messages, TODO comments, or config keys. \
+         Always use grep BEFORE read_file when you don't know which file to look at.\n\
+         WHEN NOT TO USE: If you already know the exact file — use read_file directly. \
+         If you need file names only — use glob instead.\n\
+         COST: Scans all files in the directory tree. Use the 'include' glob to narrow scope."
     }
 
     fn schema(&self) -> Value {

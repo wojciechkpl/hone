@@ -20,7 +20,11 @@ impl Tool for GlobTool {
 
     fn description(&self) -> &str {
         "Find files matching a glob pattern. Uses `.gitignore` rules by default. \
-         The optional `path` parameter restricts the search root."
+         The optional `path` parameter restricts the search root.\n\n\
+         WHEN TO USE: To discover what files exist in the project. To find files by extension \
+         (e.g. '**/*.rs', 'src/**/*.py'). To understand project structure before diving in.\n\
+         WHEN NOT TO USE: If you need to search file CONTENTS — use grep instead. \
+         If you already know the exact file path — use read_file directly."
     }
 
     fn schema(&self) -> Value {

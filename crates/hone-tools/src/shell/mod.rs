@@ -27,7 +27,15 @@ impl Tool for ShellTool {
     }
 
     fn description(&self) -> &str {
-        "Run a shell command and return its stdout, stderr, and exit code."
+        "Run a shell command and return its stdout, stderr, and exit code.\n\n\
+         WHEN TO USE: To run tests (cargo test, pytest, npm test). To check build status. \
+         To run linters or formatters. To execute git commands not covered by git_* tools.\n\
+         WHEN NOT TO USE: To read files — use read_file (faster, line-numbered). \
+         To search files — use grep (faster, respects gitignore). \
+         To list files — use glob (structured output).\n\
+         COST: Spawns a subprocess. Use specific tools when available — they are faster and safer.\n\
+         SAFETY: Destructive commands (rm -rf, sudo) and network commands (curl, wget) are blocked. \
+         Compound operators (;, &&, ||, |) are treated as destructive."
     }
 
     fn schema(&self) -> Value {

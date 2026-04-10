@@ -18,7 +18,12 @@ impl Tool for WriteFileTool {
     }
 
     fn description(&self) -> &str {
-        "Write content to a file, creating it if it does not exist or overwriting it if it does."
+        "Write content to a file, creating it if it does not exist or overwriting it if it does.\n\n\
+         WHEN TO USE: To create new files. To completely rewrite a file with new content.\n\
+         WHEN NOT TO USE: To make small changes to existing files — use edit_file instead \
+         (it preserves the parts you don't change and enforces uniqueness). \
+         Never use write_file to modify a file you haven't read first.\n\
+         PREREQUISITE: Read the file first if it exists. Parent directories are created automatically."
     }
 
     fn schema(&self) -> Value {

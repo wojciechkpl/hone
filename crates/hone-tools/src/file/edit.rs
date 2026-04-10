@@ -20,7 +20,11 @@ impl Tool for EditFileTool {
     fn description(&self) -> &str {
         "Replace old_str with new_str in the specified file. old_str must appear EXACTLY ONCE \
          in the file — if it appears multiple times, include more surrounding context to make it unique. \
-         Returns applied: false when old_str is not found; errors when old_str is ambiguous."
+         Returns applied: false when old_str is not found; errors when old_str is ambiguous.\n\n\
+         WHEN TO USE: To make targeted changes to existing files. Preferred over write_file for modifications.\n\
+         WHEN NOT TO USE: To create new files (use write_file). To make many changes at once (use multi_edit).\n\
+         PREREQUISITE: Always read_file first to get the exact content for old_str. \
+         Copy the text exactly as it appears — whitespace and indentation matter."
     }
 
     fn schema(&self) -> Value {

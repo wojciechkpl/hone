@@ -33,8 +33,12 @@ impl Tool for MultiEditTool {
         "Apply multiple edits across one or more files in a single tool call. \
          Each edit has {path, old_str, new_str}. All edits are validated first; \
          if ANY edit is ambiguous (old_str not unique) or not found, the whole \
-         operation fails and no changes are committed. Use this when a single \
-         logical change spans multiple locations."
+         operation fails and no changes are committed.\n\n\
+         WHEN TO USE: When a rename or refactor requires changing the same symbol in multiple files. \
+         When a single logical change spans multiple locations. More efficient than multiple edit_file calls.\n\
+         WHEN NOT TO USE: For a single edit in one file — use edit_file (simpler). \
+         To create new files — use write_file.\n\
+         PREREQUISITE: Read all affected files first. Each old_str must be unique in its file."
     }
 
     fn schema(&self) -> Value {

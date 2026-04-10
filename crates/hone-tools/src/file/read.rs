@@ -19,8 +19,13 @@ impl Tool for ReadFileTool {
 
     fn description(&self) -> &str {
         "Read file contents with optional line range. Returns line-numbered content \
-         (1-indexed) and metadata including total line count. Use offset/limit for \
-         large files to avoid reading the whole file at once. Default limit: 500 lines."
+         (1-indexed) and metadata including total line count.\n\n\
+         WHEN TO USE: To understand existing code before editing. To verify edits after writing. \
+         To check file structure and find specific lines.\n\
+         WHEN NOT TO USE: If you only need to find which files contain a pattern — use grep instead. \
+         If you need the full directory listing — use glob instead.\n\
+         PREREQUISITE: File must exist. Use glob first if unsure of the exact path.\n\
+         Use offset/limit for large files to avoid reading the whole file at once. Default limit: 500 lines."
     }
 
     fn schema(&self) -> Value {
