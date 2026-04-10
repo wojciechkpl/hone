@@ -2,6 +2,7 @@ mod system_prompt;
 mod tools;
 
 use std::io;
+use std::io::IsTerminal as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -207,6 +208,46 @@ async fn run_recipe(agent: AgentHandle, recipe_name: &str) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Color output helpers
+// ---------------------------------------------------------------------------
+
+/// Returns `true` when ANSI color escape codes should be emitted to stderr.
+///
+/// Respects:
+/// - `NO_COLOR` env var (https://no-color.org) — any value disables color
+/// - Whether stderr is an interactive terminal (disabled when piped/redirected)
+fn should_color_stderr() -> bool {
+    std::env::var("NO_COLOR").is_err() && io::stderr().is_terminal()
+}
+
+/// Wrap `text` with ANSI bold-yellow escape codes when color is enabled.
+fn warn_style(text: &str) -> String {
+    if should_color_stderr() {
+        format!("\x1b[1;33m{text}\x1b[0m")
+    } else {
+        text.to_owned()
+    }
+}
+
+/// Wrap `text` with ANSI bold-red escape codes when color is enabled.
+fn error_style(text: &str) -> String {
+    if should_color_stderr() {
+        format!("\x1b[1;31m{text}\x1b[0m")
+    } else {
+        text.to_owned()
+    }
+}
+
+/// Wrap `text` with ANSI bold escape codes when color is enabled.
+fn bold_style(text: &str) -> String {
+    if should_color_stderr() {
+        format!("\x1b[1m{text}\x1b[0m")
+    } else {
+        text.to_owned()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Provider detection
 // ---------------------------------------------------------------------------
 
@@ -230,9 +271,9 @@ async fn detect_provider() -> DetectedProvider {
     // Prefer direct Anthropic API — supports tool calling.
     if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
         if api_key.trim().is_empty() {
-            eprintln!("\x1b[1;33mWarning:\x1b[0m ANTHROPIC_API_KEY is set but empty. Skipping Anthropic provider.");
+            eprintln!("{} ANTHROPIC_API_KEY is set but empty. Skipping Anthropic provider.", warn_style("Warning:"));
         } else if !api_key.starts_with("sk-ant-") {
-            eprintln!("\x1b[1;33mWarning:\x1b[0m ANTHROPIC_API_KEY doesn't start with 'sk-ant-'. Is this correct?");
+            eprintln!("{} ANTHROPIC_API_KEY doesn't start with 'sk-ant-'. Is this correct?", warn_style("Warning:"));
             tracing::info!(provider = "anthropic", api = "http", tools = true, "provider detected (non-standard key format)");
             return DetectedProvider {
                 provider: Arc::new(AnthropicProvider::new(api_key)),
@@ -277,8 +318,9 @@ async fn detect_provider() -> DetectedProvider {
     if binary_on_path("claude").await {
         tracing::info!(provider = "claude-cli", api = "cli", tools = false, "provider detected");
         eprintln!(
-            "\x1b[1;33mNote:\x1b[0m Using Claude CLI (no tool calling). \
-             For full agent capabilities, set ANTHROPIC_API_KEY instead."
+            "{} Using Claude CLI (no tool calling). \
+             For full agent capabilities, set ANTHROPIC_API_KEY instead.",
+            warn_style("Note:")
         );
         return DetectedProvider {
             provider: Arc::new(ClaudeCliProvider::new()),
@@ -290,8 +332,9 @@ async fn detect_provider() -> DetectedProvider {
     if binary_on_path("gemini").await {
         tracing::info!(provider = "gemini-cli", api = "cli", tools = false, "provider detected");
         eprintln!(
-            "\x1b[1;33mNote:\x1b[0m Using Gemini CLI (no tool calling). \
-             For full agent capabilities, set OPENAI_API_KEY or ANTHROPIC_API_KEY instead."
+            "{} Using Gemini CLI (no tool calling). \
+             For full agent capabilities, set OPENAI_API_KEY or ANTHROPIC_API_KEY instead.",
+            warn_style("Note:")
         );
         return DetectedProvider {
             provider: Arc::new(GeminiCliProvider::new()),
@@ -308,26 +351,51 @@ async fn detect_provider() -> DetectedProvider {
         .await
         .is_ok()
     {
-        tracing::info!(provider = "ollama", api = "http", tools = false, "provider detected");
-        return DetectedProvider {
-            provider: Arc::new(OllamaProvider::new("http://localhost:11434")),
-            model_id: ModelId::new("ollama:llama3.2"),
-            supports_tools: false,
-        };
+        const OLLAMA_DEFAULT_MODEL: &str = "llama3.2";
+
+        // Verify that the default model is actually pulled before committing
+        // to Ollama as the provider. A 200 from /api/show means the model
+        // exists; any other response (404, connection error) means it is absent.
+        let model_present = reqwest::Client::new()
+            .post("http://localhost:11434/api/show")
+            .json(&serde_json::json!({ "name": OLLAMA_DEFAULT_MODEL }))
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+
+        if !model_present {
+            eprintln!(
+                "{} Ollama is running but model '{}' is not installed.",
+                warn_style("Note:"),
+                OLLAMA_DEFAULT_MODEL
+            );
+            eprintln!("Run:  ollama pull {OLLAMA_DEFAULT_MODEL}");
+            eprintln!("Then re-run hone.\n");
+            // Fall through to the "no provider" error below.
+        } else {
+            tracing::info!(provider = "ollama", api = "http", tools = false, "provider detected");
+            return DetectedProvider {
+                provider: Arc::new(OllamaProvider::new("http://localhost:11434")),
+                model_id: ModelId::new(&format!("ollama:{OLLAMA_DEFAULT_MODEL}")),
+                supports_tools: false,
+            };
+        }
     }
 
-    tracing::warn!("no AI provider found — falling back to MockProvider");
-    eprintln!("\n\x1b[1;33mNo AI provider detected.\x1b[0m Hone checked the following (in order):\n");
-    eprintln!("  1. \x1b[1mAnthropic API\x1b[0m    — ANTHROPIC_API_KEY not set");
+    tracing::warn!("no AI provider found");
+    eprintln!("\n{} Hone checked the following (in order):\n", warn_style("No AI provider detected."));
+    eprintln!("  1. {}    — ANTHROPIC_API_KEY not set", bold_style("Anthropic API"));
     eprintln!("                         export ANTHROPIC_API_KEY=sk-ant-...");
-    eprintln!("  2. \x1b[1mOpenAI API\x1b[0m        — OPENAI_API_KEY not set");
+    eprintln!("  2. {}        — OPENAI_API_KEY not set", bold_style("OpenAI API"));
     eprintln!("                         export OPENAI_API_KEY=sk-...");
     eprintln!("                         Tip: set HONE_OPENAI_BASE_URL for DeepSeek/Qwen/Kimi/OpenRouter");
-    eprintln!("  3. \x1b[1mClaude CLI\x1b[0m        — 'claude' not found on PATH");
+    eprintln!("  3. {}        — 'claude' not found on PATH", bold_style("Claude CLI"));
     eprintln!("                         Install: https://claude.ai/download");
-    eprintln!("  4. \x1b[1mGemini CLI\x1b[0m        — 'gemini' not found on PATH");
+    eprintln!("  4. {}        — 'gemini' not found on PATH", bold_style("Gemini CLI"));
     eprintln!("                         Install: https://github.com/google-gemini/gemini-cli");
-    eprintln!("  5. \x1b[1mOllama\x1b[0m            — localhost:11434 not responding");
+    eprintln!("  5. {}            — localhost:11434 not responding", bold_style("Ollama"));
     eprintln!("                         Install: https://ollama.com  then: ollama serve");
     eprintln!();
     eprintln!("Set one of the above and re-run hone.\n");
@@ -1156,7 +1224,7 @@ async fn main() -> Result<()> {
     let model_id: ModelId = if let Some(ref m) = cli.model {
         let known_prefixes = ["anthropic:", "openai:", "ollama:", "claude-cli:", "gemini-cli:"];
         if !known_prefixes.iter().any(|p| m.starts_with(p)) {
-            eprintln!("\x1b[1;31mError:\x1b[0m invalid model ID '{m}'");
+            eprintln!("{} invalid model ID '{m}'", error_style("Error:"));
             eprintln!();
             eprintln!("Model IDs must start with a provider prefix:");
             eprintln!("  anthropic:claude-sonnet-4-5");
@@ -1171,6 +1239,34 @@ async fn main() -> Result<()> {
     } else {
         detected.model_id.clone()
     };
+
+    // Provider capability warnings: --orchestrate and --ensemble require tool
+    // calling. Warn (but do not abort) when used with a CLI/Ollama provider
+    // that cannot invoke tools.
+    if !detected.supports_tools {
+        let provider_name = detected.model_id.to_string();
+        let provider_name = provider_name
+            .split(':')
+            .next()
+            .unwrap_or(&provider_name);
+
+        if cli.orchestrate {
+            eprintln!(
+                "{} --orchestrate requires tool calling. \
+                 Current provider ({provider_name}) does not support tools. \
+                 Results may be degraded.",
+                warn_style("Warning:")
+            );
+        }
+        if cli.ensemble.is_some() {
+            eprintln!(
+                "{} --ensemble requires tool calling. \
+                 Current provider ({provider_name}) does not support tools. \
+                 Results may be degraded.",
+                warn_style("Warning:")
+            );
+        }
+    }
 
     // Try to spawn an LSP bridge for the project language (falls back to mock
     // if the language server binary is not installed).
@@ -1202,9 +1298,11 @@ async fn main() -> Result<()> {
 
     // --ensemble N: run N parallel candidates and pick the best.
     if let Some(n) = cli.ensemble {
-        if n < 2 {
-            eprintln!("Error: --ensemble requires N >= 2");
-            return Ok(());
+        if n < 2 || n > 10 {
+            eprintln!("{} --ensemble value must be between 2 and 10 (got {n})", error_style("Error:"));
+            eprintln!("  2 is the minimum useful value (needs at least 2 candidates to compare)");
+            eprintln!("  10 is the maximum (higher values risk runaway API costs)");
+            std::process::exit(1);
         }
 
         let prompt = match cli.prompt.as_deref() {
@@ -1417,4 +1515,130 @@ async fn run_tui(
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- should_color_stderr / color helpers --------------------------------
+
+    #[test]
+    fn warn_style_no_color_env_suppresses_ansi() {
+        // When NO_COLOR is set, the helpers must return plain text regardless
+        // of whether stderr is a terminal (which it never is in tests).
+        // SAFETY: single-threaded test; no other thread reads NO_COLOR here.
+        unsafe { std::env::set_var("NO_COLOR", "1") };
+        let result = warn_style("Warning:");
+        unsafe { std::env::remove_var("NO_COLOR") };
+        assert_eq!(result, "Warning:");
+    }
+
+    #[test]
+    fn error_style_no_color_env_suppresses_ansi() {
+        // SAFETY: single-threaded test; no other thread reads NO_COLOR here.
+        unsafe { std::env::set_var("NO_COLOR", "") };
+        let result = error_style("Error:");
+        unsafe { std::env::remove_var("NO_COLOR") };
+        assert_eq!(result, "Error:");
+    }
+
+    #[test]
+    fn bold_style_no_color_env_suppresses_ansi() {
+        // SAFETY: single-threaded test; no other thread reads NO_COLOR here.
+        unsafe { std::env::set_var("NO_COLOR", "1") };
+        let result = bold_style("bold text");
+        unsafe { std::env::remove_var("NO_COLOR") };
+        assert_eq!(result, "bold text");
+    }
+
+    // Since stderr is not a terminal in the test runner, should_color_stderr()
+    // returns false even without NO_COLOR.  Verify the helpers also return
+    // plain text in that case (no env override needed).
+    #[test]
+    fn warn_style_non_terminal_stderr_suppresses_ansi() {
+        // Ensure NO_COLOR is absent so the only gate is is_terminal().
+        // SAFETY: single-threaded test; no other thread reads NO_COLOR here.
+        unsafe { std::env::remove_var("NO_COLOR") };
+        let result = warn_style("Warning:");
+        // In a test runner stderr is not a TTY, so no escapes expected.
+        assert!(!result.contains('\x1b'));
+    }
+
+    // ---- ensemble validation ------------------------------------------------
+
+    /// Simulate the validation logic extracted from `main` to make it unit-testable.
+    fn validate_ensemble(n: u32) -> Result<(), String> {
+        if n < 2 || n > 10 {
+            Err(format!("--ensemble value must be between 2 and 10 (got {n})"))
+        } else {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn ensemble_rejects_zero() {
+        assert!(validate_ensemble(0).is_err());
+    }
+
+    #[test]
+    fn ensemble_rejects_one() {
+        assert!(validate_ensemble(1).is_err());
+    }
+
+    #[test]
+    fn ensemble_accepts_two() {
+        assert!(validate_ensemble(2).is_ok());
+    }
+
+    #[test]
+    fn ensemble_accepts_ten() {
+        assert!(validate_ensemble(10).is_ok());
+    }
+
+    #[test]
+    fn ensemble_rejects_eleven() {
+        assert!(validate_ensemble(11).is_err());
+    }
+
+    #[test]
+    fn ensemble_rejects_one_hundred() {
+        assert!(validate_ensemble(100).is_err());
+    }
+
+    // ---- model ID validation ------------------------------------------------
+
+    fn is_valid_model_id(m: &str) -> bool {
+        let known_prefixes = ["anthropic:", "openai:", "ollama:", "claude-cli:", "gemini-cli:"];
+        known_prefixes.iter().any(|p| m.starts_with(p))
+    }
+
+    #[test]
+    fn model_id_valid_anthropic() {
+        assert!(is_valid_model_id("anthropic:claude-sonnet-4-5"));
+    }
+
+    #[test]
+    fn model_id_valid_openai() {
+        assert!(is_valid_model_id("openai:gpt-4o"));
+    }
+
+    #[test]
+    fn model_id_valid_ollama() {
+        assert!(is_valid_model_id("ollama:llama3.2"));
+    }
+
+    #[test]
+    fn model_id_rejects_bare_name() {
+        assert!(!is_valid_model_id("gpt-4o"));
+    }
+
+    #[test]
+    fn model_id_rejects_unknown_prefix() {
+        assert!(!is_valid_model_id("mistral:mistral-7b"));
+    }
 }

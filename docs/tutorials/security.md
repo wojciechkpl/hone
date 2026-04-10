@@ -1,5 +1,17 @@
 # Security: Sandboxing and Policies
 
+## Feature Status
+
+| Feature | Status | Notes |
+|---|---|---|
+| Kernel sandbox (Landlock / Seatbelt) | Available | Linux 5.13+ and macOS |
+| Environment variable filtering | Available | Via `sandbox.defaults.allow_env` |
+| Audit logging | Available | JSON log to configurable path |
+| Memory encryption (AES-256-GCM) | Available | Requires `--features encrypted-memory` |
+| SQLite at-rest encryption (sqlcipher) | Planned | Not yet implemented |
+
+---
+
 Hone implements defense-in-depth security using kernel sandboxing, network policies, and audit logging. This guide covers the sandbox architecture, threat model, and how to configure security policies.
 
 ## Linux Landlock Sandbox
@@ -358,6 +370,8 @@ grep "alice@example.com" /var/log/hone/audit.log | jq .
 
 ## Memory Encryption (Encrypted Memory Feature)
 
+> **Status: Available** — Application-layer AES-256-GCM encryption of memory content is implemented in `crates/hone-memory/src/encrypted.rs`. This encrypts the `content` field of each memory record using a key derived from a user passphrase via Argon2id. Full SQLite file encryption via sqlcipher is **not yet implemented** (Planned).
+
 Enable optional memory encryption to protect sensitive session data:
 
 ```bash
@@ -372,7 +386,7 @@ encrypted = true
 cipher = "aes256-gcm"
 ```
 
-The encryption key is derived from a user passphrase and stored in the system keychain (via the `keyring` crate):
+The encryption key is derived from a user passphrase via Argon2id:
 
 ```bash
 hone --init-encryption
@@ -380,7 +394,7 @@ hone --init-encryption
 # Passphrase stored securely in system keychain.
 ```
 
-All session data (memories, conversation history) is encrypted at rest in the SQLite database.
+Memory content (conversation history) is encrypted at rest. The SQLite file structure itself is not encrypted — for full disk encryption, use OS-level tools or ephemeral mode.
 
 ## Ephemeral Mode
 
@@ -402,15 +416,17 @@ In ephemeral mode:
 
 ## Memory Persistence and Encryption
 
-By default, session memories are stored in plaintext SQLite at `~/.local/share/hone/memory.db`:
+By default, session memories are stored in SQLite at `~/.local/share/hone/memory.db`:
 
 ```bash
 ls -la ~/.local/share/hone/
-# memory.db            - unencrypted session memories
-# sessions.db          - unencrypted session metadata (if HONE_SESSION_DB set)
+# memory.db            - session memories (content encrypted if --features encrypted-memory)
+# sessions.db          - session metadata (if HONE_SESSION_DB set)
 ```
 
-**Encryption via sqlcipher is on the roadmap** for future releases. Until then, for sensitive workloads use `--ephemeral` to disable persistence entirely:
+When built with `--features encrypted-memory`, the content field of each memory record is encrypted with AES-256-GCM before being written to disk (see [Memory Encryption](#memory-encryption-encrypted-memory-feature) above).
+
+Full SQLite file encryption via sqlcipher is planned for a future release. Until then, for sensitive workloads where even encrypted content fields are insufficient, use `--ephemeral` to disable persistence entirely:
 
 ```bash
 hone --ephemeral -i "Sensitive query"
