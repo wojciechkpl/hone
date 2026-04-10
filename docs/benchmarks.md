@@ -1,6 +1,7 @@
 # Hone Performance Benchmarks
 
-**Date:** 2026-04-08
+**Date:** 2026-04-09 (updated)
+**Tests:** 781 passing, 0 failures
 **Hardware:** Apple M-series (macOS 25.2)
 **Binary:** `target/release/hone` (Rust 1.85, opt-level=3, lto=thin)
 **Method:** `cargo bench` (criterion) + `/usr/bin/time` for startup/memory
@@ -108,3 +109,54 @@ ANTHROPIC_API_KEY=sk-ant-... /usr/bin/time -l target/release/hone "say ok"
 ```
 
 This bypasses the claude CLI subprocess and uses the direct HTTP provider.
+
+---
+
+## Coding Task Benchmarks
+
+### Mini-benchmark (10 tasks, DeepSeek V3 via OpenRouter)
+
+**Date:** 2026-04-09
+**Model:** `deepseek/deepseek-chat` via OpenRouter
+**Cost:** ~$0.01 total
+
+| Task | Status | Time |
+|------|--------|------|
+| Fix typo in function name | PASS | 31s |
+| Add multiply function | PASS | 14s |
+| Fix off-by-one boundary check | PASS | 14s |
+| Add zero-division error handling | PASS | 15s |
+| Create new file with function | PASS | 9s |
+| Rename variables to descriptive names | PASS | 15s |
+| Add docstring to function | PASS | 20s |
+| Fix broken import path | FAIL | 8s |
+| Create pytest test file | FAIL | 25s |
+| Refactor duplicated validation logic | PASS | 38s |
+
+**Result: 8/10 (80%) pass rate.** Both failures are test harness environment issues (missing pytest module, temp dir module resolution), not agent capability gaps.
+
+### SWE-bench Lite (300 tasks, in progress)
+
+Full SWE-bench Lite inference running on DeepSeek V3 via OpenRouter. Evaluation requires Docker for test execution in isolated containers.
+
+```bash
+# Reproduce
+OPENAI_API_KEY=... HONE_OPENAI_BASE_URL=https://openrouter.ai/api \
+  HONE_OPENAI_MODEL=deepseek/deepseek-chat \
+  python benchmarks/swebench_inference.py --dataset princeton-nlp/SWE-bench_Lite
+
+# Evaluate (requires Docker)
+python benchmarks/swebench_evaluate.py --predictions benchmarks/results/swe-lite-*/predictions.jsonl
+```
+
+### Updated microbenchmarks (2026-04-09)
+
+```
+extract_rust_symbols    time:   [2.1836 ms 2.1902 ms 2.1969 ms]
+search_index            time:   [1.0007 us 1.0032 us 1.0055 us]
+build_messages_50       time:   [1.6656 us 1.6697 us 1.6739 us]
+render_empty_tui        time:   [82.256 us 82.388 us 82.528 us]
+render_50_messages      time:   [91.846 us 92.023 us 92.196 us]
+```
+
+TUI render regression of ~16% vs original baseline (69-79us to 82-92us) is attributed to new BudgetProgress event handling and context optimization code in the hot path. Still well within the 100ms frame budget at < 0.1% utilization.

@@ -17,8 +17,42 @@
 <p align="center">
   <img alt="Rust 1.85+" src="https://img.shields.io/badge/rust-1.85+-orange.svg">
   <img alt="MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-576%20passing-brightgreen.svg">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-781%20passing-brightgreen.svg">
+  <img alt="SWE-bench" src="https://img.shields.io/badge/SWE--bench%20Lite-running-yellow.svg">
 </p>
+
+---
+
+## Demo
+
+<p align="center">
+  <a href="https://asciinema.org/a/demo">
+    <img src="https://asciinema.org/a/demo.svg" alt="Hone demo" width="700">
+  </a>
+</p>
+
+<details>
+<summary>Play locally</summary>
+
+```bash
+# Install asciinema
+brew install asciinema  # or: pip install asciinema
+
+# Play the demo
+asciinema play assets/demo.cast
+```
+</details>
+
+<details>
+<summary>What the demo shows</summary>
+
+1. Hone receives a bug report: `divide(10, 0)` raises `ZeroDivisionError` instead of returning `None`
+2. The agent reads `calculator.py`, identifies the issue in the `divide` function
+3. Edits the file to add a zero-division guard: `if b == 0: return None`
+4. The fix is verified: `assert divide(10, 0) is None` passes
+
+All using DeepSeek V3 via OpenRouter (~$0.001 per task).
+</details>
 
 ---
 
@@ -119,6 +153,37 @@ EOF
 Custom agents can be placed in `.hone/agents/` (project-level) or `~/.config/hone/agents/` (user-level).
 
 For detailed information on how agents work and how to create custom ones, see [docs/tutorials/tools-and-mcp.md](docs/tutorials/tools-and-mcp.md#agents).
+
+## Benchmarks
+
+### Performance (local, `cargo bench`)
+
+| Benchmark | Result | Notes |
+|-----------|--------|-------|
+| Token estimation (tiktoken) | ~4.2ms | First call; subsequent cached via OnceLock |
+| Build messages (50 msgs) | 1.67 us | Effectively free |
+| Symbol extraction (tree-sitter) | 2.19 ms | ~550ms for a 50K LOC repo |
+| Symbol search (in-memory) | 1.00 us | Sub-microsecond |
+| TUI render (50 messages) | 92 us | < 0.1% of 100ms frame budget |
+
+### Coding Tasks (mini-benchmark, DeepSeek V3 via OpenRouter)
+
+| Metric | Result |
+|--------|--------|
+| Pass rate | **8/10 (80%)** |
+| Average task time | 19s |
+| Cost per task | ~$0.001 |
+| Tasks tested | typo fix, add function, bug fix, error handling, file creation, rename, docstring, import fix, test creation, refactoring |
+
+### SWE-bench Lite (in progress)
+
+Full SWE-bench Lite (300 real GitHub issues) running on DeepSeek V3. Results pending.
+
+```bash
+# Run benchmarks yourself
+make -C benchmarks swebench-dry-run    # 3 tasks, ~$0.01
+make -C benchmarks swebench-lite       # 300 tasks, ~$5-15
+```
 
 ## Architecture
 
