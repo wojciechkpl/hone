@@ -85,6 +85,11 @@ impl Agent {
         self.context.total_tokens()
     }
 
+    /// Return a clone of all messages in the current context window.
+    pub fn messages(&self) -> Vec<Message> {
+        self.context.messages()
+    }
+
     /// The configured maximum context token budget for this agent.
     pub fn context_token_limit(&self) -> u32 {
         self.config.max_tokens.unwrap_or(128_000)
@@ -594,6 +599,14 @@ enum AgentCommand {
     GetContextTokens {
         reply: oneshot::Sender<u32>,
     },
+    /// Bulk-load historical messages into the context (for session resume).
+    LoadHistory {
+        messages: Vec<Message>,
+    },
+    /// Return a snapshot of all messages currently in the context window.
+    GetMessages {
+        reply: oneshot::Sender<Vec<Message>>,
+    },
     Shutdown,
 }
 
@@ -632,6 +645,14 @@ impl AgentHandle {
                     }
                     AgentCommand::GetContextTokens { reply } => {
                         let _ = reply.send(agent.context_token_count());
+                    }
+                    AgentCommand::LoadHistory { messages } => {
+                        for msg in messages {
+                            agent.context.add_message(msg);
+                        }
+                    }
+                    AgentCommand::GetMessages { reply } => {
+                        let _ = reply.send(agent.messages());
                     }
                     AgentCommand::Shutdown => break,
                 }
@@ -692,6 +713,34 @@ impl AgentHandle {
             return 0;
         }
         rx.await.unwrap_or(0)
+    }
+
+    /// Bulk-load historical messages into the context window (for session resume).
+    ///
+    /// Messages are injected in order via `ContextManager::add_message`, which
+    /// applies the same deduplication and token-budget trimming as live turns.
+    /// This is fire-and-forget: the method returns once the command is queued.
+    pub async fn load_history(&self, messages: Vec<Message>) {
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::LoadHistory { messages })
+            .await;
+    }
+
+    /// Return a snapshot of all messages currently held in the context window.
+    ///
+    /// Used by the session auto-save logic to persist the conversation after
+    /// each turn.
+    pub async fn get_messages(&self) -> Vec<Message> {
+        let (tx, rx) = oneshot::channel();
+        if self.cmd_tx
+            .send(AgentCommand::GetMessages { reply: tx })
+            .await
+            .is_err()
+        {
+            return Vec::new();
+        }
+        rx.await.unwrap_or_default()
     }
 
     /// Signal the actor to shut down.  The actor will finish processing any

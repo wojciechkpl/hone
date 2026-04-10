@@ -1,3 +1,5 @@
+mod configure;
+mod session;
 mod system_prompt;
 mod tools;
 
@@ -8,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crossterm::{
     event::{Event, EventStream, KeyCode},
     execute,
@@ -46,6 +48,42 @@ use tokio::sync::{Mutex, mpsc};
 // CLI argument parsing via clap
 // ---------------------------------------------------------------------------
 
+/// Subcommands for `hone session <sub>`.
+#[derive(Subcommand, Debug)]
+enum SessionCmd {
+    /// List all saved sessions (name, date, message count).
+    List,
+    /// Resume a previous session by name.
+    Resume {
+        /// Name of the session to resume.
+        name: String,
+    },
+    /// Rename a session.
+    Rename {
+        /// Current session name.
+        old: String,
+        /// New session name.
+        new: String,
+    },
+    /// Delete a session permanently.
+    Delete {
+        /// Name of the session to delete.
+        name: String,
+    },
+}
+
+/// Top-level subcommands (optional — the default behaviour is the agent loop).
+#[derive(Subcommand, Debug)]
+enum HoneCmd {
+    /// Manage named sessions.
+    Session {
+        #[command(subcommand)]
+        cmd: SessionCmd,
+    },
+    /// Interactive setup wizard — writes ~/.config/hone/config.toml.
+    Configure,
+}
+
 #[derive(Parser)]
 #[command(name = "hone", version, about = "The universal terminal AI coding agent")]
 struct Cli {
@@ -80,6 +118,14 @@ struct Cli {
     /// response using the MASAI Ranker pattern (requires N >= 2)
     #[arg(long, value_name = "N")]
     ensemble: Option<u32>,
+
+    /// Attach a name to this session (auto-saved after each turn).
+    #[arg(long, value_name = "NAME")]
+    session: Option<String>,
+
+    /// Subcommand (session management, configure wizard, etc.)
+    #[command(subcommand)]
+    command: Option<HoneCmd>,
 }
 
 // ---------------------------------------------------------------------------
@@ -981,6 +1027,112 @@ async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Session auto-save
+// ---------------------------------------------------------------------------
+
+/// Snapshot the agent's context and persist it to the session store.
+///
+/// When `name` is `None` a default name like `"session-YYYY-MM-DD-HHMM"` is
+/// generated.  Errors are logged as warnings and never propagate to the caller.
+async fn auto_save_session(agent: &AgentHandle, name: Option<&str>) {
+    let messages = agent.get_messages().await;
+    if messages.is_empty() {
+        return;
+    }
+
+    let Some(store) = open_session_store().await else {
+        return;
+    };
+
+    let resolved_name = name
+        .map(str::to_owned)
+        .unwrap_or_else(session::default_session_name);
+
+    if let Err(e) = store.save_session(&resolved_name, &messages).await {
+        tracing::warn!("auto-save session failed: {e}");
+    } else {
+        tracing::info!(name = %resolved_name, messages = messages.len(), "session auto-saved");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Session management helpers
+// ---------------------------------------------------------------------------
+
+/// Return the path to the sessions database (`~/.local/share/hone/sessions.db`).
+fn sessions_db_path() -> PathBuf {
+    data_dir().join("sessions.db")
+}
+
+/// Open the session store, returning `None` (with a warning) on failure.
+async fn open_session_store() -> Option<session::SessionStore> {
+    let path = sessions_db_path();
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("{} could not create data dir: {e}", warn_style("Warning:"));
+            return None;
+        }
+    }
+    match session::SessionStore::open(&path).await {
+        Ok(store) => Some(store),
+        Err(e) => {
+            eprintln!("{} could not open sessions db: {e}", warn_style("Warning:"));
+            None
+        }
+    }
+}
+
+/// Handle `hone session list`.
+async fn cmd_session_list() -> Result<()> {
+    let Some(store) = open_session_store().await else {
+        return Ok(());
+    };
+    let sessions = store.list_sessions().await?;
+    if sessions.is_empty() {
+        println!("No saved sessions.  Start one with: hone --session my-session 'prompt'");
+        return Ok(());
+    }
+
+    let name_width = sessions.iter().map(|s| s.name.len()).max().unwrap_or(4).max(4);
+    println!(
+        "{:<name_width$}  {:<20}  {:>5}",
+        "NAME", "UPDATED", "MSGS",
+        name_width = name_width
+    );
+    println!("{}", "-".repeat(name_width + 2 + 20 + 2 + 5));
+    for s in &sessions {
+        println!(
+            "{:<name_width$}  {:<20}  {:>5}",
+            s.name,
+            session::format_timestamp(s.updated_at),
+            s.message_count,
+            name_width = name_width,
+        );
+    }
+    Ok(())
+}
+
+/// Handle `hone session rename <old> <new>`.
+async fn cmd_session_rename(old: &str, new: &str) -> Result<()> {
+    let Some(store) = open_session_store().await else {
+        return Ok(());
+    };
+    store.rename_session(old, new).await?;
+    println!("Session '{old}' renamed to '{new}'.");
+    Ok(())
+}
+
+/// Handle `hone session delete <name>`.
+async fn cmd_session_delete(name: &str) -> Result<()> {
+    let Some(store) = open_session_store().await else {
+        return Ok(());
+    };
+    store.delete_session(name).await?;
+    println!("Session '{name}' deleted.");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // SQLite persistence initialisation
 // ---------------------------------------------------------------------------
 
@@ -1141,10 +1293,49 @@ async fn index_directory_bg(index: &SqliteIndex, root: &std::path::Path) -> Resu
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Apply settings from ~/.config/hone/config.toml before provider detection
+    // so env vars set by the wizard are visible to detect_provider().
+    // Env vars already set by the user always take priority (apply_wizard_config
+    // only sets them when they are absent).
+    configure::apply_wizard_config();
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(io::stderr)
         .init();
+
+    // Dispatch subcommands that don't need the full agent stack.
+    if let Some(ref cmd) = cli.command {
+        match cmd {
+            HoneCmd::Configure => {
+                configure::run_wizard()?;
+                return Ok(());
+            }
+            HoneCmd::Session { cmd: session_cmd } => {
+                match session_cmd {
+                    SessionCmd::List => {
+                        cmd_session_list().await?;
+                    }
+                    SessionCmd::Resume { name } => {
+                        // Fall through — resume is handled later after the
+                        // agent is constructed, so we can load history into it.
+                        // Nothing to do here.
+                        let _ = name; // suppress unused warning
+                    }
+                    SessionCmd::Rename { old, new } => {
+                        cmd_session_rename(old, new).await?;
+                    }
+                    SessionCmd::Delete { name } => {
+                        cmd_session_delete(name).await?;
+                    }
+                }
+                // For List/Rename/Delete we exit immediately; Resume falls through.
+                if !matches!(session_cmd, SessionCmd::Resume { .. }) {
+                    return Ok(());
+                }
+            }
+        }
+    }
 
     let (config, hone_md) = load_project_config().await;
 
@@ -1285,6 +1476,47 @@ async fn main() -> Result<()> {
 
     let agent = AgentHandle::spawn(base_config.clone());
 
+    // Session resume: load history into the freshly spawned agent.
+    let is_resume = matches!(
+        cli.command,
+        Some(HoneCmd::Session { cmd: SessionCmd::Resume { .. } })
+    );
+    if is_resume {
+        if let Some(HoneCmd::Session { cmd: SessionCmd::Resume { ref name } }) = cli.command {
+            if let Some(store) = open_session_store().await {
+                match store.load_session(name).await {
+                    Ok(Some(messages)) => {
+                        let count = messages.len();
+                        agent.load_history(messages).await;
+                        eprintln!("Resumed session '{}' ({count} messages).", name);
+                    }
+                    Ok(None) => {
+                        eprintln!("{} Session '{}' not found.", error_style("Error:"), name);
+                        std::process::exit(1);
+                    }
+                    Err(e) => {
+                        eprintln!("{} Could not load session: {e}", error_style("Error:"));
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+    }
+
+    // Determine the active session name for auto-save.
+    // Priority: --session NAME > resume name > generated default.
+    let session_name: Option<String> = if cli.ephemeral {
+        None
+    } else {
+        cli.session.clone().or_else(|| {
+            if let Some(HoneCmd::Session { cmd: SessionCmd::Resume { ref name } }) = cli.command {
+                Some(name.clone())
+            } else {
+                None
+            }
+        })
+    };
+
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
         list_builtin_recipes();
@@ -1328,8 +1560,14 @@ async fn main() -> Result<()> {
 
     // One-shot mode: run a single turn, print to stdout, and exit.
     if let Some(ref prompt) = cli.prompt {
-        return run_one_shot(agent.clone(), prompt).await;
+        run_one_shot(agent.clone(), prompt).await?;
+        auto_save_session(&agent, session_name.as_deref()).await;
+        return Ok(());
     }
+
+    // Resume with no explicit prompt drops into TUI so the user can continue
+    // the conversation interactively.
+    // (fall through to TUI below)
 
     // TUI mode.
     enable_raw_mode()?;

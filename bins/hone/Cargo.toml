@@ -32,9 +32,13 @@ futures = { workspace = true }
 reqwest = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 walkdir = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
 
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+tempfile = { workspace = true }

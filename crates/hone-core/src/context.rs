@@ -594,6 +594,14 @@ impl ContextManager {
     pub fn total_tokens(&self) -> u32 {
         self.messages.iter().map(estimate_message_tokens).sum()
     }
+
+    /// Return a clone of all messages currently held in the context window.
+    ///
+    /// Intended for session persistence: callers save this snapshot and can
+    /// later replay it via repeated `add_message` calls (or `AgentHandle::load_history`).
+    pub fn messages(&self) -> Vec<Message> {
+        self.messages.clone()
+    }
 }
 
 // ---------------------------------------------------------------------------
