@@ -1,4 +1,9 @@
-# Hone: The Universal Terminal AI Coding Agent
+<p align="center">
+  <img src="assets/logo.png" alt="Hone" width="200">
+</p>
+
+<h1 align="center">Hone</h1>
+<p align="center"><strong>The Universal Terminal AI Coding Agent</strong></p>
 
 **Hone** is a privacy-first, provider-agnostic AI coding agent built entirely in Rust. It runs locally in your terminal with kernel-enforced sandboxing, supports 75+ model providers (Anthropic, OpenAI, Ollama, local, CLI pass-through), and learns patterns across sessions through adaptive memory. Work with your models, on your machine, under your rules.
 

@@ -68,5 +68,6 @@ nav:
     - Security: tutorials/security.md
     - Server & Remote: tutorials/server-and-remote.md
     - Recipes: tutorials/recipes.md
+  - Comparison: comparison.md
   - Benchmarks: benchmarks.md
   - Changelog: changelog.md
