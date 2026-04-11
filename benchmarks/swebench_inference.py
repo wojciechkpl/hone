@@ -157,9 +157,10 @@ def localize_files(
     gracefully degrade.
     """
     file_tree = get_file_tree(repo_dir)
-    localization_prompt = LOCALIZATION_PROMPT_TEMPLATE.format(
-        problem_statement=problem_statement,
-        file_tree=file_tree,
+    localization_prompt = LOCALIZATION_PROMPT_TEMPLATE.replace(
+        "{problem_statement}", problem_statement
+    ).replace(
+        "{file_tree}", file_tree
     )
 
     try:
@@ -238,9 +239,12 @@ def run_hone(repo_dir: Path, problem_statement: str, hone_binary: str, model: st
     # ------------------------------------------------------------------
     # Change 1: Structured 4-phase SWE-bench prompt
     # ------------------------------------------------------------------
-    prompt = STRUCTURED_PROMPT_TEMPLATE.format(
-        problem_statement=problem_statement,
-        file_context=file_context,
+    # Use str.replace instead of .format() to avoid KeyError if the
+    # problem_statement contains Python format tokens like {file_tree}.
+    prompt = STRUCTURED_PROMPT_TEMPLATE.replace(
+        "{problem_statement}", problem_statement
+    ).replace(
+        "{file_context}", file_context
     )
 
     start = time.time()

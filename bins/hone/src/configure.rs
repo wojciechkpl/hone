@@ -206,54 +206,69 @@ fn config_path() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".config/hone/config.toml"))
 }
 
-/// Read the wizard config from `~/.config/hone/config.toml` and apply any
-/// settings that are not already covered by environment variables.
+/// Resolved provider configuration from the wizard config file.
 ///
-/// Currently handles:
-/// - `[provider].api_key`    → sets `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`
-/// - `[provider].base_url`   → sets `HONE_OPENAI_BASE_URL`
-/// - `[provider].model`      → sets `HONE_OPENAI_MODEL` (for openai-compat paths)
-///
-/// Env vars already set by the user always take priority.
-pub fn apply_wizard_config() {
-    let Ok(home) = std::env::var("HOME") else { return };
-    let path = PathBuf::from(home).join(".config/hone/config.toml");
-    let Ok(raw) = std::fs::read_to_string(&path) else { return };
+/// Returned by [`load_wizard_config`] and consumed by `detect_provider`.
+/// No environment mutation — avoids the UB of `set_var` in a multi-threaded
+/// Tokio runtime.
+#[derive(Debug, Default)]
+pub struct ResolvedConfig {
+    pub anthropic_api_key: Option<String>,
+    pub openai_api_key: Option<String>,
+    pub openai_base_url: Option<String>,
+    pub openai_model: Option<String>,
+}
 
-    // Minimal TOML parsing — we only need a small, well-known subset.
+/// Read the wizard config from `~/.config/hone/config.toml` and return
+/// resolved provider settings.
+///
+/// Env vars already set by the user always take priority — this only fills
+/// in values that are missing from the environment.
+pub fn load_wizard_config() -> ResolvedConfig {
+    let mut resolved = ResolvedConfig::default();
+
+    let Ok(home) = std::env::var("HOME") else {
+        return resolved;
+    };
+    let path = PathBuf::from(home).join(".config/hone/config.toml");
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return resolved;
+    };
+
     let cfg = match WizardConfig::parse(&raw) {
         Some(c) => c,
-        None => return,
+        None => return resolved,
     };
 
     match cfg.provider_name.as_deref() {
         Some("anthropic") => {
-            if let Some(key) = &cfg.api_key {
+            if let Some(key) = cfg.api_key {
                 if std::env::var("ANTHROPIC_API_KEY").is_err() {
-                    // SAFETY: called before any other threads are spawned in main.
-                    unsafe { std::env::set_var("ANTHROPIC_API_KEY", key) };
+                    resolved.anthropic_api_key = Some(key);
                 }
             }
         }
         Some("openai" | "deepseek" | "openrouter") => {
-            if let Some(key) = &cfg.api_key {
+            if let Some(key) = cfg.api_key {
                 if std::env::var("OPENAI_API_KEY").is_err() {
-                    unsafe { std::env::set_var("OPENAI_API_KEY", key) };
+                    resolved.openai_api_key = Some(key);
                 }
             }
-            if let Some(url) = &cfg.base_url {
+            if let Some(url) = cfg.base_url {
                 if std::env::var("HONE_OPENAI_BASE_URL").is_err() {
-                    unsafe { std::env::set_var("HONE_OPENAI_BASE_URL", url) };
+                    resolved.openai_base_url = Some(url);
                 }
             }
-            if let Some(model) = &cfg.model {
+            if let Some(model) = cfg.model {
                 if std::env::var("HONE_OPENAI_MODEL").is_err() {
-                    unsafe { std::env::set_var("HONE_OPENAI_MODEL", model) };
+                    resolved.openai_model = Some(model);
                 }
             }
         }
-        _ => {} // claude-cli, ollama, unknown — no env vars needed
+        _ => {}
     }
+
+    resolved
 }
 
 // ── Minimal TOML reader for the wizard format ─────────────────────────────────

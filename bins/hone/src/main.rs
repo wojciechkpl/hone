@@ -313,9 +313,13 @@ async fn binary_on_path(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-async fn detect_provider() -> DetectedProvider {
+async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProvider {
     // Prefer direct Anthropic API — supports tool calling.
-    if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
+    // Check env var first, then wizard config as fallback.
+    if let Some(api_key) = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .or_else(|| wizard_cfg.anthropic_api_key.clone())
+    {
         if api_key.trim().is_empty() {
             eprintln!("{} ANTHROPIC_API_KEY is set but empty. Skipping Anthropic provider.", warn_style("Warning:"));
         } else if !api_key.starts_with("sk-ant-") {
@@ -339,8 +343,14 @@ async fn detect_provider() -> DetectedProvider {
     // OpenAI API (or any OpenAI-compatible endpoint) — supports tool calling.
     // Set HONE_OPENAI_BASE_URL to point at DeepSeek, Qwen, Kimi, OpenRouter, etc.
     // Set HONE_OPENAI_MODEL to override the default model name for that endpoint.
-    if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
-        let provider = if let Ok(base_url) = std::env::var("HONE_OPENAI_BASE_URL") {
+    if let Some(api_key) = std::env::var("OPENAI_API_KEY")
+        .ok()
+        .or_else(|| wizard_cfg.openai_api_key.clone())
+    {
+        let provider = if let Some(base_url) = std::env::var("HONE_OPENAI_BASE_URL")
+            .ok()
+            .or_else(|| wizard_cfg.openai_base_url.clone())
+        {
             tracing::info!(
                 provider = "openai-compat",
                 base_url = %base_url,
@@ -352,7 +362,10 @@ async fn detect_provider() -> DetectedProvider {
             tracing::info!(provider = "openai", api = "http", tools = true, "provider detected");
             OpenAiProvider::new(api_key)
         };
-        let model_name = std::env::var("HONE_OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".into());
+        let model_name = std::env::var("HONE_OPENAI_MODEL")
+            .ok()
+            .or_else(|| wizard_cfg.openai_model.clone())
+            .unwrap_or_else(|| "gpt-4o".into());
         return DetectedProvider {
             provider: Arc::new(provider),
             model_id: ModelId::new(&format!("openai:{model_name}")),
@@ -1293,11 +1306,8 @@ async fn index_directory_bg(index: &SqliteIndex, root: &std::path::Path) -> Resu
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Apply settings from ~/.config/hone/config.toml before provider detection
-    // so env vars set by the wizard are visible to detect_provider().
-    // Env vars already set by the user always take priority (apply_wizard_config
-    // only sets them when they are absent).
-    configure::apply_wizard_config();
+    // Load wizard config (no env mutation — returns a struct instead).
+    let wizard_cfg = configure::load_wizard_config();
 
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -1401,7 +1411,7 @@ async fn main() -> Result<()> {
 
     tracing::debug!(system_prompt_len = system_prompt.len(), "system prompt ready");
 
-    let mut detected = detect_provider().await;
+    let mut detected = detect_provider(&wizard_cfg).await;
 
     // Opt-in local response cache: set HONE_CACHE=1 (or any value) to wrap
     // the inner provider with an LRU cache. Useful for development/testing

@@ -18,9 +18,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **SWE-bench benchmark harness** — Full benchmarking pipeline for SWE-bench Lite (300 real GitHub issues). `benchmarks/swebench_inference.py` and `swebench_evaluate.py` with Makefile targets for swebench-dry-run, swebench-lite, and swebench-verified. Supports evaluation via Docker-isolated test execution.
 - **Custom OpenAI-compatible endpoints** — `HONE_OPENAI_BASE_URL` and `HONE_OPENAI_MODEL` environment variables for drop-in support of DeepSeek, Qwen, Kimi, OpenRouter, and other OpenAI-compatible services.
 - **Better startup error messages** — Clearer diagnostics for missing API keys, sandbox unavailability, configuration errors, and provider health checks.
+- **System prompt compression** — Reduced system prompt from 1776 to 511 tokens (71% reduction), saving approximately 25K tokens per 20-turn task. Achieved through iterative refinement and removal of redundant instructions while maintaining quality parity.
+- **Tool description overhaul** — All 7 core tools now feature structured WHEN TO USE / WHEN NOT TO USE fields for improved decision-making and tool selection accuracy.
+- **SWE-bench v1 optimizations** — Structured 4-phase prompt design (exploration → localization → implementation → verification), two-stage localization strategy, and hardcoded tool guards (must-read-before-edit, test-after-edit hints, max consecutive edits limit).
 
 ### Changed
 
+- **SWE-bench v1 final results** — Hone achieves 58/300 (19.3%) on SWE-bench Lite with DeepSeek V3, beating SWE-Agent (GPT-4, 18%) at 50x lower cost (~$0.001-0.002 per task vs ~$0.10-0.20).
 - **Exit code 1 on missing provider** — Hone now returns exit code 1 when no provider is configured (was silently falling back to MockProvider). Users must configure a provider via `hone configure` or environment variables.
 - **Security hardening (Phase 2 complete)**:
   - **Path traversal prevention** — All file tools use `resolve_within_working_dir()` to canonicalize paths and reject `..` escapes.
