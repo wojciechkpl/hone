@@ -1,16 +1,21 @@
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hone_proto::AgentEvent;
+use tokio::sync::mpsc;
 
 use crate::{
     animation::AnimationState,
-    commands::Command,
+    commands::{Command, TddSubcommand},
     input::InputState,
     layout::{FocusTarget, LayoutMode},
     message::{DisplayMessage, DisplayRole},
+    shell_escape::ShellEscapeResult,
     status::{ProviderStatus, StatusInfo},
+    tdd_mode::{TddEvent, TddWatcher},
     theme::Theme,
+    vim_mode::{VimAction, VimMode, VimOverlay},
 };
 
 /// Duration that the splash screen is shown before auto-dismissing.
@@ -44,6 +49,33 @@ pub struct App {
     pub(crate) splash_start: Option<Instant>,
     pub(crate) preview_content: Option<String>,
     pub(crate) preview_path: Option<String>,
+
+    // --- Shell escape -------------------------------------------------------
+    /// Current effective working directory for shell escapes.
+    pub(crate) working_dir: PathBuf,
+    /// Immutable project root — `!cd` cannot escape this boundary.
+    /// Set once at startup from the initial working directory.
+    project_root: PathBuf,
+
+    // --- Vim mode -----------------------------------------------------------
+    /// Whether vim-style keybindings are active.
+    pub(crate) vim_enabled: bool,
+    /// Vim overlay state machine.
+    pub(crate) vim: VimOverlay,
+
+    // --- TDD mode -----------------------------------------------------------
+    /// Active TDD watcher, if any.
+    pub(crate) tdd_watcher: Option<TddWatcher>,
+    /// Channel receiver for TDD events (polled each tick).
+    pub(crate) tdd_rx: Option<mpsc::Receiver<TddEvent>>,
+
+    // --- Shell escape suspend signal ----------------------------------------
+    /// When `Some`, the event loop must suspend the TUI, run this command
+    /// interactively, then restore the TUI and clear this field.
+    pub(crate) pending_interactive: Option<(String, PathBuf)>,
+
+    /// Pending non-interactive shell command awaiting async execution.
+    pub(crate) pending_shell_cmd: Option<String>,
 }
 
 impl App {
@@ -65,7 +97,22 @@ impl App {
             splash_start: Some(Instant::now()),
             preview_content: None,
             preview_path: None,
+            working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
+            project_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
+            vim_enabled: false,
+            vim: VimOverlay::new(),
+            tdd_watcher: None,
+            tdd_rx: None,
+            pending_interactive: None,
+            pending_shell_cmd: None,
         }
+    }
+
+    /// Create a new application with vim mode pre-enabled (for `--vim` flag).
+    pub fn with_vim() -> Self {
+        let mut app = Self::new();
+        app.vim_enabled = true;
+        app
     }
 
     /// Immediately dismiss the splash screen (for tests and resume scenarios).
@@ -144,6 +191,34 @@ impl App {
         self.preview_path = path;
     }
 
+    /// The current effective working directory for shell escapes.
+    pub fn working_dir(&self) -> &std::path::Path {
+        &self.working_dir
+    }
+
+    /// Whether vim-style keybindings are active.
+    pub fn vim_enabled(&self) -> bool {
+        self.vim_enabled
+    }
+
+    /// The current vim mode (Normal / Insert).  Only meaningful when
+    /// `vim_enabled()` returns `true`.
+    pub fn vim_mode(&self) -> VimMode {
+        self.vim.mode
+    }
+
+    /// Take the pending interactive command, clearing it from the app state.
+    /// The event loop should call this after detecting a pending command, run
+    /// the command outside the TUI, then resume the TUI loop.
+    pub fn take_pending_interactive(&mut self) -> Option<(String, PathBuf)> {
+        self.pending_interactive.take()
+    }
+
+    /// Whether TDD mode is currently active.
+    pub fn tdd_active(&self) -> bool {
+        self.tdd_watcher.is_some()
+    }
+
     /// Set splash_start to a specific instant (for testing auto-dismiss).
     pub fn set_splash_start(&mut self, start: std::time::Instant) {
         self.splash_start = Some(start);
@@ -165,6 +240,49 @@ impl App {
                 }
             }
         }
+
+        // Drain TDD events.
+        self.drain_tdd_events();
+    }
+
+    /// Drain any pending TDD events and display them as system messages.
+    fn drain_tdd_events(&mut self) {
+        if let Some(rx) = &mut self.tdd_rx {
+            while let Ok(event) = rx.try_recv() {
+                let msg = match &event {
+                    TddEvent::Started { command } => {
+                        format!("[TDD] watching for changes, running: {command}")
+                    }
+                    TddEvent::RunningTests { changed_path } => {
+                        format!("[TDD] change detected: {} — running tests...", changed_path.display())
+                    }
+                    TddEvent::Passed { output } => {
+                        format!("[TDD] tests PASSED\n{output}")
+                    }
+                    TddEvent::Failed { output } => {
+                        format!("[TDD] tests FAILED\n{output}")
+                    }
+                    TddEvent::WatchError(e) => {
+                        format!("[TDD] watcher error: {e}")
+                    }
+                    TddEvent::Stopped => {
+                        self.tdd_watcher = None;
+                        "[TDD] stopped".to_string()
+                    }
+                };
+
+                let role = match &event {
+                    TddEvent::Failed { .. } | TddEvent::WatchError(_) => DisplayRole::Error,
+                    _ => DisplayRole::System,
+                };
+                self.messages.push(DisplayMessage::new(role, msg));
+            }
+        }
+
+        // If the watcher finished, clean up the receiver too.
+        if self.tdd_watcher.is_none() {
+            self.tdd_rx = None;
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -173,6 +291,54 @@ impl App {
 
     /// Process a terminal key event and update state accordingly.
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // When vim mode is active, route through the overlay first.
+        if self.vim_enabled {
+            if let Some(action) = self.vim.process(key) {
+                self.apply_vim_action(action);
+            }
+            return;
+        }
+
+        // Normal (non-vim) key handling.
+        self.handle_key_normal(key);
+    }
+
+    /// Apply a vim overlay action to the app state.
+    fn apply_vim_action(&mut self, action: VimAction) {
+        match action {
+            VimAction::EnterInsert | VimAction::EnterNormal => {
+                // Mode transition handled by the overlay; nothing else to do.
+            }
+            VimAction::EnterInsertAtEnd => {
+                // Move cursor to end of input buffer.
+                self.input.cursor_position = self.input.buffer.len();
+            }
+            VimAction::ScrollUp(n) => {
+                self.scroll_offset = self.scroll_offset.saturating_add(n);
+            }
+            VimAction::ScrollDown(n) => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(n);
+            }
+            VimAction::ScrollToTop => {
+                self.scroll_offset = usize::MAX;
+            }
+            VimAction::ScrollToBottom => {
+                self.scroll_offset = 0;
+            }
+            VimAction::Quit => {
+                self.should_quit = true;
+            }
+            VimAction::Submit => {
+                self.submit_input();
+            }
+            VimAction::PassThrough(key) => {
+                self.handle_key_normal(key);
+            }
+        }
+    }
+
+    /// Non-vim key handling (also used as the passthrough target from vim Insert mode).
+    fn handle_key_normal(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
@@ -222,6 +388,12 @@ impl App {
 
         let text = self.input.take_input();
 
+        // Shell escape: `!command` bypasses the agent.
+        if let Some(cmd) = text.strip_prefix('!') {
+            self.initiate_shell_escape(cmd.trim());
+            return;
+        }
+
         // Check whether this is a slash-command.
         if let Some(cmd) = Command::parse(&text) {
             self.handle_command(cmd);
@@ -231,6 +403,112 @@ impl App {
         // Plain message — add it to the conversation and start waiting.
         self.messages.push(DisplayMessage::new(DisplayRole::User, text));
         self.state = AppState::WaitingForResponse;
+    }
+
+    /// Begin handling a shell escape (`!command`).
+    ///
+    /// For `cd` and interactive commands we produce a marker message and set
+    /// internal state; the actual async execution is performed by
+    /// [`App::handle_shell_escape_result`] which the event loop calls after
+    /// awaiting the async operation.
+    ///
+    /// For interactive commands we store the command in `pending_interactive`
+    /// and the event loop is responsible for suspending the TUI, running the
+    /// command, and then calling us back with the result.
+    pub fn initiate_shell_escape(&mut self, cmd: &str) {
+        if cmd.is_empty() {
+            self.messages.push(DisplayMessage::new(
+                DisplayRole::System,
+                "shell escape: empty command (usage: !<command>)".to_string(),
+            ));
+            return;
+        }
+
+        // Echo the command so the user can see what ran.
+        self.messages.push(DisplayMessage::new(
+            DisplayRole::User,
+            format!("! {cmd}"),
+        ));
+
+        // Detect interactive commands synchronously — no async needed.
+        if crate::shell_escape::is_interactive_command(cmd) {
+            self.pending_interactive = Some((cmd.to_owned(), self.working_dir.clone()));
+            // State stays Idle; the event loop will handle the suspend/restore.
+            return;
+        }
+
+        // For `cd` and captured commands we need async execution; signal the
+        // event loop by entering a new variant state.  We reuse
+        // WaitingForResponse semantically — the event loop checks
+        // `pending_shell_escape` before spawning an agent turn.
+        //
+        // We store the command string as the "user text" would be used by the
+        // agent, but the event loop intercepts shell escapes before routing to
+        // the agent.  We push the execution request via a lightweight signal:
+        // the state machine just returns to Idle after the result is processed.
+        //
+        // For simplicity we directly set a field the event loop polls:
+        self.state = AppState::WaitingForResponse;
+        // The event loop reads `pending_shell_escape` before deciding whether
+        // to spawn an agent turn.  We repurpose the user message text buffer to
+        // communicate the command.  See `take_pending_shell_escape`.
+        self.pending_shell_cmd = Some(cmd.to_owned());
+    }
+
+    /// Take the pending non-interactive shell command (set by
+    /// `initiate_shell_escape`).  Returns `None` if no shell escape is pending.
+    pub fn take_pending_shell_cmd(&mut self) -> Option<String> {
+        self.pending_shell_cmd.take()
+    }
+
+    /// Apply the result of an async shell escape execution to the app state.
+    pub fn handle_shell_escape_result(&mut self, result: ShellEscapeResult) {
+        match result {
+            ShellEscapeResult::Output { text, success } => {
+                let role = if success { DisplayRole::System } else { DisplayRole::Error };
+                self.messages.push(DisplayMessage::new(role, text));
+                self.state = AppState::Idle;
+            }
+            ShellEscapeResult::DirectoryChanged { new_dir } => {
+                // Security: confine cd to the project root. The project_root
+                // is the initial working_dir set at startup. Allowing cd outside
+                // would move the anchor for resolve_within_working_dir, breaking
+                // path traversal prevention for the agent's file tools.
+                let project_root = self.project_root.clone();
+                if new_dir.starts_with(&project_root) {
+                    let msg = format!("cd: {}", new_dir.display());
+                    self.working_dir = new_dir;
+                    self.messages.push(DisplayMessage::new(DisplayRole::System, msg));
+                } else {
+                    let msg = format!(
+                        "cd: {} is outside the project root ({}). Denied for security.",
+                        new_dir.display(),
+                        project_root.display()
+                    );
+                    self.messages.push(DisplayMessage::new(DisplayRole::Error, msg));
+                }
+                self.state = AppState::Idle;
+            }
+            ShellEscapeResult::CdError(e) => {
+                self.messages.push(DisplayMessage::new(DisplayRole::Error, e));
+                self.state = AppState::Idle;
+            }
+            ShellEscapeResult::NeedsTerminalSuspend { command, working_dir } => {
+                // This path should not be reached here (handled in initiate_shell_escape
+                // before async dispatch), but handle it defensively.
+                self.pending_interactive = Some((command, working_dir));
+                self.state = AppState::Idle;
+            }
+        }
+    }
+
+    /// Display the result of an interactive command (called after the TUI is
+    /// restored and the command has exited).
+    pub fn handle_interactive_command_done(&mut self) {
+        self.messages.push(DisplayMessage::new(
+            DisplayRole::System,
+            "(interactive command exited — TUI restored)".to_string(),
+        ));
     }
 
     /// Helper used by tests to populate the input buffer without going through
@@ -320,12 +598,99 @@ impl App {
                 );
                 self.messages.push(DisplayMessage::new(DisplayRole::System, preview));
             }
+            Command::SetVim(enable) => {
+                self.vim_enabled = enable;
+                if enable {
+                    self.vim = VimOverlay::new();
+                }
+                let msg = if enable {
+                    "vim mode enabled (i/a = insert, Esc = normal, j/k = scroll, gg/G = top/bottom)"
+                        .to_string()
+                } else {
+                    "vim mode disabled".to_string()
+                };
+                self.messages.push(DisplayMessage::new(DisplayRole::System, msg));
+            }
+            Command::Tdd(sub) => {
+                self.handle_tdd_command(sub);
+            }
+            Command::Review => {
+                self.handle_review_command();
+            }
             Command::Unknown(name) => {
                 let msg = format!("Unknown command: /{name}  (type /help for help)");
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::Error, msg));
             }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // TDD command handling
+    // -----------------------------------------------------------------------
+
+    fn handle_tdd_command(&mut self, sub: TddSubcommand) {
+        match sub {
+            TddSubcommand::Stop => {
+                if self.tdd_watcher.is_some() {
+                    // Drop the watcher — its stop signal fires on drop.
+                    self.tdd_watcher = None;
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::System,
+                        "[TDD] stopping watcher...".to_string(),
+                    ));
+                } else {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::System,
+                        "[TDD] not active".to_string(),
+                    ));
+                }
+            }
+            TddSubcommand::Start(maybe_cmd) => {
+                if self.tdd_watcher.is_some() {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::System,
+                        "[TDD] already active — use :tdd off to stop first".to_string(),
+                    ));
+                    return;
+                }
+
+                // Auto-detect the test command when none was given.
+                let test_cmd = maybe_cmd.or_else(|| detect_test_cmd_for_dir(&self.working_dir));
+
+                let Some(cmd) = test_cmd else {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::Error,
+                        "[TDD] could not auto-detect a test command. \
+                         Pass one explicitly: :tdd cargo test".to_string(),
+                    ));
+                    return;
+                };
+
+                let (tx, rx) = mpsc::channel::<TddEvent>(64);
+                let watcher = TddWatcher::start(self.working_dir.clone(), cmd, tx);
+                self.tdd_watcher = Some(watcher);
+                self.tdd_rx = Some(rx);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Review command handling
+    // -----------------------------------------------------------------------
+
+    fn handle_review_command(&mut self) {
+        // Run `git diff HEAD` and display it inline.  We spawn a blocking task
+        // so we don't block the event loop; results arrive via the normal shell
+        // escape mechanism.
+        self.messages.push(DisplayMessage::new(
+            DisplayRole::System,
+            "Generating session diff (git diff HEAD)...".to_string(),
+        ));
+        // Schedule the review as a shell escape so the event loop picks it up
+        // and runs it asynchronously.
+        self.pending_shell_cmd = Some("git diff HEAD".to_owned());
+        self.state = AppState::WaitingForResponse;
     }
 
     // -----------------------------------------------------------------------
@@ -452,4 +817,28 @@ impl Default for App {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Detect an appropriate test command for `dir` based on project manifests.
+fn detect_test_cmd_for_dir(dir: &std::path::Path) -> Option<String> {
+    if dir.join("Cargo.toml").exists() {
+        return Some("cargo test".to_string());
+    }
+    if dir.join("package.json").exists() {
+        return Some("npm test".to_string());
+    }
+    if dir.join("pyproject.toml").exists() || dir.join("requirements.txt").exists() {
+        return Some("pytest".to_string());
+    }
+    if dir.join("Makefile").exists() {
+        return Some("make test".to_string());
+    }
+    if dir.join("go.mod").exists() {
+        return Some("go test ./...".to_string());
+    }
+    None
 }

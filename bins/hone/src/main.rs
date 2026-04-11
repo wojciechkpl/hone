@@ -42,6 +42,7 @@ use hone_tools::{
 };
 use hone_tui::{App, AppState};
 use hone_tui::render::root;
+use hone_tui::{execute_shell_escape, run_interactive_blocking};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::{Mutex, mpsc};
 
@@ -114,6 +115,10 @@ struct Cli {
     /// Ephemeral session (no memory persistence)
     #[arg(long)]
     ephemeral: bool,
+
+    /// Enable vim-style keybindings in the TUI (i/a=insert, Esc=normal, j/k=scroll)
+    #[arg(long)]
+    vim: bool,
 
     /// Run N parallel candidates with varied temperatures and pick the best
     /// response using the MASAI Ranker pattern (requires N >= 2)
@@ -1649,7 +1654,7 @@ async fn run_selected_mode(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_tui(&mut terminal, agent.clone(), model_id, base_config).await;
+    let result = run_tui(&mut terminal, agent.clone(), model_id, base_config, cli.vim).await;
 
     // Always restore terminal even on error.
     disable_raw_mode()?;
@@ -1687,8 +1692,9 @@ async fn run_tui(
     agent: AgentHandle,
     model_id: ModelId,
     base_config: AgentConfig,
+    vim: bool,
 ) -> Result<()> {
-    let mut app = App::new();
+    let mut app = if vim { App::with_vim() } else { App::new() };
 
     // Show which model is active in the status bar.
     app.status_mut().model = model_id.to_string();
@@ -1737,12 +1743,41 @@ async fn run_tui(
                         {
                             let user_text = app.input().buffer.clone();
                             let is_command = user_text.starts_with('/');
+                            let is_shell_escape = user_text.starts_with('!');
 
                             // Let the App update its own state.
                             app.handle_key(key);
 
-                            // Only spawn an AI turn for regular messages, not commands.
-                            if !is_command && matches!(app.state(), AppState::WaitingForResponse) {
+                            // Handle pending interactive commands (e.g. nvim).
+                            // The app sets `pending_interactive` when it detects
+                            // an interactive shell escape.
+                            if let Some((cmd, wd)) = app.take_pending_interactive() {
+                                // Suspend TUI.
+                                disable_raw_mode()?;
+                                execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+                                terminal.show_cursor()?;
+
+                                // Run the command synchronously.
+                                if let Err(e) = run_interactive_blocking(&cmd, &wd) {
+                                    tracing::warn!("interactive command '{cmd}' failed: {e}");
+                                }
+
+                                // Restore TUI.
+                                enable_raw_mode()?;
+                                execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+                                terminal.clear()?;
+
+                                app.handle_interactive_command_done();
+                            }
+
+                            // Handle pending non-interactive shell escapes.
+                            if let Some(cmd) = app.take_pending_shell_cmd() {
+                                let working_dir = app.working_dir().to_path_buf();
+                                let result = execute_shell_escape(&cmd, &working_dir).await;
+                                app.handle_shell_escape_result(result);
+                            } else if !is_command && !is_shell_escape && matches!(app.state(), AppState::WaitingForResponse) {
+                                // Only spawn an AI turn for regular messages, not commands or
+                                // shell escapes.
                                 // Adaptive routing: classify complexity and pick the
                                 // appropriate execution strategy.
                                 let tier = ComplexityClassifier::classify(&user_text);
