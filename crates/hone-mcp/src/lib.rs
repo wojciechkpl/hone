@@ -1,4 +1,5 @@
 mod error;
+pub mod manager;
 mod mock;
 mod schema_cache;
 pub mod stdio_client;
@@ -6,6 +7,7 @@ mod tool_wrapper;
 mod traits;
 
 pub use error::McpError;
+pub use manager::McpManager;
 pub use mock::MockMcpClient;
 pub use schema_cache::SchemaCache;
 pub use stdio_client::StdioMcpClient;

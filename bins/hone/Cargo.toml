@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 hone-cache = { workspace = true }
 hone-core = { workspace = true }
+hone-mcp = { workspace = true }
 hone-tui = { workspace = true }
 hone-config = { workspace = true }
 hone-recipes = { workspace = true }

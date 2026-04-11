@@ -18,7 +18,8 @@ use crossterm::{
 };
 use futures::StreamExt;
 use hone_cache::{SqliteBackend, ToolResultCache};
-use hone_config::{Config, HoneMd};
+use hone_config::{Config, HoneMd, McpConfig};
+use hone_mcp::McpManager;
 use hone_core::{
     AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry, ComplexityClassifier, ComplexityTier,
     Orchestrator, PlanStore, SelfRefineLoop, TestVerificationLoop,
@@ -505,6 +506,9 @@ async fn detect_lsp_bridge() -> Arc<dyn LspBridge> {
 /// Build a `ToolRegistry` with all available native tools plus the three LSP
 /// tools backed by `lsp`, and optionally the symbol index tools.
 ///
+/// MCP tools are registered first (lower priority) so that native tools
+/// overwrite any name collisions — native tools always take precedence.
+///
 /// When `cache` is `Some`, read-only tools are wrapped with
 /// [`CachingToolWrapper`] so that repeated identical calls are served from the
 /// SQLite-backed tool-result cache.  Write tools, shell, and git_commit are
@@ -514,6 +518,7 @@ fn build_tool_registry(
     lsp: Arc<dyn LspBridge>,
     index: Option<Arc<SqliteIndex>>,
     cache: Option<Arc<ToolResultCache>>,
+    mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
 ) -> ToolRegistry {
     // Wrap a tool with the cache layer when caching is enabled.
     // The wrapper is a transparent pass-through for non-cacheable tools, but
@@ -529,7 +534,14 @@ fn build_tool_registry(
         }
     };
 
-    let mut builder = ToolRegistry::builder()
+    // Register MCP tools first so that native tools can overwrite any name
+    // collisions (last registration wins in ToolRegistryBuilder).
+    let mut builder = ToolRegistry::builder();
+    for mcp_tool in mcp_tools {
+        builder = builder.register(mcp_tool);
+    }
+
+    builder = builder
         // Cacheable read-only tools — wrapped when cache is enabled.
         .register(wrap(Box::new(ReadFileTool)))
         .register(wrap(Box::new(GlobTool)))
@@ -614,10 +626,11 @@ fn build_agent_config(
     index: Option<Arc<SqliteIndex>>,
     memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
     tool_cache: Option<Arc<ToolResultCache>>,
+    mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
 ) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
-        build_tool_registry(lsp, index, tool_cache)
+        build_tool_registry(lsp, index, tool_cache, mcp_tools)
     } else {
         ToolRegistry::new()
     };
@@ -1473,6 +1486,27 @@ async fn main() -> Result<()> {
     // if the language server binary is not installed).
     let lsp = detect_lsp_bridge().await;
 
+    // Load MCP config (global + project), then spawn and handshake all enabled
+    // MCP servers.  A broken MCP server is logged and skipped — it must never
+    // prevent the agent from starting.
+    let mcp_config = {
+        let global = std::env::var("HOME")
+            .ok()
+            .map(|h| PathBuf::from(h).join(".config/hone/mcp.json"));
+        let project = PathBuf::from(".hone/mcp.json");
+        McpConfig::load(
+            global.as_deref(),
+            if project.exists() { Some(project.as_path()) } else { None },
+        )
+    };
+    let mcp_manager = McpManager::from_config(&mcp_config).await;
+    let mcp_tools = mcp_manager.tools_as_native();
+    tracing::info!(
+        servers = mcp_manager.server_count(),
+        tools = mcp_tools.len(),
+        "MCP manager initialised"
+    );
+
     // Build a single clonable config; share it across all code paths.
     let base_config = build_agent_config(
         &detected,
@@ -1482,6 +1516,7 @@ async fn main() -> Result<()> {
         index,
         memory_store.clone(),
         tool_cache,
+        mcp_tools,
     );
 
     let agent = AgentHandle::spawn(base_config.clone());
@@ -1527,6 +1562,34 @@ async fn main() -> Result<()> {
         })
     };
 
+    // Run the selected mode and capture the result so we can shut down MCP
+    // servers before returning regardless of which path was taken.
+    let run_result = run_selected_mode(
+        cli,
+        agent,
+        base_config,
+        model_id,
+        session_name,
+    )
+    .await;
+
+    // Graceful MCP server shutdown — always runs, even on error.
+    mcp_manager.shutdown().await;
+
+    run_result
+}
+
+/// Dispatch to the appropriate execution mode based on the parsed CLI flags.
+///
+/// Extracted from `main` so that `mcp_manager.shutdown()` can unconditionally
+/// run after all execution paths without duplicating the call.
+async fn run_selected_mode(
+    cli: Cli,
+    agent: AgentHandle,
+    base_config: AgentConfig,
+    model_id: ModelId,
+    session_name: Option<String>,
+) -> Result<()> {
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
         list_builtin_recipes();

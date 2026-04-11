@@ -226,6 +226,95 @@ impl StdioMcpClient {
             server_info: Mutex::new(None),
         })
     }
+
+    /// Spawn with an explicit logical name and additional environment variables.
+    ///
+    /// The subprocess environment is scrubbed before launch — only `PATH`, `HOME`,
+    /// and the caller-supplied `extra_env` pairs are present.  This prevents
+    /// accidental inheritance of `ANTHROPIC_API_KEY` and similar credentials.
+    pub async fn spawn_with_name(
+        server_name: &str,
+        command: &str,
+        args: &[&str],
+        extra_env: &[(String, String)],
+    ) -> Result<Self, McpError> {
+        let mut cmd = tokio::process::Command::new(command);
+        cmd.args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+
+        // Security: clear the inherited environment so API keys are not leaked
+        // to untrusted MCP subprocesses.  Re-inject only the minimum needed for
+        // the subprocess to locate its own runtime dependencies.
+        cmd.env_clear();
+        if let Ok(path) = std::env::var("PATH") {
+            cmd.env("PATH", path);
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            cmd.env("HOME", home);
+        }
+        // Apply the server-specific env on top of the baseline.
+        for (k, v) in extra_env {
+            cmd.env(k, v);
+        }
+
+        let mut child = cmd.spawn().map_err(|e| McpError::ConnectionFailed {
+            server: server_name.to_string(),
+            source: e,
+        })?;
+
+        let stdin = child.stdin.take().expect("stdin piped");
+        let stdout = child.stdout.take().expect("stdout piped");
+
+        Ok(Self {
+            server_name: server_name.to_string(),
+            transport: Arc::new(Mutex::new(TransportInner {
+                process: child,
+                stdin: BufWriter::new(stdin),
+                reader: BufReader::new(stdout),
+                next_id: 1,
+            })),
+            server_info: Mutex::new(None),
+        })
+    }
+
+    /// Gracefully stop the MCP server subprocess.
+    ///
+    /// Sends a `notifications/cancelled` notification and then waits up to 5
+    /// seconds for the process to exit cleanly before issuing a hard kill.
+    pub async fn shutdown(&mut self) -> Result<(), McpError> {
+        // Best-effort notification — the server may already be gone.
+        let _ = self
+            .transport
+            .lock()
+            .await
+            .send_notification("notifications/cancelled", None, &self.server_name)
+            .await;
+
+        let kill_timeout = tokio::time::Duration::from_secs(5);
+        let mut transport = self.transport.lock().await;
+        match tokio::time::timeout(kill_timeout, transport.process.wait()).await {
+            Ok(_) => {}
+            Err(_) => {
+                // Timed out — forcibly kill the subprocess.
+                let _ = transport.process.kill().await;
+            }
+        }
+        Ok(())
+    }
+
+    /// Return the number of tools reported by the server during `connect()`.
+    ///
+    /// Returns `0` when `connect()` has not yet been called or the lock is
+    /// currently held by another task.
+    pub fn server_info_tool_count(&self) -> usize {
+        self.server_info
+            .try_lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|i| i.tools.len()))
+            .unwrap_or(0)
+    }
 }
 
 // ---------------------------------------------------------------------------
