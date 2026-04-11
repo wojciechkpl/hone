@@ -25,33 +25,34 @@
 
 ## Demo
 
-<p align="center">
-  <a href="https://asciinema.org/a/demo">
-    <img src="https://asciinema.org/a/demo.svg" alt="Hone demo" width="700">
-  </a>
-</p>
+```
+$ hone "divide(10, 0) raises ZeroDivisionError. Fix it to return None."
+
+  ✦ read_file calculator.py
+  ✎ edit_file calculator.py
+    - return a / b
+    + if b == 0:
+    +     return None
+    + return a / b
+  ❯ shell python -c "from calculator import divide; assert divide(10,0) is None"
+
+  Fixed. divide() now returns None on zero division.
+
+  claude-sonnet │ $0.001 │ ▓▓░░░░░░░░ 18% ctx │ 5s
+```
 
 <details>
-<summary>Play locally</summary>
+<summary>Play the full recording locally</summary>
 
 ```bash
 # Install asciinema
 brew install asciinema  # or: pip install asciinema
 
-# Play the demo
+# Play the recorded demo
 asciinema play assets/demo.cast
 ```
-</details>
 
-<details>
-<summary>What the demo shows</summary>
-
-1. Hone receives a bug report: `divide(10, 0)` raises `ZeroDivisionError` instead of returning `None`
-2. The agent reads `calculator.py`, identifies the issue in the `divide` function
-3. Edits the file to add a zero-division guard: `if b == 0: return None`
-4. The fix is verified: `assert divide(10, 0) is None` passes
-
-All using DeepSeek V3 via OpenRouter (~$0.001 per task).
+A `.cast` file is included at `assets/demo.cast` — recorded from a real Hone run on DeepSeek V3 via OpenRouter (~$0.001 per task).
 </details>
 
 ---
