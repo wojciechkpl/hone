@@ -1,0 +1,63 @@
+site_name: Hone
+site_description: The Universal Terminal AI Coding Agent
+site_url: https://wojciechkpl.github.io/hone/
+repo_url: https://github.com/wojciechkpl/hone
+repo_name: wojciechkpl/hone
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - search.suggest
+    - content.tabs.link
+
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.details
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - social
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started.md
+    - Configuration: configuration.md
+    - Providers: tutorials/providers.md
+  - Features:
+    - Architecture: architecture.md
+    - Tools & Agents: tutorials/tools-and-mcp.md
+    - MCP Extensions: tutorials/mcp-extensions.md
+    - Security: tutorials/security.md
+    - Server & Remote: tutorials/server-and-remote.md
+    - Recipes: tutorials/recipes.md
+  - Benchmarks: benchmarks.md
+  - Changelog: changelog.md
