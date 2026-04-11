@@ -1503,6 +1503,7 @@ dependencies = [
  "crossterm",
  "hone-core",
  "hone-proto",
+ "notify",
  "ratatui",
  "serde",
  "serde_json",
