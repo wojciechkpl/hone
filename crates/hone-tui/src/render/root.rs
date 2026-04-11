@@ -203,7 +203,7 @@ fn render_input_area(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 fn render_status_bar_area(app: &App, frame: &mut Frame, area: Rect) {
-    let line = render_status_bar(app.status(), app.theme(), app.animation());
+    let line = render_status_bar(app.status(), app.theme(), app.animation(), area.width);
     let para = Paragraph::new(line)
         .style(Style::default().bg(app.theme().surface_base));
     frame.render_widget(para, area);

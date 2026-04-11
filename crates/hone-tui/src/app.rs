@@ -9,7 +9,7 @@ use crate::{
     input::InputState,
     layout::{FocusTarget, LayoutMode},
     message::{DisplayMessage, DisplayRole},
-    status::StatusInfo,
+    status::{ProviderStatus, StatusInfo},
     theme::Theme,
 };
 
@@ -152,6 +152,9 @@ impl App {
     /// Advance the animation by one tick (call at 100ms intervals).
     pub fn tick(&mut self) {
         self.animation.tick();
+
+        // Sync elapsed time into StatusInfo so the status bar can render it.
+        self.status.elapsed_secs = self.animation.elapsed_secs();
 
         // Auto-dismiss splash after SPLASH_DURATION.
         if self.show_splash {
@@ -347,7 +350,9 @@ impl App {
             }
 
             AgentEvent::ToolCallStart { name, .. } => {
+                self.status.update_phase_from_tool(&name);
                 self.status.active_tool = Some(name.clone());
+                self.status.provider_status = ProviderStatus::Connected;
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::ToolCall { name },
                     String::new(),
@@ -382,17 +387,23 @@ impl App {
                     }
                 }
                 self.status.token_count += usage.total();
+                // Update context window estimate from cumulative token usage.
+                self.status.context_tokens = usage.total();
                 // Estimate cost: $3/M input, $15/M output (Sonnet pricing).
                 let cost =
                     (usage.input as f64 * 3.0 + usage.output as f64 * 15.0) / 1_000_000.0;
                 self.status.session_cost_usd += cost;
                 self.status.active_tool = None;
+                self.status.turn_count += 1;
+                self.status.provider_status = ProviderStatus::Connected;
                 self.state = AppState::Idle;
             }
 
             AgentEvent::Error { message } => {
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::Error, message.clone()));
+                self.status.provider_status = ProviderStatus::Error(message.clone());
+                self.status.active_tool = None;
                 self.state = AppState::Error(message);
             }
 
@@ -430,6 +441,8 @@ impl App {
                     self.status.budget_usd = budget_usd;
                 }
                 self.status.mode = format!("orchestrator {workers_completed}/{workers_total}");
+                self.status.phase = "Orchestrating".to_string();
+                self.status.provider_status = ProviderStatus::Connected;
             }
         }
     }

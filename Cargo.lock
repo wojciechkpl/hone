@@ -1274,6 +1274,7 @@ dependencies = [
  "hone-config",
  "hone-core",
  "hone-index",
+ "hone-mcp",
  "hone-memory",
  "hone-proto",
  "hone-providers",
@@ -1283,10 +1284,14 @@ dependencies = [
  "hone-tui",
  "ratatui",
  "reqwest",
+ "serde",
  "serde_json",
+ "sqlx",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "walkdir",
 ]
 
@@ -1302,6 +1307,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "tracing",
 ]
 
 [[package]]
@@ -1359,6 +1365,7 @@ name = "hone-mcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "hone-config",
  "hone-proto",
  "hone-sandbox",
  "hone-tools",
