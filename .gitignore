@@ -3,3 +3,5 @@ assets.zip
 priv/
 .hone/plan.md
 .hone/plan/
+.venv-docs/
+site/
