@@ -1,0 +1,19 @@
+{
+  "run": "v2-optimized",
+  "date": "2026-04-11",
+  "model": "deepseek/deepseek-chat (DeepSeek V3)",
+  "provider": "OpenRouter",
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "total_tasks": 300,
+  "patches_generated": 229,
+  "empty_patches": 71,
+  "evaluated": 229,
+  "completed_evaluation": 173,
+  "docker_errors": 56,
+  "resolved": 39,
+  "unresolved": 134,
+  "resolve_rate_of_evaluated": 0.225,
+  "resolve_rate_overall": 0.130,
+  "optimizations": ["structured_4phase_prompt", "two_stage_localization", "tool_guards"],
+  "conclusion": "V2 underperformed V1. Pre-localization biases agent toward wrong files and wastes context. Reverted to V1 simple prompt as default."
+}

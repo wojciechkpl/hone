@@ -220,32 +220,41 @@ def build_file_context(repo_dir: Path, localized_paths: list[str]) -> str:
 
 
 def run_hone(repo_dir: Path, problem_statement: str, hone_binary: str, model: str,
-             timeout_secs: int = 300) -> tuple[str, float, bool]:
-    """Run Hone on a task and return (patch, elapsed_secs, success)."""
+             timeout_secs: int = 300, use_localization: bool = False) -> tuple[str, float, bool]:
+    """Run Hone on a task and return (patch, elapsed_secs, success).
+
+    Args:
+        use_localization: If True, run two-stage localization before the agent.
+            Disabled by default — V1 baseline (simple prompt) outperformed the
+            structured prompt + pre-localization approach on SWE-bench Lite
+            (28.3% vs 22.5% resolve rate). The pre-loaded context can bias
+            the agent toward wrong files and waste token budget.
+    """
     env = os.environ.copy()
     env["HONE_OPENAI_MODEL"] = env.get("HONE_OPENAI_MODEL", model)
 
-    # ------------------------------------------------------------------
-    # Change 2: Two-stage localization
-    # Run a cheap localization call first to identify the top 5 candidate
-    # files, then pre-read their content into the main agent prompt.
-    # ------------------------------------------------------------------
-    localized_paths = localize_files(
-        repo_dir, problem_statement, hone_binary, model, env,
-        timeout_secs=min(60, timeout_secs // 5),
-    )
-    file_context = build_file_context(repo_dir, localized_paths)
-
-    # ------------------------------------------------------------------
-    # Change 1: Structured 4-phase SWE-bench prompt
-    # ------------------------------------------------------------------
-    # Use str.replace instead of .format() to avoid KeyError if the
-    # problem_statement contains Python format tokens like {file_tree}.
-    prompt = STRUCTURED_PROMPT_TEMPLATE.replace(
-        "{problem_statement}", problem_statement
-    ).replace(
-        "{file_context}", file_context
-    )
+    if use_localization:
+        # Two-stage localization: cheap call to narrow to top-5 files,
+        # then pre-read into a structured prompt. Use --localize flag.
+        localized_paths = localize_files(
+            repo_dir, problem_statement, hone_binary, model, env,
+            timeout_secs=min(60, timeout_secs // 5),
+        )
+        file_context = build_file_context(repo_dir, localized_paths)
+        prompt = STRUCTURED_PROMPT_TEMPLATE.replace(
+            "{problem_statement}", problem_statement
+        ).replace(
+            "{file_context}", file_context
+        )
+    else:
+        # V1 baseline: simple prompt, let the agent explore freely.
+        # This outperformed the structured approach on SWE-bench Lite.
+        prompt = (
+            f"You are fixing a bug in this repository. Here is the issue:\n\n"
+            f"{problem_statement}\n\n"
+            f"Find and fix the bug. Edit only the files necessary to resolve the issue. "
+            f"Do not add tests. Do not modify test files."
+        )
 
     start = time.time()
     try:
@@ -289,6 +298,8 @@ def main():
                         help="Per-task timeout in seconds")
     parser.add_argument("--resume", action="store_true",
                         help="Skip tasks that already have predictions")
+    parser.add_argument("--localize", action="store_true",
+                        help="Enable two-stage localization (disabled by default — V1 baseline is better)")
     args = parser.parse_args()
 
     # Resolve paths
@@ -369,7 +380,8 @@ def main():
         try:
             repo_dir = clone_repo(repo, base_commit, work_dir)
             patch, elapsed, success = run_hone(
-                repo_dir, problem, hone_binary, args.model, args.timeout
+                repo_dir, problem, hone_binary, args.model, args.timeout,
+                use_localization=args.localize,
             )
 
             prediction = {
