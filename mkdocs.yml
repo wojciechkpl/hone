@@ -27,6 +27,14 @@ theme:
     - search.suggest
     - content.tabs.link
 
+extra_javascript:
+  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
+
+extra:
+  # Force Mermaid to use dark theme
+  mermaid:
+    theme: dark
+
 markdown_extensions:
   - pymdownx.superfences:
       custom_fences:
