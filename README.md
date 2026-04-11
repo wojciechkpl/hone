@@ -82,7 +82,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Universal model support** — Anthropic, OpenAI, Azure, Ollama, local providers, CLI pass-through (ACP) with tool delegation. 75+ adapters.
 - **Kernel-enforced sandboxing** — Seatbelt on macOS, Landlock on Linux 5.13+, seccomp elsewhere. Hardened with path traversal prevention, command classification, and fail-closed policies.
 - **Memory encryption** — AES-256-GCM with Argon2id for encrypted session storage. Opt-in via `--features encrypted-memory`. Keys stored in system keychain.
-- **Layered tool architecture** — Native Rust layer (Layer 2) for zero-cost file/shell/git/LSP. MCP client for external integrations (Layer 1). Skills in markdown (Layer 3). Tool decorators for cost tracking and governance (Layer 4).
+- **Layered tool architecture** — Native Rust layer (Layer 2) for zero-cost file/shell/git/LSP. MCP client for 70+ community extensions (Layer 1) with `.hone/mcp.json` config. Skills in markdown (Layer 3). Tool decorators for cost tracking and governance (Layer 4).
 - **Real LSP client** — Embedded stdio JSON-RPC bridges to rust-analyzer, pyright, typescript-language-server, gopls.
 - **Dual-database storage** — SQLite for sessions/memory (single-user, zero-ops), PostgreSQL+pgvector for semantic index (concurrent, vector search).
 - **Adaptive memory** — Pattern learning across sessions. Hone remembers what worked, what failed, and why. Memory is local-first, private by default.
@@ -93,6 +93,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Real bore tunnel** — Automatic SSH tunnel when bore CLI installed.
 - **Client-server architecture** — hone CLI for local use, honed daemon for remote access. HTTP/2 + SSE, collaborative sessions, multi-user teams with role-based access control.
 - **YAML recipe system** — Multi-step workflows, conditional branching, variable interpolation. Recipes compose tools and agents into reproducible tasks.
+- **Redesigned status bar** — Three-zone layout (left: model/session/phase, center: tool icon, right: context bar with cost), width-adaptive (80/120/160+ cols), NO_COLOR support.
 - **Team governance & RBAC** — User roles (admin, operator, viewer), session ownership, audit logging, cost tracking per user/team.
 - **Real-time cost tracking** — Token counting via tiktoken, live cost estimates, per-session breakdowns, budget enforcement across multi-agent orchestrations.
 - **Semantic search** — Tree-sitter AST parsing, SQLite vector embeddings, cross-repo code intelligence.
@@ -174,20 +175,21 @@ For detailed information on how agents work and how to create custom ones, see [
 | CLI startup (warm) | <10ms | Binary size 12MB, cached in page cache |
 | Memory footprint (idle) | ~8MB | 6x under PRD target |
 
-### SWE-bench v1 Results
+### SWE-bench Results
 
-Full SWE-bench Lite (300 real GitHub issues) evaluated on DeepSeek V3 via OpenRouter:
+**V1 vs V2 Comparison:**
 
-| Metric | Result |
-|--------|--------|
-| Issues resolved | **58/300 (19.3%)** |
-| Evaluated | **28.3% of dataset** |
-| Cost per task | ~$0.001-0.002 (50x cheaper than SWE-Agent on GPT-4) |
-| Model | DeepSeek V3 via OpenRouter |
+| Approach | Resolved | Pass Rate | Key Insight |
+|----------|----------|-----------|-------------|
+| **V1 (simple prompt)** | **58/300** | **19.3%** | Best — pre-loaded context biases agent |
+| V2 (structured + localization) | 39/300 | 13.0% | Worse — over-constraining hurts performance |
+
+**Key Lesson:** Simple prompt + tool guards wins. Pre-loading context for localization biases the agent's search strategy. V1 simple prompt is now the default; V2 available via `--localize` flag.
 
 **Competitive Comparison:**
-- Hone (DeepSeek V3): 58/300 (19.3%) — Beats SWE-Agent (GPT-4) at 50x lower cost
+- Hone v1 (DeepSeek V3): 58/300 (19.3%) at ~$0.001-0.002/task
 - SWE-Agent (GPT-4): 18% pass rate at ~$0.10-0.20 per task
+- Hone beats SWE-Agent at **50-100x lower cost**
 
 See [docs/benchmarks.md](docs/benchmarks.md) for detailed breakdown and reproduction instructions.
 
