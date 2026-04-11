@@ -1,6 +1,6 @@
 # Hone Use Cases: Practical Tutorials
 
-This guide covers 13 real-world use cases for Hone, from simple bug fixes to complex multi-agent orchestrations. Each use case includes a concrete scenario, a terminal demo showing actual commands and output, and step-by-step explanation.
+This guide covers 16 real-world use cases for Hone, from simple bug fixes to complex multi-agent orchestrations. Each use case includes a concrete scenario, a terminal demo showing actual commands and output, and step-by-step explanation.
 
 ---
 
@@ -12,22 +12,27 @@ This guide covers 13 real-world use cases for Hone, from simple bug fixes to com
    - Code Review
    - Explain Code
 
-2. [Intermediate Use Cases](#intermediate-use-cases)
+2. [Interactive Workflow Use Cases](#interactive-workflow-use-cases)
+   - Quick Shell Access
+   - TDD with Auto-Test
+   - Edit with Vim
+
+3. [Intermediate Use Cases](#intermediate-use-cases)
    - TDD Workflow
    - Refactor with Tests
    - Multi-file Rename
    - Database Migration
 
-3. [Advanced Use Cases](#advanced-use-cases)
+4. [Advanced Use Cases](#advanced-use-cases)
    - Multi-Agent Orchestration
    - Agent Ensemble
    - MCP Extensions (GitHub)
    - Security Audit
    - Debug a Test Failure
 
-4. [Choosing the Right Mode](#choosing-the-right-mode)
-5. [Cost Optimization Tips](#cost-optimization-tips)
-6. [Session Workflow](#session-workflow)
+5. [Choosing the Right Mode](#choosing-the-right-mode)
+6. [Cost Optimization Tips](#cost-optimization-tips)
+7. [Session Workflow](#session-workflow)
 
 ---
 
@@ -261,9 +266,238 @@ $ hone "Explain what src/middleware/rate_limiter.rs does in detail"
 
 ---
 
+# Interactive Workflow Use Cases
+
+These use cases leverage Hone's interactive mode features: shell commands, vim keybindings, and TDD mode.
+
+## 5. Quick Shell Access
+
+**When to use:** You need to run shell commands without leaving the Hone session. Check build status, run tests, verify changes, explore the filesystem.
+
+**Scenario:** During a coding session, you want to run `cargo test` to verify your changes, then run `git status` to see what changed, all without exiting Hone.
+
+**Terminal Demo:**
+
+```
+> Write me a function to parse CSV files
+
+[Agent writes code...]
+
+> !cargo test
+  running 12 tests
+  test test_parse_csv ... ok
+  test test_parse_csv_with_headers ... ok
+  test test_empty_file ... ok
+  12 passed, 0 failed
+
+> !git status
+  On branch feature/csv-parser
+  Changes not staged for commit:
+    modified:   src/lib.rs
+    new file:   tests/test_csv.rs
+    
+  Untracked files:
+    target/
+
+> !git diff src/lib.rs | head -20
+  +fn parse_csv(content: &str) -> Vec<Vec<String>> {
+  +    content.lines()
+  +        .filter(|line| !line.is_empty())
+  +        .map(|line| line.split(',').map(|s| s.trim().to_string()).collect())
+  +        .collect()
+  +}
+```
+
+**Features:**
+
+- Run any shell command with `!command`
+- Output displayed inline in the session
+- Directory changes with `!cd` persist in the session (confined to project root)
+- Launch an editor with `!nvim file.rs` (TUI suspends, restores on exit)
+- All standard shell operators work: pipes, redirects, etc.
+
+**Tips and Variations:**
+
+- **Quick test during development**: `!cargo test` to verify mid-session
+- **Git verification**: `!git log --oneline -5` to check recent commits
+- **File exploration**: `!find . -name "*.rs" -type f | head -10`
+- **Environment check**: `!echo $RUST_BACKTRACE` to verify env vars
+- **Package management**: `!cargo add chrono` to add dependencies
+
+**Cost:** No API cost (local shell execution only)
+
+---
+
+## 6. TDD with Auto-Test
+
+**When to use:** Implementing a feature using Test-Driven Development. You want tests to run automatically whenever you make changes, providing instant feedback on pass/fail.
+
+**Scenario:** You're implementing a binary search function. Instead of manually running tests after each edit, you activate TDD mode to auto-run tests on every change.
+
+**Terminal Demo:**
+
+```
+> I'll implement a binary search function with TDD
+
+> :tdd cargo test
+  [TDD] watching for changes, running: cargo test
+
+... (pause while waiting for edits) ...
+
+> Implement binary search that returns the index or -1 if not found
+
+[Agent edits src/lib.rs...]
+
+[TDD] change detected: src/lib.rs — running tests...
+[TDD] tests PASSED
+  12 passed in 0.4s
+
+> Add support for custom comparators
+
+[Agent edits src/lib.rs...]
+
+[TDD] change detected: src/lib.rs — running tests...
+[TDD] tests FAILED
+  test test_custom_comparator ... FAILED
+  error: expected `fn(T, T) -> Ordering`, found closure
+
+> Fix the comparator signature
+
+[Agent edits src/lib.rs...]
+
+[TDD] change detected: src/lib.rs — running tests...
+[TDD] tests PASSED
+  12 passed in 0.5s
+
+> Now let's refactor for clarity
+
+[Agent refactors...]
+
+[TDD] change detected: src/lib.rs — running tests...
+[TDD] tests PASSED
+  12 passed in 0.4s
+
+> :tdd off
+  [TDD] watching stopped
+```
+
+**Features:**
+
+- Automatic file watching (300ms debounce to avoid rapid reruns)
+- Runs test command on every change
+- Displays PASS/FAIL with test output inline
+- Works with any test framework: `cargo test`, `pytest`, `npm test`, `make test`
+- Stop anytime with `:tdd off`
+
+**Red-Green-Refactor Workflow:**
+
+1. **Red**: Write test that fails (or see implementation fail tests)
+2. **Green**: TDD mode shows FAILED, implement to make it pass
+3. **Green**: TDD mode shows PASSED, refactor safely with instant feedback
+4. **Refactor**: Modify code, TDD shows PASSED after each change
+
+**Tips and Variations:**
+
+- **Specific test file**: `:tdd pytest tests/test_binary_search.py`
+- **Fast feedback**: `:tdd cargo test --lib search` (test single module)
+- **With coverage**: `:tdd cargo tarpaulin --out Html` (auto-generate coverage reports)
+- **Watch source only**: Configure to watch only `src/` directory
+- **Pause TDD temporarily**: Run `!cargo test` manually, then resume with `:tdd cargo test`
+
+**Cost:** No API cost (local test execution only)
+
+---
+
+## 7. Edit with Vim
+
+**When to use:** You're comfortable with vim keybindings and want vim-style navigation and editing in Hone's interactive mode.
+
+**Scenario:** You're a vim user starting an interactive session. You want j/k navigation, visual selection, and vim commands available within Hone.
+
+**Terminal Demo:**
+
+```
+$ hone --vim
+
+Hone [vim mode active]
+Type prompts and press Esc, then type :q to submit. Type :help for commands.
+
+> 
+
+(vim normal mode, waiting for input)
+
+: (press i)
+
+Type a feature: Add pagination to the user list
+
+(vim insert mode, typing normally)
+
+> Add pagination to the user list
+
+(press Esc to return to normal mode)
+
+:
+
+(in normal mode)
+
+gg (jump to start of line)
+gg (jump to start of input)
+
+(in normal mode)
+
+$ (jump to end of line)
+A (append at end)
+ with tests
+
+(still in insert mode)
+
+(press Esc)
+
+:q (submit the prompt)
+
+[Agent processes: "Add pagination to the user list with tests"]
+
+(returns to vim normal mode for next input)
+```
+
+**Vim Mode Features:**
+
+**Normal Mode:**
+- `j`/`k` — Move down/up
+- `h`/`l` — Move left/right
+- `w`/`b` — Jump to next/previous word
+- `gg` — Jump to top of input
+- `G` — Jump to bottom of input
+- `0`/`$` — Jump to start/end of line
+- `i`/`a` — Enter insert mode (before/after cursor)
+- `I`/`A` — Insert at line start/end
+- `o`/`O` — Insert line below/above
+- `dd` — Delete line
+- `dw` — Delete word
+- `yy` — Copy line
+- `p` — Paste
+- `u` — Undo
+- `Ctrl+r` — Redo
+- `:q` — Submit prompt
+- `:set novim` — Disable vim mode
+
+**Insert Mode:**
+- Type normally
+- `Esc` — Return to normal mode
+
+**Tips and Variations:**
+
+- **Toggle vim mode**: `:set novim` (while in vim mode) or `:set vim` (from normal mode)
+- **Combine with other features**: Use vim keybindings + `!shell` commands together
+- **Resume with vim**: `hone session resume my-session` (preserves vim mode preference)
+
+**Cost:** No API cost (local vim keybinding processing only)
+
+---
+
 # Intermediate Use Cases
 
-## 5. TDD Workflow
+## 8. TDD Workflow (Recipe Mode)
 
 **When to use:** You want to implement a feature using Test-Driven Development: write test first (Red), then implementation (Green), then refactor (Refactor).
 
@@ -371,7 +605,7 @@ deepseek-chat │ $0.005 │ ▓▓▓░░░░░░░ 24% ctx │ 18s
 
 ---
 
-## 6. Refactor with Tests
+## 9. Refactor with Tests
 
 **When to use:** You want to safely refactor code while ensuring tests still pass. The agent makes incremental changes and verifies at each step.
 
@@ -446,7 +680,7 @@ $ hone "Refactor the User class to use dataclasses. Run tests after each change.
 
 ---
 
-## 7. Multi-file Rename
+## 10. Multi-file Rename
 
 **When to use:** You need to rename something (variable, function, class) across multiple files. Using real LSP ensures correctness (not just string matching).
 
@@ -521,7 +755,7 @@ $ hone "Rename the function calculate_total to compute_total everywhere"
 
 ---
 
-## 8. Database Migration
+## 11. Database Migration
 
 **When to use:** You need to create a database schema change (add/drop/modify columns) with a migration file.
 
@@ -595,7 +829,7 @@ $ hone "Add a 'last_login' timestamp column to the users table"
 
 # Advanced Use Cases
 
-## 9. Multi-Agent Orchestration
+## 12. Multi-Agent Orchestration
 
 **When to use:** You have a complex task that benefits from decomposition. The orchestrator breaks it into subtasks, workers execute them in parallel, and results are merged.
 
@@ -744,7 +978,7 @@ $ hone --orchestrate "Implement user authentication with JWT tokens"
 
 ---
 
-## 10. Agent Ensemble
+## 13. Agent Ensemble
 
 **When to use:** You want multiple AI candidates to solve the same problem, ranked for quality. Useful for complex algorithmic tasks.
 
@@ -897,7 +1131,7 @@ $ hone --ensemble 3 "Write a Rust function to find the longest palindromic subst
 
 ---
 
-## 11. MCP Extensions: Create a GitHub PR
+## 14. MCP Extensions: Create a GitHub PR
 
 **When to use:** You want to use MCP servers to extend Hone's capabilities. GitHub MCP allows creating issues, PRs, and reading repos without cloning.
 
@@ -970,7 +1204,7 @@ hone
 
 ---
 
-## 12. Security Audit
+## 15. Security Audit
 
 **When to use:** You want a comprehensive security review using the specialized `security-auditor` agent.
 
@@ -1066,7 +1300,7 @@ $ hone --agent security-auditor "Audit this project for OWASP Top 10 vulnerabili
 
 ---
 
-## 13. Debug a Test Failure
+## 16. Debug a Test Failure
 
 **When to use:** A test fails and you need systematic debugging. The `debugger` agent uses the scientific method: hypothesis, test, observe, refine.
 

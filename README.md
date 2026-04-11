@@ -34,7 +34,10 @@ $ hone "divide(10, 0) raises ZeroDivisionError. Fix it to return None."
     + if b == 0:
     +     return None
     + return a / b
-  ❯ shell python -c "from calculator import divide; assert divide(10,0) is None"
+  ❯ !cargo test
+  running 12 tests
+  test test_divide_by_zero ... ok
+  12 passed in 0.3s
 
   Fixed. divide() now returns None on zero division.
 
@@ -71,6 +74,10 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 
 ## Features
 
+- **Shell escape** — Run native shell commands with `!command`: `!ls`, `!git status`, `!cargo test` show inline output. `!cd src` changes directory (confined to project). `!nvim file.rs` suspends TUI, runs editor, restores after.
+- **Vim mode** — Type `--vim` or `:set vim` for vim-style keybindings. Normal mode: j/k scroll, gg/G top/bottom, i/a insert, :q quit. Insert mode: type normally, Esc returns to normal.
+- **TDD mode** — Type `:tdd [command]` to watch source files and auto-run tests on change (300ms debounce). Shows PASS/FAIL inline. Type `:tdd off` to stop.
+- **Review mode** — Type `:review` to show git diff of session changes.
 - **Multi-agent orchestration** — Decompose complex tasks via research-backed patterns (Anthropic, MASAI, CodeR). Orchestrator-worker pipeline with message merging.
 - **Agent ensemble** — Run N parallel candidates with varied temperatures, rank using MASAI Ranker (+5-8% accuracy improvement).
 - **Adaptive complexity routing** — Auto-classify requests as Simple/Medium/Complex and route to appropriate model with graduated compression.
@@ -499,6 +506,7 @@ Up to five candidates are supported (`--ensemble 5`).
 | `hone --list-recipes` | List all available recipes |
 | `hone --session NAME` | Start named session (auto-saved after each turn) |
 | `hone --ephemeral` | No session/memory persistence for this run |
+| `hone --vim` | Start in vim mode (vim-style keybindings) |
 | `hone session list` | List all saved sessions |
 | `hone session resume NAME` | Resume a previous session |
 | `hone session rename OLD NEW` | Rename a session |
@@ -508,6 +516,19 @@ Up to five candidates are supported (`--ensemble 5`).
 | `hone --remote <host:port>` | Connect to remote daemon |
 | `honed` | Start the HTTP/2 server daemon |
 | `honed --port 8080` | Listen on custom port |
+
+In interactive mode, use these commands:
+
+| Command | Purpose |
+|---------|---------|
+| `!command` | Run shell command (e.g., `!cargo test`, `!git status`) |
+| `!cd path` | Change directory (confined to project) |
+| `!nvim file` | Suspend TUI, open editor, restore on exit |
+| `:set vim` | Enable vim-style keybindings |
+| `:set novim` | Disable vim-style keybindings |
+| `:tdd [command]` | Watch files, auto-run tests on change |
+| `:tdd off` | Stop TDD mode |
+| `:review` | Show git diff of session changes |
 
 See `hone --help` for full options.
 

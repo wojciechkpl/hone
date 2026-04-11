@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- **Shell escape (`!command`)** — Execute native shell commands directly from Hone prompt. `!ls`, `!git status`, `!cargo test` show inline output. `!cd src` changes directory persistently (confined to project root). `!nvim file.rs` suspends TUI, runs editor, restores on exit.
+- **Vim mode (`--vim` or `:set vim`)** — Full vim-style keybindings in interactive mode. Normal mode: j/k for scroll, gg/G for top/bottom, i/a for insert, :q to quit. Insert mode: type normally, Esc returns to normal. Toggle with `:set vim` and `:set novim`.
+- **TDD mode (`:tdd [command]`)** — File watcher + auto-test workflow. Watches source files with 300ms debounce, auto-runs test command on change, displays PASS/FAIL inline. Stop with `:tdd off`.
+- **Review mode (`:review`)** — Show git diff of all changes made during the session for verification before commit.
 - **MCP extensions integration** — Hone can now use 70+ community MCP extensions via `.hone/mcp.json` config (compatible with Claude Code format). McpManager spawns/manages servers with `env_clear` for security isolation. Zero changes to agent loop — McpTool already implements Tool trait.
 - **Status bar redesign** — Three-zone layout: Left (model/session/phase), Center (tool + icon), Right (context bar with cost). Width-adaptive (80/120/160+ cols), context window bar with color thresholds, tool type icons, NO_COLOR support.
 - **GitHub Pages site** — Documentation now auto-deploys on push via MkDocs + Material theme.

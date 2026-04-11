@@ -12,6 +12,15 @@ This comprehensive guide walks you through installing Hone, configuring your fir
 6. [Your First Task](#6-your-first-task)
 7. [Session Management](#7-session-management)
 8. [Modes of Operation](#8-modes-of-operation)
+   - Shell Commands
+   - Vim Keybindings
+   - TDD Workflow
+   - One-Shot Mode
+   - Interactive Mode
+   - Orchestrate Mode
+   - Ensemble Mode
+   - Recipe Mode
+   - Agent Persona Mode
 9. [MCP Extensions](#9-mcp-extensions)
 10. [Remote Access (honed)](#10-remote-access-honed)
 11. [Next Steps](#11-next-steps)
@@ -863,6 +872,155 @@ hone session rename feature/user-auth feature/user-auth-complete
 ## 8. Modes of Operation
 
 Hone supports multiple modes. Choose the right one for your task.
+
+### Shell Commands
+
+Run native shell commands directly from Hone without exiting the TUI.
+
+```bash
+!ls                 # List files, output shown inline
+!git status         # Check git status
+!cargo test         # Run tests
+!cd src             # Change directory (confined to project)
+!nvim file.rs       # Open editor, suspend TUI, restore on exit
+```
+
+**Full Example:**
+
+```
+> !cargo test
+  running 12 tests
+  test test_add ... ok
+  test test_subtract ... ok
+  12 passed, 0 failed
+
+  claude-sonnet │ $0.00 │ ▓▓▓░░░░░░░ 28% ctx │ !shell
+```
+
+**Features:**
+
+- All standard shell commands supported
+- Output captured and displayed inline
+- Directory changes persist for the session
+- `!cd` confined to project root (security)
+- `!nvim`, `!vim`, `!vi`, or any `$EDITOR` suspend TUI and restore after exit
+
+---
+
+### Vim Keybindings
+
+Enable vim-style keybindings for navigating and editing within Hone.
+
+**Start vim mode:**
+
+```bash
+hone --vim
+```
+
+Or toggle in interactive mode:
+
+```
+:set vim      # Enable vim mode
+:set novim    # Disable vim mode
+```
+
+**Normal Mode:**
+
+```
+j         Move down
+k         Move up
+h         Move left
+l         Move right
+gg        Jump to top
+G         Jump to bottom
+w         Jump to next word
+b         Jump to previous word
+i         Enter insert mode (before cursor)
+a         Enter insert mode (after cursor)
+o         Insert new line below
+O         Insert new line above
+d         Delete (dd = delete line)
+y         Yank/copy (yy = copy line)
+p         Paste
+u         Undo
+Ctrl-r    Redo
+:q        Quit to previous view
+:wq       Save and quit
+```
+
+**Insert Mode:**
+
+```
+Type normally to edit text
+Esc       Return to normal mode
+```
+
+**Full Example:**
+
+```
+> :set vim
+Vim mode enabled.
+
+> gg              # Jump to top of input
+> i               # Enter insert mode
+> (type new prompt)
+> Esc             # Return to normal mode
+> :q              # Submit
+```
+
+---
+
+### TDD Workflow
+
+Watch source files and automatically run tests on change. Perfect for test-driven development.
+
+**Start TDD mode:**
+
+```
+:tdd cargo test
+```
+
+Hone will now:
+1. Watch all source files (300ms debounce)
+2. Run `cargo test` when files change
+3. Display PASS/FAIL inline
+4. Repeat until you stop
+
+**Stop TDD mode:**
+
+```
+:tdd off
+```
+
+**Full Example:**
+
+```
+> :tdd cargo test
+  [TDD] watching for changes, running: cargo test
+
+  ... (waiting for edits) ...
+
+  [TDD] change detected: src/lib.rs — running tests...
+  [TDD] tests PASSED
+    12 passed in 0.4s
+
+  [TDD] change detected: src/main.rs — running tests...
+  [TDD] tests FAILED
+    test test_parse ... FAILED (expected Ok, got Err)
+
+  [TDD] change detected: src/main.rs — running tests...
+  [TDD] tests PASSED
+    12 passed in 0.5s
+```
+
+**Use Cases:**
+
+- Red-Green-Refactor workflow
+- Continuous verification while implementing
+- Early detection of regressions
+- Works with any test command: `cargo test`, `pytest`, `npm test`, etc.
+
+---
 
 ### One-Shot Mode (Fast)
 
