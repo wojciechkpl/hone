@@ -1,0 +1,3331 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/architecture/">
+      
+      
+        <link rel="prev" href="../tutorials/providers/">
+      
+      
+        <link rel="next" href="../tutorials/tools-and-mcp/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Architecture - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#hone-architecture-document" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-guiding-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Guiding Principles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-workspace-crate-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Workspace &amp; Crate Structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Workspace &amp; Crate Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#crate-responsibilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Crate responsibilities
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-layer-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Layer Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-core-trait-definitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Core Trait Definitions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Core Trait Definitions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-modelprovider-hone-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 ModelProvider — hone-providers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-tool-hone-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Tool — hone-tools
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-sandbox-hone-sandbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Sandbox — hone-sandbox
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-memorystore-hone-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 MemoryStore — hone-memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-semanticindex-hone-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 SemanticIndex — hone-index
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46-mcpclient-hone-mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 McpClient — hone-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#47-agent-hone-core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.7 Agent — hone-core
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-data-flow-diagrams" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Data Flow Diagrams
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Data Flow Diagrams">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-single-agent-turn" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Single Agent Turn
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-provider-hot-swap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Provider Hot-Swap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-kernel-sandbox-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Kernel Sandbox Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-daemon-client-server-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Daemon Client-Server Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-crate-dependency-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Crate Dependency Graph
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-error-handling-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Error Handling Strategy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Error Handling Strategy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-crate-errors-with-thiserror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-crate errors with thiserror
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#application-binaries-use-anyhow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Application binaries use anyhow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#panic-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Panic policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-propagation-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error propagation map
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-async-runtime-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Async Runtime &amp; Patterns
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Async Runtime &amp; Patterns">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#runtime-tokio-multi-thread-scheduler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime: tokio (multi-thread scheduler)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#concurrency-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concurrency patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backpressure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backpressure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#streaming-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-storage-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Storage Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Storage Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-sqlite-sessions-adaptive-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 SQLite — Sessions &amp; Adaptive Memory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9.1 SQLite — Sessions &amp; Adaptive Memory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#memory-encryption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory encryption
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-postgresql-pgvector-semantic-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 PostgreSQL + pgvector — Semantic Index
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9.2 PostgreSQL + pgvector — Semantic Index">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#connection-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fallback-for-offlinelocal-only-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fallback for offline/local-only use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-context-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Context Optimization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. Context Optimization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#token-budget-calculation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token Budget Calculation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bm25-reordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BM25 Reordering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#graduated-compression" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graduated Compression
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-memory-encryption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Memory Encryption
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. Memory Encryption">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#encryption-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Encryption Details
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#threat-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threat Model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ephemeral-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ephemeral Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-security-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Security Model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. Security Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sandbox-platform-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox platform matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#threat-model-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threat model summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security-hardening-phase-2-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Hardening (Phase 2 Complete)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-key-design-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Key Design Decisions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="13. Key Design Decisions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#d1-workspace-over-monolith" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D1: Workspace over monolith
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d2-async-trait-for-object-safe-async-traits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D2: async-trait for object-safe async traits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d3-boxstream-for-provider-responses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D3: BoxStream for provider responses
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d4-postgresql-pgvector-for-semantic-index-sqlite-for-everything-else" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D4: PostgreSQL + pgvector for semantic index, SQLite for everything else
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d5-recipes-as-yaml-not-rust-macros" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D5: Recipes as YAML, not Rust macros
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d6-lsp-bridge-in-layer-2-not-layer-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D6: LSP bridge in Layer 2, not Layer 1
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-guiding-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Guiding Principles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-workspace-crate-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Workspace &amp; Crate Structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Workspace &amp; Crate Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#crate-responsibilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Crate responsibilities
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-layer-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Layer Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-core-trait-definitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Core Trait Definitions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Core Trait Definitions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-modelprovider-hone-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 ModelProvider — hone-providers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-tool-hone-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Tool — hone-tools
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-sandbox-hone-sandbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Sandbox — hone-sandbox
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-memorystore-hone-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 MemoryStore — hone-memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-semanticindex-hone-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 SemanticIndex — hone-index
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46-mcpclient-hone-mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 McpClient — hone-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#47-agent-hone-core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.7 Agent — hone-core
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-data-flow-diagrams" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Data Flow Diagrams
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Data Flow Diagrams">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-single-agent-turn" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Single Agent Turn
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-provider-hot-swap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Provider Hot-Swap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-kernel-sandbox-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Kernel Sandbox Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-daemon-client-server-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Daemon Client-Server Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-crate-dependency-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Crate Dependency Graph
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-error-handling-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Error Handling Strategy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Error Handling Strategy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-crate-errors-with-thiserror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-crate errors with thiserror
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#application-binaries-use-anyhow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Application binaries use anyhow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#panic-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Panic policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-propagation-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error propagation map
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-async-runtime-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Async Runtime &amp; Patterns
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Async Runtime &amp; Patterns">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#runtime-tokio-multi-thread-scheduler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime: tokio (multi-thread scheduler)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#concurrency-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concurrency patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backpressure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backpressure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#streaming-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-storage-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Storage Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Storage Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-sqlite-sessions-adaptive-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 SQLite — Sessions &amp; Adaptive Memory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9.1 SQLite — Sessions &amp; Adaptive Memory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#memory-encryption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory encryption
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-postgresql-pgvector-semantic-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 PostgreSQL + pgvector — Semantic Index
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9.2 PostgreSQL + pgvector — Semantic Index">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#connection-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fallback-for-offlinelocal-only-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fallback for offline/local-only use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-context-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Context Optimization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. Context Optimization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#token-budget-calculation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token Budget Calculation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bm25-reordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BM25 Reordering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#graduated-compression" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Graduated Compression
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-memory-encryption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Memory Encryption
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. Memory Encryption">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#encryption-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Encryption Details
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#threat-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threat Model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ephemeral-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ephemeral Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-security-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Security Model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. Security Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sandbox-platform-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox platform matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#threat-model-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threat model summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security-hardening-phase-2-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Hardening (Phase 2 Complete)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-key-design-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Key Design Decisions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="13. Key Design Decisions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#d1-workspace-over-monolith" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D1: Workspace over monolith
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d2-async-trait-for-object-safe-async-traits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D2: async-trait for object-safe async traits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d3-boxstream-for-provider-responses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D3: BoxStream for provider responses
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d4-postgresql-pgvector-for-semantic-index-sqlite-for-everything-else" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D4: PostgreSQL + pgvector for semantic index, SQLite for everything else
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d5-recipes-as-yaml-not-rust-macros" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D5: Recipes as YAML, not Rust macros
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d6-lsp-bridge-in-layer-2-not-layer-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D6: LSP bridge in Layer 2, not Layer 1
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="hone-architecture-document">Hone — Architecture Document<a class="headerlink" href="#hone-architecture-document" title="Permanent link">&para;</a></h1>
+<p><strong>Version:</strong> 1.0<br />
+<strong>Date:</strong> 2026-04-04<br />
+<strong>Status:</strong> Working Draft</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#1-guiding-principles">Guiding Principles</a></li>
+<li><a href="#2-workspace--crate-structure">Workspace &amp; Crate Structure</a></li>
+<li><a href="#3-layer-architecture">Layer Architecture</a></li>
+<li><a href="#4-core-trait-definitions">Core Trait Definitions</a></li>
+<li><a href="#5-data-flow-diagrams">Data Flow Diagrams</a></li>
+<li><a href="#6-crate-dependency-graph">Crate Dependency Graph</a></li>
+<li><a href="#7-error-handling-strategy">Error Handling Strategy</a></li>
+<li><a href="#8-async-runtime--patterns">Async Runtime &amp; Patterns</a></li>
+<li><a href="#9-storage-architecture">Storage Architecture</a></li>
+<li><a href="#10-context-optimization">Context Optimization</a></li>
+<li><a href="#11-memory-encryption">Memory Encryption</a></li>
+<li><a href="#12-security-model">Security Model</a></li>
+<li><a href="#13-key-design-decisions">Key Design Decisions</a></li>
+</ol>
+<hr />
+<h2 id="1-guiding-principles">1. Guiding Principles<a class="headerlink" href="#1-guiding-principles" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Zero-cost at the hot path.</strong> Layer 2 native tools are direct Rust function calls — no IPC, no serialization.</li>
+<li><strong>Fail-closed security.</strong> Sandbox setup failure aborts the operation, never silently degrades.</li>
+<li><strong>Trait-boundary isolation.</strong> Every external integration (model provider, LSP, MCP server) is behind a <code>dyn Trait</code> so it can be mocked in tests.</li>
+<li><strong>Single writer, many readers.</strong> SQLite (sessions, memory) uses WAL mode; only the daemon writes, clients read via the HTTP API. PostgreSQL + pgvector (semantic index) handles concurrent reads/writes from multiple indexer workers.</li>
+<li><strong>Privacy by default.</strong> Network access requires explicit user opt-in; telemetry is opt-in and off by default.</li>
+</ul>
+<hr />
+<h2 id="2-workspace-crate-structure">2. Workspace &amp; Crate Structure<a class="headerlink" href="#2-workspace-crate-structure" title="Permanent link">&para;</a></h2>
+<p>The repository uses a Cargo workspace. The root <code>Cargo.toml</code> declares the workspace; each subdirectory under <code>crates/</code> is an independent crate with a minimal, well-defined API surface.</p>
+<div class="highlight"><pre><span></span><code>hone/
+├── Cargo.toml                  # workspace root
+├── Cargo.lock
+├── HONE.md                     # project constitution (Layer 3 skills)
+├── deny.toml                   # cargo-deny: license + advisory policy
+├── clippy.toml
+├── rustfmt.toml
+├── .github/
+│   └── workflows/
+├── crates/
+│   ├── hone-core/              # agent loop, session state, orchestration
+│   ├── hone-providers/         # model provider abstraction + all adapters
+│   ├── hone-tools/             # Layer 2 native tools (file, shell, git, LSP bridge)
+│   ├── hone-mcp/               # Layer 1 MCP client (JSON-RPC, lazy schema loading)
+│   ├── hone-sandbox/           # kernel sandboxing (Seatbelt / Landlock / seccomp)
+│   ├── hone-index/             # semantic indexer (tree-sitter AST + SQLite vectors)
+│   ├── hone-memory/            # adaptive memory (encrypted SQLite, pattern learning)
+│   ├── hone-server/            # honed daemon (HTTP/2 + SSE API)
+│   ├── hone-tui/               # Ratatui terminal UI
+│   ├── hone-recipes/           # YAML recipe runner
+│   ├── hone-config/            # TOML + HONE.md config parsing
+│   └── hone-proto/             # shared types, DTOs, serialization
+├── bins/
+│   ├── hone/                   # CLI entry point (thin shell over hone-core / hone-tui)
+│   └── honed/                  # daemon entry point (thin shell over hone-server)
+├── docs/
+├── tests/                      # workspace-level integration tests
+└── benches/                    # workspace-level benchmarks (criterion)
+</code></pre></div>
+<h3 id="crate-responsibilities">Crate responsibilities<a class="headerlink" href="#crate-responsibilities" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Crate</th>
+<th>Responsibility</th>
+<th>Public surface</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hone-proto</code></td>
+<td>Shared DTOs, error types, serialization (serde)</td>
+<td>Structs + enums only</td>
+</tr>
+<tr>
+<td><code>hone-config</code></td>
+<td>Parse <code>~/.config/hone/config.toml</code> and <code>HONE.md</code></td>
+<td><code>Config</code>, <code>HoneMd</code> structs</td>
+</tr>
+<tr>
+<td><code>hone-providers</code></td>
+<td><code>ModelProvider</code> trait + 75+ adapters</td>
+<td><code>ModelProvider</code>, <code>ProviderRegistry</code></td>
+</tr>
+<tr>
+<td><code>hone-sandbox</code></td>
+<td>Kernel sandbox setup and enforcement</td>
+<td><code>Sandbox</code> trait, <code>SandboxBuilder</code></td>
+</tr>
+<tr>
+<td><code>hone-tools</code></td>
+<td>Layer 2 native tools</td>
+<td><code>Tool</code> trait, tool registry</td>
+</tr>
+<tr>
+<td><code>hone-mcp</code></td>
+<td>MCP client, JSON-RPC transport, lazy schema</td>
+<td><code>McpClient</code>, <code>McpTool</code></td>
+</tr>
+<tr>
+<td><code>hone-index</code></td>
+<td>AST parsing, embedding, vector search (PostgreSQL + pgvector)</td>
+<td><code>SemanticIndex</code>, <code>IndexBuilder</code></td>
+</tr>
+<tr>
+<td><code>hone-memory</code></td>
+<td>Encrypted SQLite adaptive memory</td>
+<td><code>MemoryStore</code>, <code>Pattern</code></td>
+</tr>
+<tr>
+<td><code>hone-core</code></td>
+<td>Agent loop, session, context window management</td>
+<td><code>Agent</code>, <code>Session</code>, <code>ContextManager</code></td>
+</tr>
+<tr>
+<td><code>hone-recipes</code></td>
+<td>YAML recipe parsing and execution</td>
+<td><code>Recipe</code>, <code>RecipeRunner</code></td>
+</tr>
+<tr>
+<td><code>hone-server</code></td>
+<td><code>honed</code> HTTP/2+SSE daemon</td>
+<td><code>Server</code>, REST handlers</td>
+</tr>
+<tr>
+<td><code>hone-tui</code></td>
+<td>Ratatui UI, input handling</td>
+<td><code>App</code>, <code>Ui</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-layer-architecture">3. Layer Architecture<a class="headerlink" href="#3-layer-architecture" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart TB
+    subgraph L3["Layer 3 — Skills (HONE.md)"]
+        direction LR
+        HM["HONE.md\nMarkdown conventions\nzero runtime tokens"]
+    end
+
+    subgraph L2["Layer 2 — Native Tools (Rust hot path)"]
+        direction LR
+        FIO["File I/O"]
+        SH["Shell exec"]
+        GIT["Git ops"]
+        LSP["LSP bridge"]
+        IDX["Semantic index"]
+    end
+
+    subgraph L1["Layer 1 — MCP (External integrations)"]
+        direction LR
+        GH["GitHub MCP"]
+        JI["Jira MCP"]
+        SL["Slack MCP"]
+        DB["DB MCP"]
+        CM["Custom MCP"]
+    end
+
+    subgraph L0["Layer 0 — Code Mode (Orchestration)"]
+        direction LR
+        CM0["Agent-generated\nTS/Python calling\nnative + MCP via SDK"]
+    end
+
+    subgraph AGENT["hone-core: Agent Loop"]
+        AL["Agent Loop\n(orchestration)"]
+        CTX["Context Manager\n(window + compaction)"]
+        SESS["Session State"]
+    end
+
+    subgraph PROVIDERS["hone-providers"]
+        PR["Provider Registry\n(hot-swap, routing, fallback)"]
+        ANT["Anthropic"] &amp; OAI["OpenAI"] &amp; OLL["Ollama"] &amp; OTH["75+ others"]
+    end
+
+    L3 --&gt;|parsed at startup| AL
+    L2 --&gt;|direct fn calls &lt;1ms| AL
+    L1 --&gt;|JSON-RPC lazy-loaded| AL
+    L0 --&gt;|spawned subprocess| AL
+    AL &lt;--&gt;|streaming tokens| PR
+    PR --&gt; ANT &amp; OAI &amp; OLL &amp; OTH
+    AL &lt;--&gt; CTX
+    AL &lt;--&gt; SESS</code></pre>
+<hr />
+<h2 id="4-core-trait-definitions">4. Core Trait Definitions<a class="headerlink" href="#4-core-trait-definitions" title="Permanent link">&para;</a></h2>
+<p>These trait definitions are the primary abstraction boundaries. All cross-crate interactions happen through these interfaces. Concrete types are hidden behind trait objects or generics with bounds.</p>
+<h3 id="41-modelprovider-hone-providers">4.1 <code>ModelProvider</code> — <code>hone-providers</code><a class="headerlink" href="#41-modelprovider-hone-providers" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="sd">/// A streaming response item from a model.</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="nc">ProviderEvent</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">Token</span><span class="p">(</span><span class="nb">String</span><span class="p">),</span>
+<span class="w">    </span><span class="n">ToolCall</span><span class="p">(</span><span class="n">ToolCallRequest</span><span class="p">),</span>
+<span class="w">    </span><span class="n">Usage</span><span class="p">(</span><span class="n">TokenUsage</span><span class="p">),</span>
+<span class="w">    </span><span class="n">Done</span><span class="p">,</span>
+<span class="w">    </span><span class="n">Error</span><span class="p">(</span><span class="n">ProviderError</span><span class="p">),</span>
+<span class="p">}</span>
+
+<span class="sd">/// Everything a provider needs to generate a response.</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">CompletionRequest</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">model</span><span class="p">:</span><span class="w"> </span><span class="nc">ModelId</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">messages</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Message</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">tools</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">ToolSchema</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">temperature</span><span class="p">:</span><span class="w"> </span><span class="nb">Option</span><span class="o">&lt;</span><span class="kt">f32</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">max_tokens</span><span class="p">:</span><span class="w"> </span><span class="nb">Option</span><span class="o">&lt;</span><span class="kt">u32</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">stop</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">String</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="cp">#[async_trait]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">trait</span><span class="w"> </span><span class="n">ModelProvider</span><span class="p">:</span><span class="w"> </span><span class="nb">Send</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">Sync</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="o">&#39;</span><span class="nb">static</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">id</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">;</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">display_name</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">;</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">supported_models</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">ModelInfo</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">complete</span><span class="p">(</span>
+<span class="w">        </span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span>
+<span class="w">        </span><span class="n">request</span><span class="p">:</span><span class="w"> </span><span class="nc">CompletionRequest</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">BoxStream</span><span class="o">&lt;&#39;</span><span class="nb">static</span><span class="p">,</span><span class="w"> </span><span class="n">ProviderEvent</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">ProviderError</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="w">    </span><span class="sd">/// Estimate token count without a network round-trip (best-effort).</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">estimate_tokens</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">messages</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="p">[</span><span class="n">Message</span><span class="p">])</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="kt">u32</span><span class="p">;</span>
+
+<span class="w">    </span><span class="sd">/// Health check — used by the fallback chain.</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">health</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">ProviderHealth</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="42-tool-hone-tools">4.2 <code>Tool</code> — <code>hone-tools</code><a class="headerlink" href="#42-tool-hone-tools" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">ToolInput</span><span class="p">(</span><span class="n">serde_json</span><span class="p">::</span><span class="n">Value</span><span class="p">);</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">ToolOutput</span><span class="p">(</span><span class="n">serde_json</span><span class="p">::</span><span class="n">Value</span><span class="p">);</span>
+
+<span class="cp">#[async_trait]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">trait</span><span class="w"> </span><span class="n">Tool</span><span class="p">:</span><span class="w"> </span><span class="nb">Send</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">Sync</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="o">&#39;</span><span class="nb">static</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">name</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">;</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">description</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">;</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">schema</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">serde_json</span><span class="p">::</span><span class="n">Value</span><span class="p">;</span><span class="w">      </span><span class="c1">// JSON Schema for the model</span>
+
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span>
+<span class="w">        </span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span>
+<span class="w">        </span><span class="n">input</span><span class="p">:</span><span class="w"> </span><span class="nc">ToolInput</span><span class="p">,</span>
+<span class="w">        </span><span class="n">ctx</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">ToolContext</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">ToolOutput</span><span class="p">,</span><span class="w"> </span><span class="n">ToolError</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="w">    </span><span class="sd">/// Layer hint: L2 (native) or L1 (MCP).</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">layer</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">ToolLayer</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">ToolContext</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">sandbox</span><span class="p">:</span><span class="w"> </span><span class="nc">Arc</span><span class="o">&lt;</span><span class="k">dyn</span><span class="w"> </span><span class="n">Sandbox</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">working_dir</span><span class="p">:</span><span class="w"> </span><span class="nc">PathBuf</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">session_id</span><span class="p">:</span><span class="w"> </span><span class="nc">SessionId</span><span class="p">,</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="43-sandbox-hone-sandbox">4.3 <code>Sandbox</code> — <code>hone-sandbox</code><a class="headerlink" href="#43-sandbox-hone-sandbox" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">SandboxPolicy</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_read</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_write</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_exec</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_network</span><span class="p">:</span><span class="w"> </span><span class="kt">bool</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_env</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">String</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="cp">#[async_trait]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">trait</span><span class="w"> </span><span class="n">Sandbox</span><span class="p">:</span><span class="w"> </span><span class="nb">Send</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">Sync</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="o">&#39;</span><span class="nb">static</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="sd">/// Apply the sandbox to the current process or a subprocess.</span>
+<span class="w">    </span><span class="sd">/// Returns Err if the policy cannot be enforced — NEVER silently degrades.</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">apply</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">policy</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">SandboxPolicy</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">SandboxHandle</span><span class="p">,</span><span class="w"> </span><span class="n">SandboxError</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="w">    </span><span class="sd">/// Restrict an already-running child process.</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">restrict_child</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">child</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Command</span><span class="p">,</span><span class="w"> </span><span class="n">policy</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">SandboxPolicy</span><span class="p">)</span>
+<span class="w">        </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span><span class="w"> </span><span class="n">SandboxError</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">platform</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">SandboxPlatform</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="44-memorystore-hone-memory">4.4 <code>MemoryStore</code> — <code>hone-memory</code><a class="headerlink" href="#44-memorystore-hone-memory" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="cp">#[async_trait]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">trait</span><span class="w"> </span><span class="n">MemoryStore</span><span class="p">:</span><span class="w"> </span><span class="nb">Send</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">Sync</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="o">&#39;</span><span class="nb">static</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">record</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">event</span><span class="p">:</span><span class="w"> </span><span class="nc">MemoryEvent</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span><span class="w"> </span><span class="n">MemoryError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">recall</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">query</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">MemoryQuery</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Memory</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">MemoryError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">decay</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">DecayReport</span><span class="p">,</span><span class="w"> </span><span class="n">MemoryError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">forget</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">filter</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">MemoryFilter</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="kt">u64</span><span class="p">,</span><span class="w"> </span><span class="n">MemoryError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">export</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">path</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Path</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span><span class="w"> </span><span class="n">MemoryError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="45-semanticindex-hone-index">4.5 <code>SemanticIndex</code> — <code>hone-index</code><a class="headerlink" href="#45-semanticindex-hone-index" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="cp">#[async_trait]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">trait</span><span class="w"> </span><span class="n">SemanticIndex</span><span class="p">:</span><span class="w"> </span><span class="nb">Send</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">Sync</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="o">&#39;</span><span class="nb">static</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">index_path</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">root</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Path</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">IndexStats</span><span class="p">,</span><span class="w"> </span><span class="n">IndexError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">search</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">query</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">,</span><span class="w"> </span><span class="n">limit</span><span class="p">:</span><span class="w"> </span><span class="kt">usize</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">IndexResult</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">IndexError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">symbol_at</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">file</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Path</span><span class="p">,</span><span class="w"> </span><span class="n">line</span><span class="p">:</span><span class="w"> </span><span class="kt">u32</span><span class="p">,</span><span class="w"> </span><span class="n">col</span><span class="p">:</span><span class="w"> </span><span class="kt">u32</span><span class="p">)</span>
+<span class="w">        </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="nb">Option</span><span class="o">&lt;</span><span class="n">Symbol</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">IndexError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">invalidate</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">paths</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="p">[</span><span class="n">PathBuf</span><span class="p">])</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span><span class="w"> </span><span class="n">IndexError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="46-mcpclient-hone-mcp">4.6 <code>McpClient</code> — <code>hone-mcp</code><a class="headerlink" href="#46-mcpclient-hone-mcp" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="cp">#[async_trait]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">trait</span><span class="w"> </span><span class="n">McpClient</span><span class="p">:</span><span class="w"> </span><span class="nb">Send</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">Sync</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="o">&#39;</span><span class="nb">static</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">connect</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">McpServerInfo</span><span class="p">,</span><span class="w"> </span><span class="n">McpError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">list_tools</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">McpToolDef</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">McpError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">call_tool</span><span class="p">(</span>
+<span class="w">        </span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span>
+<span class="w">        </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">,</span>
+<span class="w">        </span><span class="n">args</span><span class="p">:</span><span class="w"> </span><span class="nc">serde_json</span><span class="p">::</span><span class="n">Value</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">serde_json</span><span class="p">::</span><span class="n">Value</span><span class="p">,</span><span class="w"> </span><span class="n">McpError</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">tools_as_native</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">Box</span><span class="o">&lt;</span><span class="k">dyn</span><span class="w"> </span><span class="n">Tool</span><span class="o">&gt;&gt;</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="47-agent-hone-core">4.7 <code>Agent</code> — <code>hone-core</code><a class="headerlink" href="#47-agent-hone-core" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">AgentConfig</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">provider</span><span class="p">:</span><span class="w"> </span><span class="nc">Arc</span><span class="o">&lt;</span><span class="k">dyn</span><span class="w"> </span><span class="n">ModelProvider</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">tools</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">Box</span><span class="o">&lt;</span><span class="k">dyn</span><span class="w"> </span><span class="n">Tool</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">sandbox</span><span class="p">:</span><span class="w"> </span><span class="nc">Arc</span><span class="o">&lt;</span><span class="k">dyn</span><span class="w"> </span><span class="n">Sandbox</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">memory</span><span class="p">:</span><span class="w"> </span><span class="nc">Arc</span><span class="o">&lt;</span><span class="k">dyn</span><span class="w"> </span><span class="n">MemoryStore</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">index</span><span class="p">:</span><span class="w"> </span><span class="nc">Arc</span><span class="o">&lt;</span><span class="k">dyn</span><span class="w"> </span><span class="n">SemanticIndex</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">session</span><span class="p">:</span><span class="w"> </span><span class="nc">Session</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">Agent</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">config</span><span class="p">:</span><span class="w"> </span><span class="nc">AgentConfig</span><span class="p">,</span>
+<span class="w">    </span><span class="n">context</span><span class="p">:</span><span class="w"> </span><span class="nc">ContextManager</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">impl</span><span class="w"> </span><span class="n">Agent</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">new</span><span class="p">(</span><span class="n">config</span><span class="p">:</span><span class="w"> </span><span class="nc">AgentConfig</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">Self</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="o">..</span><span class="p">.</span><span class="w"> </span><span class="p">}</span>
+
+<span class="w">    </span><span class="sd">/// Run one user turn, streaming events back through the channel.</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">run_turn</span><span class="p">(</span>
+<span class="w">        </span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">,</span>
+<span class="w">        </span><span class="n">user_input</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">,</span>
+<span class="w">        </span><span class="n">events</span><span class="p">:</span><span class="w"> </span><span class="nc">mpsc</span><span class="p">::</span><span class="n">Sender</span><span class="o">&lt;</span><span class="n">AgentEvent</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">TurnResult</span><span class="p">,</span><span class="w"> </span><span class="n">AgentError</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="w">    </span><span class="sd">/// Hot-swap the provider without resetting session state.</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">swap_provider</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">provider</span><span class="p">:</span><span class="w"> </span><span class="nc">Arc</span><span class="o">&lt;</span><span class="k">dyn</span><span class="w"> </span><span class="n">ModelProvider</span><span class="o">&gt;</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+<hr />
+<h2 id="5-data-flow-diagrams">5. Data Flow Diagrams<a class="headerlink" href="#5-data-flow-diagrams" title="Permanent link">&para;</a></h2>
+<h3 id="51-single-agent-turn">5.1 Single Agent Turn<a class="headerlink" href="#51-single-agent-turn" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>sequenceDiagram
+    participant User
+    participant TUI as hone-tui / CLI
+    participant Core as hone-core (Agent)
+    participant Ctx as ContextManager
+    participant Provider as ModelProvider
+    participant Tools as ToolRegistry (L2 + L1)
+    participant Sandbox as Sandbox
+    participant Memory as MemoryStore
+
+    User-&gt;&gt;TUI: types prompt
+    TUI-&gt;&gt;Core: run_turn(input)
+    Core-&gt;&gt;Memory: recall(context_query)
+    Memory--&gt;&gt;Core: relevant memories
+    Core-&gt;&gt;Ctx: build_messages(input, memories, history)
+    Ctx--&gt;&gt;Core: messages (within token budget)
+    Core-&gt;&gt;Provider: complete(request) → Stream
+    Provider--&gt;&gt;Core: Token events (streaming)
+    Core--&gt;&gt;TUI: AgentEvent::Token (streamed)
+
+    loop Tool calls
+        Provider--&gt;&gt;Core: ToolCall event
+        Core-&gt;&gt;Sandbox: verify policy allows tool
+        Sandbox--&gt;&gt;Core: Ok / Err (fail-closed)
+        Core-&gt;&gt;Tools: call(tool_name, args)
+        Tools--&gt;&gt;Core: ToolOutput
+        Core-&gt;&gt;Provider: append tool result, continue stream
+    end
+
+    Provider--&gt;&gt;Core: Done + Usage
+    Core-&gt;&gt;Memory: record(turn_summary, patterns)
+    Core--&gt;&gt;TUI: AgentEvent::Done(TurnResult)
+    TUI--&gt;&gt;User: final response rendered</code></pre>
+<h3 id="52-provider-hot-swap">5.2 Provider Hot-Swap<a class="headerlink" href="#52-provider-hot-swap" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>sequenceDiagram
+    participant User
+    participant Core as Agent
+    participant Reg as ProviderRegistry
+    participant Old as OldProvider
+    participant New as NewProvider
+
+    User-&gt;&gt;Core: /model switch anthropic:claude-opus-4-5
+    Core-&gt;&gt;Reg: get("anthropic:claude-opus-4-5")
+    Reg--&gt;&gt;Core: Arc&lt;dyn ModelProvider&gt;
+    Core-&gt;&gt;Old: (no teardown needed — stateless)
+    Core-&gt;&gt;Core: swap_provider(new)
+    Note over Core: session history preserved
+    Note over Core: context window re-evaluated for new model limits
+    Core--&gt;&gt;User: "Switched to claude-opus-4-5 (200K ctx)"
+    Core-&gt;&gt;New: next complete() call uses new provider</code></pre>
+<h3 id="53-kernel-sandbox-lifecycle">5.3 Kernel Sandbox Lifecycle<a class="headerlink" href="#53-kernel-sandbox-lifecycle" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>sequenceDiagram
+    participant Core as Agent
+    participant SB as SandboxBuilder
+    participant OS as OS Kernel
+
+    Core-&gt;&gt;SB: build(policy)
+    SB-&gt;&gt;SB: detect platform (macOS / Linux / container)
+    alt macOS
+        SB-&gt;&gt;OS: sandbox_init (Seatbelt profile)
+    else Linux bare-metal
+        SB-&gt;&gt;OS: landlock_create_ruleset + seccomp-BPF filter
+    else container / fallback
+        SB-&gt;&gt;OS: setrlimit + no-new-privs
+    end
+
+    alt Sandbox applied successfully
+        OS--&gt;&gt;SB: Ok
+        SB--&gt;&gt;Core: SandboxHandle
+    else Sandbox failed
+        OS--&gt;&gt;SB: Err
+        SB--&gt;&gt;Core: Err(SandboxError::Unavailable)
+        Note over Core: FAIL-CLOSED: abort operation
+    end</code></pre>
+<h3 id="54-daemon-client-server-flow">5.4 Daemon Client-Server Flow<a class="headerlink" href="#54-daemon-client-server-flow" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>sequenceDiagram
+    participant CLI as hone CLI
+    participant Web as Web PWA
+    participant Daemon as honed (HTTP/2+SSE)
+    participant Core as Agent (per-session)
+    participant SQLite as SQLite (sessions, memory)
+    participant PG as PostgreSQL + pgvector (index)
+
+    CLI-&gt;&gt;Daemon: POST /sessions {model, tools}
+    Daemon-&gt;&gt;Core: spawn Agent for session_id
+    Daemon--&gt;&gt;CLI: {session_id, sse_url}
+
+    CLI-&gt;&gt;Daemon: POST /sessions/{id}/turns {input}
+    Daemon-&gt;&gt;Core: run_turn(input)
+    Core-&gt;&gt;PG: semantic search for context
+    PG--&gt;&gt;Core: relevant symbols + embeddings
+    Core--&gt;&gt;Daemon: AgentEvent stream
+    Daemon--&gt;&gt;CLI: SSE: data: {event} \n\n
+
+    Web-&gt;&gt;Daemon: GET /sessions/{id}/events (SSE)
+    Note over Daemon,Web: Web UI observes same session
+    Daemon--&gt;&gt;Web: SSE replay from session start
+
+    Core-&gt;&gt;SQLite: persist turn (WAL write)
+    SQLite--&gt;&gt;Core: Ok</code></pre>
+<hr />
+<h2 id="6-crate-dependency-graph">6. Crate Dependency Graph<a class="headerlink" href="#6-crate-dependency-graph" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>graph TD
+    PROTO[hone-proto]
+    CFG[hone-config]
+    SB[hone-sandbox]
+    PROV[hone-providers]
+    TOOLS[hone-tools]
+    MCP[hone-mcp]
+    IDX[hone-index]
+    MEM[hone-memory]
+    CORE[hone-core]
+    RECIPES[hone-recipes]
+    SERVER[hone-server]
+    TUI[hone-tui]
+    BIN_CLI[bin: hone]
+    BIN_DAEMON[bin: honed]
+
+    PROTO --&gt; CFG
+    PROTO --&gt; SB
+    PROTO --&gt; PROV
+    PROTO --&gt; TOOLS
+    PROTO --&gt; MCP
+    PROTO --&gt; IDX
+    PROTO --&gt; MEM
+    CFG --&gt; CORE
+    SB --&gt; TOOLS
+    SB --&gt; CORE
+    PROV --&gt; CORE
+    TOOLS --&gt; CORE
+    MCP --&gt; TOOLS
+    MCP --&gt; CORE
+    IDX --&gt; CORE
+    MEM --&gt; CORE
+    CORE --&gt; RECIPES
+    CORE --&gt; SERVER
+    CORE --&gt; TUI
+    TUI --&gt; BIN_CLI
+    SERVER --&gt; BIN_DAEMON
+    RECIPES --&gt; BIN_CLI
+    RECIPES --&gt; BIN_DAEMON</code></pre>
+<p><strong>Rules enforced by <code>cargo-deny</code>:</strong>
+- <code>hone-proto</code> must have zero non-<code>serde</code> external dependencies.
+- <code>hone-sandbox</code> must not depend on <code>hone-providers</code> or <code>hone-mcp</code> (avoids pulling network code into the sandbox enforcement path).
+- <code>hone-tui</code> must not depend on <code>hone-server</code> (clean TUI/daemon separation).</p>
+<hr />
+<h2 id="7-error-handling-strategy">7. Error Handling Strategy<a class="headerlink" href="#7-error-handling-strategy" title="Permanent link">&para;</a></h2>
+<h3 id="per-crate-errors-with-thiserror">Per-crate errors with <code>thiserror</code><a class="headerlink" href="#per-crate-errors-with-thiserror" title="Permanent link">&para;</a></h3>
+<p>Each crate defines its own error enum using <code>thiserror</code>. Cross-crate propagation uses the <code>#[from]</code> conversion where natural, otherwise explicit mapping. Library crates never use <code>anyhow</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// hone-providers/src/error.rs</span>
+<span class="cp">#[derive(Debug, thiserror::Error)]</span>
+<span class="k">pub</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="nc">ProviderError</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cp">#[error(</span><span class="s">&quot;provider &#39;{provider}&#39; returned HTTP {status}: {body}&quot;</span><span class="cp">)]</span>
+<span class="w">    </span><span class="n">Http</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">provider</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="n">status</span><span class="p">:</span><span class="w"> </span><span class="kt">u16</span><span class="p">,</span><span class="w"> </span><span class="n">body</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="w"> </span><span class="p">},</span>
+
+<span class="w">    </span><span class="cp">#[error(</span><span class="s">&quot;provider &#39;{provider}&#39; stream interrupted: {source}&quot;</span><span class="cp">)]</span>
+<span class="w">    </span><span class="n">Stream</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">provider</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="cp">#[source]</span><span class="w"> </span><span class="n">source</span><span class="p">:</span><span class="w"> </span><span class="nc">std</span><span class="p">::</span><span class="n">io</span><span class="p">::</span><span class="n">Error</span><span class="w"> </span><span class="p">},</span>
+
+<span class="w">    </span><span class="cp">#[error(</span><span class="s">&quot;rate limit exceeded for &#39;{provider}&#39;, retry after {retry_after_secs}s&quot;</span><span class="cp">)]</span>
+<span class="w">    </span><span class="n">RateLimit</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">provider</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="n">retry_after_secs</span><span class="p">:</span><span class="w"> </span><span class="kt">u64</span><span class="w"> </span><span class="p">},</span>
+
+<span class="w">    </span><span class="cp">#[error(</span><span class="s">&quot;model &#39;{model}&#39; not found in provider &#39;{provider}&#39;&quot;</span><span class="cp">)]</span>
+<span class="w">    </span><span class="n">ModelNotFound</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">model</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="n">provider</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="w"> </span><span class="p">},</span>
+
+<span class="w">    </span><span class="cp">#[error(</span><span class="s">&quot;request serialization failed: {0}&quot;</span><span class="cp">)]</span>
+<span class="w">    </span><span class="n">Serialization</span><span class="p">(</span><span class="cp">#[from]</span><span class="w"> </span><span class="n">serde_json</span><span class="p">::</span><span class="n">Error</span><span class="p">),</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="application-binaries-use-anyhow">Application binaries use <code>anyhow</code><a class="headerlink" href="#application-binaries-use-anyhow" title="Permanent link">&para;</a></h3>
+<p><code>bins/hone/main.rs</code> and <code>bins/honed/main.rs</code> return <code>anyhow::Result&lt;()&gt;</code> and use <code>context()</code> / <code>with_context()</code> to add user-visible detail to errors before display.</p>
+<h3 id="panic-policy">Panic policy<a class="headerlink" href="#panic-policy" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>unwrap()</code> and <code>expect()</code> are banned in all <code>crates/</code> code via a <code>clippy</code> rule.</li>
+<li>The only permitted <code>expect()</code> calls are in <code>build.rs</code> scripts and test code, with a comment explaining the invariant.</li>
+<li>Panics in async tasks are caught at the <code>tokio::spawn</code> boundary and converted to errors.</li>
+</ul>
+<h3 id="error-propagation-map">Error propagation map<a class="headerlink" href="#error-propagation-map" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>flowchart LR
+    PE[ProviderError] --&gt;|Into| AE[AgentError]
+    TE[ToolError] --&gt;|Into| AE
+    SE[SandboxError] --&gt;|Into| AE
+    ME[MemoryError] --&gt;|context| AE
+    IE[IndexError] --&gt;|context| AE
+    AE --&gt;|anyhow::Error| CLI[CLI: display to user]
+    AE --&gt;|JSON response| Server[Server: HTTP 4xx/5xx]</code></pre>
+<hr />
+<h2 id="8-async-runtime-patterns">8. Async Runtime &amp; Patterns<a class="headerlink" href="#8-async-runtime-patterns" title="Permanent link">&para;</a></h2>
+<h3 id="runtime-tokio-multi-thread-scheduler">Runtime: <code>tokio</code> (multi-thread scheduler)<a class="headerlink" href="#runtime-tokio-multi-thread-scheduler" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Both the CLI and daemon use <code>#[tokio::main]</code> with the multi-thread scheduler.</li>
+<li>CPU-bound work (AST parsing, embedding generation, sandbox setup) is dispatched to <code>tokio::task::spawn_blocking</code>.</li>
+<li>The TUI runs its event loop in a dedicated blocking thread communicating via <code>mpsc</code> channels.</li>
+</ul>
+<h3 id="concurrency-patterns">Concurrency patterns<a class="headerlink" href="#concurrency-patterns" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1">// Concurrent provider health checks — JoinSet</span>
+<span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">set</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">JoinSet</span><span class="p">::</span><span class="n">new</span><span class="p">();</span>
+<span class="k">for</span><span class="w"> </span><span class="n">provider</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">registry</span><span class="p">.</span><span class="n">all</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">set</span><span class="p">.</span><span class="n">spawn</span><span class="p">(</span><span class="k">async</span><span class="w"> </span><span class="k">move</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">(</span><span class="n">provider</span><span class="p">.</span><span class="n">id</span><span class="p">(),</span><span class="w"> </span><span class="n">provider</span><span class="p">.</span><span class="n">health</span><span class="p">().</span><span class="k">await</span><span class="p">)</span><span class="w"> </span><span class="p">});</span>
+<span class="p">}</span>
+<span class="k">while</span><span class="w"> </span><span class="kd">let</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="nb">Ok</span><span class="p">((</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">health</span><span class="p">)))</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">set</span><span class="p">.</span><span class="n">join_next</span><span class="p">().</span><span class="k">await</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">results</span><span class="p">.</span><span class="n">insert</span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">health</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// Racing a stream against a timeout — select!</span>
+<span class="n">tokio</span><span class="p">::</span><span class="n">select</span><span class="o">!</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">event</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">stream</span><span class="p">.</span><span class="n">next</span><span class="p">()</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">handle_event</span><span class="p">(</span><span class="n">event</span><span class="p">),</span>
+<span class="w">    </span><span class="n">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tokio</span><span class="p">::</span><span class="n">time</span><span class="p">::</span><span class="n">sleep</span><span class="p">(</span><span class="n">STREAM_TIMEOUT</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">bail</span><span class="o">!</span><span class="p">(</span><span class="s">&quot;stream timeout&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="n">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cancel_token</span><span class="p">.</span><span class="n">cancelled</span><span class="p">()</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nb">Ok</span><span class="p">(()),</span>
+<span class="p">}</span>
+
+<span class="c1">// Structured cancellation propagated through all tasks</span>
+<span class="kd">let</span><span class="w"> </span><span class="n">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CancellationToken</span><span class="p">::</span><span class="n">new</span><span class="p">();</span>
+<span class="n">tokio</span><span class="p">::</span><span class="n">spawn</span><span class="p">(</span><span class="n">agent_loop</span><span class="p">(</span><span class="n">token</span><span class="p">.</span><span class="n">child_token</span><span class="p">()));</span>
+<span class="c1">// Clean shutdown: token.cancel()</span>
+</code></pre></div>
+<h3 id="backpressure">Backpressure<a class="headerlink" href="#backpressure" title="Permanent link">&para;</a></h3>
+<p>All inter-component communication uses bounded <code>tokio::sync::mpsc</code> channels. The TUI rendering loop consumes <code>AgentEvent</code> tokens; if the TUI falls behind, the provider stream is paused (backpressure propagates via the bounded channel).</p>
+<h3 id="streaming-architecture">Streaming architecture<a class="headerlink" href="#streaming-architecture" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>flowchart LR
+    P[Provider\nasync_stream] --&gt;|BoxStream| AL[Agent Loop\nselect!]
+    AL --&gt;|mpsc::Sender bounded| TUI[TUI Event Loop]
+    AL --&gt;|mpsc::Sender bounded| SSE[SSE encoder\nhone-server]
+    TUI --&gt;|render| Terminal
+    SSE --&gt;|HTTP/2 push| Client</code></pre>
+<hr />
+<h2 id="9-storage-architecture">9. Storage Architecture<a class="headerlink" href="#9-storage-architecture" title="Permanent link">&para;</a></h2>
+<p>Hone uses a <strong>dual-database strategy</strong>:
+- <strong>SQLite</strong> for local session/memory data (single-user, zero-ops, optionally encrypted)
+- <strong>PostgreSQL + pgvector</strong> for semantic index (vector similarity search, concurrent access)</p>
+<p>This separation ensures the CLI works offline without external dependencies, while allowing production deployments to leverage PostgreSQL's scalability and vector search capabilities.</p>
+<h3 id="91-sqlite-sessions-adaptive-memory">9.1 SQLite — Sessions &amp; Adaptive Memory<a class="headerlink" href="#91-sqlite-sessions-adaptive-memory" title="Permanent link">&para;</a></h3>
+<p>Local-first, single-file storage for data that benefits from zero configuration and offline access.</p>
+<div class="highlight"><pre><span></span><code>~/.local/share/hone/
+├── hone.db               # sessions, turns, tool calls, memories (WAL mode)
+├── hone.db-wal
+└── hone.db-shm
+</code></pre></div>
+<pre class="mermaid"><code>erDiagram
+    SESSIONS {
+        text id PK
+        text title
+        text model_id
+        integer created_at
+        integer updated_at
+    }
+    TURNS {
+        text id PK
+        text session_id FK
+        text role
+        text content
+        integer tokens_in
+        integer tokens_out
+        real cost_usd
+        integer created_at
+    }
+    MEMORIES {
+        text id PK
+        text kind
+        text content
+        text tags_json
+        real weight
+        integer last_accessed
+        integer decay_at
+    }
+    TOOL_CALLS {
+        text id PK
+        text turn_id FK
+        text tool_name
+        text input_json
+        text output_json
+        integer duration_ms
+        integer created_at
+    }
+
+    SESSIONS ||--o{ TURNS : contains
+    TURNS ||--o{ TOOL_CALLS : has</code></pre>
+<p>SQLite is accessed via <code>sqlx</code> with WAL mode. Migration files live in <code>crates/hone-memory/migrations/</code> and run automatically on startup via <code>sqlx::migrate!</code>.</p>
+<h4 id="memory-encryption">Memory encryption<a class="headerlink" href="#memory-encryption" title="Permanent link">&para;</a></h4>
+<p><code>hone-memory</code> wraps SQLite via <code>sqlcipher</code> (behind a feature flag <code>encrypted-memory</code>). The encryption key is derived from a user passphrase using Argon2id and stored in the system keychain (via <code>keyring</code> crate).</p>
+<h3 id="92-postgresql-pgvector-semantic-index">9.2 PostgreSQL + pgvector — Semantic Index<a class="headerlink" href="#92-postgresql-pgvector-semantic-index" title="Permanent link">&para;</a></h3>
+<p>The semantic index uses PostgreSQL with the <code>pgvector</code> extension for approximate nearest-neighbor (ANN) vector search over code embeddings.</p>
+<p><strong>Why PostgreSQL + pgvector instead of SQLite:</strong>
+- <strong>ANN indexing</strong>: pgvector provides <code>ivfflat</code> and <code>hnsw</code> index types for sub-linear similarity search. SQLite has no native vector index support — a custom extension would be needed.
+- <strong>Scalability</strong>: Large monorepos can produce millions of symbols with embeddings. PostgreSQL handles this without WAL checkpoint pressure.
+- <strong>Concurrent access</strong>: Multiple <code>honed</code> daemon instances or background indexer workers can read/write concurrently without SQLite's single-writer bottleneck.
+- <strong>Ecosystem</strong>: pgvector is production-proven, actively maintained, and integrates naturally with embedding pipelines.</p>
+<h4 id="connection-strategy">Connection strategy<a class="headerlink" href="#connection-strategy" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>Development:  postgres://localhost:5432/hone_index  (local Docker or system install)
+Server mode:  Configurable via DATABASE_URL in config.toml or env var
+</code></pre></div>
+<p>The connection URL is configured in <code>[index]</code> section of <code>config.toml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[index]</span>
+<span class="n">database_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;postgres://localhost:5432/hone_index&quot;</span>
+<span class="n">embedding_dimensions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">384</span>
+<span class="n">index_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;hnsw&quot;</span><span class="w">  </span><span class="c1"># or &quot;ivfflat&quot;</span>
+</code></pre></div>
+<h4 id="schema">Schema<a class="headerlink" href="#schema" title="Permanent link">&para;</a></h4>
+<pre class="mermaid"><code>erDiagram
+    INDEX_FILES {
+        text id PK "uuid v7"
+        text file_path "unique"
+        text content_hash "sha256"
+        integer indexed_at
+    }
+    INDEX_SYMBOLS {
+        text id PK "uuid v7"
+        text file_id FK
+        text name
+        text kind "function, struct, class, etc."
+        integer line
+        integer col
+        vector embedding "vector(384)"
+        integer indexed_at
+    }
+
+    INDEX_FILES ||--o{ INDEX_SYMBOLS : contains</code></pre>
+<div class="highlight"><pre><span></span><code><span class="c1">-- pgvector extension</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="n">EXTENSION</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">vector</span><span class="p">;</span>
+
+<span class="c1">-- Symbols table with vector column</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">index_symbols</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="n">id</span><span class="w">          </span><span class="n">UUID</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="n">gen_random_uuid</span><span class="p">(),</span>
+<span class="w">    </span><span class="n">file_id</span><span class="w">     </span><span class="n">UUID</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">index_files</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">,</span>
+<span class="w">    </span><span class="n">name</span><span class="w">        </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">    </span><span class="n">kind</span><span class="w">        </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">    </span><span class="n">line</span><span class="w">        </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">    </span><span class="n">col</span><span class="w">         </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">    </span><span class="n">embedding</span><span class="w">   </span><span class="n">vector</span><span class="p">(</span><span class="mi">384</span><span class="p">),</span>
+<span class="w">    </span><span class="n">indexed_at</span><span class="w">  </span><span class="nb">BIGINT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span>
+<span class="p">);</span>
+
+<span class="c1">-- HNSW index for fast ANN search</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_symbols_embedding</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">index_symbols</span>
+<span class="w">    </span><span class="k">USING</span><span class="w"> </span><span class="n">hnsw</span><span class="w"> </span><span class="p">(</span><span class="n">embedding</span><span class="w"> </span><span class="n">vector_cosine_ops</span><span class="p">)</span>
+<span class="w">    </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">m</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">16</span><span class="p">,</span><span class="w"> </span><span class="n">ef_construction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">64</span><span class="p">);</span>
+
+<span class="c1">-- B-tree for file lookups and invalidation</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_symbols_file_id</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">index_symbols</span><span class="w"> </span><span class="p">(</span><span class="n">file_id</span><span class="p">);</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_symbols_name</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">index_symbols</span><span class="w"> </span><span class="p">(</span><span class="n">name</span><span class="p">);</span>
+</code></pre></div>
+<h4 id="fallback-for-offlinelocal-only-use">Fallback for offline/local-only use<a class="headerlink" href="#fallback-for-offlinelocal-only-use" title="Permanent link">&para;</a></h4>
+<p>When no PostgreSQL connection is available, <code>hone-index</code> falls back to the current in-memory <code>SemanticIndex</code> with regex-based symbol extraction and substring matching. This ensures the CLI works without any external dependencies — pgvector is only required for embedding-powered semantic search.</p>
+<pre class="mermaid"><code>flowchart TD
+    START([Index query]) --&gt; CHECK{PostgreSQL\navailable?}
+    CHECK -- Yes --&gt; PG[pgvector ANN search\ncosine similarity]
+    CHECK -- No --&gt; MEM[In-memory fallback\nsubstring matching]
+    PG --&gt; RESULTS([SearchResult])
+    MEM --&gt; RESULTS</code></pre>
+<hr />
+<h2 id="10-context-optimization">10. Context Optimization<a class="headerlink" href="#10-context-optimization" title="Permanent link">&para;</a></h2>
+<h3 id="problem">Problem<a class="headerlink" href="#problem" title="Permanent link">&para;</a></h3>
+<p>Model context windows are finite and expensive. A 200K context window costs millions of tokens at scale. Hone minimizes token usage while preserving code comprehension through four techniques:</p>
+<ol>
+<li><strong>Model-aware token budgets</strong> — Each model family has a learned budget profile based on task complexity.</li>
+<li><strong>BM25 reordering</strong> — Given a set of candidate context (memories, file snippets, search results), BM25 ranking brings the most relevant items to the front.</li>
+<li><strong>Graduated compression</strong> — Context is progressively summarized (code comments → summaries → hashes) to preserve key information with fewer tokens.</li>
+<li><strong>Phase detection</strong> — Hone identifies conversation phases (exploration, implementation, testing, refactoring) and adjusts context strategy accordingly.</li>
+</ol>
+<h3 id="token-budget-calculation">Token Budget Calculation<a class="headerlink" href="#token-budget-calculation" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">TokenBudget</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">context_window_size</span><span class="p">:</span><span class="w"> </span><span class="kt">u32</span><span class="p">,</span><span class="w">          </span><span class="c1">// e.g., 200_000 for claude-opus-4-5</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">reserved_for_output</span><span class="p">:</span><span class="w"> </span><span class="kt">u32</span><span class="p">,</span><span class="w">          </span><span class="c1">// e.g., 4_000</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">reserved_for_system_prompt</span><span class="p">:</span><span class="w"> </span><span class="kt">u32</span><span class="p">,</span><span class="w">   </span><span class="c1">// e.g., 2_000</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">safety_margin</span><span class="p">:</span><span class="w"> </span><span class="kt">f32</span><span class="p">,</span><span class="w">                </span><span class="c1">// e.g., 0.1 (10% buffer)</span>
+<span class="p">}</span>
+
+<span class="k">impl</span><span class="w"> </span><span class="n">TokenBudget</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">available_for_context</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="kt">u32</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">usable</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">context_window_size</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">reserved_for_output</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">reserved_for_system_prompt</span><span class="p">;</span>
+<span class="w">        </span><span class="p">((</span><span class="n">usable</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="kt">f32</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="p">(</span><span class="mf">1.0</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">safety_margin</span><span class="p">))</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="kt">u32</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Example:</strong> claude-opus-4-5 (200K context):
+- Context window: 200,000 tokens
+- Reserved for output: 4,000 tokens
+- Reserved for system prompt: 2,000 tokens
+- Safety margin: 10%
+- Available for context: ~177,400 tokens</p>
+<h3 id="bm25-reordering">BM25 Reordering<a class="headerlink" href="#bm25-reordering" title="Permanent link">&para;</a></h3>
+<p>When the agent has multiple pieces of context (memories, code snippets, search results), BM25 ranking reorders them by relevance to the current query:</p>
+<div class="highlight"><pre><span></span><code><span class="k">pub</span><span class="w"> </span><span class="k">trait</span><span class="w"> </span><span class="n">ContextRanker</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">rank</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">query</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">,</span><span class="w"> </span><span class="n">candidates</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">ContextItem</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">RankedItem</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">BM25Ranker</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* implements TF-IDF with length normalization */</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p><strong>Example workflow:</strong>
+1. Agent receives: <code>"Add error handling to the auth module"</code>
+2. Retrieves 50 candidate context items (memories, code snippets, LSP results)
+3. BM25 ranks them: items matching "error", "handling", "auth" bubble to top
+4. Only top-K items (e.g., 30) are included in the context window
+5. Result: 60% fewer tokens, same coverage</p>
+<h3 id="graduated-compression">Graduated Compression<a class="headerlink" href="#graduated-compression" title="Permanent link">&para;</a></h3>
+<p>As context items age or become less relevant, they are progressively compressed:</p>
+<div class="highlight"><pre><span></span><code>Phase 1: Full code (e.g., 100 tokens per function)
+Phase 2: Code + summary (50 tokens code, 20 tokens summary = 70 total)
+Phase 3: Summary only (20 tokens)
+Phase 4: Compressed reference (5 tokens: hash + title)
+</code></pre></div>
+<p>Example:
+<div class="highlight"><pre><span></span><code><span class="c1">// Phase 1: Full code</span>
+<span class="k">fn</span><span class="w"> </span><span class="nf">validate_email</span><span class="p">(</span><span class="n">email</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span><span class="w"> </span><span class="n">EmailError</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="n">email</span><span class="p">.</span><span class="n">len</span><span class="p">()</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nb">Err</span><span class="p">(</span><span class="n">EmailError</span><span class="p">::</span><span class="n">TooShort</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="o">!</span><span class="n">email</span><span class="p">.</span><span class="n">contains</span><span class="p">(</span><span class="sc">&#39;@&#39;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nb">Err</span><span class="p">(</span><span class="n">EmailError</span><span class="p">::</span><span class="n">InvalidFormat</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">parts</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;&amp;</span><span class="kt">str</span><span class="o">&gt;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">email</span><span class="p">.</span><span class="n">split</span><span class="p">(</span><span class="sc">&#39;@&#39;</span><span class="p">).</span><span class="n">collect</span><span class="p">();</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="n">parts</span><span class="p">.</span><span class="n">len</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nb">Err</span><span class="p">(</span><span class="n">EmailError</span><span class="p">::</span><span class="n">InvalidFormat</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="n">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">len</span><span class="p">()</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nb">Err</span><span class="p">(</span><span class="n">EmailError</span><span class="p">::</span><span class="n">InvalidDomain</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="nb">Ok</span><span class="p">(())</span>
+<span class="p">}</span>
+
+<span class="c1">// Phase 2: Code + summary</span>
+<span class="k">fn</span><span class="w"> </span><span class="nf">validate_email</span><span class="p">(</span><span class="n">email</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="p">(),</span><span class="w"> </span><span class="n">EmailError</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* ... 40 lines ... */</span><span class="w"> </span><span class="p">}</span>
+<span class="c1">// Validates email: checks length, presence of @, domain validity.</span>
+
+<span class="c1">// Phase 3: Summary only</span>
+<span class="c1">// Function: validate_email. Validates email: length &gt;= 3, has @, domain valid.</span>
+
+<span class="c1">// Phase 4: Reference</span>
+<span class="c1">// ref:email_validation (hash_abc123)</span>
+</code></pre></div></p>
+<h3 id="phase-detection">Phase Detection<a class="headerlink" href="#phase-detection" title="Permanent link">&para;</a></h3>
+<p>Hone detects conversation phases and adjusts context strategy:</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Characteristics</th>
+<th>Context Strategy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Exploration</strong></td>
+<td>Questions, analysis, no code changes</td>
+<td>Keep search results, memories; drop old code</td>
+</tr>
+<tr>
+<td><strong>Implementation</strong></td>
+<td>Writing new code, modifying files</td>
+<td>Keep implementation context; compress exploration results</td>
+</tr>
+<tr>
+<td><strong>Testing</strong></td>
+<td>Running tests, debugging failures</td>
+<td>Keep test failures and logs; compress implementation details</td>
+</tr>
+<tr>
+<td><strong>Refactoring</strong></td>
+<td>Improving existing code</td>
+<td>Keep full code for area being refactored; compress unrelated context</td>
+</tr>
+</tbody>
+</table>
+<p>Example:
+<div class="highlight"><pre><span></span><code>Turn 1-3: &quot;What&#39;s in this repo?&quot; → Exploration phase
+         Context: recent memories, file structure, no code
+Turn 4-8: &quot;Implement auth module&quot; → Implementation phase
+         Context: auth spec, test template, security patterns
+Turn 9-12: &quot;Tests failing&quot; → Testing phase
+         Context: test failures, error logs, relevant code
+Turn 13+: &quot;Refactor X for performance&quot; → Refactoring phase
+         Context: full X implementation, performance patterns, benchmarks
+</code></pre></div></p>
+<hr />
+<h2 id="11-memory-encryption">11. Memory Encryption<a class="headerlink" href="#11-memory-encryption" title="Permanent link">&para;</a></h2>
+<p>Hone optionally encrypts session data using <strong>AES-256-GCM</strong> with <strong>Argon2id</strong> key derivation:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Build with encryption support</span>
+cargo<span class="w"> </span>build<span class="w"> </span>--features<span class="w"> </span>encrypted-memory
+
+<span class="c1"># Initialize encryption (stores key in system keychain)</span>
+hone<span class="w"> </span>--init-encryption
+<span class="c1"># Enter passphrase: ****</span>
+<span class="c1"># Keychain updated. Encryption enabled.</span>
+</code></pre></div>
+<h3 id="encryption-details">Encryption Details<a class="headerlink" href="#encryption-details" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Cipher:</strong> AES-256-GCM (authenticated encryption, prevents tampering)</li>
+<li><strong>Key derivation:</strong> Argon2id with user passphrase</li>
+<li>Time cost: 3 iterations</li>
+<li>Memory cost: 64 MB</li>
+<li>Parallelism: 4 threads</li>
+<li>Salt: 16 random bytes (unique per user)</li>
+<li><strong>Key storage:</strong> System keychain (keyring crate)</li>
+<li>macOS: Keychain Services API</li>
+<li>Linux: Secret Service or pass</li>
+<li>Windows: DPAPI (future)</li>
+<li><strong>Scope:</strong> SQLite database (<code>~/.local/share/hone/memory.db</code>)</li>
+<li>Encrypted at rest via SQLCipher</li>
+<li>Per-record nonces prevent replay attacks</li>
+</ul>
+<h3 id="threat-model">Threat Model<a class="headerlink" href="#threat-model" title="Permanent link">&para;</a></h3>
+<p>Encrypted memory protects against:
+- <strong>Disk theft:</strong> If the computer is stolen, session memories cannot be read without the passphrase.
+- <strong>Malware with filesystem access:</strong> Cannot extract plaintext memories without keychain access.
+- <strong>Accidental exposure:</strong> If the database file is copied to shared storage, it remains encrypted.</p>
+<p><strong>Does NOT protect against:</strong>
+- <strong>Keyloggers or screen recording:</strong> If attacker has real-time access to your computer.
+- <strong>Compromised keychain:</strong> If the system keychain is breached or the passphrase is weak.
+- <strong>Memory-resident attacks:</strong> Decrypted data in RAM can be extracted by privileged processes.</p>
+<h3 id="ephemeral-mode">Ephemeral Mode<a class="headerlink" href="#ephemeral-mode" title="Permanent link">&para;</a></h3>
+<p>For sensitive queries, use ephemeral mode to disable all persistence:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--ephemeral<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Analyze this sensitive document&quot;</span>
+</code></pre></div>
+<p>In ephemeral mode:
+- No session data is persisted
+- No memories are recorded
+- Cost tracking is not saved
+- All data is discarded when the session ends</p>
+<hr />
+<h2 id="12-security-model">12. Security Model<a class="headerlink" href="#12-security-model" title="Permanent link">&para;</a></h2>
+<h3 id="sandbox-platform-matrix">Sandbox platform matrix<a class="headerlink" href="#sandbox-platform-matrix" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Primary mechanism</th>
+<th>Fallback</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>macOS</td>
+<td>Seatbelt (<code>sandbox_init</code>)</td>
+<td><code>setrlimit</code> + <code>no-new-privs</code></td>
+</tr>
+<tr>
+<td>Linux bare-metal</td>
+<td>Landlock + seccomp-BPF</td>
+<td><code>setrlimit</code> + <code>no-new-privs</code></td>
+</tr>
+<tr>
+<td>Container (Docker/K8s)</td>
+<td><code>seccomp</code> profile + <code>no-new-privs</code></td>
+<td><code>setrlimit</code></td>
+</tr>
+<tr>
+<td>Windows (future)</td>
+<td>Job Objects + AppContainer</td>
+<td>Restricted token</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Fail-closed invariant:</strong> if the desired sandbox tier is unavailable and the policy requires it, the operation is aborted with <code>SandboxError::PolicyNotMet</code>. There is no silent downgrade.</p>
+<h3 id="network-policy">Network policy<a class="headerlink" href="#network-policy" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Default: network access denied for all tool calls.</li>
+<li>User enables per-domain allow-listing in <code>config.toml</code>.</li>
+<li>MCP servers requiring network are declared in config and subject to their own policy.</li>
+</ul>
+<h3 id="threat-model-summary">Threat model summary<a class="headerlink" href="#threat-model-summary" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>flowchart TD
+    A[Malicious prompt\ninjection] --&gt;|mitigated by| SB[Sandbox: no arbitrary exec\nwithout allowlist]
+    B[Supply chain attack\non MCP server] --&gt;|mitigated by| HASH[Content-addressable MCP\nserver hashes in config]
+    C[Model exfiltrating data] --&gt;|mitigated by| NET[Network deny-by-default]
+    D[Runaway disk write] --&gt;|mitigated by| RL[rlimit FSIZE per operation]
+    E[Secret leakage via\nenv vars] --&gt;|mitigated by| ENV[Explicit env allowlist\nin SandboxPolicy]</code></pre>
+<h3 id="security-hardening-phase-2-complete">Security Hardening (Phase 2 Complete)<a class="headerlink" href="#security-hardening-phase-2-complete" title="Permanent link">&para;</a></h3>
+<p>Recent security improvements include:</p>
+<p><strong>Access Control &amp; Path Safety:</strong>
+- <strong>Path traversal prevention:</strong> All file tools use <code>resolve_within_working_dir()</code> to canonicalize paths and reject <code>..</code> escapes. Symlink targets validated to be in allowlist at execution time (prevents TOCTOU exploits).
+- <strong>Shell command classification:</strong> Intent classifier detects compound shell operators (<code>;</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>|</code>, <code>$()</code>, backticks) and escalates <code>Destructive</code> commands to require explicit user approval. Prevents shell injection via model-generated code.
+- <strong>Binary validation:</strong> <code>check_binary_available()</code> now validates binary names with metacharacter denylist instead of dangerous <code>sh -c</code> execution.</p>
+<p><strong>Kernel Sandboxing:</strong>
+- <strong>Real Seatbelt sandboxing (macOS):</strong> <code>sandbox_init(3)</code> FFI fully functional. Path canonicalization handles macOS symlinks (<code>/tmp</code> → <code>/private/tmp</code>). Dyld compatibility via global <code>file-read*</code> rules. Process fork/exec support for child sandboxing.
+- <strong>Landlock on Linux (fully implemented):</strong> Landlock LSM (Linux 5.13+) enforces fine-grained filesystem access via <code>landlock_create_ruleset()</code>. Seccomp-BPF fallback for older kernels. No silent degradation—fail-closed on unavailability.</p>
+<p><strong>Credential Protection:</strong>
+- <strong>CLI stdin prompts:</strong> Sensitive input (API keys, prompts in one-shot mode) piped via stdin instead of CLI args to avoid exposure in <code>ps</code> output.
+- <strong>Env var allowlisting:</strong> Explicit environment variable whitelist per tool. API keys not passed to untrusted tools.</p>
+<p><strong>Infrastructure:</strong>
+- <strong>Rate limiter using peer IP:</strong> Server-side rate limiting uses actual peer socket address, not spoofable <code>X-Forwarded-For</code> header.
+- <strong>RwLock poison recovery:</strong> Provider registry uses <code>unwrap_or_else(|e| e.into_inner())</code> to recover state after panic.
+- <strong>Memory IDs with UUID v7:</strong> Session and memory IDs use sortable UUID v7 instead of truncated timestamps.
+- <strong>Cache keys with blake3:</strong> Tool result cache uses blake3 (cryptographic hash) instead of non-cryptographic <code>DefaultHasher</code>.
+- <strong>Git SHA via libgit2:</strong> HEAD resolution uses pure <code>git2</code> crate (in-process I/O) instead of subprocess spawning.</p>
+<hr />
+<h2 id="13-key-design-decisions">13. Key Design Decisions<a class="headerlink" href="#13-key-design-decisions" title="Permanent link">&para;</a></h2>
+<h3 id="d1-workspace-over-monolith">D1: Workspace over monolith<a class="headerlink" href="#d1-workspace-over-monolith" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> Multi-crate Cargo workspace rather than a single <code>src/</code> tree.</p>
+<p><strong>Rationale:</strong> Enables parallel compilation, enforces API boundaries (a crate cannot accidentally access another crate's private types), and allows publishing individual crates (e.g., <code>hone-providers</code> as a standalone library).</p>
+<p><strong>Trade-off:</strong> Slightly higher initial setup cost; longer cold compile times on a clean build. Mitigated by <code>sccache</code> in CI.</p>
+<h3 id="d2-async-trait-for-object-safe-async-traits">D2: <code>async-trait</code> for object-safe async traits<a class="headerlink" href="#d2-async-trait-for-object-safe-async-traits" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> Use <code>async-trait</code> (or the stabilized <code>async fn in traits</code> on edition 2024) for all cross-crate traits.</p>
+<p><strong>Rationale:</strong> <code>dyn Trait</code> is required for runtime polymorphism over providers and tools. Without <code>async-trait</code>, async methods cannot appear in object-safe traits.</p>
+<p><strong>Edition 2024 note:</strong> With Rust edition 2024 and the stabilized RPITIT feature, <code>async fn</code> in traits that return <code>impl Future</code> are object-safe when combined with the <code>#[async_trait]</code> shim for <code>dyn</code> dispatch. We default to using the <code>async_trait</code> crate until the edition 2024 <code>dyn*</code> feature is stable.</p>
+<h3 id="d3-boxstream-for-provider-responses">D3: <code>BoxStream</code> for provider responses<a class="headerlink" href="#d3-boxstream-for-provider-responses" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> <code>ModelProvider::complete</code> returns <code>BoxStream&lt;'static, ProviderEvent&gt;</code> rather than a concrete type.</p>
+<p><strong>Rationale:</strong> Each provider has a different underlying stream type. Erasing to <code>BoxStream</code> avoids the monomorphisation explosion that would occur if <code>Agent</code> were generic over <code>P: ModelProvider</code>.</p>
+<h3 id="d4-postgresql-pgvector-for-semantic-index-sqlite-for-everything-else">D4: PostgreSQL + pgvector for semantic index, SQLite for everything else<a class="headerlink" href="#d4-postgresql-pgvector-for-semantic-index-sqlite-for-everything-else" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> The semantic index uses PostgreSQL with pgvector for vector storage and ANN search. Sessions, memories, and tool call logs remain in local SQLite.</p>
+<p><strong>Rationale:</strong> Embedding-based code search requires approximate nearest-neighbor queries over high-dimensional vectors. pgvector provides production-grade HNSW and IVFFlat indexes with sub-linear query time, which SQLite cannot match without a custom extension. PostgreSQL also handles concurrent writes from background indexer workers without SQLite's single-writer constraint. Sessions and memories stay in SQLite because they are inherently single-user, benefit from zero-ops local storage, and do not need vector search.</p>
+<p><strong>Trade-off:</strong> PostgreSQL is a runtime dependency for full semantic search. Mitigated by an in-memory fallback that provides regex-based symbol search when no database connection is available, so the CLI works offline with no external dependencies.</p>
+<h3 id="d5-recipes-as-yaml-not-rust-macros">D5: Recipes as YAML, not Rust macros<a class="headerlink" href="#d5-recipes-as-yaml-not-rust-macros" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> The recipe system uses YAML definitions rather than a Rust DSL.</p>
+<p><strong>Rationale:</strong> Recipes must be shareable between users without recompilation. YAML files can be distributed via the marketplace and loaded at runtime. The trade-off is loss of compile-time verification, mitigated by JSON Schema validation of recipe files on load.</p>
+<h3 id="d6-lsp-bridge-in-layer-2-not-layer-1">D6: LSP bridge in Layer 2, not Layer 1<a class="headerlink" href="#d6-lsp-bridge-in-layer-2-not-layer-1" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> The LSP bridge is a native Rust tool (Layer 2), not an MCP server (Layer 1).</p>
+<p><strong>Rationale:</strong> LSP round-trips must complete in &lt;500ms. The JSON-RPC + subprocess overhead of MCP would add ~50–100ms per call. The native bridge speaks LSP directly over stdin/stdout to the language server process, keeping the path entirely in-process.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

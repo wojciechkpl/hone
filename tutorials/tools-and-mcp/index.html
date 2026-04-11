@@ -1,0 +1,2185 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/tutorials/tools-and-mcp/">
+      
+      
+        <link rel="prev" href="../../architecture/">
+      
+      
+        <link rel="next" href="../mcp-extensions/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Tools & Agents - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#tools-and-mcp-integration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Tools & Agents
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#layer-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layer-2-native-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 2: Native Tools
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Layer 2: Native Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#available-native-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Native Tools
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Available Native Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#file-io" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File I/O
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shell-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shell Execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#git-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lsp-bridge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LSP Bridge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#semantic-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Semantic Index
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layer-1-mcp-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 1: MCP Integration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Layer 1: MCP Integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is MCP?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuring-mcp-servers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuring MCP Servers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-mcp-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using MCP Tools
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writing-custom-mcp-servers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Custom MCP Servers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layer-0-code-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 0: Code Mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Layer 0: Code Mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agents
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agents">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-an-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is an Agent?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#built-in-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-built-in-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Built-in Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#creating-custom-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creating Custom Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Registry
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layer-3-skills-honemd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 3: Skills (HONE.md)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tool-registry-and-dispatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool Registry and Dispatch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-custom-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Custom Tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandboxing-tool-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandboxing Tool Execution
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#layer-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layer-2-native-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 2: Native Tools
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Layer 2: Native Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#available-native-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Native Tools
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Available Native Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#file-io" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File I/O
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shell-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shell Execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#git-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lsp-bridge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LSP Bridge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#semantic-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Semantic Index
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layer-1-mcp-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 1: MCP Integration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Layer 1: MCP Integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is MCP?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuring-mcp-servers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuring MCP Servers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-mcp-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using MCP Tools
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writing-custom-mcp-servers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Custom MCP Servers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layer-0-code-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 0: Code Mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Layer 0: Code Mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agents
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agents">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-an-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is an Agent?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#built-in-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-built-in-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Built-in Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#creating-custom-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creating Custom Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Registry
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layer-3-skills-honemd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 3: Skills (HONE.md)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tool-registry-and-dispatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool Registry and Dispatch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-custom-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Custom Tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandboxing-tool-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandboxing Tool Execution
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="tools-and-mcp-integration">Tools and MCP Integration<a class="headerlink" href="#tools-and-mcp-integration" title="Permanent link">&para;</a></h1>
+<p>Hone's tool system is layered: native Rust tools for speed, MCP for extensibility, and Code Mode for custom orchestration. This guide explains each layer and how to use them.</p>
+<h2 id="layer-architecture">Layer Architecture<a class="headerlink" href="#layer-architecture" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart TB
+    Agent["hone-core: Agent"]
+
+    subgraph L3["Layer 3: Skills (HONE.md)"]
+        HoneMd["HONE.md&lt;br/&gt;Markdown conventions&lt;br/&gt;Parsed at startup&lt;br/&gt;Zero runtime cost"]
+    end
+
+    subgraph L2["Layer 2: Native Tools (Rust, &lt;1ms)"]
+        FileIO["File I/O&lt;br/&gt;read, write, edit, glob"]
+        Shell["Shell&lt;br/&gt;execute, capture"]
+        Git["Git&lt;br/&gt;commit, branch, diff, undo"]
+        LSP["LSP Bridge&lt;br/&gt;hover, diagnostics, actions"]
+        Index["Semantic Index&lt;br/&gt;search code by meaning"]
+    end
+
+    subgraph L1["Layer 1: MCP (JSON-RPC, 10-100ms)"]
+        GitHub["GitHub MCP"]
+        Jira["Jira MCP"]
+        Slack["Slack MCP"]
+        DB["Database MCP"]
+        Custom["Custom MCP"]
+    end
+
+    subgraph L0["Layer 0: Code Mode (Orchestration)"]
+        CodeMode["Agent-generated&lt;br/&gt;TypeScript/Python&lt;br/&gt;Calls native + MCP via SDK"]
+    end
+
+    Agent --&gt; L2
+    Agent --&gt; L1
+    Agent --&gt; L0
+    Agent --&gt; L3</code></pre>
+<h2 id="layer-2-native-tools">Layer 2: Native Tools<a class="headerlink" href="#layer-2-native-tools" title="Permanent link">&para;</a></h2>
+<p>Fastest layer. Direct Rust function calls. Built into Hone.</p>
+<h3 id="available-native-tools">Available Native Tools<a class="headerlink" href="#available-native-tools" title="Permanent link">&para;</a></h3>
+<h4 id="file-io">File I/O<a class="headerlink" href="#file-io" title="Permanent link">&para;</a></h4>
+<p>Read, write, edit files with glob pattern matching.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># List files matching a pattern</span>
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Find all Python files in src/&quot;</span>
+<span class="c1"># Agent calls: glob(pattern=&quot;src/**/*.py&quot;)</span>
+
+<span class="c1"># Read a file</span>
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Show me main.rs&quot;</span>
+<span class="c1"># Agent calls: read_file(path=&quot;main.rs&quot;)</span>
+
+<span class="c1"># Write a file</span>
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Create a README with instructions&quot;</span>
+<span class="c1"># Agent calls: write_file(path=&quot;README.md&quot;, content=&quot;...&quot;)</span>
+
+<span class="c1"># Edit a file (precise edits)</span>
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Add error handling to line 42&quot;</span>
+<span class="c1"># Agent calls: edit_file(path=&quot;main.rs&quot;, line=42, replacement=&quot;...&quot;)</span>
+</code></pre></div>
+<p><strong>Schema:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;read_file&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;write_file&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;edit_file&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;line&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;integer&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;replacement&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;glob&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;pattern&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h4 id="shell-execution">Shell Execution<a class="headerlink" href="#shell-execution" title="Permanent link">&para;</a></h4>
+<p>Execute shell commands and capture output.</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Run the tests and show me any failures&quot;</span>
+<span class="c1"># Agent calls: shell(cmd=&quot;cargo test&quot;, cwd=&quot;/project&quot;)</span>
+</code></pre></div>
+<p><strong>Schema:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;shell&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;cmd&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bash command&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;timeout_secs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;integer&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h4 id="git-operations">Git Operations<a class="headerlink" href="#git-operations" title="Permanent link">&para;</a></h4>
+<p>Version control: commit, branch, diff, undo.</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Commit my changes with a message&quot;</span>
+<span class="c1"># Agent calls: git_commit(message=&quot;...&quot;, files=[&quot;main.rs&quot;])</span>
+
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Show me what changed&quot;</span>
+<span class="c1"># Agent calls: git_diff()</span>
+
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Switch to feature branch&quot;</span>
+<span class="c1"># Agent calls: git_checkout(branch=&quot;feature/new-tool&quot;)</span>
+</code></pre></div>
+<p><strong>Available git tools:</strong>
+- <code>git_status</code> — show changed files
+- <code>git_diff</code> — show diffs
+- <code>git_commit</code> — create commit
+- <code>git_branch</code> — create/list branches
+- <code>git_checkout</code> — switch branches
+- <code>git_undo</code> — revert last commit
+- <code>git_redo</code> — reapply undone commit</p>
+<h4 id="lsp-bridge">LSP Bridge<a class="headerlink" href="#lsp-bridge" title="Permanent link">&para;</a></h4>
+<p>Language server integration for code intelligence. Hone now supports real LSP servers via stdio JSON-RPC. The <code>StdioLspBridge</code> auto-spawns a language server based on project type.</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;What does this function do?&quot;</span>
+<span class="c1"># Agent calls: lsp_hover(file=&quot;main.rs&quot;, line=10, col=5)</span>
+
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Show me all errors in this file&quot;</span>
+<span class="c1"># Agent calls: lsp_diagnostics(file=&quot;main.rs&quot;)</span>
+
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Fix the type error on line 42&quot;</span>
+<span class="c1"># Agent calls: lsp_code_action(file=&quot;main.rs&quot;, line=42)</span>
+</code></pre></div>
+<p><strong>Supported Languages:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Language</th>
+<th>Server</th>
+<th>Detection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rust</td>
+<td>rust-analyzer</td>
+<td>Cargo.toml</td>
+</tr>
+<tr>
+<td>Python</td>
+<td>pyright-langserver</td>
+<td>pyproject.toml or requirements.txt</td>
+</tr>
+<tr>
+<td>TypeScript/JavaScript</td>
+<td>typescript-language-server</td>
+<td>package.json</td>
+</tr>
+<tr>
+<td>Go</td>
+<td>gopls</td>
+<td>go.mod</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Available LSP Tools:</strong>
+- <code>lsp_diagnostics(file: str)</code> — get errors and warnings in a file
+- <code>lsp_hover(file: str, line: int, col: int)</code> — get hover information at a position
+- <code>lsp_code_actions(file: str, line: int)</code> — get available code actions</p>
+<p>If the language server binary is not installed, Hone falls back to <code>MockLspBridge</code> that returns empty results — the tools are still registered but inactive:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># If rust-analyzer not found:</span>
+Agent<span class="w"> </span>calls:<span class="w"> </span>lsp_diagnostics<span class="o">(</span><span class="nv">file</span><span class="o">=</span><span class="s2">&quot;main.rs&quot;</span><span class="o">)</span>
+result:<span class="w"> </span><span class="o">[]</span><span class="w">  </span><span class="c1"># empty (server not available)</span>
+</code></pre></div>
+<p><strong>Installation:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Rust</span>
+rustup<span class="w"> </span>component<span class="w"> </span>add<span class="w"> </span>rust-analyzer
+
+<span class="c1"># Python</span>
+pip<span class="w"> </span>install<span class="w"> </span>pyright
+
+<span class="c1"># TypeScript/JavaScript</span>
+npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>typescript-language-server<span class="w"> </span>typescript
+
+<span class="c1"># Go</span>
+go<span class="w"> </span>install<span class="w"> </span>golang.org/x/tools/gopls@latest
+</code></pre></div>
+<h4 id="semantic-index">Semantic Index<a class="headerlink" href="#semantic-index" title="Permanent link">&para;</a></h4>
+<p>Search code by meaning (not keywords).</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Find functions that handle authentication&quot;</span>
+<span class="c1"># Agent calls: semantic_search(query=&quot;authentication&quot;, limit=10)</span>
+</code></pre></div>
+<h2 id="layer-1-mcp-integration">Layer 1: MCP Integration<a class="headerlink" href="#layer-1-mcp-integration" title="Permanent link">&para;</a></h2>
+<p>Connect external tools via the Model Context Protocol (JSON-RPC over stdio).</p>
+<h3 id="what-is-mcp">What is MCP?<a class="headerlink" href="#what-is-mcp" title="Permanent link">&para;</a></h3>
+<p>MCP is a standardized protocol for language models to call external tools. Hone acts as an MCP client, spawning MCP servers as subprocesses and forwarding tool calls.</p>
+<p><strong>Benefits:</strong>
+- Plugin architecture — tools in any language
+- Lazy schema loading — only fetch tool definitions on first use
+- JSON-RPC transport — flexible, testable
+- Full bidirectional — tool can push data back to agent</p>
+<h3 id="configuring-mcp-servers">Configuring MCP Servers<a class="headerlink" href="#configuring-mcp-servers" title="Permanent link">&para;</a></h3>
+<p>In <code>~/.config/hone/config.toml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[[mcp_servers]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;github&quot;</span>
+<span class="n">command</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span>
+<span class="n">args</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p">]</span>
+<span class="n">env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">GITHUB_TOKEN</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">&quot;ghp_...&quot;</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">[[mcp_servers]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;postgres&quot;</span>
+<span class="n">command</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/usr/local/bin/mcp-postgres&quot;</span>
+<span class="n">args</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;--connection-string&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;postgresql://user:pass@localhost/db&quot;</span><span class="p">]</span>
+
+<span class="k">[[mcp_servers]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;slack&quot;</span>
+<span class="n">command</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;python3&quot;</span>
+<span class="n">args</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/path/to/mcp-slack-server&quot;</span><span class="p">]</span>
+<span class="n">env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">SLACK_BOT_TOKEN</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">&quot;xoxb-...&quot;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<h3 id="using-mcp-tools">Using MCP Tools<a class="headerlink" href="#using-mcp-tools" title="Permanent link">&para;</a></h3>
+<p>Once configured, MCP tools appear automatically in the agent's tool registry:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Open a GitHub issue&quot;</span>
+<span class="c1"># Agent lists available tools:</span>
+<span class="c1"># - github_create_issue</span>
+<span class="c1"># - github_list_repos</span>
+<span class="c1"># - github_add_comment</span>
+<span class="c1"># ...agent calls: github_create_issue(repo=&quot;user/repo&quot;, title=&quot;...&quot;, body=&quot;...&quot;)</span>
+
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Query the database for users&quot;</span>
+<span class="c1"># Agent calls: postgres_query(sql=&quot;SELECT * FROM users WHERE active=true&quot;)</span>
+
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Post a message to Slack&quot;</span>
+<span class="c1"># Agent calls: slack_send_message(channel=&quot;general&quot;, text=&quot;...&quot;)</span>
+</code></pre></div>
+<h3 id="writing-custom-mcp-servers">Writing Custom MCP Servers<a class="headerlink" href="#writing-custom-mcp-servers" title="Permanent link">&para;</a></h3>
+<p>Create your own MCP server in any language. Here's a minimal Node.js example:</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// server.js — MCP server that provides a custom &quot;translate&quot; tool</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">readline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;readline&quot;</span><span class="p">);</span>
+
+<span class="kd">const</span><span class="w"> </span><span class="nx">rl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">readline</span><span class="p">.</span><span class="nx">createInterface</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">input</span><span class="o">:</span><span class="w"> </span><span class="nx">process</span><span class="p">.</span><span class="nx">stdin</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">output</span><span class="o">:</span><span class="w"> </span><span class="nx">process</span><span class="p">.</span><span class="nx">stdout</span><span class="p">,</span>
+<span class="p">});</span>
+
+<span class="kd">const</span><span class="w"> </span><span class="nx">tools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;translate&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">description</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Translate text from English to another language&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">inputSchema</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nx">type</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;object&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nx">properties</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">type</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">        </span><span class="nx">language</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">type</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;string&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nx">required</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;text&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;language&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">];</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="nx">messageId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0</span><span class="p">;</span>
+
+<span class="nx">rl</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="s2">&quot;line&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="nx">line</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">message</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="nx">line</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">message</span><span class="p">.</span><span class="nx">method</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;tools/list&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nb">JSON</span><span class="p">.</span><span class="nx">stringify</span><span class="p">({</span>
+<span class="w">        </span><span class="nx">jsonrpc</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;2.0&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="nx">message</span><span class="p">.</span><span class="nx">id</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">result</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">tools</span><span class="w"> </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}));</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">message</span><span class="p">.</span><span class="nx">method</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;tools/call&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">name</span><span class="p">,</span><span class="w"> </span><span class="nx">arguments</span><span class="o">:</span><span class="w"> </span><span class="nx">args</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">message</span><span class="p">.</span><span class="nx">params</span><span class="p">;</span>
+<span class="w">      </span><span class="kd">let</span><span class="w"> </span><span class="nx">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{};</span>
+
+<span class="w">      </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">name</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;translate&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Dummy translation</span>
+<span class="w">        </span><span class="nx">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nx">translated</span><span class="o">:</span><span class="w"> </span><span class="sb">`[Translation to </span><span class="si">${</span><span class="nx">args</span><span class="p">.</span><span class="nx">language</span><span class="si">}</span><span class="sb">]: </span><span class="si">${</span><span class="nx">args</span><span class="p">.</span><span class="nx">text</span><span class="si">}</span><span class="sb">`</span>
+<span class="w">        </span><span class="p">};</span>
+<span class="w">      </span><span class="p">}</span>
+
+<span class="w">      </span><span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nb">JSON</span><span class="p">.</span><span class="nx">stringify</span><span class="p">({</span>
+<span class="w">        </span><span class="nx">jsonrpc</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;2.0&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="nx">message</span><span class="p">.</span><span class="nx">id</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">result</span>
+<span class="w">      </span><span class="p">}));</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="nx">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">console</span><span class="p">.</span><span class="nx">error</span><span class="p">(</span><span class="nx">e</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">});</span>
+</code></pre></div>
+<p>Register in config:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[[mcp_servers]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;translator&quot;</span>
+<span class="n">command</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;node&quot;</span>
+<span class="n">args</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/path/to/server.js&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p>Use it:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Translate &#39;hello&#39; to Spanish&quot;</span>
+<span class="c1"># Agent calls: translate(text=&quot;hello&quot;, language=&quot;Spanish&quot;)</span>
+<span class="c1"># Output: &quot;Hola&quot;</span>
+</code></pre></div>
+<h2 id="layer-0-code-mode">Layer 0: Code Mode<a class="headerlink" href="#layer-0-code-mode" title="Permanent link">&para;</a></h2>
+<p>Advanced orchestration via agent-generated scripts. The agent generates TypeScript/Python code that calls native tools and MCP tools via SDK imports.</p>
+<p><strong>When to use Code Mode:</strong>
+- Complex multi-step workflows
+- Conditional logic based on tool outputs
+- Loops over collections
+- Custom aggregation of results</p>
+<h3 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Find all Python files, count lines of code, and report top 10 longest files&quot;</span>
+</code></pre></div>
+<p>Agent generates (pseudocode):</p>
+<div class="highlight"><pre><span></span><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">glob</span><span class="p">,</span><span class="w"> </span><span class="nx">readFile</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;@hone/native&quot;</span><span class="p">;</span>
+<span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">slack</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;@hone/mcp&quot;</span><span class="p">;</span>
+
+<span class="kd">const</span><span class="w"> </span><span class="nx">files</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">glob</span><span class="p">(</span><span class="s2">&quot;**/*.py&quot;</span><span class="p">);</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[];</span>
+
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">file</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="nx">files</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">content</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">readFile</span><span class="p">(</span><span class="nx">file</span><span class="p">);</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">lines</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">content</span><span class="p">.</span><span class="nx">split</span><span class="p">(</span><span class="s2">&quot;\n&quot;</span><span class="p">).</span><span class="nx">length</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">results</span><span class="p">.</span><span class="nx">push</span><span class="p">({</span><span class="w"> </span><span class="nx">file</span><span class="p">,</span><span class="w"> </span><span class="nx">lines</span><span class="w"> </span><span class="p">});</span>
+<span class="p">}</span>
+
+<span class="nx">results</span><span class="p">.</span><span class="nx">sort</span><span class="p">((</span><span class="nx">a</span><span class="p">,</span><span class="w"> </span><span class="nx">b</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">b</span><span class="p">.</span><span class="nx">lines</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nx">a</span><span class="p">.</span><span class="nx">lines</span><span class="p">);</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">top10</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">results</span><span class="p">.</span><span class="nx">slice</span><span class="p">(</span><span class="mf">0</span><span class="p">,</span><span class="w"> </span><span class="mf">10</span><span class="p">);</span>
+
+<span class="k">await</span><span class="w"> </span><span class="nx">slack</span><span class="p">.</span><span class="nx">send_message</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">channel</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;general&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">text</span><span class="o">:</span><span class="w"> </span><span class="sb">`Top 10 longest Python files:\n</span><span class="si">${</span><span class="nx">top10</span><span class="p">.</span><span class="nx">map</span><span class="p">(</span><span class="nx">r</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="sb">`</span><span class="si">${</span><span class="nx">r</span><span class="p">.</span><span class="nx">file</span><span class="si">}</span><span class="sb">: </span><span class="si">${</span><span class="nx">r</span><span class="p">.</span><span class="nx">lines</span><span class="si">}</span><span class="sb"> lines`</span><span class="p">).</span><span class="nx">join</span><span class="p">(</span><span class="s2">&quot;\n&quot;</span><span class="p">)</span><span class="si">}</span><span class="sb">`</span>
+<span class="p">});</span>
+</code></pre></div>
+<p>Hone executes this generated code in a sandboxed subprocess, streaming results back.</p>
+<h2 id="agents">Agents<a class="headerlink" href="#agents" title="Permanent link">&para;</a></h2>
+<p>Agents are specialized personas that combine tools, system prompts, and model preferences. Hone ships with 9 built-in agents and supports custom agents.</p>
+<h3 id="what-is-an-agent">What is an Agent?<a class="headerlink" href="#what-is-an-agent" title="Permanent link">&para;</a></h3>
+<p>An agent is defined in Markdown with YAML frontmatter:</p>
+<div class="highlight"><pre><span></span><code>---
+name: code-reviewer
+description: Expert code reviewer for quality, security, performance, and maintainability
+tools: [read, grep, glob, shell]
+model: sonnet
+memory: &quot;This agent specializes in code quality reviews&quot;
+<span class="gu">sub_agents: []</span>
+<span class="gu">---</span>
+
+You are a senior code reviewer. Perform systematic reviews following this process:
+
+<span class="gu">## Review Process</span>
+
+<span class="k">1.</span> <span class="gs">**Correctness**</span> — Does the code do what it claims?
+<span class="k">2.</span> <span class="gs">**Security**</span> — SQL injection, XSS, command injection, secret leakage
+<span class="k">3.</span> <span class="gs">**Performance**</span> — Unnecessary allocations, N+1 queries, missing indexes
+<span class="k">4.</span> <span class="gs">**Maintainability**</span> — Naming clarity, function length, file length
+<span class="k">5.</span> <span class="gs">**Tests**</span> — Coverage of happy path, error paths, edge cases
+<span class="k">6.</span> <span class="gs">**Style**</span> — Consistent with codebase conventions
+
+[Rest of system prompt...]
+</code></pre></div>
+<p>The YAML frontmatter defines:
+- <code>name</code> — Agent identifier (used with <code>--agent</code> flag)
+- <code>description</code> — One-line summary (used for discovery)
+- <code>tools</code> — List of available tools
+- <code>model</code> — Default model (e.g., "sonnet", "opus", "haiku")
+- <code>memory</code> — Optional contextual info
+- <code>sub_agents</code> — Other agents this one can delegate to</p>
+<p>The Markdown body becomes the system prompt.</p>
+<h3 id="built-in-agents">Built-in Agents<a class="headerlink" href="#built-in-agents" title="Permanent link">&para;</a></h3>
+<p>Hone includes 9 pre-configured agents:</p>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>code-reviewer</code></td>
+<td>Quality and security reviews</td>
+</tr>
+<tr>
+<td><code>debugger</code></td>
+<td>Systematic bug investigation</td>
+</tr>
+<tr>
+<td><code>security-auditor</code></td>
+<td>Vulnerability and secret scanning</td>
+</tr>
+<tr>
+<td><code>performance-optimizer</code></td>
+<td>Profiling and optimization</td>
+</tr>
+<tr>
+<td><code>documentation-agent</code></td>
+<td>API docs and architecture diagrams</td>
+</tr>
+<tr>
+<td><code>api-designer</code></td>
+<td>REST/GraphQL/gRPC design</td>
+</tr>
+<tr>
+<td><code>tdd-workflow</code></td>
+<td>Test-Driven Development coach</td>
+</tr>
+<tr>
+<td><code>rust-expert</code></td>
+<td>Rust best practices</td>
+</tr>
+<tr>
+<td><code>python-expert</code></td>
+<td>Python best practices</td>
+</tr>
+</tbody>
+</table>
+<h3 id="using-built-in-agents">Using Built-in Agents<a class="headerlink" href="#using-built-in-agents" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Use an agent by name</span>
+hone<span class="w"> </span>--agent<span class="w"> </span>code-reviewer<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Review this code&quot;</span>
+
+<span class="c1"># Use an agent by searching its description</span>
+hone<span class="w"> </span>--agent<span class="w"> </span><span class="s2">&quot;test-driven&quot;</span><span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Implement a feature&quot;</span><span class="w">  </span><span class="c1"># finds tdd-workflow</span>
+</code></pre></div>
+<p>The agent registry automatically loads built-in agents and matches descriptions to agent names.</p>
+<h3 id="creating-custom-agents">Creating Custom Agents<a class="headerlink" href="#creating-custom-agents" title="Permanent link">&para;</a></h3>
+<p>Define a custom agent in <code>.hone/agents/my-agent.md</code>:</p>
+<div class="highlight"><pre><span></span><code>---
+name: my-custom-agent
+description: My specialized agent for X
+tools: [read, write, shell, grep, glob]
+<span class="gu">model: sonnet</span>
+<span class="gu">---</span>
+
+You are a specialized agent for [your domain].
+
+<span class="gu">## Process</span>
+
+<span class="k">1.</span> Understand the task
+<span class="k">2.</span> Take action
+<span class="k">3.</span> Verify results
+
+[Your system prompt continues...]
+</code></pre></div>
+<p>Place custom agents in:
+- Project level: <code>.hone/agents/*.md</code>
+- User level: <code>~/.config/hone/agents/*.md</code></p>
+<p>Custom agents override built-in agents with the same name. Load them automatically:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>/your/project
+hone<span class="w"> </span>--agent<span class="w"> </span>my-custom-agent
+</code></pre></div>
+<h3 id="agent-registry">Agent Registry<a class="headerlink" href="#agent-registry" title="Permanent link">&para;</a></h3>
+<p>The <code>AgentRegistry</code> loads agents at startup:</p>
+<div class="highlight"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">hone_core</span><span class="p">::</span><span class="n">agent_registry</span><span class="p">::</span><span class="n">AgentRegistry</span><span class="p">;</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentRegistry</span><span class="p">::</span><span class="n">new</span><span class="p">();</span>
+
+<span class="c1">// Load built-in agents</span>
+<span class="n">registry</span><span class="p">.</span><span class="n">load_builtins</span><span class="p">();</span>
+
+<span class="c1">// Load custom agents from a directory</span>
+<span class="n">registry</span><span class="p">.</span><span class="n">load_from_dir</span><span class="p">(</span><span class="n">Path</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="s">&quot;.hone/agents&quot;</span><span class="p">))</span><span class="o">?</span><span class="p">;</span>
+
+<span class="c1">// Find an agent by name</span>
+<span class="k">if</span><span class="w"> </span><span class="kd">let</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">registry</span><span class="p">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;code-reviewer&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;Agent: {}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="n">description</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// Find by description (case-insensitive)</span>
+<span class="k">if</span><span class="w"> </span><span class="kd">let</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">registry</span><span class="p">.</span><span class="n">find_by_description</span><span class="p">(</span><span class="s">&quot;test&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;Found: {}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="n">name</span><span class="p">);</span><span class="w">  </span><span class="c1">// might be &quot;tdd-workflow&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="layer-3-skills-honemd">Layer 3: Skills (HONE.md)<a class="headerlink" href="#layer-3-skills-honemd" title="Permanent link">&para;</a></h2>
+<p>Markdown conventions parsed at startup. Zero runtime cost. Use this for system prompts, example workflows, and reusable prompts.</p>
+<p>Create <code>HONE.md</code> in your project root:</p>
+<div class="highlight"><pre><span></span><code><span class="gh"># Project Skills</span>
+
+<span class="gu">## Skill: Run Tests</span>
+
+When asked to run tests, always use <span class="sb">`cargo test`</span> and capture both stdout and stderr.
+Explain any failures.
+
+<span class="gu">## Skill: Commit with Care</span>
+
+Before committing:
+<span class="k">1.</span> Run <span class="sb">`cargo test`</span>
+<span class="k">2.</span> Run <span class="sb">`cargo clippy`</span>
+<span class="k">3.</span> Review the diff with <span class="sb">`git diff`</span>
+<span class="k">4.</span> Ask for confirmation
+
+<span class="gu">## Skill: Code Review</span>
+
+When reviewing code:
+<span class="k">1.</span> Check for proper error handling
+<span class="k">2.</span> Verify all unwrap() calls are justified
+<span class="k">3.</span> Suggest better variable names
+<span class="k">4.</span> Test changes locally
+</code></pre></div>
+<p>The agent learns these conventions without token overhead — they're parsed once at startup and become part of the system prompt.</p>
+<h2 id="tool-registry-and-dispatch">Tool Registry and Dispatch<a class="headerlink" href="#tool-registry-and-dispatch" title="Permanent link">&para;</a></h2>
+<p>Hone maintains a registry of all available tools (L0, L1, L2, L3) and dispatches calls based on availability.</p>
+<p>Access programmatically:</p>
+<div class="highlight"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">hone_tools</span><span class="p">::</span><span class="n">ToolRegistry</span><span class="p">;</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToolRegistry</span><span class="p">::</span><span class="n">default</span><span class="p">();</span>
+
+<span class="c1">// List all tools</span>
+<span class="k">for</span><span class="w"> </span><span class="n">tool</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">registry</span><span class="p">.</span><span class="n">all</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;{}: {}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">tool</span><span class="p">.</span><span class="n">name</span><span class="p">(),</span><span class="w"> </span><span class="n">tool</span><span class="p">.</span><span class="n">description</span><span class="p">());</span>
+<span class="p">}</span>
+
+<span class="c1">// Call a tool</span>
+<span class="kd">let</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToolInput</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">serde_json</span><span class="p">::</span><span class="n">json</span><span class="o">!</span><span class="p">({</span>
+<span class="w">    </span><span class="s">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;main.rs&quot;</span>
+<span class="p">}));</span>
+<span class="kd">let</span><span class="w"> </span><span class="n">output</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">registry</span><span class="p">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">).</span><span class="n">unwrap</span><span class="p">().</span><span class="n">call</span><span class="p">(</span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">ctx</span><span class="p">).</span><span class="k">await</span><span class="o">?</span><span class="p">;</span>
+<span class="fm">println!</span><span class="p">(</span><span class="s">&quot;{}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">output</span><span class="p">.</span><span class="n">into_value</span><span class="p">());</span>
+</code></pre></div>
+<h2 id="writing-custom-tools">Writing Custom Tools<a class="headerlink" href="#writing-custom-tools" title="Permanent link">&para;</a></h2>
+<p>Create a custom native tool by implementing the <code>Tool</code> trait:</p>
+<div class="highlight"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">hone_tools</span><span class="p">::{</span><span class="n">Tool</span><span class="p">,</span><span class="w"> </span><span class="n">ToolContext</span><span class="p">,</span><span class="w"> </span><span class="n">ToolInput</span><span class="p">,</span><span class="w"> </span><span class="n">ToolOutput</span><span class="p">,</span><span class="w"> </span><span class="n">ToolError</span><span class="p">};</span>
+<span class="k">use</span><span class="w"> </span><span class="n">async_trait</span><span class="p">::</span><span class="n">async_trait</span><span class="p">;</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">MyTool</span><span class="p">;</span>
+
+<span class="cp">#[async_trait]</span>
+<span class="k">impl</span><span class="w"> </span><span class="n">Tool</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">MyTool</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">name</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="s">&quot;my_custom_tool&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">description</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="s">&quot;A custom tool that does something special&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">schema</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">serde_json</span><span class="p">::</span><span class="n">Value</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">serde_json</span><span class="p">::</span><span class="n">json</span><span class="o">!</span><span class="p">({</span>
+<span class="w">            </span><span class="s">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;object&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="s">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="s">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;string&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">            </span><span class="p">},</span>
+<span class="w">            </span><span class="s">&quot;required&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s">&quot;input&quot;</span><span class="p">]</span>
+<span class="w">        </span><span class="p">})</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span>
+<span class="w">        </span><span class="o">&amp;</span><span class="bp">self</span><span class="p">,</span>
+<span class="w">        </span><span class="n">input</span><span class="p">:</span><span class="w"> </span><span class="nc">ToolInput</span><span class="p">,</span>
+<span class="w">        </span><span class="n">ctx</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">ToolContext</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="n">ToolOutput</span><span class="p">,</span><span class="w"> </span><span class="n">ToolError</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">value</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">input</span><span class="p">.</span><span class="n">into_value</span><span class="p">();</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">text</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">value</span><span class="p">[</span><span class="s">&quot;input&quot;</span><span class="p">].</span><span class="n">as_str</span><span class="p">().</span><span class="n">ok_or_else</span><span class="p">(</span><span class="o">||</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">ToolError</span><span class="p">::</span><span class="n">InvalidInput</span><span class="p">(</span><span class="s">&quot;expected &#39;input&#39; string&quot;</span><span class="p">.</span><span class="n">into</span><span class="p">())</span>
+<span class="w">        </span><span class="p">})</span><span class="o">?</span><span class="p">;</span>
+
+<span class="w">        </span><span class="c1">// Your logic here</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="fm">format!</span><span class="p">(</span><span class="s">&quot;Processed: {}&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="p">);</span>
+
+<span class="w">        </span><span class="nb">Ok</span><span class="p">(</span><span class="n">ToolOutput</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">serde_json</span><span class="p">::</span><span class="n">json</span><span class="o">!</span><span class="p">({</span><span class="w"> </span><span class="s">&quot;result&quot;</span><span class="p">:</span><span class="w"> </span><span class="nc">result</span><span class="w"> </span><span class="p">})))</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Add to the registry:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToolRegistry</span><span class="p">::</span><span class="n">default</span><span class="p">();</span>
+<span class="n">registry</span><span class="p">.</span><span class="n">register</span><span class="p">(</span><span class="nb">Box</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">MyTool</span><span class="p">));</span>
+</code></pre></div>
+<h2 id="sandboxing-tool-execution">Sandboxing Tool Execution<a class="headerlink" href="#sandboxing-tool-execution" title="Permanent link">&para;</a></h2>
+<p>All tool calls are sandboxed for security. See <a href="../security/">Security Guide</a> for details on:
+- Path restrictions (allow-list / deny-list)
+- Network policies (deny-by-default)
+- Environment variable filtering
+- Process resource limits</p>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Getting started:</strong> See <a href="../getting-started/">Getting Started</a> to use built-in tools.</li>
+<li><strong>Recipes:</strong> Combine tools in <a href="../recipes/">Recipes</a> for multi-step workflows.</li>
+<li><strong>Security:</strong> Learn sandbox policies in <a href="../security/">Security Guide</a>.</li>
+<li><strong>Server:</strong> Use tools remotely via <a href="../server-and-remote/">Server</a>.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

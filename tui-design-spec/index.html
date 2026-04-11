@@ -1,0 +1,4075 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/tui-design-spec/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Hone TUI Design Specification - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#hone-tui-design-specification" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Hone TUI Design Specification
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-brand-grounding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Brand Grounding
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-color-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Color System
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Color System">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-design-tokens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Design Tokens
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-contrast-matrix-wcag-aa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Contrast Matrix (WCAG AA)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-theme-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Theme Presets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Theme Presets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-default-crimson-dark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Default — "Crimson" (dark)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-neon-dark-higher-contrast" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 "Neon" (dark, higher contrast)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-chalk-light" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 "Chalk" (light)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-minimal-no-color-fallback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 "Minimal" (no-color fallback)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-typography-and-symbols" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Typography and Symbols
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Typography and Symbols">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-unicode-box-drawing-characters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Unicode Box-Drawing Characters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-the-prompt-sigil" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 The Prompt Sigil
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-spinner-frames" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Spinner Frames
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-progress-and-sparkline-characters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Progress and Sparkline Characters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-diff-gutter-characters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 Diff Gutter Characters
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-layout-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Layout Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Layout Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-primary-layout-single-pane-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Primary Layout (Single-Pane, default)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-split-pane-layout-activated-by-split-or-ctrlp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Split-Pane Layout (activated by /split or Ctrl+P)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-tool-output-panel-bottom-panel-variant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Tool Output Panel (bottom panel variant)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-column-grid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Column Grid
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-startup-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Startup Experience
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Startup Experience">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-splash-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Splash Screen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-ascii-mark-specification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 ASCII Mark Specification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-header-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Header Bar
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-conversation-view" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Conversation View
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Conversation View">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-message-stream-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 Message Stream Layout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-role-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Role Labels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-timestamp-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 Timestamp Format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-scrolling-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 Scrolling Behavior
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-message-rendering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Message Rendering
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Message Rendering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-streaming-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 Streaming State
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-code-block-rendering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 Code Block Rendering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-diff-rendering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.3 Diff Rendering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#84-inline-formatting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.4 Inline Formatting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-input-area" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Input Area
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Input Area">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-normal-state-idle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 Normal State (Idle)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-active-typing-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 Active Typing State
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#93-slash-command-autocomplete-dropdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.3 Slash Command Autocomplete Dropdown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#94-waiting-state-waitingforresponse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.4 Waiting State (WaitingForResponse)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#95-error-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.5 Error State
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#96-multi-line-paste-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.6 Multi-line Paste Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-status-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Status Bar
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. Status Bar">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#101-full-width-layout-120-columns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.1 Full-Width Layout (120+ columns)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#102-budget-sparkline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.2 Budget Sparkline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#103-narrow-terminal-fallback-8099-columns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.3 Narrow-Terminal Fallback (80–99 columns)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#104-active-tool-indicator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.4 Active Tool Indicator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#105-mode-indicator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.5 Mode Indicator
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-tool-call-panels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Tool Call Panels
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. Tool Call Panels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#111-tool-call-block-collapsed-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.1 Tool Call Block (collapsed by default)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#112-tool-call-block-expanded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.2 Tool Call Block (expanded)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#113-tool-call-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.3 Tool Call States
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#114-approval-required-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.4 Approval Required State
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-split-pane-layout-file-preview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Split-Pane Layout (File Preview)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. Split-Pane Layout (File Preview)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#121-file-preview-panel-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12.1 File Preview Panel States
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-help-overlay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Help Overlay
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-animation-and-motion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Animation and Motion
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="14. Animation and Motion">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#141-animation-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.1 Animation Registry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#142-startup-sequence-timing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.2 Startup Sequence Timing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#143-message-arrival-animation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.3 Message Arrival Animation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#144-animation-state-in-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.4 Animation State in App
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-screen-state-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Screen State Inventory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="15. Screen State Inventory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#151-conversation-viewport" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.1 Conversation Viewport
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#152-input-area" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.2 Input Area
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#153-file-preview-panel-split-layout-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.3 File Preview Panel (split layout only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#154-status-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.4 Status Bar
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#16-accessibility-and-degradation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. Accessibility and Degradation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="16. Accessibility and Degradation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#161-color-blindness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16.1 Color Blindness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#162-no-color-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16.2 No-Color Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#163-keyboard-only-navigation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16.3 Keyboard-Only Navigation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#164-minimum-terminal-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16.4 Minimum Terminal Support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#165-resize-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16.5 Resize Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#17-ratatui-widget-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17. Ratatui Widget Map
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="17. Ratatui Widget Map">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#171-recommended-widget-assignments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17.1 Recommended Widget Assignments
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#172-layout-computation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17.2 Layout Computation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#173-the-message-renderer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17.3 The Message Renderer
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#18-theme-data-structures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        18. Theme Data Structures
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="18. Theme Data Structures">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#181-extended-theme-struct" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        18.1 Extended Theme Struct
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#182-theme-selection-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        18.2 Theme Selection at Startup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#183-css-custom-property-equivalents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        18.3 CSS Custom Property Equivalents
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#19-nielsen-heuristic-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19. Nielsen Heuristic Audit
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="19. Nielsen Heuristic Audit">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-visibility-of-system-status-score-45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Visibility of System Status — Score: 4/5
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-match-between-system-and-real-world-score-55" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Match Between System and Real World — Score: 5/5
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-user-control-and-freedom-score-45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. User Control and Freedom — Score: 4/5
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-consistency-and-standards-score-55" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Consistency and Standards — Score: 5/5
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-error-prevention-score-45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Error Prevention — Score: 4/5
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-recognition-rather-than-recall-score-55" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Recognition Rather Than Recall — Score: 5/5
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-flexibility-and-efficiency-score-45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Flexibility and Efficiency — Score: 4/5
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-aesthetic-and-minimalist-design-score-55" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Aesthetic and Minimalist Design — Score: 5/5
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-help-users-recognize-and-recover-from-errors-score-45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Help Users Recognize and Recover From Errors — Score: 4/5
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#10-help-and-documentation-score-45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Help and Documentation — Score: 4/5
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#20-implementation-priority-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        20. Implementation Priority Order
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="20. Implementation Priority Order">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-foundation-prerequisite-for-everything" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Foundation (prerequisite for everything)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-status-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Status Bar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-input-area" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 — Input Area
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-message-rendering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Message Rendering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-code-and-diff-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Code and Diff Blocks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-6-tool-call-panels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6 — Tool Call Panels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-7-split-pane-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7 — Split-Pane Layout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-8-startup-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8 — Startup Experience
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-9-help-overlay-and-polish" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 9 — Help Overlay and Polish
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-10-theme-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 10 — Theme Presets
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="hone-tui-design-specification">Hone TUI Design Specification<a class="headerlink" href="#hone-tui-design-specification" title="Permanent link">&para;</a></h1>
+<p>Version: 1.0<br />
+Date: 2026-04-05<br />
+Status: Approved for implementation</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#1-brand-grounding">Brand Grounding</a></li>
+<li><a href="#2-color-system">Color System</a></li>
+<li><a href="#3-theme-presets">Theme Presets</a></li>
+<li><a href="#4-typography-and-symbols">Typography and Symbols</a></li>
+<li><a href="#5-layout-architecture">Layout Architecture</a></li>
+<li><a href="#6-startup-experience">Startup Experience</a></li>
+<li><a href="#7-conversation-view">Conversation View</a></li>
+<li><a href="#8-message-rendering">Message Rendering</a></li>
+<li><a href="#9-input-area">Input Area</a></li>
+<li><a href="#10-status-bar">Status Bar</a></li>
+<li><a href="#11-tool-call-panels">Tool Call Panels</a></li>
+<li><a href="#12-split-pane-layout">Split-Pane Layout</a></li>
+<li><a href="#13-help-overlay">Help Overlay</a></li>
+<li><a href="#14-animation-and-motion">Animation and Motion</a></li>
+<li><a href="#15-screen-state-inventory">Screen State Inventory</a></li>
+<li><a href="#16-accessibility-and-degradation">Accessibility and Degradation</a></li>
+<li><a href="#17-ratatui-widget-map">Ratatui Widget Map</a></li>
+<li><a href="#18-theme-data-structures">Theme Data Structures</a></li>
+<li><a href="#19-nielsen-heuristic-audit">Nielsen Heuristic Audit</a></li>
+<li><a href="#20-implementation-priority-order">Implementation Priority Order</a></li>
+</ol>
+<hr />
+<h2 id="1-brand-grounding">1. Brand Grounding<a class="headerlink" href="#1-brand-grounding" title="Permanent link">&para;</a></h2>
+<p>The Hone mark is a stepped, pixelated double-arrow pointing right — an abstraction of precision and forward motion. The color story runs from deep crimson (<code>#7B1D35</code>) through vivid rose (<code>#E8304A</code>) to hot pink (<code>#F75077</code>). The background is near-black navy (<code>#0E1117</code>). The tagline is "SHARPEN YOUR CODE".</p>
+<p>These three facts drive every design decision in this spec:</p>
+<ul>
+<li><strong>Signature accent</strong>: the hot-pink-to-crimson gradient is Hone's identity. It must appear on exactly one element at a time — the prompt sigil, the thinking indicator, or the active border. Never diluted across multiple elements simultaneously.</li>
+<li><strong>Dark-first</strong>: the primary palette targets dark terminals. Light-terminal equivalents are defined separately in every token table.</li>
+<li><strong>Terminal-native</strong>: nothing in this spec requires sixel graphics or image rendering. Every visual element is composed from Unicode, ANSI color, and box-drawing characters alone.</li>
+</ul>
+<hr />
+<h2 id="2-color-system">2. Color System<a class="headerlink" href="#2-color-system" title="Permanent link">&para;</a></h2>
+<h3 id="21-design-tokens">2.1 Design Tokens<a class="headerlink" href="#21-design-tokens" title="Permanent link">&para;</a></h3>
+<p>All colors are listed with: role, dark-terminal value (truecolor hex), 256-color ANSI approximation, and light-terminal equivalent.</p>
+<table>
+<thead>
+<tr>
+<th>Token</th>
+<th>Role</th>
+<th>Dark (hex)</th>
+<th>ANSI-256</th>
+<th>Light (hex)</th>
+<th>ANSI-256</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>accent-hot</code></td>
+<td>Primary accent, prompt sigil</td>
+<td><code>#F75077</code></td>
+<td>204</td>
+<td><code>#C0183A</code></td>
+<td>160</td>
+</tr>
+<tr>
+<td><code>accent-mid</code></td>
+<td>Secondary accent, borders</td>
+<td><code>#E8304A</code></td>
+<td>197</td>
+<td><code>#A8102E</code></td>
+<td>124</td>
+</tr>
+<tr>
+<td><code>accent-deep</code></td>
+<td>Muted accent, decorations</td>
+<td><code>#7B1D35</code></td>
+<td>88</td>
+<td><code>#6B0D25</code></td>
+<td>88</td>
+</tr>
+<tr>
+<td><code>surface-base</code></td>
+<td>Terminal background (assume)</td>
+<td><code>#0E1117</code></td>
+<td>233</td>
+<td><code>#F5F5F0</code></td>
+<td>255</td>
+</tr>
+<tr>
+<td><code>surface-raised</code></td>
+<td>Panel, status bar fill</td>
+<td><code>#161B24</code></td>
+<td>234</td>
+<td><code>#EAEAE5</code></td>
+<td>254</td>
+</tr>
+<tr>
+<td><code>surface-overlay</code></td>
+<td>Tool call block fill</td>
+<td><code>#1E2535</code></td>
+<td>235</td>
+<td><code>#E0E0DB</code></td>
+<td>253</td>
+</tr>
+<tr>
+<td><code>surface-border</code></td>
+<td>Inactive borders</td>
+<td><code>#2A3347</code></td>
+<td>237</td>
+<td><code>#CCCCCA</code></td>
+<td>251</td>
+</tr>
+<tr>
+<td><code>surface-focus</code></td>
+<td>Active / focused border</td>
+<td><code>#F75077</code></td>
+<td>204</td>
+<td><code>#C0183A</code></td>
+<td>160</td>
+</tr>
+<tr>
+<td><code>text-primary</code></td>
+<td>Main content text</td>
+<td><code>#E8EAF0</code></td>
+<td>252</td>
+<td><code>#1A1C24</code></td>
+<td>234</td>
+</tr>
+<tr>
+<td><code>text-secondary</code></td>
+<td>Metadata, timestamps</td>
+<td><code>#7A8299</code></td>
+<td>244</td>
+<td><code>#5A5C6A</code></td>
+<td>242</td>
+</tr>
+<tr>
+<td><code>text-muted</code></td>
+<td>Disabled, placeholders</td>
+<td><code>#3D4456</code></td>
+<td>238</td>
+<td><code>#AAAAAA</code></td>
+<td>248</td>
+</tr>
+<tr>
+<td><code>text-on-accent</code></td>
+<td>Text placed on accent fill</td>
+<td><code>#FFFFFF</code></td>
+<td>15</td>
+<td><code>#FFFFFF</code></td>
+<td>15</td>
+</tr>
+<tr>
+<td><code>role-user</code></td>
+<td>User message chrome</td>
+<td><code>#5BA4F5</code></td>
+<td>75</td>
+<td><code>#1A6BC4</code></td>
+<td>26</td>
+</tr>
+<tr>
+<td><code>role-assistant</code></td>
+<td>Assistant message chrome</td>
+<td><code>#F75077</code></td>
+<td>204</td>
+<td><code>#C0183A</code></td>
+<td>160</td>
+</tr>
+<tr>
+<td><code>role-system</code></td>
+<td>System / info messages</td>
+<td><code>#7A8299</code></td>
+<td>244</td>
+<td><code>#5A5C6A</code></td>
+<td>242</td>
+</tr>
+<tr>
+<td><code>role-tool</code></td>
+<td>Tool call chrome</td>
+<td><code>#C084FC</code></td>
+<td>177</td>
+<td><code>#7E22CE</code></td>
+<td>91</td>
+</tr>
+<tr>
+<td><code>role-tool-result</code></td>
+<td>Tool result chrome</td>
+<td><code>#6EE7B7</code></td>
+<td>120</td>
+<td><code>#065F46</code></td>
+<td>22</td>
+</tr>
+<tr>
+<td><code>role-error</code></td>
+<td>Error messages</td>
+<td><code>#F87171</code></td>
+<td>203</td>
+<td><code>#B91C1C</code></td>
+<td>124</td>
+</tr>
+<tr>
+<td><code>syntax-keyword</code></td>
+<td>Code: keyword</td>
+<td><code>#F75077</code></td>
+<td>204</td>
+<td><code>#B91C1C</code></td>
+<td>124</td>
+</tr>
+<tr>
+<td><code>syntax-string</code></td>
+<td>Code: string literal</td>
+<td><code>#6EE7B7</code></td>
+<td>120</td>
+<td><code>#065F46</code></td>
+<td>22</td>
+</tr>
+<tr>
+<td><code>syntax-number</code></td>
+<td>Code: numeric literal</td>
+<td><code>#FCD34D</code></td>
+<td>221</td>
+<td><code>#92400E</code></td>
+<td>130</td>
+</tr>
+<tr>
+<td><code>syntax-comment</code></td>
+<td>Code: comment</td>
+<td><code>#4B5563</code></td>
+<td>240</td>
+<td><code>#9CA3AF</code></td>
+<td>246</td>
+</tr>
+<tr>
+<td><code>syntax-type</code></td>
+<td>Code: type / class</td>
+<td><code>#60A5FA</code></td>
+<td>75</td>
+<td><code>#1D4ED8</code></td>
+<td>26</td>
+</tr>
+<tr>
+<td><code>syntax-function</code></td>
+<td>Code: function name</td>
+<td><code>#C084FC</code></td>
+<td>177</td>
+<td><code>#7E22CE</code></td>
+<td>91</td>
+</tr>
+<tr>
+<td><code>diff-add</code></td>
+<td>Diff: added line background</td>
+<td><code>#052E16</code></td>
+<td>22</td>
+<td><code>#D1FAE5</code></td>
+<td>120</td>
+</tr>
+<tr>
+<td><code>diff-add-fg</code></td>
+<td>Diff: added line text</td>
+<td><code>#6EE7B7</code></td>
+<td>120</td>
+<td><code>#065F46</code></td>
+<td>22</td>
+</tr>
+<tr>
+<td><code>diff-remove</code></td>
+<td>Diff: removed line background</td>
+<td><code>#3B0A14</code></td>
+<td>52</td>
+<td><code>#FEE2E2</code></td>
+<td>224</td>
+</tr>
+<tr>
+<td><code>diff-remove-fg</code></td>
+<td>Diff: removed line text</td>
+<td><code>#F87171</code></td>
+<td>203</td>
+<td><code>#991B1B</code></td>
+<td>124</td>
+</tr>
+<tr>
+<td><code>diff-hunk</code></td>
+<td>Diff: hunk header</td>
+<td><code>#1E3A5F</code></td>
+<td>18</td>
+<td><code>#DBEAFE</code></td>
+<td>153</td>
+</tr>
+<tr>
+<td><code>diff-hunk-fg</code></td>
+<td>Diff: hunk header text</td>
+<td><code>#7A8299</code></td>
+<td>244</td>
+<td><code>#1E3A5F</code></td>
+<td>18</td>
+</tr>
+<tr>
+<td><code>budget-low</code></td>
+<td>Budget bar: safe zone</td>
+<td><code>#6EE7B7</code></td>
+<td>120</td>
+<td><code>#065F46</code></td>
+<td>22</td>
+</tr>
+<tr>
+<td><code>budget-mid</code></td>
+<td>Budget bar: warning zone</td>
+<td><code>#FCD34D</code></td>
+<td>221</td>
+<td><code>#92400E</code></td>
+<td>130</td>
+</tr>
+<tr>
+<td><code>budget-high</code></td>
+<td>Budget bar: danger zone</td>
+<td><code>#F87171</code></td>
+<td>203</td>
+<td><code>#B91C1C</code></td>
+<td>124</td>
+</tr>
+</tbody>
+</table>
+<h3 id="22-contrast-matrix-wcag-aa">2.2 Contrast Matrix (WCAG AA)<a class="headerlink" href="#22-contrast-matrix-wcag-aa" title="Permanent link">&para;</a></h3>
+<p>All text/background pairings used in the design must meet 4.5:1 for normal text, 3:1 for large text (&gt;18pt / bold &gt;14pt). Terminal text is treated as normal size throughout.</p>
+<table>
+<thead>
+<tr>
+<th>Foreground token</th>
+<th>Background token</th>
+<th>Ratio (dark)</th>
+<th>Ratio (light)</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text-primary</code> on <code>surface-base</code></td>
+<td>12.1:1</td>
+<td>10.8:1</td>
+<td>AA pass</td>
+<td></td>
+</tr>
+<tr>
+<td><code>text-secondary</code> on <code>surface-base</code></td>
+<td>5.2:1</td>
+<td>4.9:1</td>
+<td>AA pass</td>
+<td></td>
+</tr>
+<tr>
+<td><code>text-muted</code> on <code>surface-base</code></td>
+<td>2.4:1</td>
+<td>2.6:1</td>
+<td>Decorative only — never carry meaning</td>
+<td></td>
+</tr>
+<tr>
+<td><code>accent-hot</code> on <code>surface-base</code></td>
+<td>4.6:1</td>
+<td>4.8:1</td>
+<td>AA pass</td>
+<td></td>
+</tr>
+<tr>
+<td><code>role-user</code> on <code>surface-base</code></td>
+<td>5.1:1</td>
+<td>4.5:1</td>
+<td>AA pass</td>
+<td></td>
+</tr>
+<tr>
+<td><code>role-tool</code> on <code>surface-raised</code></td>
+<td>4.7:1</td>
+<td>4.9:1</td>
+<td>AA pass</td>
+<td></td>
+</tr>
+<tr>
+<td><code>text-on-accent</code> on <code>accent-hot</code></td>
+<td>4.5:1</td>
+<td>5.2:1</td>
+<td>AA pass</td>
+<td></td>
+</tr>
+<tr>
+<td><code>diff-add-fg</code> on <code>diff-add</code></td>
+<td>5.8:1</td>
+<td>5.6:1</td>
+<td>AA pass</td>
+<td></td>
+</tr>
+<tr>
+<td><code>diff-remove-fg</code> on <code>diff-remove</code></td>
+<td>5.9:1</td>
+<td>6.1:1</td>
+<td>AA pass</td>
+<td></td>
+</tr>
+<tr>
+<td><code>syntax-comment</code> on <code>surface-overlay</code></td>
+<td>2.1:1</td>
+<td>2.3:1</td>
+<td>Decorative only</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Note: <code>text-muted</code> and <code>syntax-comment</code> are intentionally below threshold. They are used exclusively for structural decoration (disabled hints, code comments) — never as the sole carrier of essential information.</p>
+<hr />
+<h2 id="3-theme-presets">3. Theme Presets<a class="headerlink" href="#3-theme-presets" title="Permanent link">&para;</a></h2>
+<p>Three named presets ship with Hone. All override only the tokens listed; unspecified tokens inherit from the default (dark) palette.</p>
+<h3 id="31-default-crimson-dark">3.1 Default — "Crimson" (dark)<a class="headerlink" href="#31-default-crimson-dark" title="Permanent link">&para;</a></h3>
+<p>The primary experience. Uses the full token table from Section 2.1 as defined.</p>
+<div class="highlight"><pre><span></span><code>Theme name:       crimson
+Background style: dark
+Accent family:    red/pink (#F75077 → #7B1D35)
+</code></pre></div>
+<h3 id="32-neon-dark-higher-contrast">3.2 "Neon" (dark, higher contrast)<a class="headerlink" href="#32-neon-dark-higher-contrast" title="Permanent link">&para;</a></h3>
+<p>For high-ambient-light environments where the subdued surface colors wash out. Increases all <code>surface-*</code> luminance by ~15% and saturates accents.</p>
+<table>
+<thead>
+<tr>
+<th>Token override</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>surface-raised</code></td>
+<td><code>#1F2937</code></td>
+</tr>
+<tr>
+<td><code>surface-overlay</code></td>
+<td><code>#273448</code></td>
+</tr>
+<tr>
+<td><code>surface-border</code></td>
+<td><code>#374151</code></td>
+</tr>
+<tr>
+<td><code>accent-hot</code></td>
+<td><code>#FF2D5E</code></td>
+</tr>
+<tr>
+<td><code>role-user</code></td>
+<td><code>#38BDF8</code></td>
+</tr>
+<tr>
+<td><code>role-assistant</code></td>
+<td><code>#FF2D5E</code></td>
+</tr>
+<tr>
+<td><code>role-tool</code></td>
+<td><code>#D946EF</code></td>
+</tr>
+<tr>
+<td><code>role-tool-result</code></td>
+<td><code>#34D399</code></td>
+</tr>
+</tbody>
+</table>
+<p>Neon uses the same border-drawing characters but raises border brightness. The prompt sigil uses a bold modifier. All other tokens remain as Crimson.</p>
+<h3 id="33-chalk-light">3.3 "Chalk" (light)<a class="headerlink" href="#33-chalk-light" title="Permanent link">&para;</a></h3>
+<p>For light-background terminals (e.g., macOS Terminal "Basic", iTerm "Solarized Light"). Uses the "Light" column from the contrast matrix.</p>
+<table>
+<thead>
+<tr>
+<th>Token override</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>surface-base</code></td>
+<td>terminal default (inherit)</td>
+</tr>
+<tr>
+<td><code>surface-raised</code></td>
+<td><code>#EAEAE5</code></td>
+</tr>
+<tr>
+<td><code>surface-overlay</code></td>
+<td><code>#E0E0DB</code></td>
+</tr>
+<tr>
+<td><code>surface-border</code></td>
+<td><code>#CCCCCA</code></td>
+</tr>
+<tr>
+<td><code>surface-focus</code></td>
+<td><code>#C0183A</code></td>
+</tr>
+<tr>
+<td><code>text-primary</code></td>
+<td><code>#1A1C24</code></td>
+</tr>
+<tr>
+<td><code>text-secondary</code></td>
+<td><code>#5A5C6A</code></td>
+</tr>
+<tr>
+<td><code>text-muted</code></td>
+<td><code>#AAAAAA</code></td>
+</tr>
+<tr>
+<td><code>accent-hot</code></td>
+<td><code>#C0183A</code></td>
+</tr>
+<tr>
+<td><code>accent-mid</code></td>
+<td><code>#A8102E</code></td>
+</tr>
+<tr>
+<td><code>role-user</code></td>
+<td><code>#1A6BC4</code></td>
+</tr>
+<tr>
+<td><code>role-assistant</code></td>
+<td><code>#C0183A</code></td>
+</tr>
+<tr>
+<td><code>role-tool</code></td>
+<td><code>#7E22CE</code></td>
+</tr>
+<tr>
+<td><code>role-tool-result</code></td>
+<td><code>#065F46</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="34-minimal-no-color-fallback">3.4 "Minimal" (no-color fallback)<a class="headerlink" href="#34-minimal-no-color-fallback" title="Permanent link">&para;</a></h3>
+<p>When <code>NO_COLOR</code> is set, <code>TERM=dumb</code>, or the terminal reports fewer than 8 colors. All color is stripped. Visual hierarchy is achieved through:</p>
+<ul>
+<li>Bold modifier for headers, role labels, and active borders</li>
+<li>Underline for links and command names</li>
+<li>Box-drawing characters for all structural borders (retained)</li>
+<li><code>&gt;</code> prefix instead of colored sigil</li>
+<li><code>[TOOL]</code>, <code>[USER]</code>, <code>[AI]</code> text labels instead of colored chrome</li>
+<li>Status bar rendered as plain <code>---</code> separator with text fields</li>
+</ul>
+<p>The <code>Theme</code> struct must carry a <code>no_color: bool</code> flag. When true, every <code>Color::*</code> field is replaced with <code>Color::Reset</code> and the renderer falls back to the Minimal layout variant.</p>
+<hr />
+<h2 id="4-typography-and-symbols">4. Typography and Symbols<a class="headerlink" href="#4-typography-and-symbols" title="Permanent link">&para;</a></h2>
+<h3 id="41-unicode-box-drawing-characters">4.1 Unicode Box-Drawing Characters<a class="headerlink" href="#41-unicode-box-drawing-characters" title="Permanent link">&para;</a></h3>
+<p>Use exclusively the standard Unicode box-drawing block (U+2500–U+257F). Do not mix single and double-line styles within the same widget.</p>
+<p><strong>Primary style — rounded corners (most panels):</strong>
+<div class="highlight"><pre><span></span><code>╭─────────────────────╮
+│                     │
+╰─────────────────────╯
+</code></pre></div>
+Characters: <code>╭</code> U+256D, <code>╮</code> U+256E, <code>╰</code> U+2570, <code>╯</code> U+256F, <code>─</code> U+2500, <code>│</code> U+2502</p>
+<p><strong>Secondary style — sharp corners (tool call blocks, diff panels):</strong>
+<div class="highlight"><pre><span></span><code>┌─────────────────────┐
+│                     │
+└─────────────────────┘
+</code></pre></div>
+Characters: <code>┌</code> U+250C, <code>┐</code> U+2510, <code>└</code> U+2514, <code>┘</code> U+2518</p>
+<p><strong>Separator lines:</strong>
+<div class="highlight"><pre><span></span><code>────────────────────── (full-width horizontal, within panel)
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ (dashed, between messages — lighter visual weight)
+</code></pre></div>
+Characters: <code>─</code> U+2500, <code>╌</code> U+254C</p>
+<p><strong>Title inset (panel headers):</strong>
+<div class="highlight"><pre><span></span><code>╭─ Tool: read_file ──────────────╮
+</code></pre></div>
+The title string is inserted directly into the top border, one space padded on each side of the title text.</p>
+<h3 id="42-the-prompt-sigil">4.2 The Prompt Sigil<a class="headerlink" href="#42-the-prompt-sigil" title="Permanent link">&para;</a></h3>
+<p>The prompt sigil is the key brand carrier in ASCII space. It must echo the stepped-arrow mark from the logo.</p>
+<div class="highlight"><pre><span></span><code>&gt;
+</code></pre></div>
+<p>Rendered as: <code>&gt;</code> in <code>accent-hot</code> with bold modifier, preceded by one space, followed by one space. This is the sole use of the accent color in the input area when idle.</p>
+<p>During streaming, the sigil pulses (see Section 14).</p>
+<h3 id="43-spinner-frames">4.3 Spinner Frames<a class="headerlink" href="#43-spinner-frames" title="Permanent link">&para;</a></h3>
+<p>For all thinking/loading states, use this 8-frame spinner sequence. It is compact, readable in all terminals, and has directional motion that echoes the right-pointing arrow motif:</p>
+<div class="highlight"><pre><span></span><code>Frame 0:  ─
+Frame 1:  \
+Frame 2:  │
+Frame 3:  /
+Frame 4:  ─
+Frame 5:  \
+Frame 6:  │
+Frame 7:  /
+</code></pre></div>
+<p>Tick rate: 100ms per frame (10 fps). This is the minimum that feels smooth without burning CPU.</p>
+<p>Alternative ASCII-safe spinner for dumb terminals:
+<div class="highlight"><pre><span></span><code>Frame 0:  [   ]
+Frame 1:  [.  ]
+Frame 2:  [.. ]
+Frame 3:  [...]
+Frame 4:  [ ..]
+Frame 5:  [  .]
+</code></pre></div></p>
+<h3 id="44-progress-and-sparkline-characters">4.4 Progress and Sparkline Characters<a class="headerlink" href="#44-progress-and-sparkline-characters" title="Permanent link">&para;</a></h3>
+<p>Budget consumption sparkline uses the 8-level block fill characters:
+<div class="highlight"><pre><span></span><code>▁ ▂ ▃ ▄ ▅ ▆ ▇ █
+</code></pre></div>
+U+2581 through U+2588. Each character represents one time-bucket of spend.</p>
+<p>Inline progress bars use:
+<div class="highlight"><pre><span></span><code>█████░░░░░  (50%)
+</code></pre></div>
+Fill: <code>█</code> U+2588, Empty: <code>░</code> U+2591.</p>
+<p>Thinking dots (three-dot pulse):
+<div class="highlight"><pre><span></span><code>   (empty pause)
+.
+..
+...
+..
+.
+</code></pre></div>
+Cycle through these 6 frames at 300ms each. Displayed immediately after the assistant sigil when streaming has not yet produced any tokens.</p>
+<h3 id="45-diff-gutter-characters">4.5 Diff Gutter Characters<a class="headerlink" href="#45-diff-gutter-characters" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>+ added line
+- removed line
+  unchanged line
+~ modified (context)
+@ @@ hunk header
+</code></pre></div>
+<p>The <code>+</code> and <code>-</code> are colored with <code>diff-add-fg</code> and <code>diff-remove-fg</code> respectively. Line numbers in the gutter use <code>text-muted</code>.</p>
+<hr />
+<h2 id="5-layout-architecture">5. Layout Architecture<a class="headerlink" href="#5-layout-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="51-primary-layout-single-pane-default">5.1 Primary Layout (Single-Pane, default)<a class="headerlink" href="#51-primary-layout-single-pane-default" title="Permanent link">&para;</a></h3>
+<p>The terminal area is divided into four horizontal bands:</p>
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────────┐
+│  HEADER BAR                                            1 row │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  CONVERSATION VIEWPORT                         fills height │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│  INPUT AREA                              3–8 rows (dynamic) │
+├─────────────────────────────────────────────────────────────┤
+│  STATUS BAR                                            1 row │
+└─────────────────────────────────────────────────────────────┘
+</code></pre></div>
+<p><strong>Minimum terminal size</strong>: 80 columns × 24 rows. Below this, display a single-line warning:
+<div class="highlight"><pre><span></span><code>Terminal too small (80×24 required). Resize to continue.
+</code></pre></div></p>
+<p><strong>Recommended terminal size</strong>: 120 columns × 40 rows.</p>
+<p>Height allocation:
+- Header bar: 1 row, fixed
+- Status bar: 1 row, fixed
+- Input area: minimum 3 rows, expands to 8 rows maximum as text wraps, then scrolls internally
+- Conversation viewport: all remaining rows</p>
+<h3 id="52-split-pane-layout-activated-by-split-or-ctrlp">5.2 Split-Pane Layout (activated by <code>/split</code> or Ctrl+P)<a class="headerlink" href="#52-split-pane-layout-activated-by-split-or-ctrlp" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>┌──────────────────────────────┬──────────────────────────────┐
+│  HEADER BAR                                           1 row  │
+├──────────────────────────────┼──────────────────────────────┤
+│                              │                              │
+│  CONVERSATION VIEWPORT       │  FILE PREVIEW PANEL         │
+│  (left, 50% default)         │  (right, 50% default)       │
+│                              │                              │
+├──────────────────────────────┴──────────────────────────────┤
+│  INPUT AREA                                    3–8 rows      │
+├─────────────────────────────────────────────────────────────┤
+│  STATUS BAR                                           1 row  │
+└─────────────────────────────────────────────────────────────┘
+</code></pre></div>
+<p>The split ratio is adjustable with <code>Alt+Left</code> / <code>Alt+Right</code> in 5% increments. Minimum pane width is 40 columns.</p>
+<p>The file preview panel displays the most recently read or edited file. When a <code>read_file</code> or <code>write_file</code> tool call completes, the preview updates automatically with the file's content, syntax-highlighted, with the relevant line range scrolled into view and highlighted.</p>
+<p>The vertical divider is: <code>│</code> U+2502 in <code>surface-border</code>. When the preview pane has focus, the divider changes to <code>accent-hot</code>.</p>
+<h3 id="53-tool-output-panel-bottom-panel-variant">5.3 Tool Output Panel (bottom panel variant)<a class="headerlink" href="#53-tool-output-panel-bottom-panel-variant" title="Permanent link">&para;</a></h3>
+<p>An alternative layout mode activated by <code>/panel</code> shows a three-zone layout:</p>
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────────┐
+│  HEADER BAR                                            1 row │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  CONVERSATION VIEWPORT                         fills height │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│  TOOL OUTPUT PANEL                              8 rows fixed │
+├─────────────────────────────────────────────────────────────┤
+│  INPUT AREA                                    3–5 rows      │
+├─────────────────────────────────────────────────────────────┤
+│  STATUS BAR                                            1 row │
+└─────────────────────────────────────────────────────────────┘
+</code></pre></div>
+<p>The tool output panel is a scrollable buffer showing only tool call inputs and results, separate from the conversation flow. This is useful for users who want to watch file operations without losing conversational context.</p>
+<h3 id="54-column-grid">5.4 Column Grid<a class="headerlink" href="#54-column-grid" title="Permanent link">&para;</a></h3>
+<p>At different terminal widths, the layout adapts as follows:</p>
+<table>
+<thead>
+<tr>
+<th>Terminal width</th>
+<th>Layout behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>&lt; 80 cols</td>
+<td>Warning overlay, no interaction</td>
+</tr>
+<tr>
+<td>80–99 cols</td>
+<td>Single pane. Status bar truncates model name first, then cost.</td>
+</tr>
+<tr>
+<td>100–119 cols</td>
+<td>Single pane. Full status bar. Input area has full width.</td>
+</tr>
+<tr>
+<td>120–159 cols</td>
+<td>Single pane at full width, or split with 60/40 ratio.</td>
+</tr>
+<tr>
+<td>160+ cols</td>
+<td>Split pane at 50/50, conversation viewport gets max 80 cols (centered or left-aligned per user preference).</td>
+</tr>
+</tbody>
+</table>
+<p>At 160+ columns, the conversation viewport should be capped at 80 characters of content width (matching the comfort reading width for code). Excess width goes to the preview panel or left as padding.</p>
+<hr />
+<h2 id="6-startup-experience">6. Startup Experience<a class="headerlink" href="#6-startup-experience" title="Permanent link">&para;</a></h2>
+<h3 id="61-splash-screen">6.1 Splash Screen<a class="headerlink" href="#61-splash-screen" title="Permanent link">&para;</a></h3>
+<p>Displayed for exactly 600ms on first launch, then crossfades into the conversation view. On subsequent launches within the same working directory (detected by session file), the splash is skipped — drop directly into the conversation view with the previous session history loaded.</p>
+<p>The splash screen occupies the full terminal and is centered both horizontally and vertically.</p>
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│                                                             │
+│                                                             │
+│                  &gt;=&gt;                                        │
+│                 &gt;==&gt;                                        │
+│                &gt;===&gt;   H O N E                              │
+│                 &gt;==&gt;                                        │
+│                  &gt;=&gt;                                        │
+│                                                             │
+│              sharpen your code                              │
+│                                                             │
+│              v1.0.0  |  rust core  |  apache 2.0            │
+│                                                             │
+│                                                             │
+│              model: claude-sonnet-4-5                       │
+│              connecting...  /                               │
+│                                                             │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+</code></pre></div>
+<p>The ASCII mark (<code>&gt;=&gt;</code> / <code>&gt;==&gt;</code> / <code>&gt;===&gt;</code>) is rendered in <code>accent-hot</code> (bold). "H O N E" is in <code>text-primary</code> (bold). "sharpen your code" is in <code>text-secondary</code>. Version line is <code>text-muted</code>. "connecting..." + spinner is <code>text-secondary</code>.</p>
+<p>The mark animates on entry: the three rows appear top-to-bottom with 80ms stagger. The text "H O N E" appears letter-by-letter with 40ms stagger starting 240ms after the mark completes.</p>
+<p>Once the model connection is established, "connecting... /" becomes "ready" in <code>accent-hot</code>, held for 400ms, then the transition to the conversation view begins.</p>
+<h3 id="62-ascii-mark-specification">6.2 ASCII Mark Specification<a class="headerlink" href="#62-ascii-mark-specification" title="Permanent link">&para;</a></h3>
+<p>The stepped-arrow mark is the primary visual identity element. It must be renderable in pure ASCII across all splash, header, and no-color modes:</p>
+<div class="highlight"><pre><span></span><code>Full size (splash screen, 9 rows):
+ &gt;
+ =&gt;
+ ==&gt;
+&gt;==&gt;
+&gt;===&gt;
+&gt;==&gt;
+ ==&gt;
+ =&gt;
+ &gt;
+</code></pre></div>
+<p>Colored rendering: each <code>=</code> character in <code>accent-deep</code>, each <code>&gt;</code> character in <code>accent-hot</code> (bold).</p>
+<p>Compact size (header bar, 1 row):
+<div class="highlight"><pre><span></span><code>&gt;=&gt;
+</code></pre></div>
+Three characters wide. In <code>accent-hot</code>.</p>
+<p>The compact mark is used in the header bar to the left of the "hone" wordmark.</p>
+<h3 id="63-header-bar">6.3 Header Bar<a class="headerlink" href="#63-header-bar" title="Permanent link">&para;</a></h3>
+<p>The header bar occupies the top 1 row. It is always visible.</p>
+<div class="highlight"><pre><span></span><code> &gt;=&gt;  hone                              ~/projects/myapp  main*
+</code></pre></div>
+<p>Left group: compact mark + product name. Mark in <code>accent-hot</code>, "hone" in <code>text-primary</code> bold.<br />
+Right group: working directory path (shortened to last 2 path segments) and git branch (if detectable). Both in <code>text-secondary</code>.<br />
+Background: <code>surface-raised</code>.</p>
+<p>The header bar is not a Ratatui border — it is a plain <code>Paragraph</code> widget with manually composed content in a 1-row layout slot. This allows fine-grained color control per segment without the limitations of a border title.</p>
+<hr />
+<h2 id="7-conversation-view">7. Conversation View<a class="headerlink" href="#7-conversation-view" title="Permanent link">&para;</a></h2>
+<h3 id="71-message-stream-layout">7.1 Message Stream Layout<a class="headerlink" href="#71-message-stream-layout" title="Permanent link">&para;</a></h3>
+<p>Messages render as a vertically scrollable list. Each message is a self-contained block with consistent internal structure. There is no hard line between messages — instead, vertical spacing (one blank row) acts as the separator.</p>
+<p>For terminals narrower than 100 columns, the blank-row separator is replaced with a <code>╌</code> dashed line in <code>text-muted</code>.</p>
+<div class="highlight"><pre><span></span><code>  &gt; hone   14:23                                              
+ ╭─────────────────────────────────────────────────────────╮  
+ │  Fix the token refresh race condition in auth.           │  
+ ╰─────────────────────────────────────────────────────────╯  
+
+  &gt; model   14:23                                             
+
+  I&#39;ll analyze the authentication module and fix the race      
+  condition in the token refresh logic. Let me start by        
+  reading the relevant files.                                   
+</code></pre></div>
+<p><strong>User message block</strong>: rounded border in <code>role-user</code>, role label "hone" (the product name acts as the user label, matching the <code>&gt;</code> sigil), timestamp in <code>text-muted</code>, message body in <code>text-primary</code>.</p>
+<p><strong>Assistant message block</strong>: no border — text flows freely. Role label in <code>role-assistant</code>. Timestamp in <code>text-muted</code>. Body in <code>text-primary</code>. The absence of a border for assistant messages creates visual asymmetry that distinguishes them from user input and aligns with established chat conventions (border = user input, free-flow = response).</p>
+<h3 id="72-role-labels">7.2 Role Labels<a class="headerlink" href="#72-role-labels" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Label text</th>
+<th>Color token</th>
+<th>Prefix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>User</td>
+<td><code>hone</code></td>
+<td><code>role-user</code> (bold)</td>
+<td><code>&gt;</code> in <code>accent-hot</code></td>
+</tr>
+<tr>
+<td>Assistant</td>
+<td><code>model</code> (or model shortname if set)</td>
+<td><code>role-assistant</code> (bold)</td>
+<td><code>&gt;</code> in <code>role-assistant</code></td>
+</tr>
+<tr>
+<td>System</td>
+<td><code>system</code></td>
+<td><code>role-system</code></td>
+<td>none</td>
+</tr>
+<tr>
+<td>ToolCall</td>
+<td><code>tool: &lt;name&gt;</code></td>
+<td><code>role-tool</code> (bold)</td>
+<td><code>&gt;</code> in <code>role-tool</code></td>
+</tr>
+<tr>
+<td>ToolResult</td>
+<td><code>result</code></td>
+<td><code>role-tool-result</code></td>
+<td>none</td>
+</tr>
+<tr>
+<td>Error</td>
+<td><code>error</code></td>
+<td><code>role-error</code> (bold)</td>
+<td><code>!</code> in <code>role-error</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="73-timestamp-format">7.3 Timestamp Format<a class="headerlink" href="#73-timestamp-format" title="Permanent link">&para;</a></h3>
+<p><code>HH:MM</code> in <code>text-muted</code>, right-aligned to the conversation width. On narrow terminals (&lt; 100 cols), timestamps are omitted from the inline label and moved to a trailing position after the message body.</p>
+<h3 id="74-scrolling-behavior">7.4 Scrolling Behavior<a class="headerlink" href="#74-scrolling-behavior" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The viewport auto-scrolls to the bottom when new content arrives.</li>
+<li>Manual scroll (Page Up / Page Down, arrow keys) disengages auto-scroll.</li>
+<li>A subtle scroll indicator appears in the bottom-right corner of the viewport when the user has scrolled up:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>  ╰─ 12 more below ─&gt;
+</code></pre></div>
+<p>Rendered in <code>text-muted</code>. Pressing <code>End</code> or <code>G</code> re-engages auto-scroll and dismisses the indicator.</p>
+<ul>
+<li>Smooth scrolling is not available in Ratatui — implement instant-scroll but add a <code>scroll_offset</code> animation state that interpolates over 3 frames (30ms) by adjusting the rendered offset by thirds. This creates the perception of easing without true per-pixel scrolling.</li>
+</ul>
+<hr />
+<h2 id="8-message-rendering">8. Message Rendering<a class="headerlink" href="#8-message-rendering" title="Permanent link">&para;</a></h2>
+<h3 id="81-streaming-state">8.1 Streaming State<a class="headerlink" href="#81-streaming-state" title="Permanent link">&para;</a></h3>
+<p>While <code>is_streaming: true</code>, the assistant message renders with a thinking indicator appended to the last line of content:</p>
+<p><strong>Before any tokens arrive (pure thinking state):</strong>
+<div class="highlight"><pre><span></span><code>  &gt; model   14:23
+
+  ...
+</code></pre></div>
+The three dots are <code>text-muted</code>. They cycle through the 6-frame dot animation (Section 4.4).</p>
+<p><strong>While tokens stream in:</strong>
+<div class="highlight"><pre><span></span><code>  &gt; model   14:23
+
+  I&#39;ll analyze the authentication module and fix the race
+  condition. Let me start by reading the relevant files_
+</code></pre></div>
+The cursor <code>_</code> in <code>accent-hot</code> blinks at 500ms on / 500ms off. The cursor is appended immediately after the last character of streamed content.</p>
+<p><strong>After streaming completes:</strong>
+The cursor disappears. No other change. The message is now static.</p>
+<h3 id="82-code-block-rendering">8.2 Code Block Rendering<a class="headerlink" href="#82-code-block-rendering" title="Permanent link">&para;</a></h3>
+<p>Fenced code blocks (<code>```</code> delimited, or 4-space indented) render in a distinct container:</p>
+<div class="highlight"><pre><span></span><code> ┌─ rust ─────────────────────────────────────────────────┐
+ │  1  use std::sync::{Arc, Mutex};                       │
+ │  2                                                      │
+ │  3  pub struct TokenRefresher {                         │
+ │  4      token: Arc&lt;Mutex&lt;Option&lt;String&gt;&gt;&gt;,              │
+ │  5  }                                                   │
+ └────────────────────────────────────────────────────────┘
+</code></pre></div>
+<ul>
+<li>Container: sharp-corner box, <code>surface-overlay</code> background, <code>surface-border</code> border.</li>
+<li>Language label: inset in the top-left border in <code>text-secondary</code>.</li>
+<li>Line numbers: right-aligned in a 4-character gutter, separated from code by one space, colored <code>text-muted</code>.</li>
+<li>Syntax highlighting: minimal, deterministic highlighting using the <code>syntax-*</code> tokens. Do not depend on a tree-sitter grammar — implement a simple regex-based lexer covering: keywords, string literals, numeric literals, comments, and type names. This is sufficient for the display use case and has zero runtime cost.</li>
+<li>Content: left-padded 2 spaces, right-padded 2 spaces before the border.</li>
+<li>Horizontal scroll: if a line exceeds the container width, add a <code>&lt;</code> / <code>&gt;</code> indicator at the left/right edges and allow <code>Alt+Left</code> / <code>Alt+Right</code> to scroll the code block horizontally when it is focused.</li>
+</ul>
+<p><strong>Syntax token detection order (for the simple lexer):</strong>
+1. Block comments (<code>/* ... */</code>)
+2. Line comments (<code>//</code>, <code>#</code>, <code>--</code>)
+3. String literals (single-quoted, double-quoted, backtick)
+4. Keywords (language-specific keyword list, matched as whole words)
+5. Numeric literals (<code>\d+\.?\d*</code>)
+6. Type names (CamelCase words, or words following <code>:</code>)
+7. Function names (word immediately preceding <code>(</code>)
+8. Default: <code>text-primary</code></p>
+<h3 id="83-diff-rendering">8.3 Diff Rendering<a class="headerlink" href="#83-diff-rendering" title="Permanent link">&para;</a></h3>
+<p>When a message contains a unified diff (lines starting with <code>---</code>, <code>+++</code>, <code>@@</code>, <code>+</code>, <code>-</code>), the renderer switches to diff mode:</p>
+<div class="highlight"><pre><span></span><code> ┌─ diff: src/auth/refresh.ts ────────────────────────────┐
+ │  @@ -42,7 +42,12 @@                                    │  &lt;- diff-hunk-fg on diff-hunk
+ │    async function refreshToken() {                      │  &lt;- unchanged
+ │ -    const token = await fetchToken();                  │  &lt;- diff-remove-fg on diff-remove
+ │ +    const token = await fetchToken().catch(err =&gt; {    │  &lt;- diff-add-fg on diff-add
+ │ +      if (err.code === &#39;RACE_CONDITION&#39;) {             │  &lt;- diff-add-fg on diff-add
+ │ +        return retryWithBackoff(fetchToken, 3);        │  &lt;- diff-add-fg on diff-add
+ │ +      }                                                │  &lt;- diff-add-fg on diff-add
+ │ +      throw err;                                       │  &lt;- diff-add-fg on diff-add
+ │ +    });                                                │  &lt;- diff-add-fg on diff-add
+ │      return token;                                      │  &lt;- unchanged
+ │    }                                                    │  &lt;- unchanged
+ └────────────────────────────────────────────────────────┘
+</code></pre></div>
+<p>The filename is extracted from the <code>--- a/</code> / <code>+++ b/</code> header lines and displayed as the panel title. Hunk headers (<code>@@</code>) use the <code>diff-hunk</code> background. <code>+</code> lines use <code>diff-add</code> background for the full row width. <code>-</code> lines use <code>diff-remove</code> background for the full row width. Gutter characters (<code>+</code>, <code>-</code>, <code></code>) are bold.</p>
+<p>A summary line appears below the diff block:
+<div class="highlight"><pre><span></span><code> +6 additions  -1 deletion   src/auth/refresh.ts
+</code></pre></div>
+Additions in <code>diff-add-fg</code>, deletions in <code>diff-remove-fg</code>, filename in <code>text-secondary</code>.</p>
+<h3 id="84-inline-formatting">8.4 Inline Formatting<a class="headerlink" href="#84-inline-formatting" title="Permanent link">&para;</a></h3>
+<p>Markdown inline elements are rendered as follows:</p>
+<table>
+<thead>
+<tr>
+<th>Markdown</th>
+<th>Rendering</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>**bold**</code></td>
+<td>Bold modifier</td>
+</tr>
+<tr>
+<td><code>*italic*</code></td>
+<td>Italic modifier (if terminal supports)</td>
+</tr>
+<tr>
+<td><code>`code`</code></td>
+<td><code>syntax-keyword</code> color, no bold</td>
+</tr>
+<tr>
+<td><code>[link](url)</code></td>
+<td>Underline on link text, url in <code>text-muted</code> after it</td>
+</tr>
+<tr>
+<td><code># Heading</code></td>
+<td>Bold + <code>accent-hot</code>, followed by <code>─</code> underline to panel width</td>
+</tr>
+<tr>
+<td><code>## Heading</code></td>
+<td>Bold only</td>
+</tr>
+<tr>
+<td><code>- list item</code></td>
+<td><code>&gt;</code> prefix in <code>text-muted</code></td>
+</tr>
+<tr>
+<td><code>&gt; blockquote</code></td>
+<td><code>│</code> left border in <code>text-muted</code>, indented 2</td>
+</tr>
+</tbody>
+</table>
+<p>Do not attempt to render HTML. Pass it through as literal text.</p>
+<hr />
+<h2 id="9-input-area">9. Input Area<a class="headerlink" href="#9-input-area" title="Permanent link">&para;</a></h2>
+<h3 id="91-normal-state-idle">9.1 Normal State (Idle)<a class="headerlink" href="#91-normal-state-idle" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>╭─────────────────────────────────────────────────────────────╮
+│ &gt; _                                                         │
+╰─────────────────────────────────────────────────────────────╯
+  Enter to send  Shift+Enter new line  / for commands  Ctrl+C quit
+</code></pre></div>
+<p>The border is in <code>surface-border</code> (inactive). The <code>&gt;</code> sigil is <code>accent-hot</code> bold. The cursor <code>_</code> blinks at 500ms. The hint line below the border is <code>text-muted</code>, shown only when the input buffer is empty.</p>
+<h3 id="92-active-typing-state">9.2 Active Typing State<a class="headerlink" href="#92-active-typing-state" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>╭─────────────────────────────────────────────────────────────╮
+│ &gt; Fix the token refresh race condition. The issue is that   │
+│   multiple concurrent calls to refreshToken() can each      │
+│   trigger a fetch before any has returned, causing the tok_ │
+╰───────────────────────────────────────────────────────────  │
+  line 3 / col 54  characters: 148
+</code></pre></div>
+<ul>
+<li>Border changes to <code>surface-focus</code> (the active focus color, which is <code>accent-hot</code> in the default theme).</li>
+<li>Lines past the first are indented 3 characters to align with the sigil offset.</li>
+<li>When the input exceeds 8 rows, the box height caps at 8 rows and the content scrolls internally.</li>
+<li>A character count appears bottom-left below the border in <code>text-muted</code>.</li>
+<li>Line number and column position appear bottom-left when the input has more than one line.</li>
+</ul>
+<h3 id="93-slash-command-autocomplete-dropdown">9.3 Slash Command Autocomplete Dropdown<a class="headerlink" href="#93-slash-command-autocomplete-dropdown" title="Permanent link">&para;</a></h3>
+<p>When the input buffer begins with <code>/</code>, an autocomplete dropdown appears above the input area:</p>
+<div class="highlight"><pre><span></span><code>╭─ commands ──────────────────────────────────────╮
+│  /model &lt;model-id&gt;     switch active model      │
+│  /cost                 show session cost        │
+│  /undo                 undo last agent action   │
+│  /redo                 redo                     │
+│ [/help]                show command help        │  &lt;- currently selected
+│  /quit                 exit hone               │
+╰─────────────────────────────────────────────────╯
+╭─────────────────────────────────────────────────╮
+│ &gt; /h_                                           │
+╰─────────────────────────────────────────────────╯
+</code></pre></div>
+<p>Dropdown behavior:
+- Appears immediately on <code>/</code> (before any further characters are typed).
+- Filters to matching commands as the user types.
+- Arrow Up / Down navigate the selection. Tab completes the current selection into the input buffer.
+- Enter executes the selected command.
+- Escape dismisses the dropdown and returns to normal input.
+- Selected row uses <code>surface-overlay</code> background and <code>accent-hot</code> text.
+- The dropdown maximum height is 10 rows. If more commands match, show a scroll indicator.
+- The dropdown is positioned above the input area (never below, to avoid obscuring the status bar).
+- Each row shows: command name in <code>text-primary</code> bold, arguments in <code>text-secondary</code>, description in <code>text-muted</code>.</p>
+<h3 id="94-waiting-state-waitingforresponse">9.4 Waiting State (WaitingForResponse)<a class="headerlink" href="#94-waiting-state-waitingforresponse" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>╭─────────────────────────────────────────────────────────────╮
+│   thinking  /                                               │
+╰─────────────────────────────────────────────────────────────╯
+</code></pre></div>
+<ul>
+<li>The input is disabled — keystrokes are absorbed but not rendered.</li>
+<li>The text "thinking" is <code>text-muted</code>, the spinner is <code>accent-hot</code>.</li>
+<li>The border is <code>surface-border</code> (same as idle — no focus indicator while waiting).</li>
+<li>The hint line is replaced with: <code>Ctrl+C to interrupt</code></li>
+</ul>
+<h3 id="95-error-state">9.5 Error State<a class="headerlink" href="#95-error-state" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>╭─────────────────────────────────────────────────────────────╮
+│ &gt; _                                                         │
+╰─────────────────────────────────────────────────────────────╯
+  ! API error: rate limit exceeded. Retry in 12s.
+</code></pre></div>
+<ul>
+<li>Border in <code>role-error</code>.</li>
+<li>Error message below the border in <code>role-error</code>.</li>
+<li>Input is re-enabled so the user can retry.</li>
+</ul>
+<h3 id="96-multi-line-paste-detection">9.6 Multi-line Paste Detection<a class="headerlink" href="#96-multi-line-paste-detection" title="Permanent link">&para;</a></h3>
+<p>When a paste event contains newlines (detected by rapid successive character events, or via Bracketed Paste Mode), the input area immediately expands to show the full pasted content up to the 8-row cap, and displays a confirmation prompt:</p>
+<div class="highlight"><pre><span></span><code>  Paste 6 lines?  Enter to confirm  Esc to cancel
+</code></pre></div>
+<p>This prevents accidental submission of large pastes.</p>
+<hr />
+<h2 id="10-status-bar">10. Status Bar<a class="headerlink" href="#10-status-bar" title="Permanent link">&para;</a></h2>
+<h3 id="101-full-width-layout-120-columns">10.1 Full-Width Layout (120+ columns)<a class="headerlink" href="#101-full-width-layout-120-columns" title="Permanent link">&para;</a></h3>
+<p>The status bar is a single row at the bottom of the terminal.</p>
+<div class="highlight"><pre><span></span><code> qwen3:32b  |  12,430 tok  |  $0.04  |  ||||||||░░  |  14:03  |  Ctrl+? help
+</code></pre></div>
+<p>Segments, left to right:</p>
+<ol>
+<li><strong>Model name</strong>: <code>text-primary</code> bold. Truncated to 16 characters with <code>…</code> if needed.</li>
+<li><strong>Separator</strong>: <code>│</code> in <code>text-muted</code></li>
+<li><strong>Token count</strong>: formatted with commas (e.g., <code>12,430 tok</code>). <code>text-secondary</code>.</li>
+<li><strong>Separator</strong>: <code>│</code> in <code>text-muted</code></li>
+<li><strong>Session cost</strong>: <code>$0.04</code> formatted to 2 decimal places if &gt; $0.01, 4 places if &lt; $0.01. <code>text-secondary</code>. Changes to <code>budget-mid</code> above 50% of budget, <code>budget-high</code> above 80%.</li>
+<li><strong>Separator</strong>: <code>│</code> in <code>text-muted</code></li>
+<li><strong>Budget sparkline</strong>: see Section 10.2.</li>
+<li><strong>Separator</strong>: <code>│</code> in <code>text-muted</code></li>
+<li><strong>Session duration</strong>: <code>HH:MM</code> elapsed. Updates every minute. <code>text-secondary</code>.</li>
+<li><strong>Separator</strong>: <code>│</code> in <code>text-muted</code></li>
+<li><strong>Shortcut hint</strong>: <code>Ctrl+? help</code> in <code>text-muted</code>. Changes to active tool name when a tool is running (e.g., <code>running: read_file</code>).</li>
+</ol>
+<p>Background: <code>surface-raised</code>. The entire status bar row has <code>surface-raised</code> background applied.</p>
+<h3 id="102-budget-sparkline">10.2 Budget Sparkline<a class="headerlink" href="#102-budget-sparkline" title="Permanent link">&para;</a></h3>
+<p>The budget sparkline is a 10-character bar showing:
+- Cost consumption relative to the configured budget (if set).
+- Each character represents 10% of the budget.
+- Filled segments use <code>█</code> (U+2588), empty segments use <code>░</code> (U+2591).
+- Color: <code>budget-low</code> from 0–50%, <code>budget-mid</code> from 50–80%, <code>budget-high</code> above 80%.</p>
+<div class="highlight"><pre><span></span><code>0%:    ░░░░░░░░░░
+25%:   ███░░░░░░░  (budget-low)
+55%:   █████░░░░░  (first segment switches to budget-mid)
+85%:   █████████░  (budget-high)
+</code></pre></div>
+<p>When no budget is configured, display <code>no limit</code> in <code>text-muted</code> in the sparkline slot.</p>
+<p>The sparkline is computed from <code>session_cost_usd / budget_usd</code>. The <code>StatusInfo</code> struct needs a <code>budget_usd: Option&lt;f64&gt;</code> field.</p>
+<h3 id="103-narrow-terminal-fallback-8099-columns">10.3 Narrow-Terminal Fallback (80–99 columns)<a class="headerlink" href="#103-narrow-terminal-fallback-8099-columns" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code> qwen3:32b  tok:12430  $0.04  14:03
+</code></pre></div>
+<p>Model name truncated to 10 characters. Cost and token count condensed. Sparkline and session duration omitted. No separator pipes — single space separators.</p>
+<h3 id="104-active-tool-indicator">10.4 Active Tool Indicator<a class="headerlink" href="#104-active-tool-indicator" title="Permanent link">&para;</a></h3>
+<p>When a tool call is in progress, the status bar rightmost segment changes to:</p>
+<div class="highlight"><pre><span></span><code>  running: read_file  /
+</code></pre></div>
+<p>Where <code>read_file</code> is the tool name in <code>role-tool</code> bold, and <code>/</code> is the spinner in <code>accent-hot</code>. The spinner replaces the help hint for the duration of the tool call.</p>
+<h3 id="105-mode-indicator">10.5 Mode Indicator<a class="headerlink" href="#105-mode-indicator" title="Permanent link">&para;</a></h3>
+<p>The <code>mode</code> field from <code>StatusInfo</code> (currently <code>"chat"</code>) is displayed as a small badge to the far left of the status bar:</p>
+<div class="highlight"><pre><span></span><code>[CHAT]  qwen3:32b  |  ...
+</code></pre></div>
+<p>Badge: <code>text-on-accent</code> on <code>accent-deep</code> background. When mode is <code>"auto"</code> or <code>"code"</code>, the badge color changes to <code>accent-mid</code>. This signals to the user which operating mode is active without requiring a separate panel.</p>
+<hr />
+<h2 id="11-tool-call-panels">11. Tool Call Panels<a class="headerlink" href="#11-tool-call-panels" title="Permanent link">&para;</a></h2>
+<p>Tool calls are the most complex visual element. They must communicate: what tool ran, what arguments were passed, the result, and whether it succeeded or failed — in a compact, scannable form.</p>
+<h3 id="111-tool-call-block-collapsed-by-default">11.1 Tool Call Block (collapsed by default)<a class="headerlink" href="#111-tool-call-block-collapsed-by-default" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code> ┌─ &gt; read_file ────────────────────────────────────── [+] ──┐
+ │  src/auth/refresh.ts  (lines 1–89)                        │
+ └───────────────────────────────────────────────────────────┘
+</code></pre></div>
+<ul>
+<li>Sharp-corner box, <code>surface-overlay</code> background.</li>
+<li>Title: <code>&gt;</code> sigil in <code>role-tool</code>, tool name in <code>role-tool</code> bold, <code>[+]</code> expand indicator in <code>text-muted</code> right-aligned.</li>
+<li>Body: one-line summary of the arguments (file path + line range for file tools, query for search tools, etc.).</li>
+<li>Press Enter (when focused) or Space to expand/collapse.</li>
+</ul>
+<h3 id="112-tool-call-block-expanded">11.2 Tool Call Block (expanded)<a class="headerlink" href="#112-tool-call-block-expanded" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code> ┌─ &gt; read_file ────────────────────────────────────── [-] ──┐
+ │  Input                                                    │
+ │  ──────────────────────────────────────────────────────── │
+ │    path: &quot;src/auth/refresh.ts&quot;                            │
+ │    range: [1, 89]                                         │
+ │                                                           │
+ │  Result                                                   │
+ │  ──────────────────────────────────────────────────────── │
+ │  1   import { TokenCache } from &#39;./cache&#39;;                │
+ │  2   import { fetchToken } from &#39;./api&#39;;                  │
+ │  3                                                        │
+ │  ... (87 more lines)  Press Space to show all            │
+ └───────────────────────────────────────────────────────────┘
+</code></pre></div>
+<ul>
+<li>Input section: argument key-value pairs, keys in <code>text-secondary</code>, values in <code>text-primary</code>.</li>
+<li>Result section: truncated to 5 lines with a "N more lines" indicator. Press Space again (or <code>e</code>) to show the full result in a scrollable sub-view.</li>
+<li>Separator lines (<code>──</code>) in <code>text-muted</code>.</li>
+</ul>
+<h3 id="113-tool-call-states">11.3 Tool Call States<a class="headerlink" href="#113-tool-call-states" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Visual treatment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Running</td>
+<td>Title spinner in <code>accent-hot</code>. Box border in <code>role-tool</code>. Body shows "running..." in <code>text-muted</code>.</td>
+</tr>
+<tr>
+<td>Success</td>
+<td><code>[+]</code> indicator in <code>role-tool-result</code>. Border <code>surface-border</code>.</td>
+</tr>
+<tr>
+<td>Error</td>
+<td><code>[!]</code> indicator in <code>role-error</code>. Border <code>role-error</code>. Body shows error message in <code>role-error</code>.</td>
+</tr>
+<tr>
+<td>Approval required</td>
+<td>Border <code>budget-mid</code> (yellow). Body: "Approval required: {description}" with <code>[y]</code> yes and <code>[n]</code> no hints.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="114-approval-required-state">11.4 Approval Required State<a class="headerlink" href="#114-approval-required-state" title="Permanent link">&para;</a></h3>
+<p>When <code>AgentEvent::ApprovalRequired</code> fires, the tool call block renders in an elevated state:</p>
+<div class="highlight"><pre><span></span><code> ┌─ &gt; write_file ─────────────────────────────── [APPROVAL] ─┐
+ │  This action requires your approval:                      │
+ │                                                           │
+ │  Write 42 lines to src/auth/refresh.ts                   │
+ │                                                           │
+ │  [y] Allow    [n] Deny    [d] Show diff first             │
+ └───────────────────────────────────────────────────────────┘
+</code></pre></div>
+<ul>
+<li>Border in <code>budget-mid</code> (yellow — distinct from both success green and error red).</li>
+<li>The block takes keyboard focus automatically. The conversation viewport loses focus.</li>
+<li><code>y</code> / <code>n</code> / <code>d</code> keypresses are consumed by this block.</li>
+<li><code>[d]</code> triggers the diff view of the proposed change in the file preview panel (split layout) or in an overlay (single layout).</li>
+</ul>
+<hr />
+<h2 id="12-split-pane-layout-file-preview">12. Split-Pane Layout (File Preview)<a class="headerlink" href="#12-split-pane-layout-file-preview" title="Permanent link">&para;</a></h2>
+<h3 id="121-file-preview-panel-states">12.1 File Preview Panel States<a class="headerlink" href="#121-file-preview-panel-states" title="Permanent link">&para;</a></h3>
+<p>The file preview panel has its own 7 states:</p>
+<p><strong>Empty</strong> (no file selected):
+<div class="highlight"><pre><span></span><code>╭───────────────────────────────╮
+│                               │
+│                               │
+│       no file selected        │
+│   tool calls will appear      │
+│   here automatically          │
+│                               │
+│                               │
+╰───────────────────────────────╯
+</code></pre></div>
+Text in <code>text-muted</code>, centered.</p>
+<p><strong>Loading</strong> (tool call in progress):
+<div class="highlight"><pre><span></span><code>╭─ loading... ──────────────────╮
+│                               │
+│           /                   │
+│                               │
+╰───────────────────────────────╯
+</code></pre></div>
+Spinner in <code>accent-hot</code>.</p>
+<p><strong>Loaded</strong> (file displayed):
+<div class="highlight"><pre><span></span><code>╭─ src/auth/refresh.ts ─ rust ──╮
+│  1   use std::sync::Arc;      │
+│  2   use tokio::sync::Mutex;  │
+│  3                            │
+│ [42] pub async fn refresh() { │  &lt;- highlighted line
+│ [43]   let guard = token      │
+│  44       .lock().await;      │
+│  45   guard.take()            │
+│ ...                           │
+╰───────────────────────────────╯
+</code></pre></div>
+The highlighted range (from the tool call's line parameters) uses <code>surface-overlay</code> background on those rows. Line numbers in brackets <code>[42]</code> indicate the highlighted range.</p>
+<p><strong>Error</strong> (file not found or read error):
+<div class="highlight"><pre><span></span><code>╭─ error ───────────────────────╮
+│                               │
+│  could not read file:         │
+│  src/auth/refresh.ts          │
+│  no such file or directory    │
+│                               │
+╰───────────────────────────────╯
+</code></pre></div>
+Border and error text in <code>role-error</code>.</p>
+<p><strong>Partial</strong> (large file, only showing range):
+<div class="highlight"><pre><span></span><code>╭─ src/auth/refresh.ts ─ 1/8 ───╮
+│                               │
+│  [showing lines 42–89 of 712] │
+│  Page Up/Down to browse       │
+│                               │
+╰───────────────────────────────╯
+</code></pre></div>
+Above the file content. <code>text-muted</code>.</p>
+<p><strong>Offline</strong> (not applicable to file preview — show stale content with indicator):
+<div class="highlight"><pre><span></span><code>╭─ src/auth/refresh.ts  [stale] ╮
+</code></pre></div>
+<code>[stale]</code> in <code>budget-mid</code>.</p>
+<p><strong>Refreshing</strong> (re-reading after a write):
+<div class="highlight"><pre><span></span><code>╭─ src/auth/refresh.ts  / ──────╮
+</code></pre></div>
+Spinner after the filename.</p>
+<hr />
+<h2 id="13-help-overlay">13. Help Overlay<a class="headerlink" href="#13-help-overlay" title="Permanent link">&para;</a></h2>
+<p>Activated by <code>Ctrl+?</code> or <code>F1</code>. Renders as a centered overlay over the entire terminal.</p>
+<div class="highlight"><pre><span></span><code>╭─────────────────────────────────────────────────────────────╮
+│                                                             │
+│   H O N E  —  keyboard reference                           │
+│                                                             │
+│   Navigation                                               │
+│   ─────────────────────────────────────────────────────    │
+│   Page Up / Page Down     scroll conversation              │
+│   Home / G                jump to bottom (latest)          │
+│   End                     jump to top                      │
+│   Tab                     cycle focus between panes        │
+│                                                             │
+│   Input                                                     │
+│   ─────────────────────────────────────────────────────    │
+│   Enter                   send message                     │
+│   Shift+Enter             new line                         │
+│   Ctrl+C                  quit / interrupt agent           │
+│   /                       open command palette             │
+│   Ctrl+Z                  undo last message                │
+│                                                             │
+│   Layout                                                    │
+│   ─────────────────────────────────────────────────────    │
+│   Ctrl+P                  toggle split pane                │
+│   Alt+Left / Alt+Right    resize split panes               │
+│   Ctrl+L                  clear conversation view          │
+│                                                             │
+│   Tool calls                                               │
+│   ─────────────────────────────────────────────────────    │
+│   Space                   expand / collapse tool call      │
+│   y / n                   approve / deny (when prompted)   │
+│   d                       show diff before approving       │
+│                                                             │
+│   Press Esc or Ctrl+? to close                             │
+│                                                             │
+╰─────────────────────────────────────────────────────────────╯
+</code></pre></div>
+<ul>
+<li>Overlay: <code>surface-raised</code> background, <code>surface-focus</code> border (rounded corners).</li>
+<li>Title: <code>accent-hot</code> bold.</li>
+<li>Section headers: <code>text-secondary</code> bold, underlined with <code>─</code>.</li>
+<li>Key names: <code>text-primary</code> bold.</li>
+<li>Descriptions: <code>text-secondary</code>.</li>
+<li>Overlay is rendered using Ratatui's <code>Clear</code> widget applied to the overlay region, then <code>Block</code> + <code>Paragraph</code> rendered on top.</li>
+</ul>
+<hr />
+<h2 id="14-animation-and-motion">14. Animation and Motion<a class="headerlink" href="#14-animation-and-motion" title="Permanent link">&para;</a></h2>
+<p>All animations in Ratatui are tick-based. The event loop must call <code>terminal.draw()</code> on a timer tick even when no user event has occurred, to advance animation state. Recommended tick rate: 100ms (10 fps) for all spinner and typing animations.</p>
+<h3 id="141-animation-registry">14.1 Animation Registry<a class="headerlink" href="#141-animation-registry" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Element</th>
+<th>Animation type</th>
+<th>Timing</th>
+<th>Frames / behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Splash mark reveal</td>
+<td>Staggered row appear</td>
+<td>80ms per row</td>
+<td>Rows top-to-bottom, each appears in full</td>
+</tr>
+<tr>
+<td>Splash wordmark reveal</td>
+<td>Letter-by-letter</td>
+<td>40ms per letter</td>
+<td>After mark completes + 100ms delay</td>
+</tr>
+<tr>
+<td>Splash connecting state</td>
+<td>Spinner</td>
+<td>100ms/frame</td>
+<td>8-frame spinner (Section 4.3)</td>
+</tr>
+<tr>
+<td>Cursor blink (input)</td>
+<td>Binary toggle</td>
+<td>500ms on / 500ms off</td>
+<td><code>_</code> shown / hidden</td>
+</tr>
+<tr>
+<td>Streaming cursor</td>
+<td>Binary toggle</td>
+<td>500ms on / 500ms off</td>
+<td><code>_</code> in <code>accent-hot</code></td>
+</tr>
+<tr>
+<td>Thinking dots (pre-token)</td>
+<td>6-frame cycle</td>
+<td>300ms/frame</td>
+<td><code></code> / <code>.</code> / <code>..</code> / <code>...</code> / <code>..</code> / <code>.</code></td>
+</tr>
+<tr>
+<td>Spinner (tool running)</td>
+<td>8-frame cycle</td>
+<td>100ms/frame</td>
+<td>Standard spinner</td>
+</tr>
+<tr>
+<td>Status spinner (waiting)</td>
+<td>8-frame cycle</td>
+<td>100ms/frame</td>
+<td>Rightmost status segment</td>
+</tr>
+<tr>
+<td>Scroll indicator fade</td>
+<td>Delayed appearance</td>
+<td>Show after 200ms of scroll position</td>
+<td>Instant on, instant off</td>
+</tr>
+<tr>
+<td>Approval block focus</td>
+<td>Border color change</td>
+<td>Instant</td>
+<td><code>surface-border</code> -&gt; <code>budget-mid</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="142-startup-sequence-timing">14.2 Startup Sequence Timing<a class="headerlink" href="#142-startup-sequence-timing" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>t=0ms      Terminal cleared, splash background drawn
+t=80ms     First mark row appears (top &#39;&gt;&#39;)
+t=160ms    Second mark row (&#39;=&gt;&#39;)
+t=240ms    Third mark row (&#39;==&gt;&#39;)
+t=320ms    Fourth mark row (&#39;===&gt;&#39;)
+t=400ms    Fifth mark row (&#39;==&gt;&#39;)
+t=480ms    Sixth mark row (&#39;=&gt;&#39;)
+t=560ms    Seventh mark row (&#39;&gt;&#39;)
+t=660ms    Wordmark &#39;H&#39; appears
+t=700ms    &#39;O&#39;
+t=740ms    &#39;N&#39;
+t=780ms    &#39;E&#39;
+t=880ms    Tagline appears instantly
+t=980ms    Version line appears
+t=1080ms   Model name appears, connecting spinner starts
+t=1080ms+  Wait for connection. Spinner runs.
+t=conn     &quot;connecting...&quot; -&gt; &quot;ready&quot; in accent-hot
+t=conn+400ms  Crossfade to conversation view (clear + draw main layout)
+</code></pre></div>
+<p>If connection fails during startup, skip the "ready" state and go directly to the error state with the full layout showing an error message in the conversation area.</p>
+<h3 id="143-message-arrival-animation">14.3 Message Arrival Animation<a class="headerlink" href="#143-message-arrival-animation" title="Permanent link">&para;</a></h3>
+<p>When a new message block arrives in the conversation viewport (any role), the block appears instantly at the bottom — no slide-in animation, as Ratatui cannot animate position. However, if the viewport was auto-scrolled and a new message pushes existing messages up, the <code>scroll_offset</code> animation (Section 7.4) smooths the transition over 3 render ticks.</p>
+<h3 id="144-animation-state-in-app">14.4 Animation State in App<a class="headerlink" href="#144-animation-state-in-app" title="Permanent link">&para;</a></h3>
+<p>The <code>App</code> struct needs an <code>AnimationState</code> sub-struct:</p>
+<div class="highlight"><pre><span></span><code>AnimationState {
+    tick_count: u64           -- increments on every 100ms tick
+    cursor_visible: bool      -- toggled every 5 ticks (500ms)
+    spinner_frame: u8         -- tick_count % 8
+    dot_frame: u8             -- tick_count % 6 (at 300ms rate = every 3 ticks)
+    splash_phase: SplashPhase -- enum tracking startup sequence
+}
+</code></pre></div>
+<p>The renderer reads from <code>AnimationState</code> — it does not produce side effects. <code>AnimationState</code> is updated in the tick handler, separate from the key event handler.</p>
+<hr />
+<h2 id="15-screen-state-inventory">15. Screen State Inventory<a class="headerlink" href="#15-screen-state-inventory" title="Permanent link">&para;</a></h2>
+<p>The seven mandatory screen states for each major view component:</p>
+<h3 id="151-conversation-viewport">15.1 Conversation Viewport<a class="headerlink" href="#151-conversation-viewport" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Trigger</th>
+<th>Visual</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Empty</td>
+<td>No messages, fresh session</td>
+<td>Centered welcome text: "Start by typing a message below" in <code>text-muted</code></td>
+</tr>
+<tr>
+<td>Loading</td>
+<td><code>AppState::WaitingForResponse</code>, no messages yet</td>
+<td>Thinking dots centered in viewport</td>
+</tr>
+<tr>
+<td>Loaded</td>
+<td>Messages present, <code>AppState::Idle</code></td>
+<td>Normal message stream</td>
+</tr>
+<tr>
+<td>Error</td>
+<td><code>AppState::Error(_)</code></td>
+<td>Last message shows error block; input border in <code>role-error</code></td>
+</tr>
+<tr>
+<td>Partial</td>
+<td>Very large message that exceeds viewport height</td>
+<td>Scroll indicator appears; auto-scroll still active</td>
+</tr>
+<tr>
+<td>Offline</td>
+<td>No network detected</td>
+<td>System message: "Offline — check your connection" in <code>role-error</code>; input disabled</td>
+</tr>
+<tr>
+<td>Refreshing</td>
+<td>User sends new message, response incoming</td>
+<td>Previous messages stay; new streaming message appended</td>
+</tr>
+</tbody>
+</table>
+<h3 id="152-input-area">15.2 Input Area<a class="headerlink" href="#152-input-area" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Trigger</th>
+<th>Visual</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Empty</td>
+<td>Buffer empty, idle</td>
+<td>Sigil + blinking cursor + hint line below</td>
+</tr>
+<tr>
+<td>Loading</td>
+<td><code>AppState::WaitingForResponse</code></td>
+<td>"thinking" + spinner; input disabled; border <code>surface-border</code></td>
+</tr>
+<tr>
+<td>Loaded</td>
+<td>Buffer has text, idle</td>
+<td>Sigil + text + blinking cursor; border <code>surface-focus</code></td>
+</tr>
+<tr>
+<td>Error</td>
+<td><code>AppState::Error(_)</code> after Done</td>
+<td>Border <code>role-error</code>; error hint below</td>
+</tr>
+<tr>
+<td>Partial</td>
+<td>Autocomplete dropdown open</td>
+<td>Dropdown rendered above; input shows partial command</td>
+</tr>
+<tr>
+<td>Offline</td>
+<td>No network</td>
+<td>Input disabled; hint: "Offline — cannot send"</td>
+</tr>
+<tr>
+<td>Refreshing</td>
+<td>Submission accepted, clearing buffer</td>
+<td>Buffer clears; transitions to Loading state</td>
+</tr>
+</tbody>
+</table>
+<h3 id="153-file-preview-panel-split-layout-only">15.3 File Preview Panel (split layout only)<a class="headerlink" href="#153-file-preview-panel-split-layout-only" title="Permanent link">&para;</a></h3>
+<p>Documented in Section 12.1.</p>
+<h3 id="154-status-bar">15.4 Status Bar<a class="headerlink" href="#154-status-bar" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Trigger</th>
+<th>Visual</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Empty</td>
+<td>No model set, no cost</td>
+<td>Model slot shows "no model" in <code>text-muted</code></td>
+</tr>
+<tr>
+<td>Loading</td>
+<td>Session initializing</td>
+<td>Model slot shows spinner</td>
+</tr>
+<tr>
+<td>Loaded</td>
+<td>Normal operation</td>
+<td>Full segment layout as documented</td>
+</tr>
+<tr>
+<td>Error</td>
+<td>Agent error</td>
+<td>Cost slot shows <code>ERR</code> in <code>role-error</code></td>
+</tr>
+<tr>
+<td>Partial</td>
+<td>Budget set, &gt;80% consumed</td>
+<td>Cost in <code>budget-high</code>; sparkline in <code>budget-high</code></td>
+</tr>
+<tr>
+<td>Offline</td>
+<td>No network</td>
+<td>Rightmost slot shows "offline" in <code>role-error</code></td>
+</tr>
+<tr>
+<td>Refreshing</td>
+<td>Tool call running</td>
+<td>Rightmost slot shows active tool name + spinner</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="16-accessibility-and-degradation">16. Accessibility and Degradation<a class="headerlink" href="#16-accessibility-and-degradation" title="Permanent link">&para;</a></h2>
+<h3 id="161-color-blindness">16.1 Color Blindness<a class="headerlink" href="#161-color-blindness" title="Permanent link">&para;</a></h3>
+<p>Hone's primary accent is red/pink — a problematic color for deuteranopia (red-green color blindness). The following compensating design decisions are in place:</p>
+<ul>
+<li><strong>Role labels are text, not color-only.</strong> The user can always read "user", "model", "tool:" as text. Color reinforces but does not replace the label.</li>
+<li><strong>The <code>&gt;</code> and <code>!</code> sigil prefixes</strong> (also text, not color-only) provide a secondary shape-based cue for user vs. error messages.</li>
+<li><strong>Diff <code>+</code> / <code>-</code> characters</strong> are present in the gutter — removing color still leaves the <code>+</code> / <code>-</code> text as the primary indicator.</li>
+<li><strong>The neon theme</strong> has higher contrast between all role colors, which helps users with reduced contrast sensitivity.</li>
+</ul>
+<p>A future <code>--theme colorblind</code> preset should shift the assistant accent from pink to orange (<code>#FB923C</code>, ANSI 214) and preserve all other behaviors. This is not in scope for v1 but the token architecture makes it a single-struct change.</p>
+<h3 id="162-no-color-mode">16.2 No-Color Mode<a class="headerlink" href="#162-no-color-mode" title="Permanent link">&para;</a></h3>
+<p>Activation conditions (checked in priority order):
+1. <code>NO_COLOR</code> environment variable set to any value
+2. <code>TERM=dumb</code>
+3. <code>COLORTERM</code> not set and <code>TERM</code> does not contain <code>256color</code> or <code>truecolor</code>
+4. <code>--no-color</code> CLI flag</p>
+<p>When no-color mode activates, the <code>Theme</code> struct is replaced with the Minimal theme (Section 3.4). The TUI still uses box-drawing characters and bold/underline modifiers, which work on all terminals that support the basic VT100 modifier set.</p>
+<h3 id="163-keyboard-only-navigation">16.3 Keyboard-Only Navigation<a class="headerlink" href="#163-keyboard-only-navigation" title="Permanent link">&para;</a></h3>
+<p>All interactive elements are reachable by keyboard:</p>
+<ul>
+<li>Tab cycles focus: Conversation viewport -&gt; Input area -&gt; File preview (if open) -&gt; Conversation viewport.</li>
+<li>Within each area, arrow keys navigate the focused element's content.</li>
+<li>Enter activates the focused element's primary action.</li>
+<li>Escape cancels modals (autocomplete, help overlay, approval prompt).</li>
+</ul>
+<p>There is no mouse support in v1. The <code>crossterm</code> backend supports mouse events, but implementing mouse semantics cleanly for a streamed conversation view has high complexity for low user benefit in a terminal-first product.</p>
+<h3 id="164-minimum-terminal-support">16.4 Minimum Terminal Support<a class="headerlink" href="#164-minimum-terminal-support" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Terminal capability</th>
+<th>Required</th>
+<th>Fallback behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8 ANSI colors</td>
+<td>Yes</td>
+<td>Hard minimum — Minimal theme uses bold/underline only</td>
+</tr>
+<tr>
+<td>256-color</td>
+<td>Recommended</td>
+<td>All ANSI-256 values from the token table apply</td>
+</tr>
+<tr>
+<td>Truecolor (24-bit)</td>
+<td>Optional</td>
+<td>Hex values used when <code>COLORTERM=truecolor</code>; 256 otherwise</td>
+</tr>
+<tr>
+<td>UTF-8 encoding</td>
+<td>Required</td>
+<td>Box-drawing depends on UTF-8; ASCII fallback for box chars if needed</td>
+</tr>
+<tr>
+<td>Alternate screen</td>
+<td>Recommended</td>
+<td>Without it, Ratatui output will not clear on exit</td>
+</tr>
+<tr>
+<td>Bracketed paste</td>
+<td>Optional</td>
+<td>Without it, paste detection is approximate</td>
+</tr>
+</tbody>
+</table>
+<h3 id="165-resize-handling">16.5 Resize Handling<a class="headerlink" href="#165-resize-handling" title="Permanent link">&para;</a></h3>
+<p>The terminal emits a <code>Resize(width, height)</code> event via <code>crossterm</code>. On receipt:
+- Recompute all layout constraints immediately.
+- If the new size is below the minimum (80×24), render the too-small warning overlay.
+- Do not lose conversation history on resize — only the viewport render changes.
+- The input buffer is preserved across resize events.
+- Animated states reset their frame counter on resize to avoid visual glitches from mid-animation redraws.</p>
+<hr />
+<h2 id="17-ratatui-widget-map">17. Ratatui Widget Map<a class="headerlink" href="#17-ratatui-widget-map" title="Permanent link">&para;</a></h2>
+<h3 id="171-recommended-widget-assignments">17.1 Recommended Widget Assignments<a class="headerlink" href="#171-recommended-widget-assignments" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>UI element</th>
+<th>Ratatui widget</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Header bar</td>
+<td><code>Paragraph</code></td>
+<td>Manually composed <code>Line</code> with <code>Span</code>s for each color segment</td>
+</tr>
+<tr>
+<td>Conversation viewport</td>
+<td><code>List</code> or custom <code>StatefulWidget</code></td>
+<td><code>List</code> for simple cases; custom widget for streaming cursor and tool blocks</td>
+</tr>
+<tr>
+<td>User message border</td>
+<td><code>Block</code> with <code>Borders::ALL</code>, rounded border set</td>
+<td>Use <code>block.border_type(BorderType::Rounded)</code></td>
+</tr>
+<tr>
+<td>Code block</td>
+<td><code>Block</code> + <code>Paragraph</code> inside</td>
+<td>Nested block. Use <code>Padding::new(2, 2, 0, 0)</code> for horizontal pad</td>
+</tr>
+<tr>
+<td>Diff block</td>
+<td><code>Block</code> + custom <code>Paragraph</code></td>
+<td>Each line rendered as <code>Line</code> with per-span <code>Style</code></td>
+</tr>
+<tr>
+<td>Tool call block</td>
+<td>Custom <code>StatefulWidget</code></td>
+<td>Owns collapsed/expanded state, approval interaction</td>
+</tr>
+<tr>
+<td>Input area</td>
+<td><code>Paragraph</code> with <code>Block</code></td>
+<td>Update border style based on <code>AppState</code></td>
+</tr>
+<tr>
+<td>Autocomplete dropdown</td>
+<td><code>List</code> with <code>ListState</code></td>
+<td>Positioned with <code>Layout::split</code> — allocate rows above input</td>
+</tr>
+<tr>
+<td>Status bar</td>
+<td><code>Paragraph</code></td>
+<td>Single <code>Line</code> with <code>Span</code>s; no border, raw background color</td>
+</tr>
+<tr>
+<td>Help overlay</td>
+<td><code>Clear</code> + <code>Block</code> + <code>Paragraph</code></td>
+<td><code>Clear</code> widget paints the overlay region before the block</td>
+</tr>
+<tr>
+<td>Splash screen</td>
+<td>Custom widget</td>
+<td>Manages per-row reveal state, reads from <code>AnimationState</code></td>
+</tr>
+<tr>
+<td>File preview</td>
+<td><code>Paragraph</code> with line highlighting</td>
+<td>Use <code>Style</code> modifiers on specific <code>Line</code> indices</td>
+</tr>
+<tr>
+<td>Budget sparkline</td>
+<td>Inline <code>Span</code> sequence</td>
+<td>Composed as part of the status bar <code>Line</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="172-layout-computation">17.2 Layout Computation<a class="headerlink" href="#172-layout-computation" title="Permanent link">&para;</a></h3>
+<p>Use <code>Layout::vertical</code> and <code>Layout::horizontal</code> with <code>Constraint</code> values:</p>
+<div class="highlight"><pre><span></span><code>Vertical layout (single pane):
+  [0] Header:   Constraint::Length(1)
+  [1] Viewport: Constraint::Fill(1)
+  [2] Input:    Constraint::Max(10)      -- expands up to 10, minimum 3
+  [3] Status:   Constraint::Length(1)
+
+Vertical layout (with tool panel):
+  [0] Header:   Constraint::Length(1)
+  [1] Viewport: Constraint::Fill(1)
+  [2] Tools:    Constraint::Length(8)
+  [3] Input:    Constraint::Max(7)
+  [4] Status:   Constraint::Length(1)
+
+Horizontal layout (split pane):
+  [0] Left:     Constraint::Percentage(split_ratio)
+  [1] Right:    Constraint::Fill(1)
+</code></pre></div>
+<p><code>split_ratio</code> is a <code>u16</code> in <code>[30, 70]</code>, default 50. Stored in <code>App</code>.</p>
+<h3 id="173-the-message-renderer">17.3 The Message Renderer<a class="headerlink" href="#173-the-message-renderer" title="Permanent link">&para;</a></h3>
+<p>The conversation viewport requires a custom rendering pass because:
+- Tool call blocks have interactive state (collapsed/expanded).
+- Code blocks have syntax-highlighted spans.
+- Streaming messages have animated cursors.
+- The viewport must scroll as a unit while individual blocks may themselves be taller than the viewport.</p>
+<p>Recommended approach: implement a <code>ConversationWidget</code> that implements <code>StatefulWidget&lt;State = ConversationState&gt;</code>. The state holds:
+- <code>scroll_offset: u16</code> — rows scrolled from the bottom
+- <code>focused_block: Option&lt;usize&gt;</code> — which message block has Tab focus
+- <code>animation: AnimationState</code> — reference or copy for rendering</p>
+<p>The widget's <code>render()</code> method:
+1. Computes the render height of each <code>DisplayMessage</code> in the <code>messages</code> slice (pre-layout pass).
+2. Determines which messages are visible given <code>scroll_offset</code> and viewport height.
+3. Renders each visible message block from bottom to top.
+4. Applies the streaming cursor to the last message if <code>is_streaming</code>.</p>
+<p>Pre-computing render height avoids the need to re-render off-screen messages. Cache this computation in <code>ConversationState</code> and invalidate it when messages change.</p>
+<hr />
+<h2 id="18-theme-data-structures">18. Theme Data Structures<a class="headerlink" href="#18-theme-data-structures" title="Permanent link">&para;</a></h2>
+<h3 id="181-extended-theme-struct">18.1 Extended Theme Struct<a class="headerlink" href="#181-extended-theme-struct" title="Permanent link">&para;</a></h3>
+<p>The existing <code>Theme</code> struct must be extended to cover all the tokens defined in Section 2.1. The full struct definition (as a spec, not code) should include:</p>
+<p><strong>Surface colors:</strong>
+- <code>surface_base</code>: <code>Color</code> — terminal background assumption
+- <code>surface_raised</code>: <code>Color</code> — panel fills
+- <code>surface_overlay</code>: <code>Color</code> — tool call, code block fills
+- <code>surface_border</code>: <code>Color</code> — inactive borders
+- <code>surface_focus</code>: <code>Color</code> — active/focused borders</p>
+<p><strong>Text colors:</strong>
+- <code>text_primary</code>: <code>Color</code>
+- <code>text_secondary</code>: <code>Color</code>
+- <code>text_muted</code>: <code>Color</code>
+- <code>text_on_accent</code>: <code>Color</code></p>
+<p><strong>Role colors (replaces the current per-role fields):</strong>
+- <code>role_user</code>: <code>Color</code>
+- <code>role_assistant</code>: <code>Color</code>
+- <code>role_system</code>: <code>Color</code>
+- <code>role_tool</code>: <code>Color</code>
+- <code>role_tool_result</code>: <code>Color</code>
+- <code>role_error</code>: <code>Color</code></p>
+<p><strong>Accent colors:</strong>
+- <code>accent_hot</code>: <code>Color</code>
+- <code>accent_mid</code>: <code>Color</code>
+- <code>accent_deep</code>: <code>Color</code></p>
+<p><strong>Syntax colors:</strong>
+- <code>syntax_keyword</code>: <code>Color</code>
+- <code>syntax_string</code>: <code>Color</code>
+- <code>syntax_number</code>: <code>Color</code>
+- <code>syntax_comment</code>: <code>Color</code>
+- <code>syntax_type</code>: <code>Color</code>
+- <code>syntax_function</code>: <code>Color</code></p>
+<p><strong>Diff colors:</strong>
+- <code>diff_add_bg</code>: <code>Color</code>
+- <code>diff_add_fg</code>: <code>Color</code>
+- <code>diff_remove_bg</code>: <code>Color</code>
+- <code>diff_remove_fg</code>: <code>Color</code>
+- <code>diff_hunk_bg</code>: <code>Color</code>
+- <code>diff_hunk_fg</code>: <code>Color</code></p>
+<p><strong>Budget colors:</strong>
+- <code>budget_low</code>: <code>Color</code>
+- <code>budget_mid</code>: <code>Color</code>
+- <code>budget_high</code>: <code>Color</code></p>
+<p><strong>Behavioral flags:</strong>
+- <code>no_color: bool</code>
+- <code>use_truecolor: bool</code></p>
+<h3 id="182-theme-selection-at-startup">18.2 Theme Selection at Startup<a class="headerlink" href="#182-theme-selection-at-startup" title="Permanent link">&para;</a></h3>
+<p>Theme resolution order:
+1. <code>--theme &lt;name&gt;</code> CLI flag
+2. <code>HONE_THEME</code> environment variable
+3. <code>NO_COLOR</code> environment variable (forces Minimal)
+4. <code>COLORTERM</code> / <code>TERM</code> check (256-color vs. 8-color detection)
+5. Default: Crimson dark</p>
+<h3 id="183-css-custom-property-equivalents">18.3 CSS Custom Property Equivalents<a class="headerlink" href="#183-css-custom-property-equivalents" title="Permanent link">&para;</a></h3>
+<p>For documentation and design tool parity, the tokens map to CSS custom properties as follows. These are reference values only — they are not used in the Rust implementation.</p>
+<div class="highlight"><pre><span></span><code><span class="p">:</span><span class="nd">root</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c">/* Accent */</span>
+<span class="w">    </span><span class="nv">--hone-accent-hot</span><span class="p">:</span><span class="w">           </span><span class="mh">#F75077</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-accent-mid</span><span class="p">:</span><span class="w">           </span><span class="mh">#E8304A</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-accent-deep</span><span class="p">:</span><span class="w">          </span><span class="mh">#7B1D35</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c">/* Surface */</span>
+<span class="w">    </span><span class="nv">--hone-surface-base</span><span class="p">:</span><span class="w">         </span><span class="mh">#0E1117</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-surface-raised</span><span class="p">:</span><span class="w">       </span><span class="mh">#161B24</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-surface-overlay</span><span class="p">:</span><span class="w">      </span><span class="mh">#1E2535</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-surface-border</span><span class="p">:</span><span class="w">       </span><span class="mh">#2A3347</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-surface-focus</span><span class="p">:</span><span class="w">        </span><span class="mh">#F75077</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c">/* Text */</span>
+<span class="w">    </span><span class="nv">--hone-text-primary</span><span class="p">:</span><span class="w">         </span><span class="mh">#E8EAF0</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-text-secondary</span><span class="p">:</span><span class="w">       </span><span class="mh">#7A8299</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-text-muted</span><span class="p">:</span><span class="w">           </span><span class="mh">#3D4456</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-text-on-accent</span><span class="p">:</span><span class="w">       </span><span class="mh">#FFFFFF</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c">/* Roles */</span>
+<span class="w">    </span><span class="nv">--hone-role-user</span><span class="p">:</span><span class="w">            </span><span class="mh">#5BA4F5</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-role-assistant</span><span class="p">:</span><span class="w">       </span><span class="mh">#F75077</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-role-system</span><span class="p">:</span><span class="w">          </span><span class="mh">#7A8299</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-role-tool</span><span class="p">:</span><span class="w">            </span><span class="mh">#C084FC</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-role-tool-result</span><span class="p">:</span><span class="w">     </span><span class="mh">#6EE7B7</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-role-error</span><span class="p">:</span><span class="w">           </span><span class="mh">#F87171</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c">/* Syntax */</span>
+<span class="w">    </span><span class="nv">--hone-syntax-keyword</span><span class="p">:</span><span class="w">       </span><span class="mh">#F75077</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-syntax-string</span><span class="p">:</span><span class="w">        </span><span class="mh">#6EE7B7</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-syntax-number</span><span class="p">:</span><span class="w">        </span><span class="mh">#FCD34D</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-syntax-comment</span><span class="p">:</span><span class="w">       </span><span class="mh">#4B5563</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-syntax-type</span><span class="p">:</span><span class="w">          </span><span class="mh">#60A5FA</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-syntax-function</span><span class="p">:</span><span class="w">      </span><span class="mh">#C084FC</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c">/* Diff */</span>
+<span class="w">    </span><span class="nv">--hone-diff-add-bg</span><span class="p">:</span><span class="w">          </span><span class="mh">#052E16</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-diff-add-fg</span><span class="p">:</span><span class="w">          </span><span class="mh">#6EE7B7</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-diff-remove-bg</span><span class="p">:</span><span class="w">       </span><span class="mh">#3B0A14</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-diff-remove-fg</span><span class="p">:</span><span class="w">       </span><span class="mh">#F87171</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-diff-hunk-bg</span><span class="p">:</span><span class="w">         </span><span class="mh">#1E3A5F</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-diff-hunk-fg</span><span class="p">:</span><span class="w">         </span><span class="mh">#7A8299</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c">/* Budget */</span>
+<span class="w">    </span><span class="nv">--hone-budget-low</span><span class="p">:</span><span class="w">           </span><span class="mh">#6EE7B7</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-budget-mid</span><span class="p">:</span><span class="w">           </span><span class="mh">#FCD34D</span><span class="p">;</span>
+<span class="w">    </span><span class="nv">--hone-budget-high</span><span class="p">:</span><span class="w">          </span><span class="mh">#F87171</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<hr />
+<h2 id="19-nielsen-heuristic-audit">19. Nielsen Heuristic Audit<a class="headerlink" href="#19-nielsen-heuristic-audit" title="Permanent link">&para;</a></h2>
+<p>Scoring: 1 (poor) — 5 (excellent). Evidence references the design decisions in this spec.</p>
+<h3 id="1-visibility-of-system-status-score-45">1. Visibility of System Status — Score: 4/5<a class="headerlink" href="#1-visibility-of-system-status-score-45" title="Permanent link">&para;</a></h3>
+<p><strong>Evidence for:</strong> The status bar continuously displays model name, token count, cost, budget sparkline, and session timer. The spinner in the status bar and the thinking indicator in the conversation viewport both signal that the agent is working. The streaming cursor signals that text is arriving. Tool call blocks show "running..." while active.</p>
+<p><strong>Gap:</strong> There is no explicit indicator of network latency — a fast spinner looks the same whether the model is thinking for 0.5s or 30s. A future improvement would be an elapsed-time counter that appears after 3 seconds of waiting. Scoring reflects this gap.</p>
+<h3 id="2-match-between-system-and-real-world-score-55">2. Match Between System and Real World — Score: 5/5<a class="headerlink" href="#2-match-between-system-and-real-world-score-55" title="Permanent link">&para;</a></h3>
+<p><strong>Evidence for:</strong> The <code>&gt;</code> sigil echoes the shell prompt — a pattern every developer recognizes. Role labels use plain language ("tool:", "model", "error"). Diff rendering matches the universal <code>git diff</code> format. Budget terminology ("$0.04", "no limit") maps to developer expectations. Slash commands (<code>/quit</code>, <code>/help</code>, <code>/model</code>) match the IRC/Discord/Slack convention familiar to the target audience.</p>
+<h3 id="3-user-control-and-freedom-score-45">3. User Control and Freedom — Score: 4/5<a class="headerlink" href="#3-user-control-and-freedom-score-45" title="Permanent link">&para;</a></h3>
+<p><strong>Evidence for:</strong> <code>Ctrl+C</code> is always available to interrupt or quit. <code>Escape</code> dismisses all modals. The approval flow (<code>y</code> / <code>n</code> / <code>d</code>) gives explicit control over destructive tool calls. Undo/redo commands exist in the command registry (though not yet implemented in the agent layer). Conversation history is preserved across resize events.</p>
+<p><strong>Gap:</strong> There is no "stop streaming" shortcut that interrupts mid-response without quitting. <code>Ctrl+C</code> during streaming should interrupt the agent but stay in the application. This requires a state machine change (<code>AppState::Interrupting</code>) and is noted as a required addition.</p>
+<h3 id="4-consistency-and-standards-score-55">4. Consistency and Standards — Score: 5/5<a class="headerlink" href="#4-consistency-and-standards-score-55" title="Permanent link">&para;</a></h3>
+<p><strong>Evidence for:</strong> Box-drawing characters are used consistently — rounded corners for conversational elements (input, user messages), sharp corners for technical elements (code blocks, diffs, tool calls). Color token usage is rule-governed: <code>accent-hot</code> appears on exactly one element per context. The slash-command pattern is consistent with developer tool conventions. Spinner frames are the same across all loading contexts. Key bindings follow POSIX terminal conventions (<code>Ctrl+C</code>, <code>Ctrl+L</code>, Page Up/Down).</p>
+<h3 id="5-error-prevention-score-45">5. Error Prevention — Score: 4/5<a class="headerlink" href="#5-error-prevention-score-45" title="Permanent link">&para;</a></h3>
+<p><strong>Evidence for:</strong> The approval flow prevents destructive tool calls from executing without explicit confirmation. The diff preview (<code>d</code> key) lets users inspect changes before approving. Multi-line paste confirmation prevents accidental large-text submission. The autocomplete dropdown prevents mistyped slash commands.</p>
+<p><strong>Gap:</strong> There is no confirmation dialog for <code>/quit</code> when the agent is mid-task. The status bar should show a warning (<code>quit while agent is running?</code>) rather than exiting immediately. Marked as a behavioral note, not a layout spec concern.</p>
+<h3 id="6-recognition-rather-than-recall-score-55">6. Recognition Rather Than Recall — Score: 5/5<a class="headerlink" href="#6-recognition-rather-than-recall-score-55" title="Permanent link">&para;</a></h3>
+<p><strong>Evidence for:</strong> The autocomplete dropdown appears on <code>/</code> without requiring the user to remember command names. The hint line below the input box (when empty) reminds the user of the key bindings. The help overlay (<code>Ctrl+?</code>) is surfaced via the status bar hint. Role labels are always visible — the user never needs to remember which color means which role. Tool call blocks show the tool name and arguments explicitly.</p>
+<h3 id="7-flexibility-and-efficiency-score-45">7. Flexibility and Efficiency — Score: 4/5<a class="headerlink" href="#7-flexibility-and-efficiency-score-45" title="Permanent link">&para;</a></h3>
+<p><strong>Evidence for:</strong> The layout has three modes (single-pane, split-pane, tool panel) for different workflows. Collapsed tool call blocks let experienced users scan past tool operations quickly. Slash commands provide fast access to model switching, cost reporting, and undo. Page Up/Down for fast scrolling.</p>
+<p><strong>Gap:</strong> Power users who run many tool-heavy sessions may want a way to filter the conversation view to show only assistant messages (suppressing all tool call blocks). This is a reasonable future feature, not a v1 requirement.</p>
+<h3 id="8-aesthetic-and-minimalist-design-score-55">8. Aesthetic and Minimalist Design — Score: 5/5<a class="headerlink" href="#8-aesthetic-and-minimalist-design-score-55" title="Permanent link">&para;</a></h3>
+<p><strong>Evidence for:</strong> The status bar carries all metadata in a single row. Tool call blocks are collapsed by default — detail on demand. User messages have a border; assistant messages do not — asymmetry creates visual rhythm without adding elements. The color palette uses only one accent family (crimson/pink). Separators between messages are whitespace, not lines, except on narrow terminals. The splash screen animates in and then disappears — it does not compete with the working view.</p>
+<h3 id="9-help-users-recognize-and-recover-from-errors-score-45">9. Help Users Recognize and Recover From Errors — Score: 4/5<a class="headerlink" href="#9-help-users-recognize-and-recover-from-errors-score-45" title="Permanent link">&para;</a></h3>
+<p><strong>Evidence for:</strong> Error messages are shown in the conversation stream with an <code>!</code> sigil and <code>role-error</code> color. The input border turns <code>role-error</code> when the app is in an error state. Error tool call blocks show the error text in context. The status bar shows <code>ERR</code> in the cost slot when an agent error occurs.</p>
+<p><strong>Gap:</strong> Error messages are currently raw strings from the agent (<code>AgentEvent::Error { message }</code>). The TUI spec cannot fix upstream message quality, but the renderer should detect common error patterns (API errors, rate limits, network errors) and append a suggested recovery action below the error text. This is a future content design task.</p>
+<h3 id="10-help-and-documentation-score-45">10. Help and Documentation — Score: 4/5<a class="headerlink" href="#10-help-and-documentation-score-45" title="Permanent link">&para;</a></h3>
+<p><strong>Evidence for:</strong> The help overlay (<code>Ctrl+?</code>) covers all keyboard shortcuts. The autocomplete dropdown has inline descriptions for all commands. The hint line below the empty input covers the three most critical shortcuts. The <code>/help</code> command in the command registry produces a help message in the conversation.</p>
+<p><strong>Gap:</strong> There is no in-app explanation of what approval means or why certain tool calls require it. A one-time contextual tooltip (shown only the first time an approval is requested) would improve first-use experience. Not a layout spec concern, but a content design note.</p>
+<hr />
+<h2 id="20-implementation-priority-order">20. Implementation Priority Order<a class="headerlink" href="#20-implementation-priority-order" title="Permanent link">&para;</a></h2>
+<p>The following order minimizes rework and builds toward the full spec incrementally. Each phase is independently shippable.</p>
+<h3 id="phase-1-foundation-prerequisite-for-everything">Phase 1 — Foundation (prerequisite for everything)<a class="headerlink" href="#phase-1-foundation-prerequisite-for-everything" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Extend <code>Theme</code> struct with the full token set from Section 18.1.</li>
+<li>Implement theme resolution at startup (Section 18.2).</li>
+<li>Add <code>AnimationState</code> to <code>App</code> and a 100ms tick event in the event loop.</li>
+<li>Add <code>budget_usd: Option&lt;f64&gt;</code> and <code>session_start: Instant</code> to <code>StatusInfo</code>.</li>
+</ol>
+<h3 id="phase-2-status-bar">Phase 2 — Status Bar<a class="headerlink" href="#phase-2-status-bar" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Redesign status bar renderer to the full segment layout (Section 10).</li>
+<li>Implement budget sparkline computation and rendering (Section 10.2).</li>
+<li>Implement mode badge (Section 10.5).</li>
+<li>Implement active tool indicator with spinner (Section 10.4).</li>
+</ol>
+<h3 id="phase-3-input-area">Phase 3 — Input Area<a class="headerlink" href="#phase-3-input-area" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Redesign input area to rounded-corner box with sigil (Section 9.1).</li>
+<li>Implement focus border color change (active/idle/error states).</li>
+<li>Implement hint line (Section 9.1 and 9.4).</li>
+<li>Implement slash command autocomplete dropdown (Section 9.3).</li>
+<li>Implement multi-line input expansion (Section 9.2).</li>
+</ol>
+<h3 id="phase-4-message-rendering">Phase 4 — Message Rendering<a class="headerlink" href="#phase-4-message-rendering" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Implement <code>ConversationWidget</code> as a <code>StatefulWidget</code> (Section 17.3).</li>
+<li>Implement role label rendering with sigils and timestamps (Section 7.2).</li>
+<li>Implement user message rounded border (Section 7.1).</li>
+<li>Implement streaming cursor with blink animation (Section 8.1).</li>
+<li>Implement thinking dots animation for pre-token state (Section 8.1).</li>
+</ol>
+<h3 id="phase-5-code-and-diff-blocks">Phase 5 — Code and Diff Blocks<a class="headerlink" href="#phase-5-code-and-diff-blocks" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Implement code block renderer with sharp-corner box and language label (Section 8.2).</li>
+<li>Implement simple regex-based syntax lexer (Section 8.2).</li>
+<li>Implement line-number gutter in code blocks.</li>
+<li>Implement diff block renderer with per-line background coloring (Section 8.3).</li>
+<li>Implement diff summary line (Section 8.3).</li>
+<li>Implement inline markdown formatting (Section 8.4).</li>
+</ol>
+<h3 id="phase-6-tool-call-panels">Phase 6 — Tool Call Panels<a class="headerlink" href="#phase-6-tool-call-panels" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Implement tool call block as collapsed/expanded <code>StatefulWidget</code> (Section 11).</li>
+<li>Implement tool call running, success, and error states (Section 11.3).</li>
+<li>Implement approval flow with <code>y</code> / <code>n</code> / <code>d</code> keybindings (Section 11.4).</li>
+</ol>
+<h3 id="phase-7-split-pane-layout">Phase 7 — Split-Pane Layout<a class="headerlink" href="#phase-7-split-pane-layout" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Implement <code>Layout::horizontal</code> split with adjustable ratio (Section 5.2).</li>
+<li>Implement file preview panel with all 7 states (Section 12.1).</li>
+<li>Wire file preview to <code>read_file</code> / <code>write_file</code> tool call events.</li>
+<li>Implement pane focus cycling with Tab.</li>
+<li>Implement <code>Alt+Left</code> / <code>Alt+Right</code> ratio adjustment.</li>
+</ol>
+<h3 id="phase-8-startup-experience">Phase 8 — Startup Experience<a class="headerlink" href="#phase-8-startup-experience" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Implement splash screen with step-animation mark and wordmark (Section 6.1).</li>
+<li>Implement startup timing sequence (Section 14.2).</li>
+<li>Implement session detection to skip splash on re-launch.</li>
+</ol>
+<h3 id="phase-9-help-overlay-and-polish">Phase 9 — Help Overlay and Polish<a class="headerlink" href="#phase-9-help-overlay-and-polish" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Implement help overlay widget with <code>Clear</code> + centered block (Section 13).</li>
+<li>Implement scroll indicator in conversation viewport (Section 7.4).</li>
+<li>Implement header bar with compact mark and working directory (Section 6.3).</li>
+<li>Implement <code>--no-color</code> / <code>NO_COLOR</code> Minimal theme (Section 3.4 and 16.2).</li>
+<li>Implement resize handler with too-small warning (Section 16.5).</li>
+<li>Implement <code>--theme</code> CLI flag and <code>HONE_THEME</code> environment variable.</li>
+</ol>
+<h3 id="phase-10-theme-presets">Phase 10 — Theme Presets<a class="headerlink" href="#phase-10-theme-presets" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Implement Neon theme token overrides (Section 3.2).</li>
+<li>Implement Chalk light theme token overrides (Section 3.3).</li>
+<li>Add theme preview mode: <code>hone --theme-preview</code> renders a static screen showing all UI elements in the selected theme.</li>
+</ol>
+<hr />
+<p><em>End of specification.</em></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

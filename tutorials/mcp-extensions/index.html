@@ -1,0 +1,2552 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/tutorials/mcp-extensions/">
+      
+      
+        <link rel="prev" href="../tools-and-mcp/">
+      
+      
+        <link rel="next" href="../security/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>MCP Extensions - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#mcp-extensions-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              MCP Extensions
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start-set-up-your-first-mcp-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start: Set Up Your First MCP Extension
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start: Set Up Your First MCP Extension">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-create-a-honemcpjson-file-in-your-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Create a .hone/mcp.json file in your project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-set-environment-variables-if-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Set environment variables (if needed)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-start-hone-and-use-the-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Start Hone and use the extension
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-hone-loads-mcp-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Hone Loads MCP Configs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#top-10-mcp-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top 10 MCP Extensions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Top 10 MCP Extensions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-filesystem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Filesystem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-github" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. GitHub
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. PostgreSQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-brave-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Brave Search
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-fetch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Fetch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-sqlite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. SQLite
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-puppeteer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Puppeteer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-slack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Slack
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#10-sequential-thinking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Sequential Thinking
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#finding-more-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Finding More Extensions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Finding More Extensions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#official-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Official Registry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#community-collections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Community Collections
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#installing-custom-mcp-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installing Custom MCP Extensions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Security Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sandboxing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandboxing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#principle-of-least-privilege" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Principle of Least Privilege
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#common-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#npx-command-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        npx: command not found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-crashes-or-returns-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server crashes or returns errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timeout-exceeded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timeout exceeded
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-not-found-by-hone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server not found by Hone
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-cant-find-the-tool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent can't find the tool
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced-writing-custom-mcp-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced: Writing Custom MCP Extensions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start-set-up-your-first-mcp-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start: Set Up Your First MCP Extension
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start: Set Up Your First MCP Extension">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-create-a-honemcpjson-file-in-your-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Create a .hone/mcp.json file in your project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-set-environment-variables-if-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Set environment variables (if needed)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-start-hone-and-use-the-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Start Hone and use the extension
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-hone-loads-mcp-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Hone Loads MCP Configs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#top-10-mcp-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top 10 MCP Extensions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Top 10 MCP Extensions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-filesystem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Filesystem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-github" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. GitHub
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. PostgreSQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-brave-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Brave Search
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-fetch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Fetch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-sqlite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. SQLite
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-puppeteer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Puppeteer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-slack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Slack
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#10-sequential-thinking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Sequential Thinking
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#finding-more-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Finding More Extensions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Finding More Extensions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#official-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Official Registry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#community-collections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Community Collections
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#installing-custom-mcp-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installing Custom MCP Extensions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Security Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sandboxing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandboxing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#principle-of-least-privilege" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Principle of Least Privilege
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#common-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#npx-command-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        npx: command not found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-crashes-or-returns-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server crashes or returns errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timeout-exceeded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timeout exceeded
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-not-found-by-hone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server not found by Hone
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-cant-find-the-tool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent can't find the tool
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced-writing-custom-mcp-extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced: Writing Custom MCP Extensions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="mcp-extensions-guide">MCP Extensions Guide<a class="headerlink" href="#mcp-extensions-guide" title="Permanent link">&para;</a></h1>
+<p>Hone supports 70+ community MCP (Model Context Protocol) extensions, allowing you to extend your agent's capabilities beyond native tools. This guide covers the most popular and useful extensions with copy-paste-ready configurations.</p>
+<h2 id="quick-start-set-up-your-first-mcp-extension">Quick Start: Set Up Your First MCP Extension<a class="headerlink" href="#quick-start-set-up-your-first-mcp-extension" title="Permanent link">&para;</a></h2>
+<h3 id="1-create-a-honemcpjson-file-in-your-project">1. Create a <code>.hone/mcp.json</code> file in your project<a class="headerlink" href="#1-create-a-honemcpjson-file-in-your-project" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;filesystem&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/workspace&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="2-set-environment-variables-if-needed">2. Set environment variables (if needed)<a class="headerlink" href="#2-set-environment-variables-if-needed" title="Permanent link">&para;</a></h3>
+<p>Most extensions require API keys. Pass them via your shell:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">GITHUB_TOKEN</span><span class="o">=</span><span class="s2">&quot;ghp_...&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">DATABASE_URL</span><span class="o">=</span><span class="s2">&quot;postgresql://...&quot;</span>
+hone
+</code></pre></div>
+<p>Hone will make these available to MCP servers automatically.</p>
+<h3 id="3-start-hone-and-use-the-extension">3. Start Hone and use the extension<a class="headerlink" href="#3-start-hone-and-use-the-extension" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone
+<span class="c1"># Your agent now has access to filesystem operations beyond the working directory</span>
+</code></pre></div>
+<p>That's it! The agent can now call the MCP server's resources and tools.</p>
+<h2 id="how-hone-loads-mcp-configs">How Hone Loads MCP Configs<a class="headerlink" href="#how-hone-loads-mcp-configs" title="Permanent link">&para;</a></h2>
+<p>Hone looks for MCP servers in two places (in order):</p>
+<ol>
+<li><strong>Global config</strong>: <code>~/.config/hone/mcp.json</code> — applies to all projects</li>
+<li><strong>Project config</strong>: <code>.hone/mcp.json</code> — applies to this project only</li>
+</ol>
+<p>When server names collide, project settings win. Files that don't exist or are malformed are silently skipped.</p>
+<h2 id="top-10-mcp-extensions">Top 10 MCP Extensions<a class="headerlink" href="#top-10-mcp-extensions" title="Permanent link">&para;</a></h2>
+<h3 id="1-filesystem">1. Filesystem<a class="headerlink" href="#1-filesystem" title="Permanent link">&para;</a></h3>
+<p><strong>Package</strong>: <code>@modelcontextprotocol/server-filesystem</code></p>
+<p><strong>Description</strong>: Read and write files outside the working directory, manage directory structures, and perform file operations beyond Hone's native sandboxed I/O.</p>
+<p><strong>What it enables</strong>:
+- Read files outside the current project
+- Write to system directories (e.g., <code>/tmp</code>, home directory)
+- Create symlinks and manage permissions
+- Recursively walk directory trees
+- Operations on large file sets</p>
+<p><strong>Installation</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># No installation needed — npx fetches it automatically</span>
+</code></pre></div></p>
+<p><strong>Configuration</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;filesystem&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/workspace&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p>The argument <code>/workspace</code> is the root directory Hone's agent can access. Change it to restrict or expand access.</p>
+<p><strong>Example usage</strong>:</p>
+<div class="highlight"><pre><span></span><code>User: &quot;Check for config files in my home directory and list them&quot;
+
+Agent calls filesystem MCP:
+- list_dir(path=&quot;~/.config&quot;)
+- read_file(path=&quot;~/.config/app.conf&quot;)
+- Returns: file contents and directory structure
+</code></pre></div>
+<hr />
+<h3 id="2-github">2. GitHub<a class="headerlink" href="#2-github" title="Permanent link">&para;</a></h3>
+<p><strong>Package</strong>: <code>@modelcontextprotocol/server-github</code></p>
+<p><strong>Description</strong>: Create and manage GitHub issues, pull requests, branches, and inspect repository contents without <code>git clone</code>.</p>
+<p><strong>What it enables</strong>:
+- Read repo structure and file contents
+- Create/update issues and PRs
+- List and manage branches
+- Get commit history
+- Search repositories
+- Manage labels and milestones</p>
+<p><strong>Installation</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># No installation — uses npx</span>
+</code></pre></div></p>
+<p><strong>Configuration</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;github&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;GITHUB_PERSONAL_ACCESS_TOKEN&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;${GITHUB_TOKEN}&quot;</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">15000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Environment setup</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># Create a Personal Access Token at https://github.com/settings/tokens</span>
+<span class="c1"># Minimum scopes: repo, read:org</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">GITHUB_TOKEN</span><span class="o">=</span><span class="s2">&quot;ghp_...&quot;</span>
+hone
+</code></pre></div></p>
+<p><strong>Example usage</strong>:</p>
+<div class="highlight"><pre><span></span><code>User: &quot;Create a GitHub issue in my-org/my-repo about fixing the auth bug&quot;
+
+Agent calls GitHub MCP:
+- create_issue(
+    owner=&quot;my-org&quot;,
+    repo=&quot;my-repo&quot;,
+    title=&quot;Fix authentication timeout issue&quot;,
+    body=&quot;When idle for &gt;30min, auth token expires...&quot;,
+    labels=[&quot;bug&quot;, &quot;auth&quot;]
+  )
+- Returns: issue URL and number
+
+Later:
+
+User: &quot;Show me open PRs in that repo&quot;
+
+Agent calls:
+- list_pull_requests(owner=&quot;my-org&quot;, repo=&quot;my-repo&quot;, state=&quot;open&quot;)
+- Returns: titles, authors, review status
+</code></pre></div>
+<hr />
+<h3 id="3-postgresql">3. PostgreSQL<a class="headerlink" href="#3-postgresql" title="Permanent link">&para;</a></h3>
+<p><strong>Package</strong>: <code>@modelcontextprotocol/server-postgres</code></p>
+<p><strong>Description</strong>: Query databases, inspect schemas, run migrations, and manage PostgreSQL instances.</p>
+<p><strong>What it enables</strong>:
+- Execute queries (SELECT, INSERT, UPDATE, DELETE)
+- Inspect table schemas and indexes
+- Run migrations or raw SQL
+- Get query execution plans
+- Manage transactions</p>
+<p><strong>Installation</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># No installation — npx handles it</span>
+</code></pre></div></p>
+<p><strong>Configuration</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;postgres&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-postgres&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;DATABASE_URL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;${DATABASE_URL}&quot;</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">30000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Environment setup</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># PostgreSQL connection string (use a read-only user for safety)</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">DATABASE_URL</span><span class="o">=</span><span class="s2">&quot;postgresql://hone_user:password@localhost:5432/mydb&quot;</span>
+hone
+</code></pre></div></p>
+<p><strong>Example usage</strong>:</p>
+<div class="highlight"><pre><span></span><code>User: &quot;Show me all tables in the current database with their column counts&quot;
+
+Agent calls Postgres MCP:
+- query(sql=&quot;SELECT table_name FROM information_schema.tables WHERE table_schema=&#39;public&#39;&quot;)
+- For each table: query(sql=&quot;SELECT COUNT(*) as columns FROM information_schema.columns WHERE table_name=$1&quot;)
+- Returns: formatted table list with schemas
+
+User: &quot;Find slow queries (&gt;100ms) from the last hour&quot;
+
+Agent calls:
+- query(sql=&quot;SELECT query, calls, total_time FROM pg_stat_statements WHERE total_time &gt; 100 AND query != &#39;&lt;insufficient privilege&gt;&#39;&quot;)
+- Analyzes patterns and suggests indexes
+</code></pre></div>
+<hr />
+<h3 id="4-brave-search">4. Brave Search<a class="headerlink" href="#4-brave-search" title="Permanent link">&para;</a></h3>
+<p><strong>Package</strong>: <code>@modelcontextprotocol/server-brave-search</code></p>
+<p><strong>Description</strong>: Perform web searches and retrieve real-time information from the internet.</p>
+<p><strong>What it enables</strong>:
+- Full-text web search
+- News search
+- Image search
+- Real-time API data
+- Bypass information cutoff</p>
+<p><strong>Installation</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># No installation — npx handles it</span>
+</code></pre></div></p>
+<p><strong>Configuration</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;brave-search&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-brave-search&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;BRAVE_API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;${BRAVE_API_KEY}&quot;</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Environment setup</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># Get a free key at https://api.search.brave.com</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">BRAVE_API_KEY</span><span class="o">=</span><span class="s2">&quot;...&quot;</span>
+hone
+</code></pre></div></p>
+<p><strong>Example usage</strong>:</p>
+<div class="highlight"><pre><span></span><code>User: &quot;What&#39;s the latest React version and its key features?&quot;
+
+Agent calls Brave Search MCP:
+- search(query=&quot;React latest version 2025&quot;)
+- Returns: top 10 results with titles, snippets, URLs
+
+Agent synthesizes: &quot;React 19.1 includes Server Components, Actions, and...&quot;
+
+User: &quot;Find recent articles about AI safety&quot;
+
+Agent calls:
+- search(query=&quot;AI safety 2025&quot;, count=10)
+- Returns: latest news with publication dates
+</code></pre></div>
+<hr />
+<h3 id="5-memory">5. Memory<a class="headerlink" href="#5-memory" title="Permanent link">&para;</a></h3>
+<p><strong>Package</strong>: <code>@modelcontextprotocol/server-memory</code></p>
+<p><strong>Description</strong>: Persistent key-value memory across sessions, enabling agents to remember context and decisions between runs.</p>
+<p><strong>What it enables</strong>:
+- Store and retrieve arbitrary data
+- Maintain project state across sessions
+- Track decisions and rationale
+- Cross-session learning
+- Session metadata</p>
+<p><strong>Installation</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># No installation — npx handles it</span>
+</code></pre></div></p>
+<p><strong>Configuration</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;memory&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-memory&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Example usage</strong>:</p>
+<div class="highlight"><pre><span></span><code>Session 1:
+
+User: &quot;We&#39;re using PostgreSQL 14. Remember this.&quot;
+
+Agent calls Memory MCP:
+- write_memory(key=&quot;db_version&quot;, value=&quot;PostgreSQL 14&quot;)
+- write_memory(key=&quot;db_connection_pool&quot;, value=&quot;pgbouncer&quot;)
+
+---
+
+Session 2 (next day):
+
+User: &quot;Optimize the database queries&quot;
+
+Agent calls Memory MCP:
+- read_memory(key=&quot;db_version&quot;)
+- Returns: &quot;PostgreSQL 14&quot;
+
+Agent: &quot;I see you&#39;re on PostgreSQL 14 with pgbouncer. Let me optimize...&quot;
+</code></pre></div>
+<hr />
+<h3 id="6-fetch">6. Fetch<a class="headerlink" href="#6-fetch" title="Permanent link">&para;</a></h3>
+<p><strong>Package</strong>: <code>@modelcontextprotocol/server-fetch</code></p>
+<p><strong>Description</strong>: Make HTTP requests, call APIs, and fetch web content for processing.</p>
+<p><strong>What it enables</strong>:
+- HTTP GET/POST/PUT/DELETE requests
+- Web scraping (fetch HTML)
+- API integration (REST, GraphQL)
+- Download files
+- Header and authentication management</p>
+<p><strong>Installation</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># No installation — npx handles it</span>
+</code></pre></div></p>
+<p><strong>Configuration</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;fetch&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-fetch&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">30000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Example usage</strong>:</p>
+<div class="highlight"><pre><span></span><code>User: &quot;Fetch the pricing page from our API docs and extract the tier information&quot;
+
+Agent calls Fetch MCP:
+- fetch(url=&quot;https://api.example.com/docs/pricing&quot;)
+- Returns: HTML content
+
+Agent parses and extracts:
+- Tier names, prices, features
+
+User: &quot;Check the health of all our services&quot;
+
+Agent calls:
+- fetch(url=&quot;https://service1.example.com/health&quot;, method=&quot;GET&quot;)
+- fetch(url=&quot;https://service2.example.com/health&quot;, method=&quot;GET&quot;)
+- Returns: status codes, response times
+- Agent reports: &quot;All services healthy, avg response 42ms&quot;
+</code></pre></div>
+<hr />
+<h3 id="7-sqlite">7. SQLite<a class="headerlink" href="#7-sqlite" title="Permanent link">&para;</a></h3>
+<p><strong>Package</strong>: <code>@modelcontextprotocol/server-sqlite</code></p>
+<p><strong>Description</strong>: Query and manage SQLite databases stored locally or on disk.</p>
+<p><strong>What it enables</strong>:
+- Execute SQL queries on SQLite files
+- Inspect schemas
+- Create/modify tables
+- Run migrations
+- Analyze large datasets</p>
+<p><strong>Installation</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># No installation — npx handles it</span>
+</code></pre></div></p>
+<p><strong>Configuration</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;sqlite&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-sqlite&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/path/to/data.db&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">15000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Example usage</strong>:</p>
+<div class="highlight"><pre><span></span><code>User: &quot;How many users signed up last week? Show me by country.&quot;
+
+Agent calls SQLite MCP:
+- query(sql=&quot;SELECT country, COUNT(*) as signups FROM users WHERE created_at &gt;= datetime(&#39;now&#39;, &#39;-7 days&#39;) GROUP BY country ORDER BY signups DESC&quot;)
+- Returns: country-wise signup counts
+
+User: &quot;Create a backup table of inactive accounts&quot;
+
+Agent calls:
+- query(sql=&quot;CREATE TABLE inactive_backup AS SELECT * FROM users WHERE last_login &lt; datetime(&#39;now&#39;, &#39;-1 year&#39;)&quot;)
+- Returns: success message with row count
+</code></pre></div>
+<hr />
+<h3 id="8-puppeteer">8. Puppeteer<a class="headerlink" href="#8-puppeteer" title="Permanent link">&para;</a></h3>
+<p><strong>Package</strong>: <code>@modelcontextprotocol/server-puppeteer</code></p>
+<p><strong>Description</strong>: Browser automation for testing, screenshots, interaction, and dynamic content rendering.</p>
+<p><strong>What it enables</strong>:
+- Take screenshots of websites
+- Interact with dynamic content (click, type, scroll)
+- Test web flows end-to-end
+- Extract rendered HTML (not just static)
+- PDF generation
+- Performance measurement</p>
+<p><strong>Installation</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># Requires Node.js installed globally</span>
+npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>puppeteer
+</code></pre></div></p>
+<p><strong>Configuration</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;puppeteer&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-puppeteer&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">60000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Example usage</strong>:</p>
+<div class="highlight"><pre><span></span><code>User: &quot;Take a screenshot of the login page at https://app.example.com&quot;
+
+Agent calls Puppeteer MCP:
+- screenshot(url=&quot;https://app.example.com/login&quot;)
+- Returns: PNG image base64-encoded
+
+Agent: &quot;The login form is visible with email and password fields&quot;
+
+User: &quot;Test the forgot-password flow&quot;
+
+Agent calls:
+- goto(url=&quot;https://app.example.com/login&quot;)
+- click(selector=&quot;a[href=&#39;/forgot-password&#39;]&quot;)
+- screenshot()
+- fill(selector=&quot;input[type=&#39;email&#39;]&quot;, text=&quot;test@example.com&quot;)
+- click(selector=&quot;button:contains(&#39;Reset&#39;)&quot;)
+- waitForNavigation()
+- Returns: success message with screenshot showing reset email sent
+</code></pre></div>
+<hr />
+<h3 id="9-slack">9. Slack<a class="headerlink" href="#9-slack" title="Permanent link">&para;</a></h3>
+<p><strong>Package</strong>: <code>@modelcontextprotocol/server-slack</code></p>
+<p><strong>Description</strong>: Send messages to Slack, read channels, manage threads, and integrate agent actions with Slack workflows.</p>
+<p><strong>What it enables</strong>:
+- Send direct messages to users
+- Post to channels
+- Read channel history
+- Manage threads and reactions
+- List channels and users
+- Upload files</p>
+<p><strong>Installation</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># No installation — npx handles it</span>
+</code></pre></div></p>
+<p><strong>Configuration</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;slack&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-slack&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;SLACK_BOT_TOKEN&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;${SLACK_BOT_TOKEN}&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;SLACK_APP_TOKEN&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;${SLACK_APP_TOKEN}&quot;</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Environment setup</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># Create a Slack app at https://api.slack.com/apps</span>
+<span class="c1"># Generate tokens with scopes: chat:write, channels:read, users:read, files:write</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">SLACK_BOT_TOKEN</span><span class="o">=</span><span class="s2">&quot;xoxb-...&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">SLACK_APP_TOKEN</span><span class="o">=</span><span class="s2">&quot;xapp-...&quot;</span>
+hone
+</code></pre></div></p>
+<p><strong>Example usage</strong>:</p>
+<div class="highlight"><pre><span></span><code>User: &quot;Notify the dev team on Slack that the deployment is ready&quot;
+
+Agent calls Slack MCP:
+- send_message(channel=&quot;#dev-team&quot;, text=&quot;Deployment ready for v2.1.0. Rollout starts in 10 minutes.&quot;)
+- Returns: message timestamp
+
+User: &quot;Read the last 10 messages in #incidents&quot;
+
+Agent calls:
+- read_channel(channel=&quot;#incidents&quot;, limit=10)
+- Returns: messages with authors, timestamps
+
+Agent summarizes: &quot;3 open incidents, highest priority: database replication lag&quot;
+</code></pre></div>
+<hr />
+<h3 id="10-sequential-thinking">10. Sequential Thinking<a class="headerlink" href="#10-sequential-thinking" title="Permanent link">&para;</a></h3>
+<p><strong>Package</strong>: <code>@modelcontextprotocol/server-sequential-thinking</code></p>
+<p><strong>Description</strong>: Structured reasoning and multi-step planning for complex problems.</p>
+<p><strong>What it enables</strong>:
+- Break complex queries into steps
+- Explicit reasoning chains
+- Verification and backtracking
+- Better error handling
+- Auditable decision-making</p>
+<p><strong>Installation</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># No installation — npx handles it</span>
+</code></pre></div></p>
+<p><strong>Configuration</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;thinking&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-sequential-thinking&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">30000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Example usage</strong>:</p>
+<div class="highlight"><pre><span></span><code>User: &quot;Design a database schema for a multi-tenant SaaS app&quot;
+
+Agent calls Sequential Thinking MCP:
+
+thinking_start()
+
+  Step 1: Identify core entities (users, teams, workspaces, data records)
+  Step 2: Define relationships (users &lt;-&gt; teams, teams &lt;-&gt; workspaces)
+  Step 3: Consider isolation (row-level security for tenants)
+  Step 4: Plan for scaling (sharding, archiving strategies)
+  Step 5: Design migrations (versioned schema changes)
+
+thinking_end()
+
+Agent outputs: Complete SQL schema with rationale for each design decision
+
+User: &quot;Audit this code for security issues&quot;
+
+Agent uses thinking to:
+  1. Identify input vectors (URL params, form data, headers, cookies)
+  2. Check for validation (length limits, type checks, encoding)
+  3. Check for escaping (SQL injection, XSS, command injection)
+  4. Check for auth/authz (permissions, token validation)
+  5. Report findings with severity and fixes
+
+Returns: actionable security report with prioritized fixes
+</code></pre></div>
+<hr />
+<h2 id="finding-more-extensions">Finding More Extensions<a class="headerlink" href="#finding-more-extensions" title="Permanent link">&para;</a></h2>
+<p>The MCP ecosystem is rapidly growing. Here's where to discover new extensions:</p>
+<h3 id="official-registry">Official Registry<a class="headerlink" href="#official-registry" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>GitHub</strong>: https://github.com/modelcontextprotocol/servers</li>
+<li>Monitored list of official and community extensions</li>
+<li>Installation instructions and examples</li>
+<li>Feature documentation</li>
+</ul>
+<h3 id="community-collections">Community Collections<a class="headerlink" href="#community-collections" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>MCP.run</strong>: https://mcp.run (community registry with search)</li>
+<li><strong>Awesome MCP</strong>: https://github.com/pglombardo/awesome-mcp</li>
+<li>Curated list of extensions</li>
+<li>Categorized by use case</li>
+</ul>
+<h3 id="installing-custom-mcp-extensions">Installing Custom MCP Extensions<a class="headerlink" href="#installing-custom-mcp-extensions" title="Permanent link">&para;</a></h3>
+<p>Most extensions follow the same pattern:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;my-extension&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@scope/server-name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;arg1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;arg2&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;${MY_API_KEY}&quot;</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>For local or custom extensions:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;custom-tool&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;python&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/path/to/server.py&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;CONFIG&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/config.json&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<hr />
+<h2 id="configuration-reference">Configuration Reference<a class="headerlink" href="#configuration-reference" title="Permanent link">&para;</a></h2>
+<p>Every MCP server in <code>.hone/mcp.json</code> has this structure:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;server-name&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;string (required)&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;array&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;of&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;arguments&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;ENV_VAR&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;value or ${REFERENCE}&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;${MY_API_KEY}&quot;</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;disabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Fields</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>command</code></td>
+<td>string</td>
+<td>(required)</td>
+<td>Executable to run (e.g., <code>npx</code>, <code>python</code>, absolute path)</td>
+</tr>
+<tr>
+<td><code>args</code></td>
+<td>array</td>
+<td><code>[]</code></td>
+<td>Arguments passed to command</td>
+</tr>
+<tr>
+<td><code>env</code></td>
+<td>object</td>
+<td><code>{}</code></td>
+<td>Environment variables. Values can reference <code>${VAR}</code> to use shell variables</td>
+</tr>
+<tr>
+<td><code>disabled</code></td>
+<td>boolean</td>
+<td><code>false</code></td>
+<td>Skip this server at startup</td>
+</tr>
+<tr>
+<td><code>timeout_ms</code></td>
+<td>number</td>
+<td><code>10000</code></td>
+<td>Per-request timeout in milliseconds</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Environment variables</strong>:
+- <code>${VAR}</code> syntax is expanded from your shell environment
+- Only variables set before <code>hone</code> starts are available
+- Use a <code>.env</code> file or shell profile to set them persistently</p>
+<hr />
+<h2 id="security-best-practices">Security Best Practices<a class="headerlink" href="#security-best-practices" title="Permanent link">&para;</a></h2>
+<h3 id="sandboxing">Sandboxing<a class="headerlink" href="#sandboxing" title="Permanent link">&para;</a></h3>
+<p>MCP servers run in sandboxed subprocesses. Each server:
+- Runs with isolated file access (via <code>args</code> paths)
+- Cannot access Hone's memory or other servers
+- Is terminated if it hangs (via <code>timeout_ms</code>)</p>
+<h3 id="api-keys">API Keys<a class="headerlink" href="#api-keys" title="Permanent link">&para;</a></h3>
+<p><strong>Do NOT hardcode secrets in <code>.hone/mcp.json</code></strong>. Always use environment variables:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Good: uses shell environment variable</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">GITHUB_TOKEN</span><span class="o">=</span><span class="s2">&quot;ghp_...&quot;</span>
+hone
+
+<span class="c1"># Config references it safely:</span>
+<span class="s2">&quot;env&quot;</span>:<span class="w"> </span><span class="o">{</span><span class="w"> </span><span class="s2">&quot;GITHUB_PERSONAL_ACCESS_TOKEN&quot;</span>:<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">GITHUB_TOKEN</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">}</span>
+</code></pre></div>
+<p><strong>Do NOT commit <code>.hone/mcp.json</code> with real keys</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Add to .gitignore</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;.hone/mcp.json&quot;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>.gitignore
+
+<span class="c1"># Create a template for teammates</span>
+cat<span class="w"> </span>&gt;<span class="w"> </span>.hone/mcp.json.example<span class="w"> </span><span class="s">&lt;&lt; &#39;EOF&#39;</span>
+<span class="s">{</span>
+<span class="s">  &quot;mcpServers&quot;: {</span>
+<span class="s">    &quot;github&quot;: {</span>
+<span class="s">      &quot;command&quot;: &quot;npx&quot;,</span>
+<span class="s">      &quot;args&quot;: [&quot;-y&quot;, &quot;@modelcontextprotocol/server-github&quot;],</span>
+<span class="s">      &quot;env&quot;: {</span>
+<span class="s">        &quot;GITHUB_PERSONAL_ACCESS_TOKEN&quot;: &quot;${GITHUB_TOKEN}&quot;</span>
+<span class="s">      }</span>
+<span class="s">    }</span>
+<span class="s">  }</span>
+<span class="s">}</span>
+<span class="s">EOF</span>
+</code></pre></div>
+<h3 id="principle-of-least-privilege">Principle of Least Privilege<a class="headerlink" href="#principle-of-least-privilege" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Use dedicated API keys with minimal scopes for each service</li>
+<li>Revoke keys if a machine is compromised</li>
+<li>Rotate keys periodically</li>
+<li>Use read-only credentials when possible</li>
+</ul>
+<p><strong>Example for GitHub</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Create a Personal Access Token with only these scopes:</span>
+<span class="c1"># - repo (for public repos only, uncheck &quot;Full control&quot;)</span>
+<span class="c1"># - read:org</span>
+<span class="c1"># - NOT: delete_repo, admin:repo_hook, workflow</span>
+
+<span class="nb">export</span><span class="w"> </span><span class="nv">GITHUB_TOKEN</span><span class="o">=</span><span class="s2">&quot;ghp_...&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<h3 id="common-issues">Common Issues<a class="headerlink" href="#common-issues" title="Permanent link">&para;</a></h3>
+<h4 id="npx-command-not-found"><code>npx: command not found</code><a class="headerlink" href="#npx-command-not-found" title="Permanent link">&para;</a></h4>
+<p><strong>Problem</strong>: Node.js/npx not installed.</p>
+<p><strong>Solution</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># Install Node.js from https://nodejs.org</span>
+<span class="c1"># Or via package manager:</span>
+brew<span class="w"> </span>install<span class="w"> </span>node<span class="w">          </span><span class="c1"># macOS</span>
+sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>nodejs<span class="w">    </span><span class="c1"># Ubuntu/Debian</span>
+choco<span class="w"> </span>install<span class="w"> </span>nodejs<span class="w">       </span><span class="c1"># Windows</span>
+</code></pre></div></p>
+<p>Verify:
+<div class="highlight"><pre><span></span><code>npx<span class="w"> </span>--version
+</code></pre></div></p>
+<h4 id="server-crashes-or-returns-errors">Server crashes or returns errors<a class="headerlink" href="#server-crashes-or-returns-errors" title="Permanent link">&para;</a></h4>
+<p><strong>Problem</strong>: MCP server exited unexpectedly.</p>
+<p><strong>Debugging</strong>:
+<div class="highlight"><pre><span></span><code><span class="c1"># Check server output directly</span>
+npx<span class="w"> </span>-y<span class="w"> </span>@modelcontextprotocol/server-filesystem<span class="w"> </span>/tmp
+
+<span class="c1"># Verify environment variables are set</span>
+<span class="nb">echo</span><span class="w"> </span><span class="nv">$GITHUB_TOKEN</span>
+
+<span class="c1"># Check server logs in Hone (if available)</span>
+</code></pre></div></p>
+<p><strong>Common causes</strong>:
+- Missing environment variables
+- Invalid arguments
+- Insufficient permissions (e.g., database user lacks query access)</p>
+<h4 id="timeout-exceeded">Timeout exceeded<a class="headerlink" href="#timeout-exceeded" title="Permanent link">&para;</a></h4>
+<p><strong>Problem</strong>: <code>timeout_ms</code> expired before server responded.</p>
+<p><strong>Solution</strong>:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;slow-server&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-something&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;timeout_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">30000</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p>Increase <code>timeout_ms</code> for:
+- Database queries on large tables
+- Complex web scraping
+- Slow network APIs</p>
+<h4 id="server-not-found-by-hone">Server not found by Hone<a class="headerlink" href="#server-not-found-by-hone" title="Permanent link">&para;</a></h4>
+<p><strong>Problem</strong>: Configuration is correct but agent can't access server.</p>
+<p><strong>Solutions</strong>:
+1. Verify <code>.hone/mcp.json</code> is valid JSON:
+   <div class="highlight"><pre><span></span><code>cat<span class="w"> </span>.hone/mcp.json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.
+</code></pre></div></p>
+<ol>
+<li>Check file location:</li>
+<li>Project-level: <code>.hone/mcp.json</code> (in your project root)</li>
+<li>
+<p>Global: <code>~/.config/hone/mcp.json</code> (home directory)</p>
+</li>
+<li>
+<p>Restart Hone after adding/changing config:
+   <div class="highlight"><pre><span></span><code>hone
+</code></pre></div></p>
+</li>
+</ol>
+<h4 id="agent-cant-find-the-tool">Agent can't find the tool<a class="headerlink" href="#agent-cant-find-the-tool" title="Permanent link">&para;</a></h4>
+<p><strong>Problem</strong>: Server is running but agent doesn't know about its tools.</p>
+<p><strong>Solution</strong>: MCP servers expose tools that agents discover automatically. If discovery fails:
+- Check server logs for errors
+- Verify required environment variables are set
+- Increase <code>timeout_ms</code> if server is slow to respond</p>
+<hr />
+<h2 id="advanced-writing-custom-mcp-extensions">Advanced: Writing Custom MCP Extensions<a class="headerlink" href="#advanced-writing-custom-mcp-extensions" title="Permanent link">&para;</a></h2>
+<p>For team-specific tools, you can write custom MCP servers:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Create a Python MCP server</span>
+mkdir<span class="w"> </span>my-mcp-server
+<span class="nb">cd</span><span class="w"> </span>my-mcp-server
+pip<span class="w"> </span>install<span class="w"> </span>mcp
+
+<span class="c1"># Implement your server.py with resources and tools</span>
+<span class="c1"># See https://modelcontextprotocol.io/docs/server/sdks for SDK docs</span>
+
+<span class="c1"># Use it in Hone</span>
+</code></pre></div>
+<p>Configuration:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;custom&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;python&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;./my-mcp-server/server.py&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;CUSTOM_CONFIG&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/config.json&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p>For details, see the <a href="https://spec.modelcontextprotocol.io">MCP specification</a>.</p>
+<hr />
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Start small</strong>: Add one extension (e.g., Filesystem or GitHub) and test it</li>
+<li><strong>Monitor usage</strong>: Watch agent logs to see which tools are called</li>
+<li><strong>Expand gradually</strong>: Add more extensions as you discover use cases</li>
+<li><strong>Share configs</strong>: Create <code>.hone/mcp.json.example</code> templates for your team</li>
+<li><strong>Optimize timeouts</strong>: Adjust <code>timeout_ms</code> based on real performance</li>
+</ol>
+<p>For more on Hone capabilities, see:
+- <a href="../tools-and-mcp/">Tools and MCP Integration</a>
+- <a href="../../configuration/">Configuration Guide</a>
+- <a href="../security/">Security Best Practices</a></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

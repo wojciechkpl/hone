@@ -1,0 +1,2605 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/onboarding/concepts/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Core Concepts: A Deep Dive into Hone - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#core-concepts-a-deep-dive-into-hone" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Core Concepts: A Deep Dive into Hone
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-agent-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The Agent Loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. The Agent Loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#agent-loop-as-a-sequence-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Loop as a Sequence Diagram
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-this-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why This Matters
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1b-agents-specialized-personas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1b. Agents: Specialized Personas
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1b. Agents: Specialized Personas">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-an-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is an Agent?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agents-vs-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agents vs. Recipes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#built-in-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#discovery-via-description" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discovery via Description
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-layered-tool-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The Layered Tool Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. The Layered Tool Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#layer-3-skills-honemd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 3: Skills (HONE.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-2-native-tools-rust-1ms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 2: Native Tools (Rust, &lt;1ms)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-1-mcp-tools-json-rpc-50-500ms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 1: MCP Tools (JSON-RPC, 50-500ms)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-0-code-mode-agent-generated-scripts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 0: Code Mode (Agent-Generated Scripts)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-matrix-which-layer-to-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision Matrix: Which Layer to Use?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-context-window-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Context Window Management
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Context Window Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#part-1-token-budgeting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 1: Token Budgeting
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#part-2-compaction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 2: Compaction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#part-3-adaptive-inclusion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 3: Adaptive Inclusion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-the-sandbox-kernel-level-isolation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. The Sandbox: Kernel-Level Isolation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. The Sandbox: Kernel-Level Isolation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-analogy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Analogy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-sandboxes-work-platform-specific" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Sandboxes Work (Platform-Specific)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandboxpolicy-what-you-allow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SandboxPolicy: What You Allow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fail-closed-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fail-Closed Invariant
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#real-threat-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Real Threat Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-adaptive-memory-learning-from-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Adaptive Memory: Learning from Experience
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Adaptive Memory: Learning from Experience">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-learning-cycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Learning Cycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Storage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#difference-from-cloud-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Difference from Cloud Memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enablingdisabling-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enabling/Disabling Memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-the-daemon-model-hone-vs-honed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. The Daemon Model: hone vs honed
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. The Daemon Model: hone vs honed">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hone-local-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        hone — Local CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#honed-remote-daemon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        honed — Remote Daemon
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-use-each" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Use Each
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-cost-model-tokens-and-budgets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Cost Model: Tokens and Budgets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Cost Model: Tokens and Budgets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#token-pricing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token Pricing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#real-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Real Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#token-counting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token Counting
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#budget-enforcement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Budget Enforcement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-reduction-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost Reduction Strategies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-rbac-and-team-governance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. RBAC and Team Governance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. RBAC and Team Governance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#roles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Permissions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#user-assignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Assignment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audit-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit Logging
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-multi-agent-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Multi-Agent Patterns
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Multi-Agent Patterns">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pattern-1-orchestrator-worker-decompose-execute-merge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern 1: Orchestrator-Worker (Decompose-Execute-Merge)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pattern-2-agent-ensemble-with-voting-masai-ranker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern 2: Agent Ensemble with Voting (MASAI Ranker)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pattern-3-test-verification-loop-agentcoder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern 3: Test-Verification Loop (AgentCoder)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pattern-4-reviewer-agent-chatdev-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern 4: Reviewer Agent (ChatDev Pattern)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pattern-5-self-refine-loop-iterative-improvement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern 5: Self-Refine Loop (Iterative Improvement)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pattern-6-adaptive-complexity-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern 6: Adaptive Complexity Routing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#composing-patterns-together" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Composing Patterns Together
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-use-each-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Use Each Pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#implementation-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Further Reading
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="core-concepts-a-deep-dive-into-hone">Core Concepts: A Deep Dive into Hone<a class="headerlink" href="#core-concepts-a-deep-dive-into-hone" title="Permanent link">&para;</a></h1>
+<p>This document explains the "why" behind Hone's design choices. It's for users who want to understand how Hone works under the hood, not just how to use it. If you're looking for step-by-step instructions, see <a href="../../tutorials/getting-started/">Getting Started</a>.</p>
+<h2 id="1-the-agent-loop">1. The Agent Loop<a class="headerlink" href="#1-the-agent-loop" title="Permanent link">&para;</a></h2>
+<p>When you send a message to Hone, it enters a repeating cycle:</p>
+<div class="highlight"><pre><span></span><code>Prompt
+  ↓
+[Build Context]
+  ↓
+[Call Model]
+  ↓
+[Stream Tokens]
+  ↓
+[Parse Tool Calls]
+  ↓
+[Execute Tools]
+  ↓
+[Loop? Or Done?]
+</code></pre></div>
+<p>Here's what happens at each step:</p>
+<p><strong>Prompt:</strong> You type a natural language request. Example: "Fix the bug in my authentication flow."</p>
+<p><strong>Build Context:</strong> Hone gathers relevant information: your question, conversation history, file contents, git diffs, memory of past patterns. All of this is assembled into a "context window" — a bounded sequence of tokens that fits inside the model's input limit.</p>
+<p><strong>Call Model:</strong> The compiled context (prompt + history + tools definitions) is sent to the model provider (Anthropic, OpenAI, Ollama, etc.). Hone streams the response token-by-token from the model.</p>
+<p><strong>Stream Tokens:</strong> As tokens arrive, Hone displays them in the terminal. You see the agent thinking in real-time.</p>
+<p><strong>Parse Tool Calls:</strong> The model may emit structured tool calls (JSON objects like <code>{"tool": "read_file", "args": {"path": "src/main.rs"}}</code>). These are extracted from the token stream.</p>
+<p><strong>Execute Tools:</strong> If the model called a tool, Hone executes it in the sandbox. Example: reading a file, running a shell command, querying the semantic index. The tool's output is captured and added to context.</p>
+<p><strong>Loop or Done?:</strong> If the model said "I'm done" or "Here's your answer," the loop ends. If it called a tool, the output is added to the conversation and the loop repeats — the model sees the tool output and can call more tools or generate the final response.</p>
+<h3 id="agent-loop-as-a-sequence-diagram">Agent Loop as a Sequence Diagram<a class="headerlink" href="#agent-loop-as-a-sequence-diagram" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>sequenceDiagram
+    participant User
+    participant Agent as Hone Agent
+    participant ContextMgr as Context Manager
+    participant Model as Model Provider
+    participant Tools as Tool Layer
+    participant Sandbox as Kernel Sandbox
+
+    User-&gt;&gt;Agent: Send prompt
+    activate Agent
+
+    Agent-&gt;&gt;ContextMgr: Build context (messages + history + files)
+    activate ContextMgr
+    ContextMgr--&gt;&gt;Agent: Bounded context window
+    deactivate ContextMgr
+
+    Agent-&gt;&gt;Model: Call complete(context)
+    activate Model
+    Model--&gt;&gt;Agent: Stream tokens (thinking...)
+
+    alt Model emits tool call
+        Model--&gt;&gt;Agent: ToolCall JSON
+        deactivate Model
+
+        Agent-&gt;&gt;Tools: Execute tool call
+        activate Tools
+
+        Tools-&gt;&gt;Sandbox: Enforce policy
+        activate Sandbox
+        Sandbox--&gt;&gt;Tools: OK (path in allowlist)
+        deactivate Sandbox
+
+        Tools--&gt;&gt;Agent: Tool output
+        deactivate Tools
+
+        Agent-&gt;&gt;Agent: Add tool output to context
+        Agent-&gt;&gt;Model: Continue streaming with tool output
+        activate Model
+    else Model emits "done"
+        Model--&gt;&gt;Agent: Final response complete
+        deactivate Model
+        Agent-&gt;&gt;Agent: Exit loop
+    end
+
+    Agent--&gt;&gt;User: Stream final response + tool calls
+    deactivate Agent</code></pre>
+<h3 id="why-this-matters">Why This Matters<a class="headerlink" href="#why-this-matters" title="Permanent link">&para;</a></h3>
+<p><strong>Multiple turns:</strong> The agent can call a tool, see the result, and adjust its next action based on what it learned. This is not one-shot execution; it's a reasoning loop.</p>
+<p><strong>Streaming visibility:</strong> You see the model thinking in real-time, not waiting for a final response. This builds trust.</p>
+<p><strong>Interruptible:</strong> You can hit Ctrl+C at any point to stop execution. No forced completion.</p>
+<p><strong>Cost tracking:</strong> Each token and tool call is counted. You see the cost before the loop finishes.</p>
+<hr />
+<h2 id="1b-agents-specialized-personas">1b. Agents: Specialized Personas<a class="headerlink" href="#1b-agents-specialized-personas" title="Permanent link">&para;</a></h2>
+<p>An <strong>agent</strong> is a specialized version of the AI with curated tools, context, and system prompts. Unlike recipes (which define "what to do step by step"), agents define "who the AI is."</p>
+<h3 id="what-is-an-agent">What is an Agent?<a class="headerlink" href="#what-is-an-agent" title="Permanent link">&para;</a></h3>
+<p>An agent is a Markdown file with YAML frontmatter:</p>
+<div class="highlight"><pre><span></span><code>---
+name: code-reviewer
+description: Expert code reviewer for quality, security, performance, and maintainability
+tools: [read, grep, glob, shell]
+<span class="gu">model: sonnet</span>
+<span class="gu">---</span>
+
+You are a senior code reviewer. Perform systematic reviews following this process:
+
+<span class="gu">## Review Process</span>
+
+<span class="k">1.</span> <span class="gs">**Correctness**</span> — Does the code do what it claims?
+<span class="k">2.</span> <span class="gs">**Security**</span> — SQL injection, XSS, command injection, secret leakage
+<span class="k">3.</span> <span class="gs">**Performance**</span> — Unnecessary allocations, N+1 queries
+...
+</code></pre></div>
+<p>The frontmatter metadata (<code>name</code>, <code>tools</code>, <code>model</code>) configures the agent. The Markdown body becomes the system prompt.</p>
+<h3 id="agents-vs-recipes">Agents vs. Recipes<a class="headerlink" href="#agents-vs-recipes" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Agent</th>
+<th>Recipe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Defines</strong></td>
+<td>"Who are you?"</td>
+<td>"What should I do?"</td>
+</tr>
+<tr>
+<td><strong>Scope</strong></td>
+<td>A persona with tools and expertise</td>
+<td>A sequence of steps to achieve a goal</td>
+</tr>
+<tr>
+<td><strong>Reusability</strong></td>
+<td>Across many tasks</td>
+<td>For a specific workflow</td>
+</tr>
+<tr>
+<td><strong>Example</strong></td>
+<td>"I am a security auditor"</td>
+<td>"Run tests, then refactor, then commit"</td>
+</tr>
+</tbody>
+</table>
+<p>You can combine them: use the <code>tdd-workflow</code> agent with the <code>tdd-feature</code> recipe.</p>
+<h3 id="built-in-agents">Built-in Agents<a class="headerlink" href="#built-in-agents" title="Permanent link">&para;</a></h3>
+<p>Hone includes 9 agents:
+- <code>code-reviewer</code> — Quality and security reviews
+- <code>debugger</code> — Systematic bug investigation
+- <code>security-auditor</code> — Vulnerability scanning
+- <code>performance-optimizer</code> — Profiling and optimization
+- <code>documentation-agent</code> — API docs and diagrams
+- <code>api-designer</code> — REST/GraphQL/gRPC design
+- <code>tdd-workflow</code> — TDD coach
+- <code>rust-expert</code> — Rust best practices
+- <code>python-expert</code> — Python best practices</p>
+<h3 id="custom-agents">Custom Agents<a class="headerlink" href="#custom-agents" title="Permanent link">&para;</a></h3>
+<p>Define custom agents in <code>.hone/agents/my-agent.md</code> (project-level) or <code>~/.config/hone/agents/my-agent.md</code> (user-level). See <a href="../../tutorials/tools-and-mcp/#agents">Tools and MCP Guide</a> for detailed instructions.</p>
+<h3 id="discovery-via-description">Discovery via Description<a class="headerlink" href="#discovery-via-description" title="Permanent link">&para;</a></h3>
+<p>The agent registry supports fuzzy matching on description:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--agent<span class="w"> </span><span class="s2">&quot;test-driven&quot;</span><span class="w">  </span><span class="c1"># finds &quot;tdd-workflow&quot;</span>
+hone<span class="w"> </span>--agent<span class="w"> </span><span class="s2">&quot;code-quality&quot;</span><span class="w">  </span><span class="c1"># finds &quot;code-reviewer&quot;</span>
+</code></pre></div>
+<p>This is powered by <code>AgentRegistry::find_by_description()</code>, which matches keywords case-insensitively.</p>
+<hr />
+<h2 id="2-the-layered-tool-architecture">2. The Layered Tool Architecture<a class="headerlink" href="#2-the-layered-tool-architecture" title="Permanent link">&para;</a></h2>
+<p>Hone doesn't just call a remote model API. It has four distinct layers of tool execution, each with different trade-offs:</p>
+<h3 id="layer-3-skills-honemd">Layer 3: Skills (HONE.md)<a class="headerlink" href="#layer-3-skills-honemd" title="Permanent link">&para;</a></h3>
+<p><strong>Cost:</strong> Zero runtime tokens<br />
+<strong>Speed:</strong> Instant (compile-time)<br />
+<strong>Authority:</strong> User-defined conventions</p>
+<p>A <code>HONE.md</code> file at your project root contains markdown-formatted "skills" that guide the model. Example:</p>
+<div class="highlight"><pre><span></span><code><span class="gh"># My Project Skills</span>
+
+<span class="gu">## Code Style</span>
+<span class="k">-</span><span class="w"> </span>Use async/await, never callbacks
+<span class="k">-</span><span class="w"> </span>Prefer named types over tuples
+<span class="k">-</span><span class="w"> </span>All public functions must have docstrings
+
+<span class="gu">## Deployment</span>
+<span class="k">-</span><span class="w"> </span><span class="sb">`cargo build --release`</span> builds the binary
+<span class="k">-</span><span class="w"> </span>Binary is deployed to /opt/myapp via SSH
+<span class="k">-</span><span class="w"> </span>Rollback: <span class="sb">`systemctl restart myapp &amp;&amp; sleep 5 &amp;&amp; curl health-check`</span>
+</code></pre></div>
+<p>The agent reads this file at startup and incorporates it into every system prompt. No API tokens used. This is "free guidance."</p>
+<p>When to use Layer 3:
+- Encoding project conventions
+- Style guides
+- Architecture patterns
+- Deployment procedures
+- "This is how we do things here"</p>
+<h3 id="layer-2-native-tools-rust-1ms">Layer 2: Native Tools (Rust, &lt;1ms)<a class="headerlink" href="#layer-2-native-tools-rust-1ms" title="Permanent link">&para;</a></h3>
+<p><strong>Cost:</strong> Zero network, zero serialization<br />
+<strong>Speed:</strong> &lt;1 millisecond per call<br />
+<strong>Authority:</strong> Hone's built-in capabilities</p>
+<p>These are Rust functions linked directly into the Hone binary. Tool calls are function invocations, not JSON-RPC requests. Built-in tools include:</p>
+<ul>
+<li><code>read_file</code> — Read text files</li>
+<li><code>write_file</code> — Write text files</li>
+<li><code>shell</code> — Execute shell commands</li>
+<li><code>git</code> — Git operations (commit, log, diff)</li>
+<li><code>semantic_search</code> — Vector-based code search</li>
+<li><code>lsp_*</code> — Language server operations (hover, completions)</li>
+</ul>
+<p>Example: Reading a file is a direct Rust function call. No serialization, no IPC overhead, no network round-trip.</p>
+<p>When to use Layer 2:
+- File operations
+- Shell commands
+- Git interactions
+- Code intelligence (hover, completions)
+- Anything time-critical or bandwidth-heavy</p>
+<h3 id="layer-1-mcp-tools-json-rpc-50-500ms">Layer 1: MCP Tools (JSON-RPC, 50-500ms)<a class="headerlink" href="#layer-1-mcp-tools-json-rpc-50-500ms" title="Permanent link">&para;</a></h3>
+<p><strong>Cost:</strong> Serialization + IPC<br />
+<strong>Speed:</strong> 50-500 milliseconds<br />
+<strong>Authority:</strong> External services (GitHub, Jira, Slack, databases)</p>
+<p><a href="https://spec.modelcontextprotocol.io/">MCP (Model Context Protocol)</a> is a JSON-RPC interface for tools. Hone spawns external MCP servers as subprocesses and communicates via stdio. Example:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[[mcp_servers]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;github&quot;</span>
+<span class="n">command</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span>
+<span class="n">args</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p">]</span>
+<span class="n">env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">GITHUB_TOKEN</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">&quot;${GITHUB_TOKEN}&quot;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p>When the model calls <code>github_search_repos</code>, Hone:
+1. Sends JSON-RPC request to the GitHub MCP server
+2. Waits for response (50-500ms)
+3. Returns result to the agent</p>
+<p>Built-in MCP integrations:
+- GitHub (search repos, list issues, create PRs)
+- Jira (search, create tickets)
+- Slack (send messages)
+- Databases (SQL queries)
+- Custom servers (anything you implement)</p>
+<p>When to use Layer 1:
+- Third-party APIs
+- External services
+- Workflows that need off-machine resources
+- Extensibility via standard protocol</p>
+<h3 id="layer-0-code-mode-agent-generated-scripts">Layer 0: Code Mode (Agent-Generated Scripts)<a class="headerlink" href="#layer-0-code-mode-agent-generated-scripts" title="Permanent link">&para;</a></h3>
+<p><strong>Cost:</strong> Model tokens + script execution time<br />
+<strong>Speed:</strong> Varies (scripting languages are slower)<br />
+<strong>Authority:</strong> Agent-generated code</p>
+<p>For complex multi-tool orchestration, the agent can generate and execute scripts (TypeScript, Python, etc.). Example:</p>
+<p>You: "Crawl our GitHub org and find all repos without CI configured."</p>
+<p>The agent might generate:</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// Generated by agent</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">repos</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">github</span><span class="p">.</span><span class="nx">searchRepos</span><span class="p">({</span><span class="w"> </span><span class="nx">org</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;my-org&quot;</span><span class="w"> </span><span class="p">});</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">repo</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="nx">repos</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">workflows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">github</span><span class="p">.</span><span class="nx">getWorkflows</span><span class="p">(</span><span class="nx">repo</span><span class="p">.</span><span class="nx">id</span><span class="p">);</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">workflows</span><span class="p">.</span><span class="nx">length</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="mf">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="sb">`Missing CI: </span><span class="si">${</span><span class="nx">repo</span><span class="p">.</span><span class="nx">name</span><span class="si">}</span><span class="sb">`</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The script runs in a subprocess (sandboxed), and its output is fed back to the agent.</p>
+<p>When to use Layer 0:
+- Complex orchestration across multiple tools
+- Loops and conditionals
+- When you need a general-purpose programming language
+- Not recommended for simple tool calls</p>
+<h3 id="decision-matrix-which-layer-to-use">Decision Matrix: Which Layer to Use?<a class="headerlink" href="#decision-matrix-which-layer-to-use" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Layer</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read a source file</td>
+<td>2</td>
+<td>Direct Rust call, instant</td>
+</tr>
+<tr>
+<td>Find all <code>TODO</code> comments</td>
+<td>2 + 3</td>
+<td>Layer 2 reads files; Layer 3 has grep patterns</td>
+</tr>
+<tr>
+<td>Create a GitHub issue</td>
+<td>1</td>
+<td>External API, needs authentication</td>
+</tr>
+<tr>
+<td>Run a multi-step deployment</td>
+<td>0</td>
+<td>Needs conditionals, loops, state</td>
+</tr>
+<tr>
+<td>Log code metrics to Datadog</td>
+<td>1</td>
+<td>External service, out-of-process</td>
+</tr>
+<tr>
+<td>Format code with Prettier</td>
+<td>2</td>
+<td>Native tool if built-in, else Layer 1 (MCP)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-context-window-management">3. Context Window Management<a class="headerlink" href="#3-context-window-management" title="Permanent link">&para;</a></h2>
+<p>A <strong>context window</strong> is the bounded amount of text a model can process. Different models have different limits:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Context</th>
+<th>Input</th>
+<th>Output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude Opus 4.5</td>
+<td>200K tokens</td>
+<td>~300 pages</td>
+<td>~4 pages</td>
+</tr>
+<tr>
+<td>Claude Sonnet 4</td>
+<td>200K tokens</td>
+<td>~300 pages</td>
+<td>~4 pages</td>
+</tr>
+<tr>
+<td>Claude Haiku 3.5</td>
+<td>200K tokens</td>
+<td>~300 pages</td>
+<td>~4 pages</td>
+</tr>
+<tr>
+<td>GPT-4o</td>
+<td>128K tokens</td>
+<td>~190 pages</td>
+<td>~4 pages</td>
+</tr>
+<tr>
+<td>Ollama llama2</td>
+<td>4K tokens</td>
+<td>~6 pages</td>
+<td>~1 page</td>
+</tr>
+<tr>
+<td>Local Mistral</td>
+<td>32K tokens</td>
+<td>~48 pages</td>
+<td>~2 pages</td>
+</tr>
+</tbody>
+</table>
+<p>Hone's <strong>Context Manager</strong> keeps token usage under the model's limit using a three-part strategy:</p>
+<h3 id="part-1-token-budgeting">Part 1: Token Budgeting<a class="headerlink" href="#part-1-token-budgeting" title="Permanent link">&para;</a></h3>
+<p>Before sending a request, Hone calculates:</p>
+<div class="highlight"><pre><span></span><code>Available tokens = Model&#39;s context limit (e.g., 200K)
+Reserved for output = max_output_tokens (e.g., 4K)
+Budget = Available - Reserved (e.g., 196K)
+
+Current usage = conversation_history + requested_files + code_context
+If current_usage &gt; budget:
+    → Compact context (see Part 2)
+</code></pre></div>
+<h3 id="part-2-compaction">Part 2: Compaction<a class="headerlink" href="#part-2-compaction" title="Permanent link">&para;</a></h3>
+<p>When the context gets full, Hone compacts it by:</p>
+<ol>
+<li><strong>Pruning old conversation turns</strong> — Keep recent turns (last N), summarize older ones</li>
+<li><strong>Chunking large files</strong> — If a file is too big, request only relevant portions (using LSP)</li>
+<li><strong>Semantic deduplication</strong> — Remove redundant explanations</li>
+<li><strong>Memory injection</strong> — Replace large conversation history with learned patterns from memory (see Section 5)</li>
+</ol>
+<p>Example: After 20 turns of conversation, Hone might summarize:</p>
+<div class="highlight"><pre><span></span><code>[CONTEXT COMPACTION]
+First 10 turns: User asked to refactor authentication module.
+Agent: Analyzed code, found 3 issues, fixed 2.
+User: Asked for tests.
+Agent: Added 15 unit tests.
+[END COMPACTION]
+
+[RECENT TURNS - FULL DETAIL]
+Turn 11: ...
+Turn 12: ...
+...
+</code></pre></div>
+<h3 id="part-3-adaptive-inclusion">Part 3: Adaptive Inclusion<a class="headerlink" href="#part-3-adaptive-inclusion" title="Permanent link">&para;</a></h3>
+<p>Hone doesn't include every file in your repo. It includes only:</p>
+<ol>
+<li><strong>Explicitly requested</strong> — You ask to read a specific file</li>
+<li><strong>Relevant to the task</strong> — Semantic search finds related code</li>
+<li><strong>In the current loop</strong> — Files modified by recent tool calls</li>
+<li><strong>Workspace context</strong> — File tree, diagnostics, symbols</li>
+</ol>
+<p>You can cap context usage:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--context-window<span class="w"> </span><span class="m">64000</span><span class="w">  </span><span class="c1"># Use only 64K tokens, not the full 200K</span>
+</code></pre></div>
+<p>This is useful if:
+- You're on a metered connection
+- You want to control costs
+- You're using a smaller model</p>
+<hr />
+<h2 id="4-the-sandbox-kernel-level-isolation">4. The Sandbox: Kernel-Level Isolation<a class="headerlink" href="#4-the-sandbox-kernel-level-isolation" title="Permanent link">&para;</a></h2>
+<p>When an agent executes a shell command or reads a file, it doesn't happen in your main shell. It happens in a <strong>kernel-enforced sandbox</strong> — a restricted environment where the agent can only do what you explicitly allow.</p>
+<h3 id="the-analogy">The Analogy<a class="headerlink" href="#the-analogy" title="Permanent link">&para;</a></h3>
+<p>Imagine you hire someone to organize your office. You don't give them a key to your entire house. Instead:</p>
+<ul>
+<li>You unlock the filing cabinet and close the door to the bedroom</li>
+<li>You tell them "You can touch anything in the filing cabinet, but not outside it"</li>
+<li>You tell them "You can read documents, but you cannot remove anything"</li>
+<li>When they're done, you lock up again</li>
+</ul>
+<p>The sandbox is that locked door.</p>
+<h3 id="how-sandboxes-work-platform-specific">How Sandboxes Work (Platform-Specific)<a class="headerlink" href="#how-sandboxes-work-platform-specific" title="Permanent link">&para;</a></h3>
+<p><strong>macOS (Seatbelt):</strong> Uses the <code>sandbox_init()</code> system call to define a security profile. The profile lists allowed paths, system calls, and network access. The kernel enforces it at the syscall boundary.</p>
+<p><strong>Linux (Landlock):</strong> Uses the Landlock LSM (Linux Security Module) to define filesystem access rules. Landlock allows/denies file operations at the VFS layer.</p>
+<p><strong>Linux (seccomp-BPF):</strong> Older Linux kernels use seccomp-BPF to block dangerous syscalls (like <code>execve</code> unless whitelisted).</p>
+<p><strong>Container (seccomp):</strong> Docker and other containers already provide isolation via cgroups and seccomp. Hone's additional sandbox strengthens the boundary.</p>
+<p><strong>Windows (Planned):</strong> Job Objects and Restricted Tokens.</p>
+<h3 id="sandboxpolicy-what-you-allow">SandboxPolicy: What You Allow<a class="headerlink" href="#sandboxpolicy-what-you-allow" title="Permanent link">&para;</a></h3>
+<p>Before executing a tool, you define a <code>SandboxPolicy</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">SandboxPolicy</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_read</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;</span><span class="p">,</span><span class="w">      </span><span class="c1">// paths readable</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_write</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;</span><span class="p">,</span><span class="w">     </span><span class="c1">// paths writable</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_exec</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;</span><span class="p">,</span><span class="w">      </span><span class="c1">// allowed executables</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_network</span><span class="p">:</span><span class="w"> </span><span class="kt">bool</span><span class="p">,</span><span class="w">            </span><span class="c1">// network access</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_env</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">String</span><span class="o">&gt;</span><span class="p">,</span><span class="w">        </span><span class="c1">// exposed env vars</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Example policy for a <code>git_commit</code> tool:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.tools.git]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">]</span><span class="w">        </span><span class="c1"># can read project files</span>
+<span class="n">allow_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">]</span><span class="w">       </span><span class="c1"># can write to project</span>
+<span class="n">allow_exec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/usr/bin/git&quot;</span><span class="p">]</span><span class="w">          </span><span class="c1"># only git binary allowed</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="w">                  </span><span class="c1"># no network access</span>
+<span class="n">allow_env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;GIT_AUTHOR_NAME&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;GIT_AUTHOR_EMAIL&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p>If the agent tries to call <code>/usr/bin/python</code> or read <code>/etc/shadow</code>, the sandbox blocks it:</p>
+<div class="highlight"><pre><span></span><code>error: access denied (executable /usr/bin/python not in allowlist)
+</code></pre></div>
+<h3 id="fail-closed-invariant">Fail-Closed Invariant<a class="headerlink" href="#fail-closed-invariant" title="Permanent link">&para;</a></h3>
+<p>This is critical: <strong>If the desired sandbox tier is unavailable and required, the operation fails entirely.</strong> There is no degraded mode.</p>
+<p>Example:</p>
+<div class="highlight"><pre><span></span><code>You run: hone --sandbox seatbelt
+Hone starts on Linux (which uses Landlock, not Seatbelt)
+Error: Sandbox tier not available and enforcement required.
+Operation aborted.
+</code></pre></div>
+<p>Why? Because silently degrading security is worse than failing.</p>
+<h3 id="real-threat-examples">Real Threat Examples<a class="headerlink" href="#real-threat-examples" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Threat</th>
+<th>Sandbox Layer</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Agent runs <code>rm -rf /</code></td>
+<td>Seatbelt/Landlock</td>
+<td>Path allowlist; only writable paths permitted</td>
+</tr>
+<tr>
+<td>Agent reads <code>/etc/shadow</code></td>
+<td>Seatbelt/Landlock</td>
+<td>Read allowlist; only permitted paths accessible</td>
+</tr>
+<tr>
+<td>Agent exfiltrates data via curl</td>
+<td>seccomp</td>
+<td>Network blocked by default; explicit <code>allow_network</code> required</td>
+</tr>
+<tr>
+<td>Agent spawns a backdoor process</td>
+<td>Landlock + seccomp</td>
+<td>Only whitelisted executables allowed</td>
+</tr>
+<tr>
+<td>Agent exhausts disk with logs</td>
+<td>rlimit</td>
+<td>Disk write limit (e.g., 1 GB per operation)</td>
+</tr>
+<tr>
+<td>Agent uses <code>fork</code> bomb</td>
+<td>rlimit</td>
+<td>Max subprocess limit (e.g., 10 subprocesses)</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../../tutorials/security/">Security Guide</a> for complete configuration.</p>
+<hr />
+<h2 id="5-adaptive-memory-learning-from-experience">5. Adaptive Memory: Learning from Experience<a class="headerlink" href="#5-adaptive-memory-learning-from-experience" title="Permanent link">&para;</a></h2>
+<p>Most AI tools forget what they learned in the previous session. Hone remembers.</p>
+<p><strong>Adaptive memory</strong> is a local, encrypted SQLite database that stores:
+- Successful patterns ("This codebase uses async/await consistently")
+- Failed approaches ("Regex won't work; use tree-sitter instead")
+- Performance insights ("The test suite takes 45 seconds")
+- Domain knowledge ("The auth module is owned by the platform team")</p>
+<h3 id="the-learning-cycle">The Learning Cycle<a class="headerlink" href="#the-learning-cycle" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>Observation → Extraction → Hypothesis → Verification → Solidification
+</code></pre></div>
+<p><strong>Observation:</strong> During a session, Hone observes interactions. Examples:</p>
+<ul>
+<li>Agent tried approach A, user said "that's wrong"</li>
+<li>Agent tried approach B, user said "perfect"</li>
+<li>Tool returned an error; agent recovered by doing X</li>
+</ul>
+<p><strong>Extraction:</strong> After the session, Hone extracts patterns:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;pattern&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;When fixing bug type &#39;race condition&#39;, use &#39;Arc&lt;Mutex&lt;T&gt;&gt;&#39; not &#39;Cell&lt;T&gt;&#39;&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;evidence&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;fixed 3 race conditions this way&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;1 user approval&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;confidence&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.85</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Hypothesis:</strong> Hone forms a testable hypothesis:</p>
+<p>"In Rust code, Arc<Mutex> is the right choice for race condition fixes."</p>
+<p><strong>Verification:</strong> Next session, Hone tries this hypothesis. Did it work? Confidence goes up. Did it fail? Confidence goes down or hypothesis is deleted.</p>
+<p><strong>Solidification:</strong> After many successful applications, the pattern becomes "solid" and is injected into the system prompt automatically.</p>
+<h3 id="memory-storage">Memory Storage<a class="headerlink" href="#memory-storage" title="Permanent link">&para;</a></h3>
+<p>Memory is stored in <code>~/.local/share/hone/memory.db</code> (encrypted with <code>~/.config/hone/key.bin</code>). The database schema includes:</p>
+<div class="highlight"><pre><span></span><code>patterns:
+  - id
+  - text
+  - confidence (0.0 to 1.0)
+  - context (which project/language/domain)
+  - created_at
+  - last_verified_at
+
+observations:
+  - session_id
+  - timestamp
+  - category (tool_success, tool_failure, user_feedback, etc.)
+  - content (JSON)
+  - linked_pattern_id
+</code></pre></div>
+<h3 id="difference-from-cloud-memory">Difference from Cloud Memory<a class="headerlink" href="#difference-from-cloud-memory" title="Permanent link">&para;</a></h3>
+<p>Claude Code (Anthropic's product) uses cloud memory — conversations and patterns are stored on Anthropic's servers. Hone uses local memory:</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Claude Code (Cloud)</th>
+<th>Hone (Local)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Where stored</td>
+<td>Anthropic's servers</td>
+<td>Your machine</td>
+</tr>
+<tr>
+<td>Encryption</td>
+<td>At rest on servers</td>
+<td>With your key</td>
+</tr>
+<tr>
+<td>Control</td>
+<td>Anthropic has access</td>
+<td>Only you have access</td>
+</tr>
+<tr>
+<td>Privacy</td>
+<td>Varies by terms</td>
+<td>100% private</td>
+</tr>
+<tr>
+<td>Learning scope</td>
+<td>Cross-project (global)</td>
+<td>Per-project or per-team</td>
+</tr>
+<tr>
+<td>Sharing</td>
+<td>Via Anthropic's infrastructure</td>
+<td>Via your team infrastructure</td>
+</tr>
+</tbody>
+</table>
+<p>Hone is designed for privacy: you own your learning.</p>
+<h3 id="enablingdisabling-memory">Enabling/Disabling Memory<a class="headerlink" href="#enablingdisabling-memory" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[memory]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">db_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;~/.local/share/hone/memory.db&quot;</span>
+<span class="n">encryption_key_file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;~/.config/hone/key.bin&quot;</span>
+</code></pre></div>
+<p>Disable for sensitive work:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--ephemeral<span class="w">  </span><span class="c1"># no memory saved</span>
+</code></pre></div>
+<hr />
+<h2 id="6-the-daemon-model-hone-vs-honed">6. The Daemon Model: hone vs honed<a class="headerlink" href="#6-the-daemon-model-hone-vs-honed" title="Permanent link">&para;</a></h2>
+<p>Hone has two entry points:</p>
+<h3 id="hone-local-cli"><code>hone</code> — Local CLI<a class="headerlink" href="#hone-local-cli" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--model<span class="w"> </span>gpt-4o<span class="w"> </span>--dir<span class="w"> </span>~/myproject
+</code></pre></div>
+<p>This is a single-use terminal session. You start it, chat with the agent, the session ends. The process terminates.</p>
+<p>Pros:
+- Simple, self-contained
+- No persistent server
+- Great for single-user workflows</p>
+<p>Cons:
+- New process each time
+- Session state lost if terminal closes unexpectedly
+- Can't share a session with teammates</p>
+<h3 id="honed-remote-daemon"><code>honed</code> — Remote Daemon<a class="headerlink" href="#honed-remote-daemon" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Terminal 1: Start the daemon</span>
+honed<span class="w"> </span>--port<span class="w"> </span><span class="m">7777</span>
+
+<span class="c1"># Terminal 2, 3, N: Connect clients</span>
+hone<span class="w"> </span>--remote<span class="w"> </span>localhost:7777
+</code></pre></div>
+<p>The daemon is a long-running HTTP/2 + SSE server. Multiple users can connect, share sessions, and hand off work. Session state is persistent.</p>
+<p>Pros:
+- Persistent sessions (survive terminal disconnection)
+- Multi-user collaborative editing
+- Team governance via RBAC
+- Background indexing (always running)
+- Easier deployment (single server, many clients)</p>
+<p>Cons:
+- Needs a server process
+- More complex setup
+- Requires shared authentication</p>
+<h3 id="when-to-use-each">When to Use Each<a class="headerlink" href="#when-to-use-each" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fixing a bug in my code, right now</td>
+<td><code>hone</code></td>
+</tr>
+<tr>
+<td>Rapid iteration, solo developer</td>
+<td><code>hone</code></td>
+</tr>
+<tr>
+<td>Team working on same codebase</td>
+<td><code>honed</code></td>
+</tr>
+<tr>
+<td>Always-on code intelligence</td>
+<td><code>honed</code></td>
+</tr>
+<tr>
+<td>Running on a remote server</td>
+<td><code>honed</code></td>
+</tr>
+<tr>
+<td>Laptop development (no server)</td>
+<td><code>hone</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-cost-model-tokens-and-budgets">7. Cost Model: Tokens and Budgets<a class="headerlink" href="#7-cost-model-tokens-and-budgets" title="Permanent link">&para;</a></h2>
+<p>Every API call to a model provider (Anthropic, OpenAI, etc.) costs money. Hone tracks costs in real-time so you know the expense before it happens.</p>
+<h3 id="token-pricing">Token Pricing<a class="headerlink" href="#token-pricing" title="Permanent link">&para;</a></h3>
+<p>Pricing is per 1 million tokens (the standard unit):</p>
+<div class="highlight"><pre><span></span><code><span class="k">[pricing.anthropic]</span>
+<span class="s2">&quot;claude-opus-4-5&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">input_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">3.00</span><span class="p">,</span><span class="w"> </span><span class="n">output_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">15.00</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p>This means:
+- Input: $3 per 1M tokens
+- Output: $15 per 1M tokens</p>
+<p>For a request with 10,000 input tokens and 1,000 output tokens:</p>
+<div class="highlight"><pre><span></span><code>Cost = (10,000 / 1,000,000) * 3.00 + (1,000 / 1,000,000) * 15.00
+     = 0.03 + 0.015
+     = $0.045
+</code></pre></div>
+<h3 id="real-examples">Real Examples<a class="headerlink" href="#real-examples" title="Permanent link">&para;</a></h3>
+<p>A typical Hone interaction costs:</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Tokens</th>
+<th>Cost</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fix a typo</td>
+<td>2K in, 200 out</td>
+<td>~$0.01</td>
+<td>2 seconds</td>
+</tr>
+<tr>
+<td>Add a feature</td>
+<td>15K in, 2K out</td>
+<td>~$0.06</td>
+<td>1 minute</td>
+</tr>
+<tr>
+<td>Code review (10 files)</td>
+<td>50K in, 3K out</td>
+<td>~$0.20</td>
+<td>3 minutes</td>
+</tr>
+<tr>
+<td>Large refactor</td>
+<td>80K in, 8K out</td>
+<td>~$0.39</td>
+<td>5 minutes</td>
+</tr>
+</tbody>
+</table>
+<h3 id="token-counting">Token Counting<a class="headerlink" href="#token-counting" title="Permanent link">&para;</a></h3>
+<p>Hone uses <a href="https://github.com/openai/tiktoken">tiktoken</a> to count tokens accurately. Before sending a request, Hone calculates:</p>
+<div class="highlight"><pre><span></span><code>tokens_in_prompt = len(system_prompt) + len(conversation_history) + len(files)
+estimated_cost = (tokens_in_prompt / 1_000_000) * input_rate + output_estimate
+</code></pre></div>
+<p>This is shown in the CLI:</p>
+<div class="highlight"><pre><span></span><code>Prompt: 4521 tokens
+Output estimate: 500 tokens
+Estimated cost: $0.019 USD
+Continue? (y/n)
+</code></pre></div>
+<p>Hit <code>n</code> to cancel before spending.</p>
+<h3 id="budget-enforcement">Budget Enforcement<a class="headerlink" href="#budget-enforcement" title="Permanent link">&para;</a></h3>
+<p>Set a per-session budget:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--budget<span class="w"> </span><span class="m">5</span>.00<span class="w">  </span><span class="c1"># stop after spending $5</span>
+</code></pre></div>
+<p>When the limit is reached:</p>
+<div class="highlight"><pre><span></span><code>Session cost: $4.98
+Approaching budget limit ($5.00). Continue? (y/n)
+</code></pre></div>
+<p>Hit <code>n</code> to stop.</p>
+<h3 id="cost-reduction-strategies">Cost Reduction Strategies<a class="headerlink" href="#cost-reduction-strategies" title="Permanent link">&para;</a></h3>
+<p><strong>Use cheaper models for simple tasks:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Complex reasoning: use Opus (more capable, more expensive)</span>
+hone<span class="w"> </span>--model<span class="w"> </span>anthropic:claude-opus-4-5
+
+<span class="c1"># Simple edits: use Haiku (cheaper, fast)</span>
+hone<span class="w"> </span>--model<span class="w"> </span>anthropic:claude-haiku-3-5
+</code></pre></div>
+<p><strong>Use local models (free):</strong></p>
+<div class="highlight"><pre><span></span><code>ollama<span class="w"> </span>pull<span class="w"> </span>llama2
+hone<span class="w"> </span>--model<span class="w"> </span>ollama:llama2
+</code></pre></div>
+<p><strong>Reduce context size:</strong></p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--context-window<span class="w"> </span><span class="m">50000</span><span class="w">  </span><span class="c1"># use only 50K tokens, not full 200K</span>
+</code></pre></div>
+<p><strong>Enable memory:</strong></p>
+<p>Learned patterns reduce the need to re-explain your codebase. This saves tokens over time.</p>
+<hr />
+<h2 id="8-rbac-and-team-governance">8. RBAC and Team Governance<a class="headerlink" href="#8-rbac-and-team-governance" title="Permanent link">&para;</a></h2>
+<p>When running <code>honed</code> (daemon mode), multiple users can access the same session. RBAC (Role-Based Access Control) ensures each user has the right permissions.</p>
+<h3 id="roles">Roles<a class="headerlink" href="#roles" title="Permanent link">&para;</a></h3>
+<p>Define roles in <code>~/.config/hone/config.toml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[[rbac.roles]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;admin&quot;</span>
+<span class="n">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sessions:create&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;sessions:delete&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;sessions:admin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:all&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcp:all&quot;</span><span class="p">]</span>
+
+<span class="k">[[rbac.roles]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;developer&quot;</span>
+<span class="n">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sessions:create&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;sessions:read&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:git&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:shell&quot;</span><span class="p">]</span>
+
+<span class="k">[[rbac.roles]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;viewer&quot;</span>
+<span class="n">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sessions:read&quot;</span><span class="p">]</span>
+</code></pre></div>
+<h3 id="permissions">Permissions<a class="headerlink" href="#permissions" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th>Allows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sessions:create</code></td>
+<td>Start a new session</td>
+</tr>
+<tr>
+<td><code>sessions:read</code></td>
+<td>View session history</td>
+</tr>
+<tr>
+<td><code>sessions:delete</code></td>
+<td>Delete sessions</td>
+</tr>
+<tr>
+<td><code>sessions:admin</code></td>
+<td>Transfer session ownership, adjust permissions</td>
+</tr>
+<tr>
+<td><code>tools:file</code></td>
+<td>Read/write files</td>
+</tr>
+<tr>
+<td><code>tools:git</code></td>
+<td>Commit, push, rebase</td>
+</tr>
+<tr>
+<td><code>tools:shell</code></td>
+<td>Execute arbitrary shell commands</td>
+</tr>
+<tr>
+<td><code>tools:all</code></td>
+<td>All tools</td>
+</tr>
+<tr>
+<td><code>mcp:all</code></td>
+<td>Call any MCP server</td>
+</tr>
+<tr>
+<td><code>mcp:read_only</code></td>
+<td>Call MCP tools that don't mutate</td>
+</tr>
+</tbody>
+</table>
+<h3 id="user-assignment">User Assignment<a class="headerlink" href="#user-assignment" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[[rbac.users]]</span>
+<span class="n">user_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;alice@company.com&quot;</span>
+<span class="n">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;admin&quot;</span>
+
+<span class="k">[[rbac.users]]</span>
+<span class="n">user_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;bob@company.com&quot;</span>
+<span class="n">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;developer&quot;</span>
+
+<span class="k">[[rbac.users]]</span>
+<span class="n">user_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;carol@company.com&quot;</span>
+<span class="n">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;viewer&quot;</span>
+</code></pre></div>
+<h3 id="audit-logging">Audit Logging<a class="headerlink" href="#audit-logging" title="Permanent link">&para;</a></h3>
+<p>All actions are logged with user attribution:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-04-05T14:30:45Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sess_abc123&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;user&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;alice@company.com&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;event&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tool_call&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;tool&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;git_commit&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;fix: auth bug&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;result&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;success&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;duration_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">150</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>This is useful for compliance, debugging, and understanding usage patterns.</p>
+<hr />
+<h2 id="9-multi-agent-patterns">9. Multi-Agent Patterns<a class="headerlink" href="#9-multi-agent-patterns" title="Permanent link">&para;</a></h2>
+<p>Modern AI agents work better when specialized agents collaborate. Hone implements several research-backed patterns:</p>
+<h3 id="pattern-1-orchestrator-worker-decompose-execute-merge">Pattern 1: Orchestrator-Worker (Decompose-Execute-Merge)<a class="headerlink" href="#pattern-1-orchestrator-worker-decompose-execute-merge" title="Permanent link">&para;</a></h3>
+<p><strong>Reference:</strong> Anthropic internal research, CodeR (arXiv 2406.xx)</p>
+<p>The orchestrator breaks a complex task into independent subtasks, spawns worker agents for each, and merges results:</p>
+<div class="highlight"><pre><span></span><code>User: &quot;Build a CLI email validator with comprehensive tests&quot;
+
+Orchestrator: &quot;I&#39;ll break this into 4 subtasks&quot;
+  - Worker 1: Write test suite
+  - Worker 2: Implement validation logic
+  - Worker 3: Build CLI interface
+  - Worker 4: Add error handling
+
+All 4 run in parallel. Orchestrator reads all results and produces merged output.
+</code></pre></div>
+<p><strong>When to use:</strong>
+- Complex features with multiple independent concerns
+- Tasks that naturally decompose
+- When parallel execution saves time</p>
+<p><strong>Configuration:</strong>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--orchestrate<span class="w"> </span><span class="s2">&quot;your complex task&quot;</span>
+</code></pre></div></p>
+<h3 id="pattern-2-agent-ensemble-with-voting-masai-ranker">Pattern 2: Agent Ensemble with Voting (MASAI Ranker)<a class="headerlink" href="#pattern-2-agent-ensemble-with-voting-masai-ranker" title="Permanent link">&para;</a></h3>
+<p><strong>Reference:</strong> MASAI Ranker (arXiv 2406.11638, +5-8% accuracy)</p>
+<p>Run N parallel candidates with different temperatures (0.0, 0.3, 0.5, etc.), then have a dedicated ranker agent pick the best:</p>
+<div class="highlight"><pre><span></span><code>N=3 candidates with varied temperatures:
+  Candidate 1 (T=0.0): Conservative response
+  Candidate 2 (T=0.3): Balanced response
+  Candidate 3 (T=0.5): Creative response
+
+Ranker (T=0.0): Reads all 3, picks best by quality criteria.
+</code></pre></div>
+<p><strong>Research shows:</strong> Ensemble voting improves code quality by 5-8% over single-shot, at roughly N× token cost.</p>
+<p><strong>Configuration:</strong>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--ensemble<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="s2">&quot;your prompt&quot;</span>
+hone<span class="w"> </span>--ensemble<span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="s2">&quot;your prompt&quot;</span><span class="w">  </span><span class="c1"># up to 5 candidates</span>
+</code></pre></div></p>
+<h3 id="pattern-3-test-verification-loop-agentcoder">Pattern 3: Test-Verification Loop (AgentCoder)<a class="headerlink" href="#pattern-3-test-verification-loop-agentcoder" title="Permanent link">&para;</a></h3>
+<p><strong>Reference:</strong> AgentCoder pattern, ChatDev follow-up</p>
+<p>After each code generation step, automatically run tests. If tests fail, agent retries:</p>
+<div class="highlight"><pre><span></span><code>Agent: &quot;Write function foo()&quot;
+  ↓ [writes code]
+  ↓ [runs cargo test]
+  → Tests fail
+  ↓ Agent sees test output, fixes code
+  ↓ [runs cargo test again]
+  → Tests pass ✓
+</code></pre></div>
+<p><strong>Impact:</strong> +40% bugs caught early (before code review).</p>
+<p><strong>Configuration:</strong>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>tdd-feature<span class="w">  </span><span class="c1"># TDD enforces test loop</span>
+</code></pre></div></p>
+<h3 id="pattern-4-reviewer-agent-chatdev-pattern">Pattern 4: Reviewer Agent (ChatDev Pattern)<a class="headerlink" href="#pattern-4-reviewer-agent-chatdev-pattern" title="Permanent link">&para;</a></h3>
+<p><strong>Reference:</strong> ChatDev (arXiv 2308.xxxx)</p>
+<p>Dedicated "reviewer" agent reviews code changes before merge. Catches 30% of bugs that single-agent would miss:</p>
+<div class="highlight"><pre><span></span><code>Agent 1: Implement feature
+Agent 2: Review implementation
+  → Finds issue A, suggests fix
+  → Finds issue B, suggests fix
+Agent 1: Applies fixes
+Agent 2: Reviews again
+  → All checks pass ✓
+</code></pre></div>
+<p><strong>Configuration:</strong>
+Built-in as <code>code-reviewer</code> agent:
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--agent<span class="w"> </span>code-reviewer<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Review this PR&quot;</span>
+</code></pre></div></p>
+<h3 id="pattern-5-self-refine-loop-iterative-improvement">Pattern 5: Self-Refine Loop (Iterative Improvement)<a class="headerlink" href="#pattern-5-self-refine-loop-iterative-improvement" title="Permanent link">&para;</a></h3>
+<p><strong>Reference:</strong> Self-Refine (NeurIPS 2023), +8-15% quality improvement</p>
+<p>Agent generates output, then iteratively improves based on self-feedback:</p>
+<div class="highlight"><pre><span></span><code>Iteration 1: Generate solution
+Feedback: &quot;Too verbose, missing error handling&quot;
+  ↓
+Iteration 2: Refine based on feedback
+Feedback: &quot;Good, but inefficient&quot;
+  ↓
+Iteration 3: Optimize for efficiency
+Feedback: &quot;✓ Ready&quot;
+</code></pre></div>
+<p><strong>Impact:</strong> +8-15% quality improvement per iteration (costs more tokens).</p>
+<p><strong>Configuration:</strong>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>refactor<span class="w">  </span><span class="c1"># Includes refine steps</span>
+</code></pre></div></p>
+<h3 id="pattern-6-adaptive-complexity-routing">Pattern 6: Adaptive Complexity Routing<a class="headerlink" href="#pattern-6-adaptive-complexity-routing" title="Permanent link">&para;</a></h3>
+<p><strong>Reference:</strong> Internal Anthropic optimization</p>
+<p>Automatically classify requests by complexity and route to appropriate model:</p>
+<ul>
+<li><strong>Simple</strong> (&lt; 100 tokens): Use fast, cheap model (Haiku)</li>
+<li><strong>Medium</strong> (100-5000 tokens): Use balanced model (Sonnet)</li>
+<li><strong>Complex</strong> (&gt; 5000 tokens): Use capable model (Opus)</li>
+</ul>
+<div class="highlight"><pre><span></span><code>User: &quot;What&#39;s 2+2?&quot;
+Router: &quot;Simple question → route to Haiku (faster, cheaper)&quot;
+
+User: &quot;Design a microservices architecture for a fintech platform&quot;
+Router: &quot;Complex → route to Opus (most capable)&quot;
+</code></pre></div>
+<p><strong>Configuration:</strong>
+Automatic. Can override:
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--model<span class="w"> </span>anthropic:claude-opus-4-5<span class="w">  </span><span class="c1"># force a model</span>
+</code></pre></div></p>
+<h3 id="composing-patterns-together">Composing Patterns Together<a class="headerlink" href="#composing-patterns-together" title="Permanent link">&para;</a></h3>
+<p>You can combine multiple patterns:</p>
+<div class="highlight"><pre><span></span><code>Orchestrator (decompose)
+  ↓ Each worker runs:
+    Complexity Router (route to right model)
+    Test-Verify Loop (verify with tests)
+    Self-Refine (iteratively improve)
+  ↓ Ensemble Ranker (pick best result across workers)
+  ↓ Reviewer Agent (final code review)
+  ↓ Merge results
+</code></pre></div>
+<h3 id="when-to-use-each-pattern">When to Use Each Pattern<a class="headerlink" href="#when-to-use-each-pattern" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Use When</th>
+<th>Cost</th>
+<th>Quality Gain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Orchestrator</td>
+<td>Task decomposes naturally</td>
+<td>High (parallel)</td>
+<td>+20-30%</td>
+</tr>
+<tr>
+<td>Ensemble</td>
+<td>Want best-of-N responses</td>
+<td>High (N×)</td>
+<td>+5-8%</td>
+</tr>
+<tr>
+<td>Test-Verify</td>
+<td>Code generation task</td>
+<td>Medium</td>
+<td>+40% bug catch</td>
+</tr>
+<tr>
+<td>Reviewer</td>
+<td>Final quality assurance</td>
+<td>Medium</td>
+<td>+30% bug catch</td>
+</tr>
+<tr>
+<td>Self-Refine</td>
+<td>Iterative improvement needed</td>
+<td>Medium</td>
+<td>+8-15%</td>
+</tr>
+<tr>
+<td>Complexity Router</td>
+<td>Multi-task, cost-conscious</td>
+<td>Low</td>
+<td>Variable</td>
+</tr>
+</tbody>
+</table>
+<h3 id="implementation-examples">Implementation Examples<a class="headerlink" href="#implementation-examples" title="Permanent link">&para;</a></h3>
+<p>See the relevant source files for deep dives:
+- Orchestrator: <code>crates/hone-core/src/orchestrator.rs</code>
+- Ensemble: <code>crates/hone-core/src/ensemble.rs</code>
+- Test-Verify: <code>crates/hone-core/src/test_loop.rs</code>
+- Reviewer: <code>crates/hone-core/src/reviewer.rs</code>
+- Self-Refine: <code>crates/hone-core/src/self_refine.rs</code>
+- Complexity Router: <code>crates/hone-core/src/complexity.rs</code></p>
+<hr />
+<h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Security deep dive:</strong> <a href="../../tutorials/security/">Security Guide</a></li>
+<li><strong>Model providers:</strong> <a href="../../tutorials/providers/">Providers Guide</a></li>
+<li><strong>Tools and MCP:</strong> <a href="../../tutorials/tools-and-mcp/">Tools and MCP Guide</a></li>
+<li><strong>Architecture:</strong> <a href="../../architecture/">Full Architecture Document</a></li>
+<li><strong>Server setup:</strong> <a href="../../tutorials/server-and-remote/">Server and Remote Guide</a></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

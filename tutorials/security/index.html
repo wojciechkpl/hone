@@ -1,0 +1,2035 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/tutorials/security/">
+      
+      
+        <link rel="prev" href="../mcp-extensions/">
+      
+      
+        <link rel="next" href="../server-and-remote/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Security - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#security-sandboxing-and-policies" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Security
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#feature-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#linux-landlock-sandbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linux Landlock Sandbox
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandbox-architecture-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox Architecture Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandbox-platform-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox Platform Matrix
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandboxpolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SandboxPolicy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-policy-deny-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network Policy (Deny-by-Default)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#process-resource-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Process Resource Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variable-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variable Filtering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-system-restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File System Restrictions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File System Restrictions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#read-allowlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Read Allowlist
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#write-allowlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Write Allowlist
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#symlink-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symlink Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executable-restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executable Restrictions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rbac-roles-and-policies-server-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RBAC Roles and Policies (Server Mode)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audit-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit Logging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-encryption-encrypted-memory-feature" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Encryption (Encrypted Memory Feature)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ephemeral-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ephemeral Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-persistence-and-encryption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Persistence and Encryption
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#threat-model-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threat Model Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Best Practices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sandbox-not-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox Not Available
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#file-access-denied" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Access Denied
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tool-process-killed-resource-limit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool Process Killed (Resource Limit)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#feature-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#linux-landlock-sandbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linux Landlock Sandbox
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandbox-architecture-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox Architecture Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandbox-platform-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox Platform Matrix
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandboxpolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SandboxPolicy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-policy-deny-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network Policy (Deny-by-Default)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#process-resource-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Process Resource Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variable-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variable Filtering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-system-restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File System Restrictions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File System Restrictions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#read-allowlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Read Allowlist
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#write-allowlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Write Allowlist
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#symlink-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symlink Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executable-restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executable Restrictions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rbac-roles-and-policies-server-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RBAC Roles and Policies (Server Mode)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audit-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit Logging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-encryption-encrypted-memory-feature" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Encryption (Encrypted Memory Feature)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ephemeral-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ephemeral Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-persistence-and-encryption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Persistence and Encryption
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#threat-model-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Threat Model Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Best Practices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sandbox-not-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox Not Available
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#file-access-denied" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Access Denied
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tool-process-killed-resource-limit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool Process Killed (Resource Limit)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="security-sandboxing-and-policies">Security: Sandboxing and Policies<a class="headerlink" href="#security-sandboxing-and-policies" title="Permanent link">&para;</a></h1>
+<h2 id="feature-status">Feature Status<a class="headerlink" href="#feature-status" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Status</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kernel sandbox (Landlock / Seatbelt)</td>
+<td>Available</td>
+<td>Linux 5.13+ and macOS</td>
+</tr>
+<tr>
+<td>Environment variable filtering</td>
+<td>Available</td>
+<td>Via <code>sandbox.defaults.allow_env</code></td>
+</tr>
+<tr>
+<td>Audit logging</td>
+<td>Available</td>
+<td>JSON log to configurable path</td>
+</tr>
+<tr>
+<td>Memory encryption (AES-256-GCM)</td>
+<td>Available</td>
+<td>Requires <code>--features encrypted-memory</code></td>
+</tr>
+<tr>
+<td>SQLite at-rest encryption (sqlcipher)</td>
+<td>Planned</td>
+<td>Not yet implemented</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p>Hone implements defense-in-depth security using kernel sandboxing, network policies, and audit logging. This guide covers the sandbox architecture, threat model, and how to configure security policies.</p>
+<h2 id="linux-landlock-sandbox">Linux Landlock Sandbox<a class="headerlink" href="#linux-landlock-sandbox" title="Permanent link">&para;</a></h2>
+<p>On Linux kernel 5.13+, Hone enforces filesystem access via the <strong>Landlock LSM</strong> (Linux Security Module). The sandbox is configured per-tool using fine-grained access rules.</p>
+<div class="highlight"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">hone_sandbox</span><span class="p">::{</span><span class="n">SandboxPolicyBuilder</span><span class="p">,</span><span class="w"> </span><span class="n">SandboxMode</span><span class="p">};</span>
+<span class="k">use</span><span class="w"> </span><span class="n">std</span><span class="p">::</span><span class="n">path</span><span class="p">::</span><span class="n">PathBuf</span><span class="p">;</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="n">policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SandboxPolicyBuilder</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">SandboxMode</span><span class="p">::</span><span class="n">Manual</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">allow_read</span><span class="p">(</span><span class="n">PathBuf</span><span class="p">::</span><span class="n">from</span><span class="p">(</span><span class="s">&quot;/tmp&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="n">allow_write</span><span class="p">(</span><span class="n">PathBuf</span><span class="p">::</span><span class="n">from</span><span class="p">(</span><span class="s">&quot;/tmp/output&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="n">build</span><span class="p">()</span><span class="o">?</span><span class="p">;</span>
+</code></pre></div>
+<p>When a tool runs a subprocess, Landlock is applied via <code>pre_exec()</code> so the child cannot access files outside the policy:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># If tool reads /etc/passwd (not in allow_read)</span>
+Agent<span class="w"> </span>calls:<span class="w"> </span>read_file<span class="o">(</span><span class="nv">path</span><span class="o">=</span><span class="s2">&quot;/etc/passwd&quot;</span><span class="o">)</span>
+error:<span class="w"> </span>Permission<span class="w"> </span>denied<span class="w"> </span><span class="o">(</span>EACCES<span class="o">)</span>
+</code></pre></div>
+<p><strong>Requirements:</strong>
+- Linux kernel 5.13+ (Landlock upstreamed in this release)
+- Check kernel support: <code>cat /proc/sys/kernel/landlock/abi_version</code>
+  - Output &gt;= 1 means Landlock is available
+  - No output or error means unavailable</p>
+<p>If Landlock is unavailable, <code>SandboxError::Unavailable</code> is returned and the operation is aborted (fail-closed design):</p>
+<div class="highlight"><pre><span></span><code>error: Landlock not available on this kernel (&lt; 5.13)
+Set [sandbox] enforce = false to disable sandboxing (not recommended).
+</code></pre></div>
+<p>To require Landlock and fail if unavailable:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox]</span>
+<span class="n">enforce</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="w">  </span><span class="c1"># fail if Landlock not available</span>
+<span class="n">platform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;landlock&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="sandbox-architecture-overview">Sandbox Architecture Overview<a class="headerlink" href="#sandbox-architecture-overview" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart TB
+    Agent["Agent executes tool"]
+
+    subgraph Platform["Platform-Specific Sandbox"]
+        direction LR
+        macOS["macOS: Seatbelt&lt;br/&gt;(sandbox_init)"]
+        Linux["Linux: Landlock +&lt;br/&gt;seccomp-BPF"]
+        Container["Container: seccomp +&lt;br/&gt;no-new-privs"]
+        Fallback["Fallback: setrlimit +&lt;br/&gt;capabilities drop"]
+    end
+
+    Policy["SandboxPolicy&lt;br/&gt;- allow_read&lt;br/&gt;- allow_write&lt;br/&gt;- allow_exec&lt;br/&gt;- allow_network&lt;br/&gt;- allow_env"]
+
+    Agent --&gt;|SandboxPolicy| Platform
+    Policy --&gt;|enforced by| Platform
+    Platform --&gt;|success| Exec["Tool Executes&lt;br/&gt;Sandboxed"]
+    Platform --&gt;|failure| Fail["FAIL-CLOSED&lt;br/&gt;Operation Aborted"]</code></pre>
+<h2 id="sandbox-platform-matrix">Sandbox Platform Matrix<a class="headerlink" href="#sandbox-platform-matrix" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Primary</th>
+<th>Fallback</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>macOS 10.5+</strong></td>
+<td>Seatbelt</td>
+<td><code>setrlimit</code> + <code>no-new-privs</code></td>
+<td>Mature, production-ready</td>
+</tr>
+<tr>
+<td><strong>Linux 5.13+</strong></td>
+<td>Landlock</td>
+<td>seccomp-BPF + <code>setrlimit</code></td>
+<td>Modern, fine-grained</td>
+</tr>
+<tr>
+<td><strong>Linux &lt;5.13</strong></td>
+<td>seccomp-BPF</td>
+<td><code>setrlimit</code> + <code>no-new-privs</code></td>
+<td>Older kernels</td>
+</tr>
+<tr>
+<td><strong>Container</strong></td>
+<td>seccomp + <code>no-new-privs</code></td>
+<td><code>setrlimit</code></td>
+<td>Already sandboxed at OS level</td>
+</tr>
+<tr>
+<td><strong>Windows</strong></td>
+<td>Job Objects</td>
+<td>Restricted token</td>
+<td>Future implementation</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Fail-closed invariant:</strong> If the desired sandbox tier is unavailable and required by policy, the operation aborts with <code>SandboxError::PolicyNotMet</code>. There is no silent downgrade.</p>
+<h2 id="sandboxpolicy">SandboxPolicy<a class="headerlink" href="#sandboxpolicy" title="Permanent link">&para;</a></h2>
+<p>Define what each tool call is allowed to do:</p>
+<div class="highlight"><pre><span></span><code><span class="k">pub</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">SandboxPolicy</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_read</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;</span><span class="p">,</span><span class="w">      </span><span class="c1">// paths readable by tool</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_write</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;</span><span class="p">,</span><span class="w">     </span><span class="c1">// paths writable by tool</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_exec</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;</span><span class="p">,</span><span class="w">      </span><span class="c1">// executables callable from tool</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_network</span><span class="p">:</span><span class="w"> </span><span class="kt">bool</span><span class="p">,</span><span class="w">            </span><span class="c1">// network access (deny by default)</span>
+<span class="w">    </span><span class="k">pub</span><span class="w"> </span><span class="n">allow_env</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">String</span><span class="o">&gt;</span><span class="p">,</span><span class="w">        </span><span class="c1">// env vars exposed to tool</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
+<p>Sandbox policies are configured in <code>~/.config/hone/config.toml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox]</span>
+<span class="n">platform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="w">  </span><span class="c1"># auto-detect: seatbelt, landlock, seccomp, fallback</span>
+
+<span class="c1"># Default policy for all tools</span>
+<span class="k">[sandbox.defaults]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="w">  </span><span class="c1"># network deny-by-default</span>
+<span class="n">allow_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/tmp&quot;</span><span class="p">]</span><span class="w">  </span><span class="c1"># only temp writable</span>
+<span class="n">allow_env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;HOME&quot;</span><span class="p">]</span><span class="w">  </span><span class="c1"># only safe env vars</span>
+
+<span class="c1"># Per-tool policies (override defaults)</span>
+<span class="k">[sandbox.tools.shell]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/usr/lib&quot;</span><span class="p">]</span>
+<span class="n">allow_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/tmp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;{project_root}/target&quot;</span><span class="p">]</span>
+<span class="n">allow_exec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/bin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/usr/bin&quot;</span><span class="p">]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="n">allow_env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;HOME&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;RUST_BACKTRACE&quot;</span><span class="p">]</span>
+
+<span class="k">[sandbox.tools.git]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">]</span>
+<span class="n">allow_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">]</span>
+<span class="n">allow_exec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/usr/bin/git&quot;</span><span class="p">]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="n">allow_env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;GIT_AUTHOR_NAME&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;GIT_AUTHOR_EMAIL&quot;</span><span class="p">]</span>
+
+<span class="k">[sandbox.tools.semantic_search]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="w">  </span><span class="c1"># needs network to PostgreSQL</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">]</span>
+<span class="n">allow_env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;DATABASE_URL&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p><strong>Variables:</strong>
+- <code>{project_root}</code> — expands to current working directory
+- <code>{home}</code> — expands to user's home directory</p>
+<h2 id="network-policy-deny-by-default">Network Policy (Deny-by-Default)<a class="headerlink" href="#network-policy-deny-by-default" title="Permanent link">&para;</a></h2>
+<p>Network access is disabled by default for all tools. Enable explicitly for specific tools that need it:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.tools.github_api]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="w">  </span><span class="c1"># allow for GitHub MCP</span>
+
+<span class="k">[sandbox.tools.semantic_index]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="w">  </span><span class="c1"># allow for PostgreSQL</span>
+
+<span class="c1"># Block everything else</span>
+<span class="k">[sandbox.defaults]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+</code></pre></div>
+<p>DNS and HTTP requests are blocked unless explicitly allowed.</p>
+<h2 id="process-resource-limits">Process Resource Limits<a class="headerlink" href="#process-resource-limits" title="Permanent link">&para;</a></h2>
+<p>Prevent runaway processes using <code>rlimit</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.limits]</span>
+<span class="n">cpu_seconds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span><span class="w">      </span><span class="c1"># max 30 seconds CPU per tool call</span>
+<span class="n">memory_mb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">512</span><span class="w">       </span><span class="c1"># max 512 MB RAM</span>
+<span class="n">disk_mb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1024</span><span class="w">        </span><span class="c1"># max 1 GB disk writes per turn</span>
+<span class="n">open_files</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1024</span><span class="w">     </span><span class="c1"># max 1024 open files</span>
+<span class="n">subprocess_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span><span class="w"> </span><span class="c1"># max 10 subprocesses</span>
+</code></pre></div>
+<p>If a process exceeds limits, it is killed:</p>
+<div class="highlight"><pre><span></span><code>error: shell tool exceeded memory limit (512 MB)
+Tool execution aborted by sandbox.
+</code></pre></div>
+<h2 id="environment-variable-filtering">Environment Variable Filtering<a class="headerlink" href="#environment-variable-filtering" title="Permanent link">&para;</a></h2>
+<p>Only allow specific environment variables to reach tool processes:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.defaults]</span>
+<span class="n">allow_env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;HOME&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;USER&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;SHELL&quot;</span><span class="p">]</span>
+
+<span class="k">[sandbox.tools.git]</span>
+<span class="n">allow_env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;HOME&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;GIT_AUTHOR_NAME&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;GIT_AUTHOR_EMAIL&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;GIT_COMMITTER_EMAIL&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p>Attempt to access other env vars from a tool:</p>
+<div class="highlight"><pre><span></span><code>$<span class="w"> </span>hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Print ANTHROPIC_API_KEY&quot;</span>
+Agent<span class="w"> </span>calls:<span class="w"> </span>shell<span class="o">(</span><span class="nv">cmd</span><span class="o">=</span><span class="s2">&quot;echo </span><span class="nv">$ANTHROPIC_API_KEY</span><span class="s2">&quot;</span><span class="o">)</span>
+Output:<span class="w"> </span><span class="o">(</span>empty<span class="w"> </span>—<span class="w"> </span>variable<span class="w"> </span>not<span class="w"> </span>accessible<span class="o">)</span>
+</code></pre></div>
+<h2 id="file-system-restrictions">File System Restrictions<a class="headerlink" href="#file-system-restrictions" title="Permanent link">&para;</a></h2>
+<h3 id="read-allowlist">Read Allowlist<a class="headerlink" href="#read-allowlist" title="Permanent link">&para;</a></h3>
+<p>Only paths in <code>allow_read</code> are readable:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.tools.file_reader]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/etc/passwd&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p>Attempt to read a disallowed path:</p>
+<div class="highlight"><pre><span></span><code>Agent calls: read_file(path=&quot;/etc/shadow&quot;)
+error: access denied (path not in allowlist)
+</code></pre></div>
+<h3 id="write-allowlist">Write Allowlist<a class="headerlink" href="#write-allowlist" title="Permanent link">&para;</a></h3>
+<p>Only paths in <code>allow_write</code> are writable:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.tools.code_generator]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">]</span>
+<span class="n">allow_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}/generated&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p>Attempt to write outside allowlist:</p>
+<div class="highlight"><pre><span></span><code>Agent calls: write_file(path=&quot;/etc/cron.d/malicious&quot;)
+error: access denied (path not in allowlist)
+</code></pre></div>
+<h3 id="symlink-handling">Symlink Handling<a class="headerlink" href="#symlink-handling" title="Permanent link">&para;</a></h3>
+<p>Symlinks are followed if both source and target are in the allowlist:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.tools.safe_reader]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/tmp&quot;</span><span class="p">]</span>
+
+<span class="c1"># If /tmp/link -&gt; /etc/passwd</span>
+<span class="n">Agent</span><span class="w"> </span><span class="n">calls</span><span class="err">:</span><span class="w"> </span><span class="n">read_file</span><span class="err">(</span><span class="n">path</span><span class="o">=</span><span class="s2">&quot;/tmp/link&quot;</span><span class="err">)</span>
+<span class="n">error</span><span class="err">:</span><span class="w"> </span><span class="n">access</span><span class="w"> </span><span class="n">denied</span><span class="w"> </span><span class="err">(</span><span class="n">target</span><span class="w"> </span><span class="err">/</span><span class="n">etc</span><span class="err">/</span><span class="n">passwd</span><span class="w"> </span><span class="n">not</span><span class="w"> </span><span class="n">in</span><span class="w"> </span><span class="n">allowlist</span><span class="err">)</span>
+</code></pre></div>
+<h2 id="executable-restrictions">Executable Restrictions<a class="headerlink" href="#executable-restrictions" title="Permanent link">&para;</a></h2>
+<p>Only approved executables can be called by shell commands:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.tools.shell]</span>
+<span class="n">allow_exec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/usr/bin/git&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/usr/bin/cargo&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/bin/cat&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p>Attempting to call a disallowed executable:</p>
+<div class="highlight"><pre><span></span><code>Agent calls: shell(cmd=&quot;python3 -c &#39;print(1)&#39;&quot;)
+error: access denied (executable /usr/bin/python3 not in allowlist)
+</code></pre></div>
+<p>This prevents:
+- Remote code execution via arbitrary commands
+- Access to system tools that shouldn't be called
+- Privilege escalation attempts</p>
+<h2 id="rbac-roles-and-policies-server-mode">RBAC Roles and Policies (Server Mode)<a class="headerlink" href="#rbac-roles-and-policies-server-mode" title="Permanent link">&para;</a></h2>
+<p>When using the daemon (<code>honed</code>), multiple users can have different permissions via role-based access control:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[rbac]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="k">[[rbac.roles]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;admin&quot;</span>
+<span class="n">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sessions:create&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;sessions:delete&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:all&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcp:all&quot;</span><span class="p">]</span>
+
+<span class="k">[[rbac.roles]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;developer&quot;</span>
+<span class="n">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sessions:create&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;sessions:read&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:git&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:shell&quot;</span><span class="p">]</span>
+
+<span class="k">[[rbac.roles]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;viewer&quot;</span>
+<span class="n">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sessions:read&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcp:read_only&quot;</span><span class="p">]</span>
+
+<span class="k">[[rbac.users]]</span>
+<span class="n">user_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;alice@example.com&quot;</span>
+<span class="n">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;admin&quot;</span>
+
+<span class="k">[[rbac.users]]</span>
+<span class="n">user_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;bob@example.com&quot;</span>
+<span class="n">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;developer&quot;</span>
+
+<span class="k">[[rbac.users]]</span>
+<span class="n">user_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;carol@example.com&quot;</span>
+<span class="n">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;viewer&quot;</span>
+</code></pre></div>
+<p>Permission meanings:
+- <code>sessions:create</code> — create new sessions
+- <code>sessions:delete</code> — delete sessions
+- <code>tools:file</code> — use file I/O tools
+- <code>tools:git</code> — use git tools
+- <code>tools:shell</code> — use shell tool
+- <code>tools:all</code> — use all tools
+- <code>mcp:all</code> — call any MCP server
+- <code>mcp:read_only</code> — only query tools (no mutation)</p>
+<h2 id="audit-logging">Audit Logging<a class="headerlink" href="#audit-logging" title="Permanent link">&para;</a></h2>
+<p>All tool calls, file accesses, and security events are logged:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[audit]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">log_file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/var/log/hone/audit.log&quot;</span>
+<span class="n">log_level</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;info&quot;</span><span class="w">  </span><span class="c1"># info, warn, error</span>
+</code></pre></div>
+<p>Log entries (JSON format):</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-04-05T14:30:45Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sess_abc123&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;user&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;alice@example.com&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;event&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tool_call&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;tool&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;read_file&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/home/alice/src/main.rs&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;result&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;success&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;duration_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="p">}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-04-05T14:30:50Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sess_abc123&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;user&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;alice@example.com&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;event&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;access_denied&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;tool&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;read_file&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/etc/shadow&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;path not in allowlist&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;policy&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sandbox.tools.file_reader.allow_read&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Query logs:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># All events for a session</span>
+grep<span class="w"> </span><span class="s2">&quot;sess_abc123&quot;</span><span class="w"> </span>/var/log/hone/audit.log<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.
+
+<span class="c1"># All access denials</span>
+grep<span class="w"> </span><span class="s2">&quot;access_denied&quot;</span><span class="w"> </span>/var/log/hone/audit.log<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.
+
+<span class="c1"># Events for a specific user</span>
+grep<span class="w"> </span><span class="s2">&quot;alice@example.com&quot;</span><span class="w"> </span>/var/log/hone/audit.log<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.
+</code></pre></div>
+<h2 id="memory-encryption-encrypted-memory-feature">Memory Encryption (Encrypted Memory Feature)<a class="headerlink" href="#memory-encryption-encrypted-memory-feature" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>Status: Available</strong> — Application-layer AES-256-GCM encryption of memory content is implemented in <code>crates/hone-memory/src/encrypted.rs</code>. This encrypts the <code>content</code> field of each memory record using a key derived from a user passphrase via Argon2id. Full SQLite file encryption via sqlcipher is <strong>not yet implemented</strong> (Planned).</p>
+</blockquote>
+<p>Enable optional memory encryption to protect sensitive session data:</p>
+<div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>build<span class="w"> </span>--features<span class="w"> </span>encrypted-memory
+</code></pre></div>
+<p>Configuration:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[memory]</span>
+<span class="n">encrypted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">cipher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;aes256-gcm&quot;</span>
+</code></pre></div>
+<p>The encryption key is derived from a user passphrase via Argon2id:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--init-encryption
+<span class="c1"># Enter passphrase: ****</span>
+<span class="c1"># Passphrase stored securely in system keychain.</span>
+</code></pre></div>
+<p>Memory content (conversation history) is encrypted at rest. The SQLite file structure itself is not encrypted — for full disk encryption, use OS-level tools or ephemeral mode.</p>
+<h2 id="ephemeral-mode">Ephemeral Mode<a class="headerlink" href="#ephemeral-mode" title="Permanent link">&para;</a></h2>
+<p>Run a session with all data immediately discarded after completion:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--ephemeral
+<span class="c1"># or</span>
+hone<span class="w"> </span>-E
+</code></pre></div>
+<p>In ephemeral mode:
+- Session data is never persisted to disk
+- No memories are recorded
+- Cost tracking is not saved
+- Useful for sensitive queries</p>
+<hr />
+<h2 id="memory-persistence-and-encryption">Memory Persistence and Encryption<a class="headerlink" href="#memory-persistence-and-encryption" title="Permanent link">&para;</a></h2>
+<p>By default, session memories are stored in SQLite at <code>~/.local/share/hone/memory.db</code>:</p>
+<div class="highlight"><pre><span></span><code>ls<span class="w"> </span>-la<span class="w"> </span>~/.local/share/hone/
+<span class="c1"># memory.db            - session memories (content encrypted if --features encrypted-memory)</span>
+<span class="c1"># sessions.db          - session metadata (if HONE_SESSION_DB set)</span>
+</code></pre></div>
+<p>When built with <code>--features encrypted-memory</code>, the content field of each memory record is encrypted with AES-256-GCM before being written to disk (see <a href="#memory-encryption-encrypted-memory-feature">Memory Encryption</a> above).</p>
+<p>Full SQLite file encryption via sqlcipher is planned for a future release. Until then, for sensitive workloads where even encrypted content fields are insufficient, use <code>--ephemeral</code> to disable persistence entirely:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--ephemeral<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Sensitive query&quot;</span>
+</code></pre></div>
+<p>Or clear memories manually:</p>
+<div class="highlight"><pre><span></span><code>rm<span class="w"> </span>~/.local/share/hone/memory.db
+</code></pre></div>
+<h2 id="threat-model-summary">Threat Model Summary<a class="headerlink" href="#threat-model-summary" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart TD
+    A["Malicious Prompt Injection"] --&gt;|mitigated by| SB["Sandbox:&lt;br/&gt;no arbitrary exec&lt;br/&gt;without allowlist"]
+
+    B["Supply Chain Attack&lt;br/&gt;on MCP Server"] --&gt;|mitigated by| HASH["Content-addressable MCP&lt;br/&gt;server hashes in config"]
+
+    C["Model Exfiltrating Data"] --&gt;|mitigated by| NET["Network deny-by-default&lt;br/&gt;explicit allow-listing"]
+
+    D["Runaway Disk Write"] --&gt;|mitigated by| RL["rlimit FSIZE&lt;br/&gt;per operation"]
+
+    E["Secret Leakage&lt;br/&gt;via env vars"] --&gt;|mitigated by| ENV["Explicit env allowlist&lt;br/&gt;in SandboxPolicy"]
+
+    F["Symlink Escape"] --&gt;|mitigated by| SYM["Symlink target&lt;br/&gt;must be in allowlist"]
+
+    G["Privilege Escalation"] --&gt;|mitigated by| PRIV["no-new-privs flag&lt;br/&gt;capability dropping"]</code></pre>
+<h2 id="best-practices">Best Practices<a class="headerlink" href="#best-practices" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Start restrictive:</strong> Begin with minimal permissions and add as needed.</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.defaults]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="n">allow_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[]</span><span class="w">  </span><span class="c1"># deny all writes by default</span>
+</code></pre></div>
+<ol>
+<li>
+<p><strong>Use allowlists, not denylists:</strong> Only permit known-safe paths and executables.</p>
+</li>
+<li>
+<p><strong>Enable audit logging:</strong> Monitor what tools actually do.</p>
+</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="k">[audit]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+</code></pre></div>
+<ol>
+<li><strong>Review MCP server hashes:</strong> Verify external tool integrity.</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="k">[[mcp_servers]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;github&quot;</span>
+<span class="n">command</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span>
+<span class="n">args</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p">]</span>
+<span class="n">hash</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;sha256:abc123...&quot;</span><span class="w">  </span><span class="c1"># verify before running</span>
+</code></pre></div>
+<ol>
+<li>
+<p><strong>Rotate secrets regularly:</strong> If an API key is exposed, rotate it immediately.</p>
+</li>
+<li>
+<p><strong>Use ephemeral mode for sensitive prompts:</strong></p>
+</li>
+</ol>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>-E<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Analyze this sensitive document&quot;</span>
+</code></pre></div>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<h3 id="sandbox-not-available">Sandbox Not Available<a class="headerlink" href="#sandbox-not-available" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: sandbox policy not met (Seatbelt unavailable on this macOS version)
+</code></pre></div>
+<p>Check your platform:</p>
+<div class="highlight"><pre><span></span><code>rustc<span class="w"> </span>--print<span class="w"> </span>sysroot
+uname<span class="w"> </span>-r<span class="w">  </span><span class="c1"># Linux kernel version</span>
+</code></pre></div>
+<p>Update to a supported OS version, or disable sandboxing (not recommended):</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox]</span>
+<span class="n">enforce</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="w">  </span><span class="c1"># WARNING: disables security</span>
+</code></pre></div>
+<h3 id="file-access-denied">File Access Denied<a class="headerlink" href="#file-access-denied" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: access denied (path not in allowlist)
+</code></pre></div>
+<p>Add the path to the tool's allowlist:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.tools.file_reader]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/new/path&quot;</span><span class="p">]</span>
+</code></pre></div>
+<h3 id="tool-process-killed-resource-limit">Tool Process Killed (Resource Limit)<a class="headerlink" href="#tool-process-killed-resource-limit" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: shell tool process killed (exceeded memory limit)
+</code></pre></div>
+<p>Increase the limit:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.limits]</span>
+<span class="n">memory_mb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1024</span><span class="w">  </span><span class="c1"># was 512</span>
+</code></pre></div>
+<p>Or optimize the tool to use less memory.</p>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Getting started:</strong> See <a href="../getting-started/">Getting Started</a> to run your first session.</li>
+<li><strong>Tools:</strong> Configure tool sandboxes in <a href="../tools-and-mcp/">Tools Guide</a>.</li>
+<li><strong>Server:</strong> Secure the daemon in <a href="../server-and-remote/">Server Guide</a>.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

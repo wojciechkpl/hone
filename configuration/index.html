@@ -1,0 +1,2234 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/configuration/">
+      
+      
+        <link rel="prev" href="../getting-started/">
+      
+      
+        <link rel="next" href="../tutorials/providers/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Configuration - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#config-file-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config File Location
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Memory Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#memory-encryption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Encryption
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#provider-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provider Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Provider Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#anthropic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anthropic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openai-and-compatible-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI (and Compatible Endpoints)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#claude-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claude CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gemini-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gemini CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pricing-and-cost-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pricing and Cost Tracking
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandbox-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Server Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#team-configuration-rbac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Team Configuration (RBAC)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audit-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit Logging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#semantic-index-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Semantic Index (PostgreSQL)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-servers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP Servers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fallback-chains" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fallback Chains
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-routing-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model Routing Rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Flags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Configs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example Configs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#minimal-quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal (Quick Start)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#production-server-team" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production (Server + Team)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#budget-conscious-ollama-local" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Budget-Conscious (Ollama Local)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#config-file-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config file not found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-key-not-recognized" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API key not recognized
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandbox-policy-violation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox policy violation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#postgresql-connection-failed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PostgreSQL connection failed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See Also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#config-file-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config File Location
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Memory Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#memory-encryption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Encryption
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#provider-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provider Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Provider Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#anthropic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anthropic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openai-and-compatible-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI (and Compatible Endpoints)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#claude-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claude CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gemini-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gemini CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pricing-and-cost-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pricing and Cost Tracking
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandbox-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Server Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#team-configuration-rbac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Team Configuration (RBAC)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audit-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit Logging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#semantic-index-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Semantic Index (PostgreSQL)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-servers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP Servers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fallback-chains" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fallback Chains
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-routing-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model Routing Rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Flags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Configs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example Configs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#minimal-quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal (Quick Start)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#production-server-team" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production (Server + Team)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#budget-conscious-ollama-local" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Budget-Conscious (Ollama Local)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#config-file-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config file not found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-key-not-recognized" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API key not recognized
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandbox-policy-violation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox policy violation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#postgresql-connection-failed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PostgreSQL connection failed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See Also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="configuration-reference">Configuration Reference<a class="headerlink" href="#configuration-reference" title="Permanent link">&para;</a></h1>
+<p>Hone uses a three-level configuration hierarchy:</p>
+<ol>
+<li><strong>CLI flags</strong> (highest priority)</li>
+<li><strong>TOML file</strong> (<code>~/.config/hone/config.toml</code>)</li>
+<li><strong>Environment variables</strong></li>
+<li><strong>Defaults</strong> (lowest priority)</li>
+</ol>
+<p>This guide covers all configurable options.</p>
+<h2 id="config-file-location">Config File Location<a class="headerlink" href="#config-file-location" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>~/.config/hone/config.toml
+</code></pre></div>
+<p>Create the file if it doesn't exist:</p>
+<div class="highlight"><pre><span></span><code>mkdir<span class="w"> </span>-p<span class="w"> </span>~/.config/hone
+cat<span class="w"> </span>&gt;<span class="w"> </span>~/.config/hone/config.toml<span class="w"> </span><span class="s">&lt;&lt; &#39;EOF&#39;</span>
+<span class="s">[agent]</span>
+<span class="s">default_model = &quot;anthropic:claude-opus-4-5&quot;</span>
+<span class="s">context_window_tokens = 200000</span>
+
+<span class="s">[memory]</span>
+<span class="s">enabled = true</span>
+<span class="s">encrypted = true</span>
+<span class="s">EOF</span>
+</code></pre></div>
+<h2 id="agent-configuration">Agent Configuration<a class="headerlink" href="#agent-configuration" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="c1"># Default model to use when no --model flag is provided</span>
+<span class="n">default_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;anthropic:claude-opus-4-5&quot;</span>
+
+<span class="c1"># Total context window size in tokens (model-dependent)</span>
+<span class="n">context_window_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">200000</span>
+
+<span class="c1"># Tokens reserved for model output</span>
+<span class="n">reserved_output_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4000</span>
+
+<span class="c1"># Tokens reserved for system prompt</span>
+<span class="n">reserved_system_prompt_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2000</span>
+
+<span class="c1"># Safety margin (prevent hitting exact limit)</span>
+<span class="n">context_safety_margin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.1</span><span class="w">  </span><span class="c1"># 10%</span>
+
+<span class="c1"># Maximum iterations per session</span>
+<span class="n">max_iterations</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">50</span>
+
+<span class="c1"># Default temperature for non-ensemble turns</span>
+<span class="n">temperature</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.3</span>
+
+<span class="c1"># Maximum number of tool calls per turn</span>
+<span class="n">max_tool_calls_per_turn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span>
+
+<span class="c1"># Timeout for tool execution (seconds)</span>
+<span class="n">tool_timeout_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span>
+</code></pre></div>
+<h2 id="memory-configuration">Memory Configuration<a class="headerlink" href="#memory-configuration" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[memory]</span>
+<span class="c1"># Enable memory persistence across sessions</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="c1"># SQLite database path</span>
+<span class="n">db_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;~/.local/share/hone/memory.db&quot;</span>
+
+<span class="c1"># Enable encryption for sensitive data</span>
+<span class="n">encrypted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="w">  </span><span class="c1"># change to true to enable</span>
+
+<span class="c1"># Encryption cipher (if encrypted = true)</span>
+<span class="n">cipher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;aes256-gcm&quot;</span>
+
+<span class="c1"># Memory decay: forget items after N days</span>
+<span class="n">decay_days</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">90</span>
+
+<span class="c1"># Maximum memory items to retain</span>
+<span class="n">max_items</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10000</span>
+</code></pre></div>
+<h3 id="memory-encryption">Memory Encryption<a class="headerlink" href="#memory-encryption" title="Permanent link">&para;</a></h3>
+<p>To enable encryption:</p>
+<div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>build<span class="w"> </span>--features<span class="w"> </span>encrypted-memory
+hone<span class="w"> </span>--init-encryption
+<span class="c1"># Enter passphrase: ****</span>
+</code></pre></div>
+<p>This stores the encryption key in your system keychain:
+- <strong>macOS:</strong> Keychain Services
+- <strong>Linux:</strong> Secret Service or pass
+- <strong>Windows:</strong> DPAPI (future)</p>
+<p>Configuration:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[memory]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">encrypted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">cipher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;aes256-gcm&quot;</span>
+<span class="n">keychain_service</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;hone&quot;</span>
+</code></pre></div>
+<h2 id="provider-configuration">Provider Configuration<a class="headerlink" href="#provider-configuration" title="Permanent link">&para;</a></h2>
+<h3 id="anthropic">Anthropic<a class="headerlink" href="#anthropic" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[providers.anthropic]</span>
+<span class="n">api_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;${ANTHROPIC_API_KEY}&quot;</span><span class="w">  </span><span class="c1"># or hardcoded</span>
+<span class="n">base_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;https://api.anthropic.com&quot;</span>
+<span class="n">timeout_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span>
+</code></pre></div>
+<h3 id="openai-and-compatible-endpoints">OpenAI (and Compatible Endpoints)<a class="headerlink" href="#openai-and-compatible-endpoints" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[providers.openai]</span>
+<span class="n">api_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;${OPENAI_API_KEY}&quot;</span>
+<span class="n">base_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;https://api.openai.com/v1&quot;</span>
+<span class="n">timeout_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span>
+</code></pre></div>
+<p><strong>For custom OpenAI-compatible endpoints:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span><span class="s2">&quot;your-api-key&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">HONE_OPENAI_BASE_URL</span><span class="o">=</span><span class="s2">&quot;https://api.deepseek.com&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">HONE_OPENAI_MODEL</span><span class="o">=</span><span class="s2">&quot;deepseek-coder&quot;</span>
+hone
+</code></pre></div>
+<p>Or in config:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[providers.openai]</span>
+<span class="n">api_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;${OPENAI_API_KEY}&quot;</span>
+<span class="n">base_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;https://api.deepseek.com&quot;</span>
+<span class="n">model_override</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;deepseek-coder&quot;</span>
+</code></pre></div>
+<p><strong>Supported endpoints:</strong>
+- DeepSeek: <code>https://api.deepseek.com</code>
+- Qwen: <code>https://dashscope.aliyuncs.com/compatible-mode/v1</code>
+- OpenRouter: <code>https://openrouter.ai/api/v1</code>
+- vLLM: <code>http://localhost:8000/v1</code></p>
+<h3 id="ollama">Ollama<a class="headerlink" href="#ollama" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[providers.ollama]</span>
+<span class="n">base_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span>
+<span class="n">timeout_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">300</span><span class="w">  </span><span class="c1"># local models may be slow</span>
+</code></pre></div>
+<h3 id="claude-cli">Claude CLI<a class="headerlink" href="#claude-cli" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[providers.claude_cli]</span>
+<span class="n">claude_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/usr/local/bin/claude&quot;</span><span class="w">  </span><span class="c1"># auto-detected if not specified</span>
+</code></pre></div>
+<h3 id="gemini-cli">Gemini CLI<a class="headerlink" href="#gemini-cli" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[providers.gemini_cli]</span>
+<span class="n">gemini_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/usr/local/bin/gemini&quot;</span><span class="w">  </span><span class="c1"># auto-detected if not specified</span>
+</code></pre></div>
+<h2 id="pricing-and-cost-tracking">Pricing and Cost Tracking<a class="headerlink" href="#pricing-and-cost-tracking" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[pricing.anthropic]</span>
+<span class="s2">&quot;claude-opus-4-5&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">input_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">3.00</span><span class="p">,</span><span class="w"> </span><span class="n">output_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">15.00</span><span class="w"> </span><span class="p">}</span>
+<span class="s2">&quot;claude-sonnet-4&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">input_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">3.00</span><span class="p">,</span><span class="w"> </span><span class="n">output_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">15.00</span><span class="w"> </span><span class="p">}</span>
+<span class="s2">&quot;claude-haiku-3-5&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">input_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">0.80</span><span class="p">,</span><span class="w"> </span><span class="n">output_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">4.00</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">[pricing.openai]</span>
+<span class="s2">&quot;gpt-4o&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">input_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">2.50</span><span class="p">,</span><span class="w"> </span><span class="n">output_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">10.00</span><span class="w"> </span><span class="p">}</span>
+<span class="s2">&quot;gpt-4-turbo&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">input_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">10.00</span><span class="p">,</span><span class="w"> </span><span class="n">output_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">30.00</span><span class="w"> </span><span class="p">}</span>
+<span class="s2">&quot;gpt-3.5-turbo&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">input_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">0.50</span><span class="p">,</span><span class="w"> </span><span class="n">output_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">1.50</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">[pricing.ollama]</span>
+<span class="c1"># Local models are free</span>
+<span class="s2">&quot;llama2&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">input_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">0.00</span><span class="p">,</span><span class="w"> </span><span class="n">output_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">0.00</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p>Set a budget limit:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--budget<span class="w"> </span><span class="m">10</span>.00<span class="w">  </span><span class="c1"># max $10 per session</span>
+</code></pre></div>
+<h2 id="sandbox-configuration">Sandbox Configuration<a class="headerlink" href="#sandbox-configuration" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox]</span>
+<span class="c1"># Auto-detect: &quot;seatbelt&quot; (macOS), &quot;landlock&quot; (Linux), &quot;seccomp&quot; (fallback)</span>
+<span class="n">platform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span>
+
+<span class="c1"># Enforce sandbox policy (fail-closed)</span>
+<span class="n">enforce</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="c1"># Default policy for all tools</span>
+<span class="k">[sandbox.defaults]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="w">          </span><span class="c1"># deny network by default</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">]</span>
+<span class="n">allow_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/tmp&quot;</span><span class="p">]</span>
+<span class="n">allow_env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;HOME&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;USER&quot;</span><span class="p">]</span>
+
+<span class="c1"># Per-tool policy overrides</span>
+<span class="k">[sandbox.tools.shell]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/usr/lib&quot;</span><span class="p">]</span>
+<span class="n">allow_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/tmp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;{project_root}/target&quot;</span><span class="p">]</span>
+<span class="n">allow_exec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/bin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/usr/bin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/usr/local/bin&quot;</span><span class="p">]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="n">allow_env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;HOME&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;RUST_BACKTRACE&quot;</span><span class="p">]</span>
+
+<span class="k">[sandbox.tools.git]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">]</span>
+<span class="n">allow_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;{project_root}&quot;</span><span class="p">]</span>
+<span class="n">allow_exec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/usr/bin/git&quot;</span><span class="p">]</span>
+<span class="n">allow_network</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="n">allow_env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;GIT_AUTHOR_NAME&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;GIT_AUTHOR_EMAIL&quot;</span><span class="p">]</span>
+
+<span class="c1"># Process resource limits</span>
+<span class="k">[sandbox.limits]</span>
+<span class="n">cpu_seconds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span><span class="w">           </span><span class="c1"># max CPU time per tool call</span>
+<span class="n">memory_mb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">512</span><span class="w">            </span><span class="c1"># max RAM per tool call</span>
+<span class="n">disk_mb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1024</span><span class="w">             </span><span class="c1"># max disk writes per turn</span>
+<span class="n">open_files</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1024</span><span class="w">          </span><span class="c1"># max open file descriptors</span>
+<span class="n">subprocess_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span><span class="w">      </span><span class="c1"># max subprocesses per tool call</span>
+</code></pre></div>
+<p><strong>Variables:</strong>
+- <code>{project_root}</code> — current working directory
+- <code>{home}</code> — user's home directory</p>
+<h2 id="server-configuration">Server Configuration<a class="headerlink" href="#server-configuration" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[server]</span>
+<span class="c1"># HTTP/2 server listen address</span>
+<span class="n">host</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.0.0.0&quot;</span>
+<span class="n">port</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">7070</span>
+
+<span class="c1"># TLS certificate and key (optional)</span>
+<span class="n">tls_cert</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/etc/hone/cert.pem&quot;</span>
+<span class="n">tls_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/etc/hone/key.pem&quot;</span>
+
+<span class="c1"># Max concurrent connections</span>
+<span class="n">max_connections</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1000</span>
+
+<span class="c1"># Request timeout</span>
+<span class="n">request_timeout_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">300</span>
+
+<span class="c1"># Health check interval (seconds)</span>
+<span class="n">health_check_interval_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">60</span>
+</code></pre></div>
+<h3 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[server.auth]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="c1"># Bearer token (basic security)</span>
+<span class="k">[[server.auth.tokens]]</span>
+<span class="n">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;sk-hone-abc123def456...&quot;</span>
+<span class="n">user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;alice@example.com&quot;</span>
+
+<span class="c1"># OAuth2 (future)</span>
+<span class="c1"># oauth2_provider = &quot;https://auth.example.com&quot;</span>
+</code></pre></div>
+<p>Usage:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start daemon</span>
+honed<span class="w"> </span>--config<span class="w"> </span>~/.config/hone/config.toml
+
+<span class="c1"># Connect with token</span>
+curl<span class="w"> </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-hone-abc123def456...&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>http://localhost:7070/sessions
+</code></pre></div>
+<h2 id="team-configuration-rbac">Team Configuration (RBAC)<a class="headerlink" href="#team-configuration-rbac" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[rbac]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="c1"># Role definitions</span>
+<span class="k">[[rbac.roles]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;admin&quot;</span>
+<span class="n">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sessions:create&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;sessions:delete&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:all&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcp:all&quot;</span><span class="p">]</span>
+
+<span class="k">[[rbac.roles]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;developer&quot;</span>
+<span class="n">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sessions:create&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;sessions:read&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:git&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:shell&quot;</span><span class="p">]</span>
+
+<span class="k">[[rbac.roles]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;viewer&quot;</span>
+<span class="n">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sessions:read&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcp:read_only&quot;</span><span class="p">]</span>
+
+<span class="c1"># User assignments</span>
+<span class="k">[[rbac.users]]</span>
+<span class="n">user_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;alice@example.com&quot;</span>
+<span class="n">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;admin&quot;</span>
+
+<span class="k">[[rbac.users]]</span>
+<span class="n">user_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;bob@example.com&quot;</span>
+<span class="n">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;developer&quot;</span>
+
+<span class="k">[[rbac.users]]</span>
+<span class="n">user_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;carol@example.com&quot;</span>
+<span class="n">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;viewer&quot;</span>
+</code></pre></div>
+<h2 id="audit-logging">Audit Logging<a class="headerlink" href="#audit-logging" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[audit]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">log_file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/var/log/hone/audit.log&quot;</span>
+<span class="n">log_level</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;info&quot;</span><span class="w">  </span><span class="c1"># info, warn, error</span>
+<span class="n">log_format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;json&quot;</span>
+</code></pre></div>
+<p>Audit logs include:
+- Tool calls (input, output, duration)
+- File access attempts (allowed and denied)
+- Security events (sandbox violations, auth failures)
+- Cost tracking (tokens, USD)</p>
+<p>Query logs:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># All events for a session</span>
+grep<span class="w"> </span><span class="s2">&quot;session_id=sess_abc123&quot;</span><span class="w"> </span>/var/log/hone/audit.log<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.
+
+<span class="c1"># Access denials</span>
+grep<span class="w"> </span><span class="s1">&#39;&quot;event&quot;:&quot;access_denied&quot;&#39;</span><span class="w"> </span>/var/log/hone/audit.log<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.
+
+<span class="c1"># Cost tracking</span>
+grep<span class="w"> </span><span class="s1">&#39;&quot;event&quot;:&quot;cost_incurred&quot;&#39;</span><span class="w"> </span>/var/log/hone/audit.log<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.
+</code></pre></div>
+<h2 id="semantic-index-postgresql">Semantic Index (PostgreSQL)<a class="headerlink" href="#semantic-index-postgresql" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[index]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">database_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;postgres://user:pass@localhost/hone_index&quot;</span>
+
+<span class="c1"># Embedding model (default: sentence-transformers/all-MiniLM-L6-v2)</span>
+<span class="n">embedding_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;sentence-transformers/all-MiniLM-L6-v2&quot;</span>
+<span class="n">embedding_dimensions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">384</span>
+
+<span class="c1"># Index type: &quot;hnsw&quot; or &quot;ivfflat&quot;</span>
+<span class="n">index_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;hnsw&quot;</span>
+
+<span class="c1"># HNSW parameters</span>
+<span class="n">hnsw_m</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">16</span><span class="w">              </span><span class="c1"># neighbor list size</span>
+<span class="n">hnsw_ef_construction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">64</span><span class="w">  </span><span class="c1"># construction effort</span>
+
+<span class="c1"># Batch size for indexing</span>
+<span class="n">batch_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">100</span>
+
+<span class="c1"># File watcher for incremental updates</span>
+<span class="n">watch_enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">watch_ignore_patterns</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;.git&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;target&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;node_modules&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p>If PostgreSQL is unavailable, the semantic index falls back to in-memory substring matching.</p>
+<h2 id="mcp-servers">MCP Servers<a class="headerlink" href="#mcp-servers" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[[mcp_servers]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;github&quot;</span>
+<span class="n">command</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span>
+<span class="n">args</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p">]</span>
+<span class="n">hash</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;sha256:abc123def456...&quot;</span><span class="w">  </span><span class="c1"># integrity check</span>
+<span class="n">timeout_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span>
+</code></pre></div>
+<h2 id="fallback-chains">Fallback Chains<a class="headerlink" href="#fallback-chains" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[[fallback_chains]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;production&quot;</span>
+<span class="n">providers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;anthropic:claude-opus-4-5&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;openai:gpt-4o&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;ollama:llama2&quot;</span><span class="p">]</span>
+<span class="n">retry_on</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;RateLimit&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Timeout&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;ServiceUnavailable&quot;</span><span class="p">]</span>
+<span class="n">retry_delay_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5</span>
+<span class="n">max_retries</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span>
+</code></pre></div>
+<p>Usage:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--fallback-chain<span class="w"> </span>production
+</code></pre></div>
+<p>Or set as default:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="n">default_fallback_chain</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;production&quot;</span>
+</code></pre></div>
+<h2 id="model-routing-rules">Model Routing Rules<a class="headerlink" href="#model-routing-rules" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">[[routing_rules]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;quick_tasks&quot;</span>
+<span class="n">condition</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;input_length &lt; 50&quot;</span>
+<span class="n">provider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;anthropic:claude-haiku-3-5&quot;</span>
+
+<span class="k">[[routing_rules]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;complex_reasoning&quot;</span>
+<span class="n">condition</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;input_contains(&#39;analyze&#39;)&quot;</span>
+<span class="n">provider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;anthropic:claude-opus-4-5&quot;</span>
+
+<span class="k">[[routing_rules]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;budget_conscious&quot;</span>
+<span class="n">condition</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;true&quot;</span><span class="w">  </span><span class="c1"># default</span>
+<span class="n">provider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;ollama:llama2&quot;</span>
+</code></pre></div>
+<h2 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ANTHROPIC_API_KEY</code></td>
+<td>Anthropic API key</td>
+</tr>
+<tr>
+<td><code>OPENAI_API_KEY</code></td>
+<td>OpenAI API key (or custom endpoint token)</td>
+</tr>
+<tr>
+<td><code>HONE_OPENAI_BASE_URL</code></td>
+<td>Override OpenAI endpoint URL</td>
+</tr>
+<tr>
+<td><code>HONE_OPENAI_MODEL</code></td>
+<td>Override model name for custom endpoint</td>
+</tr>
+<tr>
+<td><code>RUST_LOG</code></td>
+<td>Logging level (<code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>)</td>
+</tr>
+<tr>
+<td><code>HONE_CONFIG</code></td>
+<td>Override config file path</td>
+</tr>
+<tr>
+<td><code>DATABASE_URL</code></td>
+<td>PostgreSQL connection string (if not in config)</td>
+</tr>
+<tr>
+<td><code>OLLAMA_HOST</code></td>
+<td>Ollama server URL (default: <code>http://localhost:11434</code>)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="cli-flags">CLI Flags<a class="headerlink" href="#cli-flags" title="Permanent link">&para;</a></h2>
+<p>Most config options can be overridden via CLI flags:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--model<span class="w"> </span>openai:gpt-4o<span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>--budget<span class="w"> </span><span class="m">10</span>.00<span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>--context-limit<span class="w"> </span><span class="m">32000</span><span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>--temperature<span class="w"> </span><span class="m">0</span>.5<span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>--max-iterations<span class="w"> </span><span class="m">20</span><span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>--sandbox-enforce
+</code></pre></div>
+<p>See <code>hone --help</code> for all flags.</p>
+<h2 id="example-configs">Example Configs<a class="headerlink" href="#example-configs" title="Permanent link">&para;</a></h2>
+<h3 id="minimal-quick-start">Minimal (Quick Start)<a class="headerlink" href="#minimal-quick-start" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="n">default_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;anthropic:claude-opus-4-5&quot;</span>
+
+<span class="k">[providers.anthropic]</span>
+<span class="n">api_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;${ANTHROPIC_API_KEY}&quot;</span>
+</code></pre></div>
+<h3 id="production-server-team">Production (Server + Team)<a class="headerlink" href="#production-server-team" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="n">default_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;anthropic:claude-opus-4-5&quot;</span>
+<span class="n">max_iterations</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">50</span>
+
+<span class="k">[memory]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">encrypted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="k">[providers.anthropic]</span>
+<span class="n">api_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;${ANTHROPIC_API_KEY}&quot;</span>
+<span class="n">timeout_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span>
+
+<span class="k">[server]</span>
+<span class="n">host</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.0.0.0&quot;</span>
+<span class="n">port</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">7070</span>
+<span class="n">max_connections</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1000</span>
+
+<span class="k">[server.auth]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="k">[[server.auth.tokens]]</span>
+<span class="n">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;sk-hone-prod-abc123...&quot;</span>
+<span class="n">user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;ops@example.com&quot;</span>
+
+<span class="k">[rbac]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="k">[[rbac.roles]]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;admin&quot;</span>
+<span class="n">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sessions:create&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;sessions:delete&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;tools:all&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcp:all&quot;</span><span class="p">]</span>
+
+<span class="k">[audit]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">log_file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/var/log/hone/audit.log&quot;</span>
+
+<span class="k">[sandbox]</span>
+<span class="n">enforce</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">platform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;landlock&quot;</span>
+</code></pre></div>
+<h3 id="budget-conscious-ollama-local">Budget-Conscious (Ollama Local)<a class="headerlink" href="#budget-conscious-ollama-local" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="n">default_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;ollama:llama2&quot;</span>
+<span class="n">context_window_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4096</span>
+
+<span class="k">[providers.ollama]</span>
+<span class="n">base_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span>
+<span class="n">timeout_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">300</span>
+
+<span class="k">[sandbox]</span>
+<span class="n">enforce</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="w">  </span><span class="c1"># local-only, less critical</span>
+</code></pre></div>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<h3 id="config-file-not-found">Config file not found<a class="headerlink" href="#config-file-not-found" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: config file not found at ~/.config/hone/config.toml
+</code></pre></div>
+<p>Create the file:</p>
+<div class="highlight"><pre><span></span><code>mkdir<span class="w"> </span>-p<span class="w"> </span>~/.config/hone
+touch<span class="w"> </span>~/.config/hone/config.toml
+</code></pre></div>
+<h3 id="api-key-not-recognized">API key not recognized<a class="headerlink" href="#api-key-not-recognized" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: ANTHROPIC_API_KEY not set or invalid
+</code></pre></div>
+<p>Check environment variable:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">echo</span><span class="w"> </span><span class="nv">$ANTHROPIC_API_KEY</span>
+</code></pre></div>
+<p>Or add to config:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[providers.anthropic]</span>
+<span class="n">api_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;sk-ant-...&quot;</span>
+</code></pre></div>
+<h3 id="sandbox-policy-violation">Sandbox policy violation<a class="headerlink" href="#sandbox-policy-violation" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: sandbox policy not met (path not in allowlist)
+</code></pre></div>
+<p>Add the path to the allowlist:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[sandbox.tools.file_reader]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/new/path&quot;</span><span class="p">]</span>
+</code></pre></div>
+<h3 id="postgresql-connection-failed">PostgreSQL connection failed<a class="headerlink" href="#postgresql-connection-failed" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: failed to connect to PostgreSQL at postgres://localhost/hone_index
+</code></pre></div>
+<p>Check PostgreSQL is running:</p>
+<div class="highlight"><pre><span></span><code>psql<span class="w"> </span>-U<span class="w"> </span>postgres<span class="w"> </span>-d<span class="w"> </span>hone_index<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;SELECT 1&quot;</span>
+</code></pre></div>
+<p>If unavailable, semantic index falls back to in-memory substring matching.</p>
+<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../architecture/#10-context-optimization">Architecture: Context Optimization</a></li>
+<li><a href="../tutorials/security/">Security Guide</a></li>
+<li><a href="../tutorials/providers/">Provider Configuration</a></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

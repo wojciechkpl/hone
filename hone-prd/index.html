@@ -1,0 +1,3902 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/hone-prd/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Product Requirements Document: Hone - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#product-requirements-document-hone" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Product Requirements Document: Hone
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-universal-terminal-ai-code-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Universal Terminal AI Code Agent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-executive-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Executive Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-problem-statement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Problem Statement
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Problem Statement">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-the-fragmentation-tax" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 The Fragmentation Tax
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-the-unserved-quadrant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 The Unserved Quadrant
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-vision-positioning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Vision &amp; Positioning
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Vision &amp; Positioning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-product-vision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Product Vision
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-positioning-statement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Positioning Statement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-design-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Design Principles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-target-users" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Target Users
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Target Users">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-primary-personas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Primary Personas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-secondary-personas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Secondary Personas
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-competitive-landscape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Competitive Landscape
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Competitive Landscape">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-market-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Market Map
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-competitive-advantage-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Competitive Advantage Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-high-level-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 High-Level Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-technology-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Technology Stack
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-client-server-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Client-Server Split
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-core-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Core Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Core Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-requirement-categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 Requirement Categories
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-requirements-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Requirements Table
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-feature-specifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Feature Specifications
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Feature Specifications">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-universal-model-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 Universal Model Support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-kernel-enforced-sandboxing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 Kernel-Enforced Sandboxing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-lsp-powered-code-intelligence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.3 LSP-Powered Code Intelligence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#84-layered-tool-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.4 Layered Tool Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#85-file-editing-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.5 File Editing System
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#86-cost-estimation-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.6 Cost Estimation Engine
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-security-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Security Model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Security Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#91-security-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.1 Security Layers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#92-threat-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9.2 Threat Model
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-privacy-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Privacy Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. Privacy Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#101-data-flow-classification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.1 Data Flow Classification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#102-privacy-guarantees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10.2 Privacy Guarantees
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-adaptive-learning-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Adaptive Learning System
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. Adaptive Learning System">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#111-how-hone-learns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.1 How Hone Learns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#112-memory-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.2 Memory Hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#113-learning-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11.3 Learning Loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-remote-access-multi-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Remote Access &amp; Multi-Surface
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. Remote Access &amp; Multi-Surface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#121-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12.1 Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#122-mobile-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12.2 Mobile Experience
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#123-session-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12.3 Session Persistence
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-performance-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Performance Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="13. Performance Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#131-performance-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.1 Performance Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-extensibility-ecosystem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Extensibility &amp; Ecosystem
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="14. Extensibility &amp; Ecosystem">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#141-recipe-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.1 Recipe System
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#142-custom-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.2 Custom Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#143-extension-marketplace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14.3 Extension Marketplace
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-developer-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Developer Experience
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="15. Developer Experience">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#151-first-run-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.1 First-Run Experience
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#152-command-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.2 Command Interface
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#153-configuration-hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.3 Configuration Hierarchy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#16-monetization-licensing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. Monetization &amp; Licensing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="16. Monetization &amp; Licensing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#161-open-source-core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16.1 Open-Source Core
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#162-revenue-streams" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16.2 Revenue Streams
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#163-pricing-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16.3 Pricing Targets
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#17-success-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17. Success Metrics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="17. Success Metrics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#171-north-star-metric" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17.1 North Star Metric
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#172-key-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17.2 Key Metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#18-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        18. Roadmap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="18. Roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#181-phase-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        18.1 Phase Overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#182-milestones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        18.2 Milestones
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#19-risks-mitigations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19. Risks &amp; Mitigations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="19. Risks &amp; Mitigations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#191-risk-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.1 Risk Matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#192-detailed-risks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        19.2 Detailed Risks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#20-appendix-competitive-feature-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        20. Appendix: Competitive Feature Matrix
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#changelog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changelog
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="product-requirements-document-hone">Product Requirements Document: Hone<a class="headerlink" href="#product-requirements-document-hone" title="Permanent link">&para;</a></h1>
+<h2 id="the-universal-terminal-ai-code-agent">The Universal Terminal AI Code Agent<a class="headerlink" href="#the-universal-terminal-ai-code-agent" title="Permanent link">&para;</a></h2>
+<p><strong>Version:</strong> 1.1<br />
+<strong>Date:</strong> April 4, 2026<br />
+<strong>Status:</strong> Draft for Review — Architecture Revised<br />
+<strong>Classification:</strong> Confidential</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#1-executive-summary">Executive Summary</a></li>
+<li><a href="#2-problem-statement">Problem Statement</a></li>
+<li><a href="#3-vision--positioning">Vision &amp; Positioning</a></li>
+<li><a href="#4-target-users">Target Users</a></li>
+<li><a href="#5-competitive-landscape">Competitive Landscape</a></li>
+<li><a href="#6-architecture">Architecture</a></li>
+<li><a href="#7-core-requirements">Core Requirements</a></li>
+<li><a href="#8-feature-specifications">Feature Specifications</a></li>
+<li><a href="#9-security-model">Security Model</a></li>
+<li><a href="#10-privacy-architecture">Privacy Architecture</a></li>
+<li><a href="#11-adaptive-learning-system">Adaptive Learning System</a></li>
+<li><a href="#12-remote-access--multi-surface">Remote Access &amp; Multi-Surface</a></li>
+<li><a href="#13-performance-requirements">Performance Requirements</a></li>
+<li><a href="#14-extensibility--ecosystem">Extensibility &amp; Ecosystem</a></li>
+<li><a href="#15-developer-experience">Developer Experience</a></li>
+<li><a href="#16-monetization--licensing">Monetization &amp; Licensing</a></li>
+<li><a href="#17-success-metrics">Success Metrics</a></li>
+<li><a href="#18-roadmap">Roadmap</a></li>
+<li><a href="#19-risks--mitigations">Risks &amp; Mitigations</a></li>
+<li><a href="#20-appendix-competitive-feature-matrix">Appendix: Competitive Feature Matrix</a></li>
+</ol>
+<hr />
+<h2 id="1-executive-summary">1. Executive Summary<a class="headerlink" href="#1-executive-summary" title="Permanent link">&para;</a></h2>
+<p><strong>Hone</strong> is an open-source, privacy-first, terminal-native AI coding agent designed to unify the best capabilities from every existing tool in the category — while filling the critical gaps none of them address.</p>
+<p>The terminal AI coding agent market has exploded to 15+ serious contenders serving millions of developers daily. Yet no single tool combines provider-agnostic model support, kernel-level sandboxing, LSP code intelligence, a layered tool architecture that uses native CLI for speed and MCP for extensibility, adaptive pattern learning, and secure remote access. Developers are forced to juggle 2–3 tools, fragmenting context and compounding costs.</p>
+<p>Hone eliminates this fragmentation. It is built on three foundational principles:</p>
+<ol>
+<li><strong>Your models, your machine, your rules.</strong> Run any model — local or cloud, any provider — with data that never leaves your control unless you explicitly choose otherwise.</li>
+<li><strong>Intelligence compounds.</strong> Hone learns your patterns, preferences, and project conventions through a local-first adaptive memory system that gets smarter with every session.</li>
+<li><strong>Work from anywhere.</strong> A secure client-server architecture lets you start a task in the terminal and seamlessly continue from your phone, tablet, or browser — all through an encrypted tunnel with zero cloud dependency.</li>
+</ol>
+<pre class="mermaid"><code>mindmap
+  root((Hone))
+    Universal Models
+      75+ API providers
+      Local via Ollama/llama.cpp
+      CLI pass-through
+      Hot-swap mid-session
+    Privacy First
+      Local-first memory
+      Kernel sandboxing
+      Zero telemetry default
+      Encrypted tunnels
+    Adaptive Learning
+      Pattern recognition
+      Convention memory
+      Project constitution
+      Cross-session recall
+    Work Anywhere
+      CLI/TUI primary
+      Web UI
+      Mobile client
+      SSH fallback
+    Deep Intelligence
+      LSP integration
+      Semantic indexing
+      Test-driven editing
+      Cross-repo awareness
+    Extensible Core
+      Layered tool architecture
+      Native CLI hot path
+      MCP for external services
+      Code Mode orchestration
+      Recipe workflows
+      Custom agents</code></pre>
+<hr />
+<h2 id="2-problem-statement">2. Problem Statement<a class="headerlink" href="#2-problem-statement" title="Permanent link">&para;</a></h2>
+<h3 id="21-the-fragmentation-tax">2.1 The Fragmentation Tax<a class="headerlink" href="#21-the-fragmentation-tax" title="Permanent link">&para;</a></h3>
+<p>Developers in 2026 use an average of 2.3 terminal AI coding agents. Each tool excels in one dimension but forces painful trade-offs in others:</p>
+<table>
+<thead>
+<tr>
+<th>Pain Point</th>
+<th>Cause</th>
+<th>Impact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Vendor lock-in</td>
+<td>Claude Code (Anthropic only), Codex (OpenAI only), Gemini CLI (Google only)</td>
+<td>Developers can't use the best model for each task</td>
+</tr>
+<tr>
+<td>No real security</td>
+<td>OpenCode admits its permissions are "not designed to provide security isolation"</td>
+<td>Autonomous mode is a liability</td>
+</tr>
+<tr>
+<td>No pattern memory</td>
+<td>Most tools start fresh each session; config files are manual</td>
+<td>Repeated explanations, inconsistent output</td>
+</tr>
+<tr>
+<td>No remote access</td>
+<td>Only OpenCode has client-server; no tool has a mobile-optimized UI</td>
+<td>Can't monitor or intervene from a phone</td>
+</tr>
+<tr>
+<td>Context amnesia</td>
+<td>Auto-compaction loses early instructions; no persistent semantic index</td>
+<td>Agents forget what matters mid-session</td>
+</tr>
+<tr>
+<td>Cost opacity</td>
+<td>No tool shows real-time token consumption before executing</td>
+<td>$50+ surprise sessions are common</td>
+</tr>
+<tr>
+<td>No test-driven loop</td>
+<td>Agents guess at correctness instead of iterating against a test contract</td>
+<td>Bugs shipped to production</td>
+</tr>
+</tbody>
+</table>
+<h3 id="22-the-unserved-quadrant">2.2 The Unserved Quadrant<a class="headerlink" href="#22-the-unserved-quadrant" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>quadrantChart
+    title Market Gap Analysis
+    x-axis "Vendor Locked" --&gt; "Full Provider Freedom"
+    y-axis "Stationary (desk only)" --&gt; "Fully Remote/Mobile"
+    quadrant-1 "THE GAP: No tool here"
+    quadrant-2 "Cloud-locked but mobile"
+    quadrant-3 "Locked and local"
+    quadrant-4 "Free but desk-bound"
+    Claude Code: [0.1, 0.15]
+    Codex CLI: [0.2, 0.15]
+    Gemini CLI: [0.15, 0.2]
+    OpenCode: [0.9, 0.65]
+    Goose: [0.7, 0.3]
+    Aider: [0.85, 0.2]
+    Amp: [0.3, 0.4]
+    Plandex: [0.8, 0.25]
+    Hone Target: [0.92, 0.9]</code></pre>
+<p><strong>Hone occupies the top-right quadrant</strong> — full provider freedom with full remote access — while also delivering the security, intelligence, and learning that no tool in any quadrant currently provides.</p>
+<hr />
+<h2 id="3-vision-positioning">3. Vision &amp; Positioning<a class="headerlink" href="#3-vision-positioning" title="Permanent link">&para;</a></h2>
+<h3 id="31-product-vision">3.1 Product Vision<a class="headerlink" href="#31-product-vision" title="Permanent link">&para;</a></h3>
+<blockquote>
+<p>Hone is the last terminal coding agent you'll ever need — an open-source, self-hosted, privacy-respecting AI development partner that learns your style, runs any model, works from any device, and gets smarter every day.</p>
+</blockquote>
+<h3 id="32-positioning-statement">3.2 Positioning Statement<a class="headerlink" href="#32-positioning-statement" title="Permanent link">&para;</a></h3>
+<p>For professional developers who demand privacy, model freedom, and mobility, Hone is the terminal AI coding agent that unifies kernel-enforced security, LSP code intelligence, a layered tool architecture (native CLI + MCP + Code Mode), and adaptive pattern learning into a single open-source tool. Unlike Claude Code, Codex CLI, or OpenCode, Hone never locks you to a vendor, never sends data without consent, and never forgets what it learned about your codebase.</p>
+<h3 id="33-design-principles">3.3 Design Principles<a class="headerlink" href="#33-design-principles" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph LR
+    A[Privacy by Default] --&gt; B[Intelligence Compounds]
+    B --&gt; C[Extensibility over Features]
+    C --&gt; D[Speed is a Feature]
+    D --&gt; E[Terminal First, Multi-Surface]
+    E --&gt; F[Open Source, Open Governance]
+
+    style A fill:#E94560,color:#fff
+    style B fill:#0F3460,color:#fff
+    style C fill:#16213E,color:#fff
+    style D fill:#1A1A2E,color:#fff
+    style E fill:#533483,color:#fff
+    style F fill:#2B2D42,color:#fff</code></pre>
+<ol>
+<li><strong>Privacy by Default</strong> — Local-first. No telemetry. No data leaves the machine unless the user opts in. Encrypted at rest and in transit.</li>
+<li><strong>Intelligence Compounds</strong> — Every session makes the next one better. Memory, conventions, and learnings persist locally and improve over time.</li>
+<li><strong>Extensibility over Features</strong> — Build the platform, not every feature. A layered tool architecture — native CLI for hot-path operations, MCP for external integrations, Code Mode for complex orchestration, Skills for guidance — means each layer does what it does best without taxing the others.</li>
+<li><strong>Speed is a Feature</strong> — Sub-100ms startup. Streaming responses. Rust core for hot paths. Never make the developer wait for the tool.</li>
+<li><strong>Terminal First, Multi-Surface</strong> — The CLI is the primary interface. Web, mobile, and IDE are secondary surfaces consuming the same backend.</li>
+<li><strong>Open Source, Open Governance</strong> — Apache 2.0 license. Community-driven roadmap. Aiming for Linux Foundation / AAIF membership alongside Goose and MCP.</li>
+</ol>
+<hr />
+<h2 id="4-target-users">4. Target Users<a class="headerlink" href="#4-target-users" title="Permanent link">&para;</a></h2>
+<h3 id="41-primary-personas">4.1 Primary Personas<a class="headerlink" href="#41-primary-personas" title="Permanent link">&para;</a></h3>
+<p><strong>The Privacy-Conscious Professional</strong> — Senior engineer at a regulated company (finance, healthcare, government). Needs local model support, audit trails, and zero data leakage. Currently uses Aider + Ollama but lacks intelligence and remote access.</p>
+<p><strong>The Multi-Stack Polyglot</strong> — Full-stack developer working across 3–5 languages and repositories. Needs the best model for each task (Claude for architecture, GPT for speed, local for sensitive code). Currently switches between Claude Code and OpenCode depending on task.</p>
+<p><strong>The Mobile-First Operator</strong> — DevOps/SRE or indie developer who monitors and manages deployments from a phone. Needs to kick off tasks, review diffs, and approve changes remotely. Currently SSH-es into a tmux session as a workaround.</p>
+<p><strong>The Team Lead</strong> — Manages 5–15 developers and needs governance: spend caps, model policies, approved extensions, audit logs. Currently has no visibility into team AI usage.</p>
+<h3 id="42-secondary-personas">4.2 Secondary Personas<a class="headerlink" href="#42-secondary-personas" title="Permanent link">&para;</a></h3>
+<p><strong>The Open-Source Contributor</strong> — Wants to extend Hone with MCP servers, custom agents, and recipes. Values documentation, plugin APIs, and community.</p>
+<p><strong>The Student/Hobbyist</strong> — Budget-constrained. Needs the free tier (local models) to be genuinely capable, not a teaser for paid features.</p>
+<hr />
+<h2 id="5-competitive-landscape">5. Competitive Landscape<a class="headerlink" href="#5-competitive-landscape" title="Permanent link">&para;</a></h2>
+<h3 id="51-market-map">5.1 Market Map<a class="headerlink" href="#51-market-map" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph TB
+    subgraph "Vendor-Locked Agents"
+        CC[Claude Code&lt;br/&gt;Anthropic only&lt;br/&gt;71K stars]
+        CX[Codex CLI&lt;br/&gt;OpenAI primary&lt;br/&gt;60K stars]
+        GC[Gemini CLI&lt;br/&gt;Google only&lt;br/&gt;98K stars]
+        CP[Copilot CLI&lt;br/&gt;GitHub/MS&lt;br/&gt;GA Mar 2026]
+    end
+
+    subgraph "Provider-Agnostic Agents"
+        OC[OpenCode&lt;br/&gt;75+ providers&lt;br/&gt;130K stars]
+        AI[Aider&lt;br/&gt;All LLMs&lt;br/&gt;39K stars]
+        GO[Goose&lt;br/&gt;25+ providers&lt;br/&gt;35K stars]
+        PL[Plandex&lt;br/&gt;Multi-model&lt;br/&gt;10K stars]
+        CR[Crush CLI&lt;br/&gt;Multi-model&lt;br/&gt;New]
+    end
+
+    subgraph "Hybrid / Team Agents"
+        AM[Amp&lt;br/&gt;Sourcegraph&lt;br/&gt;Team-first]
+        WA[Warp Code&lt;br/&gt;Terminal replacement]
+    end
+
+    FG[HONE&lt;br/&gt;All providers + local&lt;br/&gt;Privacy + Remote + Learning]
+
+    OC -.-&gt;|model freedom| FG
+    GO -.-&gt;|MCP extensibility| FG
+    CX -.-&gt;|kernel sandbox| FG
+    OC -.-&gt;|LSP + client-server| FG
+    CC -.-&gt;|reasoning + memory| FG
+    PL -.-&gt;|massive context| FG
+    AI -.-&gt;|git integration| FG
+    AM -.-&gt;|code graph context| FG
+
+    style FG fill:#E94560,color:#fff,stroke-width:3px</code></pre>
+<h3 id="52-competitive-advantage-summary">5.2 Competitive Advantage Summary<a class="headerlink" href="#52-competitive-advantage-summary" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Best Current Tool</th>
+<th>Their Limitation</th>
+<th>Hone Advantage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model freedom</td>
+<td>OpenCode (75+)</td>
+<td>No sandboxing, heavy runtime</td>
+<td>75+ providers with kernel sandboxing</td>
+</tr>
+<tr>
+<td>Security</td>
+<td>Codex CLI (kernel)</td>
+<td>OpenAI-locked, no LSP</td>
+<td>Kernel sandbox + any model</td>
+</tr>
+<tr>
+<td>Code intelligence</td>
+<td>OpenCode (LSP)</td>
+<td>No persistent index</td>
+<td>LSP + persistent semantic index</td>
+</tr>
+<tr>
+<td>Extensibility</td>
+<td>Goose (MCP-native)</td>
+<td>No phone access, rough polish; MCP context overhead on hot-path ops</td>
+<td>Layered: native CLI hot path + MCP for external only + Code Mode orchestration</td>
+</tr>
+<tr>
+<td>Pattern learning</td>
+<td>Claude Code (auto-memory)</td>
+<td>Anthropic-locked, cloud-stored</td>
+<td>Local-first adaptive memory</td>
+</tr>
+<tr>
+<td>Remote access</td>
+<td>OpenCode (client-server)</td>
+<td>No mobile UI, 1GB+ RAM</td>
+<td>Lightweight Rust server + mobile app</td>
+</tr>
+<tr>
+<td>Large codebases</td>
+<td>Plandex (2M tokens)</td>
+<td>Limited autonomy tooling</td>
+<td>Tree-sitter indexing + smart context loading</td>
+</tr>
+<tr>
+<td>Git workflow</td>
+<td>Aider (commit-per-edit)</td>
+<td>No LSP, no remote</td>
+<td>Git-first with LSP validation</td>
+</tr>
+<tr>
+<td>Team governance</td>
+<td>Amp (shared threads)</td>
+<td>Cloud-stored, no self-host</td>
+<td>Self-hosted with audit logs</td>
+</tr>
+<tr>
+<td>Cost transparency</td>
+<td>None</td>
+<td>All tools lack this</td>
+<td>Real-time cost estimation before execution</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6-architecture">6. Architecture<a class="headerlink" href="#6-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="61-high-level-architecture">6.1 High-Level Architecture<a class="headerlink" href="#61-high-level-architecture" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph TB
+    subgraph "Client Layer"
+        CLI[CLI / TUI&lt;br/&gt;Primary interface&lt;br/&gt;Rust + Ratatui]
+        WEB[Web UI&lt;br/&gt;Lightweight SPA&lt;br/&gt;Accessible from phone]
+        MOB[Mobile PWA&lt;br/&gt;Touch-optimized&lt;br/&gt;Push notifications]
+        IDE[IDE Extension&lt;br/&gt;VS Code / JetBrains]
+        SSH[SSH Terminal&lt;br/&gt;Fallback access]
+    end
+
+    subgraph "Hone Server (honed)"
+        API[HTTP/SSE API&lt;br/&gt;Session management]
+        AGENT[Agent Engine&lt;br/&gt;Planning + Execution loop]
+        MEM[Memory Engine&lt;br/&gt;Local adaptive learning]
+        CTX[Context Engine&lt;br/&gt;Semantic index + LSP]
+        SAND[Sandbox Manager&lt;br/&gt;Kernel enforcement]
+        COST[Cost Estimator&lt;br/&gt;Real-time token tracking]
+    end
+
+    subgraph "Tool Layers"
+        direction TB
+        subgraph "Layer 3: Skills — HONE.md"
+            SK[Conventions, workflows&lt;br/&gt;Loaded on demand&lt;br/&gt;Zero runtime tokens]
+        end
+        subgraph "Layer 2: Native Tools — Rust hot path"
+            NT[File I/O, Shell, Git&lt;br/&gt;LSP Bridge, Semantic Index&lt;br/&gt;Direct function calls, sub-ms]
+        end
+        subgraph "Layer 1: MCP — External integrations"
+            MCP_T[GitHub, Jira, Slack, DBs&lt;br/&gt;Auth, state, audit&lt;br/&gt;Lazy-loaded schemas]
+        end
+        subgraph "Layer 0: Code Mode — Orchestration"
+            CM[Agent writes TS/Python&lt;br/&gt;Calls native + MCP via SDK&lt;br/&gt;1 pass replaces N tool calls]
+        end
+    end
+
+    subgraph "Intelligence Layer"
+        LSP_S[LSP Servers&lt;br/&gt;20+ languages]
+        IDX[Semantic Indexer&lt;br/&gt;Embeddings + call graphs]
+        TREE[Tree-sitter&lt;br/&gt;AST parsing]
+    end
+
+    subgraph "Model Layer"
+        LOCAL[Local Models&lt;br/&gt;Ollama / llama.cpp / vLLM]
+        CLOUD[Cloud APIs&lt;br/&gt;Anthropic / OpenAI / Google / 75+]
+        PASS[CLI Pass-through&lt;br/&gt;Claude Code / Codex / Gemini CLI]
+    end
+
+    subgraph "Security Layer"
+        SB_MAC[macOS Seatbelt&lt;br/&gt;Profile generator]
+        SB_LIN[Linux Landlock&lt;br/&gt;+ seccomp-BPF]
+        SB_CON[Container Mode&lt;br/&gt;OCI isolation]
+        AUDIT[Audit Logger&lt;br/&gt;Every action recorded]
+    end
+
+    CLI --&gt; API
+    WEB --&gt; API
+    MOB --&gt; API
+    IDE --&gt; API
+    SSH --&gt; CLI
+
+    API --&gt; AGENT
+    AGENT --&gt; MEM
+    AGENT --&gt; CTX
+    AGENT --&gt; SAND
+    AGENT --&gt; COST
+
+    AGENT --&gt; SK
+    AGENT --&gt; NT
+    AGENT --&gt; MCP_T
+    AGENT --&gt; CM
+
+    CTX --&gt; LSP_S
+    CTX --&gt; IDX
+    CTX --&gt; TREE
+
+    AGENT --&gt; LOCAL
+    AGENT --&gt; CLOUD
+    AGENT --&gt; PASS
+
+    SAND --&gt; SB_MAC
+    SAND --&gt; SB_LIN
+    SAND --&gt; SB_CON
+
+    style CLI fill:#E94560,color:#fff
+    style AGENT fill:#0F3460,color:#fff
+    style MEM fill:#533483,color:#fff
+    style SAND fill:#2B2D42,color:#fff
+    style NT fill:#E94560,color:#fff
+    style MCP_T fill:#0F3460,color:#fff
+    style CM fill:#533483,color:#fff
+    style SK fill:#059669,color:#fff</code></pre>
+<h3 id="62-technology-stack">6.2 Technology Stack<a class="headerlink" href="#62-technology-stack" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Technology</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Core runtime</td>
+<td>Rust</td>
+<td>Performance, safety, single binary distribution</td>
+</tr>
+<tr>
+<td>TUI framework</td>
+<td>Ratatui</td>
+<td>Native Rust TUI, fast rendering, low memory</td>
+</tr>
+<tr>
+<td>Web UI</td>
+<td>SolidJS + Tailwind</td>
+<td>Lightweight, reactive, no virtual DOM overhead</td>
+</tr>
+<tr>
+<td>Mobile</td>
+<td>PWA (Progressive Web App)</td>
+<td>Cross-platform, no app store dependency, push notifications</td>
+</tr>
+<tr>
+<td>Server protocol</td>
+<td>HTTP/2 + SSE (Server-Sent Events)</td>
+<td>Streaming responses, reconnection resilience</td>
+</tr>
+<tr>
+<td>Semantic indexing</td>
+<td>SQLite + embedded vectors</td>
+<td>Local-first, no external DB dependency</td>
+</tr>
+<tr>
+<td>AST parsing</td>
+<td>Tree-sitter</td>
+<td>Incremental parsing, 30+ language grammars</td>
+</tr>
+<tr>
+<td>Sandboxing</td>
+<td>Platform-native (Seatbelt/Landlock/seccomp)</td>
+<td>Kernel-level enforcement, not permission theater</td>
+</tr>
+<tr>
+<td>MCP runtime</td>
+<td>Rust MCP SDK</td>
+<td>For external integrations only; native tools bypass MCP entirely</td>
+</tr>
+<tr>
+<td>Configuration</td>
+<td>TOML + Markdown (HONE.md)</td>
+<td>Human-readable, version-controllable</td>
+</tr>
+</tbody>
+</table>
+<h3 id="63-client-server-split">6.3 Client-Server Split<a class="headerlink" href="#63-client-server-split" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>sequenceDiagram
+    participant Phone as Mobile / Web
+    participant Tunnel as WireGuard Tunnel
+    participant Server as honed (dev machine)
+    participant Sandbox as Kernel Sandbox
+    participant Model as LLM (local/cloud)
+    participant LSP as LSP Server
+    participant FS as File System
+
+    Phone-&gt;&gt;Tunnel: Encrypted request
+    Tunnel-&gt;&gt;Server: Forward to honed
+    Server-&gt;&gt;Server: Authenticate (token/mTLS)
+    Server-&gt;&gt;Model: Send prompt + context
+    Model--&gt;&gt;Server: Stream tokens
+    Server-&gt;&gt;Sandbox: Execute tool call
+    Sandbox-&gt;&gt;FS: Read/write within sandbox
+    Sandbox-&gt;&gt;LSP: Validate edit
+    LSP--&gt;&gt;Sandbox: Diagnostics
+    Sandbox--&gt;&gt;Server: Result + diagnostics
+    Server--&gt;&gt;Tunnel: Stream response
+    Tunnel--&gt;&gt;Phone: Encrypted response
+    Server-&gt;&gt;Server: Update memory + cost tracker</code></pre>
+<p>The <code>honed</code> daemon runs on the developer's machine (or a self-hosted server). All clients — CLI, web, mobile, IDE — connect to the same instance. Sessions persist across disconnects. The server holds all state; clients are stateless renderers.</p>
+<hr />
+<h2 id="7-core-requirements">7. Core Requirements<a class="headerlink" href="#7-core-requirements" title="Permanent link">&para;</a></h2>
+<h3 id="71-requirement-categories">7.1 Requirement Categories<a class="headerlink" href="#71-requirement-categories" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph LR
+    subgraph "P0 — Launch Blockers"
+        R1[Universal model support]
+        R2[Kernel sandboxing]
+        R3[LSP integration]
+        R4[Layered tool architecture]
+        R5[Client-server architecture]
+        R6[Local adaptive memory]
+        R7[CLI/TUI primary UI]
+        R8[HONE.md project config]
+    end
+
+    subgraph "P1 — Fast Follow"
+        R9[Web UI + mobile PWA]
+        R10[Recipe system]
+        R11[Cost estimator]
+        R12[Semantic indexing]
+        R13[Multi-agent orchestration]
+        R14[Git-first workflow]
+    end
+
+    subgraph "P2 — Growth"
+        R15[Plugin marketplace]
+        R16[Team governance]
+        R17[Cross-repo intelligence]
+        R18[Test-driven editing]
+        R19[Voice-to-code]
+        R20[Collaborative sessions]
+    end
+
+    style R1 fill:#E94560,color:#fff
+    style R2 fill:#E94560,color:#fff
+    style R5 fill:#E94560,color:#fff
+    style R6 fill:#533483,color:#fff</code></pre>
+<h3 id="72-requirements-table">7.2 Requirements Table<a class="headerlink" href="#72-requirements-table" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Priority</th>
+<th>Category</th>
+<th>Derived From</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>R1</td>
+<td>Support 75+ LLM providers including all major APIs and local inference</td>
+<td>P0</td>
+<td>Model</td>
+<td>OpenCode, Aider</td>
+</tr>
+<tr>
+<td>R2</td>
+<td>Kernel-enforced sandboxing on macOS (Seatbelt) and Linux (Landlock + seccomp)</td>
+<td>P0</td>
+<td>Security</td>
+<td>Codex CLI</td>
+</tr>
+<tr>
+<td>R3</td>
+<td>LSP integration with 20+ language servers for diagnostics, hover, go-to-def</td>
+<td>P0</td>
+<td>Intelligence</td>
+<td>OpenCode</td>
+</tr>
+<tr>
+<td>R4</td>
+<td>Layered tool architecture: native Rust tools for hot path, MCP client for external integrations, Code Mode for multi-tool orchestration, Skills for guidance</td>
+<td>P0</td>
+<td>Architecture</td>
+<td>Goose (MCP), Codex (CLI), Anthropic (Code Mode)</td>
+</tr>
+<tr>
+<td>R5</td>
+<td>Client-server architecture with HTTP/SSE API supporting multiple simultaneous clients</td>
+<td>P0</td>
+<td>Architecture</td>
+<td>OpenCode</td>
+</tr>
+<tr>
+<td>R6</td>
+<td>Local-first adaptive memory system that learns patterns across sessions</td>
+<td>P0</td>
+<td>Learning</td>
+<td>Claude Code, Goose</td>
+</tr>
+<tr>
+<td>R7</td>
+<td>Rust-based CLI/TUI with sub-100ms startup and streaming output</td>
+<td>P0</td>
+<td>Performance</td>
+<td>Codex CLI</td>
+</tr>
+<tr>
+<td>R8</td>
+<td>HONE.md hierarchical project constitution (project, directory, user levels)</td>
+<td>P0</td>
+<td>Configuration</td>
+<td>Claude Code CLAUDE.md</td>
+</tr>
+<tr>
+<td>R9</td>
+<td>Lightweight web UI accessible from any browser including mobile</td>
+<td>P1</td>
+<td>Remote Access</td>
+<td>OpenCode</td>
+</tr>
+<tr>
+<td>R10</td>
+<td>YAML-based recipe system for declarative multi-step workflows</td>
+<td>P1</td>
+<td>Extensibility</td>
+<td>Goose Recipes</td>
+</tr>
+<tr>
+<td>R11</td>
+<td>Real-time cost estimation showing projected spend before executing actions</td>
+<td>P1</td>
+<td>Cost</td>
+<td>Novel</td>
+</tr>
+<tr>
+<td>R12</td>
+<td>Persistent incremental semantic index (embeddings + call graphs) surviving across sessions</td>
+<td>P1</td>
+<td>Intelligence</td>
+<td>Novel</td>
+</tr>
+<tr>
+<td>R13</td>
+<td>Multi-agent orchestration with lead-worker model and parallel subagents</td>
+<td>P1</td>
+<td>Agentic</td>
+<td>Claude Code Agent Teams, Goose</td>
+</tr>
+<tr>
+<td>R14</td>
+<td>Git-first workflow with automatic commits per edit and branch management</td>
+<td>P1</td>
+<td>Workflow</td>
+<td>Aider</td>
+</tr>
+<tr>
+<td>R15</td>
+<td>Extension marketplace for discovering and installing MCP servers and recipes</td>
+<td>P2</td>
+<td>Ecosystem</td>
+<td>Novel</td>
+</tr>
+<tr>
+<td>R16</td>
+<td>Team governance: spend caps, model policies, approved extensions, audit logs</td>
+<td>P2</td>
+<td>Enterprise</td>
+<td>Claude Code Enterprise</td>
+</tr>
+<tr>
+<td>R17</td>
+<td>Cross-repository intelligence understanding impacts across multiple repos</td>
+<td>P2</td>
+<td>Intelligence</td>
+<td>Novel</td>
+</tr>
+<tr>
+<td>R18</td>
+<td>Test-driven editing mode: accept test spec, iterate code until tests pass</td>
+<td>P2</td>
+<td>Workflow</td>
+<td>Novel</td>
+</tr>
+<tr>
+<td>R19</td>
+<td>Voice-to-code input with local transcription (Whisper)</td>
+<td>P2</td>
+<td>Input</td>
+<td>Aider</td>
+</tr>
+<tr>
+<td>R20</td>
+<td>Collaborative multi-user sessions for pair programming with AI</td>
+<td>P2</td>
+<td>Collaboration</td>
+<td>Novel</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="8-feature-specifications">8. Feature Specifications<a class="headerlink" href="#8-feature-specifications" title="Permanent link">&para;</a></h2>
+<h3 id="81-universal-model-support">8.1 Universal Model Support<a class="headerlink" href="#81-universal-model-support" title="Permanent link">&para;</a></h3>
+<p>Hone must treat LLM providers as interchangeable backends. No model provider receives special treatment or tighter integration than any other.</p>
+<p><strong>Provider abstraction layer:</strong></p>
+<pre class="mermaid"><code>graph TB
+    subgraph "Model Router"
+        ROUTER[Smart Router&lt;br/&gt;Selects model per task]
+        FALLBACK[Fallback Chain&lt;br/&gt;Auto-retry on failure]
+        COST_R[Cost Optimizer&lt;br/&gt;Route cheap tasks to cheap models]
+    end
+
+    subgraph "Provider Adapters"
+        A1[Anthropic Adapter]
+        A2[OpenAI Adapter]
+        A3[Google Adapter]
+        A4[Ollama Adapter]
+        A5[llama.cpp Adapter]
+        A6[vLLM Adapter]
+        A7[OpenRouter Adapter]
+        A8[AWS Bedrock Adapter]
+        A9[Azure OpenAI Adapter]
+        A10[CLI Pass-through&lt;br/&gt;Claude Code / Codex / Gemini CLI]
+        A11[Custom OpenAI-Compatible]
+    end
+
+    ROUTER --&gt; FALLBACK
+    FALLBACK --&gt; COST_R
+    COST_R --&gt; A1
+    COST_R --&gt; A2
+    COST_R --&gt; A3
+    COST_R --&gt; A4
+    COST_R --&gt; A5
+    COST_R --&gt; A6
+    COST_R --&gt; A7
+    COST_R --&gt; A8
+    COST_R --&gt; A9
+    COST_R --&gt; A10
+    COST_R --&gt; A11</code></pre>
+<p><strong>Key capabilities:</strong></p>
+<ul>
+<li>Hot-swap models mid-session without losing context (conversation history is model-agnostic)</li>
+<li>Per-agent model configuration: define a "fast-local" agent using Qwen 3 via Ollama and a "deep-cloud" agent using Claude Opus 4.6</li>
+<li>Model routing rules: "Use local model for file reads; use cloud model for multi-file refactors"</li>
+<li>Fallback chains: if primary model is rate-limited, auto-switch to secondary</li>
+<li>CLI pass-through providers: piggyback on existing Claude Code, Codex, or Gemini CLI subscriptions</li>
+<li>Custom OpenAI-compatible endpoint support for self-hosted or enterprise deployments</li>
+</ul>
+<p><strong>Configuration example (hone.toml):</strong></p>
+<div class="highlight"><pre><span></span><code>[models.default]
+provider = &quot;ollama&quot;
+model = &quot;qwen3:32b&quot;
+context_length = 131072
+
+[models.deep]
+provider = &quot;anthropic&quot;
+model = &quot;claude-opus-4-6&quot;
+context_length = 1000000
+api_key_env = &quot;ANTHROPIC_API_KEY&quot;
+
+[models.fast]
+provider = &quot;openai&quot;
+model = &quot;gpt-5.3-codex-spark&quot;
+context_length = 256000
+
+[routing]
+file_read = &quot;default&quot;          # cheap local model
+multi_file_edit = &quot;deep&quot;       # powerful cloud model
+test_generation = &quot;fast&quot;       # speed-optimized
+planning = &quot;deep&quot;
+code_review = &quot;deep&quot;
+</code></pre></div>
+<h3 id="82-kernel-enforced-sandboxing">8.2 Kernel-Enforced Sandboxing<a class="headerlink" href="#82-kernel-enforced-sandboxing" title="Permanent link">&para;</a></h3>
+<p>The sandbox is not a permission prompt. It is a kernel-level enforcement boundary that the agent cannot bypass.</p>
+<pre class="mermaid"><code>graph TB
+    subgraph "Autonomy Modes"
+        M1[Manual&lt;br/&gt;Approve every action]
+        M2[Supervised&lt;br/&gt;Auto-approve reads,&lt;br/&gt;prompt for writes]
+        M3[Autonomous&lt;br/&gt;Full auto within sandbox]
+    end
+
+    subgraph "Sandbox Layers"
+        L1[Filesystem&lt;br/&gt;Landlock / Seatbelt&lt;br/&gt;Project dir only]
+        L2[Network&lt;br/&gt;Disabled by default&lt;br/&gt;Allowlist domains]
+        L3[Process&lt;br/&gt;seccomp-BPF&lt;br/&gt;Blocked syscalls]
+        L4[Resource&lt;br/&gt;cgroups v2&lt;br/&gt;CPU/memory limits]
+    end
+
+    subgraph "Escape Hatches"
+        E1[User approval&lt;br/&gt;Explicit per-action]
+        E2[Allowlisted commands&lt;br/&gt;Per-project config]
+        E3[Protected paths&lt;br/&gt;.git, .hone, ~, /etc]
+    end
+
+    M3 --&gt; L1
+    M3 --&gt; L2
+    M3 --&gt; L3
+    M3 --&gt; L4
+
+    M2 --&gt; E1
+    M2 --&gt; E2
+
+    M1 --&gt; E1
+    M1 --&gt; E3</code></pre>
+<p><strong>Implementation details:</strong></p>
+<ul>
+<li><strong>macOS:</strong> Dynamic Apple Seatbelt profiles generated at runtime based on project directory and configured permissions. Profiles are compiled and enforced by the kernel.</li>
+<li><strong>Linux:</strong> Three-layer defense — Bubblewrap (user namespace isolation) + Landlock (filesystem access control) + seccomp-BPF (syscall filtering). A dedicated <code>hone-sandbox</code> helper binary with minimal privileges.</li>
+<li><strong>Container mode:</strong> For environments without kernel sandbox support, spawn tool execution inside an OCI container (Podman/Docker) with volume-mounted project directory. Zero runtime dependencies beyond the container engine.</li>
+<li><strong>Network policy:</strong> Network is OFF by default in Autonomous mode. Users define domain allowlists in <code>hone.toml</code>. DNS resolution is filtered through the sandbox.</li>
+<li><strong>Protected paths:</strong> <code>.git/</code>, <code>.hone/</code>, home directory, system directories are NEVER writable in any autonomous mode. Modifications require explicit user approval regardless of mode.</li>
+<li><strong>Fail-closed design:</strong> If the sandbox cannot be initialized (missing kernel support, permission denied), Hone refuses to enter Autonomous mode and falls back to Manual.</li>
+</ul>
+<h3 id="83-lsp-powered-code-intelligence">8.3 LSP-Powered Code Intelligence<a class="headerlink" href="#83-lsp-powered-code-intelligence" title="Permanent link">&para;</a></h3>
+<p>Every file edit is validated by the actual language toolchain, not by pattern matching or the LLM's judgment.</p>
+<pre class="mermaid"><code>sequenceDiagram
+    participant Agent as Hone Agent
+    participant LSP as LSP Server
+    participant FS as File System
+    participant Index as Semantic Index
+
+    Agent-&gt;&gt;FS: Read file (pre-edit)
+    Agent-&gt;&gt;LSP: textDocument/didOpen
+    Agent-&gt;&gt;FS: Apply edit
+    Agent-&gt;&gt;LSP: textDocument/didChange
+    LSP--&gt;&gt;Agent: publishDiagnostics
+
+    alt Diagnostics clean
+        Agent-&gt;&gt;Index: Update semantic index
+        Agent-&gt;&gt;Agent: Continue to next step
+    else Errors found
+        Agent-&gt;&gt;Agent: Auto-fix attempt (max 3)
+        Agent-&gt;&gt;LSP: textDocument/didChange (retry)
+        LSP--&gt;&gt;Agent: publishDiagnostics
+    end
+
+    Note over Agent,LSP: Also available to agent
+    Agent-&gt;&gt;LSP: textDocument/hover
+    Agent-&gt;&gt;LSP: textDocument/definition
+    Agent-&gt;&gt;LSP: textDocument/references
+    Agent-&gt;&gt;LSP: workspace/symbol</code></pre>
+<p><strong>Supported language servers (P0 launch):</strong></p>
+<p>TypeScript (tsserver), Go (gopls), Python (Pyright), Rust (rust-analyzer), Java (Eclipse JDT), C/C++ (clangd), PHP (Intelephense), Ruby (Solargraph), Elixir (ElixirLS), Zig (zls)</p>
+<p><strong>Additional servers (P1):</strong></p>
+<p>Kotlin, Swift, C#, Haskell, OCaml, Lua, Terraform, SQL, YAML, Dockerfile</p>
+<p><strong>Auto-detection:</strong> Hone scans the project for language markers (package.json, go.mod, Cargo.toml, etc.) and automatically starts the appropriate LSP servers. No configuration required for standard setups.</p>
+<h3 id="84-layered-tool-architecture">8.4 Layered Tool Architecture<a class="headerlink" href="#84-layered-tool-architecture" title="Permanent link">&para;</a></h3>
+<p>Hone's most critical architectural decision: <strong>core tools are native, external tools use MCP, complex flows use Code Mode, and guidance uses Skills.</strong> This is a deliberate rejection of the "MCP everything" approach (used by Goose) based on hard production data showing that MCP schema overhead can consume 55,000–143,000 tokens before a conversation even starts, degrading both cost and LLM response quality.</p>
+<pre class="mermaid"><code>graph TB
+    subgraph "Layer 3: Skills — HONE.md"
+        S1[Markdown instructions&lt;br/&gt;Conventions, workflows, patterns]
+        S_NOTE["Zero tokens at runtime&lt;br/&gt;Loaded on demand when relevant"]
+    end
+
+    subgraph "Layer 2: Native Tools — Rust hot path"
+        N1[hone-fs: read/write/search]
+        N2[hone-shell: sandboxed exec]
+        N3[hone-git: commit/branch/diff]
+        N4[hone-lsp: diagnostics/hover/refs]
+        N5[hone-index: semantic search]
+        N6[hone-cost: token/budget tracking]
+        N_NOTE["Direct Rust function calls&lt;br/&gt;Zero protocol overhead, sub-ms"]
+    end
+
+    subgraph "Layer 1: MCP — External integrations"
+        M1[GitHub / GitLab]
+        M2[Jira / Linear / Slack]
+        M3[Databases / Cloud / K8s]
+        M4[Custom enterprise APIs]
+        M_NOTE["JSON-RPC protocol&lt;br/&gt;Auth, state, audit trails&lt;br/&gt;Schemas loaded lazily"]
+    end
+
+    subgraph "Layer 0: Code Mode — Orchestration"
+        C1[Agent writes TS or Python]
+        C2[Calls native + MCP via SDK]
+        C_NOTE["1 LLM pass replaces N tool calls&lt;br/&gt;50%+ token reduction"]
+    end
+
+    style N1 fill:#E94560,color:#fff
+    style N2 fill:#E94560,color:#fff
+    style N3 fill:#E94560,color:#fff
+    style N4 fill:#E94560,color:#fff
+    style M1 fill:#0F3460,color:#fff
+    style M2 fill:#0F3460,color:#fff
+    style C1 fill:#533483,color:#fff
+    style S1 fill:#059669,color:#fff</code></pre>
+<p><strong>Why not MCP for everything?</strong> Production evidence is clear:</p>
+<ul>
+<li>A five-MCP-server setup with 58 tools consumes ~55,000 tokens of context before the user types anything (StackOne production data)</li>
+<li>Some deployments report 70,000–90,000 tokens consumed by tool schemas alone — up to 72% of the context window</li>
+<li>LLM instruction-following quality degrades as tool definitions fill the context window</li>
+<li>Perplexity, Cloudflare, and multiple Y Combinator companies have independently moved core operations away from MCP to direct CLI approaches in 2026</li>
+<li>Anthropic's own engineering blog recommends Code Mode — having the agent write code to call tools rather than invoking them directly via MCP</li>
+</ul>
+<p><strong>Why not CLI for everything?</strong> CLI tools assume shell access, which mobile clients, browser extensions, and non-technical integrations cannot provide. CLI has no standardized discovery, authentication, or audit trail. External services with OAuth flows, connection pooling, and state management genuinely benefit from MCP infrastructure.</p>
+<p><strong>The layered approach — which layer handles what:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Layer</th>
+<th>Why This Layer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read/write project files</td>
+<td><strong>Native (L2)</strong></td>
+<td>Direct Rust <code>fs</code> calls, zero overhead, sub-ms</td>
+</tr>
+<tr>
+<td>Run tests, build, lint</td>
+<td><strong>Native (L2)</strong></td>
+<td>Shell execution, structured output, already exists</td>
+</tr>
+<tr>
+<td>Git operations</td>
+<td><strong>Native (L2)</strong></td>
+<td><code>git</code> CLI is battle-tested, agents parse it well</td>
+</tr>
+<tr>
+<td>LSP diagnostics after edit</td>
+<td><strong>Native (L2)</strong></td>
+<td>Direct IPC to language server, latency-critical</td>
+</tr>
+<tr>
+<td>Search codebase (grep/ripgrep)</td>
+<td><strong>Native (L2)</strong></td>
+<td>Text search + tree-sitter AST, fast and precise</td>
+</tr>
+<tr>
+<td>Coding conventions and style</td>
+<td><strong>Skills (L3)</strong></td>
+<td>Loaded contextually from HONE.md, zero tokens when unused</td>
+</tr>
+<tr>
+<td>Connect to GitHub API</td>
+<td><strong>MCP (L1)</strong></td>
+<td>OAuth, pagination, webhooks — needs infrastructure</td>
+</tr>
+<tr>
+<td>Post to Slack / update Jira</td>
+<td><strong>MCP (L1)</strong></td>
+<td>External service with auth and audit requirements</td>
+</tr>
+<tr>
+<td>Query a database</td>
+<td><strong>MCP (L1)</strong></td>
+<td>Connection pooling, credentials, type-safe results</td>
+</tr>
+<tr>
+<td>Multi-tool orchestration (5+ steps)</td>
+<td><strong>Code Mode (L0)</strong></td>
+<td>Agent writes a script calling both native + MCP tools; 1 LLM pass</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Practical result:</strong> A task like "read the auth module, find the bug, fix it, run tests, commit" hits <strong>zero MCP overhead</strong> — all native Layer 2. A task like "find the Jira ticket, update it, post to Slack, create a PR on GitHub" uses MCP for external integrations but orchestrates them via Code Mode in a single inference pass.</p>
+<p><strong>MCP extension management (Layer 1):</strong></p>
+<ul>
+<li><code>hone ext list</code> — show installed and available MCP servers</li>
+<li><code>hone ext add &lt;name&gt;</code> — install from registry or URL</li>
+<li><code>hone ext remove &lt;name&gt;</code> — uninstall</li>
+<li><strong>Lazy schema loading:</strong> MCP tool schemas are NOT loaded into context at session start. They load only when the agent determines a task requires an external integration, and only the relevant server's tools are loaded.</li>
+<li>Per-project extensions in <code>hone.toml</code>; global extensions in <code>~/.config/hone/extensions.toml</code></li>
+<li>Extension permissions are sandboxed: an MCP server for Slack cannot access the filesystem unless explicitly granted</li>
+</ul>
+<p><strong>Code Mode implementation (Layer 0):</strong></p>
+<p>When the agent detects a task requiring 3+ tool calls across multiple services, it switches to Code Mode:</p>
+<ol>
+<li>Agent receives the task description</li>
+<li>Agent generates a TypeScript/Python script importing a Hone SDK</li>
+<li>Script calls both native tools (<code>hone.fs.read()</code>, <code>hone.git.commit()</code>) and MCP tools (<code>hone.mcp.github.createPR()</code>) programmatically</li>
+<li>Script executes inside the kernel sandbox</li>
+<li>Only the final result returns to LLM context — intermediate data stays in script memory</li>
+</ol>
+<p>This avoids the anti-pattern where intermediate results (e.g., a full document body from Google Drive) pass through the LLM context multiple times, compounding token costs.</p>
+<h3 id="85-file-editing-system">8.5 File Editing System<a class="headerlink" href="#85-file-editing-system" title="Permanent link">&para;</a></h3>
+<p>Hone uses a hybrid editing approach that combines the best of each competitor:</p>
+<table>
+<thead>
+<tr>
+<th>Technique</th>
+<th>Used When</th>
+<th>Derived From</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Exact string replacement</td>
+<td>Small, targeted edits</td>
+<td>OpenCode</td>
+</tr>
+<tr>
+<td>Patch/diff application</td>
+<td>Multi-line changes</td>
+<td>Codex CLI</td>
+</tr>
+<tr>
+<td>Full file write</td>
+<td>New files or complete rewrites</td>
+<td>Claude Code</td>
+</tr>
+<tr>
+<td>AST-aware transforms</td>
+<td>Rename symbol, extract function</td>
+<td>Novel</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Every edit passes through:</strong></p>
+<ol>
+<li><strong>Pre-edit snapshot</strong> — Git stash or internal checkpoint</li>
+<li><strong>Edit application</strong> — Using the most token-efficient method</li>
+<li><strong>LSP validation</strong> — Diagnostics check for errors</li>
+<li><strong>Auto-fix loop</strong> — Up to 3 retry attempts if errors found</li>
+<li><strong>Post-edit index update</strong> — Semantic index refreshed incrementally</li>
+<li><strong>Git commit</strong> — Automatic commit with descriptive message (configurable)</li>
+</ol>
+<p><strong>Undo/redo:</strong> Full git-backed undo (<code>/undo</code>) and redo (<code>/redo</code>) at any point. Branching for exploratory edits (<code>/branch experiment-name</code>).</p>
+<h3 id="86-cost-estimation-engine">8.6 Cost Estimation Engine<a class="headerlink" href="#86-cost-estimation-engine" title="Permanent link">&para;</a></h3>
+<p>Before every action that consumes tokens, Hone displays an estimated cost:</p>
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────┐
+│  Estimated cost for this operation:              │
+│                                                  │
+│  Input tokens:  ~45,000  ($0.34)                │
+│  Output tokens: ~12,000  ($0.18)                │
+│  Total:                   $0.52                  │
+│                                                  │
+│  Session total so far:    $3.27                  │
+│  Daily budget remaining:  $16.73                 │
+│                                                  │
+│  [Enter] Proceed  [c] Cheaper model  [s] Skip   │
+└─────────────────────────────────────────────────┘
+</code></pre></div>
+<p><strong>Implementation:</strong></p>
+<ul>
+<li>Token estimation based on context window state + planned tool calls</li>
+<li>Per-provider pricing tables updated weekly via a lightweight config fetch</li>
+<li>Configurable daily/weekly/monthly budget caps with hard enforcement</li>
+<li>Budget alerts at 50%, 80%, and 95% thresholds</li>
+<li>Cost breakdown per session, per day, per project in <code>hone stats</code></li>
+</ul>
+<hr />
+<h2 id="9-security-model">9. Security Model<a class="headerlink" href="#9-security-model" title="Permanent link">&para;</a></h2>
+<h3 id="91-security-layers">9.1 Security Layers<a class="headerlink" href="#91-security-layers" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph TB
+    subgraph "Layer 1: Authentication"
+        AUTH[API token + mTLS&lt;br/&gt;for remote access]
+    end
+
+    subgraph "Layer 2: Authorization"
+        PERM[Permission modes&lt;br/&gt;Manual / Supervised / Autonomous]
+        ALLOW[Command allowlists&lt;br/&gt;Per-project configuration]
+        PROTECT[Protected paths&lt;br/&gt;.git, .hone, system dirs]
+    end
+
+    subgraph "Layer 3: Isolation"
+        KERN[Kernel sandbox&lt;br/&gt;Seatbelt / Landlock / seccomp]
+        NET[Network policy&lt;br/&gt;Default deny, allowlist domains]
+        RES[Resource limits&lt;br/&gt;cgroups CPU/memory caps]
+    end
+
+    subgraph "Layer 4: Audit"
+        LOG[Action log&lt;br/&gt;Every tool call recorded]
+        DIFF[Diff log&lt;br/&gt;Every file change tracked]
+        COST_L[Cost log&lt;br/&gt;Token usage per action]
+    end
+
+    AUTH --&gt; PERM
+    PERM --&gt; KERN
+    KERN --&gt; LOG</code></pre>
+<h3 id="92-threat-model">9.2 Threat Model<a class="headerlink" href="#92-threat-model" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Threat</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Malicious model output (prompt injection via code)</td>
+<td>Kernel sandbox prevents execution outside project dir; network deny-by-default</td>
+</tr>
+<tr>
+<td>Supply chain attack via MCP server</td>
+<td>MCP servers (Layer 1 only) run in isolated processes with declared permissions; sandboxed filesystem access; core tools are native Rust and not exposed to MCP attack surface</td>
+</tr>
+<tr>
+<td>Credential leakage</td>
+<td>API keys stored in OS keychain, never in config files; environment variables cleared from sandbox</td>
+</tr>
+<tr>
+<td>Remote access interception</td>
+<td>WireGuard/Tailscale encrypted tunnel; mTLS for API authentication; no plaintext HTTP</td>
+</tr>
+<tr>
+<td>Runaway cost</td>
+<td>Hard budget caps enforced at the server level; auto-pause at threshold</td>
+</tr>
+<tr>
+<td>Data exfiltration</td>
+<td>Network deny-by-default in Autonomous mode; DNS filtering; audit log for all network requests</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10-privacy-architecture">10. Privacy Architecture<a class="headerlink" href="#10-privacy-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="101-data-flow-classification">10.1 Data Flow Classification<a class="headerlink" href="#101-data-flow-classification" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph LR
+    subgraph "NEVER leaves machine"
+        A[Source code]
+        B[Memory/learnings]
+        C[Semantic index]
+        D[Session history]
+        E[Credentials]
+    end
+
+    subgraph "Leaves ONLY with explicit opt-in"
+        F[Prompts to cloud LLM]
+        G[Telemetry/analytics]
+        H[Extension marketplace queries]
+    end
+
+    subgraph "User controls destination"
+        I[LLM provider choice&lt;br/&gt;Local = zero leakage&lt;br/&gt;Cloud = provider's policy]
+    end
+
+    A --&gt; I
+    F --&gt; I
+
+    style A fill:#059669,color:#fff
+    style B fill:#059669,color:#fff
+    style C fill:#059669,color:#fff
+    style F fill:#D97706,color:#fff
+    style I fill:#0F3460,color:#fff</code></pre>
+<h3 id="102-privacy-guarantees">10.2 Privacy Guarantees<a class="headerlink" href="#102-privacy-guarantees" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Zero telemetry by default.</strong> No usage data, crash reports, or analytics are sent unless the user explicitly enables them in settings.</li>
+<li><strong>Memory is local-only.</strong> The adaptive learning system stores all data in an encrypted SQLite database on the user's machine. No cloud sync. No Sourcegraph-style server storage.</li>
+<li><strong>Model choice = privacy choice.</strong> Using Ollama/llama.cpp means literally zero data leaves the machine. Using a cloud API means data goes to that provider under their terms. Hone makes this trade-off explicit and visible.</li>
+<li><strong>Encrypted at rest.</strong> The memory database, session history, and semantic index are encrypted with a user-provided passphrase or OS keychain integration.</li>
+<li><strong>Ephemeral mode.</strong> <code>hone --ephemeral</code> starts a session that retains nothing — no memory updates, no session history, no index changes. For sensitive one-off tasks.</li>
+<li><strong>Audit trail.</strong> Every piece of data sent to any external service is logged locally. Users can review exactly what was transmitted.</li>
+</ol>
+<hr />
+<h2 id="11-adaptive-learning-system">11. Adaptive Learning System<a class="headerlink" href="#11-adaptive-learning-system" title="Permanent link">&para;</a></h2>
+<h3 id="111-how-hone-learns">11.1 How Hone Learns<a class="headerlink" href="#111-how-hone-learns" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph TB
+    subgraph "Input Signals"
+        S1[User corrections to generated code]
+        S2[Accepted vs rejected suggestions]
+        S3[HONE.md conventions and rules]
+        S4[Codebase patterns and style]
+        S5[Tool usage patterns]
+        S6[Model preference per task type]
+    end
+
+    subgraph "Memory Types"
+        M1[Style Memory&lt;br/&gt;Indentation, naming, patterns]
+        M2[Convention Memory&lt;br/&gt;Architecture decisions, APIs]
+        M3[Preference Memory&lt;br/&gt;Model routing, tool choices]
+        M4[Project Memory&lt;br/&gt;Build commands, test patterns]
+        M5[Interaction Memory&lt;br/&gt;Communication style, verbosity]
+    end
+
+    subgraph "Storage"
+        DB[(Encrypted SQLite&lt;br/&gt;~/.hone/memory.db)]
+    end
+
+    subgraph "Application"
+        A1[System prompt enrichment]
+        A2[Model routing optimization]
+        A3[Edit validation rules]
+        A4[Convention enforcement]
+    end
+
+    S1 --&gt; M1
+    S2 --&gt; M3
+    S3 --&gt; M2
+    S4 --&gt; M1
+    S5 --&gt; M3
+    S6 --&gt; M3
+
+    M1 --&gt; DB
+    M2 --&gt; DB
+    M3 --&gt; DB
+    M4 --&gt; DB
+    M5 --&gt; DB
+
+    DB --&gt; A1
+    DB --&gt; A2
+    DB --&gt; A3
+    DB --&gt; A4</code></pre>
+<h3 id="112-memory-hierarchy">11.2 Memory Hierarchy<a class="headerlink" href="#112-memory-hierarchy" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>~/.hone/memory.db              # Global: your cross-project preferences
+├── style/                      # How you like code formatted
+├── preferences/                # Model choices, verbosity, etc.
+└── interactions/               # Communication patterns
+
+project/.hone/memory.db        # Project: this codebase&#39;s specifics
+├── conventions/                # Architecture decisions, API patterns
+├── build/                      # Build commands, test patterns
+└── context/                    # Key files, important decisions
+
+project/.hone/HONE.md         # Explicit: user-written constitution
+├── Root HONE.md               # Project-wide rules
+├── src/HONE.md                # Directory-specific rules
+└── ~/.hone/HONE.md           # User-level defaults
+</code></pre></div>
+<h3 id="113-learning-loop">11.3 Learning Loop<a class="headerlink" href="#113-learning-loop" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Observe:</strong> Track which edits the user accepts, modifies, or rejects</li>
+<li><strong>Extract:</strong> Identify patterns (naming conventions, import ordering, error handling style)</li>
+<li><strong>Hypothesize:</strong> Formulate a convention ("this user prefers early returns over nested if/else")</li>
+<li><strong>Verify:</strong> On the next relevant edit, apply the convention and check if accepted</li>
+<li><strong>Solidify:</strong> After 3+ consistent confirmations, promote to active memory</li>
+<li><strong>Surface:</strong> Periodically suggest adding solidified patterns to HONE.md for explicitness</li>
+</ol>
+<p><strong>Memory decay:</strong> Patterns not confirmed in 30+ days gradually decay in priority. This prevents stale conventions from persisting after code style evolves.</p>
+<p><strong>User control:</strong> <code>hone memory list</code>, <code>hone memory show &lt;id&gt;</code>, <code>hone memory forget &lt;id&gt;</code>, <code>hone memory export</code>, <code>hone memory import</code>. Full transparency and control over what Hone has learned.</p>
+<hr />
+<h2 id="12-remote-access-multi-surface">12. Remote Access &amp; Multi-Surface<a class="headerlink" href="#12-remote-access-multi-surface" title="Permanent link">&para;</a></h2>
+<h3 id="121-architecture">12.1 Architecture<a class="headerlink" href="#121-architecture" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph TB
+    subgraph "Dev Machine"
+        HONED[honed daemon&lt;br/&gt;Always running&lt;br/&gt;Manages sessions]
+        MODELS[Local Models&lt;br/&gt;Ollama]
+        FS[File System]
+        SAND[Sandbox]
+    end
+
+    subgraph "Secure Tunnel"
+        WG[WireGuard / Tailscale&lt;br/&gt;Encrypted overlay network&lt;br/&gt;NAT traversal]
+    end
+
+    subgraph "Remote Clients"
+        PHONE[Phone Browser&lt;br/&gt;PWA with push notifications]
+        TABLET[Tablet Browser&lt;br/&gt;Split-pane view]
+        LAPTOP[Laptop Browser&lt;br/&gt;Full web UI]
+        TERM[SSH Terminal&lt;br/&gt;hone attach]
+    end
+
+    HONED --&gt; WG
+    WG --&gt; PHONE
+    WG --&gt; TABLET
+    WG --&gt; LAPTOP
+    WG --&gt; TERM
+
+    HONED --&gt; MODELS
+    HONED --&gt; FS
+    HONED --&gt; SAND</code></pre>
+<h3 id="122-mobile-experience">12.2 Mobile Experience<a class="headerlink" href="#122-mobile-experience" title="Permanent link">&para;</a></h3>
+<p>The mobile PWA is not a dumbed-down view. It is a touch-optimized surface for the full Hone experience:</p>
+<ul>
+<li><strong>Session list:</strong> See all active and recent sessions with status (running, waiting for input, completed)</li>
+<li><strong>Live streaming:</strong> Watch the agent work in real-time with syntax-highlighted diffs</li>
+<li><strong>Approve/reject:</strong> Swipe to approve or reject pending actions</li>
+<li><strong>Voice input:</strong> Dictate instructions via phone microphone with local Whisper transcription</li>
+<li><strong>Push notifications:</strong> "Task completed," "Approval needed," "Budget threshold reached"</li>
+<li><strong>Cost dashboard:</strong> Real-time spend tracking per session and per day</li>
+<li><strong>Quick actions:</strong> Start new session, resume last session, run a saved recipe</li>
+</ul>
+<h3 id="123-session-persistence">12.3 Session Persistence<a class="headerlink" href="#123-session-persistence" title="Permanent link">&para;</a></h3>
+<p>Sessions survive disconnects, sleep, and reconnects. The <code>honed</code> daemon maintains all state server-side. Clients are ephemeral renderers.</p>
+<ul>
+<li><code>hone attach</code> — reconnect to the most recent active session</li>
+<li><code>hone attach &lt;session-id&gt;</code> — reconnect to a specific session</li>
+<li><code>hone sessions</code> — list all sessions with status and last activity</li>
+<li><code>hone sessions gc</code> — garbage-collect completed sessions older than N days</li>
+</ul>
+<hr />
+<h2 id="13-performance-requirements">13. Performance Requirements<a class="headerlink" href="#13-performance-requirements" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Target</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CLI startup time</td>
+<td>&lt; 100ms</td>
+<td>Faster than typing the next command</td>
+</tr>
+<tr>
+<td>First token latency (local model)</td>
+<td>&lt; 500ms</td>
+<td>Perceived instant response</td>
+</tr>
+<tr>
+<td>First token latency (cloud model)</td>
+<td>&lt; 1.5s</td>
+<td>Network + model latency</td>
+</tr>
+<tr>
+<td>Memory footprint (idle)</td>
+<td>&lt; 50MB</td>
+<td>Rust binary, not a Node.js/Electron app</td>
+</tr>
+<tr>
+<td>Memory footprint (active session)</td>
+<td>&lt; 200MB</td>
+<td>Excluding model VRAM</td>
+</tr>
+<tr>
+<td>Semantic index build (50K LOC)</td>
+<td>&lt; 30s</td>
+<td>Background, non-blocking</td>
+</tr>
+<tr>
+<td>Semantic index incremental update</td>
+<td>&lt; 2s</td>
+<td>After single file change</td>
+</tr>
+<tr>
+<td>LSP diagnostic round-trip</td>
+<td>&lt; 500ms</td>
+<td>After edit application</td>
+</tr>
+<tr>
+<td>Session reconnect</td>
+<td>&lt; 1s</td>
+<td>From any client surface</td>
+</tr>
+<tr>
+<td>Web UI initial load</td>
+<td>&lt; 500KB</td>
+<td>PWA, aggressive code splitting</td>
+</tr>
+</tbody>
+</table>
+<h3 id="131-performance-architecture">13.1 Performance Architecture<a class="headerlink" href="#131-performance-architecture" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph LR
+    subgraph "Hot Path (Rust)"
+        A[Token streaming]
+        B[File I/O]
+        C[Sandbox enforcement]
+        D[Session management]
+        E[Semantic search]
+    end
+
+    subgraph "Warm Path (Rust + async)"
+        F[LSP communication]
+        G[MCP server management]
+        H[Index updates]
+        I[Cost calculation]
+    end
+
+    subgraph "Cold Path (Background)"
+        J[Full index rebuild]
+        K[Memory consolidation]
+        L[Extension updates]
+        M[Audit log rotation]
+    end</code></pre>
+<hr />
+<h2 id="14-extensibility-ecosystem">14. Extensibility &amp; Ecosystem<a class="headerlink" href="#14-extensibility-ecosystem" title="Permanent link">&para;</a></h2>
+<h3 id="141-recipe-system">14.1 Recipe System<a class="headerlink" href="#141-recipe-system" title="Permanent link">&para;</a></h3>
+<p>Recipes are declarative YAML workflows that encode repeatable multi-step tasks. They are Goose's best idea, refined with type-safe parameters and composability.</p>
+<p><strong>Example recipe — Feature Implementation with TDD:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tdd-feature</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Implement a feature using test-driven development</span>
+<span class="nt">parameters</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">feature_description</span>
+<span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">string</span>
+<span class="w">    </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test_framework</span>
+<span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">enum</span>
+<span class="w">    </span><span class="nt">values</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">jest</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">pytest</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">go-test</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cargo-test</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">auto-detect</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">review_model</span>
+<span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">model</span>
+<span class="w">    </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">deep</span>
+
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">plan</span>
+<span class="w">    </span><span class="nt">agent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">planner</span>
+<span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">deep</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">Analyze the following feature request and create an implementation plan.</span>
+<span class="w">      </span><span class="no">Feature: {{ feature_description }}</span>
+<span class="w">      </span><span class="no">Output: list of files to create/modify, test cases to write</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">write-tests</span>
+<span class="w">    </span><span class="nt">agent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">coder</span>
+<span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">Write failing tests for the planned feature using {{ test_framework }}.</span>
+<span class="w">      </span><span class="no">Plan: {{ steps.plan.output }}</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">run-tests</span>
+<span class="w">    </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hone-shell</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{</span><span class="nv"> </span><span class="s">test_command</span><span class="nv"> </span><span class="s">}}&quot;</span>
+<span class="w">    </span><span class="nt">expect</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failure</span><span class="w">  </span><span class="c1"># Tests should fail (TDD red phase)</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">implement</span>
+<span class="w">    </span><span class="nt">agent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">coder</span>
+<span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">Implement the minimum code to make all tests pass.</span>
+<span class="w">      </span><span class="no">Tests: {{ steps.write-tests.output }}</span>
+<span class="w">    </span><span class="nt">validate</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hone-shell</span>
+<span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{</span><span class="nv"> </span><span class="s">test_command</span><span class="nv"> </span><span class="s">}}&quot;</span>
+<span class="w">        </span><span class="nt">expect</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">success</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">refactor</span>
+<span class="w">    </span><span class="nt">agent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">coder</span>
+<span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">deep</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">Refactor the implementation for clarity and performance.</span>
+<span class="w">      </span><span class="no">Ensure all tests still pass.</span>
+<span class="w">    </span><span class="nt">validate</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hone-shell</span>
+<span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{</span><span class="nv"> </span><span class="s">test_command</span><span class="nv"> </span><span class="s">}}&quot;</span>
+<span class="w">        </span><span class="nt">expect</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">success</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">review</span>
+<span class="w">    </span><span class="nt">agent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reviewer</span>
+<span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{</span><span class="nv"> </span><span class="s">parameters.review_model</span><span class="nv"> </span><span class="s">}}&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">Review all changes for correctness, style, and potential issues.</span>
+<span class="w">      </span><span class="no">Output: review comments and approval/rejection</span>
+</code></pre></div>
+<h3 id="142-custom-agents">14.2 Custom Agents<a class="headerlink" href="#142-custom-agents" title="Permanent link">&para;</a></h3>
+<p>Agents are defined as Markdown files in <code>.hone/agents/</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="gh"># .hone/agents/security-reviewer.md</span>
+
+<span class="gu">## Role</span>
+You are a security-focused code reviewer. You specialize in identifying
+vulnerabilities, injection risks, authentication flaws, and data leakage.
+
+<span class="gu">## Model</span>
+deep
+
+<span class="gu">## Temperature</span>
+0.2
+
+<span class="gu">## Tools</span>
+<span class="k">-</span><span class="w"> </span>hone-fs (read-only)
+<span class="k">-</span><span class="w"> </span>hone-index
+<span class="k">-</span><span class="w"> </span>hone-web (for CVE lookups)
+
+<span class="gu">## Instructions</span>
+<span class="k">-</span><span class="w"> </span>Check every user input for sanitization
+<span class="k">-</span><span class="w"> </span>Verify authentication on all endpoints
+<span class="k">-</span><span class="w"> </span>Flag any hardcoded secrets or credentials
+<span class="k">-</span><span class="w"> </span>Reference OWASP Top 10 where applicable
+</code></pre></div>
+<h3 id="143-extension-marketplace">14.3 Extension Marketplace<a class="headerlink" href="#143-extension-marketplace" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph TB
+    subgraph "Registry (self-hostable)"
+        REG[Extension Registry&lt;br/&gt;MCP servers + Recipes + Agents]
+        META[Metadata + Reviews&lt;br/&gt;Trust scores, download counts]
+        VERIFY[Verification&lt;br/&gt;Automated security scan]
+    end
+
+    subgraph "Developer Workflow"
+        DEV[hone ext create]
+        TEST[hone ext test]
+        PUB[hone ext publish]
+    end
+
+    subgraph "User Workflow"
+        SEARCH[hone ext search]
+        INSTALL[hone ext add]
+        UPDATE[hone ext update]
+    end
+
+    DEV --&gt; TEST --&gt; PUB --&gt; REG
+    REG --&gt; VERIFY
+    SEARCH --&gt; REG
+    INSTALL --&gt; REG
+    UPDATE --&gt; REG</code></pre>
+<hr />
+<h2 id="15-developer-experience">15. Developer Experience<a class="headerlink" href="#15-developer-experience" title="Permanent link">&para;</a></h2>
+<h3 id="151-first-run-experience">15.1 First-Run Experience<a class="headerlink" href="#151-first-run-experience" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>graph LR
+    A[curl install.sh] --&gt; B[hone init]
+    B --&gt; C{Model choice}
+    C --&gt;|Local| D[Auto-detect Ollama&lt;br/&gt;Suggest model]
+    C --&gt;|Cloud| E[Enter API key&lt;br/&gt;Stored in OS keychain]
+    C --&gt;|Pass-through| F[Detect existing&lt;br/&gt;Claude Code / Codex]
+    D --&gt; G[hone]
+    E --&gt; G
+    F --&gt; G
+    G --&gt; H[Auto-detect project&lt;br/&gt;Start LSP servers&lt;br/&gt;Build initial index]
+    H --&gt; I[Ready in &lt; 5 seconds]</code></pre>
+<p><strong>Target: zero to productive in under 60 seconds.</strong> One-line install, one command to start, auto-detection handles the rest. No configuration required for basic usage.</p>
+<h3 id="152-command-interface">15.2 Command Interface<a class="headerlink" href="#152-command-interface" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone                       # Start interactive session
+hone &quot;fix the auth bug&quot;    # One-shot task
+hone --resume              # Resume last session
+hone --ephemeral           # No memory, no history
+hone --model deep          # Override model for this session
+hone --recipe tdd-feature  # Run a recipe
+
+# In-session commands
+/plan                       # Toggle plan mode (read-only)
+/auto                       # Toggle autonomous mode
+/model &lt;name&gt;               # Switch model
+/agent &lt;name&gt;               # Switch to custom agent
+/cost                       # Show session cost breakdown
+/memory                     # Show what Hone remembers
+/undo                       # Git-backed undo last change
+/redo                       # Redo last undone change
+/branch &lt;name&gt;              # Create exploratory branch
+/recipe &lt;name&gt;              # Run a recipe
+/compact                    # Manual context compaction
+/attach                     # Show session ID for remote attach
+
+# Management commands
+hone sessions              # List all sessions
+hone memory list           # Show learned patterns
+hone stats                 # Usage statistics
+hone ext search &lt;query&gt;    # Find extensions
+hone doctor                # Diagnose setup issues
+</code></pre></div>
+<h3 id="153-configuration-hierarchy">15.3 Configuration Hierarchy<a class="headerlink" href="#153-configuration-hierarchy" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>CLI flags                    # Highest priority
+├── Environment variables
+├── Project .hone/config.toml
+├── Project HONE.md
+├── User ~/.config/hone/config.toml
+├── User ~/.hone/HONE.md
+└── Hone defaults           # Lowest priority
+</code></pre></div>
+<hr />
+<h2 id="16-monetization-licensing">16. Monetization &amp; Licensing<a class="headerlink" href="#16-monetization-licensing" title="Permanent link">&para;</a></h2>
+<h3 id="161-open-source-core">16.1 Open-Source Core<a class="headerlink" href="#161-open-source-core" title="Permanent link">&para;</a></h3>
+<p>Hone core is Apache 2.0 licensed. This includes the agent engine, CLI/TUI, all built-in MCP servers, sandbox, LSP integration, memory system, and client-server architecture. The full product is usable without paying anything — bring your own API keys or use local models.</p>
+<h3 id="162-revenue-streams">16.2 Revenue Streams<a class="headerlink" href="#162-revenue-streams" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Stream</th>
+<th>Description</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hone Cloud (optional)</td>
+<td>Managed <code>honed</code> hosting with secure tunnel, push notifications, web UI hosting</td>
+<td>Individual developers who don't want to self-host</td>
+</tr>
+<tr>
+<td>Hone Teams</td>
+<td>Centralized governance dashboard, spend analytics, SSO, audit log aggregation</td>
+<td>Engineering teams (5–50 developers)</td>
+</tr>
+<tr>
+<td>Hone Enterprise</td>
+<td>On-premise deployment, dedicated support, SLA, custom integrations</td>
+<td>Large organizations (50+ developers)</td>
+</tr>
+<tr>
+<td>Marketplace cut</td>
+<td>15% commission on paid MCP servers and recipes in the marketplace</td>
+<td>Extension developers</td>
+</tr>
+<tr>
+<td>Model partnerships</td>
+<td>Revenue share with model providers for default/recommended routing</td>
+<td>Model providers</td>
+</tr>
+</tbody>
+</table>
+<h3 id="163-pricing-targets">16.3 Pricing Targets<a class="headerlink" href="#163-pricing-targets" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Price</th>
+<th>Includes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Open Source</td>
+<td>Free forever</td>
+<td>Full CLI, all features, self-hosted</td>
+</tr>
+<tr>
+<td>Cloud Individual</td>
+<td>$10/month</td>
+<td>Managed hosting, mobile PWA, push notifications</td>
+</tr>
+<tr>
+<td>Cloud Team</td>
+<td>$25/user/month</td>
+<td>Governance, shared recipes, audit logs, SSO</td>
+</tr>
+<tr>
+<td>Enterprise</td>
+<td>Contact sales</td>
+<td>On-premise, SLA, dedicated support</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="17-success-metrics">17. Success Metrics<a class="headerlink" href="#17-success-metrics" title="Permanent link">&para;</a></h2>
+<h3 id="171-north-star-metric">17.1 North Star Metric<a class="headerlink" href="#171-north-star-metric" title="Permanent link">&para;</a></h3>
+<p><strong>Weekly active sessions per developer</strong> — measures both adoption and engagement depth. Target: 25+ sessions/week within 6 months of launch (indicating it has become the developer's primary coding tool).</p>
+<h3 id="172-key-metrics">17.2 Key Metrics<a class="headerlink" href="#172-key-metrics" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Metric</th>
+<th>6-Month Target</th>
+<th>12-Month Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Adoption</td>
+<td>GitHub stars</td>
+<td>25K</td>
+<td>75K</td>
+</tr>
+<tr>
+<td>Adoption</td>
+<td>Weekly active users</td>
+<td>50K</td>
+<td>250K</td>
+</tr>
+<tr>
+<td>Engagement</td>
+<td>Sessions per user per week</td>
+<td>15</td>
+<td>25</td>
+</tr>
+<tr>
+<td>Engagement</td>
+<td>Avg session duration</td>
+<td>20 min</td>
+<td>30 min</td>
+</tr>
+<tr>
+<td>Quality</td>
+<td>Edit acceptance rate</td>
+<td>75%</td>
+<td>85%</td>
+</tr>
+<tr>
+<td>Quality</td>
+<td>LSP error catch rate (pre-commit)</td>
+<td>90%</td>
+<td>95%</td>
+</tr>
+<tr>
+<td>Retention</td>
+<td>Week 4 retention</td>
+<td>40%</td>
+<td>55%</td>
+</tr>
+<tr>
+<td>Ecosystem</td>
+<td>Published MCP extensions</td>
+<td>100</td>
+<td>500</td>
+</tr>
+<tr>
+<td>Ecosystem</td>
+<td>Published recipes</td>
+<td>200</td>
+<td>1000</td>
+</tr>
+<tr>
+<td>Revenue</td>
+<td>Cloud subscribers (individual)</td>
+<td>2K</td>
+<td>15K</td>
+</tr>
+<tr>
+<td>Revenue</td>
+<td>Team accounts</td>
+<td>50</td>
+<td>300</td>
+</tr>
+<tr>
+<td>Performance</td>
+<td>P95 startup time</td>
+<td>&lt; 100ms</td>
+<td>&lt; 80ms</td>
+</tr>
+<tr>
+<td>Performance</td>
+<td>P95 memory (idle)</td>
+<td>&lt; 50MB</td>
+<td>&lt; 40MB</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="18-roadmap">18. Roadmap<a class="headerlink" href="#18-roadmap" title="Permanent link">&para;</a></h2>
+<h3 id="181-phase-overview">18.1 Phase Overview<a class="headerlink" href="#181-phase-overview" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>gantt
+    title Hone Development Roadmap
+    dateFormat YYYY-MM
+    axisFormat %b %Y
+
+    section Phase 0: Foundation
+    Rust core + agent loop           :p0a, 2026-04, 3M
+    Provider abstraction (10+ provs) :p0b, 2026-04, 3M
+    Native tools L2 + MCP client L1  :p0c, 2026-05, 3M
+    Kernel sandbox (mac + linux)     :p0d, 2026-05, 3M
+    CLI/TUI with Ratatui             :p0e, 2026-04, 3M
+
+    section Phase 1: Intelligence
+    LSP integration (10 languages)   :p1a, 2026-07, 2M
+    HONE.md + config system         :p1b, 2026-07, 1M
+    Adaptive memory engine           :p1c, 2026-07, 3M
+    Git-first workflow               :p1d, 2026-08, 2M
+    Cost estimation engine           :p1e, 2026-08, 1M
+
+    section Phase 2: Multi-Surface
+    HTTP/SSE server API              :p2a, 2026-09, 2M
+    Web UI (SolidJS)                 :p2b, 2026-10, 2M
+    Mobile PWA                       :p2c, 2026-11, 2M
+    WireGuard tunnel integration     :p2d, 2026-10, 1M
+    Push notifications               :p2e, 2026-11, 1M
+
+    section Phase 3: Ecosystem
+    Recipe system                    :p3a, 2026-12, 2M
+    Custom agents                    :p3b, 2026-12, 1M
+    Code Mode engine + sandbox SDK   :p3c, 2027-01, 2M
+    Extension marketplace            :p3d, 2027-01, 2M
+    Multi-agent orchestration        :p3e, 2027-02, 2M
+    Semantic indexer                  :p3f, 2027-02, 2M
+
+    section Phase 4: Enterprise
+    Team governance dashboard        :p4a, 2027-03, 2M
+    SSO / SCIM                       :p4b, 2027-03, 2M
+    Audit log aggregation            :p4c, 2027-04, 1M
+    Cross-repo intelligence          :p4d, 2027-04, 3M
+    Collaborative sessions           :p4e, 2027-05, 3M</code></pre>
+<h3 id="182-milestones">18.2 Milestones<a class="headerlink" href="#182-milestones" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Milestone</th>
+<th>Date</th>
+<th>Deliverable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>M0: First Light</td>
+<td>July 2026</td>
+<td>CLI works end-to-end: prompt → plan → edit → sandbox → commit. Native tools (L2) for file/shell/git. MCP client (L1) for GitHub. 10+ providers. macOS + Linux sandbox.</td>
+</tr>
+<tr>
+<td>M1: Intelligence</td>
+<td>September 2026</td>
+<td>LSP validation, adaptive memory, cost estimation, HONE.md. Usable as daily driver.</td>
+</tr>
+<tr>
+<td>M2: Multi-Surface</td>
+<td>December 2026</td>
+<td>Web UI, mobile PWA, remote access via tunnel. "Work from anywhere" promise delivered.</td>
+</tr>
+<tr>
+<td>M3: Ecosystem</td>
+<td>February 2027</td>
+<td>Recipes, custom agents, Code Mode (L0) orchestration engine, marketplace. Community can extend Hone without core changes.</td>
+</tr>
+<tr>
+<td>M4: Enterprise</td>
+<td>May 2027</td>
+<td>Team governance, SSO, audit logs, cross-repo. Ready for enterprise pilot deployments.</td>
+</tr>
+<tr>
+<td>M5: Foundation</td>
+<td>July 2027</td>
+<td>Submit to Linux Foundation AAIF for neutral governance alongside MCP and Goose.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="19-risks-mitigations">19. Risks &amp; Mitigations<a class="headerlink" href="#19-risks-mitigations" title="Permanent link">&para;</a></h2>
+<h3 id="191-risk-matrix">19.1 Risk Matrix<a class="headerlink" href="#191-risk-matrix" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>quadrantChart
+    title Risk Assessment
+    x-axis "Low Likelihood" --&gt; "High Likelihood"
+    y-axis "Low Impact" --&gt; "High Impact"
+    quadrant-1 "Monitor Closely"
+    quadrant-2 "Mitigate Aggressively"
+    quadrant-3 "Accept"
+    quadrant-4 "Contingency Plan"
+    Model API changes: [0.7, 0.6]
+    Sandbox bypass vuln: [0.3, 0.9]
+    Rust hiring difficulty: [0.5, 0.5]
+    Competitor copies features: [0.8, 0.4]
+    MCP spec instability: [0.4, 0.3]
+    OSS community fragmentation: [0.5, 0.7]
+    Local model quality: [0.6, 0.5]</code></pre>
+<h3 id="192-detailed-risks">19.2 Detailed Risks<a class="headerlink" href="#192-detailed-risks" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Likelihood</th>
+<th>Impact</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Model providers change APIs frequently</strong></td>
+<td>High</td>
+<td>Medium</td>
+<td>Provider abstraction layer isolates core from API changes; community-maintained adapters</td>
+</tr>
+<tr>
+<td><strong>Kernel sandbox bypass vulnerability</strong></td>
+<td>Low</td>
+<td>Critical</td>
+<td>Security bounty program; formal verification of sandbox profiles; defense-in-depth (container mode as fallback)</td>
+</tr>
+<tr>
+<td><strong>Rust talent scarcity</strong></td>
+<td>Medium</td>
+<td>Medium</td>
+<td>Hybrid architecture — Rust for hot paths, TypeScript for UI and extensions; invest in contributor onboarding</td>
+</tr>
+<tr>
+<td><strong>Competitor clones Hone's feature combination</strong></td>
+<td>High</td>
+<td>Low</td>
+<td>Speed of execution + community moat; features are table stakes, the adaptive learning system is the defensible moat</td>
+</tr>
+<tr>
+<td><strong>MCP specification instability</strong></td>
+<td>Medium</td>
+<td>Low</td>
+<td>MCP is used only for external integrations (Layer 1), not core operations. Core tools are native Rust and unaffected by MCP spec changes. Abstraction layer isolates MCP version changes.</td>
+</tr>
+<tr>
+<td><strong>Open-source community fragmentation</strong></td>
+<td>Medium</td>
+<td>High</td>
+<td>Strong governance (AAIF), clear contributor guidelines, regular community calls, responsive maintainership</td>
+</tr>
+<tr>
+<td><strong>Local models not capable enough for tool calling</strong></td>
+<td>Medium</td>
+<td>Medium</td>
+<td>Model routing rules auto-escalate to cloud for complex tool use; invest in Ollama tool-calling support; contribute upstream improvements</td>
+</tr>
+<tr>
+<td><strong>Privacy regulations (GDPR, CCPA) compliance</strong></td>
+<td>Medium</td>
+<td>Medium</td>
+<td>Privacy-by-design architecture already exceeds requirements; data never leaves machine by default</td>
+</tr>
+<tr>
+<td><strong>Monetization insufficient for sustainability</strong></td>
+<td>Medium</td>
+<td>High</td>
+<td>Multiple revenue streams; open-source core ensures survival even without commercial success; consider VC funding for Phase 2–4</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="20-appendix-competitive-feature-matrix">20. Appendix: Competitive Feature Matrix<a class="headerlink" href="#20-appendix-competitive-feature-matrix" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Hone</th>
+<th>Claude Code</th>
+<th>Codex CLI</th>
+<th>OpenCode</th>
+<th>Goose</th>
+<th>Aider</th>
+<th>Gemini CLI</th>
+<th>Amp</th>
+<th>Plandex</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Open source</strong></td>
+<td>Apache 2.0</td>
+<td>No</td>
+<td>Apache 2.0</td>
+<td>MIT</td>
+<td>Apache 2.0</td>
+<td>Apache 2.0</td>
+<td>Apache 2.0</td>
+<td>Partial</td>
+<td>MIT</td>
+</tr>
+<tr>
+<td><strong>Model providers</strong></td>
+<td>75+</td>
+<td>1 (Anthropic)</td>
+<td>1 (OpenAI)</td>
+<td>75+</td>
+<td>25+</td>
+<td>All</td>
+<td>1 (Google)</td>
+<td>3</td>
+<td>Multi</td>
+</tr>
+<tr>
+<td><strong>Local models</strong></td>
+<td>Full</td>
+<td>No</td>
+<td>Via Ollama</td>
+<td>Via Ollama</td>
+<td>Via Ollama</td>
+<td>Via Ollama</td>
+<td>No</td>
+<td>No</td>
+<td>Via OpenRouter</td>
+</tr>
+<tr>
+<td><strong>Kernel sandbox</strong></td>
+<td>Yes</td>
+<td>No</td>
+<td>Yes</td>
+<td>No</td>
+<td>Optional</td>
+<td>No</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>LSP integration</strong></td>
+<td>20+ langs</td>
+<td>No</td>
+<td>No</td>
+<td>20+ langs</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Tool architecture</strong></td>
+<td>Layered (native + MCP + Code Mode)</td>
+<td>Native tools</td>
+<td>Native tools</td>
+<td>Native + MCP client</td>
+<td>MCP-everything</td>
+<td>No</td>
+<td>MCP client</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Adaptive memory</strong></td>
+<td>Local-first</td>
+<td>Cloud-stored</td>
+<td>No</td>
+<td>No</td>
+<td>MCP server</td>
+<td>No</td>
+<td>Yes</td>
+<td>Cloud-stored</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Remote/mobile</strong></td>
+<td>PWA + Web</td>
+<td>No</td>
+<td>macOS app</td>
+<td>Web UI</td>
+<td>No</td>
+<td>Browser</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Client-server</strong></td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+<td>Partial</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><strong>Cost estimation</strong></td>
+<td>Real-time</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Recipes/workflows</strong></td>
+<td>YAML</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>YAML</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Semantic index</strong></td>
+<td>Persistent</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>On-demand</td>
+<td>Repo map</td>
+<td>No</td>
+<td>Code graph</td>
+<td>Tree-sitter</td>
+</tr>
+<tr>
+<td><strong>Git-first</strong></td>
+<td>Auto-commit</td>
+<td>Manual</td>
+<td>Manual</td>
+<td>Undo/redo</td>
+<td>Manual</td>
+<td>Auto-commit</td>
+<td>Manual</td>
+<td>Manual</td>
+<td>Auto-commit</td>
+</tr>
+<tr>
+<td><strong>Multi-agent</strong></td>
+<td>Lead-worker</td>
+<td>Agent Teams</td>
+<td>No</td>
+<td>Parallel</td>
+<td>Subagents</td>
+<td>No</td>
+<td>Subagents</td>
+<td>Sub-agents</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Voice input</strong></td>
+<td>Local Whisper</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Test-driven mode</strong></td>
+<td>First-class</td>
+<td>Promptable</td>
+<td>Promptable</td>
+<td>No</td>
+<td>Via recipe</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>Via autonomy</td>
+</tr>
+<tr>
+<td><strong>Cross-repo</strong></td>
+<td>Planned</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Team governance</strong></td>
+<td>Planned</td>
+<td>Enterprise</td>
+<td>No</td>
+<td>Enterprise</td>
+<td>No</td>
+<td>No</td>
+<td>Enterprise</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Startup time</strong></td>
+<td>&lt; 100ms</td>
+<td>~2s</td>
+<td>~200ms</td>
+<td>~1.5s</td>
+<td>~1s</td>
+<td>~3s</td>
+<td>~2s</td>
+<td>~1.5s</td>
+<td>~2s</td>
+</tr>
+<tr>
+<td><strong>Memory footprint</strong></td>
+<td>&lt; 50MB</td>
+<td>~200MB</td>
+<td>~80MB</td>
+<td>~1GB</td>
+<td>~150MB</td>
+<td>~100MB</td>
+<td>~200MB</td>
+<td>~200MB</td>
+<td>~150MB</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>This document is a living artifact. It will be updated as competitive intelligence evolves, user research refines requirements, and technical prototyping validates or invalidates assumptions.</em></p>
+<p><em>Next steps: Technical design review → Architecture Decision Records → Phase 0 sprint planning</em></p>
+<hr />
+<h2 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Version</th>
+<th>Date</th>
+<th>Changes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.0</td>
+<td>April 4, 2026</td>
+<td>Initial draft with MCP-native architecture for all tools</td>
+</tr>
+<tr>
+<td>1.1</td>
+<td>April 4, 2026</td>
+<td><strong>Major architecture revision:</strong> Replaced "MCP everything" approach with four-layer tool architecture (Native CLI → MCP → Code Mode → Skills) based on production data showing 55K–143K token overhead from MCP schema loading. Core tools (file I/O, shell, git, LSP, semantic index) are now native Rust with zero protocol overhead. MCP reserved for external integrations only with lazy schema loading. Added Code Mode (Layer 0) for multi-tool orchestration reducing tokens by 50%+. Updated requirements R4, risk assessments, roadmap, competitive matrix, and all architecture diagrams.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

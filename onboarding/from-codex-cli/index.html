@@ -1,0 +1,1717 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/onboarding/from-codex-cli/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Migrating from Codex CLI to Hone - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#migrating-from-codex-cli-to-hone" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Migrating from Codex CLI to Hone
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#concept-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concept Mapping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#before-and-after" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before and After
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Before and After">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#codex-cli-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Codex CLI Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hone-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hone Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-you-gain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What You Gain
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What You Gain">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-kernel-sandboxing-better-than-seccomp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Kernel Sandboxing (Better Than seccomp)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-provider-freedom-no-openai-lock-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Provider Freedom (No OpenAI Lock-In)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-recipes-better-than-mode-switching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Recipes (Better Than Mode Switching)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-real-time-cost-tracking-transparent-billing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Real-Time Cost Tracking (Transparent Billing)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-lsp-integration-no-language-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. LSP Integration (No Language Gaps)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-multi-user-audit-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Multi-User &amp; Audit Logging
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#whats-different" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's Different
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What&#39;s Different">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-approval-workflow-is-more-granular" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Approval Workflow Is More Granular
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-recipes-are-yaml-not-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Recipes Are YAML, Not Modes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-sandbox-policy-is-configurable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Sandbox Policy Is Configurable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-distributed-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Distributed Execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-by-step-migration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step-by-Step Migration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step-by-Step Migration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-install-hone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Install Hone
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-configure-openai-your-existing-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Configure OpenAI (Your Existing Provider)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-test-your-first-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Test Your First Session
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-create-your-first-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Create Your First Recipe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-explore-approval-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Explore Approval Workflows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#faq" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FAQ
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="FAQ">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#can-i-use-the-same-openai-api-key-with-hone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I use the same OpenAI API key with Hone?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-hones-sandbox-as-safe-as-codex-clis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Is Hone's sandbox as safe as Codex CLI's?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-recipes-replace-approval-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Do recipes replace approval workflows?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-migrate-my-codex-cli-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I migrate my Codex CLI workflows?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-set-per-step-budgets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I set per-step budgets?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-about-rate-limiting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What about rate limiting?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="migrating-from-codex-cli-to-hone">Migrating from Codex CLI to Hone<a class="headerlink" href="#migrating-from-codex-cli-to-hone" title="Permanent link">&para;</a></h1>
+<p>You know Codex CLI. You're comfortable with kernel sandboxing, approval workflows, and running code safely. Here's how Hone takes those ideas further—and what's new.</p>
+<h2 id="concept-mapping">Concept Mapping<a class="headerlink" href="#concept-mapping" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Codex CLI</th>
+<th>Hone Equivalent</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>seccomp sandbox</td>
+<td>Seatbelt/Landlock/seccomp</td>
+<td>Same approach, kernel-level</td>
+</tr>
+<tr>
+<td>Approval workflow</td>
+<td>Approval workflow + diffs</td>
+<td>Implemented, more granular</td>
+</tr>
+<tr>
+<td>OpenAI models</td>
+<td>75+ providers (including OpenAI)</td>
+<td>Not locked to OpenAI</td>
+</tr>
+<tr>
+<td>suggest mode</td>
+<td>Agent loop with streaming</td>
+<td>Same paradigm</td>
+</tr>
+<tr>
+<td>auto-edit mode</td>
+<td>AutoCommitter tool</td>
+<td>Implemented</td>
+</tr>
+<tr>
+<td>full-auto mode</td>
+<td>Recipes with multi-step automation</td>
+<td>More structured, auditable</td>
+</tr>
+<tr>
+<td>Cost tracking</td>
+<td>Real-time cost tracking per turn</td>
+<td>Better visibility</td>
+</tr>
+<tr>
+<td>Diff review</td>
+<td>git_diff tool + approval</td>
+<td>Natural git integration</td>
+</tr>
+</tbody>
+</table>
+<h2 id="before-and-after">Before and After<a class="headerlink" href="#before-and-after" title="Permanent link">&para;</a></h2>
+<h3 id="codex-cli-workflow">Codex CLI Workflow<a class="headerlink" href="#codex-cli-workflow" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start session (suggest mode)</span>
+codex<span class="w"> </span>suggest
+
+<span class="c1"># In session:</span>
+<span class="c1"># Prompt: Fix the null pointer exception in main.rs</span>
+<span class="c1"># Codex suggests changes, you review diffs</span>
+<span class="c1"># Accept or reject</span>
+
+<span class="c1"># For automation, switch to auto-edit mode</span>
+codex<span class="w"> </span>auto-edit
+
+<span class="c1"># Prompt: Add logging to all database queries</span>
+<span class="c1"># Codex makes changes automatically, asks for approval</span>
+</code></pre></div>
+<p><strong>Strengths:</strong> Safe by default (approvals required), OpenAI integration, cost tracking.</p>
+<h3 id="hone-workflow">Hone Workflow<a class="headerlink" href="#hone-workflow" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start session</span>
+hone
+
+<span class="c1"># In session:</span>
+<span class="c1"># Prompt: Fix the null pointer exception in main.rs</span>
+<span class="c1"># Hone loops: reads file, identifies issue, suggests fix</span>
+<span class="c1"># Shows diff (same as Codex)</span>
+<span class="c1"># You accept or reject</span>
+
+<span class="c1"># For automation, use a recipe</span>
+hone<span class="w"> </span>--recipe<span class="w"> </span>scripts/add-logging.yaml
+
+<span class="c1"># Executes multi-step workflow:</span>
+<span class="c1">#   1. Find database queries</span>
+<span class="c1">#   2. Add structured logging</span>
+<span class="c1">#   3. Run tests</span>
+<span class="c1">#   4. Commit (if approved)</span>
+</code></pre></div>
+<p><strong>Key differences:</strong>
+- Approvals are more flexible (per-turn, per-tool, per-file)
+- Recipes replace mode switching (more composable)
+- Sandbox is kernel-enforced (more secure)</p>
+<h2 id="what-you-gain">What You Gain<a class="headerlink" href="#what-you-gain" title="Permanent link">&para;</a></h2>
+<h3 id="1-kernel-sandboxing-better-than-seccomp">1. Kernel Sandboxing (Better Than seccomp)<a class="headerlink" href="#1-kernel-sandboxing-better-than-seccomp" title="Permanent link">&para;</a></h3>
+<p>Codex CLI uses seccomp. Hone uses OS-native sandboxing:</p>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Codex CLI</th>
+<th>Hone</th>
+<th>Benefit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>macOS</td>
+<td>seccomp (emulated)</td>
+<td>Seatbelt (native)</td>
+<td>Same API as Safari, more reliable</td>
+</tr>
+<tr>
+<td>Linux</td>
+<td>seccomp</td>
+<td>Landlock (newer)</td>
+<td>Supports deny-on-access, more flexible</td>
+</tr>
+<tr>
+<td>Other</td>
+<td>seccomp</td>
+<td>seccomp</td>
+<td>Same</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Real example:</strong></p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--show-sandbox-policy
+
+<span class="c1"># Output:</span>
+<span class="c1"># Sandbox: Seatbelt on macOS</span>
+<span class="c1">#   Deny: /etc/* (except whitelisted)</span>
+<span class="c1">#   Deny: /var/* (except ~/.local/share/hone)</span>
+<span class="c1">#   Deny: Network (except api.openai.com, api.anthropic.com)</span>
+<span class="c1">#   Allow: read /Users/you/project, execute /bin/bash, /usr/bin/python3</span>
+</code></pre></div>
+<p>Policies are auditable and configurable.</p>
+<h3 id="2-provider-freedom-no-openai-lock-in">2. Provider Freedom (No OpenAI Lock-In)<a class="headerlink" href="#2-provider-freedom-no-openai-lock-in" title="Permanent link">&para;</a></h3>
+<p>Codex CLI only works with OpenAI. Hone supports 75+ providers:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--model<span class="w"> </span>openai:gpt-4o<span class="w">              </span><span class="c1"># OpenAI (match Codex CLI)</span>
+hone<span class="w"> </span>--model<span class="w"> </span>anthropic:claude-opus-4-5<span class="w">  </span><span class="c1"># Anthropic (more capable)</span>
+hone<span class="w"> </span>--model<span class="w"> </span>ollama:llama2<span class="w">              </span><span class="c1"># Local (free, private)</span>
+</code></pre></div>
+<p>Hot-swap mid-session:
+<div class="highlight"><pre><span></span><code>You: /model anthropic:claude-opus-4-5
+Hone: Switched to claude-opus-4-5. Conversation preserved.
+</code></pre></div></p>
+<p>Why this matters:
+- Vendor negotiating power (shop around for pricing)
+- Avoid API outages (fallback chains)
+- Use local models for sensitive code
+- Experiment with different models</p>
+<h3 id="3-recipes-better-than-mode-switching">3. Recipes (Better Than Mode Switching)<a class="headerlink" href="#3-recipes-better-than-mode-switching" title="Permanent link">&para;</a></h3>
+<p>Codex CLI has 3 modes: suggest, auto-edit, full-auto. Hone has recipes:</p>
+<p><strong>Codex CLI:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1"># Mode switching</span>
+codex<span class="w"> </span>suggest<span class="w">   </span><span class="c1"># interactive, show diffs</span>
+codex<span class="w"> </span>auto-edit<span class="w"> </span><span class="c1"># auto-apply, ask for approval</span>
+codex<span class="w"> </span>full-auto<span class="w"> </span><span class="c1"># fully automatic (risky)</span>
+</code></pre></div></p>
+<p><strong>Hone:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1"># recipes/add-logging.yaml</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add-structured-logging</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Add structured logging to database queries</span>
+
+<span class="nt">approvals</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">require_approval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;edit_file&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;git_commit&quot;</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># approve edits and commits</span>
+
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">file_search</span>
+<span class="w">    </span><span class="nt">pattern</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;src/**/*.rs&quot;</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">agent</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Find</span><span class="nv"> </span><span class="s">database</span><span class="nv"> </span><span class="s">query</span><span class="nv"> </span><span class="s">calls&quot;</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai:gpt-4o</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">agent</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Add</span><span class="nv"> </span><span class="s">structured</span><span class="nv"> </span><span class="s">logging</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">each</span><span class="nv"> </span><span class="s">query&quot;</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai:gpt-4o</span>
+<span class="w">      </span><span class="nt">approval_before</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># ask before agent edits</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shell</span>
+<span class="w">    </span><span class="nt">cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;cargo</span><span class="nv"> </span><span class="s">test&quot;</span>
+<span class="w">    </span><span class="nt">approval_before</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">git_commit</span>
+<span class="w">    </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;feat:</span><span class="nv"> </span><span class="s">add</span><span class="nv"> </span><span class="s">structured</span><span class="nv"> </span><span class="s">logging</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">database</span><span class="nv"> </span><span class="s">queries&quot;</span>
+<span class="w">    </span><span class="nt">approval_before</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div></p>
+<p>Run it:
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>scripts/add-logging.yaml
+<span class="c1"># Executes step by step, asks for approval at each approval point</span>
+</code></pre></div></p>
+<p>Benefits:
+- Fully composable (tools + agents + conditions)
+- Auditable (each step is logged)
+- Reusable (version with git)
+- Safer than "full-auto" (explicit approval points)</p>
+<h3 id="4-real-time-cost-tracking-transparent-billing">4. Real-Time Cost Tracking (Transparent Billing)<a class="headerlink" href="#4-real-time-cost-tracking-transparent-billing" title="Permanent link">&para;</a></h3>
+<p>Both Codex CLI and Hone track costs. Hone is more granular:</p>
+<p><strong>Codex CLI:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1"># Session total at end</span>
+Total<span class="w"> </span>cost:<span class="w"> </span><span class="nv">$0</span>.42<span class="w"> </span><span class="o">(</span>OpenAI<span class="w"> </span>API<span class="w"> </span>usage<span class="o">)</span>
+</code></pre></div></p>
+<p><strong>Hone:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1"># Per-turn cost tracking (streaming)</span>
+Usage:<span class="w"> </span><span class="m">4521</span><span class="w"> </span>input<span class="w"> </span>tokens,<span class="w"> </span><span class="m">312</span><span class="w"> </span>output<span class="w"> </span>tokens
+Cost:<span class="w"> </span><span class="nv">$0</span>.019<span class="w"> </span>USD<span class="w"> </span><span class="o">(</span>openai:gpt-4o<span class="o">)</span>
+Session<span class="w"> </span>total:<span class="w"> </span><span class="nv">$0</span>.24<span class="w"> </span>USD
+Budget<span class="w"> </span>remaining:<span class="w"> </span><span class="nv">$9</span>.76<span class="w"> </span>/<span class="w"> </span><span class="nv">$10</span>.00
+
+<span class="c1"># Turn 2</span>
+Usage:<span class="w"> </span><span class="m">1200</span><span class="w"> </span>input<span class="w"> </span>tokens,<span class="w"> </span><span class="m">89</span><span class="w"> </span>output<span class="w"> </span>tokens
+Cost:<span class="w"> </span><span class="nv">$0</span>.004<span class="w"> </span>USD
+Session<span class="w"> </span>total:<span class="w"> </span><span class="nv">$0</span>.28<span class="w"> </span>USD
+</code></pre></div></p>
+<p>Plus built-in budget limits:
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--budget<span class="w"> </span><span class="m">5</span>.00
+<span class="c1"># Session stops when $5.00 is spent</span>
+</code></pre></div></p>
+<p>Or in config:
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="n">max_spend_usd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">5.00</span>
+</code></pre></div></p>
+<h3 id="5-lsp-integration-no-language-gaps">5. LSP Integration (No Language Gaps)<a class="headerlink" href="#5-lsp-integration-no-language-gaps" title="Permanent link">&para;</a></h3>
+<p>Codex CLI has basic language support. Hone bridges all language servers:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Fix type errors in this Rust file&quot;</span>
+<span class="c1"># Agent calls: lsp_diagnostics(file=&quot;main.rs&quot;)</span>
+<span class="c1"># Sees all type errors from rust-analyzer</span>
+<span class="c1"># Fixes them systematically</span>
+
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;What does this Python function do?&quot;</span>
+<span class="c1"># Agent calls: lsp_hover(file=&quot;utils.py&quot;, line=42, col=10)</span>
+<span class="c1"># Returns docstring + type info from Pylance</span>
+</code></pre></div>
+<p>Supports Python, Rust, TypeScript, Go, Java, C++, etc.</p>
+<h3 id="6-multi-user-audit-logging">6. Multi-User &amp; Audit Logging<a class="headerlink" href="#6-multi-user-audit-logging" title="Permanent link">&para;</a></h3>
+<p>Codex CLI is single-user. Hone can be multi-user with full audit logging:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start daemon</span>
+honed<span class="w"> </span>--port<span class="w"> </span><span class="m">7070</span><span class="w"> </span>--audit-log<span class="w"> </span>/var/log/hone/audit.log
+
+<span class="c1"># From your laptop</span>
+hone<span class="w"> </span>--remote<span class="w"> </span>myserver:7070
+
+<span class="c1"># Audit log shows:</span>
+<span class="c1"># 2026-04-05 12:34:56 [user=alice, session=abc123]</span>
+<span class="c1">#   Tool: read_file, path=/home/alice/project/src/main.rs</span>
+<span class="c1">#   Result: OK</span>
+<span class="c1"># 2026-04-05 12:34:57 [user=alice, session=abc123]</span>
+<span class="c1">#   Tool: shell, cmd=cargo test</span>
+<span class="c1">#   Result: OK (0 failures)</span>
+<span class="c1"># 2026-04-05 12:35:00 [user=alice, session=abc123]</span>
+<span class="c1">#   Tool: git_commit, message=fix: null pointer exception</span>
+<span class="c1">#   Result: OK</span>
+</code></pre></div>
+<p>Useful for:
+- Compliance (HIPAA, SOC 2, etc.)
+- Team accountability
+- Security investigations
+- Cost tracking per user</p>
+<h2 id="whats-different">What's Different<a class="headerlink" href="#whats-different" title="Permanent link">&para;</a></h2>
+<h3 id="1-approval-workflow-is-more-granular">1. Approval Workflow Is More Granular<a class="headerlink" href="#1-approval-workflow-is-more-granular" title="Permanent link">&para;</a></h3>
+<p><strong>Codex CLI:</strong> Approve or reject entire turn</p>
+<p><strong>Hone:</strong> Approve specific actions:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># In session, Hone shows each tool call</span>
+<span class="o">[</span>Tool:<span class="w"> </span>read_file<span class="o">]</span><span class="w"> </span>src/main.rs
+<span class="o">[</span>Tool:<span class="w"> </span>edit_file<span class="o">]</span><span class="w"> </span>src/main.rs<span class="w"> </span><span class="o">(</span>line<span class="w"> </span><span class="m">42</span><span class="o">)</span>
+<span class="w">  </span>-<span class="w"> </span>Old:<span class="w"> </span><span class="k">if</span><span class="w"> </span>ptr<span class="w"> </span>!<span class="o">=</span><span class="w"> </span>null<span class="w"> </span><span class="o">{</span><span class="w"> </span>...<span class="w"> </span><span class="o">}</span>
+<span class="w">  </span>-<span class="w"> </span>New:<span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="nb">let</span><span class="w"> </span>Some<span class="o">(</span>ptr<span class="o">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>ptr<span class="w"> </span><span class="o">{</span><span class="w"> </span>...<span class="w"> </span><span class="o">}</span>
+<span class="w">  </span><span class="o">[</span>Approve?<span class="w"> </span>y/n<span class="o">]</span><span class="w"> </span>y
+
+<span class="o">[</span>Tool:<span class="w"> </span>shell<span class="o">]</span><span class="w"> </span>cargo<span class="w"> </span><span class="nb">test</span>
+<span class="o">[</span>Output:<span class="w"> </span><span class="m">15</span><span class="w"> </span>tests<span class="w"> </span>passed<span class="o">]</span>
+<span class="w">  </span><span class="o">[</span>Approve?<span class="w"> </span>y/n<span class="o">]</span><span class="w"> </span>y
+
+<span class="o">[</span>Tool:<span class="w"> </span>git_commit<span class="o">]</span><span class="w"> </span>fix:<span class="w"> </span>null<span class="w"> </span>pointer<span class="w"> </span>exception
+<span class="w">  </span><span class="o">[</span>Approve?<span class="w"> </span>y/n<span class="o">]</span><span class="w"> </span>y
+</code></pre></div>
+<p>More fine-grained control.</p>
+<h3 id="2-recipes-are-yaml-not-modes">2. Recipes Are YAML, Not Modes<a class="headerlink" href="#2-recipes-are-yaml-not-modes" title="Permanent link">&para;</a></h3>
+<p>Codex CLI modes are implicit. Hone recipes are explicit YAML files.</p>
+<p><strong>Benefit:</strong> Reusable, versionable, shareable.</p>
+<h3 id="3-sandbox-policy-is-configurable">3. Sandbox Policy Is Configurable<a class="headerlink" href="#3-sandbox-policy-is-configurable" title="Permanent link">&para;</a></h3>
+<p>Codex CLI sandbox is hardcoded. Hone sandbox is policy-based:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># ~/.config/hone/config.toml</span>
+
+<span class="k">[sandbox]</span>
+<span class="n">strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;seatbelt&quot;</span><span class="w">  </span><span class="c1"># macOS</span>
+
+<span class="k">[sandbox.policies.file_system]</span>
+<span class="n">allow_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/Users/you/project&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/usr/lib&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/usr/local/bin&quot;</span><span class="p">]</span>
+<span class="n">deny_read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/etc&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/var&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/private/var&quot;</span><span class="p">]</span>
+<span class="n">allow_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/Users/you/project&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/tmp&quot;</span><span class="p">]</span>
+<span class="n">deny_write</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/etc&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/var&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/private/var&quot;</span><span class="p">]</span>
+
+<span class="k">[sandbox.policies.network]</span>
+<span class="n">deny_all</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">allow_exceptions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;api.openai.com&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;github.com&quot;</span><span class="p">]</span>
+
+<span class="k">[sandbox.policies.process]</span>
+<span class="n">deny_all</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">allow_execute</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;/bin/bash&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/usr/bin/python3&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/usr/local/bin/cargo&quot;</span><span class="p">]</span>
+</code></pre></div>
+<p>You can tighten or loosen policies per project.</p>
+<h3 id="4-distributed-execution">4. Distributed Execution<a class="headerlink" href="#4-distributed-execution" title="Permanent link">&para;</a></h3>
+<p>Codex CLI is single-machine. Hone can run on a server:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Codex CLI: always local</span>
+codex<span class="w"> </span>suggest
+
+<span class="c1"># Hone: local or remote</span>
+hone<span class="w">                        </span><span class="c1"># local</span>
+hone<span class="w"> </span>--remote<span class="w"> </span>myserver:7070<span class="w"> </span><span class="c1"># remote (daemon)</span>
+</code></pre></div>
+<p>Remote daemon handles authentication, audit logging, cost tracking per user.</p>
+<h2 id="step-by-step-migration">Step-by-Step Migration<a class="headerlink" href="#step-by-step-migration" title="Permanent link">&para;</a></h2>
+<h3 id="1-install-hone">1. Install Hone<a class="headerlink" href="#1-install-hone" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/anthropics/hone.git
+<span class="nb">cd</span><span class="w"> </span>hone
+cargo<span class="w"> </span>build<span class="w"> </span>--release
+sudo<span class="w"> </span>cp<span class="w"> </span>target/release/hone<span class="w"> </span>/usr/local/bin/
+</code></pre></div>
+<h3 id="2-configure-openai-your-existing-provider">2. Configure OpenAI (Your Existing Provider)<a class="headerlink" href="#2-configure-openai-your-existing-provider" title="Permanent link">&para;</a></h3>
+<p>If you've been using Codex CLI with OpenAI:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-...&quot;</span><span class="w">  </span><span class="c1"># same as Codex CLI</span>
+
+<span class="c1"># Create config</span>
+mkdir<span class="w"> </span>-p<span class="w"> </span>~/.config/hone
+cat<span class="w"> </span>&gt;<span class="w"> </span>~/.config/hone/config.toml<span class="w"> </span><span class="s">&lt;&lt; &#39;EOF&#39;</span>
+<span class="s">[providers.openai]</span>
+<span class="s">api_key = &quot;${OPENAI_API_KEY}&quot;</span>
+
+<span class="s">[agent]</span>
+<span class="s">default_model = &quot;openai:gpt-4o&quot;</span>
+<span class="s">max_spend_usd = 10.00  # your budget</span>
+
+<span class="s">[sandbox]</span>
+<span class="s">strategy = &quot;seatbelt&quot;  # macOS</span>
+<span class="s">EOF</span>
+</code></pre></div>
+<h3 id="3-test-your-first-session">3. Test Your First Session<a class="headerlink" href="#3-test-your-first-session" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>/your/codex/project
+hone
+</code></pre></div>
+<p>Try a familiar task:
+<div class="highlight"><pre><span></span><code>Fix the null pointer exception in main.rs
+</code></pre></div></p>
+<p>Hone will:
+1. Find the file
+2. Read it
+3. Identify the issue
+4. Suggest a fix
+5. Show the diff
+6. Ask for approval
+7. Apply the fix
+8. Commit (if you approve)</p>
+<h3 id="4-create-your-first-recipe">4. Create Your First Recipe<a class="headerlink" href="#4-create-your-first-recipe" title="Permanent link">&para;</a></h3>
+<p>If you had workflows you ran repeatedly with Codex CLI, turn them into recipes.</p>
+<p>Example: "Refactor legacy Python to use type hints"</p>
+<p>Create <code>scripts/add-type-hints.yaml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add-type-hints</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Add type hints to legacy Python code</span>
+
+<span class="nt">approvals</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">require_approval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;edit_file&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;git_commit&quot;</span><span class="p p-Indicator">]</span>
+
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">file_search</span>
+<span class="w">    </span><span class="nt">pattern</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;src/**/*.py&quot;</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">agent</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Add</span><span class="nv"> </span><span class="s">comprehensive</span><span class="nv"> </span><span class="s">type</span><span class="nv"> </span><span class="s">hints</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">these</span><span class="nv"> </span><span class="s">Python</span><span class="nv"> </span><span class="s">files&quot;</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai:gpt-4o</span>
+<span class="w">      </span><span class="nt">approval_before</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shell</span>
+<span class="w">    </span><span class="nt">cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;python</span><span class="nv"> </span><span class="s">-m</span><span class="nv"> </span><span class="s">mypy</span><span class="nv"> </span><span class="s">src/&quot;</span>
+<span class="w">    </span><span class="nt">approval_before</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># no approval for read-only check</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">git_commit</span>
+<span class="w">    </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;refactor:</span><span class="nv"> </span><span class="s">add</span><span class="nv"> </span><span class="s">type</span><span class="nv"> </span><span class="s">hints</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">Python</span><span class="nv"> </span><span class="s">modules&quot;</span>
+<span class="w">    </span><span class="nt">approval_before</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<p>Run it:
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>scripts/add-type-hints.yaml
+</code></pre></div></p>
+<h3 id="5-explore-approval-workflows">5. Explore Approval Workflows<a class="headerlink" href="#5-explore-approval-workflows" title="Permanent link">&para;</a></h3>
+<p>Unlike Codex CLI's rigid modes, Hone lets you customize approval points:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">agent</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Refactor</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">main</span><span class="nv"> </span><span class="s">function&quot;</span>
+<span class="w">      </span><span class="nt">approval_before</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># approve before agent runs</span>
+<span class="w">      </span><span class="nt">approval_after</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">   </span><span class="c1"># auto-apply changes (still review via git_diff)</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">git_diff</span>
+<span class="w">    </span><span class="c1"># Show changes (read-only)</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">git_commit</span>
+<span class="w">    </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;refactor:</span><span class="nv"> </span><span class="s">improve</span><span class="nv"> </span><span class="s">main</span><span class="nv"> </span><span class="s">function&quot;</span>
+<span class="w">    </span><span class="nt">approval_before</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">    </span><span class="c1"># approve before committing</span>
+</code></pre></div>
+<h2 id="faq">FAQ<a class="headerlink" href="#faq" title="Permanent link">&para;</a></h2>
+<h3 id="can-i-use-the-same-openai-api-key-with-hone">Can I use the same OpenAI API key with Hone?<a class="headerlink" href="#can-i-use-the-same-openai-api-key-with-hone" title="Permanent link">&para;</a></h3>
+<p>Yes. Set <code>OPENAI_API_KEY</code> env var or config file. Hone reads the same keys.</p>
+<h3 id="is-hones-sandbox-as-safe-as-codex-clis">Is Hone's sandbox as safe as Codex CLI's?<a class="headerlink" href="#is-hones-sandbox-as-safe-as-codex-clis" title="Permanent link">&para;</a></h3>
+<p>Yes, and arguably better. Hone uses OS-native sandboxing (Seatbelt on macOS, Landlock on Linux) instead of seccomp emulation. Policies are auditable.</p>
+<h3 id="do-recipes-replace-approval-workflows">Do recipes replace approval workflows?<a class="headerlink" href="#do-recipes-replace-approval-workflows" title="Permanent link">&para;</a></h3>
+<p>No. Recipes define multi-step workflows; approvals control which steps require manual review. Use together:
+- Recipes for orchestration
+- Approvals for safety</p>
+<h3 id="how-do-i-migrate-my-codex-cli-workflows">How do I migrate my Codex CLI workflows?<a class="headerlink" href="#how-do-i-migrate-my-codex-cli-workflows" title="Permanent link">&para;</a></h3>
+<p>Turn them into recipes. Example:
+- Codex CLI "full-auto mode" → Hone recipe with <code>approval_before: false</code> on most steps
+- Codex CLI "suggest mode" → Hone session with <code>/model</code> and manual approval per turn</p>
+<h3 id="can-i-set-per-step-budgets">Can I set per-step budgets?<a class="headerlink" href="#can-i-set-per-step-budgets" title="Permanent link">&para;</a></h3>
+<p>Not yet, but you can set global budget:
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="n">max_spend_usd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">10.00</span>
+</code></pre></div></p>
+<p>When recipe hits the budget, it stops.</p>
+<h3 id="what-about-rate-limiting">What about rate limiting?<a class="headerlink" href="#what-about-rate-limiting" title="Permanent link">&para;</a></h3>
+<p>Hone respects provider rate limits. If OpenAI rate-limits you:
+1. Hone waits (configurable timeout)
+2. Falls back to next provider (if configured)
+3. Logs the event for debugging</p>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Install:</strong> Follow step 1 above</li>
+<li><strong>Config:</strong> Create <code>~/.config/hone/config.toml</code> with OpenAI settings</li>
+<li><strong>Test:</strong> Run <code>hone</code> and try a familiar task</li>
+<li><strong>Recipes:</strong> Read <a href="../../tutorials/recipes/">Recipes Guide</a> to automate workflows</li>
+<li><strong>Security:</strong> Read <a href="../security.md">Security Guide</a> for sandbox policies</li>
+<li><strong>Team:</strong> Read <a href="../../tutorials/server-and-remote/">Server and Remote</a> for multi-user setup</li>
+</ol>
+<hr />
+<p>Migrating from Codex CLI? Questions? Open an issue on GitHub.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

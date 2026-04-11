@@ -1,0 +1,2129 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/tutorials/recipes/">
+      
+      
+        <link rel="prev" href="../server-and-remote/">
+      
+      
+        <link rel="next" href="../../benchmarks/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Recipes - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#recipes-automating-workflows-with-yaml" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Recipes
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#built-in-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in Recipes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Built-in Recipes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tdd-feature" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tdd-feature
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        bug-fix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        code-review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        refactor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-built-in-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Built-in Recipes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-are-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Are Recipes?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-yaml-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe YAML Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recipe YAML Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recipe-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete Example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conditional-steps-when" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conditional Steps (when)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tdd-hook-test_cmd-and-test-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TDD Hook: test_cmd and Test Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Recipes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running Recipes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#interactive-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interactive Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#batch-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Batch Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-model-override" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Model Override
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-budget-limit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Budget Limit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-output-and-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe Output and Export
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-directory-and-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe Directory and Discovery
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-your-own-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Your Own Recipe
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-clear-prompts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Clear Prompts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-break-down-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Break Down Steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-reference-previous-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Reference Previous Steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-use-test_cmd-for-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Use test_cmd for Verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#marketplace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Marketplace
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#built-in-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in Recipes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Built-in Recipes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tdd-feature" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tdd-feature
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        bug-fix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        code-review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        refactor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-built-in-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Built-in Recipes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-are-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Are Recipes?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-yaml-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe YAML Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recipe YAML Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recipe-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete Example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conditional-steps-when" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conditional Steps (when)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tdd-hook-test_cmd-and-test-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TDD Hook: test_cmd and Test Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Recipes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running Recipes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#interactive-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interactive Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#batch-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Batch Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-model-override" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Model Override
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-budget-limit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Budget Limit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-output-and-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe Output and Export
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-directory-and-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe Directory and Discovery
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-your-own-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Your Own Recipe
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-clear-prompts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Clear Prompts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-break-down-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Break Down Steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-reference-previous-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Reference Previous Steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-use-test_cmd-for-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Use test_cmd for Verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#marketplace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Marketplace
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="recipes-automating-workflows-with-yaml">Recipes: Automating Workflows with YAML<a class="headerlink" href="#recipes-automating-workflows-with-yaml" title="Permanent link">&para;</a></h1>
+<p>Recipes are YAML files that define multi-step agent workflows. Each step runs a prompt through the model, and steps can depend on previous outputs.</p>
+<h2 id="built-in-recipes">Built-in Recipes<a class="headerlink" href="#built-in-recipes" title="Permanent link">&para;</a></h2>
+<p>Hone includes 4 bundled recipes for common development tasks:</p>
+<h3 id="tdd-feature">tdd-feature<a class="headerlink" href="#tdd-feature" title="Permanent link">&para;</a></h3>
+<p>Implement a feature using Test-Driven Development (Red-Green-Refactor):</p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tdd-feature</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Implement a feature using Test-Driven Development</span>
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">understand</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Read</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">relevant</span><span class="nv"> </span><span class="s">code</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">understand</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">current</span><span class="nv"> </span><span class="s">architecture.</span><span class="nv"> </span><span class="s">Summarize</span><span class="nv"> </span><span class="s">what</span><span class="nv"> </span><span class="s">you</span><span class="nv"> </span><span class="s">find.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">red</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Write</span><span class="nv"> </span><span class="s">failing</span><span class="nv"> </span><span class="s">tests</span><span class="nv"> </span><span class="s">that</span><span class="nv"> </span><span class="s">describe</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">desired</span><span class="nv"> </span><span class="s">behavior.</span><span class="nv"> </span><span class="s">Run</span><span class="nv"> </span><span class="s">them</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">confirm</span><span class="nv"> </span><span class="s">they</span><span class="nv"> </span><span class="s">fail.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">green</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Write</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">minimum</span><span class="nv"> </span><span class="s">code</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">make</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">tests</span><span class="nv"> </span><span class="s">pass.</span><span class="nv"> </span><span class="s">Do</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">add</span><span class="nv"> </span><span class="s">extra</span><span class="nv"> </span><span class="s">features.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">refactor</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Refactor</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">implementation</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">clarity</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">quality.</span><span class="nv"> </span><span class="s">All</span><span class="nv"> </span><span class="s">tests</span><span class="nv"> </span><span class="s">must</span><span class="nv"> </span><span class="s">still</span><span class="nv"> </span><span class="s">pass.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">verify</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Run</span><span class="nv"> </span><span class="s">all</span><span class="nv"> </span><span class="s">tests</span><span class="nv"> </span><span class="s">one</span><span class="nv"> </span><span class="s">final</span><span class="nv"> </span><span class="s">time.</span><span class="nv"> </span><span class="s">Report</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">results.&quot;</span>
+<span class="nt">test_cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;cargo</span><span class="nv"> </span><span class="s">test&quot;</span>
+</code></pre></div>
+<h3 id="bug-fix">bug-fix<a class="headerlink" href="#bug-fix" title="Permanent link">&para;</a></h3>
+<p>Fix a bug using systematic debugging with regression test:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bug-fix</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Fix a bug using systematic debugging with regression test</span>
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reproduce</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Read</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">bug</span><span class="nv"> </span><span class="s">report</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">reproduce</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">issue.</span><span class="nv"> </span><span class="s">Identify</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">failing</span><span class="nv"> </span><span class="s">behavior.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">regression-test</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Write</span><span class="nv"> </span><span class="s">a</span><span class="nv"> </span><span class="s">regression</span><span class="nv"> </span><span class="s">test</span><span class="nv"> </span><span class="s">that</span><span class="nv"> </span><span class="s">captures</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">bug.</span><span class="nv"> </span><span class="s">Verify</span><span class="nv"> </span><span class="s">it</span><span class="nv"> </span><span class="s">fails.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fix</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Write</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">minimal</span><span class="nv"> </span><span class="s">fix.</span><span class="nv"> </span><span class="s">Do</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">refactor</span><span class="nv"> </span><span class="s">surrounding</span><span class="nv"> </span><span class="s">code.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">verify</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Run</span><span class="nv"> </span><span class="s">all</span><span class="nv"> </span><span class="s">tests.</span><span class="nv"> </span><span class="s">The</span><span class="nv"> </span><span class="s">regression</span><span class="nv"> </span><span class="s">test</span><span class="nv"> </span><span class="s">should</span><span class="nv"> </span><span class="s">now</span><span class="nv"> </span><span class="s">pass</span><span class="nv"> </span><span class="s">along</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">all</span><span class="nv"> </span><span class="s">existing</span><span class="nv"> </span><span class="s">tests.&quot;</span>
+<span class="nt">test_cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;cargo</span><span class="nv"> </span><span class="s">test&quot;</span>
+</code></pre></div>
+<h3 id="code-review">code-review<a class="headerlink" href="#code-review" title="Permanent link">&para;</a></h3>
+<p>Perform a comprehensive code review:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">code-review</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Perform a comprehensive code review</span>
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">overview</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Read</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">changed</span><span class="nv"> </span><span class="s">files.</span><span class="nv"> </span><span class="s">Understand</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">intent</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">scope</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">changes.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">correctness</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Check</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">logical</span><span class="nv"> </span><span class="s">errors,</span><span class="nv"> </span><span class="s">edge</span><span class="nv"> </span><span class="s">cases,</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">off-by-one</span><span class="nv"> </span><span class="s">bugs.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">security</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Scan</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">injection</span><span class="nv"> </span><span class="s">vulnerabilities,</span><span class="nv"> </span><span class="s">secret</span><span class="nv"> </span><span class="s">leakage,</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">auth</span><span class="nv"> </span><span class="s">issues.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">performance</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Identify</span><span class="nv"> </span><span class="s">unnecessary</span><span class="nv"> </span><span class="s">allocations,</span><span class="nv"> </span><span class="s">N+1</span><span class="nv"> </span><span class="s">queries,</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">hot-path</span><span class="nv"> </span><span class="s">issues.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">report</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Summarize</span><span class="nv"> </span><span class="s">findings</span><span class="nv"> </span><span class="s">in</span><span class="nv"> </span><span class="s">a</span><span class="nv"> </span><span class="s">table</span><span class="nv"> </span><span class="s">sorted</span><span class="nv"> </span><span class="s">by</span><span class="nv"> </span><span class="s">severity</span><span class="nv"> </span><span class="s">(CRITICAL</span><span class="nv"> </span><span class="s">&gt;</span><span class="nv"> </span><span class="s">HIGH</span><span class="nv"> </span><span class="s">&gt;</span><span class="nv"> </span><span class="s">MEDIUM</span><span class="nv"> </span><span class="s">&gt;</span><span class="nv"> </span><span class="s">LOW</span><span class="nv"> </span><span class="s">&gt;</span><span class="nv"> </span><span class="s">INFO).&quot;</span>
+</code></pre></div>
+<h3 id="refactor">refactor<a class="headerlink" href="#refactor" title="Permanent link">&para;</a></h3>
+<p>Safely refactor code with test verification at each step:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">refactor</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Safely refactor code with test verification at each step</span>
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">baseline</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Run</span><span class="nv"> </span><span class="s">all</span><span class="nv"> </span><span class="s">existing</span><span class="nv"> </span><span class="s">tests</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">establish</span><span class="nv"> </span><span class="s">a</span><span class="nv"> </span><span class="s">green</span><span class="nv"> </span><span class="s">baseline.</span><span class="nv"> </span><span class="s">Report</span><span class="nv"> </span><span class="s">results.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">plan</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Analyze</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">code</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">create</span><span class="nv"> </span><span class="s">a</span><span class="nv"> </span><span class="s">refactoring</span><span class="nv"> </span><span class="s">plan.</span><span class="nv"> </span><span class="s">List</span><span class="nv"> </span><span class="s">each</span><span class="nv"> </span><span class="s">change</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">its</span><span class="nv"> </span><span class="s">purpose.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">execute</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Apply</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">refactoring</span><span class="nv"> </span><span class="s">changes</span><span class="nv"> </span><span class="s">one</span><span class="nv"> </span><span class="s">at</span><span class="nv"> </span><span class="s">a</span><span class="nv"> </span><span class="s">time.</span><span class="nv"> </span><span class="s">Run</span><span class="nv"> </span><span class="s">tests</span><span class="nv"> </span><span class="s">after</span><span class="nv"> </span><span class="s">each</span><span class="nv"> </span><span class="s">change.&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">verify</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Run</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">full</span><span class="nv"> </span><span class="s">test</span><span class="nv"> </span><span class="s">suite.</span><span class="nv"> </span><span class="s">All</span><span class="nv"> </span><span class="s">tests</span><span class="nv"> </span><span class="s">must</span><span class="nv"> </span><span class="s">pass.</span><span class="nv"> </span><span class="s">Report</span><span class="nv"> </span><span class="s">before/after</span><span class="nv"> </span><span class="s">code</span><span class="nv"> </span><span class="s">metrics.&quot;</span>
+<span class="nt">test_cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;cargo</span><span class="nv"> </span><span class="s">test&quot;</span>
+</code></pre></div>
+<h3 id="using-built-in-recipes">Using Built-in Recipes<a class="headerlink" href="#using-built-in-recipes" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># List all available recipes</span>
+hone<span class="w"> </span>--list-recipes
+
+<span class="c1"># Run a built-in recipe by name</span>
+hone<span class="w"> </span>--recipe<span class="w"> </span>tdd-feature
+hone<span class="w"> </span>--recipe<span class="w"> </span>bug-fix
+hone<span class="w"> </span>--recipe<span class="w"> </span>code-review
+hone<span class="w"> </span>--recipe<span class="w"> </span>refactor
+
+<span class="c1"># Run in non-interactive mode (useful for CI/CD)</span>
+hone<span class="w"> </span>--recipe<span class="w"> </span>tdd-feature<span class="w"> </span>--non-interactive
+
+<span class="c1"># Override the test command</span>
+hone<span class="w"> </span>--recipe<span class="w"> </span>tdd-feature<span class="w"> </span>--test-cmd<span class="w"> </span><span class="s2">&quot;pytest tests/&quot;</span>
+</code></pre></div>
+<p>The <code>--list-recipes</code> command shows all available recipes with descriptions:</p>
+<div class="highlight"><pre><span></span><code>Available recipes:
+  tdd-feature           Implement a feature using Test-Driven Development
+  bug-fix               Fix a bug using systematic debugging with regression test
+  code-review           Perform a comprehensive code review
+  refactor              Safely refactor code with test verification at each step
+</code></pre></div>
+<h2 id="what-are-recipes">What Are Recipes?<a class="headerlink" href="#what-are-recipes" title="Permanent link">&para;</a></h2>
+<p>A recipe automates a sequence of agent turns. Instead of typing prompts manually, you define them once in YAML and run them repeatedly.</p>
+<p><strong>When to use recipes:</strong>
+- Multi-step workflows (e.g., analyze → improve → test)
+- Reproducible processes (e.g., code review, documentation generation)
+- Conditional branches (e.g., if test fails, retry)
+- TDD: define test before implementation</p>
+<h2 id="recipe-yaml-format">Recipe YAML Format<a class="headerlink" href="#recipe-yaml-format" title="Permanent link">&para;</a></h2>
+<p>Basic structure:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Code</span><span class="nv"> </span><span class="s">Review&quot;</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Review</span><span class="nv"> </span><span class="s">a</span><span class="nv"> </span><span class="s">code</span><span class="nv"> </span><span class="s">change</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">suggest</span><span class="nv"> </span><span class="s">improvements&quot;</span>
+
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Analyze</span><span class="nv"> </span><span class="s">Changes&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Review</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">changes</span><span class="nv"> </span><span class="s">in</span><span class="nv"> </span><span class="s">this</span><span class="nv"> </span><span class="s">pull</span><span class="nv"> </span><span class="s">request</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">identify</span><span class="nv"> </span><span class="s">issues&quot;</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Suggest</span><span class="nv"> </span><span class="s">Improvements&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Based</span><span class="nv"> </span><span class="s">on</span><span class="nv"> </span><span class="s">your</span><span class="nv"> </span><span class="s">analysis,</span><span class="nv"> </span><span class="s">list</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">top</span><span class="nv"> </span><span class="s">3</span><span class="nv"> </span><span class="s">improvements</span><span class="nv"> </span><span class="s">we</span><span class="nv"> </span><span class="s">should</span><span class="nv"> </span><span class="s">make&quot;</span>
+<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># conditional: only run if condition is true</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Generate</span><span class="nv"> </span><span class="s">Summary&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Write</span><span class="nv"> </span><span class="s">a</span><span class="nv"> </span><span class="s">concise</span><span class="nv"> </span><span class="s">summary</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">code</span><span class="nv"> </span><span class="s">review&quot;</span>
+<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
+<span class="nt">test_cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;cargo</span><span class="nv"> </span><span class="s">test&quot;</span><span class="w">  </span><span class="c1"># optional: verify the recipe worked</span>
+</code></pre></div>
+<h3 id="recipe-fields">Recipe Fields<a class="headerlink" href="#recipe-fields" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Recipe identifier</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td>string</td>
+<td>No</td>
+<td>Human-readable description</td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td>array</td>
+<td>Yes</td>
+<td>List of steps (see below)</td>
+</tr>
+<tr>
+<td><code>test_cmd</code></td>
+<td>string</td>
+<td>No</td>
+<td>Shell command to verify recipe success (TDD)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="step-fields">Step Fields<a class="headerlink" href="#step-fields" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Step identifier (used in logs, output)</td>
+</tr>
+<tr>
+<td><code>prompt</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>The prompt to send to the agent</td>
+</tr>
+<tr>
+<td><code>when</code></td>
+<td>bool</td>
+<td>No</td>
+<td>Conditional execution (default: true)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="complete-example">Complete Example<a class="headerlink" href="#complete-example" title="Permanent link">&para;</a></h2>
+<p>Here's a realistic recipe for implementing a feature with TDD:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;TDD</span><span class="nv"> </span><span class="s">Feature</span><span class="nv"> </span><span class="s">Implementation&quot;</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Implement</span><span class="nv"> </span><span class="s">a</span><span class="nv"> </span><span class="s">feature</span><span class="nv"> </span><span class="s">test-first:</span><span class="nv"> </span><span class="s">write</span><span class="nv"> </span><span class="s">test</span><span class="nv"> </span><span class="s">→</span><span class="nv"> </span><span class="s">implement</span><span class="nv"> </span><span class="s">→</span><span class="nv"> </span><span class="s">verify&quot;</span>
+
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Analyze</span><span class="nv"> </span><span class="s">Requirements&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">I want to add a feature that validates email addresses. </span>
+<span class="w">      </span><span class="no">Please outline:</span>
+<span class="w">      </span><span class="no">1. Test cases (valid/invalid formats)</span>
+<span class="w">      </span><span class="no">2. Edge cases (international domains, subdomains)</span>
+<span class="w">      </span><span class="no">3. Recommended library or algorithm</span>
+<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Write</span><span class="nv"> </span><span class="s">Tests&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">Based on the analysis above, write comprehensive unit tests for email validation.</span>
+<span class="w">      </span><span class="no">Use Rust&#39;s standard testing framework.</span>
+<span class="w">      </span><span class="no">Don&#39;t implement yet — just the tests.</span>
+<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Implement</span><span class="nv"> </span><span class="s">Feature&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">Now implement the email validation function to make the tests pass.</span>
+<span class="w">      </span><span class="no">Keep it simple and well-commented.</span>
+<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Review</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">Edge</span><span class="nv"> </span><span class="s">Cases&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">Review the implementation. Did we handle all the edge cases from the analysis?</span>
+<span class="w">      </span><span class="no">Suggest any additions.</span>
+<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Optimize&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">The implementation works. Can we make it faster or more readable?</span>
+<span class="w">      </span><span class="no">Suggest optimizations without breaking tests.</span>
+<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
+<span class="nt">test_cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;cargo</span><span class="nv"> </span><span class="s">test&quot;</span><span class="w">  </span><span class="c1"># Verify all tests pass</span>
+</code></pre></div>
+<h2 id="conditional-steps-when">Conditional Steps (when)<a class="headerlink" href="#conditional-steps-when" title="Permanent link">&para;</a></h2>
+<p>Control which steps run using the <code>when</code> field:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Check</span><span class="nv"> </span><span class="s">Compilation&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Does</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">code</span><span class="nv"> </span><span class="s">compile?</span><span class="nv"> </span><span class="s">Run</span><span class="nv"> </span><span class="s">`cargo</span><span class="nv"> </span><span class="s">check`&quot;</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Fix</span><span class="nv"> </span><span class="s">Compilation</span><span class="nv"> </span><span class="s">Errors&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Fix</span><span class="nv"> </span><span class="s">any</span><span class="nv"> </span><span class="s">compilation</span><span class="nv"> </span><span class="s">errors&quot;</span>
+<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># conditionally enable based on previous step</span>
+<span class="w">    </span><span class="c1"># In future versions: when: &quot;previous.step.failed&quot;</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Run</span><span class="nv"> </span><span class="s">Tests&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Run</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">test</span><span class="nv"> </span><span class="s">suite</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">`cargo</span><span class="nv"> </span><span class="s">test`&quot;</span>
+<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># always run</span>
+</code></pre></div>
+<p>Currently, <code>when</code> accepts boolean literals. Future versions will support expressions like:
+- <code>when: "previous_step.success"</code>
+- <code>when: "output_contains('error')"</code></p>
+<h2 id="tdd-hook-test_cmd-and-test-verification">TDD Hook: test_cmd and Test Verification<a class="headerlink" href="#tdd-hook-test_cmd-and-test-verification" title="Permanent link">&para;</a></h2>
+<p>The <code>test_cmd</code> field automatically runs tests after each step and feeds test failures back to the agent for fixing. This creates a tight TDD feedback loop.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Implementation</span><span class="nv"> </span><span class="s">Recipe&quot;</span>
+
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Write</span><span class="nv"> </span><span class="s">Implementation&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Implement</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">feature&quot;</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Add</span><span class="nv"> </span><span class="s">Tests&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Write</span><span class="nv"> </span><span class="s">tests</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">feature&quot;</span>
+
+<span class="nt">test_cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;cargo</span><span class="nv"> </span><span class="s">test</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">cargo</span><span class="nv"> </span><span class="s">clippy&quot;</span><span class="w">  </span><span class="c1"># Both must pass after each step</span>
+</code></pre></div>
+<p><strong>How test verification works:</strong></p>
+<ol>
+<li>Agent executes a step (writes code, modifies files)</li>
+<li><code>test_cmd</code> runs automatically: <code>cargo test</code></li>
+<li><strong>If tests pass:</strong> → move to next step</li>
+<li><strong>If tests fail:</strong> → feed test output to agent and retry (up to 3 times)</li>
+<li>Agent sees the failure and fixes code based on error messages</li>
+</ol>
+<p><strong>Example output:</strong></p>
+<div class="highlight"><pre><span></span><code>Recipe: TDD Implementation
+Step 1: Implement Authentication Function
+  Running: cargo test
+  test auth::test_login ... FAILED
+  error[E0308]: mismatched types
+
+  [Retry 1/3] Agent re-runs step with test output as context...
+  test auth::test_login ... PASSED ✓
+
+Step 2: Add Documentation
+  Running: cargo test &amp;&amp; cargo clippy
+  test result: ok. 5 passed ✓
+  clippy: no warnings ✓
+
+Recipe result: SUCCESS
+</code></pre></div>
+<p><strong>Configuration:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;TDD</span><span class="nv"> </span><span class="s">Feature&quot;</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Build</span><span class="nv"> </span><span class="s">a</span><span class="nv"> </span><span class="s">feature</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">automatic</span><span class="nv"> </span><span class="s">test</span><span class="nv"> </span><span class="s">verification&quot;</span>
+<span class="nt">test_cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;pytest</span><span class="nv"> </span><span class="s">tests/&quot;</span><span class="w">  </span><span class="c1"># Run after each step</span>
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">write_tests</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Write</span><span class="nv"> </span><span class="s">failing</span><span class="nv"> </span><span class="s">tests</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">new</span><span class="nv"> </span><span class="s">feature&quot;</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">implement</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Implement</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">feature</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">pass</span><span class="nv"> </span><span class="s">tests&quot;</span>
+<span class="w">    </span><span class="c1"># test_cmd runs here automatically</span>
+<span class="w">    </span><span class="c1"># If tests fail, agent retries with failure details</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cleanup</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Refactor</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">clarity&quot;</span>
+<span class="w">    </span><span class="c1"># test_cmd runs here too</span>
+</code></pre></div>
+<p><strong>Retry behavior:</strong></p>
+<ul>
+<li>Default: retry up to 3 times if tests fail</li>
+<li>Each retry includes the previous test output as context</li>
+<li>If max retries exhausted, recipe halts with error</li>
+<li>Successful runs advance to next step immediately</li>
+</ul>
+<p><strong>When to use test verification:</strong></p>
+<ul>
+<li>Implementing features (TDD: red-green-refactor)</li>
+<li>Bug fixes (regression test then fix)</li>
+<li>Refactoring (tests ensure behavior preserved)</li>
+<li>Complex algorithms (automatic validation)</li>
+</ul>
+<p><strong>Research:</strong> The TestVerificationLoop catches 40% more bugs than self-generated tests (AgentCoder study). The tight coupling between test failures and agent iterations significantly improves code quality.</p>
+<h2 id="running-recipes">Running Recipes<a class="headerlink" href="#running-recipes" title="Permanent link">&para;</a></h2>
+<h3 id="interactive-mode">Interactive Mode<a class="headerlink" href="#interactive-mode" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>code-review.yaml
+</code></pre></div>
+<p>Hone runs each step, streaming output. Press <code>y</code> at each step to proceed, <code>n</code> to skip, or <code>q</code> to quit.</p>
+<div class="highlight"><pre><span></span><code>Recipe: Code Review
+Step 1/3: Analyze Changes
+Agent: I found 3 issues...
+[pause] Continue to next step? [y/n/q]
+&gt; y
+
+Step 2/3: Suggest Improvements
+Agent: Top improvements are...
+[pause] Continue to next step? [y/n/q]
+&gt; y
+
+Step 3/3: Generate Summary
+Agent: Summary of review...
+[pause] Test command: cargo test
+✓ All tests passed
+Recipe completed successfully.
+</code></pre></div>
+<h3 id="batch-mode">Batch Mode<a class="headerlink" href="#batch-mode" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>code-review.yaml<span class="w"> </span>--non-interactive
+</code></pre></div>
+<p>Runs all steps without pausing. Useful for CI/CD.</p>
+<h3 id="with-model-override">With Model Override<a class="headerlink" href="#with-model-override" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>code-review.yaml<span class="w"> </span>--model<span class="w"> </span>ollama:llama2
+</code></pre></div>
+<p>Use a specific model for all steps in the recipe.</p>
+<h3 id="with-budget-limit">With Budget Limit<a class="headerlink" href="#with-budget-limit" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>code-review.yaml<span class="w"> </span>--budget<span class="w"> </span><span class="m">5</span>.00
+</code></pre></div>
+<p>Stop if the recipe exceeds $5 in API costs.</p>
+<h2 id="recipe-output-and-export">Recipe Output and Export<a class="headerlink" href="#recipe-output-and-export" title="Permanent link">&para;</a></h2>
+<p>Each recipe run produces a report:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>code-review.yaml<span class="w"> </span>--export-to<span class="w"> </span>review-report.json
+</code></pre></div>
+<p>Report format:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;recipe_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Code Review&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;started_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-04-05T14:30:00Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;completed_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-04-05T14:32:15Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Analyze Changes&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;output&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;The pull request contains...&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;skipped&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;tokens_input&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1200</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;tokens_output&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">340</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;cost_usd&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.024</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Suggest Improvements&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;output&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Top 3 improvements: ...&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;skipped&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;tokens_input&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2100</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;tokens_output&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">520</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;cost_usd&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.035</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;test_result&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;cmd&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cargo test&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;passed&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;output&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;test result: ok. 5 passed&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;session_cost_usd&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.059</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;success&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="recipe-directory-and-discovery">Recipe Directory and Discovery<a class="headerlink" href="#recipe-directory-and-discovery" title="Permanent link">&para;</a></h2>
+<p>Hone looks for recipes in:</p>
+<ol>
+<li>Current directory (<code>./*.yaml</code>)</li>
+<li><code>~/.config/hone/recipes/</code> (user recipes)</li>
+<li><code>/etc/hone/recipes/</code> (system recipes)</li>
+<li>Built-in recipes (bundled with Hone)</li>
+</ol>
+<p>List all available recipes:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--list-recipes
+</code></pre></div>
+<p>Output:</p>
+<div class="highlight"><pre><span></span><code>Available recipes:
+  user:
+    code-review.yaml — Review a code change and suggest improvements
+    tdd-feature.yaml — Implement a feature test-first
+  system:
+    documentation.yaml — Auto-generate API documentation
+    refactor.yaml — Refactor code safely
+  built-in:
+    unit-test.yaml — Write comprehensive unit tests
+    integration-test.yaml — Write integration tests
+</code></pre></div>
+<h2 id="writing-your-own-recipe">Writing Your Own Recipe<a class="headerlink" href="#writing-your-own-recipe" title="Permanent link">&para;</a></h2>
+<p>Step-by-step:</p>
+<ol>
+<li>Create a <code>.yaml</code> file:</li>
+</ol>
+<div class="highlight"><pre><span></span><code>cat<span class="w"> </span>&gt;<span class="w"> </span>my-recipe.yaml<span class="w"> </span><span class="s">&lt;&lt; &#39;EOF&#39;</span>
+<span class="s">name: &quot;My Workflow&quot;</span>
+<span class="s">description: &quot;What this recipe does&quot;</span>
+
+<span class="s">steps:</span>
+<span class="s">  - name: &quot;Step 1&quot;</span>
+<span class="s">    prompt: &quot;First prompt&quot;</span>
+
+<span class="s">  - name: &quot;Step 2&quot;</span>
+<span class="s">    prompt: &quot;Second prompt&quot;</span>
+
+<span class="s">test_cmd: &quot;echo &#39;All done!&#39;&quot;</span>
+<span class="s">EOF</span>
+</code></pre></div>
+<ol>
+<li>Test it locally:</li>
+</ol>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>my-recipe.yaml
+</code></pre></div>
+<ol>
+<li>Share it: Commit to your repo or publish to the Hone marketplace.</li>
+</ol>
+<h2 id="best-practices">Best Practices<a class="headerlink" href="#best-practices" title="Permanent link">&para;</a></h2>
+<h3 id="1-clear-prompts">1. Clear Prompts<a class="headerlink" href="#1-clear-prompts" title="Permanent link">&para;</a></h3>
+<p>Write prompts that give the agent specific direction:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Good</span>
+<span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">  </span><span class="no">Write unit tests for the `validate_email` function.</span>
+<span class="w">  </span><span class="no">Use Rust&#39;s #[test] macro.</span>
+<span class="w">  </span><span class="no">Include at least 5 test cases.</span>
+
+<span class="c1"># Vague</span>
+<span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Write</span><span class="nv"> </span><span class="s">tests&quot;</span>
+</code></pre></div>
+<h3 id="2-break-down-steps">2. Break Down Steps<a class="headerlink" href="#2-break-down-steps" title="Permanent link">&para;</a></h3>
+<p>Separate concerns into distinct steps:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Good: each step has a clear focus</span>
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Analyze&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Analyze</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">requirements&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Design&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Design</span><span class="nv"> </span><span class="s">a</span><span class="nv"> </span><span class="s">solution&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Implement&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Implement</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">design&quot;</span>
+
+<span class="c1"># Vague: too much in one step</span>
+<span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Do</span><span class="nv"> </span><span class="s">everything&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Analyze,</span><span class="nv"> </span><span class="s">design,</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">implement&quot;</span>
+</code></pre></div>
+<h3 id="3-reference-previous-steps">3. Reference Previous Steps<a class="headerlink" href="#3-reference-previous-steps" title="Permanent link">&para;</a></h3>
+<p>Prompts can reference outputs from earlier steps implicitly (the conversation history includes them):</p>
+<div class="highlight"><pre><span></span><code><span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Identify</span><span class="nv"> </span><span class="s">Issues&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;List</span><span class="nv"> </span><span class="s">all</span><span class="nv"> </span><span class="s">issues</span><span class="nv"> </span><span class="s">in</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">code&quot;</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Fix</span><span class="nv"> </span><span class="s">Issues&quot;</span>
+<span class="w">    </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Fix</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">issues</span><span class="nv"> </span><span class="s">you</span><span class="nv"> </span><span class="s">identified</span><span class="nv"> </span><span class="s">above&quot;</span>
+<span class="w">    </span><span class="c1"># The agent sees the previous step&#39;s output in context</span>
+</code></pre></div>
+<h3 id="4-use-test_cmd-for-verification">4. Use test_cmd for Verification<a class="headerlink" href="#4-use-test_cmd-for-verification" title="Permanent link">&para;</a></h3>
+<p>Always include a test command to catch regressions:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">test_cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;cargo</span><span class="nv"> </span><span class="s">test</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">cargo</span><span class="nv"> </span><span class="s">clippy</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">cargo</span><span class="nv"> </span><span class="s">fmt</span><span class="nv"> </span><span class="s">--check&quot;</span>
+</code></pre></div>
+<h2 id="marketplace">Marketplace<a class="headerlink" href="#marketplace" title="Permanent link">&para;</a></h2>
+<p>Share recipes with the community (future feature):</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>recipe-publish<span class="w"> </span>my-recipe.yaml
+</code></pre></div>
+<p>This publishes your recipe to the Hone marketplace. Others can then:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>@username/my-recipe.yaml
+</code></pre></div>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Getting started:</strong> See <a href="../getting-started/">Getting Started</a> to run your first session.</li>
+<li><strong>Providers:</strong> Configure multiple providers in <a href="../providers/">Providers Guide</a>.</li>
+<li><strong>Tools:</strong> Use recipes with custom tools in <a href="../tools-and-mcp/">Tools Guide</a>.</li>
+<li><strong>Server:</strong> Trigger recipes remotely via <a href="../server-and-remote/">Server Guide</a>.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

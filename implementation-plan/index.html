@@ -1,0 +1,2985 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/implementation-plan/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Hone — TDD Implementation Plan - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#hone-tdd-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Hone — TDD Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-tdd-workflow-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. TDD Workflow Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. TDD Workflow Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#testing-levels-per-crate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing levels per crate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-dependency-order-crate-build-sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Dependency Order &amp; Crate Build Sequence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-phase-0-core-foundation-aprjun-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Phase 0 — Core Foundation (Apr–Jun 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Phase 0 — Core Foundation (Apr–Jun 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-task-p0-1-hone-proto-shared-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Task P0-1: hone-proto — Shared Types
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3.1 Task P0-1: hone-proto — Shared Types">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-task-p0-2-hone-config-configuration-parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Task P0-2: hone-config — Configuration Parsing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3.2 Task P0-2: hone-config — Configuration Parsing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-task-p0-3-hone-sandbox-kernel-policy-enforcement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Task P0-3: hone-sandbox — Kernel Policy Enforcement
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3.3 Task P0-3: hone-sandbox — Kernel Policy Enforcement">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-task-p0-4-hone-providers-model-provider-abstraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Task P0-4: hone-providers — Model Provider Abstraction
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3.4 Task P0-4: hone-providers — Model Provider Abstraction">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-task-p0-5-hone-tools-layer-2-native-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 Task P0-5: hone-tools — Layer 2 Native Tools
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3.5 Task P0-5: hone-tools — Layer 2 Native Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#36-task-p0-6-hone-mcp-mcp-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.6 Task P0-6: hone-mcp — MCP Client
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3.6 Task P0-6: hone-mcp — MCP Client">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#37-task-p0-7-hone-core-agent-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.7 Task P0-7: hone-core — Agent Loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3.7 Task P0-7: hone-core — Agent Loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#38-task-p0-8-hone-tui-ratatui-terminal-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.8 Task P0-8: hone-tui — Ratatui Terminal UI
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3.8 Task P0-8: hone-tui — Ratatui Terminal UI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-phase-1-intelligence-layer-julsep-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Phase 1 — Intelligence Layer (Jul–Sep 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Phase 1 — Intelligence Layer (Jul–Sep 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-task-p1-1-hone-index-semantic-indexer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Task P1-1: hone-index — Semantic Indexer
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4.1 Task P1-1: hone-index — Semantic Indexer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-task-p1-2-hone-memory-adaptive-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Task P1-2: hone-memory — Adaptive Memory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4.2 Task P1-2: hone-memory — Adaptive Memory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-task-p1-3-lsp-bridge-in-hone-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Task P1-3: LSP Bridge in hone-tools
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4.3 Task P1-3: LSP Bridge in hone-tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-task-p1-4-git-workflow-in-hone-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Task P1-4: Git Workflow in hone-tools
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4.4 Task P1-4: Git Workflow in hone-tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-task-p1-5-cost-estimation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 Task P1-5: Cost Estimation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4.5 Task P1-5: Cost Estimation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-phase-2-multi-surface-sepdec-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Phase 2 — Multi-Surface (Sep–Dec 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Phase 2 — Multi-Surface (Sep–Dec 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-task-p2-1-hone-server-http2-sse-daemon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Task P2-1: hone-server — HTTP/2 + SSE Daemon
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5.1 Task P2-1: hone-server — HTTP/2 + SSE Daemon">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refactor_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REFACTOR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-task-p2-2-tunnel-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Task P2-2: Tunnel Support
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5.2 Task P2-2: Tunnel Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-phase-3-power-features-dec-2026feb-2027" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Phase 3 — Power Features (Dec 2026–Feb 2027)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Phase 3 — Power Features (Dec 2026–Feb 2027)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-task-p3-1-hone-recipes-yaml-recipe-runner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Task P3-1: hone-recipes — YAML Recipe Runner
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6.1 Task P3-1: hone-recipes — YAML Recipe Runner">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-task-p3-2-semantic-indexer-code-mode-layer-0" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Task P3-2: Semantic Indexer — Code Mode (Layer 0)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6.2 Task P3-2: Semantic Indexer — Code Mode (Layer 0)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#red-write-these-tests-first_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RED — Write these tests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#green-implement_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GREEN — Implement
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-phase-4-team-enterprise-marjul-2027" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Phase 4 — Team &amp; Enterprise (Mar–Jul 2027)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-integration-test-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Integration Test Strategy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Integration Test Strategy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#real-vs-mocked-per-test-tier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Real vs mocked per test tier
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-fixtures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test fixtures
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-property-based-testing-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Property-Based Testing Plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-benchmark-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Benchmark Plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-cicd-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. CI/CD Pipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. CI/CD Pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#branch-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Branch strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#required-pr-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required PR checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-key-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Key Dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-gantt-chart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Gantt Chart
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="hone-tdd-implementation-plan">Hone — TDD Implementation Plan<a class="headerlink" href="#hone-tdd-implementation-plan" title="Permanent link">&para;</a></h1>
+<p><strong>Version:</strong> 1.0<br />
+<strong>Date:</strong> 2026-04-04<br />
+<strong>Status:</strong> Working Draft</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#1-tdd-workflow-overview">TDD Workflow Overview</a></li>
+<li><a href="#2-dependency-order--crate-build-sequence">Dependency Order &amp; Crate Build Sequence</a></li>
+<li><a href="#3-phase-0--core-foundation-aprjun-2026">Phase 0 — Core Foundation (Apr–Jun 2026)</a></li>
+<li><a href="#4-phase-1--intelligence-layer-julsep-2026">Phase 1 — Intelligence Layer (Jul–Sep 2026)</a></li>
+<li><a href="#5-phase-2--multi-surface-sepdec-2026">Phase 2 — Multi-Surface (Sep–Dec 2026)</a></li>
+<li><a href="#6-phase-3--power-features-dec-2026feb-2027">Phase 3 — Power Features (Dec 2026–Feb 2027)</a></li>
+<li><a href="#7-phase-4--team--enterprise-marjul-2027">Phase 4 — Team &amp; Enterprise (Mar–Jul 2027)</a></li>
+<li><a href="#8-integration-test-strategy">Integration Test Strategy</a></li>
+<li><a href="#9-property-based-testing-plan">Property-Based Testing Plan</a></li>
+<li><a href="#10-benchmark-plan">Benchmark Plan</a></li>
+<li><a href="#11-cicd-pipeline">CI/CD Pipeline</a></li>
+<li><a href="#12-key-dependencies">Key Dependencies</a></li>
+<li><a href="#13-gantt-chart">Gantt Chart</a></li>
+</ol>
+<hr />
+<h2 id="1-tdd-workflow-overview">1. TDD Workflow Overview<a class="headerlink" href="#1-tdd-workflow-overview" title="Permanent link">&para;</a></h2>
+<p>Every task in this plan follows the same Red → Green → Refactor cycle. The flow below applies at every level: unit, integration, and property-based tests.</p>
+<pre class="mermaid"><code>flowchart TD
+    START([New task]) --&gt; RED
+    RED["RED\nWrite a failing test\nthat describes the behavior\nyou want"] --&gt; COMPILE
+    COMPILE{Does it compile?}
+    COMPILE -- No --&gt; FIXTYPE["Fix type errors\n(don't make the test pass yet)"]
+    FIXTYPE --&gt; COMPILE
+    COMPILE -- Yes --&gt; RUNFAIL{Does it fail\nfor the right reason?}
+    RUNFAIL -- No --&gt; REVISIT["Revise test —\nit may be testing the wrong thing"]
+    REVISIT --&gt; RED
+    RUNFAIL -- Yes --&gt; GREEN
+    GREEN["GREEN\nWrite the minimum code\nto make the test pass\n(no premature abstraction)"] --&gt; RUNPASS
+    RUNPASS{All tests pass?}
+    RUNPASS -- No --&gt; GREEN
+    RUNPASS -- Yes --&gt; REFACTOR
+    REFACTOR["REFACTOR\nImprove code quality:\n- extract duplication\n- clarify names\n- tighten types\n- add error variants"] --&gt; RUNPASS2
+    RUNPASS2{All tests still pass?}
+    RUNPASS2 -- No --&gt; REFACTOR
+    RUNPASS2 -- Yes --&gt; COMMIT["Commit: tests + impl together"]
+    COMMIT --&gt; NEXT([Next task])</code></pre>
+<h3 id="testing-levels-per-crate">Testing levels per crate<a class="headerlink" href="#testing-levels-per-crate" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Location</th>
+<th>Tools</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unit</td>
+<td><code>crates/*/src/</code> — <code>#[cfg(test)]</code></td>
+<td><code>std</code> test harness, <code>mockall</code></td>
+<td>Every public fn</td>
+</tr>
+<tr>
+<td>Integration</td>
+<td><code>crates/*/tests/</code></td>
+<td><code>tokio::test</code>, real dependencies</td>
+<td>Every trait impl</td>
+</tr>
+<tr>
+<td>Property</td>
+<td><code>crates/*/tests/</code></td>
+<td><code>proptest</code></td>
+<td>Parsing, encoding, index ops</td>
+</tr>
+<tr>
+<td>Benchmark</td>
+<td><code>benches/</code></td>
+<td><code>criterion</code></td>
+<td>Hot paths, performance targets</td>
+</tr>
+<tr>
+<td>Workspace integration</td>
+<td><code>tests/</code></td>
+<td><code>assert_cmd</code>, <code>tempfile</code></td>
+<td>Full CLI commands</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-dependency-order-crate-build-sequence">2. Dependency Order &amp; Crate Build Sequence<a class="headerlink" href="#2-dependency-order-crate-build-sequence" title="Permanent link">&para;</a></h2>
+<p>Crates must be built in dependency order. The graph below is the canonical implementation sequence — never start a crate until all its dependencies have green test suites.</p>
+<pre class="mermaid"><code>flowchart LR
+    P0(["START"])
+    PROTO["1. hone-proto\n(shared types)"]
+    CFG["2. hone-config\n(TOML + HONE.md)"]
+    SB["3. hone-sandbox\n(kernel policy)"]
+    PROV["4. hone-providers\n(model adapters)"]
+    TOOLS["5. hone-tools\n(L2 native tools)"]
+    MCP["6. hone-mcp\n(L1 JSON-RPC)"]
+    IDX["7. hone-index\n(AST + vectors)"]
+    MEM["8. hone-memory\n(adaptive SQLite)"]
+    CORE["9. hone-core\n(agent loop)"]
+    TUI["10. hone-tui\n(Ratatui)"]
+    REC["11. hone-recipes\n(YAML runner)"]
+    SRV["12. hone-server\n(HTTP/2+SSE)"]
+
+    P0 --&gt; PROTO --&gt; CFG
+    PROTO --&gt; SB
+    PROTO --&gt; PROV
+    SB --&gt; TOOLS
+    PROTO --&gt; TOOLS
+    PROTO --&gt; MCP
+    TOOLS --&gt; MCP
+    CFG --&gt; CORE
+    SB --&gt; CORE
+    PROV --&gt; CORE
+    TOOLS --&gt; CORE
+    MCP --&gt; CORE
+    IDX --&gt; CORE
+    MEM --&gt; CORE
+    CORE --&gt; TUI
+    CORE --&gt; REC
+    CORE --&gt; SRV</code></pre>
+<hr />
+<h2 id="3-phase-0-core-foundation-aprjun-2026">3. Phase 0 — Core Foundation (Apr–Jun 2026)<a class="headerlink" href="#3-phase-0-core-foundation-aprjun-2026" title="Permanent link">&para;</a></h2>
+<h3 id="31-task-p0-1-hone-proto-shared-types">3.1 Task P0-1: <code>hone-proto</code> — Shared Types<a class="headerlink" href="#31-task-p0-1-hone-proto-shared-types" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> All shared DTOs, IDs, and serialization. Zero logic — pure data.</p>
+<h4 id="red-write-these-tests-first">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-proto/tests/serialization.rs
+</code></pre></div>
+<ul>
+<li><code>test_message_roundtrip</code>: serialize <code>Message</code> to JSON, deserialize back, assert equality.</li>
+<li><code>test_model_id_display</code>: <code>ModelId::from("anthropic:claude-opus-4-5")</code> renders as <code>"anthropic:claude-opus-4-5"</code>.</li>
+<li><code>test_token_usage_add</code>: <code>TokenUsage</code> addition is associative (property test).</li>
+<li><code>test_session_id_is_uuid</code>: <code>SessionId::new()</code> produces a valid UUID v7.</li>
+</ul>
+<h4 id="green-implement">GREEN — Implement<a class="headerlink" href="#green-implement" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>Message { role: Role, content: Content, tool_calls: Vec&lt;ToolCallRequest&gt; }</code></li>
+<li><code>ModelId(String)</code> newtype with <code>Display</code>, <code>FromStr</code></li>
+<li><code>TokenUsage { input: u32, output: u32, cache_read: u32 }</code> + <code>Add</code> impl</li>
+<li><code>SessionId(Uuid)</code> newtype</li>
+<li><code>ToolCallRequest</code>, <code>ToolResult</code>, <code>ToolSchema</code></li>
+<li>All types: <code>#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]</code></li>
+</ul>
+<h4 id="refactor">REFACTOR<a class="headerlink" href="#refactor" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Ensure <code>Content</code> handles both <code>String</code> and <code>Vec&lt;ContentPart&gt;</code> (text + images).</li>
+<li>Add <code>#[serde(deny_unknown_fields)]</code> on wire types.</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>serde</code>, <code>serde_json</code>, <code>uuid</code> (v7 feature), <code>time</code></p>
+<hr />
+<h3 id="32-task-p0-2-hone-config-configuration-parsing">3.2 Task P0-2: <code>hone-config</code> — Configuration Parsing<a class="headerlink" href="#32-task-p0-2-hone-config-configuration-parsing" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Parse <code>~/.config/hone/config.toml</code> and project-local <code>HONE.md</code>.</p>
+<h4 id="red-write-these-tests-first_1">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_1" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-config/tests/config.rs
+</code></pre></div>
+<ul>
+<li><code>test_default_config_is_valid</code>: <code>Config::default()</code> passes validation.</li>
+<li><code>test_parse_minimal_toml</code>: parse a minimal TOML string, assert required fields present.</li>
+<li><code>test_parse_provider_block</code>: TOML with <code>[provider.anthropic]</code> sets the API key field.</li>
+<li><code>test_hone_md_extracts_sections</code>: a markdown string with <code>## TOOLS</code> and <code>## STYLE</code> headings is correctly sectioned.</li>
+<li><code>test_unknown_toml_key_errors</code>: extra unknown field returns <code>ConfigError::UnknownField</code>.</li>
+<li><code>test_merge_project_over_global</code>: project config overrides global config for shared keys.</li>
+</ul>
+<h4 id="green-implement_1">GREEN — Implement<a class="headerlink" href="#green-implement_1" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>Config</code> struct with <code>providers: HashMap&lt;String, ProviderConfig&gt;</code>, <code>sandbox: SandboxConfig</code>, <code>model_routing: Vec&lt;RoutingRule&gt;</code></li>
+<li><code>HoneMd</code> struct with <code>sections: HashMap&lt;String, String&gt;</code> parsed from markdown headings</li>
+<li><code>Config::load(global: &amp;Path, project: &amp;Path) -&gt; Result&lt;Config, ConfigError&gt;</code></li>
+<li><code>ConfigError</code> enum with <code>thiserror</code></li>
+</ul>
+<h4 id="refactor_1">REFACTOR<a class="headerlink" href="#refactor_1" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Add <code>figment</code> for layered config (env vars override file, which overrides defaults).</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>toml</code>, <code>figment</code>, <code>pulldown-cmark</code>, <code>dirs</code></p>
+<hr />
+<h3 id="33-task-p0-3-hone-sandbox-kernel-policy-enforcement">3.3 Task P0-3: <code>hone-sandbox</code> — Kernel Policy Enforcement<a class="headerlink" href="#33-task-p0-3-hone-sandbox-kernel-policy-enforcement" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Platform-specific sandbox with fail-closed semantics.</p>
+<h4 id="red-write-these-tests-first_2">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_2" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-sandbox/tests/sandbox.rs
+</code></pre></div>
+<ul>
+<li><code>test_null_sandbox_always_succeeds</code>: <code>NullSandbox</code> (test double) always returns <code>Ok</code>.</li>
+<li><code>test_policy_builder_rejects_empty_allowlist</code>: <code>SandboxPolicyBuilder::build()</code> with no paths returns <code>Err</code>.</li>
+<li><code>test_seatbelt_profile_renders_correctly</code>: <code>SeatbeltProfile::from_policy(policy)</code> produces valid profile syntax (snapshot test).</li>
+<li><code>test_landlock_rules_from_policy</code>: <code>LandlockRuleset::from_policy(policy)</code> produces the expected rule count.</li>
+<li><code>test_child_process_cannot_write_outside_allowlist</code>: spawn a subprocess that tries to write <code>/tmp/evil</code>; assert it gets <code>EPERM</code> (integration test, Linux only, <code>#[cfg(target_os = "linux")]</code>).</li>
+<li><code>test_sandbox_error_on_unsupported_platform</code>: <code>ContainerSandbox::apply</code> on a platform that doesn't support it returns <code>SandboxError::Unavailable</code> (not a panic).</li>
+</ul>
+<h4 id="green-implement_2">GREEN — Implement<a class="headerlink" href="#green-implement_2" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>SandboxPolicy</code> and <code>SandboxPolicyBuilder</code></li>
+<li><code>Sandbox</code> trait</li>
+<li><code>NullSandbox</code> (always-allow, for tests)</li>
+<li><code>SeatbeltSandbox</code> (macOS — <code>sandbox_init</code> via FFI)</li>
+<li><code>LandlockSandbox</code> (Linux — <code>rustix</code> + <code>seccompiler</code>)</li>
+<li><code>ContainerSandbox</code> (setrlimit fallback)</li>
+<li><code>SandboxBuilder::detect() -&gt; Box&lt;dyn Sandbox&gt;</code> — selects strongest available</li>
+</ul>
+<h4 id="refactor_2">REFACTOR<a class="headerlink" href="#refactor_2" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Extract the profile DSL for Seatbelt into a separate module with its own tests.</li>
+<li>Add the <code>fail_closed</code> invariant as a documented contract in the trait doc comment.</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>rustix</code>, <code>seccompiler</code>, <code>libc</code>, <code>cfg-if</code></p>
+<hr />
+<h3 id="34-task-p0-4-hone-providers-model-provider-abstraction">3.4 Task P0-4: <code>hone-providers</code> — Model Provider Abstraction<a class="headerlink" href="#34-task-p0-4-hone-providers-model-provider-abstraction" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> <code>ModelProvider</code> trait + concrete adapters for Anthropic, OpenAI, Ollama. Router and fallback chain.</p>
+<h4 id="red-write-these-tests-first_3">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_3" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-providers/tests/
+├── provider_contract.rs   # trait contract tests run against every adapter
+├── anthropic.rs
+├── openai.rs
+├── ollama.rs
+├── router.rs
+└── fallback.rs
+</code></pre></div>
+<ul>
+<li><code>test_anthropic_request_serializes_correctly</code>: build a <code>CompletionRequest</code>, call the serializer, assert the JSON body matches Anthropic's API format (no network).</li>
+<li><code>test_openai_request_serializes_correctly</code>: same for OpenAI.</li>
+<li><code>test_stream_events_parse_from_sse_bytes</code>: feed raw SSE bytes into the parser, assert <code>ProviderEvent</code> sequence matches expected tokens.</li>
+<li><code>test_estimate_tokens_is_under_actual</code>: <code>estimate_tokens</code> returns a value ≤ the actual token count returned by the API (property: never over-estimate).</li>
+<li><code>test_router_selects_by_model_id_prefix</code>: routing rule <code>anthropic:*</code> routes to <code>AnthropicProvider</code>.</li>
+<li><code>test_fallback_chain_tries_next_on_rate_limit</code>: when provider 1 returns <code>RateLimit</code>, the chain tries provider 2.</li>
+<li><code>test_provider_registry_hot_swap</code>: swap the active provider, assert next <code>complete()</code> call goes to new provider.</li>
+</ul>
+<h4 id="green-implement_3">GREEN — Implement<a class="headerlink" href="#green-implement_3" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>ModelProvider</code> trait (see architecture doc)</li>
+<li><code>AnthropicProvider</code>, <code>OpenAiProvider</code>, <code>OllamaProvider</code>, <code>CliPassthroughProvider</code></li>
+<li><code>ProviderRegistry</code> with <code>register</code>, <code>get</code>, <code>swap</code></li>
+<li><code>ModelRouter</code> with routing rules from config</li>
+<li><code>FallbackChain(Vec&lt;Arc&lt;dyn ModelProvider&gt;&gt;)</code></li>
+<li><code>MockProvider</code> (in <code>#[cfg(test)]</code> module) — deterministic, no network</li>
+</ul>
+<h4 id="refactor_3">REFACTOR<a class="headerlink" href="#refactor_3" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Abstract the HTTP client into a <code>HttpClient</code> trait so tests can inject a mock transport.</li>
+<li>Add retry logic with exponential backoff for <code>RateLimit</code> errors.</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>reqwest</code> (rustls-tls feature), <code>eventsource-stream</code>, <code>tiktoken-rs</code>, <code>async-trait</code></p>
+<hr />
+<h3 id="35-task-p0-5-hone-tools-layer-2-native-tools">3.5 Task P0-5: <code>hone-tools</code> — Layer 2 Native Tools<a class="headerlink" href="#35-task-p0-5-hone-tools-layer-2-native-tools" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> All Layer 2 tools behind the <code>Tool</code> trait: file read/write/edit, shell exec, git ops.</p>
+<h4 id="red-write-these-tests-first_4">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_4" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-tools/tests/
+├── file_tools.rs
+├── shell_tool.rs
+└── git_tools.rs
+</code></pre></div>
+<ul>
+<li><code>test_read_file_returns_content</code>: write a temp file, call <code>ReadFileTool</code>, assert content matches.</li>
+<li><code>test_write_file_creates_file</code>: call <code>WriteFileTool</code> on a nonexistent path in a tempdir, assert file created.</li>
+<li><code>test_edit_file_applies_diff</code>: call <code>EditFileTool</code> with <code>old_str</code>/<code>new_str</code>, assert file updated, no other lines changed.</li>
+<li><code>test_shell_tool_captures_stdout_stderr</code>: run <code>echo hello</code>, assert output is <code>"hello\n"</code>.</li>
+<li><code>test_shell_tool_respects_timeout</code>: run <code>sleep 10</code> with a 100ms timeout, assert <code>ToolError::Timeout</code>.</li>
+<li><code>test_shell_tool_sandbox_blocks_exec_outside_allowlist</code>: <code>NullSandbox</code> allows it; a restrictive policy blocks it.</li>
+<li><code>test_git_status_parses_output</code>: call <code>GitStatusTool</code> on a temp git repo with a staged file, assert the result contains the expected file.</li>
+<li><code>test_git_commit_creates_commit</code>: stage a file, call <code>GitCommitTool</code>, assert <code>git log</code> shows the new commit.</li>
+<li><code>test_tool_schema_is_valid_json_schema</code>: every tool's <code>schema()</code> passes JSON Schema meta-validation.</li>
+</ul>
+<h4 id="green-implement_4">GREEN — Implement<a class="headerlink" href="#green-implement_4" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>Tool</code> trait</li>
+<li><code>ReadFileTool</code>, <code>WriteFileTool</code>, <code>EditFileTool</code>, <code>GlobTool</code>, <code>GrepTool</code></li>
+<li><code>ShellTool</code> (uses <code>tokio::process::Command</code> + <code>tokio::time::timeout</code>)</li>
+<li><code>GitStatusTool</code>, <code>GitDiffTool</code>, <code>GitCommitTool</code>, <code>GitCheckoutTool</code>, <code>GitBranchTool</code></li>
+<li><code>ToolRegistry</code> — collects all tools, exposes schemas to providers</li>
+</ul>
+<h4 id="refactor_4">REFACTOR<a class="headerlink" href="#refactor_4" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Unify path resolution (all paths relative to <code>ToolContext::working_dir</code>).</li>
+<li>Add structured output types per tool (rather than raw <code>serde_json::Value</code> in all cases).</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>tokio-process</code>, <code>git2</code>, <code>ignore</code> (gitignore-aware globbing), <code>similar</code> (diff)</p>
+<hr />
+<h3 id="36-task-p0-6-hone-mcp-mcp-client">3.6 Task P0-6: <code>hone-mcp</code> — MCP Client<a class="headerlink" href="#36-task-p0-6-hone-mcp-mcp-client" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> JSON-RPC MCP client that wraps remote tools as <code>dyn Tool</code>.</p>
+<h4 id="red-write-these-tests-first_5">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_5" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-mcp/tests/mcp_client.rs
+</code></pre></div>
+<ul>
+<li><code>test_connect_sends_initialize</code>: mock MCP server receives <code>initialize</code> JSON-RPC message on connect.</li>
+<li><code>test_list_tools_parses_response</code>: feed a <code>tools/list</code> response JSON, assert correct <code>McpToolDef</code> structs.</li>
+<li><code>test_call_tool_sends_correct_json</code>: calling <code>McpTool::call</code> sends a <code>tools/call</code> JSON-RPC request to the mock server.</li>
+<li><code>test_mcp_tool_wraps_as_native_tool</code>: <code>tools_as_native()</code> returns <code>Box&lt;dyn Tool&gt;</code> that delegates to JSON-RPC.</li>
+<li><code>test_server_startup_timeout_returns_error</code>: if server process doesn't initialize within 5s, returns <code>McpError::Timeout</code>.</li>
+</ul>
+<h4 id="green-implement_5">GREEN — Implement<a class="headerlink" href="#green-implement_5" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>StdioMcpTransport</code> (spawn subprocess, communicate over stdin/stdout)</li>
+<li><code>HttpMcpTransport</code> (HTTP JSON-RPC)</li>
+<li><code>McpClient</code> trait and <code>DefaultMcpClient</code> impl</li>
+<li><code>McpTool</code> wrapper implementing <code>Tool</code></li>
+<li>Lazy schema loading: schemas fetched once on first use, cached</li>
+</ul>
+<h4 id="refactor_5">REFACTOR<a class="headerlink" href="#refactor_5" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Add connection pooling for HTTP transports.</li>
+<li>Content-hash verification of MCP server binaries.</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>jsonrpc-core</code>, <code>serde_json</code>, <code>tokio-process</code></p>
+<hr />
+<h3 id="37-task-p0-7-hone-core-agent-loop">3.7 Task P0-7: <code>hone-core</code> — Agent Loop<a class="headerlink" href="#37-task-p0-7-hone-core-agent-loop" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> The orchestration core: turn execution, context management, provider streaming, tool dispatch.</p>
+<h4 id="red-write-these-tests-first_6">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_6" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-core/tests/
+├── agent_turn.rs
+├── context_manager.rs
+└── tool_dispatch.rs
+</code></pre></div>
+<ul>
+<li><code>test_single_turn_no_tools</code>: <code>Agent::run_turn("hello")</code> with <code>MockProvider</code> returning a single token stream produces <code>AgentEvent::Token</code> then <code>AgentEvent::Done</code>.</li>
+<li><code>test_tool_call_dispatched_and_result_fed_back</code>: <code>MockProvider</code> emits a <code>ToolCall</code> event; assert the tool is called with correct args; assert a second provider call includes the tool result.</li>
+<li><code>test_context_manager_truncates_to_model_limit</code>: add messages until context limit exceeded; assert <code>ContextManager::build_messages</code> returns messages within the token limit.</li>
+<li><code>test_context_manager_keeps_system_message</code>: even after truncation, the system message is always present.</li>
+<li><code>test_agent_hot_swap_mid_session</code>: call <code>swap_provider</code>, assert next turn uses new provider, history preserved.</li>
+<li><code>test_sandbox_block_aborts_tool_call</code>: sandbox returns <code>SandboxError</code>, assert the tool is not called and <code>AgentEvent::Error</code> is emitted.</li>
+<li><code>test_run_turn_propagates_cancellation</code>: cancel via <code>CancellationToken</code>, assert stream terminates cleanly.</li>
+</ul>
+<h4 id="green-implement_6">GREEN — Implement<a class="headerlink" href="#green-implement_6" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>Agent</code>, <code>AgentConfig</code></li>
+<li><code>ContextManager</code> with <code>build_messages(token_budget: u32) -&gt; Vec&lt;Message&gt;</code></li>
+<li><code>Session</code> — persists turn history</li>
+<li><code>ToolDispatcher</code> — routes <code>ToolCallRequest</code> to the correct <code>Box&lt;dyn Tool&gt;</code></li>
+<li><code>AgentEvent</code> enum</li>
+<li><code>TurnResult</code> with token usage and cost</li>
+</ul>
+<h4 id="refactor_6">REFACTOR<a class="headerlink" href="#refactor_6" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Extract system prompt construction into a dedicated <code>SystemPromptBuilder</code> that incorporates <code>HoneMd</code> sections.</li>
+<li>Add a <code>CostAccumulator</code> to track session-total cost.</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>tokio</code>, <code>futures</code>, <code>tokio-util</code>, <code>async-trait</code></p>
+<hr />
+<h3 id="38-task-p0-8-hone-tui-ratatui-terminal-ui">3.8 Task P0-8: <code>hone-tui</code> — Ratatui Terminal UI<a class="headerlink" href="#38-task-p0-8-hone-tui-ratatui-terminal-ui" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Sub-100ms startup, &lt;50MB idle. Input → agent → streamed output.</p>
+<h4 id="red-write-these-tests-first_7">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_7" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-tui/tests/tui.rs
+</code></pre></div>
+<ul>
+<li><code>test_input_widget_captures_keystrokes</code>: simulate key events, assert input buffer updates.</li>
+<li><code>test_message_list_renders_tokens_incrementally</code>: push <code>AgentEvent::Token</code> events, assert the rendered cell buffer contains them in order.</li>
+<li><code>test_startup_time</code>: measure time from <code>App::new()</code> to first rendered frame; assert &lt; 100ms.</li>
+<li><code>test_resize_redraws_correctly</code>: change terminal size, assert re-render doesn't panic.</li>
+</ul>
+<h4 id="green-implement_7">GREEN — Implement<a class="headerlink" href="#green-implement_7" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>App</code> struct with <code>EventLoop</code></li>
+<li><code>InputWidget</code>, <code>MessageListWidget</code>, <code>StatusBarWidget</code>, <code>CostWidget</code></li>
+<li>Streaming token rendering (append to active message cell)</li>
+<li>Keybindings: <code>Enter</code> submit, <code>Ctrl-C</code> cancel, <code>/model</code> command prefix</li>
+</ul>
+<h4 id="refactor_7">REFACTOR<a class="headerlink" href="#refactor_7" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Use <code>ratatui</code>'s <code>StatefulWidget</code> for the message list to handle scroll independently of render.</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>ratatui</code>, <code>crossterm</code>, <code>tokio</code></p>
+<hr />
+<h2 id="4-phase-1-intelligence-layer-julsep-2026">4. Phase 1 — Intelligence Layer (Jul–Sep 2026)<a class="headerlink" href="#4-phase-1-intelligence-layer-julsep-2026" title="Permanent link">&para;</a></h2>
+<h3 id="41-task-p1-1-hone-index-semantic-indexer">4.1 Task P1-1: <code>hone-index</code> — Semantic Indexer<a class="headerlink" href="#41-task-p1-1-hone-index-semantic-indexer" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Tree-sitter AST parsing + SQLite vector search, builds 50K LOC in &lt;30s.</p>
+<h4 id="red-write-these-tests-first_8">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_8" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-index/tests/
+├── indexer.rs
+├── search.rs
+└── incremental.rs
+</code></pre></div>
+<ul>
+<li><code>test_index_rust_file_extracts_functions</code>: index a known Rust file, assert function symbols are present.</li>
+<li><code>test_index_python_file_extracts_classes</code>: same for Python.</li>
+<li><code>test_search_returns_relevant_results</code>: after indexing, search for a function name, assert it appears in top-3 results.</li>
+<li><code>test_build_50k_loc_under_30s</code>: benchmark test asserting the performance target.</li>
+<li><code>test_incremental_update_only_reindexes_changed_files</code>: modify one file, call <code>invalidate</code>, assert only that file's symbols are updated.</li>
+<li><code>test_symbol_at_position_returns_correct_symbol</code>: call <code>symbol_at(file, line, col)</code>, assert name matches.</li>
+</ul>
+<h4 id="green-implement_8">GREEN — Implement<a class="headerlink" href="#green-implement_8" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>TreeSitterParser</code> for Rust, Python, TypeScript, Go, Java, C, C++, more</li>
+<li><code>EmbeddingGenerator</code> — local model via <code>ort</code> (ONNX Runtime) or API</li>
+<li><code>IndexBuilder</code> — parallel file walk with <code>rayon</code>, inserts into <code>index.db</code></li>
+<li><code>SqliteVectorSearch</code> — cosine similarity search via SQLite extension</li>
+<li><code>SemanticIndex</code> trait impl</li>
+</ul>
+<h4 id="refactor_8">REFACTOR<a class="headerlink" href="#refactor_8" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Add file watcher (<code>notify</code> crate) for background incremental updates.</li>
+<li>Cache embeddings keyed by content hash to avoid re-embedding unchanged content.</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>tree-sitter</code>, <code>tree-sitter-rust</code>, <code>tree-sitter-python</code>, <code>ort</code>, <code>rayon</code>, <code>notify</code>, <code>walkdir</code></p>
+<hr />
+<h3 id="42-task-p1-2-hone-memory-adaptive-memory">4.2 Task P1-2: <code>hone-memory</code> — Adaptive Memory<a class="headerlink" href="#42-task-p1-2-hone-memory-adaptive-memory" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Local-first encrypted SQLite, pattern recognition, decay, user control.</p>
+<h4 id="red-write-these-tests-first_9">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_9" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-memory/tests/
+├── store.rs
+├── decay.rs
+└── patterns.rs
+</code></pre></div>
+<ul>
+<li><code>test_record_and_recall_basic</code>: record a fact, recall with a matching query, assert it appears.</li>
+<li><code>test_recall_respects_relevance_ordering</code>: insert 10 memories with varying weights, assert <code>recall</code> returns highest-weight first.</li>
+<li><code>test_decay_reduces_weight</code>: run <code>decay()</code>, assert weights have decreased by the configured factor.</li>
+<li><code>test_decay_removes_expired_memories</code>: memories past their <code>decay_at</code> timestamp are removed.</li>
+<li><code>test_forget_by_filter_removes_matching</code>: <code>forget(MemoryFilter::tag("project:foo"))</code> removes only matching memories.</li>
+<li><code>test_export_produces_valid_json</code>: <code>export(path)</code> writes a file that deserializes back to identical memories.</li>
+<li><code>test_encryption_key_derivation_is_deterministic</code>: same passphrase + same salt = same key (Argon2id).</li>
+</ul>
+<h4 id="green-implement_9">GREEN — Implement<a class="headerlink" href="#green-implement_9" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>SqliteMemoryStore</code> implementing <code>MemoryStore</code></li>
+<li><code>MemoryEvent</code>, <code>Memory</code>, <code>MemoryQuery</code>, <code>MemoryFilter</code> types</li>
+<li><code>DecayScheduler</code> — runs on a background task, triggered on startup</li>
+<li><code>PatternDetector</code> — heuristics for extracting reusable patterns from turn history</li>
+<li>Encryption layer via <code>sqlcipher</code> (feature-flagged)</li>
+</ul>
+<h4 id="refactor_9">REFACTOR<a class="headerlink" href="#refactor_9" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Add <code>MemoryStore::summarize_for_context(token_budget: u32) -&gt; String</code> to produce a compact memory digest for injection into the system prompt.</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>sqlx</code>, <code>argon2</code>, <code>keyring</code>, <code>chrono</code></p>
+<hr />
+<h3 id="43-task-p1-3-lsp-bridge-in-hone-tools">4.3 Task P1-3: LSP Bridge in <code>hone-tools</code><a class="headerlink" href="#43-task-p1-3-lsp-bridge-in-hone-tools" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Extend <code>hone-tools</code> with LSP-backed tools. Auto-detect language servers. Auto-fix loop (3 retries).</p>
+<h4 id="red-write-these-tests-first_10">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_10" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-tools/tests/lsp_tools.rs
+</code></pre></div>
+<ul>
+<li><code>test_lsp_diagnostics_roundtrip</code>: start <code>rust-analyzer</code> in a temp workspace, call <code>LspDiagnosticsTool</code>, assert diagnostics returned in &lt;500ms.</li>
+<li><code>test_lsp_auto_fix_loop_applies_fixes</code>: introduce a known fixable error, run auto-fix loop, assert error disappears.</li>
+<li><code>test_auto_fix_stops_after_3_retries</code>: fix loop gives up after 3 iterations if errors remain.</li>
+<li><code>test_language_detection_from_file_extensions</code>: <code>detect_language(path)</code> returns correct language for <code>.rs</code>, <code>.py</code>, <code>.ts</code>.</li>
+</ul>
+<h4 id="green-implement_10">GREEN — Implement<a class="headerlink" href="#green-implement_10" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>LspBridge</code> — manages LSP server process lifecycle per language</li>
+<li><code>LspDiagnosticsTool</code>, <code>LspHoverTool</code>, <code>LspRenameTool</code>, <code>LspCodeActionTool</code></li>
+<li><code>AutoFixLoop</code> — calls diagnostics → applies fixes → repeats up to 3 times</li>
+<li><code>LanguageDetector</code> — file extension + shebang heuristics</li>
+</ul>
+<h4 id="refactor_10">REFACTOR<a class="headerlink" href="#refactor_10" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Pool LSP connections per workspace to avoid restart overhead.</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>lsp-types</code>, <code>tokio-process</code></p>
+<hr />
+<h3 id="44-task-p1-4-git-workflow-in-hone-tools">4.4 Task P1-4: Git Workflow in <code>hone-tools</code><a class="headerlink" href="#44-task-p1-4-git-workflow-in-hone-tools" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Auto-commit per edit, branch management, undo/redo stack.</p>
+<h4 id="red-write-these-tests-first_11">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_11" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-tools/tests/git_workflow.rs
+</code></pre></div>
+<ul>
+<li><code>test_auto_commit_after_write</code>: <code>WriteFileTool</code> with <code>auto_commit: true</code> results in a new git commit.</li>
+<li><code>test_undo_reverts_last_commit</code>: <code>GitUndoTool</code> runs <code>git revert HEAD</code>, asserts file content rolled back.</li>
+<li><code>test_branch_create_and_switch</code>: <code>GitBranchTool::create("feature/x")</code> + <code>GitCheckoutTool</code> asserts <code>HEAD</code> is on new branch.</li>
+<li><code>test_undo_stack_is_bounded_at_50</code>: stack does not grow beyond 50 entries.</li>
+</ul>
+<h4 id="green-implement_11">GREEN — Implement<a class="headerlink" href="#green-implement_11" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>AutoCommitter</code> — wraps <code>WriteFileTool</code>, stages and commits after each successful write</li>
+<li><code>UndoStack</code> — ring buffer of commit SHAs</li>
+<li><code>GitUndoTool</code>, <code>GitRedoTool</code></li>
+</ul>
+<hr />
+<h3 id="45-task-p1-5-cost-estimation">4.5 Task P1-5: Cost Estimation<a class="headerlink" href="#45-task-p1-5-cost-estimation" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Real-time token tracking, per-provider pricing, budget caps.</p>
+<h4 id="red-write-these-tests-first_12">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_12" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-core/tests/cost.rs
+</code></pre></div>
+<ul>
+<li><code>test_cost_accumulator_sums_turns</code>: add 3 turns with known usage, assert total cost matches sum.</li>
+<li><code>test_budget_cap_blocks_new_turn</code>: set budget cap to $0.01, exhaust it, assert next <code>run_turn</code> returns <code>AgentError::BudgetExceeded</code>.</li>
+<li><code>test_pricing_table_matches_provider_docs</code>: assert known prices for <code>claude-opus-4-5</code> match Anthropic's documented rates.</li>
+</ul>
+<h4 id="green-implement_12">GREEN — Implement<a class="headerlink" href="#green-implement_12" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>PricingTable</code> — static table of per-provider per-model prices in <code>hone-providers</code></li>
+<li><code>CostAccumulator</code> in <code>hone-core</code></li>
+<li><code>BudgetCap</code> enforcement in <code>Agent::run_turn</code></li>
+</ul>
+<hr />
+<h2 id="5-phase-2-multi-surface-sepdec-2026">5. Phase 2 — Multi-Surface (Sep–Dec 2026)<a class="headerlink" href="#5-phase-2-multi-surface-sepdec-2026" title="Permanent link">&para;</a></h2>
+<h3 id="51-task-p2-1-hone-server-http2-sse-daemon">5.1 Task P2-1: <code>hone-server</code> — HTTP/2 + SSE Daemon<a class="headerlink" href="#51-task-p2-1-hone-server-http2-sse-daemon" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> <code>honed</code> daemon serving multiple simultaneous clients.</p>
+<h4 id="red-write-these-tests-first_13">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_13" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-server/tests/
+├── api.rs
+└── sse.rs
+</code></pre></div>
+<ul>
+<li><code>test_post_sessions_creates_session</code>: <code>POST /sessions</code> returns <code>201</code> with a <code>session_id</code>.</li>
+<li><code>test_post_turn_streams_sse_events</code>: <code>POST /sessions/{id}/turns</code> triggers SSE; assert token events received in order.</li>
+<li><code>test_concurrent_sessions_are_isolated</code>: two concurrent sessions do not share state.</li>
+<li><code>test_sse_reconnect_replays_from_last_event_id</code>: disconnect and reconnect with <code>Last-Event-ID</code>, assert no events missed.</li>
+<li><code>test_auth_token_required</code>: requests without a valid bearer token return <code>401</code>.</li>
+</ul>
+<h4 id="green-implement_13">GREEN — Implement<a class="headerlink" href="#green-implement_13" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>axum</code> 0.8 server with HTTP/2 via <code>hyper</code></li>
+<li>Routes: <code>POST /sessions</code>, <code>GET /sessions/{id}</code>, <code>POST /sessions/{id}/turns</code>, <code>GET /sessions/{id}/events</code> (SSE), <code>DELETE /sessions/{id}</code></li>
+<li><code>SseEncoder</code> — converts <code>AgentEvent</code> to SSE frames</li>
+<li>Bearer token auth middleware</li>
+<li>Per-session <code>Agent</code> lifecycle managed by <code>SessionStore</code></li>
+</ul>
+<h4 id="refactor_11">REFACTOR<a class="headerlink" href="#refactor_11" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Add <code>tower</code> middleware: request tracing, rate limiting.</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>axum</code> (0.8), <code>hyper</code>, <code>tower</code>, <code>tower-http</code></p>
+<hr />
+<h3 id="52-task-p2-2-tunnel-support">5.2 Task P2-2: Tunnel Support<a class="headerlink" href="#52-task-p2-2-tunnel-support" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Encrypted tunnel so remote clients can reach <code>honed</code>.</p>
+<h4 id="red-write-these-tests-first_14">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_14" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>test_tunnel_url_is_reachable</code>: start tunnel, make HTTP request to tunnel URL, assert response matches.</li>
+<li><code>test_tunnel_rejects_connections_without_token</code>: unauthenticated connection to tunnel returns <code>401</code>.</li>
+</ul>
+<h4 id="green-implement_14">GREEN — Implement<a class="headerlink" href="#green-implement_14" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>TunnelManager</code> — wraps <code>bore</code> or custom WireGuard tunnel</li>
+<li>Token-based access control</li>
+<li><code>hone tunnel start</code> CLI subcommand</li>
+</ul>
+<hr />
+<h2 id="6-phase-3-power-features-dec-2026feb-2027">6. Phase 3 — Power Features (Dec 2026–Feb 2027)<a class="headerlink" href="#6-phase-3-power-features-dec-2026feb-2027" title="Permanent link">&para;</a></h2>
+<h3 id="61-task-p3-1-hone-recipes-yaml-recipe-runner">6.1 Task P3-1: <code>hone-recipes</code> — YAML Recipe Runner<a class="headerlink" href="#61-task-p3-1-hone-recipes-yaml-recipe-runner" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Multi-step YAML workflows with TDD support.</p>
+<h4 id="red-write-these-tests-first_15">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_15" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-recipes/tests/
+├── parser.rs
+└── runner.rs
+</code></pre></div>
+<ul>
+<li><code>test_parse_minimal_recipe</code>: parse a two-step YAML recipe, assert step count and names.</li>
+<li><code>test_invalid_recipe_schema_errors</code>: missing required field returns <code>RecipeError::SchemaValidation</code>.</li>
+<li><code>test_step_with_condition_skips_when_false</code>: conditional step with <code>when: false</code> is skipped in execution.</li>
+<li><code>test_recipe_runner_executes_steps_in_order</code>: run a mock two-step recipe, assert steps called in order.</li>
+<li><code>test_tdd_recipe_runs_tests_between_steps</code>: recipe with <code>test_cmd</code> runs the command after each code step.</li>
+</ul>
+<h4 id="green-implement_15">GREEN — Implement<a class="headerlink" href="#green-implement_15" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>Recipe</code>, <code>RecipeStep</code> types parsed from YAML</li>
+<li>JSON Schema validation on load</li>
+<li><code>RecipeRunner</code> — sequential execution with <code>Agent</code> per step</li>
+<li><code>TddHook</code> — runs test command, feeds result back to agent if failing</li>
+</ul>
+<p><strong>Dependencies:</strong> <code>serde_yaml</code>, <code>jsonschema</code></p>
+<hr />
+<h3 id="62-task-p3-2-semantic-indexer-code-mode-layer-0">6.2 Task P3-2: Semantic Indexer — Code Mode (Layer 0)<a class="headerlink" href="#62-task-p3-2-semantic-indexer-code-mode-layer-0" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> <code>Agent</code> can generate and execute TS/Python scripts that call native + MCP tools.</p>
+<h4 id="red-write-these-tests-first_16">RED — Write these tests first<a class="headerlink" href="#red-write-these-tests-first_16" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code>crates/hone-core/tests/code_mode.rs
+</code></pre></div>
+<ul>
+<li><code>test_code_mode_script_is_sandboxed</code>: generated script runs inside the same <code>SandboxPolicy</code>.</li>
+<li><code>test_code_mode_output_is_captured</code>: <code>stdout</code> and <code>stderr</code> of generated script returned to agent.</li>
+<li><code>test_code_mode_tool_calls_via_sdk</code>: generated script calling the SDK invokes the same <code>ToolRegistry</code>.</li>
+</ul>
+<h4 id="green-implement_16">GREEN — Implement<a class="headerlink" href="#green-implement_16" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>CodeModeRunner</code> — writes script to tempfile, executes in sandbox, captures output</li>
+<li>SDK shim (thin Node.js / Python package) that serializes tool calls as JSON-RPC to <code>honed</code></li>
+</ul>
+<hr />
+<h2 id="7-phase-4-team-enterprise-marjul-2027">7. Phase 4 — Team &amp; Enterprise (Mar–Jul 2027)<a class="headerlink" href="#7-phase-4-team-enterprise-marjul-2027" title="Permanent link">&para;</a></h2>
+<p>Tasks for Phase 4 (team governance, SSO, audit logs, cross-repo awareness, collaborative sessions) are captured in the roadmap but deferred from detailed TDD breakdown until Phase 3 is complete. They will follow the same Red→Green→Refactor pattern when the time comes.</p>
+<p>Key test areas to anticipate:
+- <code>test_audit_log_records_every_tool_call</code>: every tool call produces a signed audit entry.
+- <code>test_rbac_prevents_unauthorized_tool_use</code>: RBAC policy blocks a user from calling write tools.
+- <code>test_collaborative_session_syncs_events</code>: two users in the same session both receive all events.</p>
+<hr />
+<h2 id="8-integration-test-strategy">8. Integration Test Strategy<a class="headerlink" href="#8-integration-test-strategy" title="Permanent link">&para;</a></h2>
+<p>Integration tests live in <code>tests/</code> (workspace level) and in <code>crates/*/tests/</code> (crate level). They test real components wired together, not individual units with mocks.</p>
+<pre class="mermaid"><code>flowchart TD
+    UNIT["Unit tests\ncrates/*/src/#[cfg(test)]\nMocks for all I/O"] --&gt; CI
+    CRATE_IT["Crate integration tests\ncrates/*/tests/\nReal SQLite, real filesystem\nMock providers / mock MCP"] --&gt; CI
+    WS_IT["Workspace integration tests\ntests/\nassert_cmd: real CLI binary\nReal providers (feature-gated)"] --&gt; CI
+    BENCH["Benchmarks\nbenches/\ncriterion\nPerformance regression guard"] --&gt; CI
+    CI["CI pipeline\ncargo test --workspace\ncargo bench --no-run (compile check)"]</code></pre>
+<h3 id="real-vs-mocked-per-test-tier">Real vs mocked per test tier<a class="headerlink" href="#real-vs-mocked-per-test-tier" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Unit tests</th>
+<th>Crate integration tests</th>
+<th>Workspace tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model Provider</td>
+<td><code>MockProvider</code></td>
+<td><code>MockProvider</code></td>
+<td>Real (env var gated)</td>
+</tr>
+<tr>
+<td>File system</td>
+<td><code>tempfile</code></td>
+<td><code>tempfile</code></td>
+<td>Real tempdir</td>
+</tr>
+<tr>
+<td>SQLite</td>
+<td>In-memory</td>
+<td>File-based temp</td>
+<td>File-based temp</td>
+</tr>
+<tr>
+<td>Sandbox</td>
+<td><code>NullSandbox</code></td>
+<td>Real (platform)</td>
+<td>Real (platform)</td>
+</tr>
+<tr>
+<td>LSP</td>
+<td><code>MockLsp</code></td>
+<td>Real <code>rust-analyzer</code></td>
+<td>Real</td>
+</tr>
+<tr>
+<td>MCP</td>
+<td>Mock server</td>
+<td>Local MCP binary</td>
+<td>Local MCP binary</td>
+</tr>
+</tbody>
+</table>
+<h3 id="test-fixtures">Test fixtures<a class="headerlink" href="#test-fixtures" title="Permanent link">&para;</a></h3>
+<p>All test fixtures (sample source files, mock SSE streams, example configs) live in <code>crates/*/tests/fixtures/</code> and are loaded with <code>include_str!</code> or <code>tempfile</code> copies.</p>
+<hr />
+<h2 id="9-property-based-testing-plan">9. Property-Based Testing Plan<a class="headerlink" href="#9-property-based-testing-plan" title="Permanent link">&para;</a></h2>
+<p>Use <code>proptest</code> for all parsing, encoding, and index operations where the input space is large.</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Property</th>
+<th>Generator</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hone-proto</code></td>
+<td><code>Message</code> serialize/deserialize roundtrip</td>
+<td><code>any::&lt;Message&gt;()</code></td>
+</tr>
+<tr>
+<td><code>hone-config</code></td>
+<td>Valid TOML always parses without panic</td>
+<td><code>r"[a-z_]+ = .*"</code></td>
+</tr>
+<tr>
+<td><code>hone-providers</code></td>
+<td><code>estimate_tokens</code> never exceeds actual</td>
+<td>Random message sequences</td>
+</tr>
+<tr>
+<td><code>hone-tools</code></td>
+<td><code>EditTool</code> with valid diff never corrupts other lines</td>
+<td>File content + diff params</td>
+</tr>
+<tr>
+<td><code>hone-index</code></td>
+<td>Indexed file always searchable by symbol name</td>
+<td>Random valid Rust source</td>
+</tr>
+<tr>
+<td><code>hone-memory</code></td>
+<td>Decay never increases weight</td>
+<td>Random weight + decay factor</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="c1">// Example: proto roundtrip property test</span>
+<span class="n">proptest</span><span class="o">!</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cp">#[test]</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">message_roundtrip</span><span class="p">(</span><span class="n">role</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">any</span><span class="p">::</span><span class="o">&lt;</span><span class="n">Role</span><span class="o">&gt;</span><span class="p">(),</span><span class="w"> </span><span class="n">content</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="s">&quot;.*&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Message</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">role</span><span class="p">,</span><span class="w"> </span><span class="n">content</span><span class="p">:</span><span class="w"> </span><span class="nc">Content</span><span class="p">::</span><span class="n">Text</span><span class="p">(</span><span class="n">content</span><span class="p">.</span><span class="n">clone</span><span class="p">()),</span><span class="w"> </span><span class="n">tool_calls</span><span class="p">:</span><span class="w"> </span><span class="nc">vec</span><span class="o">!</span><span class="p">[]</span><span class="w"> </span><span class="p">};</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">json</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">serde_json</span><span class="p">::</span><span class="n">to_string</span><span class="p">(</span><span class="o">&amp;</span><span class="n">msg</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">decoded</span><span class="p">:</span><span class="w"> </span><span class="nc">Message</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">serde_json</span><span class="p">::</span><span class="n">from_str</span><span class="p">(</span><span class="o">&amp;</span><span class="n">json</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+<span class="w">        </span><span class="n">prop_assert_eq</span><span class="o">!</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">decoded</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<hr />
+<h2 id="10-benchmark-plan">10. Benchmark Plan<a class="headerlink" href="#10-benchmark-plan" title="Permanent link">&para;</a></h2>
+<p>All benchmarks use <code>criterion</code> with <code>BenchmarkGroup</code> for organized output. They run in CI with <code>--no-run</code> (compile check only) and weekly in a dedicated performance job with regression detection.</p>
+<table>
+<thead>
+<tr>
+<th>Benchmark</th>
+<th>Target</th>
+<th>Method</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cli_startup</code></td>
+<td>&lt;100ms</td>
+<td>Time from <code>main()</code> entry to first rendered frame</td>
+</tr>
+<tr>
+<td><code>first_token_local</code></td>
+<td>&lt;500ms</td>
+<td><code>Agent::run_turn</code> → first <code>AgentEvent::Token</code> with Ollama</td>
+</tr>
+<tr>
+<td><code>first_token_cloud</code></td>
+<td>&lt;1.5s</td>
+<td>Same with real Anthropic (weekly job, env gated)</td>
+</tr>
+<tr>
+<td><code>memory_idle</code></td>
+<td>&lt;50MB RSS</td>
+<td>Measure RSS after startup, before any turn</td>
+</tr>
+<tr>
+<td><code>memory_active</code></td>
+<td>&lt;200MB RSS</td>
+<td>Measure RSS during a turn with all tools active</td>
+</tr>
+<tr>
+<td><code>index_build_50k</code></td>
+<td>&lt;30s</td>
+<td>Index the hone repo itself (~50K LOC)</td>
+</tr>
+<tr>
+<td><code>lsp_diagnostic_roundtrip</code></td>
+<td>&lt;500ms</td>
+<td>Request diagnostics → receive response</td>
+</tr>
+<tr>
+<td><code>context_build_messages</code></td>
+<td>&lt;1ms</td>
+<td><code>ContextManager::build_messages</code> for 1000 turns</td>
+</tr>
+<tr>
+<td><code>tool_registry_lookup</code></td>
+<td>&lt;100µs</td>
+<td><code>ToolRegistry::get</code> for 50 registered tools</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="c1">// Example benchmark</span>
+<span class="k">fn</span><span class="w"> </span><span class="nf">bench_context_build</span><span class="p">(</span><span class="n">c</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Criterion</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">generate_messages</span><span class="p">(</span><span class="mi">1000</span><span class="p">);</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">mgr</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ContextManager</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="mi">200_000</span><span class="p">);</span>
+<span class="w">    </span><span class="n">c</span><span class="p">.</span><span class="n">bench_function</span><span class="p">(</span><span class="s">&quot;context_build_1000_turns&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">b</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">b</span><span class="p">.</span><span class="n">iter</span><span class="p">(</span><span class="o">||</span><span class="w"> </span><span class="n">mgr</span><span class="p">.</span><span class="n">build_messages</span><span class="p">(</span><span class="n">black_box</span><span class="p">(</span><span class="o">&amp;</span><span class="n">messages</span><span class="p">),</span><span class="w"> </span><span class="mi">100_000</span><span class="p">))</span>
+<span class="w">    </span><span class="p">});</span>
+<span class="p">}</span>
+</code></pre></div>
+<hr />
+<h2 id="11-cicd-pipeline">11. CI/CD Pipeline<a class="headerlink" href="#11-cicd-pipeline" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart TD
+    PUSH["git push / PR"] --&gt; FMT
+    FMT["cargo fmt --check"] --&gt; CLIPPY
+    CLIPPY["cargo clippy --all-targets -- -D warnings"] --&gt; DENY
+    DENY["cargo deny check\n(licenses + advisories)"] --&gt; TEST
+    TEST["cargo test --workspace\n--all-features"] --&gt; MIRI
+    MIRI["cargo miri test\n(unsafe crates only)"] --&gt; BUILD
+    BUILD["cargo build --release\n--all-targets"] --&gt; BENCH_COMPILE
+    BENCH_COMPILE["cargo bench --no-run\n(compile check)"] --&gt; DONE
+
+    PUSH --&gt; SEC["cargo audit\n(advisory DB)"]
+
+    WEEKLY["weekly cron"] --&gt; BENCH_RUN
+    BENCH_RUN["cargo bench --workspace\ncriterion + regression check"] --&gt; PERF_REPORT["post performance\nreport to PR"]</code></pre>
+<h3 id="branch-strategy">Branch strategy<a class="headerlink" href="#branch-strategy" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>main</code> — always green, release-ready</li>
+<li><code>dev/phase-N</code> — phase integration branch, merged to <code>main</code> at phase completion</li>
+<li><code>feat/*</code> — individual task branches, PR into <code>dev/phase-N</code></li>
+<li>Feature flags (<code>--features</code>) used to gate incomplete features in CI</li>
+</ul>
+<h3 id="required-pr-checks">Required PR checks<a class="headerlink" href="#required-pr-checks" title="Permanent link">&para;</a></h3>
+<ol>
+<li>All CI jobs green</li>
+<li>No new <code>clippy</code> warnings</li>
+<li>No new <code>cargo-deny</code> violations</li>
+<li>Coverage ≥ 80% on changed lines (via <code>cargo-llvm-cov</code>)</li>
+<li>Benchmarks do not regress &gt;10% (weekly job blocks merge if violated)</li>
+</ol>
+<hr />
+<h2 id="12-key-dependencies">12. Key Dependencies<a class="headerlink" href="#12-key-dependencies" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Crate</th>
+<th>Version</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tokio</code></td>
+<td>1 (full)</td>
+<td>Async runtime</td>
+</tr>
+<tr>
+<td><code>async-trait</code></td>
+<td>0.1</td>
+<td><code>dyn Trait</code> with async fn</td>
+</tr>
+<tr>
+<td><code>serde</code> + <code>serde_json</code></td>
+<td>1</td>
+<td>Serialization</td>
+</tr>
+<tr>
+<td><code>thiserror</code></td>
+<td>2</td>
+<td>Library error types</td>
+</tr>
+<tr>
+<td><code>anyhow</code></td>
+<td>1</td>
+<td>Application error handling</td>
+</tr>
+<tr>
+<td><code>axum</code></td>
+<td>0.8</td>
+<td>HTTP server</td>
+</tr>
+<tr>
+<td><code>hyper</code></td>
+<td>1</td>
+<td>HTTP/2</td>
+</tr>
+<tr>
+<td><code>tower</code></td>
+<td>0.5</td>
+<td>Middleware</td>
+</tr>
+<tr>
+<td><code>reqwest</code></td>
+<td>0.12 (rustls)</td>
+<td>HTTP client (providers)</td>
+</tr>
+<tr>
+<td><code>sqlx</code></td>
+<td>0.8 (sqlite, runtime-tokio)</td>
+<td>Database</td>
+</tr>
+<tr>
+<td><code>ratatui</code></td>
+<td>0.29</td>
+<td>TUI</td>
+</tr>
+<tr>
+<td><code>crossterm</code></td>
+<td>0.28</td>
+<td>Terminal backend</td>
+</tr>
+<tr>
+<td><code>tree-sitter</code></td>
+<td>0.24</td>
+<td>AST parsing</td>
+</tr>
+<tr>
+<td><code>rayon</code></td>
+<td>1</td>
+<td>CPU-parallel indexing</td>
+</tr>
+<tr>
+<td><code>ort</code></td>
+<td>2</td>
+<td>ONNX Runtime (embeddings)</td>
+</tr>
+<tr>
+<td><code>proptest</code></td>
+<td>1</td>
+<td>Property-based testing</td>
+</tr>
+<tr>
+<td><code>criterion</code></td>
+<td>0.5</td>
+<td>Benchmarks</td>
+</tr>
+<tr>
+<td><code>mockall</code></td>
+<td>0.13</td>
+<td>Mock generation</td>
+</tr>
+<tr>
+<td><code>tempfile</code></td>
+<td>3</td>
+<td>Test filesystem</td>
+</tr>
+<tr>
+<td><code>assert_cmd</code></td>
+<td>2</td>
+<td>CLI integration tests</td>
+</tr>
+<tr>
+<td><code>uuid</code></td>
+<td>1 (v7)</td>
+<td>Session/turn IDs</td>
+</tr>
+<tr>
+<td><code>figment</code></td>
+<td>0.10</td>
+<td>Layered config</td>
+</tr>
+<tr>
+<td><code>pulldown-cmark</code></td>
+<td>0.12</td>
+<td>HONE.md parsing</td>
+</tr>
+<tr>
+<td><code>git2</code></td>
+<td>0.19</td>
+<td>Git operations</td>
+</tr>
+<tr>
+<td><code>lsp-types</code></td>
+<td>0.97</td>
+<td>LSP protocol types</td>
+</tr>
+<tr>
+<td><code>notify</code></td>
+<td>7</td>
+<td>File system watcher</td>
+</tr>
+<tr>
+<td><code>seccompiler</code></td>
+<td>0.4</td>
+<td>seccomp-BPF (Linux)</td>
+</tr>
+<tr>
+<td><code>rustix</code></td>
+<td>0.38</td>
+<td>Linux syscalls (Landlock)</td>
+</tr>
+<tr>
+<td><code>keyring</code></td>
+<td>3</td>
+<td>System keychain</td>
+</tr>
+<tr>
+<td><code>argon2</code></td>
+<td>0.5</td>
+<td>KDF for memory encryption</td>
+</tr>
+<tr>
+<td><code>eventsource-stream</code></td>
+<td>0.2</td>
+<td>SSE parsing</td>
+</tr>
+<tr>
+<td><code>serde_yaml</code></td>
+<td>0.9</td>
+<td>Recipe YAML</td>
+</tr>
+<tr>
+<td><code>jsonschema</code></td>
+<td>0.18</td>
+<td>Recipe schema validation</td>
+</tr>
+<tr>
+<td><code>tiktoken-rs</code></td>
+<td>0.6</td>
+<td>Token estimation</td>
+</tr>
+<tr>
+<td><code>walkdir</code></td>
+<td>2</td>
+<td>Directory traversal</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-gantt-chart">13. Gantt Chart<a class="headerlink" href="#13-gantt-chart" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>gantt
+    title Hone Implementation Roadmap
+    dateFormat YYYY-MM-DD
+    axisFormat %b %Y
+
+    section Phase 0 — Core Foundation
+    P0-1 hone-proto              :p01, 2026-04-04, 5d
+    P0-2 hone-config             :p02, after p01, 7d
+    P0-3 hone-sandbox            :p03, after p01, 14d
+    P0-4 hone-providers          :p04, after p01, 21d
+    P0-5 hone-tools              :p05, after p03, 21d
+    P0-6 hone-mcp                :p06, after p05, 14d
+    P0-7 hone-core agent loop    :p07, after p04 p05 p06, 21d
+    P0-8 hone-tui                :p08, after p07, 21d
+    Phase 0 complete             :milestone, after p08, 0d
+
+    section Phase 1 — Intelligence
+    P1-1 hone-index              :p11, 2026-07-01, 21d
+    P1-2 hone-memory             :p12, 2026-07-01, 21d
+    P1-3 LSP bridge              :p13, after p11, 21d
+    P1-4 Git workflow            :p14, after p11, 14d
+    P1-5 Cost estimation         :p15, after p12, 7d
+    Phase 1 complete             :milestone, after p13 p14 p15, 0d
+
+    section Phase 2 — Multi-Surface
+    P2-1 hone-server HTTP/SSE    :p21, 2026-09-15, 28d
+    P2-2 Tunnel support          :p22, after p21, 21d
+    P2-3 Web PWA (SolidJS)       :p23, after p21, 42d
+    Phase 2 complete             :milestone, after p22 p23, 0d
+
+    section Phase 3 — Power Features
+    P3-1 hone-recipes            :p31, 2026-12-01, 21d
+    P3-2 Code Mode (Layer 0)     :p32, after p31, 28d
+    P3-3 Custom agents           :p33, after p32, 21d
+    P3-4 Semantic indexer v2     :p34, after p32, 21d
+    P3-5 Multi-agent             :p35, after p33, 21d
+    Phase 3 complete             :milestone, after p34 p35, 0d
+
+    section Phase 4 — Team &amp; Enterprise
+    P4-1 Team governance + RBAC  :p41, 2027-03-01, 28d
+    P4-2 SSO (OIDC/SAML)         :p42, after p41, 21d
+    P4-3 Audit logging           :p43, after p41, 14d
+    P4-4 Cross-repo awareness    :p44, after p43, 21d
+    P4-5 Collaborative sessions  :p45, after p44, 21d
+    Phase 4 complete             :milestone, after p42 p45, 0d</code></pre>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

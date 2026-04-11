@@ -1,0 +1,1686 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/onboarding/from-opencode/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Migrating from OpenCode to Hone - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#migrating-from-opencode-to-hone" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Migrating from OpenCode to Hone
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#concept-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concept Mapping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#before-and-after" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before and After
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Before and After">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#opencode-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenCode Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hone-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hone Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-you-gain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What You Gain
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What You Gain">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-kernel-sandboxing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Kernel Sandboxing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-adaptive-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Adaptive Memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-recipes-with-conditional-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Recipes with Conditional Logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-better-lsp-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Better LSP Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-team-governance-rbac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Team Governance (RBAC)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-acp-protocol-standardized-custom-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. ACP Protocol (Standardized Custom Agents)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#whats-different" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's Different
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What&#39;s Different">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-tui-instead-of-web-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. TUI Instead of Web UI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-daemon-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Daemon Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-toml-config-instead-of-json" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. TOML Config Instead of JSON
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-git-native-diff-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Git-Native Diff Review
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-by-step-migration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step-by-Step Migration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step-by-Step Migration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-install-hone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Install Hone
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-migrate-your-opencode-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Migrate Your OpenCode Config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-start-the-daemon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Start the Daemon
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-test-your-first-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Test Your First Session
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-create-honemd-project-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Create HONE.md (Project Conventions)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-migrate-your-recipes-if-any" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Migrate Your Recipes (If Any)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#faq" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FAQ
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="FAQ">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#can-i-still-use-the-web-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I still use the web UI?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-my-opencode-recipes-work-in-hone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Do my OpenCode recipes work in Hone?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-set-per-user-budgets-like-opencode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I set per-user budgets like OpenCode?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is-hone-faster-than-opencode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Is Hone faster than OpenCode?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-use-both-opencode-and-hone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Can I use both OpenCode and Hone?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-do-i-export-sessions-like-opencode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How do I export sessions like OpenCode?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-about-the-web-ui-i-prefer-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What about the web UI? I prefer it.
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="migrating-from-opencode-to-hone">Migrating from OpenCode to Hone<a class="headerlink" href="#migrating-from-opencode-to-hone" title="Permanent link">&para;</a></h1>
+<p>You know OpenCode. You're comfortable with 75+ providers, LSP integration, client-server architecture, and web UI. Here's how Hone relates—and what's different.</p>
+<h2 id="concept-mapping">Concept Mapping<a class="headerlink" href="#concept-mapping" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>OpenCode</th>
+<th>Hone Equivalent</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>75+ provider support</td>
+<td>75+ providers (same breadth)</td>
+<td>Full compatibility</td>
+</tr>
+<tr>
+<td>OpenCode LSP bridge</td>
+<td>LSP bridges (same approach)</td>
+<td>Embedded in Hone</td>
+</tr>
+<tr>
+<td>OpenCode web UI</td>
+<td>hone TUI + honed daemon</td>
+<td>TUI instead of web (faster)</td>
+</tr>
+<tr>
+<td>OpenCode client-server</td>
+<td>hone CLI + honed daemon</td>
+<td>HTTP/2 + SSE instead of WebSocket</td>
+</tr>
+<tr>
+<td>OpenCode cost tracking</td>
+<td>Real-time cost tracking</td>
+<td>Per-turn granularity</td>
+</tr>
+<tr>
+<td>Custom integrations</td>
+<td>MCP + ACP + Layer 2 tools</td>
+<td>More modular</td>
+</tr>
+<tr>
+<td>OpenCode recipes</td>
+<td>YAML recipes (same format)</td>
+<td>100% compatible</td>
+</tr>
+</tbody>
+</table>
+<h2 id="before-and-after">Before and After<a class="headerlink" href="#before-and-after" title="Permanent link">&para;</a></h2>
+<h3 id="opencode-workflow">OpenCode Workflow<a class="headerlink" href="#opencode-workflow" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start web UI</span>
+opencode<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">3000</span>
+<span class="c1"># Open http://localhost:3000</span>
+
+<span class="c1"># In UI:</span>
+<span class="c1"># 1. Select provider (Anthropic, OpenAI, etc.)</span>
+<span class="c1"># 2. Select model</span>
+<span class="c1"># 3. Type prompt</span>
+<span class="c1"># 4. View LSP diagnostics on the side</span>
+<span class="c1"># 5. Agent makes changes</span>
+<span class="c1"># 6. Review in web diff viewer</span>
+</code></pre></div>
+<h3 id="hone-workflow">Hone Workflow<a class="headerlink" href="#hone-workflow" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start daemon</span>
+honed<span class="w"> </span>--port<span class="w"> </span><span class="m">7070</span>
+
+<span class="c1"># Option 1: TUI (faster, no web browser needed)</span>
+hone<span class="w"> </span>--remote<span class="w"> </span>localhost:7070
+
+<span class="c1"># Option 2: Web UI (planned, not yet)</span>
+<span class="c1"># hone serve --port 3000</span>
+
+<span class="c1"># In TUI:</span>
+<span class="c1"># 1. Select provider and model (or use default)</span>
+<span class="c1"># 2. Type prompt</span>
+<span class="c1"># 3. View LSP diagnostics (integrated)</span>
+<span class="c1"># 4. Agent makes changes</span>
+<span class="c1"># 5. Review diffs (git-native, not custom viewer)</span>
+</code></pre></div>
+<p><strong>Key difference:</strong> Hone uses TUI + daemon (faster) instead of web UI (more familiar).</p>
+<h2 id="what-you-gain">What You Gain<a class="headerlink" href="#what-you-gain" title="Permanent link">&para;</a></h2>
+<h3 id="1-kernel-sandboxing">1. Kernel Sandboxing<a class="headerlink" href="#1-kernel-sandboxing" title="Permanent link">&para;</a></h3>
+<p>OpenCode has process isolation. Hone adds kernel-level confinement:</p>
+<p><strong>OpenCode:</strong>
+<div class="highlight"><pre><span></span><code>Process isolation: Parent container, restricted subprocess
+Risk: Determined attacker could escape via kernel bugs
+</code></pre></div></p>
+<p><strong>Hone:</strong>
+<div class="highlight"><pre><span></span><code>Kernel sandboxing: OS-native restrictions (Seatbelt/Landlock)
+Risk: Attacker must exploit kernel itself (much harder)
+
+Example: Agent tries to read /etc/passwd
+  1. Hone syscall intercept (kernel level)
+  2. Policy check: deny_read = [&quot;/etc/*&quot;]
+  3. Error returned to process: Permission denied
+</code></pre></div></p>
+<p>On macOS, Hone uses the same sandbox API as Safari.</p>
+<h3 id="2-adaptive-memory">2. Adaptive Memory<a class="headerlink" href="#2-adaptive-memory" title="Permanent link">&para;</a></h3>
+<p>OpenCode has basic session memory. Hone learns patterns:</p>
+<p><strong>OpenCode:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1"># Session history stored in JSON</span>
+<span class="c1"># No cross-session learning</span>
+</code></pre></div></p>
+<p><strong>Hone:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1"># Encrypted SQLite with pattern learning</span>
+<span class="c1"># Hone remembers:</span>
+<span class="c1">#   - Which tools succeed most often</span>
+<span class="c1">#   - Which models work best for each task type</span>
+<span class="c1">#   - Common workflows and their steps</span>
+<span class="c1">#   - Frequently-used file patterns</span>
+</code></pre></div></p>
+<p>Example:
+<div class="highlight"><pre><span></span><code>You: (first session) Run the tests
+Hone: [runs pytest]
+
+You: (second session) Fix the failing test
+Hone: Based on your pattern, should I run pytest after fixing?
+</code></pre></div></p>
+<h3 id="3-recipes-with-conditional-logic">3. Recipes with Conditional Logic<a class="headerlink" href="#3-recipes-with-conditional-logic" title="Permanent link">&para;</a></h3>
+<p>OpenCode recipes are linear. Hone recipes support branching:</p>
+<p><strong>OpenCode recipe:</strong>
+<div class="highlight"><pre><span></span><code><span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">find_files</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tests/**/*.py&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">agent</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Run</span><span class="nv"> </span><span class="s">pytest</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">fix</span><span class="nv"> </span><span class="s">failures&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">commit</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;fix:</span><span class="nv"> </span><span class="s">test</span><span class="nv"> </span><span class="s">failures&quot;</span>
+</code></pre></div></p>
+<p><strong>Hone recipe:</strong>
+<div class="highlight"><pre><span></span><code><span class="nt">steps</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">file_search</span>
+<span class="w">    </span><span class="nt">pattern</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tests/**/*.py&quot;</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">agent</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Run</span><span class="nv"> </span><span class="s">pytest&quot;</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai:gpt-4o</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;if</span><span class="nv"> </span><span class="s">test_results.failed</span><span class="nv"> </span><span class="s">&gt;</span><span class="nv"> </span><span class="s">0&quot;</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">agent</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Fix</span><span class="nv"> </span><span class="s">failing</span><span class="nv"> </span><span class="s">tests&quot;</span>
+<span class="w">          </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai:gpt-4o</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shell</span>
+<span class="w">        </span><span class="nt">cmd</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;pytest</span><span class="nv"> </span><span class="s">-v&quot;</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;if</span><span class="nv"> </span><span class="s">all</span><span class="nv"> </span><span class="s">tests</span><span class="nv"> </span><span class="s">pass&quot;</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">git_commit</span>
+<span class="w">        </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;fix:</span><span class="nv"> </span><span class="s">test</span><span class="nv"> </span><span class="s">failures&quot;</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">slack_send</span>
+<span class="w">        </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Tests</span><span class="nv"> </span><span class="s">passing.</span><span class="nv"> </span><span class="s">Ready</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">merge.&quot;</span>
+</code></pre></div></p>
+<p>Conditional logic enables smarter automation.</p>
+<h3 id="4-better-lsp-integration">4. Better LSP Integration<a class="headerlink" href="#4-better-lsp-integration" title="Permanent link">&para;</a></h3>
+<p>OpenCode embeds LSP bridges. Hone standardizes and extends them:</p>
+<p><strong>Both support:</strong>
+- Hover information (types, docs)
+- Diagnostics (errors, warnings)
+- Code actions (quick fixes)</p>
+<p><strong>Hone adds:</strong>
+- Workspace symbols (search code by meaning)
+- Semantic indexing (cross-file understanding)
+- Cost accounting for LSP calls</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;What&#39;s the return type of authenticate()?&quot;</span>
+<span class="c1"># Agent calls: lsp_hover(file=&quot;auth.rs&quot;, line=42, col=10)</span>
+<span class="c1"># Hone tracks: 1 LSP call (no cost, local)</span>
+
+hone<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Find all calls to the deprecated API&quot;</span>
+<span class="c1"># Agent calls: semantic_search(query=&quot;deprecated API&quot;)</span>
+<span class="c1"># Hone returns: 12 matching locations</span>
+</code></pre></div>
+<h3 id="5-team-governance-rbac">5. Team Governance (RBAC)<a class="headerlink" href="#5-team-governance-rbac" title="Permanent link">&para;</a></h3>
+<p>OpenCode has basic permissions. Hone has fine-grained RBAC:</p>
+<p><strong>OpenCode:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1"># Basic: authenticated or not</span>
+<span class="c1"># Limited team features</span>
+</code></pre></div></p>
+<p><strong>Hone:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1"># Roles: admin, operator, viewer</span>
+<span class="c1"># Per-user budgets</span>
+<span class="c1"># Audit logging (who did what, when)</span>
+<span class="c1"># Cost tracking per user/team</span>
+
+<span class="o">[</span>team.users<span class="o">]</span>
+<span class="nv">alice</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">{</span><span class="w"> </span><span class="nv">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;admin&quot;</span>,<span class="w"> </span><span class="nv">budget</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;unlimited&quot;</span><span class="w"> </span><span class="o">}</span>
+<span class="nv">bob</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">{</span><span class="w"> </span><span class="nv">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;operator&quot;</span>,<span class="w"> </span><span class="nv">budget</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$500</span><span class="s2">/month&quot;</span><span class="w"> </span><span class="o">}</span>
+<span class="nv">charlie</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">{</span><span class="w"> </span><span class="nv">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;viewer&quot;</span><span class="w"> </span><span class="o">}</span>
+</code></pre></div></p>
+<p>Audit log:
+<div class="highlight"><pre><span></span><code>2026-04-05 12:34:56 [user=alice] Tool: edit_file, path=/src/main.rs
+2026-04-05 12:34:57 [user=alice] Tool: shell, cmd=cargo test
+2026-04-05 12:34:58 [user=bob] Tool: read_file, path=/src/main.rs
+</code></pre></div></p>
+<h3 id="6-acp-protocol-standardized-custom-agents">6. ACP Protocol (Standardized Custom Agents)<a class="headerlink" href="#6-acp-protocol-standardized-custom-agents" title="Permanent link">&para;</a></h3>
+<p>OpenCode has custom integrations. Hone standardizes via ACP:</p>
+<p><strong>ACP (Agent Client Protocol):</strong>
+- Persistent bidirectional connection
+- Full tool support (not limited to JSON-RPC)
+- Better for complex integrations</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># config.toml</span>
+<span class="o">[</span>providers.acp<span class="o">]</span>
+<span class="nv">server_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/path/to/my-custom-agent&quot;</span>
+<span class="nv">server_args</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">[</span><span class="s2">&quot;--port&quot;</span>,<span class="w"> </span><span class="s2">&quot;9000&quot;</span><span class="o">]</span>
+
+<span class="c1"># CLI</span>
+hone<span class="w"> </span>--model<span class="w"> </span>acp:my-service
+</code></pre></div>
+<p>Your custom agent can implement complex logic, not limited to tool schemas.</p>
+<h2 id="whats-different">What's Different<a class="headerlink" href="#whats-different" title="Permanent link">&para;</a></h2>
+<h3 id="1-tui-instead-of-web-ui">1. TUI Instead of Web UI<a class="headerlink" href="#1-tui-instead-of-web-ui" title="Permanent link">&para;</a></h3>
+<p><strong>OpenCode:</strong> Web UI in browser (familiar, but slower, requires port forwarding)</p>
+<p><strong>Hone:</strong> TUI in terminal (faster, lower latency, easier SSH access)</p>
+<p><strong>In comparison:</strong>
+- Web UI: Better for non-technical users, remote collaboration
+- TUI: Better for developers, lower latency, no browser overhead</p>
+<p>Web UI is planned for Hone (not yet implemented).</p>
+<h3 id="2-daemon-architecture">2. Daemon Architecture<a class="headerlink" href="#2-daemon-architecture" title="Permanent link">&para;</a></h3>
+<p>Both OpenCode and Hone have client-server. But different protocols:</p>
+<p><strong>OpenCode:</strong> WebSocket (stateless, polling)</p>
+<p><strong>Hone:</strong> HTTP/2 + SSE (stateful, push-based)</p>
+<p>Benefits of Hone's approach:
+- Lower latency (push vs. poll)
+- Less network traffic
+- Better streaming (SSE)
+- Easier debugging (HTTP inspector)</p>
+<h3 id="3-toml-config-instead-of-json">3. TOML Config Instead of JSON<a class="headerlink" href="#3-toml-config-instead-of-json" title="Permanent link">&para;</a></h3>
+<p><strong>OpenCode:</strong> JSON config (UI-editable)</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;providers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;anthropic&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;anthropic&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;api_key&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sk-ant-...&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;lsp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Hone:</strong> TOML config (human-editable)</p>
+<div class="highlight"><pre><span></span><code><span class="k">[providers.anthropic]</span>
+<span class="n">api_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;sk-ant-...&quot;</span>
+
+<span class="k">[agent]</span>
+<span class="n">default_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;anthropic:claude-opus-4-5&quot;</span>
+
+<span class="k">[lsp]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+</code></pre></div>
+<p>TOML is easier to edit manually and supports comments.</p>
+<h3 id="4-git-native-diff-review">4. Git-Native Diff Review<a class="headerlink" href="#4-git-native-diff-review" title="Permanent link">&para;</a></h3>
+<p><strong>OpenCode:</strong> Custom diff viewer in web UI</p>
+<p><strong>Hone:</strong> Git diff (standard tool)</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># In Hone session</span>
+git<span class="w"> </span>diff<span class="w">          </span><span class="c1"># See changes</span>
+git<span class="w"> </span>diff<span class="w"> </span>--cached<span class="w"> </span><span class="c1"># See staged changes</span>
+git<span class="w"> </span>status<span class="w">        </span><span class="c1"># See file status</span>
+</code></pre></div>
+<p>Why? Standard git tools are more powerful and integrate with your existing workflow.</p>
+<h2 id="step-by-step-migration">Step-by-Step Migration<a class="headerlink" href="#step-by-step-migration" title="Permanent link">&para;</a></h2>
+<h3 id="1-install-hone">1. Install Hone<a class="headerlink" href="#1-install-hone" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/anthropics/hone.git
+<span class="nb">cd</span><span class="w"> </span>hone
+cargo<span class="w"> </span>build<span class="w"> </span>--release
+sudo<span class="w"> </span>cp<span class="w"> </span>target/release/hone<span class="w"> </span>/usr/local/bin/
+sudo<span class="w"> </span>cp<span class="w"> </span>target/release/honed<span class="w"> </span>/usr/local/bin/
+</code></pre></div>
+<h3 id="2-migrate-your-opencode-config">2. Migrate Your OpenCode Config<a class="headerlink" href="#2-migrate-your-opencode-config" title="Permanent link">&para;</a></h3>
+<p><strong>OpenCode location:</strong> <code>~/.opencode/config.json</code> or environment variables</p>
+<p><strong>Hone location:</strong> <code>~/.config/hone/config.toml</code></p>
+<p>Example migration:</p>
+<p><strong>OpenCode:</strong>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;providers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;anthropic&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;anthropic&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;api_key&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sk-ant-...&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;claude-opus-4-5&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;lsp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;cost_tracking&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Hone:</strong>
+<div class="highlight"><pre><span></span><code><span class="k">[providers.anthropic]</span>
+<span class="n">api_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;sk-ant-...&quot;</span>
+
+<span class="k">[agent]</span>
+<span class="n">default_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;anthropic:claude-opus-4-5&quot;</span>
+
+<span class="k">[lsp]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="k">[pricing.anthropic]</span>
+<span class="s2">&quot;claude-opus-4-5&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">input_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">3.00</span><span class="p">,</span><span class="w"> </span><span class="n">output_per_mtok</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mf">15.00</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div></p>
+<h3 id="3-start-the-daemon">3. Start the Daemon<a class="headerlink" href="#3-start-the-daemon" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># If running locally</span>
+honed<span class="w"> </span>--port<span class="w"> </span><span class="m">7070</span>
+
+<span class="c1"># In another terminal</span>
+hone<span class="w"> </span>--remote<span class="w"> </span>localhost:7070
+
+<span class="c1"># Or remotely on a server</span>
+ssh<span class="w"> </span>myserver
+honed<span class="w"> </span>--config<span class="w"> </span>~/.config/hone/config.toml
+
+<span class="c1"># From your laptop</span>
+hone<span class="w"> </span>--remote<span class="w"> </span>myserver:7070
+</code></pre></div>
+<h3 id="4-test-your-first-session">4. Test Your First Session<a class="headerlink" href="#4-test-your-first-session" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>/your/opencode/project
+hone<span class="w"> </span>--remote<span class="w"> </span>localhost:7070
+</code></pre></div>
+<p>Try a familiar task:
+<div class="highlight"><pre><span></span><code>Refactor the authentication module
+</code></pre></div></p>
+<p>Hone will:
+1. Find related files via semantic search
+2. Read them
+3. Make changes
+4. Show diffs
+5. Commit (if you approve)</p>
+<h3 id="5-create-honemd-project-conventions">5. Create HONE.md (Project Conventions)<a class="headerlink" href="#5-create-honemd-project-conventions" title="Permanent link">&para;</a></h3>
+<p>If you had OpenCode system prompts or guidelines:</p>
+<div class="highlight"><pre><span></span><code><span class="gh"># Project Skills</span>
+
+<span class="gu">## Skill: Code Review</span>
+
+Before committing:
+<span class="k">1.</span> Run tests with pytest
+<span class="k">2.</span> Check for error handling
+<span class="k">3.</span> Review with <span class="sb">`git diff`</span>
+
+<span class="gu">## Skill: Refactoring</span>
+
+When refactoring:
+<span class="k">1.</span> Write tests first (if not present)
+<span class="k">2.</span> Make changes incrementally
+<span class="k">3.</span> Run tests after each change
+<span class="k">4.</span> Commit per logical unit
+</code></pre></div>
+<h3 id="6-migrate-your-recipes-if-any">6. Migrate Your Recipes (If Any)<a class="headerlink" href="#6-migrate-your-recipes-if-any" title="Permanent link">&para;</a></h3>
+<p>If you had OpenCode recipes, copy them over:</p>
+<div class="highlight"><pre><span></span><code>cp<span class="w"> </span>~/.opencode/recipes/*<span class="w"> </span>~/.config/hone/recipes/
+</code></pre></div>
+<p>Hone recipes are YAML (same format as OpenCode). Update tool names if needed.</p>
+<h2 id="faq">FAQ<a class="headerlink" href="#faq" title="Permanent link">&para;</a></h2>
+<h3 id="can-i-still-use-the-web-ui">Can I still use the web UI?<a class="headerlink" href="#can-i-still-use-the-web-ui" title="Permanent link">&para;</a></h3>
+<p>Not yet. Hone currently has a TUI. Web UI is planned.</p>
+<h3 id="do-my-opencode-recipes-work-in-hone">Do my OpenCode recipes work in Hone?<a class="headerlink" href="#do-my-opencode-recipes-work-in-hone" title="Permanent link">&para;</a></h3>
+<p>Mostly. Recipe syntax is similar. Tool names may differ. Copy recipes and test.</p>
+<h3 id="how-do-i-set-per-user-budgets-like-opencode">How do I set per-user budgets like OpenCode?<a class="headerlink" href="#how-do-i-set-per-user-budgets-like-opencode" title="Permanent link">&para;</a></h3>
+<p>In config.toml:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[team.users]</span>
+<span class="n">alice</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">budget</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">&quot;unlimited&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="n">bob</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">budget</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">&quot;$500/month&quot;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p>Or enforce at daemon level:</p>
+<div class="highlight"><pre><span></span><code>honed<span class="w"> </span>--user-budget<span class="w"> </span><span class="m">500</span><span class="w"> </span>--budget-period<span class="w"> </span>month
+</code></pre></div>
+<h3 id="is-hone-faster-than-opencode">Is Hone faster than OpenCode?<a class="headerlink" href="#is-hone-faster-than-opencode" title="Permanent link">&para;</a></h3>
+<p>For local use: yes (TUI is faster than web). For remote: similar (both use daemon).</p>
+<h3 id="can-i-use-both-opencode-and-hone">Can I use both OpenCode and Hone?<a class="headerlink" href="#can-i-use-both-opencode-and-hone" title="Permanent link">&para;</a></h3>
+<p>Yes. They run independently. Keep both until you're comfortable with Hone.</p>
+<h3 id="how-do-i-export-sessions-like-opencode">How do I export sessions like OpenCode?<a class="headerlink" href="#how-do-i-export-sessions-like-opencode" title="Permanent link">&para;</a></h3>
+<p>In session:
+<div class="highlight"><pre><span></span><code>/export session.json
+</code></pre></div></p>
+<p>Sessions are also stored in memory database:
+<div class="highlight"><pre><span></span><code>~/.local/share/hone/memory.db
+</code></pre></div></p>
+<h3 id="what-about-the-web-ui-i-prefer-it">What about the web UI? I prefer it.<a class="headerlink" href="#what-about-the-web-ui-i-prefer-it" title="Permanent link">&para;</a></h3>
+<p>Web UI is on the roadmap. For now, TUI is the primary interface. SSH tunneling works well for remote use:</p>
+<div class="highlight"><pre><span></span><code>ssh<span class="w"> </span>-L<span class="w"> </span><span class="m">7070</span>:localhost:7070<span class="w"> </span>myserver
+hone<span class="w"> </span>--remote<span class="w"> </span>localhost:7070
+</code></pre></div>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Install:</strong> Follow step 1 above</li>
+<li><strong>Config:</strong> Migrate your OpenCode config to TOML</li>
+<li><strong>Daemon:</strong> Run <code>honed</code> locally and connect via <code>hone --remote</code></li>
+<li><strong>Test:</strong> Try a familiar task</li>
+<li><strong>Recipes:</strong> Read <a href="../../tutorials/recipes/">Recipes Guide</a> for automation</li>
+<li><strong>Team:</strong> Read <a href="../../tutorials/server-and-remote/">Server and Remote</a> for multi-user setup</li>
+</ol>
+<hr />
+<p>Migrating from OpenCode? Questions? Open an issue on GitHub.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

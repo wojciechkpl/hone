@@ -1,0 +1,2654 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/tutorials/use-cases/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Hone Use Cases: Practical Tutorials - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#hone-use-cases-practical-tutorials" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Hone Use Cases: Practical Tutorials
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="hone-use-cases-practical-tutorials">Hone Use Cases: Practical Tutorials<a class="headerlink" href="#hone-use-cases-practical-tutorials" title="Permanent link">&para;</a></h1>
+<p>This guide covers 16 real-world use cases for Hone, from simple bug fixes to complex multi-agent orchestrations. Each use case includes a concrete scenario, a terminal demo showing actual commands and output, and step-by-step explanation.</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#beginner-use-cases">Beginner Use Cases</a></li>
+<li>Fix a Bug</li>
+<li>Add a Feature</li>
+<li>Code Review</li>
+<li>
+<p>Explain Code</p>
+</li>
+<li>
+<p><a href="#interactive-workflow-use-cases">Interactive Workflow Use Cases</a></p>
+</li>
+<li>Quick Shell Access</li>
+<li>TDD with Auto-Test</li>
+<li>
+<p>Edit with Vim</p>
+</li>
+<li>
+<p><a href="#intermediate-use-cases">Intermediate Use Cases</a></p>
+</li>
+<li>TDD Workflow</li>
+<li>Refactor with Tests</li>
+<li>Multi-file Rename</li>
+<li>
+<p>Database Migration</p>
+</li>
+<li>
+<p><a href="#advanced-use-cases">Advanced Use Cases</a></p>
+</li>
+<li>Multi-Agent Orchestration</li>
+<li>Agent Ensemble</li>
+<li>MCP Extensions (GitHub)</li>
+<li>Security Audit</li>
+<li>
+<p>Debug a Test Failure</p>
+</li>
+<li>
+<p><a href="#choosing-the-right-mode">Choosing the Right Mode</a></p>
+</li>
+<li><a href="#cost-optimization-tips">Cost Optimization Tips</a></li>
+<li><a href="#session-workflow">Session Workflow</a></li>
+</ol>
+<hr />
+<h1 id="beginner-use-cases">Beginner Use Cases<a class="headerlink" href="#beginner-use-cases" title="Permanent link">&para;</a></h1>
+<h2 id="1-fix-a-bug">1. Fix a Bug<a class="headerlink" href="#1-fix-a-bug" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You found a bug and can describe it. The agent reads the code, identifies the root cause, applies a fix, and verifies it works.</p>
+<p><strong>Scenario:</strong> Your login function crashes when <code>email</code> is <code>None</code>. You want Hone to fix it without manually searching the codebase.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone &quot;The login function crashes when email is None. Fix it.&quot;
+
+  ✦ read_file auth.py
+  ✦ grep -n &quot;email is None&quot; auth.py
+  ✓ Found the issue at line 42: no null check before string operations
+
+  ✎ edit_file auth.py
+    - def login(email: str, password: str):
+    -     user = db.find_user(email)
+    + def login(email: str, password: str):
+    +     if email is None:
+    +         return None
+    +     user = db.find_user(email)
+
+  ❯ shell python -m pytest tests/test_auth.py::test_login -q
+    1 passed in 0.2s
+
+  Fixed. Added null check for email parameter before database lookup.
+
+  deepseek-chat │ $0.001 │ ▓░░░░░░░░░ 12% ctx │ 3s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Understand</strong>: Hone reads <code>auth.py</code> to understand the login function structure</li>
+<li><strong>Search</strong>: Uses grep to find references to the email check (or lack thereof)</li>
+<li><strong>Identify</strong>: Recognizes the crash happens because <code>email</code> is used without validation</li>
+<li><strong>Plan</strong>: Determines minimal fix: add a null check at function entry</li>
+<li><strong>Edit</strong>: Edits the file using <code>edit_file</code> with the exact old and new strings</li>
+<li><strong>Verify</strong>: Runs the test suite to confirm the fix works</li>
+<li><strong>Report</strong>: Explains what was changed in one line</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Add logging:</strong> Ask Hone to "fix the crash AND add a debug log message when email is None"</li>
+<li><strong>Multiple languages:</strong> If you have Python and TypeScript files, Hone will fix both (using LSP for each language)</li>
+<li><strong>Custom test:</strong> Replace the default test with your own: "Fix the crash. Then run <code>make test-auth</code>"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.001-0.002 (DeepSeek V3)</p>
+<hr />
+<h2 id="2-add-a-feature">2. Add a Feature<a class="headerlink" href="#2-add-a-feature" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You want the agent to create a new function, endpoint, or module based on your specification.</p>
+<p><strong>Scenario:</strong> Add a new <code>/health</code> endpoint to your FastAPI app that returns <code>{"status": "ok", "timestamp": "..."}</code>.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone &quot;Add a /health endpoint that returns {status: ok, timestamp: iso8601}&quot;
+
+  ✦ read_file app.py
+  ✓ Found FastAPI app at line 12
+
+  ✎ edit_file app.py
+    + from datetime import datetime
+    +
+    + @app.get(&quot;/health&quot;)
+    + def health_check():
+    +     return {
+    +         &quot;status&quot;: &quot;ok&quot;,
+    +         &quot;timestamp&quot;: datetime.utcnow().isoformat()
+    +     }
+
+  ❯ shell curl -s http://localhost:8000/health | jq .
+    {
+      &quot;status&quot;: &quot;ok&quot;,
+      &quot;timestamp&quot;: &quot;2026-04-09T15:30:22.123456&quot;
+    }
+
+  Added /health endpoint. Returns 200 OK with status and timestamp.
+
+  deepseek-chat │ $0.001 │ ▓░░░░░░░░░ 12% ctx │ 4s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Read the code</strong>: Hone examines the existing FastAPI app to understand the structure</li>
+<li><strong>Find the right location</strong>: Identifies where to add the new endpoint (typically near other routes)</li>
+<li><strong>Write the code</strong>: Generates the endpoint function with proper imports and formatting</li>
+<li><strong>Verify</strong>: Optionally runs a quick test (curl, pytest, etc.) to confirm it works</li>
+<li><strong>Report</strong>: Summarizes the change</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Add tests</strong>: "Add a /health endpoint AND write a test for it in tests/test_health.py"</li>
+<li><strong>Dependency injection</strong>: "Add /health that uses the database connection pool to report db status"</li>
+<li><strong>Error handling</strong>: "Add /health that returns 503 if database is unreachable"</li>
+<li><strong>Documentation</strong>: "Add /health endpoint with full OpenAPI docstring"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.001-0.003 (DeepSeek V3)</p>
+<hr />
+<h2 id="3-code-review">3. Code Review<a class="headerlink" href="#3-code-review" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You want a specialist to review code for security issues, performance, or best practices.</p>
+<p><strong>Scenario:</strong> You have an authentication module in <code>src/auth.py</code> and want to check it for security vulnerabilities.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone --agent code-reviewer &quot;Review src/auth.py for security issues&quot;
+
+  ✦ read_file src/auth.py
+  ✦ lsp_diagnostics src/auth.py
+  ✦ grep -n &quot;secret\|password\|token&quot; src/auth.py
+
+  [code-reviewer] Findings:
+
+  CRITICAL: Hardcoded secret at line 8
+  - Code: SECRET_KEY = &quot;dev-key-12345&quot;
+  - Risk: Secrets in source code exposed in git history
+  - Fix: Load from environment variable via os.getenv(&quot;SECRET_KEY&quot;)
+
+  HIGH: Plaintext password comparison at line 34
+  - Code: if password == stored_password:
+  - Risk: Timing attack vulnerability
+  - Fix: Use constant-time comparison: secrets.compare_digest(password, stored_password)
+
+  MEDIUM: No CSRF token validation on login form
+  - Risk: Cross-site request forgery on login endpoint
+  - Fix: Validate request.form[&#39;csrf_token&#39;] against session
+
+  Low-risk findings: 2 (see full report below)
+
+  deepseek-chat │ $0.002 │ ▓▓░░░░░░░░ 16% ctx │ 8s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Read the code</strong>: Agent reads the authentication module</li>
+<li><strong>Run diagnostics</strong>: Checks for type errors, imports, and common patterns</li>
+<li><strong>Search for patterns</strong>: Greps for security-sensitive keywords (secret, password, token)</li>
+<li><strong>Analyze</strong>: Applies security knowledge to identify vulnerabilities</li>
+<li><strong>Report</strong>: Lists findings by severity with explanations and fixes</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Performance review</strong>: Use <code>--agent performance-optimizer</code> instead</li>
+<li><strong>Automatically fix</strong>: "Review src/auth.py for security issues AND fix the critical ones"</li>
+<li><strong>Specific focus</strong>: "Review src/auth.py focusing on password handling and token validation"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.001-0.003 (DeepSeek V3)</p>
+<hr />
+<h2 id="4-explain-code">4. Explain Code<a class="headerlink" href="#4-explain-code" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You encounter unfamiliar code and want the agent to walk you through what it does.</p>
+<p><strong>Scenario:</strong> You inherit a codebase with a complex rate limiter and want to understand how it works.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone &quot;Explain what src/middleware/rate_limiter.rs does in detail&quot;
+
+  ✦ read_file src/middleware/rate_limiter.rs
+  ✦ grep -n &quot;struct\|impl\|fn &quot; src/middleware/rate_limiter.rs
+
+  The rate limiter implements a **sliding window counter** for per-IP request throttling.
+
+  Key components:
+
+  1. **RateLimiter struct** (lines 10-15)
+     Stores: window_size_ms, max_requests, per_ip_counters (HashMap)
+     Manages concurrent access via Arc&lt;Mutex&lt;&gt;&gt;
+
+  2. **RateLimiter::new()** (lines 17-22)
+     Constructor. Initializes empty counters map.
+
+  3. **RateLimiter::check_limit()** (lines 24-45)
+     Core logic:
+     a. Get current timestamp
+     b. For the requesting IP, find all requests in [now - window, now]
+     c. If count &lt; max_requests, allow and record timestamp
+     d. Else, reject with 429 Too Many Requests
+
+  4. **Cleanup** (lines 47-50)
+     Removes old entries to prevent HashMap growth
+
+  Time complexity: O(requests_per_window) per check
+  Space complexity: O(unique_ips * requests_per_window)
+
+  Common usage:
+  ```
+  let limiter = RateLimiter::new(window_ms: 60000, max: 100);
+  match limiter.check_limit(&amp;ip) {
+      Ok(()) =&gt; next_handler(),
+      Err(_) =&gt; 429_response(),
+  }
+  ```
+
+  deepseek-chat │ $0.002 │ ▓▓░░░░░░░░ 16% ctx │ 5s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Read the code</strong>: Agent examines the file</li>
+<li><strong>Extract structure</strong>: Greps for key definitions (structs, functions, types)</li>
+<li><strong>Understand flow</strong>: Traces the logic from initialization through execution</li>
+<li><strong>Explain patterns</strong>: Identifies algorithms (sliding window, hash table, etc.)</li>
+<li><strong>Provide context</strong>: Gives time/space complexity and typical usage</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Visual diagram</strong>: "Explain src/rate_limiter.rs AND draw a diagram showing the data flow"</li>
+<li><strong>Comparison</strong>: "Explain how src/rate_limiter.rs compares to a token bucket approach"</li>
+<li><strong>Specific function</strong>: "Explain the check_limit() function in detail"</li>
+<li><strong>With examples</strong>: "Explain src/rate_limiter.rs with 2-3 code examples"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.001-0.002 (DeepSeek V3)</p>
+<hr />
+<h1 id="interactive-workflow-use-cases">Interactive Workflow Use Cases<a class="headerlink" href="#interactive-workflow-use-cases" title="Permanent link">&para;</a></h1>
+<p>These use cases leverage Hone's interactive mode features: shell commands, vim keybindings, and TDD mode.</p>
+<h2 id="5-quick-shell-access">5. Quick Shell Access<a class="headerlink" href="#5-quick-shell-access" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You need to run shell commands without leaving the Hone session. Check build status, run tests, verify changes, explore the filesystem.</p>
+<p><strong>Scenario:</strong> During a coding session, you want to run <code>cargo test</code> to verify your changes, then run <code>git status</code> to see what changed, all without exiting Hone.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>&gt; Write me a function to parse CSV files
+
+[Agent writes code...]
+
+&gt; !cargo test
+  running 12 tests
+  test test_parse_csv ... ok
+  test test_parse_csv_with_headers ... ok
+  test test_empty_file ... ok
+  12 passed, 0 failed
+
+&gt; !git status
+  On branch feature/csv-parser
+  Changes not staged for commit:
+    modified:   src/lib.rs
+    new file:   tests/test_csv.rs
+
+  Untracked files:
+    target/
+
+&gt; !git diff src/lib.rs | head -20
+  +fn parse_csv(content: &amp;str) -&gt; Vec&lt;Vec&lt;String&gt;&gt; {
+  +    content.lines()
+  +        .filter(|line| !line.is_empty())
+  +        .map(|line| line.split(&#39;,&#39;).map(|s| s.trim().to_string()).collect())
+  +        .collect()
+  +}
+</code></pre></div>
+<p><strong>Features:</strong></p>
+<ul>
+<li>Run any shell command with <code>!command</code></li>
+<li>Output displayed inline in the session</li>
+<li>Directory changes with <code>!cd</code> persist in the session (confined to project root)</li>
+<li>Launch an editor with <code>!nvim file.rs</code> (TUI suspends, restores on exit)</li>
+<li>All standard shell operators work: pipes, redirects, etc.</li>
+</ul>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Quick test during development</strong>: <code>!cargo test</code> to verify mid-session</li>
+<li><strong>Git verification</strong>: <code>!git log --oneline -5</code> to check recent commits</li>
+<li><strong>File exploration</strong>: <code>!find . -name "*.rs" -type f | head -10</code></li>
+<li><strong>Environment check</strong>: <code>!echo $RUST_BACKTRACE</code> to verify env vars</li>
+<li><strong>Package management</strong>: <code>!cargo add chrono</code> to add dependencies</li>
+</ul>
+<p><strong>Cost:</strong> No API cost (local shell execution only)</p>
+<hr />
+<h2 id="6-tdd-with-auto-test">6. TDD with Auto-Test<a class="headerlink" href="#6-tdd-with-auto-test" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> Implementing a feature using Test-Driven Development. You want tests to run automatically whenever you make changes, providing instant feedback on pass/fail.</p>
+<p><strong>Scenario:</strong> You're implementing a binary search function. Instead of manually running tests after each edit, you activate TDD mode to auto-run tests on every change.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>&gt; I&#39;ll implement a binary search function with TDD
+
+&gt; :tdd cargo test
+  [TDD] watching for changes, running: cargo test
+
+... (pause while waiting for edits) ...
+
+&gt; Implement binary search that returns the index or -1 if not found
+
+[Agent edits src/lib.rs...]
+
+[TDD] change detected: src/lib.rs — running tests...
+[TDD] tests PASSED
+  12 passed in 0.4s
+
+&gt; Add support for custom comparators
+
+[Agent edits src/lib.rs...]
+
+[TDD] change detected: src/lib.rs — running tests...
+[TDD] tests FAILED
+  test test_custom_comparator ... FAILED
+  error: expected `fn(T, T) -&gt; Ordering`, found closure
+
+&gt; Fix the comparator signature
+
+[Agent edits src/lib.rs...]
+
+[TDD] change detected: src/lib.rs — running tests...
+[TDD] tests PASSED
+  12 passed in 0.5s
+
+&gt; Now let&#39;s refactor for clarity
+
+[Agent refactors...]
+
+[TDD] change detected: src/lib.rs — running tests...
+[TDD] tests PASSED
+  12 passed in 0.4s
+
+&gt; :tdd off
+  [TDD] watching stopped
+</code></pre></div>
+<p><strong>Features:</strong></p>
+<ul>
+<li>Automatic file watching (300ms debounce to avoid rapid reruns)</li>
+<li>Runs test command on every change</li>
+<li>Displays PASS/FAIL with test output inline</li>
+<li>Works with any test framework: <code>cargo test</code>, <code>pytest</code>, <code>npm test</code>, <code>make test</code></li>
+<li>Stop anytime with <code>:tdd off</code></li>
+</ul>
+<p><strong>Red-Green-Refactor Workflow:</strong></p>
+<ol>
+<li><strong>Red</strong>: Write test that fails (or see implementation fail tests)</li>
+<li><strong>Green</strong>: TDD mode shows FAILED, implement to make it pass</li>
+<li><strong>Green</strong>: TDD mode shows PASSED, refactor safely with instant feedback</li>
+<li><strong>Refactor</strong>: Modify code, TDD shows PASSED after each change</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Specific test file</strong>: <code>:tdd pytest tests/test_binary_search.py</code></li>
+<li><strong>Fast feedback</strong>: <code>:tdd cargo test --lib search</code> (test single module)</li>
+<li><strong>With coverage</strong>: <code>:tdd cargo tarpaulin --out Html</code> (auto-generate coverage reports)</li>
+<li><strong>Watch source only</strong>: Configure to watch only <code>src/</code> directory</li>
+<li><strong>Pause TDD temporarily</strong>: Run <code>!cargo test</code> manually, then resume with <code>:tdd cargo test</code></li>
+</ul>
+<p><strong>Cost:</strong> No API cost (local test execution only)</p>
+<hr />
+<h2 id="7-edit-with-vim">7. Edit with Vim<a class="headerlink" href="#7-edit-with-vim" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You're comfortable with vim keybindings and want vim-style navigation and editing in Hone's interactive mode.</p>
+<p><strong>Scenario:</strong> You're a vim user starting an interactive session. You want j/k navigation, visual selection, and vim commands available within Hone.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone --vim
+
+Hone [vim mode active]
+Type prompts and press Esc, then type :q to submit. Type :help for commands.
+
+&gt; 
+
+(vim normal mode, waiting for input)
+
+: (press i)
+
+Type a feature: Add pagination to the user list
+
+(vim insert mode, typing normally)
+
+&gt; Add pagination to the user list
+
+(press Esc to return to normal mode)
+
+:
+
+(in normal mode)
+
+gg (jump to start of line)
+gg (jump to start of input)
+
+(in normal mode)
+
+$ (jump to end of line)
+A (append at end)
+ with tests
+
+(still in insert mode)
+
+(press Esc)
+
+:q (submit the prompt)
+
+[Agent processes: &quot;Add pagination to the user list with tests&quot;]
+
+(returns to vim normal mode for next input)
+</code></pre></div>
+<p><strong>Vim Mode Features:</strong></p>
+<p><strong>Normal Mode:</strong>
+- <code>j</code>/<code>k</code> — Move down/up
+- <code>h</code>/<code>l</code> — Move left/right
+- <code>w</code>/<code>b</code> — Jump to next/previous word
+- <code>gg</code> — Jump to top of input
+- <code>G</code> — Jump to bottom of input
+- <code>0</code>/<code>$</code> — Jump to start/end of line
+- <code>i</code>/<code>a</code> — Enter insert mode (before/after cursor)
+- <code>I</code>/<code>A</code> — Insert at line start/end
+- <code>o</code>/<code>O</code> — Insert line below/above
+- <code>dd</code> — Delete line
+- <code>dw</code> — Delete word
+- <code>yy</code> — Copy line
+- <code>p</code> — Paste
+- <code>u</code> — Undo
+- <code>Ctrl+r</code> — Redo
+- <code>:q</code> — Submit prompt
+- <code>:set novim</code> — Disable vim mode</p>
+<p><strong>Insert Mode:</strong>
+- Type normally
+- <code>Esc</code> — Return to normal mode</p>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Toggle vim mode</strong>: <code>:set novim</code> (while in vim mode) or <code>:set vim</code> (from normal mode)</li>
+<li><strong>Combine with other features</strong>: Use vim keybindings + <code>!shell</code> commands together</li>
+<li><strong>Resume with vim</strong>: <code>hone session resume my-session</code> (preserves vim mode preference)</li>
+</ul>
+<p><strong>Cost:</strong> No API cost (local vim keybinding processing only)</p>
+<hr />
+<h1 id="intermediate-use-cases">Intermediate Use Cases<a class="headerlink" href="#intermediate-use-cases" title="Permanent link">&para;</a></h1>
+<h2 id="8-tdd-workflow-recipe-mode">8. TDD Workflow (Recipe Mode)<a class="headerlink" href="#8-tdd-workflow-recipe-mode" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You want to implement a feature using Test-Driven Development: write test first (Red), then implementation (Green), then refactor (Refactor).</p>
+<p><strong>Scenario:</strong> Add rate limiting to an API. You want the structure enforced: test first, implementation, refactoring, verification.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone --recipe tdd-feature
+
+Hone TDD Recipe
+===============
+
+What feature do you want to implement? 
+&gt; Add rate limiting to the /api/data endpoint (max 10 requests per minute per IP)
+
+Step 1 of 4: Write the test [RED]
+========================================
+
+✎ write_file tests/test_rate_limit.py
+   + def test_rate_limit_enforced():
+   +     client = TestClient(app)
+   +     ip = &quot;192.168.1.1&quot;
+   +     
+   +     # First 10 requests should succeed
+   +     for i in range(10):
+   +         resp = client.get(&quot;/api/data&quot;, headers={&quot;X-Forwarded-For&quot;: ip})
+   +         assert resp.status_code == 200, f&quot;Request {i+1} should succeed&quot;
+   +     
+   +     # 11th request should be rate limited
+   +     resp = client.get(&quot;/api/data&quot;, headers={&quot;X-Forwarded-For&quot;: ip})
+   +     assert resp.status_code == 429, &quot;Request 11 should be rate limited&quot;
+
+❯ shell pytest tests/test_rate_limit.py -q
+  FAILED tests/test_rate_limit.py::test_rate_limit_enforced - AttributeError: &#39;app&#39; has no rate limiter
+
+✓ TEST FAILED (expected)
+
+
+Step 2 of 4: Implement the feature [GREEN]
+===========================================
+
+✎ edit_file app.py
+   + from ratelimit import RateLimiter
+   + 
+   + limiter = RateLimiter(max_requests=10, window_seconds=60)
+   + 
+   + @app.get(&quot;/api/data&quot;)
+   + async def get_data(request: Request):
+   +     if not limiter.check(request.client.host):
+   +         raise HTTPException(status_code=429, detail=&quot;Rate limited&quot;)
+   +     return {&quot;data&quot;: [...]}
+
+❯ shell pytest tests/test_rate_limit.py -q
+  1 passed in 0.3s
+
+✓ TEST PASSED
+
+
+Step 3 of 4: Refactor for quality [REFACTOR]
+==============================================
+
+✎ edit_file app.py
+   - limiter = RateLimiter(max_requests=10, window_seconds=60)
+   + limiter = RateLimiter(
+   +     max_requests=10,
+   +     window_seconds=60,
+   +     key_func=lambda r: r.headers.get(&quot;X-Forwarded-For&quot;, r.client.host)
+   + )
+
+❯ shell pytest tests/test_rate_limit.py -q
+  1 passed in 0.3s
+
+✓ TESTS STILL PASSING
+
+
+Step 4 of 4: Verify full test suite [VERIFY]
+=============================================
+
+❯ shell pytest tests/ -q
+  15 passed in 1.2s
+
+✓ ALL TESTS PASS
+
+TDD workflow complete. Feature implemented with test coverage.
+
+deepseek-chat │ $0.005 │ ▓▓▓░░░░░░░ 24% ctx │ 18s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>RED phase</strong>: Agent writes a failing test that specifies the desired behavior</li>
+<li><strong>GREEN phase</strong>: Agent implements the minimal code to make the test pass</li>
+<li><strong>REFACTOR phase</strong>: Agent improves code quality without changing behavior</li>
+<li><strong>VERIFY phase</strong>: Agent runs the full test suite to ensure no regressions</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Skip refactor</strong>: "Use tdd-feature but skip the refactor phase"</li>
+<li><strong>Multiple tests</strong>: "Implement feature X with at least 5 test cases"</li>
+<li><strong>Integration test</strong>: Include end-to-end tests alongside unit tests</li>
+<li><strong>With documentation</strong>: "After TDD, add API documentation to the endpoint"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.003-0.005 (DeepSeek V3)</p>
+<hr />
+<h2 id="9-refactor-with-tests">9. Refactor with Tests<a class="headerlink" href="#9-refactor-with-tests" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You want to safely refactor code while ensuring tests still pass. The agent makes incremental changes and verifies at each step.</p>
+<p><strong>Scenario:</strong> You want to refactor a User class to use Python dataclasses instead of manual <code>__init__</code> and <code>__repr__</code>.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone &quot;Refactor the User class to use dataclasses. Run tests after each change.&quot;
+
+  ✦ read_file models.py
+  ✓ Found User class at lines 10-35
+
+  [refactor] Step 1: Add dataclasses import
+  ✎ edit_file models.py
+    + from dataclasses import dataclass
+    - class User:
+    + @dataclass
+    + class User:
+
+  ❯ shell pytest tests/test_models.py::UserTests -q
+    3 passed in 0.2s
+  ✓ Tests pass after step 1
+
+  [refactor] Step 2: Convert __init__ to fields
+  ✎ edit_file models.py
+    - def __init__(self, email, password_hash, created_at):
+    -     self.email = email
+    -     self.password_hash = password_hash
+    -     self.created_at = created_at
+    + email: str
+    + password_hash: str
+    + created_at: datetime
+
+  ❯ shell pytest tests/test_models.py::UserTests -q
+    3 passed in 0.2s
+  ✓ Tests pass after step 2
+
+  [refactor] Step 3: Remove redundant __repr__
+  ✎ edit_file models.py
+    - def __repr__(self):
+    -     return f&quot;&lt;User {self.email}&gt;&quot;
+    (removed - dataclass generates this automatically)
+
+  ❯ shell pytest tests/test_models.py -q
+    12 passed in 0.3s
+  ✓ All tests pass
+
+  Refactored User class from manual implementation to @dataclass.
+  Benefits: 15 fewer lines, auto-generated __repr__ and __eq__, type hints.
+
+  deepseek-chat │ $0.003 │ ▓▓░░░░░░░░ 20% ctx │ 9s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Understand original</strong>: Reads the current User class implementation</li>
+<li><strong>Plan incremental changes</strong>: Identifies safe, minimal refactoring steps</li>
+<li><strong>Apply step 1</strong>: Adds decorator and imports</li>
+<li><strong>Test</strong>: Runs test suite to confirm no breakage</li>
+<li><strong>Apply step 2-N</strong>: Continues incrementally, testing after each change</li>
+<li><strong>Verify</strong>: Final full test suite run</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Extract method</strong>: "Refactor the payment logic into a separate PaymentProcessor class"</li>
+<li><strong>Rename safely</strong>: "Rename all instances of 'total_amount' to 'grand_total' (use LSP for correctness)"</li>
+<li><strong>Dependency injection</strong>: "Refactor the service layer to use dependency injection instead of globals"</li>
+<li><strong>Type migration</strong>: "Add type hints to the User class (Python 3.8+)"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.002-0.004 (DeepSeek V3)</p>
+<hr />
+<h2 id="10-multi-file-rename">10. Multi-file Rename<a class="headerlink" href="#10-multi-file-rename" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You need to rename something (variable, function, class) across multiple files. Using real LSP ensures correctness (not just string matching).</p>
+<p><strong>Scenario:</strong> Rename the function <code>calculate_total</code> to <code>compute_total</code> everywhere in the codebase.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone &quot;Rename the function calculate_total to compute_total everywhere&quot;
+
+  ✦ symbol_search &quot;calculate_total&quot;
+  ✓ Found 23 references across 5 files:
+    - src/billing.py: 3 definitions, 5 usages
+    - src/reports.py: 2 usages
+    - tests/test_billing.py: 4 usages
+    - docs/API.md: 1 mention
+    - src/legacy.py: 8 usages
+
+  [multi-edit] Preparing atomic rename using LSP
+
+  ✎ multi_edit
+    src/billing.py:
+      - def calculate_total(items: List[Item]) -&gt; float:
+      + def compute_total(items: List[Item]) -&gt; float:
+      - return calculate_total(updated_items)
+      + return compute_total(updated_items)
+      (5 more replacements...)
+
+    src/reports.py:
+      - total = calculate_total(yearly_transactions)
+      + total = compute_total(yearly_transactions)
+      (1 more replacement...)
+
+    tests/test_billing.py:
+      - assert calculate_total([...]) == 150.00
+      + assert compute_total([...]) == 150.00
+      (3 more replacements...)
+
+    docs/API.md:
+      - ## calculate_total()
+      + ## compute_total()
+
+  ❯ shell pytest tests/ -q
+    18 passed in 0.5s
+  ✓ All tests pass after rename
+
+  ❯ lsp_diagnostics
+  ✓ No type errors
+
+  Renamed calculate_total -&gt; compute_total across 23 references in 5 files.
+  Tests and type checking pass.
+
+  deepseek-chat │ $0.002 │ ▓░░░░░░░░░ 14% ctx │ 6s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Search</strong>: Uses symbol_search (LSP-based) to find all references</li>
+<li><strong>Plan</strong>: Identifies all files and contexts where the rename must happen</li>
+<li><strong>Atomic edit</strong>: Uses <code>multi_edit</code> to apply all changes atomically</li>
+<li><strong>Verify</strong>: Runs tests and LSP diagnostics to confirm correctness</li>
+<li><strong>Report</strong>: Shows number of files and references changed</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Class rename</strong>: "Rename the class UserAccount to CustomerProfile everywhere"</li>
+<li><strong>Const rename</strong>: "Rename MAX_RETRIES to MAX_RETRY_ATTEMPTS"</li>
+<li><strong>Import update</strong>: "Rename the module from src/utils.py to src/helpers.py and update all imports"</li>
+<li><strong>Type rename</strong>: "Rename struct User to Person in Rust code"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.001-0.003 (DeepSeek V3)</p>
+<hr />
+<h2 id="11-database-migration">11. Database Migration<a class="headerlink" href="#11-database-migration" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You need to create a database schema change (add/drop/modify columns) with a migration file.</p>
+<p><strong>Scenario:</strong> Add a <code>last_login</code> timestamp column to the users table in PostgreSQL.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone &quot;Add a &#39;last_login&#39; timestamp column to the users table&quot;
+
+  ✦ read_file alembic/versions/
+  ✓ Found latest migration at 001_initial_schema.py
+
+  ✎ write_file alembic/versions/002_add_last_login.py
+   + from alembic import op
+   + import sqlalchemy as sa
+   + 
+   + revision = &#39;002_add_last_login&#39;
+   + down_revision = &#39;001_initial_schema&#39;
+   + 
+   + def upgrade():
+   +     op.add_column(&#39;users&#39;,
+   +         sa.Column(&#39;last_login&#39;, sa.DateTime, nullable=True, index=True)
+   +     )
+   + 
+   + def downgrade():
+   +     op.drop_column(&#39;users&#39;, &#39;last_login&#39;)
+
+  ✎ edit_file models.py
+    - class User(Base):
+    -     email: str
+    + class User(Base):
+    +     email: str
+    +     last_login: Optional[datetime] = None
+
+  ❯ shell alembic upgrade head
+    [alembic] Running upgrade 001 -&gt; 002
+
+  ❯ shell psql $DATABASE_URL -c \
+      &quot;SELECT column_name FROM information_schema.columns WHERE table_name=&#39;users&#39;&quot;
+    email
+    password_hash
+    created_at
+    last_login
+
+  ✓ Column added successfully
+
+  Added last_login timestamp column to users table with index for query performance.
+
+  deepseek-chat │ $0.003 │ ▓▓░░░░░░░░ 18% ctx │ 7s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Read schema</strong>: Reads existing migration files to understand the pattern</li>
+<li><strong>Create migration</strong>: Generates an Alembic migration file (up and down)</li>
+<li><strong>Update model</strong>: Updates the SQLAlchemy model to match the schema</li>
+<li><strong>Test migration</strong>: Runs <code>alembic upgrade</code> to apply the change</li>
+<li><strong>Verify</strong>: Confirms the column exists in the database</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Data migration</strong>: "Add a status column to orders (with default='pending') and backfill existing rows"</li>
+<li><strong>Index addition</strong>: "Add an index on the email column for faster lookups"</li>
+<li><strong>Constraint</strong>: "Add a UNIQUE constraint on email"</li>
+<li><strong>Rollback test</strong>: "Create a migration to add the column AND test that the down() rollback works"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.002-0.004 (DeepSeek V3)</p>
+<hr />
+<h1 id="advanced-use-cases">Advanced Use Cases<a class="headerlink" href="#advanced-use-cases" title="Permanent link">&para;</a></h1>
+<h2 id="12-multi-agent-orchestration">12. Multi-Agent Orchestration<a class="headerlink" href="#12-multi-agent-orchestration" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You have a complex task that benefits from decomposition. The orchestrator breaks it into subtasks, workers execute them in parallel, and results are merged.</p>
+<p><strong>Scenario:</strong> Implement user authentication with JWT tokens. This involves: backend token generation, frontend integration, token refresh logic, and security review.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone --orchestrate &quot;Implement user authentication with JWT tokens&quot;
+
+  [orchestrator] Decomposing task...
+
+  Subtasks:
+  1. auth-backend: Implement JWT generation and validation in Python
+  2. auth-frontend: Add login form and token storage in TypeScript
+  3. refresh-logic: Implement token refresh with sliding expiration
+  4. security-review: Audit the implementation for vulnerabilities
+
+  [orchestrator] Spawning 4 workers...
+  =====================================
+
+  [worker 1 - auth-backend] Running
+  ✦ read_file app.py
+  ✎ write_file auth.py
+   + import jwt
+   + from datetime import datetime, timedelta
+   + 
+   + SECRET_KEY = os.getenv(&quot;JWT_SECRET&quot;)
+   + TOKEN_EXPIRY_HOURS = 1
+   + 
+   + def generate_token(user_id: str) -&gt; str:
+   +     payload = {
+   +         &quot;user_id&quot;: user_id,
+   +         &quot;exp&quot;: datetime.utcnow() + timedelta(hours=TOKEN_EXPIRY_HOURS)
+   +     }
+   +     return jwt.encode(payload, SECRET_KEY, algorithm=&quot;HS256&quot;)
+   + 
+   + def verify_token(token: str) -&gt; Optional[str]:
+   +     try:
+   +         payload = jwt.decode(token, SECRET_KEY, algorithms=[&quot;HS256&quot;])
+   +         return payload[&quot;user_id&quot;]
+   +     except jwt.ExpiredSignatureError:
+   +         return None
+
+  [worker 2 - auth-frontend] Running
+  ✎ write_file src/components/LoginForm.tsx
+   + export function LoginForm() {
+   +     const [email, setEmail] = useState(&quot;&quot;);
+   +     const [password, setPassword] = useState(&quot;&quot;);
+   +     
+   +     const handleLogin = async () =&gt; {
+   +         const res = await fetch(&quot;/api/login&quot;, {
+   +             method: &quot;POST&quot;,
+   +             body: JSON.stringify({ email, password })
+   +         });
+   +         const { token } = await res.json();
+   +         localStorage.setItem(&quot;auth_token&quot;, token);
+   +     };
+   +     
+   +     return (
+   +         &lt;form onSubmit={handleLogin}&gt;
+   +             &lt;input value={email} onChange={e =&gt; setEmail(e.target.value)} /&gt;
+   +             &lt;input type=&quot;password&quot; value={password} onChange={e =&gt; setPassword(e.target.value)} /&gt;
+   +             &lt;button type=&quot;submit&quot;&gt;Login&lt;/button&gt;
+   +         &lt;/form&gt;
+   +     );
+   + }
+
+  [worker 3 - refresh-logic] Running
+  ✎ edit_file auth.py
+   + REFRESH_TOKEN_EXPIRY_DAYS = 7
+   + 
+   + def generate_refresh_token(user_id: str) -&gt; str:
+   +     payload = {
+   +         &quot;user_id&quot;: user_id,
+   +         &quot;type&quot;: &quot;refresh&quot;,
+   +         &quot;exp&quot;: datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)
+   +     }
+   +     return jwt.encode(payload, SECRET_KEY, algorithm=&quot;HS256&quot;)
+   + 
+   + @app.post(&quot;/api/refresh&quot;)
+   + def refresh_token_endpoint(refresh_token: str):
+   +     user_id = verify_token(refresh_token)
+   +     if not user_id:
+   +         raise HTTPException(status_code=401)
+   +     return {&quot;token&quot;: generate_token(user_id)}
+
+  [worker 4 - security-review] Running
+  ✦ read_file auth.py
+  ✓ CRITICAL: TOKEN NOT VALIDATED ON EVERY REQUEST
+    Fix: Add middleware to check Authorization: Bearer &lt;token&gt;
+  ✓ HIGH: REFRESH TOKEN SAME ALGORITHM AS ACCESS TOKEN
+    Risk: Attacker can use refresh token as access token
+    Fix: Sign refresh token with different key or add &quot;type&quot; claim
+  ✓ MEDIUM: NO LOGOUT ENDPOINT
+    Risk: Tokens cannot be revoked early
+    Fix: Add token blacklist (Redis set)
+
+  [orchestrator] Merging results...
+
+  ✎ edit_file app.py
+   + from functools import wraps
+   + 
+   + def require_auth(f):
+   +     @wraps(f)
+   +     def wrapper(*args, **kwargs):
+   +         token = request.headers.get(&quot;Authorization&quot;, &quot;&quot;).replace(&quot;Bearer &quot;, &quot;&quot;)
+   +         user_id = verify_token(token)
+   +         if not user_id:
+   +             raise HTTPException(status_code=401)
+   +         return f(*args, user_id=user_id, **kwargs)
+   +     return wrapper
+   + 
+   + @app.get(&quot;/api/protected&quot;)
+   + @require_auth
+   + def protected_endpoint(user_id: str):
+   +     return {&quot;user_id&quot;: user_id}
+
+  ❯ shell pytest tests/test_auth.py -q
+    12 passed in 0.8s
+
+  Authentication system implemented:
+  - Backend: JWT generation and validation with 1-hour expiry
+  - Frontend: Login form stores token in localStorage
+  - Refresh: Sliding token refresh with 7-day refresh token
+  - Security: Middleware validates tokens on protected endpoints, separate refresh token key
+
+  deepseek-chat │ $0.012 │ ▓▓▓▓░░░░░░ 32% ctx │ 45s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Orchestrator reads the task</strong>: Understands the requirements</li>
+<li><strong>Decompose</strong>: Breaks into 4 logical subtasks (backend, frontend, refresh, security)</li>
+<li><strong>Spawn workers</strong>: 4 agents run in parallel on their subtasks</li>
+<li><strong>Merge results</strong>: Lead agent integrates results, applies security fixes, runs tests</li>
+<li><strong>Report</strong>: Summarizes what was implemented</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Longer orchestrations</strong>: "Build a complete user management system: auth, profiles, RBAC, audit logging"</li>
+<li><strong>Multi-language</strong>: "Implement API pagination in Go backend and React frontend"</li>
+<li><strong>Cross-cutting</strong>: "Add comprehensive logging to all services"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.010-0.015 (4 workers running in parallel, DeepSeek V3)</p>
+<hr />
+<h2 id="13-agent-ensemble">13. Agent Ensemble<a class="headerlink" href="#13-agent-ensemble" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You want multiple AI candidates to solve the same problem, ranked for quality. Useful for complex algorithmic tasks.</p>
+<p><strong>Scenario:</strong> Write a Rust function that finds the longest palindromic substring in O(n) time using Manacher's algorithm.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone --ensemble 3 &quot;Write a Rust function to find the longest palindromic substring using Manacher&#39;s algorithm. Include tests.&quot;
+
+  [ensemble] Running 3 candidates in parallel...
+  ==============================================
+
+  [candidate 1: temperature=0.3 - deterministic]
+  ✓ Generated 45 lines of code, 3 test cases
+
+  [candidate 2: temperature=0.7 - balanced]
+  ✓ Generated 52 lines of code, 5 test cases
+
+  [candidate 3: temperature=1.0 - creative]
+  ✓ Generated 61 lines of code, 4 test cases
+
+  [ranker] Analyzing candidates...
+
+  Candidate 1: SCORE 0.82
+    Strengths: Correct algorithm, clear structure
+    Weaknesses: Missing edge case tests for even-length palindromes
+
+  Candidate 2: SCORE 0.91
+    Strengths: Most complete test coverage, handles even/odd palindromes, includes boundary tests
+    Weaknesses: Slightly verbose with comments
+
+  Candidate 3: SCORE 0.79
+    Strengths: Creative error handling
+    Weaknesses: Incomplete test coverage, unused variable in main logic
+
+  [ranker] SELECTED: Candidate 2 (score 0.91)
+  Reason: Most comprehensive test coverage with proper handling of both even and odd-length palindromes.
+
+  ✨ Using solution from Candidate 2:
+
+  ✎ write_file src/palindrome.rs
+   + pub fn longest_palindrome(s: &amp;str) -&gt; String {
+   +     if s.is_empty() { return String::new(); }
+   +     
+   +     let chars: Vec&lt;char&gt; = s.chars().collect();
+   +     let n = chars.len();
+   +     let mut expanded = vec![&#39;|&#39;];
+   +     
+   +     for c in &amp;chars {
+   +         expanded.push(*c);
+   +         expanded.push(&#39;|&#39;);
+   +     }
+   +     
+   +     let n_exp = expanded.len();
+   +     let mut palindrome_radii = vec![0; n_exp];
+   +     let mut center = 0;
+   +     let mut right = 0;
+   +     
+   +     for i in 1..n_exp {
+   +         let mirror = 2 * center - i;
+   +         
+   +         if i &lt; right {
+   +             palindrome_radii[i] = std::cmp::min(right - i, palindrome_radii[mirror]);
+   +         }
+   +         
+   +         while i + palindrome_radii[i] + 1 &lt; n_exp
+   +             &amp;&amp; i - palindrome_radii[i] - 1 &gt;= 0
+   +             &amp;&amp; expanded[i + palindrome_radii[i] + 1] == expanded[i - palindrome_radii[i] - 1]
+   +         {
+   +             palindrome_radii[i] += 1;
+   +         }
+   +         
+   +         if i + palindrome_radii[i] &gt; right {
+   +             center = i;
+   +             right = i + palindrome_radii[i];
+   +         }
+   +     }
+   +     
+   +     let max_len = *palindrome_radii.iter().max().unwrap_or(&amp;0);
+   +     let center_max = palindrome_radii.iter().position(|&amp;x| x == max_len).unwrap();
+   +     
+   +     let start = (center_max - max_len) / 2;
+   +     chars[start..start + max_len].iter().collect()
+   + }
+   + 
+   + #[cfg(test)]
+   + mod tests {
+   +     use super::*;
+   +     
+   +     #[test]
+   +     fn test_odd_palindrome() {
+   +         assert_eq!(longest_palindrome(&quot;racecar&quot;), &quot;racecar&quot;);
+   +     }
+   +     
+   +     #[test]
+   +     fn test_even_palindrome() {
+   +         assert_eq!(longest_palindrome(&quot;abccba&quot;), &quot;abccba&quot;);
+   +     }
+   +     
+   +     #[test]
+   +     fn test_single_char() {
+   +         assert_eq!(longest_palindrome(&quot;a&quot;), &quot;a&quot;);
+   +     }
+   +     
+   +     #[test]
+   +     fn test_no_palindrome() {
+   +         let result = longest_palindrome(&quot;abcd&quot;);
+   +         assert_eq!(result.len(), 1);
+   +     }
+   +     
+   +     #[test]
+   +     fn test_entire_string() {
+   +         assert_eq!(longest_palindrome(&quot;aabbaa&quot;), &quot;aabbaa&quot;);
+   +     }
+   + }
+
+  ❯ shell cargo test --lib palindrome -q
+    running 5 tests
+    test palindrome::tests::test_odd_palindrome ... ok
+    test palindrome::tests::test_even_palindrome ... ok
+    test palindrome::tests::test_single_char ... ok
+    test palindrome::tests::test_no_palindrome ... ok
+    test palindrome::tests::test_entire_string ... ok
+
+    test result: ok. 5 passed
+
+  ✓ All tests pass. Time complexity: O(n), Space complexity: O(n)
+
+  Best solution selected from 3 candidates using MASAI Ranker (arXiv 2406.11638).
+
+  deepseek-chat │ $0.005 │ ▓▓▓░░░░░░░ 28% ctx │ 22s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Generate candidates</strong>: 3 agents run the same prompt at different temperatures (0.3, 0.7, 1.0)</li>
+<li><strong>Rank</strong>: A dedicated ranker agent scores each candidate on code quality, test coverage, and correctness</li>
+<li><strong>Select</strong>: The best candidate (highest score) is chosen</li>
+<li><strong>Verify</strong>: The selected solution is tested to confirm it works</li>
+<li><strong>Report</strong>: Shows the scores and ranking rationale</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>More candidates</strong>: Use <code>--ensemble 5</code> for more diversity (up to 5 supported)</li>
+<li><strong>Custom ranker prompt</strong>: "Generate 3 solutions for X and rank them on performance, readability, and test coverage"</li>
+<li><strong>Different models</strong>: Mix models in the ensemble for different "styles" of solutions</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.004-0.008 (3 candidates + ranker, DeepSeek V3)</p>
+<hr />
+<h2 id="14-mcp-extensions-create-a-github-pr">14. MCP Extensions: Create a GitHub PR<a class="headerlink" href="#14-mcp-extensions-create-a-github-pr" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You want to use MCP servers to extend Hone's capabilities. GitHub MCP allows creating issues, PRs, and reading repos without cloning.</p>
+<p><strong>Scenario:</strong> Your README has a typo. You want Hone to fix it and create a PR automatically.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ export GITHUB_TOKEN=&quot;ghp_...&quot;
+$ hone &quot;Fix the typo in README.md line 42 and create a PR&quot;
+
+  ✦ read_file README.md | head -n 50
+  ✓ Found typo: &quot;integrtion&quot; should be &quot;integration&quot;
+
+  [mcp-github] Creating branch...
+  ✓ Created branch: typo-fix-readme
+
+  ✎ edit_file README.md
+    - This tool provides integrtion with multiple providers.
+    + This tool provides integration with multiple providers.
+
+  [mcp-github] Committing changes...
+  ✓ Committed: Fix typo in README
+
+  [mcp-github] Creating pull request...
+  ✓ PR created: https://github.com/honelang/hone/pull/234
+
+  Title: Fix typo in README: integrtion -&gt; integration
+  Description:
+    Fixed a typo on line 42 of README.md
+
+    Changes:
+    - &quot;integrtion&quot; -&gt; &quot;integration&quot;
+
+  deepseek-chat │ $0.002 │ ▓░░░░░░░░░ 14% ctx │ 8s
+</code></pre></div>
+<p><strong>Setup Instructions:</strong></p>
+<ol>
+<li>Create <code>.hone/mcp.json</code>:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;github&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;GITHUB_PERSONAL_ACCESS_TOKEN&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;${GITHUB_TOKEN}&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ol>
+<li>Set your GitHub token:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">GITHUB_TOKEN</span><span class="o">=</span><span class="s2">&quot;ghp_...&quot;</span>
+hone
+</code></pre></div>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Create issue</strong>: "Create a GitHub issue for the performance bug in the parser module"</li>
+<li><strong>Multiple PRs</strong>: "Fix the 3 typos I found in the docs AND create 3 separate PRs"</li>
+<li><strong>Add labels</strong>: "Create a PR and label it as 'bug' and 'urgent'"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.001-0.003 (includes MCP communication)</p>
+<hr />
+<h2 id="15-security-audit">15. Security Audit<a class="headerlink" href="#15-security-audit" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> You want a comprehensive security review using the specialized <code>security-auditor</code> agent.</p>
+<p><strong>Scenario:</strong> Full OWASP Top 10 audit of your Flask application.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone --agent security-auditor &quot;Audit this project for OWASP Top 10 vulnerabilities&quot;
+
+  ✦ read_file app.py
+  ✦ read_file models.py
+  ✦ grep -n &quot;sql\|query\|request\|password\|secret&quot; app.py
+  ✦ lsp_diagnostics
+
+  SECURITY AUDIT REPORT
+  =====================
+
+  [CRITICAL] A1: SQL Injection
+  Location: app.py line 42
+  Code: db.query(f&quot;SELECT * FROM users WHERE id = {user_id}&quot;)
+  Risk: User input directly interpolated into SQL query
+  CWE: CWE-89
+  Fix: Use parameterized queries:
+       db.query(&quot;SELECT * FROM users WHERE id = ?&quot;, [user_id])
+
+  [CRITICAL] A2: Broken Authentication
+  Location: auth.py line 15
+  Code: if password == stored_password:
+  Risk: Timing attack vulnerability (non-constant-time comparison)
+  CWE: CWE-208
+  Fix: import secrets
+       if secrets.compare_digest(password, stored_password):
+
+  [HIGH] A3: Sensitive Data Exposure
+  Location: app.py line 5
+  Code: SECRET_KEY = &quot;dev-secret-12345&quot;
+  Risk: Secrets in source code
+  CWE: CWE-798
+  Fix: Load from environment: SECRET_KEY = os.getenv(&quot;SECRET_KEY&quot;)
+
+  [HIGH] A5: Broken Access Control
+  Location: app.py line 78
+  Code: @app.get(&quot;/api/user/&lt;id&gt;&quot;)
+       def get_user(id):
+           return User.query.get(id)  # No permission check!
+  Risk: Authenticated users can access any user&#39;s data
+  CWE: CWE-639
+  Fix: Add authorization:
+       if user.id != id and not user.is_admin:
+           raise PermissionDenied()
+
+  [MEDIUM] A6: CSRF Protection
+  Location: app.py line 95
+  Code: @app.post(&quot;/api/settings&quot;)
+       def update_settings():  # No CSRF token check
+  Risk: Form submissions from other sites can modify user settings
+  CWE: CWE-352
+  Fix: Add CSRF middleware: flask_wtf.csrf.csrf_protect
+
+  [LOW] A9: Using Components with Known Vulnerabilities
+  Location: requirements.txt
+  Code: requests==2.25.1  # Released Jan 2021, now has 3 CVEs
+  Fix: Upgrade: requests&gt;=2.31.0
+
+  Summary:
+  - Critical: 2 (SQL injection, timing attack)
+  - High: 2 (hardcoded secrets, missing authz)
+  - Medium: 1 (CSRF)
+  - Low: 1 (outdated dependency)
+
+  Estimated fix time: 30 minutes
+  Risk level: HIGH - deploy fixes before production
+
+  deepseek-chat │ $0.005 │ ▓▓▓░░░░░░░ 26% ctx │ 12s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Scan code</strong>: Reads all Python/JS files, greps for security keywords</li>
+<li><strong>Analyze patterns</strong>: Checks for common vulnerabilities (SQL injection, hardcoded secrets, etc.)</li>
+<li><strong>Cross-reference CWE/OWASP</strong>: Maps findings to official vulnerability databases</li>
+<li><strong>Suggest fixes</strong>: Provides concrete code examples for each issue</li>
+<li><strong>Prioritize</strong>: Ranks by severity and exploitability</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Automatic fixes</strong>: "Audit for security AND fix all HIGH and CRITICAL issues"</li>
+<li><strong>Compliance</strong>: "Audit for PCI-DSS compliance (credit card handling)"</li>
+<li><strong>Dependency check</strong>: "Check dependencies for known vulnerabilities using CVE database"</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.003-0.005 (security review is thorough but worth it)</p>
+<hr />
+<h2 id="16-debug-a-test-failure">16. Debug a Test Failure<a class="headerlink" href="#16-debug-a-test-failure" title="Permanent link">&para;</a></h2>
+<p><strong>When to use:</strong> A test fails and you need systematic debugging. The <code>debugger</code> agent uses the scientific method: hypothesis, test, observe, refine.</p>
+<p><strong>Scenario:</strong> The <code>test_user_creation</code> test fails with <code>AttributeError: 'NoneType' object has no attribute 'email'</code>.</p>
+<p><strong>Terminal Demo:</strong></p>
+<div class="highlight"><pre><span></span><code>$ hone --agent debugger &quot;test_user_creation fails with AttributeError: &#39;NoneType&#39; has no attribute &#39;email&#39;&quot;
+
+  ✦ read_file tests/test_models.py
+  ✓ Found test at line 12
+
+  ❯ shell pytest tests/test_models.py::test_user_creation -v
+    FAILED tests/test_models.py::test_user_creation - AttributeError: &#39;NoneType&#39; object has no attribute &#39;email&#39;
+
+    Traceback:
+      File &quot;tests/test_models.py&quot;, line 18, in test_user_creation
+        assert created_user.email == &quot;test@example.com&quot;
+      NoneType has no attribute &#39;email&#39;
+
+  [debugger] Hypothesis 1: user creation returns None instead of User object
+
+  ✦ read_file models.py
+  ✓ Found User.create() method at line 42
+
+  [debugger] Investigating: Does User.create() always return a User?
+
+  ✦ grep -n &quot;def create\|return&quot; models.py
+  ✓ Code path analysis:
+    - Line 42: def create(email, password):
+    - Line 43-45: validation
+    - Line 46: db.add(user)
+    - Line 47: db.commit()  &lt;-- No return statement here!
+    - Line 48: (no explicit return, returns None implicitly)
+
+  [debugger] ROOT CAUSE FOUND: User.create() doesn&#39;t return the created user
+
+  ✎ edit_file models.py
+    - def create(email, password):
+    -     user = User(email=email, password=password)
+    -     db.add(user)
+    -     db.commit()
+    + def create(email, password):
+    +     user = User(email=email, password=password)
+    +     db.add(user)
+    +     db.commit()
+    +     return user
+
+  ❯ shell pytest tests/test_models.py::test_user_creation -v
+    PASSED tests/test_models.py::test_user_creation
+  ✓ TEST NOW PASSES
+
+  [debugger] Verification: Are there other similar missing return statements?
+
+  ✦ grep -n &quot;def.*create\|def.*update\|def.*delete&quot; models.py
+  ✓ Checked 8 other CRUD methods. All return objects. No further issues found.
+
+  Root cause: User.create() was missing a return statement.
+  Fix: Added `return user` at line 48.
+  Verification: Test now passes. No similar issues in other methods.
+
+  deepseek-chat │ $0.003 │ ▓▓░░░░░░░░ 18% ctx │ 11s
+</code></pre></div>
+<p><strong>Step-by-Step Explanation:</strong></p>
+<ol>
+<li><strong>Run failing test</strong>: Reproduces the error and reads the full traceback</li>
+<li><strong>Read test code</strong>: Understands what the test expects</li>
+<li><strong>Read implementation</strong>: Examines the code being tested</li>
+<li><strong>Form hypothesis</strong>: "User.create() returns None" based on stack trace</li>
+<li><strong>Investigate</strong>: Traces execution path to find the actual cause</li>
+<li><strong>Identify root cause</strong>: Missing return statement</li>
+<li><strong>Fix</strong>: Adds the return statement</li>
+<li><strong>Verify</strong>: Re-runs the test to confirm it passes</li>
+<li><strong>Check for similar issues</strong>: Scans for similar bugs in related methods</li>
+</ol>
+<p><strong>Tips and Variations:</strong></p>
+<ul>
+<li><strong>Flaky test</strong>: "The test_async_payment test passes sometimes and fails randomly. Debug it."</li>
+<li><strong>Performance test</strong>: "test_bulk_insert takes 30s but should take &lt;5s. Optimize it."</li>
+<li><strong>Integration failure</strong>: "test_api_with_database fails. Debug the integration between Flask and SQLAlchemy."</li>
+</ul>
+<p><strong>Cost:</strong> ~$0.002-0.004 (DeepSeek V3)</p>
+<hr />
+<h1 id="choosing-the-right-mode">Choosing the Right Mode<a class="headerlink" href="#choosing-the-right-mode" title="Permanent link">&para;</a></h1>
+<p>This section helps you pick the best invocation style for your task.</p>
+<h2 id="one-shot-mode">One-Shot Mode<a class="headerlink" href="#one-shot-mode" title="Permanent link">&para;</a></h2>
+<p><strong>Command:</strong> <code>hone "your prompt"</code></p>
+<p><strong>Best for:</strong>
+- Simple, scoped tasks (bug fix, add function, small refactor)
+- Quick answers (explain code, search codebase)
+- Throwaway work (experiments, prototyping)</p>
+<p><strong>Examples:</strong>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span><span class="s2">&quot;Fix the typo in line 42&quot;</span>
+hone<span class="w"> </span><span class="s2">&quot;Add a print statement to debug the loop&quot;</span>
+hone<span class="w"> </span><span class="s2">&quot;Explain what this function does&quot;</span>
+</code></pre></div></p>
+<p><strong>Characteristics:</strong>
+- Fast (seconds)
+- Cheap ($0.001-0.003)
+- No session persistence
+- Model sees full context at once</p>
+<hr />
+<h2 id="interactive-mode">Interactive Mode<a class="headerlink" href="#interactive-mode" title="Permanent link">&para;</a></h2>
+<p><strong>Command:</strong> <code>hone</code> (no arguments, then type multi-turn prompts)</p>
+<p><strong>Best for:</strong>
+- Exploring code iteratively
+- Back-and-forth conversation
+- Session-based work (resume next day)
+- Learning a codebase gradually</p>
+<p><strong>Examples:</strong>
+<div class="highlight"><pre><span></span><code>hone
+<span class="c1"># Hone: What would you like to do?</span>
+<span class="c1"># You: Explain the authentication flow</span>
+<span class="c1"># Hone: [detailed explanation]</span>
+<span class="c1"># You: Show me the login function</span>
+<span class="c1"># Hone: [reads and explains]</span>
+<span class="c1"># You: Fix the timing attack vulnerability</span>
+<span class="c1"># Hone: [makes fix]</span>
+</code></pre></div></p>
+<p><strong>Characteristics:</strong>
+- Slower (one turn at a time)
+- Moderate cost (accumulates across turns)
+- Remembers context across turns
+- Session auto-saved</p>
+<hr />
+<h2 id="recipe-mode">Recipe Mode<a class="headerlink" href="#recipe-mode" title="Permanent link">&para;</a></h2>
+<p><strong>Command:</strong> <code>hone --recipe tdd-feature</code></p>
+<p><strong>Best for:</strong>
+- Structured workflows (TDD, bug fix, code review, refactor)
+- Team standards (enforce Red-Green-Refactor discipline)
+- Reproducible processes
+- Guiding less experienced developers</p>
+<p><strong>Examples:</strong>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>tdd-feature<span class="w">           </span><span class="c1"># Implement with tests first</span>
+hone<span class="w"> </span>--recipe<span class="w"> </span>bug-fix<span class="w">               </span><span class="c1"># Fix with systematic debugging</span>
+hone<span class="w"> </span>--recipe<span class="w"> </span>code-review<span class="w">           </span><span class="c1"># Comprehensive review</span>
+hone<span class="w"> </span>--recipe<span class="w"> </span>refactor<span class="w">              </span><span class="c1"># Safe refactoring with verification</span>
+</code></pre></div></p>
+<p><strong>Characteristics:</strong>
+- Multi-step (enforces structure)
+- Moderate-to-high cost (multiple steps)
+- Highly guided experience
+- Perfect for learning</p>
+<hr />
+<h2 id="orchestration-mode">Orchestration Mode<a class="headerlink" href="#orchestration-mode" title="Permanent link">&para;</a></h2>
+<p><strong>Command:</strong> <code>hone --orchestrate "complex task"</code></p>
+<p><strong>Best for:</strong>
+- Large, complex tasks that benefit from decomposition
+- Multiple independent subtasks
+- Tasks where parallel work saves time
+- Full-feature implementations</p>
+<p><strong>Examples:</strong>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--orchestrate<span class="w"> </span><span class="s2">&quot;Implement JWT auth with refresh tokens and logout&quot;</span>
+hone<span class="w"> </span>--orchestrate<span class="w"> </span><span class="s2">&quot;Build a microservice with REST API, background jobs, and monitoring&quot;</span>
+hone<span class="w"> </span>--orchestrate<span class="w"> </span><span class="s2">&quot;Refactor the monolith into 3 services&quot;</span>
+</code></pre></div></p>
+<p><strong>Characteristics:</strong>
+- Spawns multiple agents (4-5 typical)
+- Higher cost (parallel agents)
+- Faster overall (parallelism)
+- Best quality (diverse specialists)
+- Requires complex task</p>
+<hr />
+<h2 id="ensemble-mode">Ensemble Mode<a class="headerlink" href="#ensemble-mode" title="Permanent link">&para;</a></h2>
+<p><strong>Command:</strong> <code>hone --ensemble 3 "algorithm problem"</code></p>
+<p><strong>Best for:</strong>
+- Algorithmic problems with multiple valid solutions
+- High-quality output where cost is less critical
+- Competitive problems (coding challenges, interviews)
+- When you want to compare approaches</p>
+<p><strong>Examples:</strong>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--ensemble<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="s2">&quot;Write a binary search tree implementation in Rust&quot;</span>
+hone<span class="w"> </span>--ensemble<span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="s2">&quot;Design a rate limiter using token bucket algorithm&quot;</span>
+hone<span class="w"> </span>--ensemble<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="s2">&quot;Optimize this SQL query for performance&quot;</span>
+</code></pre></div></p>
+<p><strong>Characteristics:</strong>
+- Runs N agents in parallel, ranks results
+- Moderate-to-high cost (N times + ranker)
+- Best for well-defined problems
+- Visible quality ranking</p>
+<hr />
+<h2 id="agent-selection">Agent Selection<a class="headerlink" href="#agent-selection" title="Permanent link">&para;</a></h2>
+<p>Use specific agents for specialized tasks:</p>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>Use for</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>code-reviewer</code></td>
+<td>Code quality, security, maintainability</td>
+<td><code>hone --agent code-reviewer "Review src/auth.py"</code></td>
+</tr>
+<tr>
+<td><code>debugger</code></td>
+<td>Systematic debugging, test failures</td>
+<td><code>hone --agent debugger "test_x fails with AttributeError"</code></td>
+</tr>
+<tr>
+<td><code>security-auditor</code></td>
+<td>Vulnerability assessment, compliance</td>
+<td><code>hone --agent security-auditor "Audit for OWASP Top 10"</code></td>
+</tr>
+<tr>
+<td><code>performance-optimizer</code></td>
+<td>Speed, memory, database optimization</td>
+<td><code>hone --agent performance-optimizer "Speed up the query"</code></td>
+</tr>
+<tr>
+<td><code>tdd-workflow</code></td>
+<td>Test-driven development</td>
+<td><code>hone --agent tdd-workflow "Add rate limiting"</code></td>
+</tr>
+<tr>
+<td><code>rust-expert</code></td>
+<td>Rust-specific issues (ownership, async)</td>
+<td><code>hone --agent rust-expert "Fix lifetime errors"</code></td>
+</tr>
+<tr>
+<td><code>python-expert</code></td>
+<td>Python-specific issues (typing, async)</td>
+<td><code>hone --agent python-expert "Fix the async handler"</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="cost-optimization-tips">Cost Optimization Tips<a class="headerlink" href="#cost-optimization-tips" title="Permanent link">&para;</a></h1>
+<p>Hone's cost efficiency comes from:</p>
+<ol>
+<li><strong>Model selection</strong>: Cheap for simple tasks, powerful for complex ones</li>
+<li><strong>Complexity routing</strong>: Automatic classification reduces wasted tokens</li>
+<li><strong>Context optimization</strong>: Smart reordering and compression minimizes input tokens</li>
+<li><strong>Parallel execution</strong>: Orchestration/ensemble costs less per-task than sequential</li>
+</ol>
+<h2 id="cost-breakdown">Cost Breakdown<a class="headerlink" href="#cost-breakdown" title="Permanent link">&para;</a></h2>
+<p><strong>Typical costs (DeepSeek V3 via OpenRouter):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Model</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Simple bug fix</td>
+<td>DeepSeek</td>
+<td>$0.001</td>
+</tr>
+<tr>
+<td>Add a feature</td>
+<td>DeepSeek</td>
+<td>$0.002</td>
+</tr>
+<tr>
+<td>Code review</td>
+<td>DeepSeek</td>
+<td>$0.003</td>
+</tr>
+<tr>
+<td>TDD workflow</td>
+<td>DeepSeek</td>
+<td>$0.004</td>
+</tr>
+<tr>
+<td>Orchestration (4 agents)</td>
+<td>DeepSeek</td>
+<td>$0.010</td>
+</tr>
+<tr>
+<td>Ensemble (3 candidates)</td>
+<td>DeepSeek</td>
+<td>$0.006</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Comparison to competitors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Same Task</th>
+<th>Cost</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hone (DeepSeek)</td>
+<td>Bug fix</td>
+<td>$0.001</td>
+<td>Fast, local sandboxing</td>
+</tr>
+<tr>
+<td>Claude Code (Sonnet)</td>
+<td>Bug fix</td>
+<td>$0.080</td>
+<td>Higher quality, but 80x more expensive</td>
+</tr>
+<tr>
+<td>GPT-4 (OpenAI)</td>
+<td>Bug fix</td>
+<td>$0.050</td>
+<td>More capable, still 50x more expensive</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="strategies-for-lower-cost">Strategies for Lower Cost<a class="headerlink" href="#strategies-for-lower-cost" title="Permanent link">&para;</a></h2>
+<h3 id="1-use-deepseek-v3-for-exploration">1. Use DeepSeek V3 for Exploration<a class="headerlink" href="#1-use-deepseek-v3-for-exploration" title="Permanent link">&para;</a></h3>
+<p>DeepSeek handles 80% of coding tasks perfectly at 1/50th the cost:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-...&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">HONE_OPENAI_BASE_URL</span><span class="o">=</span><span class="s2">&quot;https://api.deepseek.com&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">HONE_OPENAI_MODEL</span><span class="o">=</span><span class="s2">&quot;deepseek-coder&quot;</span>
+hone<span class="w"> </span><span class="s2">&quot;Fix the login bug&quot;</span><span class="w">  </span><span class="c1"># $0.001</span>
+</code></pre></div>
+<h3 id="2-use-claude-for-critical-decisions">2. Use Claude for Critical Decisions<a class="headerlink" href="#2-use-claude-for-critical-decisions" title="Permanent link">&para;</a></h3>
+<p>Save Claude for high-stakes tasks (security reviews, architecture decisions):</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-ant-...&quot;</span>
+hone<span class="w"> </span>--model<span class="w"> </span>claude-3-sonnet<span class="w"> </span><span class="s2">&quot;Audit for security vulnerabilities&quot;</span><span class="w">  </span><span class="c1"># $0.010</span>
+</code></pre></div>
+<h3 id="3-use-ephemeral-mode-to-save-session-storage">3. Use Ephemeral Mode to Save Session Storage<a class="headerlink" href="#3-use-ephemeral-mode-to-save-session-storage" title="Permanent link">&para;</a></h3>
+<p>Skip session persistence if you don't need to resume:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--ephemeral<span class="w"> </span><span class="s2">&quot;Quick refactor&quot;</span><span class="w">  </span><span class="c1"># Doesn&#39;t persist to disk</span>
+</code></pre></div>
+<h3 id="4-use-local-models-for-repetitive-tasks">4. Use Local Models for Repetitive Tasks<a class="headerlink" href="#4-use-local-models-for-repetitive-tasks" title="Permanent link">&para;</a></h3>
+<p>Run <code>deepseek-coder-v2:16b</code> locally with Ollama ($0.00 cost):</p>
+<div class="highlight"><pre><span></span><code>ollama<span class="w"> </span>pull<span class="w"> </span>deepseek-coder-v2:16b
+hone<span class="w"> </span>configure<span class="w">  </span><span class="c1"># Select Ollama</span>
+hone<span class="w"> </span><span class="s2">&quot;Refactor this function&quot;</span><span class="w">  </span><span class="c1"># Free, offline, private</span>
+</code></pre></div>
+<h3 id="5-batch-similar-tasks">5. Batch Similar Tasks<a class="headerlink" href="#5-batch-similar-tasks" title="Permanent link">&para;</a></h3>
+<p>Use recipes to combine multiple steps into one invocation:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--recipe<span class="w"> </span>bug-fix<span class="w">  </span><span class="c1"># 4 structured steps in one session</span>
+<span class="c1"># vs</span>
+hone<span class="w"> </span><span class="s2">&quot;write test&quot;</span>
+hone<span class="w"> </span><span class="s2">&quot;implement fix&quot;</span>
+hone<span class="w"> </span><span class="s2">&quot;refactor&quot;</span>
+hone<span class="w"> </span><span class="s2">&quot;verify&quot;</span><span class="w">            </span><span class="c1"># 4 separate invocations, higher overhead</span>
+</code></pre></div>
+<h3 id="6-avoid-orchestration-for-simple-tasks">6. Avoid Orchestration for Simple Tasks<a class="headerlink" href="#6-avoid-orchestration-for-simple-tasks" title="Permanent link">&para;</a></h3>
+<p>Orchestration spawns multiple agents (expensive). Use it only when subtasks are genuinely independent:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># GOOD: Complex task benefits from decomposition</span>
+hone<span class="w"> </span>--orchestrate<span class="w"> </span><span class="s2">&quot;Implement OAuth2 with email verification and 2FA&quot;</span>
+
+<span class="c1"># WASTEFUL: Simple task over-engineered</span>
+hone<span class="w"> </span>--orchestrate<span class="w"> </span><span class="s2">&quot;Add a print statement&quot;</span><span class="w">  </span><span class="c1"># Just use: hone &quot;Add a print statement&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="monitoring-costs">Monitoring Costs<a class="headerlink" href="#monitoring-costs" title="Permanent link">&para;</a></h2>
+<p>Check cost after each session:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># In interactive mode</span>
+hone
+<span class="c1"># ... do work ...</span>
+/cost
+
+<span class="c1"># Session cost: $0.012 (1,847 tokens at $0.00065/1K)</span>
+</code></pre></div>
+<p>Or query past sessions:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>session<span class="w"> </span>list
+hone<span class="w"> </span>session<span class="w"> </span>cost<span class="w"> </span>my-session
+</code></pre></div>
+<hr />
+<h1 id="session-workflow">Session Workflow<a class="headerlink" href="#session-workflow" title="Permanent link">&para;</a></h1>
+<p>Sessions allow you to resume work across days, remember context, and track costs.</p>
+<h2 id="create-and-resume-sessions">Create and Resume Sessions<a class="headerlink" href="#create-and-resume-sessions" title="Permanent link">&para;</a></h2>
+<h3 id="start-a-named-session">Start a Named Session<a class="headerlink" href="#start-a-named-session" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--session<span class="w"> </span>my-project
+</code></pre></div>
+<p>Hone saves the session after each turn. Resume it later:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>session<span class="w"> </span>resume<span class="w"> </span>my-project
+</code></pre></div>
+<h3 id="list-all-sessions">List All Sessions<a class="headerlink" href="#list-all-sessions" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>session<span class="w"> </span>list
+
+Sessions:
+<span class="w">  </span>my-project<span class="w">          </span><span class="o">(</span><span class="m">3</span><span class="w"> </span>turns,<span class="w"> </span><span class="nv">$0</span>.012,<span class="w"> </span>last<span class="w"> </span>turn<span class="w"> </span>1h<span class="w"> </span>ago<span class="o">)</span>
+<span class="w">  </span>refactor-auth<span class="w">       </span><span class="o">(</span><span class="m">12</span><span class="w"> </span>turns,<span class="w"> </span><span class="nv">$0</span>.045,<span class="w"> </span>last<span class="w"> </span>turn<span class="w"> </span>2d<span class="w"> </span>ago<span class="o">)</span>
+<span class="w">  </span>feature-x<span class="w">           </span><span class="o">(</span><span class="m">8</span><span class="w"> </span>turns,<span class="w"> </span><span class="nv">$0</span>.034,<span class="w"> </span>last<span class="w"> </span>turn<span class="w"> </span>5d<span class="w"> </span>ago<span class="o">)</span>
+</code></pre></div>
+<h3 id="rename-a-session">Rename a Session<a class="headerlink" href="#rename-a-session" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>session<span class="w"> </span>rename<span class="w"> </span>my-project<span class="w"> </span>auth-refactor
+</code></pre></div>
+<h3 id="delete-a-session">Delete a Session<a class="headerlink" href="#delete-a-session" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>session<span class="w"> </span>delete<span class="w"> </span>my-project
+</code></pre></div>
+<h3 id="ephemeral-throwaway-sessions">Ephemeral (Throwaway) Sessions<a class="headerlink" href="#ephemeral-throwaway-sessions" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--ephemeral<span class="w"> </span><span class="s2">&quot;Quick fix&quot;</span>
+<span class="c1"># Session NOT saved. Useful for experiments.</span>
+</code></pre></div>
+<hr />
+<h2 id="session-context-and-memory">Session Context and Memory<a class="headerlink" href="#session-context-and-memory" title="Permanent link">&para;</a></h2>
+<h3 id="what-gets-persisted">What Gets Persisted<a class="headerlink" href="#what-gets-persisted" title="Permanent link">&para;</a></h3>
+<p>Each session stores:
+- Conversation history
+- File changes made
+- Tool calls and outputs
+- Cost tracking
+- Project-specific patterns learned</p>
+<h3 id="cross-session-learning">Cross-Session Learning<a class="headerlink" href="#cross-session-learning" title="Permanent link">&para;</a></h3>
+<p>Hone's adaptive memory learns patterns across sessions:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Session 1</span>
+hone<span class="w"> </span>--session<span class="w"> </span>project-a<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Add tests using pytest&quot;</span>
+<span class="c1"># Hone learns: this project uses pytest</span>
+
+<span class="c1"># Session 2 (next day)</span>
+hone<span class="w"> </span>--session<span class="w"> </span>project-a<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;Add more tests&quot;</span>
+<span class="c1"># Hone remembers: use pytest here (learned from session 1)</span>
+</code></pre></div>
+<hr />
+<h2 id="typical-session-workflows">Typical Session Workflows<a class="headerlink" href="#typical-session-workflows" title="Permanent link">&para;</a></h2>
+<h3 id="day-1-feature-development">Day 1: Feature Development<a class="headerlink" href="#day-1-feature-development" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--session<span class="w"> </span>feature-auth
+<span class="c1"># Turn 1: Implement login endpoint</span>
+<span class="c1"># Turn 2: Add JWT token generation</span>
+<span class="c1"># Turn 3: Write tests</span>
+<span class="c1"># Turn 4: Security review (auto-saved)</span>
+
+<span class="c1"># Cost: $0.008</span>
+</code></pre></div>
+<h3 id="day-2-bug-fixes">Day 2: Bug Fixes<a class="headerlink" href="#day-2-bug-fixes" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>session<span class="w"> </span>resume<span class="w"> </span>feature-auth
+<span class="c1"># Turn 5: Fix the timing attack</span>
+<span class="c1"># Turn 6: Optimize query</span>
+<span class="c1"># (Hone remembers the project structure from day 1)</span>
+
+<span class="c1"># Cost: $0.005 (lower because it remembers context)</span>
+</code></pre></div>
+<h3 id="multi-day-project">Multi-Day Project<a class="headerlink" href="#multi-day-project" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Week 1: Design and implement</span>
+hone<span class="w"> </span>--session<span class="w"> </span>project-x
+<span class="c1"># Weeks 2-3: Bug fixes and optimization</span>
+hone<span class="w"> </span>session<span class="w"> </span>resume<span class="w"> </span>project-x
+<span class="c1"># End of month: Final review</span>
+hone<span class="w"> </span>session<span class="w"> </span>resume<span class="w"> </span>project-x
+</code></pre></div>
+<hr />
+<h2 id="privacy-and-session-storage">Privacy and Session Storage<a class="headerlink" href="#privacy-and-session-storage" title="Permanent link">&para;</a></h2>
+<h3 id="default-storage">Default Storage<a class="headerlink" href="#default-storage" title="Permanent link">&para;</a></h3>
+<p>Sessions are stored in <code>~/.local/share/hone/sessions/</code>:</p>
+<div class="highlight"><pre><span></span><code>ls<span class="w"> </span>~/.local/share/hone/sessions/
+feature-auth.db
+my-project.db
+</code></pre></div>
+<p>SQLite databases are plain text. Sensitive code is readable.</p>
+<h3 id="encrypted-sessions">Encrypted Sessions<a class="headerlink" href="#encrypted-sessions" title="Permanent link">&para;</a></h3>
+<p>Enable encryption at compile time:</p>
+<div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>build<span class="w"> </span>--features<span class="w"> </span>encrypted-memory<span class="w"> </span>--release
+</code></pre></div>
+<p>Sessions are then encrypted with AES-256-GCM:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Now encrypted with system keychain key</span>
+hone<span class="w"> </span>--session<span class="w"> </span>confidential-work
+</code></pre></div>
+<hr />
+<h2 id="session-governance-team-use">Session Governance (Team Use)<a class="headerlink" href="#session-governance-team-use" title="Permanent link">&para;</a></h2>
+<p>If using the <code>honed</code> daemon for team collaboration:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Admin</span>
+honed<span class="w"> </span>start
+
+<span class="c1"># Developer 1</span>
+hone<span class="w"> </span>--remote<span class="w"> </span>localhost:3117<span class="w"> </span>--session<span class="w"> </span>my-task
+
+<span class="c1"># Admin can audit</span>
+hone<span class="w"> </span>remote<span class="w"> </span>cost<span class="w"> </span>--user<span class="w"> </span>dev1<span class="w"> </span>--session<span class="w"> </span>my-task<span class="w">  </span><span class="c1"># See cost breakdown</span>
+hone<span class="w"> </span>remote<span class="w"> </span>audit<span class="w"> </span>--user<span class="w"> </span>dev1<span class="w">                    </span><span class="c1"># See all actions</span>
+</code></pre></div>
+<hr />
+<h1 id="summary-quick-reference">Summary: Quick Reference<a class="headerlink" href="#summary-quick-reference" title="Permanent link">&para;</a></h1>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Command</th>
+<th>Cost</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fix a bug</td>
+<td><code>hone "bug description"</code></td>
+<td>$0.001</td>
+<td>5s</td>
+</tr>
+<tr>
+<td>Add a feature</td>
+<td><code>hone "feature description"</code></td>
+<td>$0.002</td>
+<td>10s</td>
+</tr>
+<tr>
+<td>Review code</td>
+<td><code>hone --agent code-reviewer "path"</code></td>
+<td>$0.003</td>
+<td>8s</td>
+</tr>
+<tr>
+<td>TDD workflow</td>
+<td><code>hone --recipe tdd-feature</code></td>
+<td>$0.004</td>
+<td>20s</td>
+</tr>
+<tr>
+<td>Complex task</td>
+<td><code>hone --orchestrate "description"</code></td>
+<td>$0.010</td>
+<td>45s</td>
+</tr>
+<tr>
+<td>Best solution</td>
+<td><code>hone --ensemble 3 "problem"</code></td>
+<td>$0.006</td>
+<td>30s</td>
+</tr>
+<tr>
+<td>Security audit</td>
+<td><code>hone --agent security-auditor "path"</code></td>
+<td>$0.005</td>
+<td>12s</td>
+</tr>
+<tr>
+<td>Debug test</td>
+<td><code>hone --agent debugger "error message"</code></td>
+<td>$0.003</td>
+<td>10s</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h1>
+<ol>
+<li><strong>Pick a use case</strong> from this guide that matches your current task</li>
+<li><strong>Run the example command</strong> with your code</li>
+<li><strong>Monitor the cost</strong> with <code>/cost</code> or <code>hone session list</code></li>
+<li><strong>Create a custom recipe</strong> if you have a repeated workflow</li>
+<li><strong>Set up MCP extensions</strong> if you need GitHub, databases, or web access</li>
+<li><strong>Read the security guide</strong> if you handle sensitive code</li>
+</ol>
+<p>For more details, see:
+- <a href="../../configuration/">Configuration Guide</a>
+- <a href="../tools-and-mcp/">Tools &amp; MCP</a>
+- <a href="../security/">Security Best Practices</a>
+- <a href="../recipes/">Recipes Guide</a></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

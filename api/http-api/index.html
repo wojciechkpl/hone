@@ -1,0 +1,2270 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/api/http-api/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>HTTP API Reference - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#http-api-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              HTTP API Reference
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Authentication">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-response" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Response
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Core Endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-sessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /sessions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-sessionsid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /sessions/{id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-sessionsid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /sessions/{id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#collaboration-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Collaboration Endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Collaboration Endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-sessionsidjoin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /sessions/{id}/join
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-sessionsidleave" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /sessions/{id}/leave
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-sessionsidparticipants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /sessions/{id}/participants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-sessionsidkick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /sessions/{id}/kick
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#team-governance-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Team Governance Endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Team Governance Endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-teamusage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /team/usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-teammembers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /team/members
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-teampolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /team/policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-teampolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /team/policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tunnel-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tunnel Endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tunnel Endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /tunnel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /tunnel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /tunnel
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#http-status-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTP Status Codes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#utility-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Utility Endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Utility Endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-openapijson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /openapi.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-sessionsgc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /sessions/gc
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rate-limiting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rate Limiting
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="http-api-reference">HTTP API Reference<a class="headerlink" href="#http-api-reference" title="Permanent link">&para;</a></h1>
+<p>The <code>honed</code> daemon exposes a REST API for session management, team governance, collaboration, and tunneling. All endpoints require Bearer token authentication (if configured).</p>
+<h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Permanent link">&para;</a></h2>
+<p>Requests must include a Bearer token in the Authorization header:</p>
+<div class="highlight"><pre><span></span><code>Authorization: Bearer &lt;token&gt;
+</code></pre></div>
+<p>If no auth token is configured on the server, this header may be omitted.</p>
+<h3 id="error-response">Error Response<a class="headerlink" href="#error-response" title="Permanent link">&para;</a></h3>
+<p>All endpoints return error responses with the following format:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;error description&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="core-endpoints">Core Endpoints<a class="headerlink" href="#core-endpoints" title="Permanent link">&para;</a></h2>
+<h3 id="get-health">GET /health<a class="headerlink" href="#get-health" title="Permanent link">&para;</a></h3>
+<p>Health check endpoint.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8080/health
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>200 OK</code>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ok&quot;</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<hr />
+<h3 id="post-sessions">POST /sessions<a class="headerlink" href="#post-sessions" title="Permanent link">&para;</a></h3>
+<p>Create a new session.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/sessions<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>201 Created</code>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sess_abc123def456&quot;</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Return Fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session_id</code></td>
+<td>string</td>
+<td>Unique session identifier</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="get-sessionsid">GET /sessions/{id}<a class="headerlink" href="#get-sessionsid" title="Permanent link">&para;</a></h3>
+<p>Retrieve session information by ID.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8080/sessions/sess_abc123def456<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>200 OK</code>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sess_abc123def456&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1704067200</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Response Fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>string</td>
+<td>Session identifier</td>
+</tr>
+<tr>
+<td><code>created_at</code></td>
+<td>u64</td>
+<td>Unix timestamp of session creation</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>404 Not Found</code></td>
+<td>Session not found</td>
+<td>Session with given ID does not exist</td>
+</tr>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="delete-sessionsid">DELETE /sessions/{id}<a class="headerlink" href="#delete-sessionsid" title="Permanent link">&para;</a></h3>
+<p>Delete a session.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>DELETE<span class="w"> </span>http://localhost:8080/sessions/sess_abc123def456<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>204 No Content</code></p>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>404 Not Found</code></td>
+<td>Session not found</td>
+<td>Session with given ID does not exist</td>
+</tr>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="collaboration-endpoints">Collaboration Endpoints<a class="headerlink" href="#collaboration-endpoints" title="Permanent link">&para;</a></h2>
+<h3 id="post-sessionsidjoin">POST /sessions/{id}/join<a class="headerlink" href="#post-sessionsidjoin" title="Permanent link">&para;</a></h3>
+<p>Add a participant to a session.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/sessions/sess_abc123def456/join<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;user_id&quot;: &quot;user_123&quot;,</span>
+<span class="s1">    &quot;name&quot;: &quot;Alice&quot;</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div></p>
+<p><strong>Request Body:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user_id</code></td>
+<td>string</td>
+<td>Unique user identifier</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Display name for the participant</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>200 OK</code>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user_123&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Alice&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;owner&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;joined_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1704067200</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Response Fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user_id</code></td>
+<td>string</td>
+<td>User identifier</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Display name</td>
+</tr>
+<tr>
+<td><code>role</code></td>
+<td>string</td>
+<td>Participant role: <code>owner</code> (first joiner) or <code>editor</code></td>
+</tr>
+<tr>
+<td><code>joined_at</code></td>
+<td>u64</td>
+<td>Unix timestamp of when user joined</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>409 Conflict</code></td>
+<td>Already joined</td>
+<td>User already a participant in this session</td>
+</tr>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="post-sessionsidleave">POST /sessions/{id}/leave<a class="headerlink" href="#post-sessionsidleave" title="Permanent link">&para;</a></h3>
+<p>Remove a participant from a session.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/sessions/sess_abc123def456/leave<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;user_id&quot;: &quot;user_123&quot;</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div></p>
+<p><strong>Request Body:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user_id</code></td>
+<td>string</td>
+<td>User to remove</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>204 No Content</code></p>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>404 Not Found</code></td>
+<td>Not a participant</td>
+<td>User is not in this session</td>
+</tr>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="get-sessionsidparticipants">GET /sessions/{id}/participants<a class="headerlink" href="#get-sessionsidparticipants" title="Permanent link">&para;</a></h3>
+<p>List all participants in a session.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8080/sessions/sess_abc123def456/participants<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>200 OK</code>
+<div class="highlight"><pre><span></span><code><span class="p">[</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user_123&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Alice&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;owner&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;joined_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1704067200</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user_456&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bob&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;editor&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;joined_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1704067201</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">]</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> Array of participant objects with fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user_id</code></td>
+<td>string</td>
+<td>User identifier</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Display name</td>
+</tr>
+<tr>
+<td><code>role</code></td>
+<td>string</td>
+<td>Participant role: <code>owner</code> or <code>editor</code></td>
+</tr>
+<tr>
+<td><code>joined_at</code></td>
+<td>u64</td>
+<td>Unix timestamp of join time</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="post-sessionsidkick">POST /sessions/{id}/kick<a class="headerlink" href="#post-sessionsidkick" title="Permanent link">&para;</a></h3>
+<p>Remove a participant from a session (owner only).</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/sessions/sess_abc123def456/kick<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;owner_user_id&quot;: &quot;user_123&quot;,</span>
+<span class="s1">    &quot;target_user_id&quot;: &quot;user_456&quot;</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div></p>
+<p><strong>Request Body:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>owner_user_id</code></td>
+<td>string</td>
+<td>User performing the kick (must be owner)</td>
+</tr>
+<tr>
+<td><code>target_user_id</code></td>
+<td>string</td>
+<td>User to remove</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>204 No Content</code></p>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>403 Forbidden</code></td>
+<td>Forbidden</td>
+<td>Caller is not the session owner</td>
+</tr>
+<tr>
+<td><code>404 Not Found</code></td>
+<td>Not a participant</td>
+<td>Target user is not in this session</td>
+</tr>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="team-governance-endpoints">Team Governance Endpoints<a class="headerlink" href="#team-governance-endpoints" title="Permanent link">&para;</a></h2>
+<h3 id="get-teamusage">GET /team/usage<a class="headerlink" href="#get-teamusage" title="Permanent link">&para;</a></h3>
+<p>Retrieve team token usage and cost metrics.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8080/team/usage<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>200 OK</code>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;total_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;total_cost_usd&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">12.50</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;by_model&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;claude-opus-4-5&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">30000</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;cost_usd&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">10.00</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;claude-haiku-3-5&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20000</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;cost_usd&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.50</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Response Fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>total_tokens</code></td>
+<td>u64</td>
+<td>Total tokens consumed by team</td>
+</tr>
+<tr>
+<td><code>total_cost_usd</code></td>
+<td>f64</td>
+<td>Total cost in USD</td>
+</tr>
+<tr>
+<td><code>by_model</code></td>
+<td>object</td>
+<td>Usage breakdown by model ID</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Model Usage Fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tokens</code></td>
+<td>u64</td>
+<td>Tokens for this model</td>
+</tr>
+<tr>
+<td><code>cost_usd</code></td>
+<td>f64</td>
+<td>Cost for this model in USD</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="get-teammembers">GET /team/members<a class="headerlink" href="#get-teammembers" title="Permanent link">&para;</a></h3>
+<p>List all team members.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8080/team/members<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>200 OK</code>
+<div class="highlight"><pre><span></span><code><span class="p">[</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;member_123&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Alice&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;admin&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;joined_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1704067200</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;member_456&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bob&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;joined_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1704067201</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">]</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> Array of team member objects with fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>string</td>
+<td>Member identifier</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Display name</td>
+</tr>
+<tr>
+<td><code>role</code></td>
+<td>string</td>
+<td>Team role (e.g., <code>admin</code>, <code>user</code>)</td>
+</tr>
+<tr>
+<td><code>joined_at</code></td>
+<td>u64</td>
+<td>Unix timestamp of when member joined team</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="get-teampolicy">GET /team/policy<a class="headerlink" href="#get-teampolicy" title="Permanent link">&para;</a></h3>
+<p>Retrieve team governance policy.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8080/team/policy<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>200 OK</code>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;allowed_models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">&quot;claude-opus-4-5&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;claude-sonnet-4-5&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;claude-haiku-3-5&quot;</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;spend_cap_usd&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1000.00</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;approved_extensions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">&quot;ext_mcp_filesystem&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;ext_mcp_database&quot;</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Response Fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>allowed_models</code></td>
+<td>array</td>
+<td>List of model IDs allowed for team</td>
+</tr>
+<tr>
+<td><code>spend_cap_usd</code></td>
+<td>number | null</td>
+<td>Monthly spend limit in USD, or null for unlimited</td>
+</tr>
+<tr>
+<td><code>approved_extensions</code></td>
+<td>array</td>
+<td>List of approved extension identifiers</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="post-teampolicy">POST /team/policy<a class="headerlink" href="#post-teampolicy" title="Permanent link">&para;</a></h3>
+<p>Update team governance policy.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/team/policy<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;allowed_models&quot;: [&quot;claude-opus-4-5&quot;, &quot;claude-haiku-3-5&quot;],</span>
+<span class="s1">    &quot;spend_cap_usd&quot;: 500.00,</span>
+<span class="s1">    &quot;approved_extensions&quot;: [&quot;ext_mcp_filesystem&quot;]</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div></p>
+<p><strong>Request Body:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>allowed_models</code></td>
+<td>array</td>
+<td>New list of allowed model IDs</td>
+</tr>
+<tr>
+<td><code>spend_cap_usd</code></td>
+<td>number | null</td>
+<td>New spend cap, or null for unlimited</td>
+</tr>
+<tr>
+<td><code>approved_extensions</code></td>
+<td>array</td>
+<td>New list of approved extension IDs</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>200 OK</code> (returns updated policy)
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;allowed_models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;claude-opus-4-5&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;claude-haiku-3-5&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;spend_cap_usd&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">500.00</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;approved_extensions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;ext_mcp_filesystem&quot;</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="tunnel-endpoints">Tunnel Endpoints<a class="headerlink" href="#tunnel-endpoints" title="Permanent link">&para;</a></h2>
+<h3 id="post-tunnel">POST /tunnel<a class="headerlink" href="#post-tunnel" title="Permanent link">&para;</a></h3>
+<p>Start a reverse tunnel to expose a local port.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/tunnel<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;local_port&quot;: 3000</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div></p>
+<p><strong>Request Body:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>local_port</code></td>
+<td>u16</td>
+<td>Local port to expose via tunnel</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>201 Created</code>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://tunnel-abc123.hone.sh&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;local_port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3000</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;is_active&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Response Fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td>string</td>
+<td>Public tunnel URL</td>
+</tr>
+<tr>
+<td><code>local_port</code></td>
+<td>u16</td>
+<td>Exposed local port</td>
+</tr>
+<tr>
+<td><code>is_active</code></td>
+<td>bool</td>
+<td>Whether tunnel is currently active</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+<tr>
+<td><code>500 Internal Server Error</code></td>
+<td>Internal error</td>
+<td>Failed to create tunnel</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="get-tunnel">GET /tunnel<a class="headerlink" href="#get-tunnel" title="Permanent link">&para;</a></h3>
+<p>Get current tunnel status.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8080/tunnel<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>200 OK</code> (if tunnel active)
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://tunnel-abc123.hone.sh&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;local_port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3000</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;is_active&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>200 OK</code> (if no tunnel)
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;is_active&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Response Fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td>string</td>
+<td>Public tunnel URL (if active)</td>
+</tr>
+<tr>
+<td><code>local_port</code></td>
+<td>u16</td>
+<td>Exposed port (if active)</td>
+</tr>
+<tr>
+<td><code>is_active</code></td>
+<td>bool</td>
+<td>Whether tunnel is currently active</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+<tr>
+<td><code>500 Internal Server Error</code></td>
+<td>Internal error</td>
+<td>Failed to check tunnel status</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="delete-tunnel">DELETE /tunnel<a class="headerlink" href="#delete-tunnel" title="Permanent link">&para;</a></h3>
+<p>Stop the active tunnel.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>DELETE<span class="w"> </span>http://localhost:8080/tunnel<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span>
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>204 No Content</code></p>
+<p><strong>Errors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Unauthorized</td>
+<td>Invalid or missing authentication token</td>
+</tr>
+<tr>
+<td><code>500 Internal Server Error</code></td>
+<td>Internal error</td>
+<td>Failed to stop tunnel</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="http-status-codes">HTTP Status Codes<a class="headerlink" href="#http-status-codes" title="Permanent link">&para;</a></h2>
+<p>Standard HTTP status codes are used throughout:</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200 OK</code></td>
+<td>Request succeeded</td>
+</tr>
+<tr>
+<td><code>201 Created</code></td>
+<td>Resource created successfully</td>
+</tr>
+<tr>
+<td><code>204 No Content</code></td>
+<td>Request succeeded, no response body</td>
+</tr>
+<tr>
+<td><code>400 Bad Request</code></td>
+<td>Invalid request format or parameters</td>
+</tr>
+<tr>
+<td><code>401 Unauthorized</code></td>
+<td>Missing or invalid authentication token</td>
+</tr>
+<tr>
+<td><code>403 Forbidden</code></td>
+<td>Authenticated but lacking required permissions</td>
+</tr>
+<tr>
+<td><code>404 Not Found</code></td>
+<td>Resource does not exist</td>
+</tr>
+<tr>
+<td><code>409 Conflict</code></td>
+<td>Request conflicts with current state (e.g., duplicate join)</td>
+</tr>
+<tr>
+<td><code>500 Internal Server Error</code></td>
+<td>Server error during processing</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="utility-endpoints">Utility Endpoints<a class="headerlink" href="#utility-endpoints" title="Permanent link">&para;</a></h2>
+<h3 id="get-openapijson">GET /openapi.json<a class="headerlink" href="#get-openapijson" title="Permanent link">&para;</a></h3>
+<p>Returns the OpenAPI 3.1 specification for the API. No authentication required.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:3117/openapi.json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq
+</code></pre></div></p>
+<p><strong>Response:</strong> <code>200 OK</code>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;openapi&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;3.1.0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;info&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hone API&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0.1.0&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;paths&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;/health&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="err">...</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;/sessions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="err">...</span><span class="p">},</span>
+<span class="w">    </span><span class="err">...</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p>Use this endpoint to programmatically discover the API structure, validate client implementations, or generate client libraries.</p>
+<hr />
+<h3 id="delete-sessionsgc">DELETE /sessions/gc<a class="headerlink" href="#delete-sessionsgc" title="Permanent link">&para;</a></h3>
+<p>Garbage collect sessions older than a specified number of days.</p>
+<p><strong>Request:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>DELETE<span class="w"> </span><span class="s2">&quot;http://localhost:3117/sessions/gc?older_than_days=7&quot;</span>
+</code></pre></div></p>
+<p><strong>Query Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>older_than_days</code></td>
+<td>integer</td>
+<td>30</td>
+<td>Remove sessions older than N days</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>200 OK</code>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;removed&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Response Fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>removed</code></td>
+<td>integer</td>
+<td>Number of sessions deleted</td>
+</tr>
+</tbody>
+</table>
+<p>This endpoint is useful for periodic maintenance to clean up old sessions and free storage space. Can be called manually or via a scheduled task (cron, systemd timer, etc.).</p>
+<hr />
+<h2 id="rate-limiting">Rate Limiting<a class="headerlink" href="#rate-limiting" title="Permanent link">&para;</a></h2>
+<p>All endpoints are rate-limited at <strong>100 requests per minute per client</strong>. The client is identified by the <code>X-Forwarded-For</code> header (when present), or the source IP address.</p>
+<p>When rate limit is exceeded, the server returns:</p>
+<div class="highlight"><pre><span></span><code>HTTP/1.1 429 Too Many Requests
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rate limit exceeded&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The <code>Retry-After</code> header indicates seconds until the next request can be made:</p>
+<div class="highlight"><pre><span></span><code>Retry-After: 45
+</code></pre></div>
+<p>Rate limits apply to all endpoints uniformly. For high-volume integrations, contact the server operator to discuss dedicated rate limits.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

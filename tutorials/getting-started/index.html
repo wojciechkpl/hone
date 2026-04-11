@@ -1,0 +1,1621 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/tutorials/getting-started/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Getting Started with Hone - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#getting-started-with-hone" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Getting Started with Hone
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building from Source
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#first-run-configure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First Run: Configure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#starting-your-first-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Starting Your First Session
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-model-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a Model Provider
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choosing a Model Provider">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-anthropic-api-cloud" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Anthropic API (Cloud)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-openai-api-cloud" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. OpenAI API (Cloud)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-ollama-local" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Ollama (Local)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-claude-cli-pass-through-generation-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Claude CLI Pass-Through (Generation 1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-gemini-cli-pass-through-generation-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Gemini CLI Pass-Through (Generation 1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-acp-agent-client-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. ACP (Agent Client Protocol)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#first-interactive-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First Interactive Session
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session Management
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Session Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#listing-and-managing-sessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Listing and Managing Sessions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resuming-a-previous-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resuming a Previous Session
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#renaming-and-deleting-sessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Renaming and Deleting Sessions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#starting-a-named-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Starting a Named Session
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ephemeral-no-save-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ephemeral (No-Save) Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-shot-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-Shot Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#first-multi-agent-orchestration-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First Multi-Agent Orchestration Run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#context-window-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context Window Management
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understanding-the-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Understanding the Output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understanding the Output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#token-streaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token Streaming
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tool-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool Calls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost Tracking
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-and-encryption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory and Encryption
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#api-key-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Key Not Found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model Not Found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-error-firewall" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network Error (Firewall)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandbox-error-on-macos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox Error on macOS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#out-of-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Out of Memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Support
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="getting-started-with-hone">Getting Started with Hone<a class="headerlink" href="#getting-started-with-hone" title="Permanent link">&para;</a></h1>
+<p>This guide walks you through setting up Hone, configuring your first model provider, and running your first agent session.</p>
+<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Rust 1.85+</strong>: Check with <code>rustc --version</code>. Install from https://rustup.rs if needed.</li>
+<li><strong>Cargo</strong>: Comes with Rust. Verify with <code>cargo --version</code>.</li>
+<li><strong>Git</strong>: For cloning and version control features. <code>git --version</code> to verify.</li>
+<li><strong>System dependencies</strong> (varies by platform):</li>
+<li><strong>macOS</strong>: XCode Command Line Tools (<code>xcode-select --install</code>)</li>
+<li><strong>Linux</strong>: <code>build-essential</code>, <code>pkg-config</code>, <code>libssl-dev</code> (Ubuntu/Debian: <code>sudo apt-get install build-essential pkg-config libssl-dev</code>)</li>
+<li><strong>Windows</strong>: Microsoft C++ Build Tools</li>
+</ul>
+<h2 id="building-from-source">Building from Source<a class="headerlink" href="#building-from-source" title="Permanent link">&para;</a></h2>
+<p>Clone the Hone repository and build:</p>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/anthropics/hone.git
+<span class="nb">cd</span><span class="w"> </span>hone
+cargo<span class="w"> </span>build<span class="w"> </span>--release
+</code></pre></div>
+<p>The binary is at <code>target/release/hone</code>. Add it to your PATH or use the full path:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">/target/release:</span><span class="nv">$PATH</span><span class="s2">&quot;</span>
+hone<span class="w"> </span>--version
+</code></pre></div>
+<h2 id="first-run-configure">First Run: Configure<a class="headerlink" href="#first-run-configure" title="Permanent link">&para;</a></h2>
+<p>Before starting your first session, run the interactive configuration wizard:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>configure
+</code></pre></div>
+<p>This guides you step-by-step through:
+1. Selecting a model provider (Anthropic, OpenAI, DeepSeek, OpenRouter, Ollama, etc.)
+2. Entering your API key (securely via stdin, not command-line args)
+3. Choosing your default model from that provider
+4. Writing the configuration to <code>~/.config/hone/config.toml</code></p>
+<p>Configuration is one-time. Your provider and model are remembered for future sessions.</p>
+<h2 id="starting-your-first-session">Starting Your First Session<a class="headerlink" href="#starting-your-first-session" title="Permanent link">&para;</a></h2>
+<p>After configuration, start an interactive session:</p>
+<div class="highlight"><pre><span></span><code>hone
+</code></pre></div>
+<p>This launches the terminal UI. You can:
+- Type prompts and press Enter
+- Press <code>?</code> at any time for help
+- Type <code>Ctrl+C</code> to quit</p>
+<p>Your session is automatically saved with a default name. You can resume it later or create a named session:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--session<span class="w"> </span>my-project
+</code></pre></div>
+<h2 id="choosing-a-model-provider">Choosing a Model Provider<a class="headerlink" href="#choosing-a-model-provider" title="Permanent link">&para;</a></h2>
+<p>The <code>hone configure</code> wizard guides you through provider selection. The available providers are:</p>
+<p>Hone supports multiple model providers. Choose based on your needs:</p>
+<h3 id="1-anthropic-api-cloud">1. Anthropic API (Cloud)<a class="headerlink" href="#1-anthropic-api-cloud" title="Permanent link">&para;</a></h3>
+<p>Most capable. Requires an API key.</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-ant-...&quot;</span>
+hone<span class="w"> </span>--model<span class="w"> </span>anthropic:claude-opus-4-5
+</code></pre></div>
+<p><strong>First session:</strong> Type your API key when prompted, or set the environment variable above.</p>
+<p><strong>Cost:</strong> $3–15 per million input tokens, $15–60 per million output tokens (claude-opus-4-5).</p>
+<h3 id="2-openai-api-cloud">2. OpenAI API (Cloud)<a class="headerlink" href="#2-openai-api-cloud" title="Permanent link">&para;</a></h3>
+<p>Alternative cloud provider.</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-...&quot;</span>
+hone<span class="w"> </span>--model<span class="w"> </span>openai:gpt-4o
+</code></pre></div>
+<h3 id="3-ollama-local">3. Ollama (Local)<a class="headerlink" href="#3-ollama-local" title="Permanent link">&para;</a></h3>
+<p>Run models on your machine (no internet, free).</p>
+<p>Install Ollama from https://ollama.ai, then:</p>
+<div class="highlight"><pre><span></span><code>ollama<span class="w"> </span>pull<span class="w"> </span>llama2
+ollama<span class="w"> </span>serve<span class="w">  </span><span class="c1"># in another terminal</span>
+hone<span class="w"> </span>--model<span class="w"> </span>ollama:llama2
+</code></pre></div>
+<p><strong>Pros:</strong> Private, instant responses, free.
+<strong>Cons:</strong> Slower (CPU/GPU dependent), less capable than Claude/GPT-4.</p>
+<h3 id="4-claude-cli-pass-through-generation-1">4. Claude CLI Pass-Through (Generation 1)<a class="headerlink" href="#4-claude-cli-pass-through-generation-1" title="Permanent link">&para;</a></h3>
+<p>Use your existing <code>claude</code> CLI. Requires Generation 1 installed.</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--model<span class="w"> </span>claude-cli:claude-opus
+</code></pre></div>
+<h3 id="5-gemini-cli-pass-through-generation-1">5. Gemini CLI Pass-Through (Generation 1)<a class="headerlink" href="#5-gemini-cli-pass-through-generation-1" title="Permanent link">&para;</a></h3>
+<p>Use Google's <code>gemini</code> CLI.</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--model<span class="w"> </span>gemini-cli:gemini-pro
+</code></pre></div>
+<h3 id="6-acp-agent-client-protocol">6. ACP (Agent Client Protocol)<a class="headerlink" href="#6-acp-agent-client-protocol" title="Permanent link">&para;</a></h3>
+<p>Full tool support via persistent subprocess. For advanced users integrating custom tools.</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--model<span class="w"> </span>acp:my-custom-model<span class="w"> </span>--acp-endpoint<span class="w"> </span>/path/to/acp/binary
+</code></pre></div>
+<h2 id="first-interactive-session">First Interactive Session<a class="headerlink" href="#first-interactive-session" title="Permanent link">&para;</a></h2>
+<p>Once you select a provider and model, you're in the session loop. Type prompts and press Enter:</p>
+<div class="highlight"><pre><span></span><code>You: What files are in this directory?
+Assistant: I&#39;ll list the files for you.
+[tool call: shell -&gt; ls]
+Output: main.rs  Cargo.toml  README.md
+Found 3 files. You have main.rs (Rust source), Cargo.toml (manifest), and README.md.
+</code></pre></div>
+<p><strong>Key features:</strong>
+- <strong>Streaming:</strong> Tokens appear as they arrive.
+- <strong>Tool calls:</strong> The agent calls native tools (file, shell, git, LSP) automatically.
+- <strong>Transparency:</strong> Each tool call and result is shown.</p>
+<p>Type <code>/help</code> to see available commands:</p>
+<div class="highlight"><pre><span></span><code>/model &lt;provider:model&gt;   — switch models mid-session
+/budget &lt;usd&gt;             — set spending limit
+/clear                    — clear conversation history
+/export &lt;path&gt;            — save session to JSON
+/quit                     — exit
+</code></pre></div>
+<h2 id="session-management">Session Management<a class="headerlink" href="#session-management" title="Permanent link">&para;</a></h2>
+<p>Sessions are named conversations that persist across runs. Hone automatically saves your sessions after each turn.</p>
+<h3 id="listing-and-managing-sessions">Listing and Managing Sessions<a class="headerlink" href="#listing-and-managing-sessions" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># See all your saved sessions</span>
+hone<span class="w"> </span>session<span class="w"> </span>list
+</code></pre></div>
+<p>Output example:
+<div class="highlight"><pre><span></span><code>id                              created_at           updated_at           name             messages
+──────────────────────────────  ───────────────────  ───────────────────  ───────────────  ────────
+550e8400-e29b-41d4-a716-4467   2026-04-09 15:22:33  2026-04-09 15:45:12  my-project       42
+550e8400-e29b-41d4-a716-4468   2026-04-09 14:10:00  2026-04-09 14:10:00  debug-session    5
+</code></pre></div></p>
+<h3 id="resuming-a-previous-session">Resuming a Previous Session<a class="headerlink" href="#resuming-a-previous-session" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Resume a session by name</span>
+hone<span class="w"> </span>session<span class="w"> </span>resume<span class="w"> </span>my-project
+</code></pre></div>
+<p>All prior messages and context are restored. The session is updated with any new turns.</p>
+<h3 id="renaming-and-deleting-sessions">Renaming and Deleting Sessions<a class="headerlink" href="#renaming-and-deleting-sessions" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Rename a session</span>
+hone<span class="w"> </span>session<span class="w"> </span>rename<span class="w"> </span>old-name<span class="w"> </span>new-name
+
+<span class="c1"># Delete a session (irreversible)</span>
+hone<span class="w"> </span>session<span class="w"> </span>delete<span class="w"> </span>my-old-session
+</code></pre></div>
+<h3 id="starting-a-named-session">Starting a Named Session<a class="headerlink" href="#starting-a-named-session" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start a new session with a specific name (auto-created if doesn&#39;t exist)</span>
+hone<span class="w"> </span>--session<span class="w"> </span>debug-session
+</code></pre></div>
+<h3 id="ephemeral-no-save-mode">Ephemeral (No-Save) Mode<a class="headerlink" href="#ephemeral-no-save-mode" title="Permanent link">&para;</a></h3>
+<p>To run without saving:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Session won&#39;t be saved after this run</span>
+hone<span class="w"> </span>--ephemeral
+</code></pre></div>
+<p>This is useful for sensitive work, one-off queries, or testing.</p>
+<h2 id="one-shot-mode">One-Shot Mode<a class="headerlink" href="#one-shot-mode" title="Permanent link">&para;</a></h2>
+<p>Run a single command without the interactive loop:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span><span class="s2">&quot;List all Python files in src/&quot;</span><span class="w"> </span>--model<span class="w"> </span>anthropic:claude-opus
+</code></pre></div>
+<p>Output is streamed to stdout, no TUI.</p>
+<h2 id="first-multi-agent-orchestration-run">First Multi-Agent Orchestration Run<a class="headerlink" href="#first-multi-agent-orchestration-run" title="Permanent link">&para;</a></h2>
+<p>Hone's multi-agent orchestrator decomposes complex tasks, executes them in parallel, and merges results. This is research-backed by Anthropic, MASAI, and CodeR papers:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Set up API key</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-ant-...&quot;</span>
+
+<span class="c1"># Run with orchestrator</span>
+hone<span class="w"> </span>--orchestrate<span class="w"> </span><span class="s2">&quot;Build a CLI tool that validates email addresses with comprehensive test coverage&quot;</span>
+</code></pre></div>
+<p>What happens:</p>
+<ol>
+<li><strong>Decompose</strong> — Orchestrator breaks down "build CLI tool" into parallel subtasks:</li>
+<li>Write tests for email validation</li>
+<li>Implement validation logic</li>
+<li>Build CLI interface</li>
+<li>
+<p>Add error handling</p>
+</li>
+<li>
+<p><strong>Execute</strong> — Each worker agent runs in parallel on their assigned task:
+   <div class="highlight"><pre><span></span><code>[PlanCreated] Task decomposed into 4 subtasks
+[WorkerStarted] Worker 1: &quot;write_tests&quot;
+[WorkerStarted] Worker 2: &quot;implement_logic&quot;
+[WorkerStarted] Worker 3: &quot;build_cli&quot;
+[WorkerStarted] Worker 4: &quot;add_errors&quot;
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Merge</strong> — Orchestrator reads all results and produces a coherent merged output:
+   <div class="highlight"><pre><span></span><code>[Merged] All workers completed
+Final output: Complete CLI tool with tests, logic, interface, and error handling
+</code></pre></div></p>
+</li>
+</ol>
+<p>Expected output format:
+- Token counts for each subtask
+- Merged response combining all workers
+- Total cost across all parallel executions</p>
+<p><strong>When to use:</strong>
+- Complex features with multiple concerns
+- Tasks that naturally decompose (API + CLI + tests)
+- When you want parallel execution within a single request</p>
+<h2 id="context-window-management">Context Window Management<a class="headerlink" href="#context-window-management" title="Permanent link">&para;</a></h2>
+<p>Hone automatically optimizes context to stay within model limits while preserving code relevance:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># View context optimization details</span>
+hone<span class="w"> </span>--debug-context
+</code></pre></div>
+<p><strong>What happens behind the scenes:</strong></p>
+<ol>
+<li>
+<p><strong>Model-aware budgets</strong> — Each model has a learned token budget. claude-opus-4-5 has 200K context; hone reserves 4K for output, 2K for system prompt, leaving ~177K for conversation.</p>
+</li>
+<li>
+<p><strong>Automatic reranking</strong> — When context gets large, Hone uses BM25 ranking to keep the most relevant code snippets and memories at the front of the context window.</p>
+</li>
+<li>
+<p><strong>Graduated compression</strong> — Old or less relevant items are progressively summarized: full code → code + summary → summary only → compressed reference.</p>
+</li>
+<li>
+<p><strong>Phase detection</strong> — Hone adapts context strategy based on conversation phase (exploration, implementation, testing, refactoring).</p>
+</li>
+</ol>
+<p><strong>Example:</strong> Adding error handling to a 500-line authentication module:
+- Turn 1-3: Exploration phase. Context shows file structure, not full code.
+- Turn 4-8: Implementation phase. Context includes auth spec, test template, security patterns.
+- Turn 9+: Testing phase. Context focuses on test failures and relevant code.</p>
+<p>Set a custom context limit:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--context-limit<span class="w"> </span><span class="m">32000</span><span class="w">  </span><span class="c1"># tokens</span>
+</code></pre></div>
+<h2 id="understanding-the-output">Understanding the Output<a class="headerlink" href="#understanding-the-output" title="Permanent link">&para;</a></h2>
+<h3 id="token-streaming">Token Streaming<a class="headerlink" href="#token-streaming" title="Permanent link">&para;</a></h3>
+<p>Tokens arrive and render in real-time:</p>
+<div class="highlight"><pre><span></span><code>Assistant: I&#39;m analyzing...your request. [tokens streaming]
+</code></pre></div>
+<p>You see partial text as computation happens, not the final response all at once.</p>
+<h3 id="tool-calls">Tool Calls<a class="headerlink" href="#tool-calls" title="Permanent link">&para;</a></h3>
+<p>When the agent needs to act, it calls a tool:</p>
+<div class="highlight"><pre><span></span><code>[Tool: read_file]
+Input: {&quot;path&quot;: &quot;main.rs&quot;}
+Output: (file contents)
+</code></pre></div>
+<p>Tools available in Layer 2 (native, &lt;1ms latency):
+- <strong>File I/O:</strong> read, write, edit, glob patterns
+- <strong>Shell:</strong> execute commands, capture output
+- <strong>Git:</strong> commit, branch, diff, undo/redo
+- <strong>LSP bridge:</strong> hover, diagnostics, code actions
+- <strong>Semantic index:</strong> search code by meaning</p>
+<p>Tools in Layer 1 (MCP, JSON-RPC):
+- GitHub, Jira, Slack, databases, custom integrations</p>
+<h3 id="cost-tracking">Cost Tracking<a class="headerlink" href="#cost-tracking" title="Permanent link">&para;</a></h3>
+<p>After each turn, the output shows:</p>
+<div class="highlight"><pre><span></span><code>Usage: 4521 input tokens, 312 output tokens
+Cost: $0.068 USD
+Session total: $0.24 USD
+Budget remaining: $9.76 / $10.00
+</code></pre></div>
+<p>All costs are tracked in real USD for your chosen model. Set a budget limit to avoid surprises:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--budget<span class="w"> </span><span class="m">5</span>.00<span class="w">  </span><span class="c1"># max $5 per session</span>
+</code></pre></div>
+<p>When you hit the limit, the session stops.</p>
+<h2 id="memory-and-encryption">Memory and Encryption<a class="headerlink" href="#memory-and-encryption" title="Permanent link">&para;</a></h2>
+<p>For sensitive sessions, Hone can encrypt all memories and session data:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Build with encryption support</span>
+cargo<span class="w"> </span>build<span class="w"> </span>--features<span class="w"> </span>encrypted-memory
+
+<span class="c1"># Initialize encryption (stores key in system keychain)</span>
+hone<span class="w"> </span>--init-encryption
+<span class="c1"># Enter passphrase: ****</span>
+
+<span class="c1"># Run in ephemeral mode (no data saved)</span>
+hone<span class="w"> </span>--ephemeral
+</code></pre></div>
+<p>See <a href="../security/">Security Guide</a> for memory encryption and ephemeral mode.</p>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Configure providers:</strong> See <a href="../providers/">Providers Guide</a> for hot-swapping, custom endpoints (DeepSeek, OpenRouter), fallback chains, and pricing tables.</li>
+<li><strong>Context optimization:</strong> Hone automatically optimizes context using BM25 reranking and graduated compression. See <a href="../../configuration/">Configuration</a> for tuning.</li>
+<li><strong>Write recipes:</strong> See <a href="../recipes/">Recipes Guide</a> to automate multi-step workflows.</li>
+<li><strong>Run the daemon:</strong> See <a href="../server-and-remote/">Server Guide</a> to use Hone as a persistent HTTP service with RBAC.</li>
+<li><strong>Custom tools:</strong> See <a href="../tools-and-mcp/">Tools Guide</a> to integrate external MCP servers and custom tools.</li>
+<li><strong>Security:</strong> See <a href="../security/">Security Guide</a> for sandbox policies, audit logging, and memory encryption.</li>
+<li><strong>Architecture:</strong> See <a href="../../architecture/">Architecture Guide</a> for deep dives into context optimization, memory encryption, and security hardening.</li>
+</ul>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<h3 id="api-key-not-found">API Key Not Found<a class="headerlink" href="#api-key-not-found" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: ANTHROPIC_API_KEY not set
+</code></pre></div>
+<p>Set the environment variable:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-ant-...&quot;</span>
+hone
+</code></pre></div>
+<p>Or create <code>~/.config/hone/config.toml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[providers.anthropic]</span>
+<span class="n">api_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;sk-ant-...&quot;</span>
+</code></pre></div>
+<h3 id="model-not-found">Model Not Found<a class="headerlink" href="#model-not-found" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: model &#39;anthropic:claude-unknown&#39; not supported
+</code></pre></div>
+<p>List available models:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--list-models
+</code></pre></div>
+<h3 id="network-error-firewall">Network Error (Firewall)<a class="headerlink" href="#network-error-firewall" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: failed to connect to Anthropic API
+</code></pre></div>
+<p>Check your firewall and proxy settings. If behind a corporate proxy:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[http]</span>
+<span class="n">proxy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;http://proxy.example.com:8080&quot;</span>
+</code></pre></div>
+<h3 id="sandbox-error-on-macos">Sandbox Error on macOS<a class="headerlink" href="#sandbox-error-on-macos" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: sandbox policy not supported (Seatbelt unavailable)
+</code></pre></div>
+<p>This is rare. It means the sandbox layer failed. Hone uses fail-closed policy and aborts rather than running unsandboxed. Check System Preferences &gt; Security &amp; Privacy.</p>
+<h3 id="out-of-memory">Out of Memory<a class="headerlink" href="#out-of-memory" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>error: context window exceeded maximum
+</code></pre></div>
+<p>The conversation history is too long. Clear the session:</p>
+<div class="highlight"><pre><span></span><code>/clear
+</code></pre></div>
+<p>Or reduce the context window in config:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="n">context_window</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">32000</span><span class="w">  </span><span class="c1"># tokens</span>
+</code></pre></div>
+<h2 id="support">Support<a class="headerlink" href="#support" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Bug reports: https://github.com/anthropics/hone/issues</li>
+<li>Discussions: https://github.com/anthropics/hone/discussions</li>
+<li>Documentation: See ../</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
