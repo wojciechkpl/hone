@@ -27,6 +27,8 @@ tracing = { workspace = true }
 tempfile = { workspace = true }
 tiktoken-rs = { workspace = true }
 uuid = { workspace = true }
+ignore = { workspace = true }
+regex = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

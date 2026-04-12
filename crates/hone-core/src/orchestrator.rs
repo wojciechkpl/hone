@@ -336,6 +336,8 @@ impl Orchestrator {
             working_dir: self.lead_config.working_dir.clone(),
             memory_store: None,
             retry_config: self.lead_config.retry_config.clone(),
+            index: None,
+            inject_context: false,
         }
     }
 
@@ -383,6 +385,8 @@ impl Orchestrator {
             working_dir: self.lead_config.working_dir.clone(),
             memory_store: None,
             retry_config: self.lead_config.retry_config.clone(),
+            index: None,
+            inject_context: false,
         }
     }
 }

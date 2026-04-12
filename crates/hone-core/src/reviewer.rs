@@ -81,6 +81,8 @@ impl ReviewerAgent {
             working_dir: base_config.working_dir,
             memory_store: None,
             retry_config: base_config.retry_config,
+            index: None,
+            inject_context: false,
         };
 
         Self { agent_config }
@@ -110,6 +112,8 @@ impl ReviewerAgent {
             working_dir: self.agent_config.working_dir.clone(),
             memory_store: None,
             retry_config: self.agent_config.retry_config.clone(),
+            index: None,
+            inject_context: false,
         });
 
         let turn = agent.run_turn(context, events).await?;

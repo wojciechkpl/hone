@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::StreamExt;
+use hone_index::SqliteIndex;
 use hone_memory::{Memory, MemoryQuery, MemoryStore};
 use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ProviderEvent, ToolCallRequest, TokenUsage};
 use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
@@ -13,6 +14,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::task::JoinSet;
 
 use crate::context::ContextManager;
+use crate::context_injector::ContextInjector;
 use crate::cost::CostAccumulator;
 use crate::error::AgentError;
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
@@ -44,6 +46,13 @@ pub struct AgentConfig {
     /// 429s, 502/503s) before surfacing the error to the model.
     /// Default: 3 attempts with exponential backoff starting at 500 ms.
     pub retry_config: RetryConfig,
+    /// Optional SQLite symbol index used by the proactive context injector.
+    pub index: Option<Arc<SqliteIndex>>,
+    /// Enable proactive context injection before the first turn of each task.
+    ///
+    /// Controlled by the `HONE_CONTEXT_INJECTION=1` env var or the
+    /// `--inject-context` CLI flag.  Disabled by default until validated.
+    pub inject_context: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -272,7 +281,35 @@ impl Agent {
         // Fetch memories before adding the user message so the query is clean.
         let memories = self.fetch_relevant_memories(user_input).await;
 
-        self.context.add_message(Message::user(user_input));
+        // Proactive context injection — runs on the first turn only and only
+        // when explicitly enabled via `inject_context`.
+        let effective_input: std::borrow::Cow<'_, str> =
+            if self.turn_count == 1 && self.config.inject_context {
+                let injector = ContextInjector::with_defaults();
+                let index_ref = self.config.index.as_deref();
+                let injection = injector
+                    .inject(user_input, &self.config.working_dir, index_ref)
+                    .await;
+
+                if !injection.context_block.is_empty() {
+                    tracing::debug!(
+                        confidence = ?injection.confidence,
+                        tokens = injection.tokens_used,
+                        budget = injection.exploration_budget,
+                        "context injection applied"
+                    );
+                    std::borrow::Cow::Owned(format!(
+                        "{}\n\n---\n\n{}",
+                        injection.context_block, user_input
+                    ))
+                } else {
+                    std::borrow::Cow::Borrowed(user_input)
+                }
+            } else {
+                std::borrow::Cow::Borrowed(user_input)
+            };
+
+        self.context.add_message(Message::user(effective_input.as_ref()));
 
         let mut response_text = String::new();
         let mut turn_usage = TokenUsage::default();

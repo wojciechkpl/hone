@@ -129,6 +129,10 @@ struct Cli {
     #[arg(long, value_name = "NAME")]
     session: Option<String>,
 
+    /// Enable proactive context injection (disabled by default; also set HONE_CONTEXT_INJECTION=1).
+    #[arg(long)]
+    inject_context: bool,
+
     /// Subcommand (session management, configure wizard, etc.)
     #[command(subcommand)]
     command: Option<HoneCmd>,
@@ -632,13 +636,21 @@ fn build_agent_config(
     memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
     tool_cache: Option<Arc<ToolResultCache>>,
     mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
+    inject_context_flag: bool,
 ) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
-        build_tool_registry(lsp, index, tool_cache, mcp_tools)
+        build_tool_registry(lsp, index.clone(), tool_cache, mcp_tools)
     } else {
         ToolRegistry::new()
     };
+
+    // Enable proactive context injection when explicitly opted in via env var
+    // or the --inject-context CLI flag.
+    let inject_context = inject_context_flag
+        || std::env::var("HONE_CONTEXT_INJECTION")
+            .map(|v| v == "1")
+            .unwrap_or(false);
 
     AgentConfig {
         provider: Arc::clone(&detected.provider),
@@ -658,6 +670,8 @@ fn build_agent_config(
         working_dir: std::env::current_dir().unwrap_or_default(),
         memory_store,
         retry_config: hone_core::RetryConfig::default(),
+        index: index.map(|idx| Arc::clone(&idx)),
+        inject_context,
     }
 }
 
@@ -1522,6 +1536,7 @@ async fn main() -> Result<()> {
         memory_store.clone(),
         tool_cache,
         mcp_tools,
+        cli.inject_context,
     );
 
     let agent = AgentHandle::spawn(base_config.clone());

@@ -1,5 +1,6 @@
 pub mod agent_def;
 pub mod agent_registry;
+pub mod context_injector;
 pub mod metrics;
 pub mod recovery;
 pub mod retry;
@@ -24,6 +25,7 @@ pub mod relevance;
 mod turn;
 
 pub use agent::{Agent, AgentConfig, AgentHandle, is_read_only_tool};
+pub use context_injector::{ContextInjector, InjectionResult, RetrievalConfidence};
 pub use metrics::{ContextMetrics, MetricsSnapshot};
 pub use ensemble::{AgentEnsemble, EnsembleResult};
 pub use agent_def::{AgentDef, AgentDefError};
