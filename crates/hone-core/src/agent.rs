@@ -969,6 +969,10 @@ enum AgentCommand {
     GetMessages {
         reply: oneshot::Sender<Vec<Message>>,
     },
+    /// Replace the agent's system prompt (for inline @agent persona dispatch).
+    SetSystemPrompt {
+        prompt: String,
+    },
     Shutdown,
 }
 
@@ -1015,6 +1019,9 @@ impl AgentHandle {
                     }
                     AgentCommand::GetMessages { reply } => {
                         let _ = reply.send(agent.messages());
+                    }
+                    AgentCommand::SetSystemPrompt { prompt } => {
+                        agent.config.system_prompt = prompt;
                     }
                     AgentCommand::Shutdown => break,
                 }
@@ -1103,6 +1110,20 @@ impl AgentHandle {
             return Vec::new();
         }
         rx.await.unwrap_or_default()
+    }
+
+    /// Replace the agent's active system prompt.
+    ///
+    /// Fire-and-forget — the command is queued; it takes effect before the next
+    /// `run_turn` call because the actor processes commands sequentially.
+    ///
+    /// Used by the TUI's `@agent-name` inline dispatch to temporarily swap the
+    /// persona for one turn.
+    pub async fn set_system_prompt(&self, prompt: impl Into<String>) {
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::SetSystemPrompt { prompt: prompt.into() })
+            .await;
     }
 
     /// Signal the actor to shut down.  The actor will finish processing any

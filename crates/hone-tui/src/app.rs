@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     animation::AnimationState,
-    commands::{Command, TddSubcommand},
+    commands::{Command, TddSubcommand, parse_inline_agent},
     input::InputState,
     layout::{FocusTarget, LayoutMode},
     message::{DisplayMessage, DisplayRole},
@@ -82,6 +82,16 @@ pub struct App {
     pub(crate) review_session: Option<crate::review_mode::ReviewSession>,
     /// Set to true when :review is waiting for git diff output.
     pending_review: bool,
+
+    // --- Inline @agent dispatch -----------------------------------------------
+    /// When `Some`, the next AI turn will be routed through this named agent
+    /// persona.  Cleared after one turn.
+    pub(crate) inline_agent: Option<String>,
+
+    // --- Clarify mode ---------------------------------------------------------
+    /// When `true`, the next user prompt will be pre-processed through the
+    /// clarification detector regardless of heuristics (forced by `/clarify`).
+    pub(crate) force_clarify: bool,
 }
 
 impl App {
@@ -113,6 +123,8 @@ impl App {
             pending_shell_cmd: None,
             review_session: None,
             pending_review: false,
+            inline_agent: None,
+            force_clarify: false,
         }
     }
 
@@ -225,6 +237,21 @@ impl App {
     /// Whether TDD mode is currently active.
     pub fn tdd_active(&self) -> bool {
         self.tdd_watcher.is_some()
+    }
+
+    /// Take the pending inline agent name, clearing it from state.
+    ///
+    /// The event loop reads this after a submit to know whether to swap the
+    /// system prompt for this turn.
+    pub fn take_inline_agent(&mut self) -> Option<String> {
+        self.inline_agent.take()
+    }
+
+    /// Whether the next turn was explicitly forced into clarification mode.
+    pub fn take_force_clarify(&mut self) -> bool {
+        let v = self.force_clarify;
+        self.force_clarify = false;
+        v
     }
 
     /// Set splash_start to a specific instant (for testing auto-dismiss).
@@ -405,6 +432,31 @@ impl App {
         // Check whether this is a slash-command.
         if let Some(cmd) = Command::parse(&text) {
             self.handle_command(cmd);
+            return;
+        }
+
+        // @agent-name prefix — inline persona dispatch.
+        // Must be checked after slash-commands so `/clarify` is not shadowed.
+        if let Some((agent_name, prompt)) = parse_inline_agent(&text) {
+            let agent_name = agent_name.to_owned();
+            let prompt = prompt.to_owned();
+
+            self.messages.push(DisplayMessage::new(
+                DisplayRole::System,
+                format!("Switching to @{agent_name} persona for this turn."),
+            ));
+            self.inline_agent = Some(agent_name);
+
+            let display_text = if prompt.is_empty() {
+                // No prompt given — just acknowledge; the user can follow up.
+                self.state = AppState::Idle;
+                return;
+            } else {
+                prompt
+            };
+
+            self.messages.push(DisplayMessage::new(DisplayRole::User, display_text));
+            self.state = AppState::WaitingForResponse;
             return;
         }
 
@@ -634,6 +686,9 @@ impl App {
             Command::Review => {
                 self.handle_review_command();
             }
+            Command::Clarify(prompt) => {
+                self.handle_clarify_command(prompt);
+            }
             Command::Unknown(name) => {
                 let msg = format!("Unknown command: /{name}  (type /help for help)");
                 self.messages
@@ -704,6 +759,35 @@ impl App {
         self.pending_review = true;
         self.pending_shell_cmd = Some("git diff".to_owned());
         self.state = AppState::WaitingForResponse;
+    }
+
+    // -----------------------------------------------------------------------
+    // Clarify command handling
+    // -----------------------------------------------------------------------
+
+    fn handle_clarify_command(&mut self, prompt: String) {
+        if prompt.is_empty() {
+            // No inline prompt — set the flag so the next regular message
+            // is forced through clarification regardless of heuristics.
+            self.force_clarify = true;
+            self.messages.push(DisplayMessage::new(
+                DisplayRole::System,
+                "[Clarify mode] Your next message will trigger a clarification step.".to_string(),
+            ));
+        } else {
+            // Prompt provided inline — synthesise clarifying questions now.
+            use hone_core::ClarificationDetector;
+            let questions = ClarificationDetector::needs_clarification(&prompt)
+                .unwrap_or_else(|| {
+                    vec!["Could you provide more details about what you'd like me to do?".into()]
+                });
+            let formatted = ClarificationDetector::format_questions(&questions);
+            self.messages.push(DisplayMessage::new(DisplayRole::User, prompt.clone()));
+            self.messages.push(DisplayMessage::new(DisplayRole::System, formatted));
+            // Mark force_clarify so the event loop knows this turn has been
+            // pre-processed; the user's answer will go straight to the agent.
+            self.force_clarify = true;
+        }
     }
 
     /// Open a review session from a diff string.

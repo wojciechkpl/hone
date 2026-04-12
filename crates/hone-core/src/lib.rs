@@ -1,5 +1,6 @@
 pub mod agent_def;
 pub mod agent_registry;
+pub mod clarify;
 pub mod context_injector;
 pub mod egress_log;
 pub mod injection_detector;
@@ -27,6 +28,7 @@ pub mod relevance;
 mod turn;
 
 pub use agent::{Agent, AgentConfig, AgentHandle, is_read_only_tool};
+pub use clarify::ClarificationDetector;
 pub use context_injector::{ContextInjector, InjectionResult, RetrievalConfidence, SkeletonStrategy};
 pub use metrics::{ContextMetrics, MetricsSnapshot};
 pub use ensemble::{AgentEnsemble, EnsembleResult};

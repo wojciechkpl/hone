@@ -21,8 +21,9 @@ use hone_cache::{SqliteBackend, ToolResultCache};
 use hone_config::{Config, HoneMd, McpConfig};
 use hone_mcp::McpManager;
 use hone_core::{
-    AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry, ComplexityClassifier, ComplexityTier,
-    Orchestrator, PlanStore, SelfRefineLoop, SkeletonStrategy, TestVerificationLoop,
+    AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry, ClarificationDetector,
+    ComplexityClassifier, ComplexityTier, Orchestrator, PlanStore, SelfRefineLoop,
+    SkeletonStrategy, TestVerificationLoop,
 };
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
@@ -157,6 +158,12 @@ struct Cli {
     /// Also enabled by setting HONE_AUDIT_LOG=1.
     #[arg(long)]
     audit: bool,
+
+    /// Skip scope clarification entirely (useful for scripting/CI).
+    /// By default, ambiguous one-shot prompts may trigger clarifying questions
+    /// before the agent begins executing.
+    #[arg(long)]
+    no_clarify: bool,
 
     /// Subcommand (session management, configure wizard, etc.)
     #[command(subcommand)]
@@ -1736,12 +1743,14 @@ async fn main() -> Result<()> {
 
     // Run the selected mode and capture the result so we can shut down MCP
     // servers before returning regardless of which path was taken.
+    let no_clarify = cli.no_clarify;
     let run_result = run_selected_mode(
         cli,
         agent,
         base_config,
         model_id,
         session_name,
+        no_clarify,
     )
     .await;
 
@@ -1761,6 +1770,7 @@ async fn run_selected_mode(
     base_config: AgentConfig,
     model_id: ModelId,
     session_name: Option<String>,
+    no_clarify: bool,
 ) -> Result<()> {
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -1817,6 +1827,24 @@ async fn run_selected_mode(
 
     // One-shot mode: run a single turn, print to stdout, and exit.
     if let Some(ref prompt) = cli.prompt {
+        // Clarification step: when the prompt is ambiguous and --no-clarify
+        // was not set, print questions to stderr and continue (we do not block
+        // execution — just surface the questions so the user is aware).
+        if !no_clarify && !cli.json {
+            if let Some(questions) = ClarificationDetector::needs_clarification(prompt) {
+                let formatted = ClarificationDetector::format_questions(&questions);
+                eprintln!("{}", warn_style("[Hone] Ambiguous prompt detected."));
+                eprintln!("{formatted}");
+                eprintln!();
+                eprintln!(
+                    "{} Proceeding with the original prompt. \
+                     Re-run with a more specific prompt or pass --no-clarify to suppress this.",
+                    warn_style("Note:")
+                );
+                eprintln!();
+            }
+        }
+
         if cli.json {
             run_json_mode(agent.clone(), prompt, model_id.as_str()).await?;
         } else {
@@ -1929,6 +1957,9 @@ async fn run_tui(
                             let user_text = app.input().buffer.clone();
                             let is_command = user_text.starts_with('/');
                             let is_shell_escape = user_text.starts_with('!');
+                            // @agent-name prefix is also detected by the app's
+                            // submit_input; we check here only for the routing decision.
+                            let is_inline_agent = user_text.trim_start().starts_with('@');
 
                             // Let the App update its own state.
                             app.handle_key(key);
@@ -1963,34 +1994,114 @@ async fn run_tui(
                             } else if !is_command && !is_shell_escape && matches!(app.state(), AppState::WaitingForResponse) {
                                 // Only spawn an AI turn for regular messages, not commands or
                                 // shell escapes.
+
+                                // @agent inline dispatch: swap system prompt for this turn.
+                                let maybe_inline_agent = if is_inline_agent {
+                                    app.take_inline_agent()
+                                } else {
+                                    None
+                                };
+
+                                if let Some(ref agent_name) = maybe_inline_agent {
+                                    // Look up the agent definition and swap the prompt.
+                                    let mut registry = AgentRegistry::new();
+                                    registry.load_builtins();
+                                    if let Some(def) = registry.get(agent_name) {
+                                        let persona_prompt = def.system_prompt.clone();
+                                        agent.set_system_prompt(persona_prompt).await;
+                                        tracing::info!(agent = %agent_name, "inline @agent persona active");
+                                        app.status_mut().mode = format!("@{agent_name}");
+                                    } else {
+                                        tracing::warn!(agent = %agent_name, "unknown @agent name — using default persona");
+                                    }
+                                }
+
+                                // Determine the effective prompt for the turn.
+                                // When an @agent was parsed, app already stored the
+                                // remainder as the last User message; we use that text.
+                                let effective_text = if is_inline_agent {
+                                    // Extract the prompt portion that was already pushed as a
+                                    // User message by submit_input.
+                                    app.messages()
+                                        .iter()
+                                        .rev()
+                                        .find(|m| matches!(m.role, hone_tui::message::DisplayRole::User))
+                                        .map(|m| m.content.clone())
+                                        .unwrap_or(user_text.clone())
+                                } else {
+                                    user_text.clone()
+                                };
+
                                 // Adaptive routing: classify complexity and pick the
                                 // appropriate execution strategy.
-                                let tier = ComplexityClassifier::classify(&user_text);
+                                let tier = ComplexityClassifier::classify(&effective_text);
+
+                                // Spawn the appropriate turn.
+                                let agent_clone = agent.clone();
+                                let effective_text_clone = effective_text.clone();
+                                let base_config_clone = base_config.clone();
+                                let agent_tx_clone = agent_tx.clone();
+                                let original_prompt = base_config.system_prompt.clone();
+                                let restore_prompt = maybe_inline_agent.is_some();
+
                                 match tier {
                                     ComplexityTier::Simple => {
                                         tracing::debug!("complexity: Simple — direct agent turn");
-                                        spawn_agent_turn(
-                                            agent.clone(),
-                                            user_text,
-                                            agent_tx.clone(),
-                                        );
+                                        if restore_prompt {
+                                            tokio::spawn(async move {
+                                                let (tx2, rx2) = mpsc::channel(256);
+                                                spawn_agent_turn(agent_clone.clone(), effective_text_clone, tx2);
+                                                // Forward all events then restore the prompt.
+                                                let mut rx2 = rx2;
+                                                while let Some(ev) = rx2.recv().await {
+                                                    let _ = agent_tx_clone.send(ev).await;
+                                                }
+                                                agent_clone.set_system_prompt(original_prompt).await;
+                                            });
+                                        } else {
+                                            spawn_agent_turn(agent.clone(), effective_text, agent_tx.clone());
+                                        }
                                     }
                                     ComplexityTier::Medium => {
                                         tracing::debug!("complexity: Medium — self-refine turn");
-                                        spawn_medium_turn(
-                                            agent.clone(),
-                                            user_text,
-                                            agent_tx.clone(),
-                                        );
+                                        if restore_prompt {
+                                            tokio::spawn(async move {
+                                                let (tx2, rx2) = mpsc::channel(256);
+                                                spawn_medium_turn(agent_clone.clone(), effective_text_clone, tx2);
+                                                let mut rx2 = rx2;
+                                                while let Some(ev) = rx2.recv().await {
+                                                    let _ = agent_tx_clone.send(ev).await;
+                                                }
+                                                agent_clone.set_system_prompt(original_prompt).await;
+                                            });
+                                        } else {
+                                            spawn_medium_turn(agent.clone(), effective_text, agent_tx.clone());
+                                        }
                                     }
                                     ComplexityTier::Complex => {
                                         tracing::debug!("complexity: Complex — orchestrated turn");
-                                        spawn_orchestrated_turn(
-                                            base_config.clone(),
-                                            user_text,
-                                            agent_tx.clone(),
-                                        );
+                                        if restore_prompt {
+                                            tokio::spawn(async move {
+                                                let (tx2, rx2) = mpsc::channel(256);
+                                                spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2);
+                                                let mut rx2 = rx2;
+                                                while let Some(ev) = rx2.recv().await {
+                                                    let _ = agent_tx_clone.send(ev).await;
+                                                }
+                                                agent_clone.set_system_prompt(original_prompt).await;
+                                            });
+                                        } else {
+                                            spawn_orchestrated_turn(base_config.clone(), effective_text, agent_tx.clone());
+                                        }
                                     }
+                                }
+
+                                // After the turn is dispatched, clear the mode label
+                                // if we had an inline agent (the spawned task restores
+                                // the prompt when the turn finishes).
+                                if restore_prompt {
+                                    // Mode will be reset to default once the turn
+                                    // finishes; for now show the agent label.
                                 }
                             }
                         } else {
