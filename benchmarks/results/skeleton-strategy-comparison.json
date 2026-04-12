@@ -1,0 +1,12 @@
+{
+  "date": "2026-04-12",
+  "tasks": 10,
+  "model": "deepseek/deepseek-chat",
+  "results": {
+    "v1_baseline": {"patches": 7, "empty": 3, "rate": 0.70, "avg_size": 732},
+    "flat": {"patches": 9, "empty": 1, "rate": 0.90, "avg_size": 849, "delta_vs_v1": "+20pp"},
+    "hybrid": {"patches": 9, "empty": 1, "rate": 0.90, "avg_size": 982, "delta_vs_v1": "+20pp"},
+    "call_graph": {"patches": 10, "empty": 0, "rate": 1.00, "avg_size": 912, "delta_vs_v1": "+30pp"}
+  },
+  "conclusion": "CallGraph achieves 100% patch rate (+30pp over V1). All injection strategies beat baseline. Call-level details matter more than dependency arrows."
+}
