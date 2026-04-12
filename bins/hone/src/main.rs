@@ -1610,7 +1610,8 @@ async fn main() -> Result<()> {
         detected.provider = Arc::new(hone_providers::CachingProvider::new(detected.provider, 100));
     }
 
-    // Validate --model against known provider prefixes.
+    // Validate --model and override provider when the prefix doesn't match
+    // the auto-detected provider (e.g., --model ollama:... when Claude CLI was detected).
     let model_id: ModelId = if let Some(ref m) = cli.model {
         let known_prefixes = ["anthropic:", "openai:", "ollama:", "claude-cli:", "gemini-cli:"];
         if !known_prefixes.iter().any(|p| m.starts_with(p)) {
@@ -1621,10 +1622,30 @@ async fn main() -> Result<()> {
             eprintln!("  openai:gpt-4o");
             eprintln!("  openai:deepseek-coder      (with HONE_OPENAI_BASE_URL)");
             eprintln!("  ollama:llama3.2");
+            eprintln!("  ollama:qwen2.5-coder:14b");
             eprintln!("  claude-cli:claude-sonnet-4-5");
             eprintln!("  gemini-cli:gemini-2.5-pro");
             std::process::exit(1);
         }
+
+        // Override the detected provider when --model specifies a different one.
+        if m.starts_with("ollama:") && detected.provider.id() != "ollama" {
+            tracing::info!("--model overrides provider to Ollama");
+            detected.provider = Arc::new(OllamaProvider::new("http://localhost:11434"));
+            detected.supports_tools = true;
+        } else if m.starts_with("openai:") && detected.provider.id() != "openai" {
+            if let Some(key) = std::env::var("OPENAI_API_KEY").ok().or(wizard_cfg.openai_api_key.clone()) {
+                tracing::info!("--model overrides provider to OpenAI");
+                let provider = if let Some(url) = std::env::var("HONE_OPENAI_BASE_URL").ok().or(wizard_cfg.openai_base_url.clone()) {
+                    OpenAiProvider::with_base_url(key, url)
+                } else {
+                    OpenAiProvider::new(key)
+                };
+                detected.provider = Arc::new(provider);
+                detected.supports_tools = true;
+            }
+        }
+
         ModelId::new(m)
     } else {
         detected.model_id.clone()
