@@ -301,6 +301,56 @@ pub fn validate_command(command: &str) -> ValidationResult {
 }
 
 #[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn classify_never_panics(cmd in "\\PC{0,500}") {
+            // Classification must never panic on any printable input.
+            let _ = CommandIntent::classify(&cmd);
+        }
+
+        #[test]
+        fn validate_never_panics(cmd in "\\PC{0,500}") {
+            // Full validation pipeline must never panic on any printable input.
+            let _ = validate_command(&cmd);
+        }
+
+        #[test]
+        fn compound_operators_are_never_readonly(
+            prefix in "[a-z]{2,10}",
+            suffix in "[a-z]{2,10}",
+        ) {
+            // Any command containing a compound operator must not be classified ReadOnly,
+            // because first-token analysis cannot see what the chained command does.
+            for op in &[";", "&&", "||", "|", "$(", "`"] {
+                let cmd = format!("{prefix} {op} {suffix}");
+                let intent = CommandIntent::classify(&cmd);
+                prop_assert_ne!(
+                    intent,
+                    CommandIntent::ReadOnly,
+                    "compound command '{}' should not be ReadOnly",
+                    cmd
+                );
+            }
+        }
+
+        #[test]
+        fn empty_and_whitespace_commands_are_unknown(spaces in " {0,20}") {
+            // Empty or all-whitespace commands must classify as Unknown.
+            let intent = CommandIntent::classify(&spaces);
+            prop_assert_eq!(
+                intent,
+                CommandIntent::Unknown,
+                "blank input should be Unknown"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -35,6 +35,7 @@ mockall = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 criterion = { workspace = true }
+proptest = { workspace = true }
 
 [[bench]]
 name = "context_perf"

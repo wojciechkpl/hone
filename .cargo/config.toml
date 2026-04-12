@@ -1,0 +1,12 @@
+# Cargo configuration for the Hone workspace.
+
+# Exclude benchmark harnesses and generated/test-only files from llvm-cov
+# line-coverage reporting. These patterns are matched against source file paths.
+[llvm-cov]
+# Files matching these globs are excluded from coverage reports.
+ignore-filename-regex = [
+    # Criterion benchmark harnesses
+    "benches/.*\\.rs",
+    # Generated protobuf or build-script output
+    "build\\.rs",
+]

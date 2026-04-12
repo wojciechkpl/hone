@@ -138,6 +138,59 @@ pub fn interleave_edges<T>(sorted_desc: Vec<T>) -> Vec<T> {
 }
 
 #[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn score_is_non_negative(doc in "\\PC{1,200}", query in "\\PC{1,50}") {
+            let corpus = vec![doc.clone()];
+            let scorer = Bm25Scorer::from_corpus(&corpus);
+            let score = scorer.score(&doc, &query);
+            prop_assert!(score >= 0.0, "BM25 score must be non-negative, got {}", score);
+        }
+
+        #[test]
+        fn score_is_finite(doc in "\\PC{1,200}", query in "\\PC{1,50}") {
+            let corpus = vec![doc.clone()];
+            let scorer = Bm25Scorer::from_corpus(&corpus);
+            let score = scorer.score(&doc, &query);
+            prop_assert!(score.is_finite(), "BM25 score must be finite, got {}", score);
+        }
+
+        #[test]
+        fn empty_query_scores_zero(doc in "\\PC{1,200}") {
+            let corpus = vec![doc.clone()];
+            let scorer = Bm25Scorer::from_corpus(&corpus);
+            let score = scorer.score(&doc, "");
+            prop_assert!(score == 0.0, "empty query must score 0.0, got {}", score);
+        }
+
+        #[test]
+        fn identical_doc_and_query_scores_highest(
+            query in "[a-z]{3,20}( [a-z]{3,20}){1,5}",
+        ) {
+            let other = "completely unrelated different words here";
+            let corpus = vec![query.clone(), other.to_string()];
+            let scorer = Bm25Scorer::from_corpus(&corpus);
+            let self_score = scorer.score(&query, &query);
+            let other_score = scorer.score(other, &query);
+            prop_assert!(self_score >= other_score,
+                "self-score {} should be >= other-score {}", self_score, other_score);
+        }
+
+        #[test]
+        fn classify_never_panics_bm25(doc in "\\PC{0,200}", query in "\\PC{0,100}") {
+            // Scoring should never panic on arbitrary printable input.
+            let corpus = vec![doc.clone()];
+            let scorer = Bm25Scorer::from_corpus(&corpus);
+            let _ = scorer.score(&doc, &query);
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

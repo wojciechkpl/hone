@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt clean release deny bench test-real test-acp
+.PHONY: build test lint fmt clean release deny bench test-real test-acp coverage coverage-html coverage-ci
 
 build:
 	cargo build
@@ -43,6 +43,19 @@ test-real:
 # Example: HONE_ACP_BIN=gemini-acp make test-acp
 test-acp:
 	HONE_ACP_BIN=$${HONE_ACP_BIN:-claude} cargo test -p hone-providers --test acp_real -- --ignored --nocapture
+
+# Coverage measurement (requires: cargo install cargo-llvm-cov)
+coverage:
+	cargo llvm-cov --workspace --lcov --output-path lcov.info
+	@echo "Coverage report: lcov.info"
+
+coverage-html:
+	cargo llvm-cov --workspace --html --output-dir coverage-html
+	@echo "Open coverage-html/index.html"
+
+coverage-ci:
+	cargo llvm-cov --workspace --lcov --output-path lcov.info --fail-under-lines 60
+	@echo "Coverage gate: 60% minimum passed"
 
 # Install locally
 install:
