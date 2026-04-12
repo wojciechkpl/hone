@@ -248,7 +248,6 @@ graph TB
     style MultiAgent fill:#6e4a1a,stroke:#da5,color:#fff
     style Storage fill:#3a3a3a,stroke:#888,color:#fff
     style Sandbox fill:#8b0000,stroke:#f44,color:#fff
-    style Sandbox fill:#FF6B6B
 ```
 
 ## Getting Help

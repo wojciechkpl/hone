@@ -391,11 +391,11 @@ graph TD
     L --> M["agent.run_turn()"]
     M --> N["Tool Execution Loop"]
     
-    style D fill:#90EE90
-    style G fill:#87CEEB
-    style J fill:#FFD700
-    style K fill:#DDA0DD
-    style M fill:#FF6B6B
+    style D fill:#2d6a2d,stroke:#4a4,color:#fff
+    style G fill:#1a5276,stroke:#5ac,color:#fff
+    style J fill:#6e4a1a,stroke:#da5,color:#fff
+    style K fill:#5b3a7a,stroke:#a7c,color:#fff
+    style M fill:#8b0000,stroke:#f44,color:#fff
 ```
 
 **Flow explanation:**
