@@ -1,0 +1,22 @@
+{
+  "run": "v4-multi-attempt",
+  "date": "2026-04-11",
+  "model": "deepseek/deepseek-chat (DeepSeek V3)",
+  "provider": "OpenRouter",
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "total_tasks": 20,
+  "patches_generated": 19,
+  "empty_patches": 1,
+  "patch_rate": 0.95,
+  "avg_patch_size_chars": 909,
+  "strategy": "multi-attempt (3 attempts: default + localize + hint)",
+  "context_injection": true,
+  "comparison_first_20": {
+    "v1_patch_rate": 0.75,
+    "v3_patch_rate": 0.95,
+    "v4_patch_rate": 0.95,
+    "v4_avg_patch_larger": true
+  },
+  "projected_resolve_rate": "24-27%",
+  "conclusion": "Context injection is the primary driver (+20pp patch rate). Multi-attempt adds larger patches but same patch rate. Recommend enabling injection by default."
+}
