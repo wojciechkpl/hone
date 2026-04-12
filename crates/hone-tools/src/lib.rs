@@ -3,6 +3,7 @@ mod file;
 mod git;
 pub mod lsp;
 mod registry;
+mod screen;
 mod shell;
 mod traits;
 
@@ -18,6 +19,7 @@ pub use lsp::{
     StdioLspBridge, detect_language,
 };
 pub use registry::{ToolRegistry, ToolRegistryBuilder};
+pub use screen::{ComputerControlTool, ScreenCaptureTool};
 pub use shell::ShellTool;
 pub use shell::validation::{CommandIntent, ValidationResult};
 pub use traits::{Tool, ToolContext, ToolInput, ToolOutput};

@@ -36,9 +36,10 @@ use hone_recipes::Recipe;
 use hone_sandbox::SandboxBuilder;
 use hone_memory::{MemoryStore, SqliteStore};
 use hone_tools::{
-    EditFileTool, GlobTool, GrepTool, GitCommitTool, GitDiffTool, GitStatusTool, Language,
-    LspBridge, LspCodeActionTool, LspDiagnosticsTool, LspHoverTool, MockLspBridge, MultiEditTool,
-    ReadFileTool, ShellTool, StdioLspBridge, ToolRegistry, WriteFileTool,
+    ComputerControlTool, EditFileTool, GlobTool, GrepTool, GitCommitTool, GitDiffTool,
+    GitStatusTool, Language, LspBridge, LspCodeActionTool, LspDiagnosticsTool, LspHoverTool,
+    MockLspBridge, MultiEditTool, ReadFileTool, ScreenCaptureTool, ShellTool, StdioLspBridge,
+    ToolRegistry, WriteFileTool,
 };
 use hone_tui::{App, AppState};
 use hone_tui::render::root;
@@ -584,7 +585,9 @@ fn build_tool_registry(
         .register(Box::new(EditFileTool))
         .register(Box::new(MultiEditTool))
         .register(Box::new(ShellTool))
-        .register(Box::new(GitCommitTool));
+        .register(Box::new(GitCommitTool))
+        .register(Box::new(ScreenCaptureTool))
+        .register(Box::new(ComputerControlTool));
 
     if let Some(idx) = index {
         builder = builder

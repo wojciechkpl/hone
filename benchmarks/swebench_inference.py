@@ -29,6 +29,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -282,6 +283,137 @@ def run_hone(repo_dir: Path, problem_statement: str, hone_binary: str, model: st
     return patch, elapsed, success
 
 
+HINT_PROMPT_TEMPLATE = """\
+You are fixing a bug in this repository. Here is the issue:
+
+{problem_statement}
+
+Find and fix the bug. Edit only the files necessary to resolve the issue. \
+Do not add tests. Do not modify test files.
+
+Hint: {hint}
+"""
+
+
+def run_hone_with_hint(
+    repo_dir: Path,
+    problem_statement: str,
+    hone_binary: str,
+    model: str,
+    timeout_secs: int = 300,
+    hint: str = "",
+) -> tuple[str, float, bool]:
+    """Run Hone with an appended hint string and return (patch, elapsed, success)."""
+    env = os.environ.copy()
+    env["HONE_OPENAI_MODEL"] = env.get("HONE_OPENAI_MODEL", model)
+
+    prompt = HINT_PROMPT_TEMPLATE.replace(
+        "{problem_statement}", problem_statement
+    ).replace("{hint}", hint)
+
+    start = time.time()
+    try:
+        result = subprocess.run(
+            [hone_binary, "--model", f"openai:{model}", prompt],
+            cwd=repo_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_secs,
+        )
+        elapsed = time.time() - start
+        success = result.returncode == 0
+    except subprocess.TimeoutExpired:
+        elapsed = timeout_secs
+        success = False
+
+    diff_result = subprocess.run(
+        ["git", "diff"],
+        cwd=repo_dir, capture_output=True, text=True, timeout=30,
+    )
+    patch = diff_result.stdout.strip()
+    return patch, elapsed, success
+
+
+def _reset_repo(repo_dir: Path) -> None:
+    """Reset the working tree to HEAD, discarding all local changes."""
+    subprocess.run(["git", "checkout", "-f", "."], cwd=repo_dir, capture_output=True, timeout=60)
+    subprocess.run(["git", "clean", "-fd"], cwd=repo_dir, capture_output=True, timeout=60)
+
+
+def run_multi_attempt(
+    repo_dir: Path,
+    problem_statement: str,
+    hone_binary: str,
+    model: str,
+    timeout_secs: int = 300,
+    num_attempts: int = 3,
+) -> tuple[str, float, bool, list[dict]]:
+    """Run up to *num_attempts* times with varied strategies, return the best patch.
+
+    Returns:
+        (best_patch, total_elapsed, success, attempt_records)
+
+    Each attempt record is a dict with keys: attempt, strategy, patch, elapsed, success.
+    """
+    HINTS = [
+        "Think about edge cases. Check if the fix handles None/empty inputs.",
+        "Consider boundary conditions and off-by-one errors.",
+        "Look carefully at type handling and implicit conversions.",
+        "Check if the issue is in how arguments are validated or defaulted.",
+        "Think about thread safety, state mutations, and ordering.",
+    ]
+
+    attempt_records: list[dict] = []
+    total_elapsed = 0.0
+
+    for i in range(num_attempts):
+        _reset_repo(repo_dir)
+
+        if i == 0:
+            strategy = "default"
+            patch, elapsed, success = run_hone(
+                repo_dir, problem_statement, hone_binary, model, timeout_secs,
+                use_localization=False,
+            )
+        elif i == 1:
+            strategy = "localize"
+            patch, elapsed, success = run_hone(
+                repo_dir, problem_statement, hone_binary, model, timeout_secs,
+                use_localization=True,
+            )
+        else:
+            hint_idx = (i - 2) % len(HINTS)
+            strategy = f"hint_{hint_idx}"
+            patch, elapsed, success = run_hone_with_hint(
+                repo_dir, problem_statement, hone_binary, model, timeout_secs,
+                hint=HINTS[hint_idx],
+            )
+
+        total_elapsed += elapsed
+        attempt_records.append({
+            "attempt": i + 1,
+            "strategy": strategy,
+            "patch": patch,
+            "elapsed": elapsed,
+            "success": success,
+        })
+
+    # Select best patch from the collected attempts.
+    patches_with_content = [r["patch"] for r in attempt_records if r["patch"]]
+
+    if not patches_with_content:
+        return "", total_elapsed, False, attempt_records
+
+    # Majority vote: use the most common patch; break ties by length (longest wins).
+    counts = Counter(patches_with_content)
+    best_count = counts.most_common(1)[0][1]
+    candidates = [p for p, c in counts.items() if c == best_count]
+    best_patch = max(candidates, key=len)
+
+    return best_patch, total_elapsed, True, attempt_records
+
+
 def main():
     parser = argparse.ArgumentParser(description="SWE-bench inference with Hone")
     parser.add_argument("--dataset", default="princeton-nlp/SWE-bench_Lite",
@@ -300,7 +432,32 @@ def main():
                         help="Skip tasks that already have predictions")
     parser.add_argument("--localize", action="store_true",
                         help="Enable two-stage localization (disabled by default — V1 baseline is better)")
+    parser.add_argument(
+        "--attempts", type=int, default=1, metavar="N",
+        help="Number of attempts per task (1–5). >1 activates multi-attempt selection.",
+    )
+    parser.add_argument(
+        "--strategy",
+        choices=["single", "multi", "localize"],
+        default="single",
+        help=(
+            "Inference strategy: "
+            "'single' (default, one attempt with optional --localize), "
+            "'multi' (N attempts with varied strategies, requires --attempts N >= 2), "
+            "'localize' (shorthand for --localize with single attempt)."
+        ),
+    )
     args = parser.parse_args()
+
+    # Validate attempt count.
+    if args.attempts < 1 or args.attempts > 5:
+        parser.error("--attempts must be between 1 and 5")
+
+    # Normalise strategy / localize interaction.
+    if args.strategy == "localize":
+        args.localize = True
+    if args.strategy == "multi" and args.attempts < 2:
+        args.attempts = 3  # sensible default for multi
 
     # Resolve paths
     project_root = Path(__file__).parent.parent
@@ -350,19 +507,26 @@ def main():
         "date": datetime.now().isoformat(),
         "total_tasks": len(tasks),
         "timeout_per_task": args.timeout,
+        "strategy": args.strategy,
+        "attempts": args.attempts,
     }
     with open(metadata_file, "w") as f:
         json.dump(metadata, f, indent=2)
+
+    use_multi = args.strategy == "multi" or args.attempts > 1
 
     # Process tasks
     work_dir = Path(tempfile.mkdtemp(prefix="hone-swebench-"))
     passed = 0
     failed = 0
     skipped = 0
-    total_cost = 0.0
 
     print(f"\nRunning inference (output: {output_dir})")
-    print(f"Work dir: {work_dir}\n")
+    print(f"Work dir: {work_dir}")
+    if use_multi:
+        print(f"Strategy: multi-attempt ({args.attempts} attempts per task)\n")
+    else:
+        print(f"Strategy: {args.strategy}\n")
 
     for i, task in enumerate(tasks):
         instance_id = task["instance_id"]
@@ -379,16 +543,31 @@ def main():
 
         try:
             repo_dir = clone_repo(repo, base_commit, work_dir)
-            patch, elapsed, success = run_hone(
-                repo_dir, problem, hone_binary, args.model, args.timeout,
-                use_localization=args.localize,
-            )
 
-            prediction = {
-                "instance_id": instance_id,
-                "model_patch": patch,
-                "model_name_or_path": f"hone+{args.model}",
-            }
+            if use_multi:
+                patch, elapsed, success, attempt_records = run_multi_attempt(
+                    repo_dir, problem, hone_binary, args.model, args.timeout,
+                    num_attempts=args.attempts,
+                )
+                prediction = {
+                    "instance_id": instance_id,
+                    "model_patch": patch,
+                    "model_name_or_path": f"hone+{args.model}",
+                    "attempts": [
+                        {k: v for k, v in rec.items() if k != "patch"}
+                        for rec in attempt_records
+                    ],
+                }
+            else:
+                patch, elapsed, success = run_hone(
+                    repo_dir, problem, hone_binary, args.model, args.timeout,
+                    use_localization=args.localize,
+                )
+                prediction = {
+                    "instance_id": instance_id,
+                    "model_patch": patch,
+                    "model_name_or_path": f"hone+{args.model}",
+                }
 
             with open(predictions_file, "a") as f:
                 f.write(json.dumps(prediction) + "\n")

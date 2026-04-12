@@ -61,3 +61,8 @@ coverage-ci:
 install:
 	cargo install --path bins/hone
 	cargo install --path bins/honed
+
+# Cross-session learning benchmark (10 mini tasks, 2 rounds)
+# Requires: OPENAI_API_KEY, optional HONE_OPENAI_BASE_URL / HONE_OPENAI_MODEL
+learning-benchmark: release
+	python3 benchmarks/learning_benchmark.py
