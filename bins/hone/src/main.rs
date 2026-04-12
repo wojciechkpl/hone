@@ -133,6 +133,11 @@ struct Cli {
     #[arg(long)]
     inject_context: bool,
 
+    /// Output structured JSON instead of streaming text (for CI/CD and scripting).
+    /// Includes response, tool calls, usage, cost, and exit status.
+    #[arg(long)]
+    json: bool,
+
     /// Subcommand (session management, configure wizard, etc.)
     #[command(subcommand)]
     command: Option<HoneCmd>,
@@ -1071,6 +1076,94 @@ async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
     Ok(())
 }
 
+/// Run a one-shot prompt and output structured JSON.
+///
+/// Output format:
+/// ```json
+/// {
+///   "response": "the agent's final text response",
+///   "tool_calls": [{"name": "read_file", "result": "..."}],
+///   "usage": {"input": 1234, "output": 567, "cache_read": 0},
+///   "cost_usd": 0.0034,
+///   "model": "openai:deepseek/deepseek-chat",
+///   "success": true,
+///   "error": null
+/// }
+/// ```
+async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Result<()> {
+    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+    let collector = tokio::spawn(async move {
+        let mut response = String::new();
+        let mut tool_calls: Vec<serde_json::Value> = Vec::new();
+        let mut usage = serde_json::json!(null);
+        let mut error: Option<String> = None;
+        let mut current_tool: Option<String> = None;
+
+        while let Some(event) = rx.recv().await {
+            match event {
+                AgentEvent::Token { text } => {
+                    response.push_str(&text);
+                }
+                AgentEvent::ToolCallStart { name, .. } => {
+                    current_tool = Some(name);
+                }
+                AgentEvent::ToolCallEnd { result, is_error, .. } => {
+                    let tool_name = current_tool.take().unwrap_or_else(|| "unknown".to_string());
+                    tool_calls.push(serde_json::json!({
+                        "name": tool_name,
+                        "result": result.to_string(),
+                        "is_error": is_error,
+                    }));
+                }
+                AgentEvent::Done { usage: u } => {
+                    usage = serde_json::json!({
+                        "input": u.input,
+                        "output": u.output,
+                        "cache_read": u.cache_read,
+                    });
+                    break;
+                }
+                AgentEvent::Error { message } => {
+                    error = Some(message);
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        (response, tool_calls, usage, error)
+    });
+
+    let turn_result = agent.run_turn(prompt, tx).await;
+    let (response, tool_calls, usage, error) = collector.await.unwrap_or_default();
+
+    let success = turn_result.is_ok() && error.is_none();
+    let cost_usd = if let Ok(ref t) = turn_result {
+        t.cost_usd
+    } else {
+        0.0
+    };
+
+    let output = serde_json::json!({
+        "response": response,
+        "tool_calls": tool_calls,
+        "usage": usage,
+        "cost_usd": cost_usd,
+        "model": model_id,
+        "success": success,
+        "error": error,
+    });
+
+    println!("{}", serde_json::to_string_pretty(&output)?);
+
+    if !success {
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Session auto-save
 // ---------------------------------------------------------------------------
@@ -1653,8 +1746,14 @@ async fn run_selected_mode(
 
     // One-shot mode: run a single turn, print to stdout, and exit.
     if let Some(ref prompt) = cli.prompt {
-        run_one_shot(agent.clone(), prompt).await?;
-        auto_save_session(&agent, session_name.as_deref()).await;
+        if cli.json {
+            run_json_mode(agent.clone(), prompt, model_id.as_str()).await?;
+        } else {
+            run_one_shot(agent.clone(), prompt).await?;
+        }
+        if !cli.ephemeral {
+            auto_save_session(&agent, session_name.as_deref()).await;
+        }
         return Ok(());
     }
 
