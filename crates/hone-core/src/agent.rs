@@ -14,7 +14,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::task::JoinSet;
 
 use crate::context::ContextManager;
-use crate::context_injector::ContextInjector;
+use crate::context_injector::{ContextInjector, SkeletonStrategy};
 use crate::cost::CostAccumulator;
 use crate::egress_log::{EgressEntry, EgressLog, now_rfc3339, preview};
 use crate::error::AgentError;
@@ -55,6 +55,11 @@ pub struct AgentConfig {
     /// Controlled by the `HONE_CONTEXT_INJECTION=1` env var or the
     /// `--inject-context` CLI flag.  Disabled by default until validated.
     pub inject_context: bool,
+    /// Skeleton generation strategy used by the context injector.
+    ///
+    /// Overrides the `HONE_SKELETON_STRATEGY` env var when explicitly set.
+    /// Defaults to `SkeletonStrategy::Hybrid`.
+    pub skeleton_strategy: SkeletonStrategy,
     /// When `Some`, every tool call is recorded to this egress audit log.
     ///
     /// Enabled via `HONE_AUDIT_LOG=1` or `--audit`.  The log is flushed
@@ -292,7 +297,8 @@ impl Agent {
         // when explicitly enabled via `inject_context`.
         let effective_input: std::borrow::Cow<'_, str> =
             if self.turn_count == 1 && self.config.inject_context {
-                let mut injector = ContextInjector::with_defaults();
+                let mut injector =
+                    ContextInjector::with_defaults().with_strategy(self.config.skeleton_strategy);
                 let index_ref = self.config.index.as_deref();
                 let injection = injector
                     .inject(user_input, &self.config.working_dir, index_ref)

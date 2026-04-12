@@ -22,7 +22,7 @@ use hone_config::{Config, HoneMd, McpConfig};
 use hone_mcp::McpManager;
 use hone_core::{
     AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry, ComplexityClassifier, ComplexityTier,
-    Orchestrator, PlanStore, SelfRefineLoop, TestVerificationLoop,
+    Orchestrator, PlanStore, SelfRefineLoop, SkeletonStrategy, TestVerificationLoop,
 };
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
@@ -135,6 +135,13 @@ struct Cli {
     /// into the agent's context, improving patch rate by +20pp on SWE-bench.
     #[arg(long)]
     no_inject: bool,
+
+    /// Skeleton generation strategy for context injection.
+    ///
+    /// Choices: flat, dependency-graph, call-graph, hybrid (default).
+    /// Also controlled via the HONE_SKELETON_STRATEGY env var.
+    #[arg(long, value_name = "STRATEGY")]
+    skeleton_strategy: Option<String>,
 
     /// Output structured JSON instead of streaming text (for CI/CD and scripting).
     /// Includes response, tool calls, usage, cost, and exit status.
@@ -661,6 +668,7 @@ fn build_agent_config(
     tool_cache: Option<Arc<ToolResultCache>>,
     mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
     no_inject_flag: bool,
+    skeleton_strategy_arg: Option<&str>,
     audit_flag: bool,
 ) -> AgentConfig {
     // Only register tools when the provider can actually use them.
@@ -676,6 +684,18 @@ fn build_agent_config(
         && std::env::var("HONE_NO_INJECTION")
             .map(|v| v != "1")
             .unwrap_or(true);
+
+    // Skeleton strategy: CLI arg wins over env var; env var is read inside
+    // SkeletonStrategy::from_str fallback via ContextInjector::new(). We
+    // resolve explicitly here so the value is stored in AgentConfig.
+    let skeleton_strategy = skeleton_strategy_arg
+        .and_then(SkeletonStrategy::from_str)
+        .or_else(|| {
+            std::env::var("HONE_SKELETON_STRATEGY")
+                .ok()
+                .and_then(|v| SkeletonStrategy::from_str(&v))
+        })
+        .unwrap_or_default();
 
     // Egress audit log: enabled via --audit or HONE_AUDIT_LOG=1.
     let enable_audit = audit_flag
@@ -712,6 +732,7 @@ fn build_agent_config(
         retry_config: hone_core::RetryConfig::default(),
         index: index.map(|idx| Arc::clone(&idx)),
         inject_context,
+        skeleton_strategy,
         egress_log,
     }
 }
@@ -1666,6 +1687,7 @@ async fn main() -> Result<()> {
         tool_cache,
         mcp_tools,
         cli.no_inject,
+        cli.skeleton_strategy.as_deref(),
         cli.audit,
     );
 

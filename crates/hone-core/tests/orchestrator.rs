@@ -32,6 +32,10 @@ fn base_config(provider: Arc<MockProvider>) -> AgentConfig {
         working_dir: std::path::PathBuf::from("."),
         memory_store: None,
         retry_config: hone_core::RetryConfig::default(),
+        index: None,
+        inject_context: false,
+        skeleton_strategy: Default::default(),
+        egress_log: None,
     }
 }
 

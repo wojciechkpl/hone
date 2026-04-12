@@ -83,6 +83,7 @@ impl ReviewerAgent {
             retry_config: base_config.retry_config,
             index: None,
             inject_context: false,
+            skeleton_strategy: Default::default(),
             egress_log: None,
         };
 
@@ -115,6 +116,7 @@ impl ReviewerAgent {
             retry_config: self.agent_config.retry_config.clone(),
             index: None,
             inject_context: false,
+            skeleton_strategy: Default::default(),
             egress_log: None,
         });
 

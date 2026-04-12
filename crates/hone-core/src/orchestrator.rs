@@ -338,6 +338,7 @@ impl Orchestrator {
             retry_config: self.lead_config.retry_config.clone(),
             index: None,
             inject_context: false,
+            skeleton_strategy: Default::default(),
             egress_log: None,
         }
     }
@@ -388,6 +389,7 @@ impl Orchestrator {
             retry_config: self.lead_config.retry_config.clone(),
             index: None,
             inject_context: false,
+            skeleton_strategy: Default::default(),
             egress_log: None,
         }
     }

@@ -30,6 +30,10 @@ fn make_config(tokens: Vec<String>) -> AgentConfig {
         working_dir: std::path::PathBuf::from("."),
         memory_store: None,
         retry_config: hone_core::RetryConfig::default(),
+        index: None,
+        inject_context: false,
+        skeleton_strategy: Default::default(),
+        egress_log: None,
     }
 }
 
@@ -166,6 +170,10 @@ async fn test_ensemble_handles_candidate_failure() {
         working_dir: std::path::PathBuf::from("."),
         memory_store: None,
         retry_config: hone_core::RetryConfig::default(),
+        index: None,
+        inject_context: false,
+        skeleton_strategy: Default::default(),
+        egress_log: None,
     };
 
     let ensemble = AgentEnsemble::new(failing_config, vec![0.0, 0.3]);
