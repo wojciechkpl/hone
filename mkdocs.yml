@@ -63,6 +63,7 @@ nav:
     - Providers: tutorials/providers.md
   - Features:
     - Architecture: architecture.md
+    - Context Injection: context-injection.md
     - Tools & Agents: tutorials/tools-and-mcp.md
     - MCP Extensions: tutorials/mcp-extensions.md
     - Security: tutorials/security.md

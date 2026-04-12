@@ -592,6 +592,8 @@ All environment variables in one place. CLI flags and config file override these
 | `OLLAMA_HOST` | Ollama server URL | `http://localhost:11434` |
 | `RUST_LOG` | Logging verbosity | `debug`, `info`, `warn`, `error` |
 | `HONE_CONFIG` | Override config file path | `~/.config/hone/config.toml` |
+| `HONE_NO_INJECTION` | Disable context injection for this run | `1` |
+| `HONE_INJECT_CONTEXT` | Explicitly enable context injection (already default) | `1` |
 
 ### Config File Format
 
@@ -621,6 +623,28 @@ max_iterations = 50
 
 # Maximum tool calls per turn
 max_tool_calls_per_turn = 10
+
+
+# ── Context injection (enabled by default) ────────────────────────────────
+
+[context_injection]
+# Enable proactive context injection (default: true)
+# Injects repo skeleton, high-confidence signatures, and exploration budgets
+# Disable with --no-inject or HONE_NO_INJECTION=1
+enabled = true
+
+# BM25 confidence gap threshold for signature injection (default: 0.4)
+# Lower = more aggressive, Higher = conservative
+confidence_gap_threshold = 0.4
+
+# Token budget for repository skeleton (default: 1500)
+context_skeleton_budget = 1500
+
+# Number of signatures to inject from top matches (default: 3)
+signature_count = 3
+
+# Enable exploration budget hints (default: true)
+budget_hints_enabled = true
 
 
 # ── Provider configuration ────────────────────────────────────────────────
