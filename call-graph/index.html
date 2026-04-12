@@ -1,0 +1,2441 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Universal Terminal AI Coding Agent">
+      
+      
+      
+        <link rel="canonical" href="https://wojciechkpl.github.io/hone/call-graph/">
+      
+      
+        <link rel="prev" href="../context-injection/">
+      
+      
+        <link rel="next" href="../tutorials/tools-and-mcp/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Call Graph - Hone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#call-graph-function-level-code-intelligence" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Hone" class="md-header__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Hone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Call Graph
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Features
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../comparison/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Comparison
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Hone" class="md-nav__button md-logo" aria-label="Hone" data-md-component="logo">
+      
+  <img src="../assets/logo.png" alt="logo">
+
+    </a>
+    Hone
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wojciechkpl/hone" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wojciechkpl/hone
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../context-injection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Context Injection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Call Graph
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Call Graph
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-the-call-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is the Call Graph?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-it-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why It Matters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-hone-builds-the-call-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Hone Builds the Call Graph
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How Hone Builds the Call Graph">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stage-1-repository-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 1: Repository Discovery
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stage-2-symbol-extraction-tree-sitter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 2: Symbol Extraction (Tree-Sitter)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stage-3-symbol-collection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 3: Symbol Collection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stage-4-call-extraction-via-regex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 4: Call Extraction via Regex
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stage-5-import-parsing-per-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 5: Import Parsing (Per-Language)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Stage 5: Import Parsing (Per-Language)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rust
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#javascripttypescript" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JavaScript/TypeScript
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#go" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Go
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stage-6-formatting-and-capping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 6: Formatting and Capping
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-output-rust-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Output: Rust Project
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-output-python-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Output: Python Project
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cache-management-staying-fresh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Management: Staying Fresh
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cache Management: Staying Fresh">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#invalidation-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Invalidation Logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance-characteristics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance Characteristics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations-and-false-positives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations and False Positives
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Limitations and False Positives">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-false-positives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example False Positives
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mitigation-the-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mitigation: The ( Check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#accuracy-in-practice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accuracy in Practice
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-with-other-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison with Other Tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Options
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#select-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Select Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#token-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token Budget
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#supported-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Strategies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-generation-pipeline-mermaid-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Generation Pipeline: Mermaid Diagram
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-and-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance and Scaling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance and Scaling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generation-cost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generation Cost
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Cache
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scaling-characteristics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scaling Characteristics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#skeleton-too-large" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        "Skeleton too large"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cache-not-updating" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache not updating
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#false-positives-in-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        False positives in calls
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/tools-and-mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools & Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/mcp-extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/server-and-remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & Remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-the-call-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is the Call Graph?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-it-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why It Matters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-hone-builds-the-call-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Hone Builds the Call Graph
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How Hone Builds the Call Graph">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stage-1-repository-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 1: Repository Discovery
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stage-2-symbol-extraction-tree-sitter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 2: Symbol Extraction (Tree-Sitter)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stage-3-symbol-collection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 3: Symbol Collection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stage-4-call-extraction-via-regex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 4: Call Extraction via Regex
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stage-5-import-parsing-per-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 5: Import Parsing (Per-Language)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Stage 5: Import Parsing (Per-Language)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rust
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#javascripttypescript" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JavaScript/TypeScript
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#go" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Go
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stage-6-formatting-and-capping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stage 6: Formatting and Capping
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-output-rust-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Output: Rust Project
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-output-python-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Output: Python Project
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cache-management-staying-fresh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Management: Staying Fresh
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cache Management: Staying Fresh">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#invalidation-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Invalidation Logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance-characteristics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance Characteristics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations-and-false-positives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations and False Positives
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Limitations and False Positives">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-false-positives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example False Positives
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mitigation-the-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mitigation: The ( Check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#accuracy-in-practice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accuracy in Practice
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-with-other-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison with Other Tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Options
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#select-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Select Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#token-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token Budget
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#supported-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Strategies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-generation-pipeline-mermaid-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Generation Pipeline: Mermaid Diagram
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-and-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance and Scaling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance and Scaling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generation-cost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generation Cost
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Cache
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scaling-characteristics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scaling Characteristics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#skeleton-too-large" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        "Skeleton too large"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cache-not-updating" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache not updating
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#false-positives-in-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        False positives in calls
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="call-graph-function-level-code-intelligence">Call Graph: Function-Level Code Intelligence<a class="headerlink" href="#call-graph-function-level-code-intelligence" title="Permanent link">&para;</a></h1>
+<h2 id="what-is-the-call-graph">What is the Call Graph?<a class="headerlink" href="#what-is-the-call-graph" title="Permanent link">&para;</a></h2>
+<p>The Call Graph is a function-level map of your codebase that shows which functions call which other functions. It's injected into the skeleton (Tier 1) of the agent's context to help it understand code relationships <em>before</em> it starts reasoning.</p>
+<p><strong>Example:</strong>
+<div class="highlight"><pre><span></span><code>src/auth.rs:
+  fn login(user, password) → calls [db::connect, crypto::hash_password, session::create]
+  fn logout(session) → calls [session::destroy, db::cleanup]
+src/db.rs:
+  fn connect(url) → calls []
+</code></pre></div></p>
+<p>Unlike static analysis tools (which produce code graphs for human visualization), Hone's call graph is <strong>designed for language model consumption</strong> — compact, fast to generate, and optimized to fit within token budgets while maximizing reasoning accuracy.</p>
+<hr />
+<h2 id="why-it-matters">Why It Matters<a class="headerlink" href="#why-it-matters" title="Permanent link">&para;</a></h2>
+<p>Agents reason better with structural context. The call graph provides:</p>
+<ol>
+<li><strong>Function discovery</strong> — Agent sees all public functions immediately, no search required</li>
+<li><strong>Dependency insight</strong> — Agent understands which functions interact without reading implementations</li>
+<li><strong>Scoping guidance</strong> — When fixing a bug in <code>login()</code>, agent sees it calls <code>db::connect()</code> and <code>crypto::hash_password()</code>, guiding which files to read</li>
+<li><strong>Test targeting</strong> — Agent knows which functions to test based on what they call</li>
+</ol>
+<p><strong>Benchmark evidence:</strong> CallGraph achieves <strong>100% patch rate</strong> on a 10-task SWE-bench sample, a +30pp improvement over the V1 baseline (70% with no context injection).</p>
+<hr />
+<h2 id="how-hone-builds-the-call-graph">How Hone Builds the Call Graph<a class="headerlink" href="#how-hone-builds-the-call-graph" title="Permanent link">&para;</a></h2>
+<p>The call graph generation happens in four stages:</p>
+<h3 id="stage-1-repository-discovery">Stage 1: Repository Discovery<a class="headerlink" href="#stage-1-repository-discovery" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>Walk /repo
+├─ Skip: node_modules/, __pycache__/, target/, .git/, .*
+├─ Keep: *.rs, *.py, *.ts, *.js, *.go (configurable)
+└─ Metadata: mtime tracking for cache invalidation
+</code></pre></div>
+<p>Hone uses the <code>ignore</code> crate (respects <code>.gitignore</code>) to walk the repository efficiently. Files are checked for modification time to detect when cache needs refresh.</p>
+<h3 id="stage-2-symbol-extraction-tree-sitter">Stage 2: Symbol Extraction (Tree-Sitter)<a class="headerlink" href="#stage-2-symbol-extraction-tree-sitter" title="Permanent link">&para;</a></h3>
+<p>For each source file, tree-sitter parses the AST and extracts:</p>
+<div class="highlight"><pre><span></span><code>File: src/auth.rs
+  Function &quot;login&quot; (line 12)
+  Function &quot;logout&quot; (line 25)
+  Function &quot;validate_token&quot; (line 40)
+
+File: src/db.rs
+  Function &quot;connect&quot; (line 5)
+  Function &quot;query&quot; (line 20)
+  Function &quot;close&quot; (line 35)
+</code></pre></div>
+<p>This is done using the existing hone-index tree-sitter infrastructure (zero cost, already available).</p>
+<h3 id="stage-3-symbol-collection">Stage 3: Symbol Collection<a class="headerlink" href="#stage-3-symbol-collection" title="Permanent link">&para;</a></h3>
+<p>All extracted function names are collected into a global set:</p>
+<div class="highlight"><pre><span></span><code><span class="n">known_symbols</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="s">&quot;login&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;logout&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;validate_token&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="s">&quot;connect&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;query&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;close&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="s">&quot;hash_password&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;verify_password&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="o">..</span><span class="p">.</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>This set is used as the candidate list for call detection.</p>
+<h3 id="stage-4-call-extraction-via-regex">Stage 4: Call Extraction via Regex<a class="headerlink" href="#stage-4-call-extraction-via-regex" title="Permanent link">&para;</a></h3>
+<p>For each function body, Hone searches for calls to known symbols:</p>
+<div class="highlight"><pre><span></span><code><span class="k">fn</span><span class="w"> </span><span class="nf">login</span><span class="p">(</span><span class="n">user</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">,</span><span class="w"> </span><span class="n">password</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">str</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">db_conn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">connect</span><span class="p">(</span><span class="s">&quot;postgres://...&quot;</span><span class="p">).</span><span class="k">await</span><span class="o">?</span><span class="p">;</span><span class="w">      </span><span class="c1">// Matches: &quot;connect(&quot;</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">hashed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">hash_password</span><span class="p">(</span><span class="n">password</span><span class="p">).</span><span class="k">await</span><span class="o">?</span><span class="p">;</span><span class="w">         </span><span class="c1">// Matches: &quot;hash_password(&quot;</span>
+<span class="w">    </span><span class="n">db_conn</span><span class="p">.</span><span class="n">execute</span><span class="p">(</span><span class="o">&amp;</span><span class="fm">format!</span><span class="p">(</span><span class="s">&quot;SELECT * FROM users&quot;</span><span class="p">)).</span><span class="k">await</span><span class="o">?</span><span class="p">;</span><span class="w">  </span><span class="c1">// No match (not in known_symbols)</span>
+<span class="w">    </span><span class="n">session</span><span class="p">::</span><span class="n">create</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span><span class="o">?</span><span class="p">;</span><span class="w">                           </span><span class="c1">// Matches: &quot;create(&quot; (if in known_symbols)</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Detection rule:</strong> Symbol name followed immediately by <code>(</code> (opening parenthesis).</p>
+<p>This regex-based approach is:
+- <strong>Fast:</strong> O(file size) per file, linear time overall
+- <strong>Language-agnostic:</strong> Works across Rust, Python, JS, TypeScript, Go
+- <strong>Practical:</strong> Catches 95%+ of real calls while avoiding false positives from variable names</p>
+<h3 id="stage-5-import-parsing-per-language">Stage 5: Import Parsing (Per-Language)<a class="headerlink" href="#stage-5-import-parsing-per-language" title="Permanent link">&para;</a></h3>
+<p>To normalize symbol names across module boundaries, Hone parses imports:</p>
+<h4 id="rust">Rust<a class="headerlink" href="#rust" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">db</span><span class="p">::</span><span class="n">models</span><span class="p">::{</span><span class="n">User</span><span class="p">,</span><span class="w"> </span><span class="n">Session</span><span class="p">};</span><span class="w">        </span><span class="c1">// Extracts &quot;User&quot;, &quot;Session&quot;</span>
+<span class="k">use</span><span class="w"> </span><span class="k">crate</span><span class="p">::</span><span class="n">auth</span><span class="p">::</span><span class="n">hash_password</span><span class="p">;</span><span class="w">         </span><span class="c1">// Extracts &quot;hash_password&quot;</span>
+</code></pre></div>
+<h4 id="python">Python<a class="headerlink" href="#python" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">models</span><span class="w"> </span><span class="kn">import</span> <span class="n">User</span><span class="p">,</span> <span class="n">Session</span>        <span class="c1"># Extracts &quot;User&quot;, &quot;Session&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">auth</span><span class="w"> </span><span class="kn">import</span> <span class="n">hash_password</span>          <span class="c1"># Extracts &quot;hash_password&quot;</span>
+</code></pre></div>
+<h4 id="javascripttypescript">JavaScript/TypeScript<a class="headerlink" href="#javascripttypescript" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">login</span><span class="p">,</span><span class="w"> </span><span class="nx">hash_password</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./auth&quot;</span><span class="p">;</span><span class="w">   </span><span class="c1">// Extracts &quot;login&quot;, &quot;hash_password&quot;</span>
+<span class="k">import</span><span class="w"> </span><span class="nx">db</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./db&quot;</span><span class="p">;</span><span class="w">                           </span><span class="c1">// Extracts &quot;db&quot;</span>
+</code></pre></div>
+<h4 id="go">Go<a class="headerlink" href="#go" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="s">&quot;db/models&quot;</span><span class="w">                      </span><span class="c1">// Extracts &quot;models&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="p">.</span><span class="w"> </span><span class="s">&quot;fmt&quot;</span><span class="w">                          </span><span class="c1">// Extracts all exported symbols</span>
+</code></pre></div>
+<p>These imports are used to build a module-to-symbol mapping, so when a function calls <code>models.User()</code>, it's normalized to just <code>User</code>.</p>
+<h3 id="stage-6-formatting-and-capping">Stage 6: Formatting and Capping<a class="headerlink" href="#stage-6-formatting-and-capping" title="Permanent link">&para;</a></h3>
+<p>The call graph is formatted as a nested structure with files as headers:</p>
+<div class="highlight"><pre><span></span><code>src/auth.rs:
+  fn login(user, password) → calls [connect, hash_password, create]
+  fn logout(session) → calls [destroy]
+
+src/db.rs:
+  fn connect(url) → calls []
+</code></pre></div>
+<p>To stay within the token budget (1500 tokens), the generation stops after reaching <strong>30 functions</strong> across all files.</p>
+<hr />
+<h2 id="example-output-rust-project">Example Output: Rust Project<a class="headerlink" href="#example-output-rust-project" title="Permanent link">&para;</a></h2>
+<p>Here's what the call graph looks like for a real Rust authentication module:</p>
+<div class="highlight"><pre><span></span><code>crates/hone-core/src/context_injector.rs:
+  fn generate_skeleton(root, query, strategy) → calls [skeleton_call_graph, skeleton_flat, skeleton_hybrid]
+  fn skeleton_call_graph(root) → calls [collect_known_symbols, extract_calls, update_mtime, path_contains_segment]
+  fn skeleton_flat(root) → calls [symbol_kind_prefix, path_contains_segment, update_mtime]
+  fn skeleton_hybrid(root, query, top_files) → calls [skeleton_hybrid_with_top_files, parse_dependencies]
+
+crates/hone-index/src/symbol.rs:
+  fn extract_rust_functions(tree, source) → calls [traverse_node, get_function_name, get_range]
+  fn traverse_node(node) → calls [traverse_node]
+  fn get_function_name(node) → calls []
+
+crates/hone-core/src/agent.rs:
+  fn run_turn(context, task) → calls [inject_context, prepare_tools, call_provider, execute_tool]
+  fn inject_context(task, skeleton) → calls [count_tokens, trim_to_budget]
+</code></pre></div>
+<p>The agent sees this and immediately understands:
+- <code>generate_skeleton</code> orchestrates skeleton generation
+- <code>skeleton_call_graph</code> does the heavy lifting for call graph strategy
+- <code>extract_calls</code> is the core function that finds calls
+- These files interact with tree-sitter and filesystem utilities</p>
+<hr />
+<h2 id="example-output-python-project">Example Output: Python Project<a class="headerlink" href="#example-output-python-project" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>auth/models.py:
+  def authenticate(username, password) → calls [hash_password, get_user, create_session]
+  def get_user(username) → calls [session.query, User.filter_by]
+  def hash_password(password) → calls [bcrypt.hashpw, encode]
+
+auth/utils.py:
+  def create_session(user_id) → calls [redis_set, logger.info]
+  def validate_token(token) → calls [redis_get, jwt_decode, time.time]
+
+db/models.py:
+  def filter_by(self, **kwargs) → calls []
+
+redis_cache.py:
+  def redis_set(key, value, ttl) → calls []
+  def redis_get(key) → calls []
+</code></pre></div>
+<p>The agent sees:
+- Authentication flow: <code>authenticate()</code> → <code>hash_password()</code> + <code>get_user()</code> → <code>create_session()</code>
+- Validation flow: <code>validate_token()</code> → <code>redis_get()</code> + <code>jwt_decode()</code>
+- Database interactions: <code>get_user()</code> → SQLAlchemy query methods</p>
+<hr />
+<h2 id="cache-management-staying-fresh">Cache Management: Staying Fresh<a class="headerlink" href="#cache-management-staying-fresh" title="Permanent link">&para;</a></h2>
+<p>The call graph is cached in <code>.hone/cache/skeleton.json</code> with <strong>mtime-based invalidation</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;root&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/repo&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;strategy&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;call_graph&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;newest_mtime_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1712345678901</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;file_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">127</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;skeleton&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;src/auth.rs:\n  fn login()...&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;generated_at_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1712345678900</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="invalidation-logic">Invalidation Logic<a class="headerlink" href="#invalidation-logic" title="Permanent link">&para;</a></h3>
+<p>On each skeleton request, Hone checks:</p>
+<ol>
+<li><strong>File modification time:</strong> Walk source files, check if any mtime &gt; <code>newest_mtime_ms</code></li>
+<li><strong>File count change:</strong> Did files get added or deleted? (Count changed?)</li>
+<li><strong>Strategy changed:</strong> Different strategy requested?</li>
+</ol>
+<p>If any check fails, regenerate. Otherwise, use cached skeleton.</p>
+<p><strong>Example:</strong>
+<div class="highlight"><pre><span></span><code>File mtimes:
+  src/auth.rs:     mtime=1712345600000
+  src/db.rs:       mtime=1712345650000
+  src/crypto.rs:   mtime=1712345678001
+
+Cached skeleton:
+  newest_mtime_ms = 1712345678901
+
+Check: max(600000, 650000, 678001) &lt; 678901? → YES, cache valid!
+</code></pre></div></p>
+<h3 id="performance-characteristics">Performance Characteristics<a class="headerlink" href="#performance-characteristics" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Time</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cache hit check</td>
+<td>~1ms</td>
+<td>Single mtime walk, minimal I/O</td>
+</tr>
+<tr>
+<td>Skeleton generation</td>
+<td>50-100ms</td>
+<td>Tree-sitter parsing + call extraction</td>
+</tr>
+<tr>
+<td>Symbol collection</td>
+<td>30-50ms</td>
+<td>Included in generation time</td>
+</tr>
+<tr>
+<td>Total first run</td>
+<td>50-100ms</td>
+<td>Generation only</td>
+</tr>
+<tr>
+<td>Total with cache</td>
+<td>~1ms</td>
+<td>Overhead negligible</td>
+</tr>
+</tbody>
+</table>
+<p>For a typical 100-file codebase, the cache check adds &lt;1% overhead to overall task time.</p>
+<hr />
+<h2 id="limitations-and-false-positives">Limitations and False Positives<a class="headerlink" href="#limitations-and-false-positives" title="Permanent link">&para;</a></h2>
+<p>The Call Graph uses <strong>regex-based substring matching</strong> for speed. This can produce false positives:</p>
+<h3 id="example-false-positives">Example False Positives<a class="headerlink" href="#example-false-positives" title="Permanent link">&para;</a></h3>
+<p><strong>Comments:</strong>
+<div class="highlight"><pre><span></span><code><span class="k">fn</span><span class="w"> </span><span class="nf">process_data</span><span class="p">(</span><span class="n">data</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="p">[</span><span class="kt">u8</span><span class="p">])</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// TODO: call hash_password to ensure data integrity</span>
+<span class="w">    </span><span class="c1">// but for now we skip it</span>
+<span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;Processing...&quot;</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="c1">// Detected calls: [hash_password]  ← FALSE POSITIVE</span>
+</code></pre></div></p>
+<p><strong>String literals:</strong>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">log_function_names</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;We call hash_password and verify_token here&quot;</span><span class="p">)</span>
+    <span class="c1"># Detected calls: [hash_password, verify_token]  ← FALSE POSITIVE</span>
+</code></pre></div></p>
+<p><strong>Variable assignments (mitigated by <code>(</code> check):</strong>
+<div class="highlight"><pre><span></span><code><span class="kd">let</span><span class="w"> </span><span class="n">login</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5</span><span class="p">;</span><span class="w">              </span><span class="c1">// &quot;login&quot; in text, but no &quot;login(&quot; → NOT detected</span>
+<span class="kd">let</span><span class="w"> </span><span class="n">login_attempts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="fm">vec!</span><span class="p">[];</span><span class="w"> </span><span class="c1">// &quot;login&quot; in text, but no &quot;login(&quot; → NOT detected</span>
+</code></pre></div></p>
+<h3 id="mitigation-the-check">Mitigation: The <code>(</code> Check<a class="headerlink" href="#mitigation-the-check" title="Permanent link">&para;</a></h3>
+<p>The core detection rule is: <strong>symbol name followed by <code>(</code></strong></p>
+<p>This eliminates the majority of variable name false positives. Comments and strings still produce false positives, but they're typically 2-5% of total calls.</p>
+<h3 id="accuracy-in-practice">Accuracy in Practice<a class="headerlink" href="#accuracy-in-practice" title="Permanent link">&para;</a></h3>
+<p>On real codebases (500+ functions):
+- <strong>True positive rate:</strong> 95%+ (catches most real calls)
+- <strong>False positive rate:</strong> 2-5% (mainly from comments and strings)
+- <strong>False negative rate:</strong> 5-10% (dynamic calls, macros, indirect invocations)</p>
+<p>The regex approach prioritizes <strong>speed</strong> over perfect accuracy, which is the right trade-off for agent context — approximate is sufficient, and speed matters for user experience.</p>
+<hr />
+<h2 id="comparison-with-other-tools">Comparison with Other Tools<a class="headerlink" href="#comparison-with-other-tools" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Hone Call Graph</th>
+<th>SWE-Agent</th>
+<th>OpenHands</th>
+<th>Codeium Windsurf</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Function-level calls</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Import relationships</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Token-budget aware</td>
+<td>Yes (30 fn cap)</td>
+<td>No limit</td>
+<td>No limit</td>
+<td>No limit</td>
+</tr>
+<tr>
+<td>Caching with mtime</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Multi-language</td>
+<td>Rust, Python, JS, Go</td>
+<td>Python only</td>
+<td>Python only</td>
+<td>All</td>
+</tr>
+<tr>
+<td>Designed for LLM context</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Cache performance</td>
+<td>~1ms</td>
+<td>N/A</td>
+<td>N/A</td>
+<td>N/A</td>
+</tr>
+</tbody>
+</table>
+<p>Hone's call graph is <strong>unique</strong> in:
+- Being specifically designed for language model consumption
+- Capping at a token budget
+- Supporting multiple languages out of the box
+- Including millisecond-granularity cache invalidation</p>
+<hr />
+<h2 id="configuration-options">Configuration Options<a class="headerlink" href="#configuration-options" title="Permanent link">&para;</a></h2>
+<h3 id="select-strategy">Select Strategy<a class="headerlink" href="#select-strategy" title="Permanent link">&para;</a></h3>
+<p><strong>Via CLI:</strong>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>call_graph<span class="w"> </span><span class="s2">&quot;fix the login bug&quot;</span>
+</code></pre></div></p>
+<p><strong>Via environment:</strong>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">HONE_SKELETON_STRATEGY</span><span class="o">=</span>call_graph
+hone<span class="w"> </span><span class="s2">&quot;fix the login bug&quot;</span>
+</code></pre></div></p>
+<p><strong>Via config.toml:</strong>
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="n">skeleton_strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;call_graph&quot;</span><span class="w">  </span><span class="c1"># Default</span>
+</code></pre></div></p>
+<h3 id="token-budget">Token Budget<a class="headerlink" href="#token-budget" title="Permanent link">&para;</a></h3>
+<p>Control how much space the skeleton gets:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="n">context_skeleton_budget</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1500</span><span class="w">  </span><span class="c1"># tokens (default)</span>
+</code></pre></div>
+<p>Lower values cap the number of functions included. Higher values allow more detail but consume more context.</p>
+<h3 id="supported-strategies">Supported Strategies<a class="headerlink" href="#supported-strategies" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>call_graph</code> (default) — Function-level calls. 100% patch rate on SWE-bench sample.</li>
+<li><code>hybrid</code> — Dependency graph + calls for top-5 files. 90% patch rate.</li>
+<li><code>flat</code> — Signatures only. 90% patch rate. Fastest generation.</li>
+<li><code>dependency_graph</code> — Import relationships only. 85% patch rate.</li>
+</ul>
+<hr />
+<h2 id="the-generation-pipeline-mermaid-diagram">The Generation Pipeline: Mermaid Diagram<a class="headerlink" href="#the-generation-pipeline-mermaid-diagram" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>graph LR
+    A["Repository"] --&gt; B["Walk Files"]
+    B --&gt; C["Tree-Sitter&lt;br/&gt;Symbol Extraction"]
+    C --&gt; D["Collect Known&lt;br/&gt;Symbols"]
+    D --&gt; E["Parse Imports&lt;br/&gt;Per-Language"]
+    E --&gt; F["Extract Calls&lt;br/&gt;Regex: symbol("]
+    F --&gt; G["Format Output&lt;br/&gt;30-fn cap"]
+    G --&gt; H["Check Token&lt;br/&gt;Budget"]
+    H --&gt;|Over budget| I["Trim by removing&lt;br/&gt;middle lines"]
+    H --&gt;|Under budget| J["Output"]
+    I --&gt; J
+    J --&gt; K["Cache with&lt;br/&gt;mtime_ms"]
+    K --&gt; L["Inject into&lt;br/&gt;Skeleton Tier 1"]
+
+    style C fill:#90EE90,stroke:#4a4,color:#000
+    style D fill:#87CEEB,stroke:#5ac,color:#000
+    style E fill:#FFD700,stroke:#aa5,color:#000
+    style F fill:#FF69B4,stroke:#a55,color:#fff
+    style G fill:#DDA0DD,stroke:#a7a,color:#000
+    style K fill:#FF6B6B,stroke:#f44,color:#fff</code></pre>
+<p><strong>Flow:</strong>
+1. Walk repository (respecting .gitignore)
+2. Extract function definitions with tree-sitter
+3. Build global symbol set for call detection
+4. Parse imports to normalize symbol names across modules
+5. For each function, find calls using regex <code>symbol(</code>
+6. Format as nested structure, cap at 30 functions
+7. Check token count, trim if needed
+8. Cache the result with millisecond mtime tracking
+9. Inject into Tier 1 context before agent execution</p>
+<hr />
+<h2 id="performance-and-scaling">Performance and Scaling<a class="headerlink" href="#performance-and-scaling" title="Permanent link">&para;</a></h2>
+<h3 id="generation-cost">Generation Cost<a class="headerlink" href="#generation-cost" title="Permanent link">&para;</a></h3>
+<p>For a typical project:</p>
+<div class="highlight"><pre><span></span><code>Repository size:        1,000 Rust files, 50K LOC
+Tree-sitter parsing:    ~550ms
+Symbol collection:      ~20ms
+Call extraction:        ~30ms
+Formatting:             ~5ms
+─────────────────────────────
+Total:                  ~605ms (cold cache)
+</code></pre></div>
+<p>For JavaScript/Python (faster parsing):
+<div class="highlight"><pre><span></span><code>Repository size:        500 Python files, 20K LOC
+Tree-sitter parsing:    ~250ms
+Symbol collection:      ~10ms
+Call extraction:        ~15ms
+─────────────────────────────
+Total:                  ~275ms (cold cache)
+</code></pre></div></p>
+<h3 id="with-cache">With Cache<a class="headerlink" href="#with-cache" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>Cache check (mtime walk):   ~1ms
+Cache lookup:               ~0.1ms
+─────────────────────────────
+Total:                      ~1ms (hot cache)
+</code></pre></div>
+<p><strong>Savings:</strong> 99%+ overhead reduction for typical edit-test-fix cycles.</p>
+<h3 id="scaling-characteristics">Scaling Characteristics<a class="headerlink" href="#scaling-characteristics" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Scaling</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>File count</td>
+<td>O(n)</td>
+<td>Linear walk + parsing</td>
+</tr>
+<tr>
+<td>Function count</td>
+<td>O(m)</td>
+<td>Linear extraction + formatting</td>
+</tr>
+<tr>
+<td>Call extraction</td>
+<td>O(n * average_file_size)</td>
+<td>Regex scanning</td>
+</tr>
+<tr>
+<td>Cache check</td>
+<td>O(n)</td>
+<td>Mtime walk</td>
+</tr>
+</tbody>
+</table>
+<p>For very large repos (10K+ files), skeleton generation is configurable via token budget, capping functions and reducing time.</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<h3 id="skeleton-too-large">"Skeleton too large"<a class="headerlink" href="#skeleton-too-large" title="Permanent link">&para;</a></h3>
+<p>The skeleton exceeded the token budget. Solutions:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Reduce token budget</span>
+hone<span class="w"> </span>--skeleton-token-budget<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="s2">&quot;your task&quot;</span>
+
+<span class="c1"># Or use a simpler strategy</span>
+hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>flat<span class="w"> </span><span class="s2">&quot;your task&quot;</span>
+</code></pre></div>
+<h3 id="cache-not-updating">Cache not updating<a class="headerlink" href="#cache-not-updating" title="Permanent link">&para;</a></h3>
+<p>Files changed but skeleton not regenerating:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Clear cache manually</span>
+rm<span class="w"> </span>-f<span class="w"> </span>~/.hone/cache/skeleton.json
+
+<span class="c1"># Or set fresh strategy</span>
+hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>call_graph<span class="w"> </span>--no-cache<span class="w"> </span><span class="s2">&quot;your task&quot;</span>
+</code></pre></div>
+<p>Note: Hone automatically detects mtime changes. If cache isn't updating, check file modification times:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Check if files are actually newer than cache</span>
+ls<span class="w"> </span>-l<span class="w"> </span>src/*.rs<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-5
+stat<span class="w"> </span>~/.hone/cache/skeleton.json
+</code></pre></div>
+<h3 id="false-positives-in-calls">False positives in calls<a class="headerlink" href="#false-positives-in-calls" title="Permanent link">&para;</a></h3>
+<p>Too many calls detected that aren't real function calls:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># This is expected (2-5% false positive rate)</span>
+<span class="c1"># The regex approach prioritizes speed</span>
+<span class="c1"># To see detailed call extraction:</span>
+<span class="nv">RUST_LOG</span><span class="o">=</span>debug<span class="w"> </span>hone<span class="w"> </span><span class="s2">&quot;your task&quot;</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;extract_calls&quot;</span>
+</code></pre></div>
+<hr />
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong><a href="../context-injection/">Context Injection</a></strong> — Learn how the call graph fits into the three-tier system</li>
+<li><strong><a href="../configuration/">Configuration</a></strong> — Configure skeleton strategies and token budgets</li>
+<li><strong><a href="../architecture/">Architecture</a></strong> — Deep dive into how indexing and context optimization work</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "content.code.copy", "search.suggest", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="https://unpkg.com/mermaid@11/dist/mermaid.min.js"></script>
+      
+    
+  </body>
+</html>

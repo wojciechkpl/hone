@@ -667,6 +667,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../call-graph/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Call Graph
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../tutorials/tools-and-mcp/" class="md-nav__link">
         
   
@@ -1219,6 +1247,8 @@
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
+<li><strong>CallGraph skeleton strategy (new default)</strong> — Function-level call graph showing which functions call which other functions. Achieved <strong>100% patch rate</strong> on 10-task SWE-bench sample (+30pp over V1 baseline). Replaces Hybrid as default strategy. Available strategies: <code>call_graph</code> (default), <code>hybrid</code>, <code>flat</code>, <code>dependency_graph</code>. Configure via <code>HONE_SKELETON_STRATEGY</code> env var or <code>--skeleton-strategy</code> CLI flag.</li>
+<li><strong>Skeleton strategy comparison documentation</strong> — New <code>docs/call-graph.md</code> with deep-dive into CallGraph implementation, examples for Rust and Python, cache management (mtime + file count), performance characteristics (~1ms cache check, 50-100ms generation), limitations (regex-based, 2-5% false positive rate), and comparison with other tools.</li>
 <li><strong>Named session management</strong> — <code>hone session list/resume/rename/delete</code> commands for persistent named conversations. Sessions auto-save after each turn. <code>--session NAME</code> flag to start a named session. <code>--ephemeral</code> flag disables saving. Implementation: <code>bins/hone/src/session.rs</code>.</li>
 <li><strong>Interactive configure wizard</strong> — <code>hone configure</code> guides users through provider selection, API key entry, and model selection. Writes <code>~/.config/hone/config.toml</code>. Implementation: <code>bins/hone/src/configure.rs</code>.</li>
 <li><strong>UX improvements</strong> — NO_COLOR environment variable support for disabling colored output. Ollama model verification during configuration. Ensemble mode validates 2-10 candidate count. Provider capability warnings for --orchestrate and --ensemble modes.</li>
@@ -1235,6 +1265,7 @@
 </ul>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
 <ul>
+<li><strong>Default skeleton strategy changed to CallGraph</strong> — Improves SWE-bench sample from 90% (Hybrid) to 100% (CallGraph). Shows function-level call relationships instead of just imports. Supports 4 strategies: CallGraph (default, +30pp), Hybrid (+20pp), Flat (+20pp), DependencyGraph (+15pp).</li>
 <li><strong>SWE-bench v1 final results</strong> — Hone achieves 58/300 (19.3%) on SWE-bench Lite with DeepSeek V3, beating SWE-Agent (GPT-4, 18%) at 50x lower cost (~$0.001-0.002 per task vs ~$0.10-0.20).</li>
 <li><strong>Exit code 1 on missing provider</strong> — Hone now returns exit code 1 when no provider is configured (was silently falling back to MockProvider). Users must configure a provider via <code>hone configure</code> or environment variables.</li>
 <li><strong>Security hardening (Phase 2 complete)</strong>:</li>

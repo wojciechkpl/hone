@@ -1539,6 +1539,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../call-graph/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Call Graph
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../tutorials/tools-and-mcp/" class="md-nav__link">
         
   
@@ -3161,6 +3189,11 @@ gcloud<span class="w"> </span>init
 <td><code>1</code></td>
 </tr>
 <tr>
+<td><code>HONE_SKELETON_STRATEGY</code></td>
+<td>Skeleton strategy for context injection</td>
+<td><code>call_graph</code>, <code>hybrid</code>, <code>flat</code>, <code>dependency_graph</code></td>
+</tr>
+<tr>
 <td><code>HONE_INJECT_CONTEXT</code></td>
 <td>Explicitly enable context injection (already default)</td>
 <td><code>1</code></td>
@@ -3201,6 +3234,13 @@ gcloud<span class="w"> </span>init
 <span class="c1"># Injects repo skeleton, high-confidence signatures, and exploration budgets</span>
 <span class="c1"># Disable with --no-inject or HONE_NO_INJECTION=1</span>
 <span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="c1"># Skeleton strategy: call_graph, hybrid, flat, dependency_graph (default: call_graph)</span>
+<span class="c1"># - call_graph: Function-level calls (100% patch rate, +30pp over V1)</span>
+<span class="c1"># - hybrid: Dependency graph + calls for top-5 files (90% patch rate)</span>
+<span class="c1"># - flat: Signatures only, fastest generation (90% patch rate)</span>
+<span class="c1"># - dependency_graph: Import relationships only (85% patch rate)</span>
+<span class="n">skeleton_strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;call_graph&quot;</span>
 
 <span class="c1"># BM25 confidence gap threshold for signature injection (default: 0.4)</span>
 <span class="c1"># Lower = more aggressive, Higher = conservative</span>

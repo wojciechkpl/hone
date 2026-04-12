@@ -16,7 +16,7 @@
         <link rel="prev" href="../architecture/">
       
       
-        <link rel="next" href="../tutorials/tools-and-mcp/">
+        <link rel="next" href="../call-graph/">
       
       
         
@@ -715,15 +715,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-it-works-three-tier-system" class="md-nav__link">
+  <a href="#how-it-works-three-tier-system-with-callgraph" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How It Works: Three-Tier System
+        How It Works: Three-Tier System with CallGraph
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="How It Works: Three-Tier System">
+    <nav class="md-nav" aria-label="How It Works: Three-Tier System with CallGraph">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -803,6 +803,233 @@
     <span class="md-ellipsis">
       
         Quality Over Token Count
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#skeleton-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skeleton Strategies
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Skeleton Strategies">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#strategy-comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategy Comparison
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#callgraph-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CallGraph (Default)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dependencygraph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DependencyGraph
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hybrid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hybrid
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#call-graph-deep-dive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Call Graph Deep-Dive
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Call Graph Deep-Dive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-hone-builds-the-call-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Hone Builds the Call Graph
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#import-parsing-per-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Import Parsing Per Language
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-output-real-rust-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Output: Real Rust Project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-output-python-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Output: Python Project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cache-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Behavior
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#limitations-and-false-positives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations and False Positives
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comparison-with-other-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison with Other Tools
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-configure-the-skeleton-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to Configure the Skeleton Strategy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How to Configure the Skeleton Strategy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cli-flag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Flag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment-variable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selection-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Selection Guide
       
     </span>
   </a>
@@ -1076,10 +1303,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#mermaid-diagram-injection-pipeline" class="md-nav__link">
+  <a href="#mermaid-diagram-injection-pipeline-with-callgraph" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Mermaid Diagram: Injection Pipeline
+        Mermaid Diagram: Injection Pipeline with CallGraph
       
     </span>
   </a>
@@ -1212,6 +1439,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../call-graph/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Call Graph
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1483,15 +1738,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-it-works-three-tier-system" class="md-nav__link">
+  <a href="#how-it-works-three-tier-system-with-callgraph" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How It Works: Three-Tier System
+        How It Works: Three-Tier System with CallGraph
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="How It Works: Three-Tier System">
+    <nav class="md-nav" aria-label="How It Works: Three-Tier System with CallGraph">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1571,6 +1826,233 @@
     <span class="md-ellipsis">
       
         Quality Over Token Count
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#skeleton-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skeleton Strategies
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Skeleton Strategies">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#strategy-comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategy Comparison
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#callgraph-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CallGraph (Default)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dependencygraph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DependencyGraph
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hybrid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hybrid
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#call-graph-deep-dive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Call Graph Deep-Dive
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Call Graph Deep-Dive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-hone-builds-the-call-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Hone Builds the Call Graph
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#import-parsing-per-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Import Parsing Per Language
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-output-real-rust-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Output: Real Rust Project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-output-python-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Output: Python Project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cache-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Behavior
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#limitations-and-false-positives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations and False Positives
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comparison-with-other-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison with Other Tools
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-configure-the-skeleton-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to Configure the Skeleton Strategy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How to Configure the Skeleton Strategy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cli-flag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Flag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment-variable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selection-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Selection Guide
       
     </span>
   </a>
@@ -1844,10 +2326,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#mermaid-diagram-injection-pipeline" class="md-nav__link">
+  <a href="#mermaid-diagram-injection-pipeline-with-callgraph" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Mermaid Diagram: Injection Pipeline
+        Mermaid Diagram: Injection Pipeline with CallGraph
       
     </span>
   </a>
@@ -2000,27 +2482,30 @@
 <h2 id="what-is-context-injection">What is Context Injection?<a class="headerlink" href="#what-is-context-injection" title="Permanent link">&para;</a></h2>
 <p>Context injection is an automated, three-tier system that proactively provides the agent with code context before it starts executing tools. Instead of the agent discovering relevant code through search and exploration, Hone now prepares a strategic selection of code signatures and directory structure upfront. This reduces exploration time, improves tool selection accuracy, and dramatically increases task success rates. On SWE-bench Lite (300 real GitHub issues), context injection increased pass rates from 75% (V3) to 95% (V4) with larger, more confident patches.</p>
 <hr />
-<h2 id="how-it-works-three-tier-system">How It Works: Three-Tier System<a class="headerlink" href="#how-it-works-three-tier-system" title="Permanent link">&para;</a></h2>
+<h2 id="how-it-works-three-tier-system-with-callgraph">How It Works: Three-Tier System with CallGraph<a class="headerlink" href="#how-it-works-three-tier-system-with-callgraph" title="Permanent link">&para;</a></h2>
 <p>Context injection operates as a three-tier system, each serving a specific purpose:</p>
 <h3 id="tier-1-repository-skeleton-always-injected">Tier 1: Repository Skeleton (Always Injected)<a class="headerlink" href="#tier-1-repository-skeleton-always-injected" title="Permanent link">&para;</a></h3>
-<p>The foundation of context injection. Provides a complete roadmap of the codebase structure without requiring any tool calls.</p>
+<p>The foundation of context injection. Provides a complete roadmap of the codebase structure without requiring any tool calls. The default strategy is <strong>CallGraph</strong> which shows function-level call relationships, achieving 100% patch rate on a 10-task SWE-bench sample (+30pp improvement over V1 baseline).</p>
 <p><strong>Content:</strong>
-- Complete file tree with all directories and files
 - Function/class signatures (no bodies) for public APIs
-- Import statements and module structure</p>
+- Import statements and module structure
+- <strong>CallGraph (default):</strong> Function-level call relationships showing which functions call which other functions
+- <strong>Alternative strategies:</strong> Flat (signatures only), DependencyGraph (imports), Hybrid (calls for top-5 files)</p>
 <p><strong>Size:</strong> 800-1500 tokens (configurable via <code>context_skeleton_budget</code>)</p>
-<p><strong>Example output:</strong>
-<div class="highlight"><pre><span></span><code>Repository structure:
-  src/
-    main.rs         → fn main()
-    utils.rs        → fn parse_config(path: &amp;str) -&gt; Config
-                    → fn validate_input(s: &amp;str) -&gt; Result&lt;(), Error&gt;
-    lib.rs          → pub fn process(input: &amp;str) -&gt; String
-                    → mod utils
-  tests/
-    unit/
-      test_parse.rs → #[test] fn test_parse_valid()
-                    → #[test] fn test_parse_invalid()
+<p><strong>Example output (CallGraph strategy):</strong>
+<div class="highlight"><pre><span></span><code>src/auth.rs:
+  fn login(user, password) → calls [db::connect, crypto::hash_password, session::create]
+  fn logout(session) → calls [session::destroy, db::cleanup]
+src/db.rs:
+  fn connect(url) → calls []
+  fn cleanup(session_id) → calls [logger::info]
+src/crypto.rs:
+  fn hash_password(password) → calls [argon2::hash]
+</code></pre></div></p>
+<p><strong>Alternative example (Flat strategy):</strong>
+<div class="highlight"><pre><span></span><code>src/auth.rs → fn login(), fn logout()
+src/db.rs → fn connect(), fn cleanup()
+src/crypto.rs → fn hash_password()
 </code></pre></div></p>
 <p><strong>When to use:</strong> Always. This is the baseline context for any task.</p>
 <hr />
@@ -2121,6 +2606,324 @@ to explore and fix this issue. Prioritize:
 - Patch quality improved (fewer spurious edits, better reasoning)
 - Tool call efficiency improved (agents make fewer wrong turns)
 - Overall task time decreased due to fewer retries</p>
+<hr />
+<h2 id="skeleton-strategies">Skeleton Strategies<a class="headerlink" href="#skeleton-strategies" title="Permanent link">&para;</a></h2>
+<p>Hone offers four strategies for generating the repository skeleton. You can choose which strategy best fits your needs using the <code>--skeleton-strategy</code> CLI flag or <code>HONE_SKELETON_STRATEGY</code> environment variable.</p>
+<h3 id="strategy-comparison">Strategy Comparison<a class="headerlink" href="#strategy-comparison" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Format</th>
+<th>Call Details</th>
+<th>Token Usage</th>
+<th>Patch Rate</th>
+<th>Best For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>CallGraph</strong> (default)</td>
+<td>Function-level calls</td>
+<td>Per-function</td>
+<td>850-1200</td>
+<td><strong>100%</strong></td>
+<td>Maximum accuracy, available token budget</td>
+</tr>
+<tr>
+<td><strong>Hybrid</strong></td>
+<td>Deps + call details for top-5</td>
+<td>Top-5 files only</td>
+<td>900-1300</td>
+<td>90%</td>
+<td>Balanced approach, moderate repos</td>
+</tr>
+<tr>
+<td><strong>Flat</strong></td>
+<td>Signatures only</td>
+<td>None</td>
+<td>600-900</td>
+<td>90%</td>
+<td>Token-constrained, need fast generation</td>
+</tr>
+<tr>
+<td><strong>DependencyGraph</strong></td>
+<td>Signatures + imports</td>
+<td>Import arrows</td>
+<td>700-1000</td>
+<td>85%</td>
+<td>Understanding module relationships</td>
+</tr>
+</tbody>
+</table>
+<h3 id="callgraph-default">CallGraph (Default)<a class="headerlink" href="#callgraph-default" title="Permanent link">&para;</a></h3>
+<p>Shows function-level call relationships across the entire repository, capped at 30 functions to stay within token budget.</p>
+<p><strong>Format:</strong>
+<div class="highlight"><pre><span></span><code>src/auth.rs:
+  fn login(user, password) → calls [db::connect, crypto::hash]
+  fn validate_otp(code) → calls [redis::get, time::now]
+src/db.rs:
+  fn connect(url) → calls []
+src/crypto.rs:
+  fn hash(password) → calls []
+</code></pre></div></p>
+<p><strong>How it works:</strong>
+1. Tree-sitter extracts all function definitions across the repo
+2. For each function, parse the function body to find calls to known symbols
+3. Call detection uses regex matching: <code>symbol_name(</code> to avoid false positives
+4. Sort by file order, cap at 30 functions per budget
+5. Format as nested structure with call arrows</p>
+<p><strong>Benchmark Results (10-task SWE-bench sample):</strong>
+- CallGraph: 10/10 patches (100%) — +30pp over V1 baseline (70%)
+- Hybrid: 9/10 patches (90%) — +20pp over V1
+- Flat: 9/10 patches (90%) — +20pp over V1</p>
+<p><strong>Why it's the default:</strong> Function-level call relationships directly help agents understand code flow and dependencies. The agent sees which functions interact, enabling better reasoning about where bugs might be and what needs testing.</p>
+<h3 id="flat">Flat<a class="headerlink" href="#flat" title="Permanent link">&para;</a></h3>
+<p>The original strategy. Shows file-by-file function/class signatures without any call information or import relationships.</p>
+<p><strong>Format:</strong>
+<div class="highlight"><pre><span></span><code>src/auth.rs: fn login(), fn logout(), fn validate_otp()
+src/db.rs: fn connect(), fn cleanup()
+src/crypto.rs: fn hash()
+tests/auth_test.rs: #[test] fn test_login_valid()
+</code></pre></div></p>
+<p><strong>Best for:</strong>
+- Token-constrained scenarios (very large repos)
+- Fast skeleton generation (no symbol collection required)
+- Minimal context footprint</p>
+<p><strong>Trade-off:</strong> Agent must read files to understand how functions interact.</p>
+<h3 id="dependencygraph">DependencyGraph<a class="headerlink" href="#dependencygraph" title="Permanent link">&para;</a></h3>
+<p>Shows file-level import relationships using arrows. Every file lists the modules it depends on.</p>
+<p><strong>Format:</strong>
+<div class="highlight"><pre><span></span><code>src/auth.rs: fn login(), fn logout() → [db, crypto, redis]
+src/db.rs: fn connect(), fn cleanup() → [logger]
+src/crypto.rs: fn hash() → [argon2]
+tests/: → [src/auth, src/db]
+</code></pre></div></p>
+<p><strong>Best for:</strong>
+- Understanding module dependencies
+- Identifying circular import issues
+- Scoping module-level changes</p>
+<p><strong>Trade-off:</strong> Doesn't show function-level interactions, so agent can't see which functions call which.</p>
+<h3 id="hybrid">Hybrid<a class="headerlink" href="#hybrid" title="Permanent link">&para;</a></h3>
+<p>Combines dependency graph for all files with function-level call details for the top-5 files most relevant to the task (by BM25 score).</p>
+<p><strong>Format:</strong>
+<div class="highlight"><pre><span></span><code>All files (dependency graph):
+src/auth.rs: fn login(), fn logout() → [db, crypto]
+src/db.rs: fn connect(), fn cleanup() → [logger]
+src/crypto.rs: fn hash() → []
+src/utils.rs: fn format_error() → []
+
+Top-5 relevant files (with call details):
+src/auth.rs:
+  fn login(user, password) → calls [db::connect, crypto::hash]
+  fn logout(session) → calls [db::cleanup, redis::delete]
+</code></pre></div></p>
+<p><strong>Best for:</strong>
+- Balanced token usage + accuracy
+- When you want file-level overview plus detail where it matters most
+- Moderate-sized codebases (1K-10K files)</p>
+<hr />
+<h2 id="call-graph-deep-dive">Call Graph Deep-Dive<a class="headerlink" href="#call-graph-deep-dive" title="Permanent link">&para;</a></h2>
+<p>The Call Graph strategy is the most detailed and most effective. Here's how it works under the hood.</p>
+<h3 id="how-hone-builds-the-call-graph">How Hone Builds the Call Graph<a class="headerlink" href="#how-hone-builds-the-call-graph" title="Permanent link">&para;</a></h3>
+<p><strong>Step 1: Parse all source files</strong>
+- Walk the repository, skipping <code>node_modules</code>, <code>__pycache__</code>, <code>target</code>, <code>.git</code>
+- Supports: Rust (<code>.rs</code>), Python (<code>.py</code>), JavaScript/TypeScript (<code>.ts</code>, <code>.js</code>), Go (<code>.go</code>)
+- Uses tree-sitter AST to extract function/method definitions with names and line ranges</p>
+<p><strong>Step 2: Collect all known symbols</strong>
+- Global pass: scan all files, collect every function/class/method name into a set
+- Example: <code>{login, logout, connect, cleanup, hash, validate_otp, ...}</code></p>
+<p><strong>Step 3: Extract function calls</strong>
+- For each function body, look for calls to known symbols
+- Detection: does the body contain <code>symbol(</code> (symbol followed by opening parenthesis)?
+- Sort detected calls alphabetically
+- Example: in <code>login()</code> body, find <code>db::connect(</code>, <code>crypto::hash(</code> → record as calls <code>[connect, hash]</code></p>
+<p><strong>Step 4: Format and cap</strong>
+- Format: file header, then per-function line with signature and calls
+- Cap at 30 functions total to stay in token budget
+- Sort files by discovery order, stop when reaching limit</p>
+<h3 id="import-parsing-per-language">Import Parsing Per Language<a class="headerlink" href="#import-parsing-per-language" title="Permanent link">&para;</a></h3>
+<p>The Call Graph uses language-specific regex patterns to parse imports, then extracts symbol names:</p>
+<p><strong>Rust:</strong>
+<div class="highlight"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">std</span><span class="p">::</span><span class="n">collections</span><span class="p">::</span><span class="n">HashMap</span><span class="p">;</span><span class="w">           </span><span class="c1">// extracts &quot;HashMap&quot;</span>
+<span class="k">use</span><span class="w"> </span><span class="n">db</span><span class="p">::</span><span class="n">models</span><span class="p">::{</span><span class="n">User</span><span class="p">,</span><span class="w"> </span><span class="n">Post</span><span class="p">};</span><span class="w">            </span><span class="c1">// extracts &quot;User&quot;, &quot;Post&quot;</span>
+<span class="k">use</span><span class="w"> </span><span class="k">crate</span><span class="p">::</span><span class="n">auth</span><span class="p">::</span><span class="n">login</span><span class="p">;</span><span class="w">                  </span><span class="c1">// extracts &quot;login&quot;</span>
+</code></pre></div></p>
+<p><strong>Python:</strong>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">models</span><span class="w"> </span><span class="kn">import</span> <span class="n">User</span><span class="p">,</span> <span class="n">Post</span>            <span class="c1"># extracts &quot;User&quot;, &quot;Post&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">db.connect</span>                        <span class="c1"># extracts &quot;connect&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">auth</span><span class="w"> </span><span class="kn">import</span> <span class="n">validate_otp</span> <span class="k">as</span> <span class="n">check</span>   <span class="c1"># extracts &quot;check&quot;</span>
+</code></pre></div></p>
+<p><strong>JavaScript/TypeScript:</strong>
+<div class="highlight"><pre><span></span><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">login</span><span class="p">,</span><span class="w"> </span><span class="nx">logout</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./auth&quot;</span><span class="p">;</span><span class="w">  </span><span class="c1">// extracts &quot;login&quot;, &quot;logout&quot;</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">db</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;./db&quot;</span><span class="p">);</span><span class="w">              </span><span class="c1">// extracts &quot;db&quot;</span>
+<span class="k">import</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="nx">crypto</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;crypto&quot;</span><span class="p">;</span><span class="w">        </span><span class="c1">// extracts &quot;crypto&quot;</span>
+</code></pre></div></p>
+<p><strong>Go:</strong>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="s">&quot;db/models&quot;</span><span class="w">                       </span><span class="c1">// extracts &quot;models&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="p">.</span><span class="w"> </span><span class="s">&quot;fmt&quot;</span><span class="w">                           </span><span class="c1">// extracts all exported symbols</span>
+<span class="kn">import</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="s">&quot;migrations&quot;</span><span class="w">                    </span><span class="c1">// skips unused imports</span>
+</code></pre></div></p>
+<h3 id="example-output-real-rust-project">Example Output: Real Rust Project<a class="headerlink" href="#example-output-real-rust-project" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>crates/hone-core/src/context_injector.rs:
+  fn generate_skeleton(root, query) → calls [skeleton_call_graph, parse_dependencies]
+  fn skeleton_call_graph(root) → calls [collect_known_symbols, extract_calls, update_mtime]
+  fn extract_calls(content, known_symbols) → calls []
+
+crates/hone-index/src/search.rs:
+  fn bm25_search(query, corpus) → calls [tokenize, score_documents, sort_by_score]
+  fn score_documents(docs, query) → calls [calculate_tf, calculate_idf]
+</code></pre></div>
+<h3 id="example-output-python-project">Example Output: Python Project<a class="headerlink" href="#example-output-python-project" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>auth/models.py:
+  def authenticate(username, password) → calls [db_get_user, verify_password, create_session]
+  def verify_password(stored_hash, input_password) → calls [bcrypt_check]
+
+auth/utils.py:
+  def create_session(user_id) → calls [redis_set, logger_info]
+
+db/connection.py:
+  def db_get_user(username) → calls []
+</code></pre></div>
+<h3 id="cache-behavior">Cache Behavior<a class="headerlink" href="#cache-behavior" title="Permanent link">&para;</a></h3>
+<p>The skeleton is cached with <strong>mtime-based invalidation</strong> at millisecond granularity:</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// Skeleton is cached in .hone/cache/skeleton.json</span>
+<span class="c1">// Cache entry includes:</span>
+<span class="p">{</span>
+<span class="w">  </span><span class="s">&quot;root&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/path/to/repo&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="s">&quot;newest_mtime_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1712345678901</span><span class="p">,</span><span class="w">   </span><span class="c1">// millisecond precision</span>
+<span class="w">  </span><span class="s">&quot;file_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span><span class="w">                    </span><span class="c1">// how many files were in skeleton</span>
+<span class="w">  </span><span class="s">&quot;strategy&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;call_graph&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="s">&quot;skeleton&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;src/auth.rs:</span><span class="se">\n</span><span class="s">  fn login()...&quot;</span>
+<span class="p">}</span>
+
+<span class="c1">// On next run:</span>
+<span class="c1">// 1. Check if any source file mtime &gt; newest_mtime_ms</span>
+<span class="c1">// 2. Check if file count changed (files added/deleted)</span>
+<span class="c1">// 3. If either check fails, regenerate skeleton</span>
+<span class="c1">// 4. Otherwise use cached version</span>
+</code></pre></div>
+<p><strong>Performance:</strong>
+- Cache check: ~1ms (filesystem mtime comparison)
+- Skeleton generation: 50-100ms (tree-sitter parsing + symbol extraction)
+- With cache hit: 1ms total overhead</p>
+<h3 id="limitations-and-false-positives">Limitations and False Positives<a class="headerlink" href="#limitations-and-false-positives" title="Permanent link">&para;</a></h3>
+<p>The Call Graph uses <strong>regex-based substring matching</strong> rather than full AST analysis for speed:</p>
+<p><strong>False positives can occur when:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1">// Example 1: Comments</span>
+<span class="k">fn</span><span class="w"> </span><span class="nf">process</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// We call hash_password here but we don&#39;t actually</span>
+<span class="w">    </span><span class="c1">// This would be detected as a call to hash_password</span>
+<span class="p">}</span>
+
+<span class="c1">// Example 2: String literals</span>
+<span class="k">fn</span><span class="w"> </span><span class="nf">log_function_names</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="fm">println!</span><span class="p">(</span><span class="s">&quot;hash_password, login, logout&quot;</span><span class="p">);</span><span class="w">  </span><span class="c1">// Detected as 3 calls</span>
+<span class="p">}</span>
+
+<span class="c1">// Example 3: Variable names</span>
+<span class="k">fn</span><span class="w"> </span><span class="nf">process</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">login</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5</span><span class="p">;</span><span class="w">           </span><span class="c1">// &#39;login&#39; detected as call (false positive)</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">login_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span><span class="p">;</span><span class="w">    </span><span class="c1">// &#39;login(&#39; not in string, so not detected</span>
+<span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Mitigation:</strong>
+- Look for symbol followed by <code>(</code> to filter out variable assignments
+- This eliminates the majority of false positives while being extremely fast</p>
+<h3 id="comparison-with-other-tools">Comparison with Other Tools<a class="headerlink" href="#comparison-with-other-tools" title="Permanent link">&para;</a></h3>
+<p>No other tools offer built-in function-level call graphs in the skeleton:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Call Graph</th>
+<th>Import Graph</th>
+<th>Line-of-Code Limit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hone</strong></td>
+<td>Yes (30 functions)</td>
+<td>Yes</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>SWE-Agent</strong></td>
+<td>No</td>
+<td>No</td>
+<td>8000 LOC</td>
+</tr>
+<tr>
+<td><strong>OpenHands</strong></td>
+<td>No</td>
+<td>No</td>
+<td>10000 LOC</td>
+</tr>
+<tr>
+<td><strong>Codeium Windsurf</strong></td>
+<td>No</td>
+<td>No</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>GitHub Copilot</strong></td>
+<td>No</td>
+<td>No</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<p>Hone's call graph is <strong>unique</strong> in offering function-level relationship visibility before the agent starts reasoning about code.</p>
+<hr />
+<h2 id="how-to-configure-the-skeleton-strategy">How to Configure the Skeleton Strategy<a class="headerlink" href="#how-to-configure-the-skeleton-strategy" title="Permanent link">&para;</a></h2>
+<h3 id="cli-flag">CLI Flag<a class="headerlink" href="#cli-flag" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Use CallGraph (default)</span>
+hone<span class="w"> </span><span class="s2">&quot;fix the login function&quot;</span>
+
+<span class="c1"># Explicitly specify strategy</span>
+hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>flat<span class="w"> </span><span class="s2">&quot;find all parse functions&quot;</span>
+hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>call_graph<span class="w"> </span><span class="s2">&quot;debug this error&quot;</span>
+hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>hybrid<span class="w"> </span><span class="s2">&quot;refactor db module&quot;</span>
+hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>dependency_graph<span class="w"> </span><span class="s2">&quot;trace imports&quot;</span>
+</code></pre></div>
+<h3 id="environment-variable">Environment Variable<a class="headerlink" href="#environment-variable" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Set globally</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">HONE_SKELETON_STRATEGY</span><span class="o">=</span>flat
+hone<span class="w"> </span><span class="s2">&quot;your task&quot;</span>
+
+<span class="c1"># Or one-shot</span>
+<span class="nv">HONE_SKELETON_STRATEGY</span><span class="o">=</span>hybrid<span class="w"> </span>hone<span class="w"> </span><span class="s2">&quot;your task&quot;</span>
+</code></pre></div>
+<h3 id="configuration-file">Configuration File<a class="headerlink" href="#configuration-file" title="Permanent link">&para;</a></h3>
+<p>In <code>~/.config/hone/config.toml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
+<span class="c1"># Default skeleton strategy (default: call_graph)</span>
+<span class="n">skeleton_strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;call_graph&quot;</span>
+
+<span class="c1"># Token budget for skeleton (affects how many functions are included)</span>
+<span class="n">context_skeleton_budget</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1500</span>
+</code></pre></div>
+<h3 id="selection-guide">Selection Guide<a class="headerlink" href="#selection-guide" title="Permanent link">&para;</a></h3>
+<p><strong>Use CallGraph (default) if:</strong>
+- You have available token budget (200K context)
+- You want maximum accuracy
+- Working on medium-to-large codebases (100+ functions)
+- Fixing bugs or refactoring complex interactions</p>
+<p><strong>Use Flat if:</strong>
+- Working on token-constrained models (4K-8K context)
+- Repository is very large (10K+ files)
+- Need fast skeleton generation
+- Agent can discover relationships by reading files</p>
+<p><strong>Use Hybrid if:</strong>
+- Medium-sized codebase (1K-10K files)
+- Want balanced detail + token efficiency
+- Want full import graph plus detailed calls for top matches</p>
+<p><strong>Use DependencyGraph if:</strong>
+- Primarily concerned with module-level dependencies
+- Fixing circular import issues
+- Tracing package relationships
+- Working with monorepos</p>
 <hr />
 <h2 id="how-to-disable-and-when-you-might-want-to">How to Disable and When You Might Want To<a class="headerlink" href="#how-to-disable-and-when-you-might-want-to" title="Permanent link">&para;</a></h2>
 <h3 id="disable-globally">Disable Globally<a class="headerlink" href="#disable-globally" title="Permanent link">&para;</a></h3>
@@ -2299,12 +3102,17 @@ Do not read other files. Do not use git blame.
 - Informational: 95% pass rate (agent adapts to reality, uses suggestions as guidance)</p>
 <p><strong>Key insight:</strong> Agents work better with suggestions than rigid rules.</p>
 <hr />
-<h2 id="mermaid-diagram-injection-pipeline">Mermaid Diagram: Injection Pipeline<a class="headerlink" href="#mermaid-diagram-injection-pipeline" title="Permanent link">&para;</a></h2>
+<h2 id="mermaid-diagram-injection-pipeline-with-callgraph">Mermaid Diagram: Injection Pipeline with CallGraph<a class="headerlink" href="#mermaid-diagram-injection-pipeline-with-callgraph" title="Permanent link">&para;</a></h2>
 <pre class="mermaid"><code>graph TD
     A["User Request"] --&gt; B["Tokenize Task Description"]
-    B --&gt; C["Load Repository Index&lt;br/&gt;(tree-sitter cache)"]
-    C --&gt; D["Generate Tier 1: Skeleton&lt;br/&gt;(file tree + signatures)"]
-    D --&gt; E["BM25 Search&lt;br/&gt;(find top-3 matches)"]
+    B --&gt; C["Check Skeleton Cache&lt;br/&gt;(mtime + file count)"]
+    C --&gt;|Cache Hit| D1["Load Cached Skeleton"]
+    C --&gt;|Cache Miss| D2["Generate New Skeleton"]
+    D2 --&gt; D2a["Strategy Selection&lt;br/&gt;(CallGraph/Hybrid/Flat/Deps)"]
+    D2a --&gt; D2b["CallGraph: Extract Calls&lt;br/&gt;DependencyGraph: Parse Imports&lt;br/&gt;Flat: Signatures Only"]
+    D2b --&gt; D2c["Format &amp; Cap at Token Budget"]
+    D2c --&gt; D1
+    D1 --&gt; E["BM25 Search&lt;br/&gt;(find top-3 matches)"]
     E --&gt; F{"Score Gap &gt; Threshold?"}
     F --&gt;|Yes| G["Generate Tier 2&lt;br/&gt;(inject top-3 signatures)"]
     F --&gt;|No| H["Skip Tier 2"]
@@ -2316,21 +3124,29 @@ Do not read other files. Do not use git blame.
     L --&gt; M["agent.run_turn()"]
     M --&gt; N["Tool Execution Loop"]
 
-    style D fill:#2d6a2d,stroke:#4a4,color:#fff
+    style D2 fill:#2d6a2d,stroke:#4a4,color:#fff
+    style D2a fill:#2d8a3d,stroke:#5a5,color:#fff
+    style D1 fill:#1d5a2d,stroke:#3a3,color:#fff
     style G fill:#1a5276,stroke:#5ac,color:#fff
     style J fill:#6e4a1a,stroke:#da5,color:#fff
     style K fill:#5b3a7a,stroke:#a7c,color:#fff
     style M fill:#8b0000,stroke:#f44,color:#fff</code></pre>
 <p><strong>Flow explanation:</strong>
 1. User provides task description
-2. Tokenize and search repository index (zero-cost, cached)
-3. Generate skeleton (always)
-4. Search for high-confidence matches (BM25)
-5. Conditionally inject signatures based on gap ratio
-6. Assign exploration budget based on confidence
-7. Augment system prompt with all three tiers
-8. Pass to agent with injected context
-9. Agent executes tools with improved guidance</p>
+2. Check if skeleton is cached (mtime + file count)
+3. If cached and valid, load; otherwise regenerate
+4. Select skeleton strategy (CallGraph is default)
+5. Generate skeleton based on strategy:
+   - CallGraph: walk files, collect symbols, extract function calls
+   - DependencyGraph: parse imports for each file
+   - Flat: signatures only
+6. Format output and cap at token budget (1500 tokens)
+7. Search for high-confidence matches (BM25)
+8. Conditionally inject signatures based on gap ratio
+9. Assign exploration budget based on confidence
+10. Augment system prompt with all three tiers
+11. Pass to agent with injected context
+12. Agent executes tools with improved guidance</p>
 <hr />
 <h2 id="debugging-observability">Debugging &amp; Observability<a class="headerlink" href="#debugging-observability" title="Permanent link">&para;</a></h2>
 <h3 id="view-injected-context">View Injected Context<a class="headerlink" href="#view-injected-context" title="Permanent link">&para;</a></h3>
@@ -2364,6 +3180,13 @@ Do not read other files. Do not use git blame.
 <span class="c1"># Enable proactive context injection (default: true)</span>
 <span class="n">context_injection</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
 
+<span class="c1"># Skeleton strategy: call_graph, hybrid, flat, dependency_graph (default: call_graph)</span>
+<span class="c1"># call_graph: Function-level calls (100% patch rate, +30pp over V1)</span>
+<span class="c1"># hybrid: Dependency graph + calls for top-5 files (90% patch rate)</span>
+<span class="c1"># flat: Signatures only, fastest generation (90% patch rate)</span>
+<span class="c1"># dependency_graph: Import relationships only (85% patch rate)</span>
+<span class="n">skeleton_strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;call_graph&quot;</span>
+
 <span class="c1"># BM25 confidence gap threshold (default: 0.4)</span>
 <span class="c1"># Lower = more aggressive injection, Higher = conservative</span>
 <span class="n">confidence_gap_threshold</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.4</span>
@@ -2385,7 +3208,12 @@ Do not read other files. Do not use git blame.
 <span class="nv">RUST_LOG</span><span class="o">=</span>hone_core::context_injection<span class="o">=</span>debug
 </code></pre></div>
 <h3 id="cli-flags">CLI Flags<a class="headerlink" href="#cli-flags" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--no-inject<span class="w"> </span><span class="s2">&quot;task&quot;</span><span class="w">              </span><span class="c1"># Disable for this run</span>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>call_graph<span class="w"> </span><span class="s2">&quot;task&quot;</span><span class="w">      </span><span class="c1"># Use CallGraph (default)</span>
+hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>flat<span class="w"> </span><span class="s2">&quot;task&quot;</span><span class="w">            </span><span class="c1"># Use Flat strategy</span>
+hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>hybrid<span class="w"> </span><span class="s2">&quot;task&quot;</span><span class="w">          </span><span class="c1"># Use Hybrid strategy</span>
+hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>dependency_graph<span class="w"> </span><span class="s2">&quot;task&quot;</span><span class="w"> </span><span class="c1"># Use DependencyGraph</span>
+
+hone<span class="w"> </span>--no-inject<span class="w"> </span><span class="s2">&quot;task&quot;</span><span class="w">              </span><span class="c1"># Disable injection for this run</span>
 hone<span class="w"> </span>--inject-context<span class="w"> </span><span class="s2">&quot;task&quot;</span><span class="w">         </span><span class="c1"># Explicitly enable (already default)</span>
 </code></pre></div>
 <hr />
