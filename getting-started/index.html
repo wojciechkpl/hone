@@ -1511,6 +1511,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../context-injection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Context Injection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../tutorials/tools-and-mcp/" class="md-nav__link">
         
   
@@ -3127,6 +3155,16 @@ gcloud<span class="w"> </span>init
 <td>Override config file path</td>
 <td><code>~/.config/hone/config.toml</code></td>
 </tr>
+<tr>
+<td><code>HONE_NO_INJECTION</code></td>
+<td>Disable context injection for this run</td>
+<td><code>1</code></td>
+</tr>
+<tr>
+<td><code>HONE_INJECT_CONTEXT</code></td>
+<td>Explicitly enable context injection (already default)</td>
+<td><code>1</code></td>
+</tr>
 </tbody>
 </table>
 <h3 id="config-file-format">Config File Format<a class="headerlink" href="#config-file-format" title="Permanent link">&para;</a></h3>
@@ -3154,6 +3192,28 @@ gcloud<span class="w"> </span>init
 
 <span class="c1"># Maximum tool calls per turn</span>
 <span class="n">max_tool_calls_per_turn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span>
+
+
+<span class="c1"># ── Context injection (enabled by default) ────────────────────────────────</span>
+
+<span class="k">[context_injection]</span>
+<span class="c1"># Enable proactive context injection (default: true)</span>
+<span class="c1"># Injects repo skeleton, high-confidence signatures, and exploration budgets</span>
+<span class="c1"># Disable with --no-inject or HONE_NO_INJECTION=1</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="c1"># BM25 confidence gap threshold for signature injection (default: 0.4)</span>
+<span class="c1"># Lower = more aggressive, Higher = conservative</span>
+<span class="n">confidence_gap_threshold</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.4</span>
+
+<span class="c1"># Token budget for repository skeleton (default: 1500)</span>
+<span class="n">context_skeleton_budget</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1500</span>
+
+<span class="c1"># Number of signatures to inject from top matches (default: 3)</span>
+<span class="n">signature_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span>
+
+<span class="c1"># Enable exploration budget hints (default: true)</span>
+<span class="n">budget_hints_enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
 
 
 <span class="c1"># ── Provider configuration ────────────────────────────────────────────────</span>
