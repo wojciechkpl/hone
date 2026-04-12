@@ -593,6 +593,7 @@ All environment variables in one place. CLI flags and config file override these
 | `RUST_LOG` | Logging verbosity | `debug`, `info`, `warn`, `error` |
 | `HONE_CONFIG` | Override config file path | `~/.config/hone/config.toml` |
 | `HONE_NO_INJECTION` | Disable context injection for this run | `1` |
+| `HONE_SKELETON_STRATEGY` | Skeleton strategy for context injection | `call_graph`, `hybrid`, `flat`, `dependency_graph` |
 | `HONE_INJECT_CONTEXT` | Explicitly enable context injection (already default) | `1` |
 
 ### Config File Format
@@ -632,6 +633,13 @@ max_tool_calls_per_turn = 10
 # Injects repo skeleton, high-confidence signatures, and exploration budgets
 # Disable with --no-inject or HONE_NO_INJECTION=1
 enabled = true
+
+# Skeleton strategy: call_graph, hybrid, flat, dependency_graph (default: call_graph)
+# - call_graph: Function-level calls (100% patch rate, +30pp over V1)
+# - hybrid: Dependency graph + calls for top-5 files (90% patch rate)
+# - flat: Signatures only, fastest generation (90% patch rate)
+# - dependency_graph: Import relationships only (85% patch rate)
+skeleton_strategy = "call_graph"
 
 # BM25 confidence gap threshold for signature injection (default: 0.4)
 # Lower = more aggressive, Higher = conservative

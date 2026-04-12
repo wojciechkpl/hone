@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- **CallGraph skeleton strategy (new default)** — Function-level call graph showing which functions call which other functions. Achieved **100% patch rate** on 10-task SWE-bench sample (+30pp over V1 baseline). Replaces Hybrid as default strategy. Available strategies: `call_graph` (default), `hybrid`, `flat`, `dependency_graph`. Configure via `HONE_SKELETON_STRATEGY` env var or `--skeleton-strategy` CLI flag.
+- **Skeleton strategy comparison documentation** — New `docs/call-graph.md` with deep-dive into CallGraph implementation, examples for Rust and Python, cache management (mtime + file count), performance characteristics (~1ms cache check, 50-100ms generation), limitations (regex-based, 2-5% false positive rate), and comparison with other tools.
 - **Named session management** — `hone session list/resume/rename/delete` commands for persistent named conversations. Sessions auto-save after each turn. `--session NAME` flag to start a named session. `--ephemeral` flag disables saving. Implementation: `bins/hone/src/session.rs`.
 - **Interactive configure wizard** — `hone configure` guides users through provider selection, API key entry, and model selection. Writes `~/.config/hone/config.toml`. Implementation: `bins/hone/src/configure.rs`.
 - **UX improvements** — NO_COLOR environment variable support for disabling colored output. Ollama model verification during configuration. Ensemble mode validates 2-10 candidate count. Provider capability warnings for --orchestrate and --ensemble modes.
@@ -24,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- **Default skeleton strategy changed to CallGraph** — Improves SWE-bench sample from 90% (Hybrid) to 100% (CallGraph). Shows function-level call relationships instead of just imports. Supports 4 strategies: CallGraph (default, +30pp), Hybrid (+20pp), Flat (+20pp), DependencyGraph (+15pp).
 - **SWE-bench v1 final results** — Hone achieves 58/300 (19.3%) on SWE-bench Lite with DeepSeek V3, beating SWE-Agent (GPT-4, 18%) at 50x lower cost (~$0.001-0.002 per task vs ~$0.10-0.20).
 - **Exit code 1 on missing provider** — Hone now returns exit code 1 when no provider is configured (was silently falling back to MockProvider). Users must configure a provider via `hone configure` or environment variables.
 - **Security hardening (Phase 2 complete)**:
