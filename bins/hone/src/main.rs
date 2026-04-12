@@ -138,6 +138,16 @@ struct Cli {
     #[arg(long)]
     json: bool,
 
+    /// Substitute a variable in a recipe prompt. Repeatable.
+    /// Format: KEY=VALUE (e.g. --var feature_name=my_feature --var test_command="cargo test")
+    #[arg(long = "var", value_name = "KEY=VALUE")]
+    vars: Vec<String>,
+
+    /// Enable the egress audit log (writes to .hone/audit.jsonl).
+    /// Also enabled by setting HONE_AUDIT_LOG=1.
+    #[arg(long)]
+    audit: bool,
+
     /// Subcommand (session management, configure wizard, etc.)
     #[command(subcommand)]
     command: Option<HoneCmd>,
@@ -189,11 +199,15 @@ fn list_builtin_recipes() {
 // Recipe execution mode
 // ---------------------------------------------------------------------------
 
-async fn run_recipe(agent: AgentHandle, recipe_name: &str) -> Result<()> {
+async fn run_recipe(
+    agent: AgentHandle,
+    recipe_name: &str,
+    vars: &std::collections::HashMap<String, String>,
+) -> Result<()> {
     let yaml = load_builtin_recipe(recipe_name)
         .ok_or_else(|| anyhow::anyhow!("unknown recipe: {recipe_name}"))?;
 
-    let recipe = Recipe::from_yaml(yaml)?;
+    let recipe = Recipe::from_yaml(yaml)?.with_variables(vars);
 
     println!("Running recipe: {} ({} steps)", recipe.name, recipe.steps.len());
     if let Some(desc) = &recipe.description {
@@ -642,6 +656,7 @@ fn build_agent_config(
     tool_cache: Option<Arc<ToolResultCache>>,
     mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
     inject_context_flag: bool,
+    audit_flag: bool,
 ) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
@@ -656,6 +671,21 @@ fn build_agent_config(
         || std::env::var("HONE_CONTEXT_INJECTION")
             .map(|v| v == "1")
             .unwrap_or(false);
+
+    // Egress audit log: enabled via --audit or HONE_AUDIT_LOG=1.
+    let enable_audit = audit_flag
+        || std::env::var("HONE_AUDIT_LOG")
+            .map(|v| v == "1")
+            .unwrap_or(false);
+    let egress_log = if enable_audit {
+        let working_dir = std::env::current_dir().unwrap_or_default();
+        let log_path = working_dir.join(".hone").join("audit.jsonl");
+        Some(Arc::new(tokio::sync::Mutex::new(
+            hone_core::EgressLog::new(log_path),
+        )))
+    } else {
+        None
+    };
 
     AgentConfig {
         provider: Arc::clone(&detected.provider),
@@ -677,6 +707,7 @@ fn build_agent_config(
         retry_config: hone_core::RetryConfig::default(),
         index: index.map(|idx| Arc::clone(&idx)),
         inject_context,
+        egress_log,
     }
 }
 
@@ -1630,6 +1661,7 @@ async fn main() -> Result<()> {
         tool_cache,
         mcp_tools,
         cli.inject_context,
+        cli.audit,
     );
 
     let agent = AgentHandle::spawn(base_config.clone());
@@ -1709,9 +1741,21 @@ async fn run_selected_mode(
         return Ok(());
     }
 
+    // Parse --var KEY=VALUE pairs into a HashMap for recipe substitution.
+    let recipe_vars: std::collections::HashMap<String, String> = cli
+        .vars
+        .iter()
+        .filter_map(|kv| {
+            let mut parts = kv.splitn(2, '=');
+            let key = parts.next()?.to_owned();
+            let value = parts.next().unwrap_or("").to_owned();
+            Some((key, value))
+        })
+        .collect();
+
     // --recipe <name>: run a built-in recipe and exit.
     if let Some(ref recipe_name) = cli.recipe {
-        return run_recipe(agent.clone(), recipe_name).await;
+        return run_recipe(agent.clone(), recipe_name, &recipe_vars).await;
     }
 
     // --ensemble N: run N parallel candidates and pick the best.

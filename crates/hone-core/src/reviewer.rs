@@ -83,6 +83,7 @@ impl ReviewerAgent {
             retry_config: base_config.retry_config,
             index: None,
             inject_context: false,
+            egress_log: None,
         };
 
         Self { agent_config }
@@ -114,6 +115,7 @@ impl ReviewerAgent {
             retry_config: self.agent_config.retry_config.clone(),
             index: None,
             inject_context: false,
+            egress_log: None,
         });
 
         let turn = agent.run_turn(context, events).await?;

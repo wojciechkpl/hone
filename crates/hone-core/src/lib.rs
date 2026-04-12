@@ -1,6 +1,8 @@
 pub mod agent_def;
 pub mod agent_registry;
 pub mod context_injector;
+pub mod egress_log;
+pub mod injection_detector;
 pub mod metrics;
 pub mod recovery;
 pub mod retry;
@@ -46,6 +48,8 @@ pub use task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerS
 pub use test_loop::{
     GreenCommands, GreenContract, GreenLevel, TestLoopResult, TestStatus, TestVerificationLoop,
 };
+pub use egress_log::{EgressEntry, EgressLog};
+pub use injection_detector::{InjectionDetector, InjectionRisk};
 pub use recovery::{FailureScenario, RecoveryAction};
 pub use retry::{is_transient_error, retry, RetryConfig};
 pub use turn::TurnResult;
