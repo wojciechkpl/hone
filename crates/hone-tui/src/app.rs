@@ -76,6 +76,12 @@ pub struct App {
 
     /// Pending non-interactive shell command awaiting async execution.
     pub(crate) pending_shell_cmd: Option<String>,
+
+    // --- Review mode ----------------------------------------------------------
+    /// Active review session (hunk-by-hunk accept/reject).
+    pub(crate) review_session: Option<crate::review_mode::ReviewSession>,
+    /// Set to true when :review is waiting for git diff output.
+    pending_review: bool,
 }
 
 impl App {
@@ -105,6 +111,8 @@ impl App {
             tdd_rx: None,
             pending_interactive: None,
             pending_shell_cmd: None,
+            review_session: None,
+            pending_review: false,
         }
     }
 
@@ -465,6 +473,15 @@ impl App {
     pub fn handle_shell_escape_result(&mut self, result: ShellEscapeResult) {
         match result {
             ShellEscapeResult::Output { text, success } => {
+                // If this was a review command (git diff), open review session
+                // instead of just displaying the raw diff.
+                if self.pending_review && success && !text.is_empty() {
+                    self.pending_review = false;
+                    self.open_review_session(&text);
+                    self.state = AppState::Idle;
+                    return;
+                }
+                self.pending_review = false;
                 let role = if success { DisplayRole::System } else { DisplayRole::Error };
                 self.messages.push(DisplayMessage::new(role, text));
                 self.state = AppState::Idle;
@@ -680,17 +697,107 @@ impl App {
     // -----------------------------------------------------------------------
 
     fn handle_review_command(&mut self) {
-        // Run `git diff HEAD` and display it inline.  We spawn a blocking task
-        // so we don't block the event loop; results arrive via the normal shell
-        // escape mechanism.
         self.messages.push(DisplayMessage::new(
             DisplayRole::System,
-            "Generating session diff (git diff HEAD)...".to_string(),
+            "Generating session diff...".to_string(),
         ));
-        // Schedule the review as a shell escape so the event loop picks it up
-        // and runs it asynchronously.
-        self.pending_shell_cmd = Some("git diff HEAD".to_owned());
+        self.pending_review = true;
+        self.pending_shell_cmd = Some("git diff".to_owned());
         self.state = AppState::WaitingForResponse;
+    }
+
+    /// Open a review session from a diff string.
+    pub fn open_review_session(&mut self, diff: &str) {
+        use crate::review_mode::ReviewSession;
+        let session = ReviewSession::from_diff(diff);
+        if session.total_count() == 0 {
+            self.messages.push(DisplayMessage::new(
+                DisplayRole::System,
+                "No changes to review.".to_string(),
+            ));
+            return;
+        }
+        let hunk_display = session.format_current_for_display();
+        let header = format!("[Review mode] {} hunks to review. Keys: a=accept, r=reject, j=next, k=prev, A=accept all, R=reject all, q=finish", session.total_count());
+        self.messages.push(DisplayMessage::new(
+            DisplayRole::System,
+            format!("{header}\n\n{hunk_display}"),
+        ));
+        self.review_session = Some(session);
+    }
+
+    /// Handle a key press in review mode. Returns true if the key was consumed.
+    pub fn handle_review_key(&mut self, key: crossterm::event::KeyCode) -> bool {
+        use crossterm::event::KeyCode;
+
+        let Some(session) = &mut self.review_session else {
+            return false;
+        };
+
+        match key {
+            KeyCode::Char('a') => {
+                session.accept_current();
+            }
+            KeyCode::Char('r') => {
+                session.reject_current();
+            }
+            KeyCode::Char('A') => {
+                session.accept_all();
+            }
+            KeyCode::Char('R') => {
+                session.reject_all();
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                session.next();
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                session.prev();
+            }
+            KeyCode::Char('q') | KeyCode::Esc => {
+                let accepted = session.accepted_count();
+                let rejected = session.rejected_count();
+                let total = session.total_count();
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::System,
+                    format!("[Review complete] {accepted} accepted, {rejected} rejected out of {total} hunks."),
+                ));
+                if accepted > 0 {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::System,
+                        "Accepted changes are in your working tree. Use `!git add -p` to stage selectively or `!git commit -am 'message'` to commit all.".to_string(),
+                    ));
+                }
+                self.review_session = None;
+                return true;
+            }
+            _ => return false,
+        }
+
+        // Update display with current hunk
+        if let Some(session) = &self.review_session {
+            if session.is_complete() {
+                let accepted = session.accepted_count();
+                let rejected = session.rejected_count();
+                let total = session.total_count();
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::System,
+                    format!("[Review complete] {accepted} accepted, {rejected} rejected out of {total} hunks. Press q to exit review mode."),
+                ));
+            } else {
+                let display = session.format_current_for_display();
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::System,
+                    display,
+                ));
+            }
+        }
+
+        true
+    }
+
+    /// Whether review mode is currently active.
+    pub fn is_review_active(&self) -> bool {
+        self.review_session.is_some()
     }
 
     // -----------------------------------------------------------------------
