@@ -464,11 +464,11 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
             eprintln!("Then re-run hone.\n");
             // Fall through to the "no provider" error below.
         } else {
-            tracing::info!(provider = "ollama", api = "http", tools = false, "provider detected");
+            tracing::info!(provider = "ollama", api = "http", tools = true, "provider detected (tool calling enabled since Ollama v0.3.0)");
             return DetectedProvider {
                 provider: Arc::new(OllamaProvider::new("http://localhost:11434")),
                 model_id: ModelId::new(&format!("ollama:{OLLAMA_DEFAULT_MODEL}")),
-                supports_tools: false,
+                supports_tools: true,
             };
         }
     }

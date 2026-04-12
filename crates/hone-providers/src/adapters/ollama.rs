@@ -1,8 +1,12 @@
+use std::collections::HashMap;
 use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt, stream};
-use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, Role, TokenUsage};
+use hone_proto::{
+    Content, Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, Role, TokenUsage,
+    ToolCallRequest, ToolSchema,
+};
 use reqwest::Client;
 use serde_json::{Value, json};
 use tracing::debug;
@@ -25,29 +29,84 @@ impl OllamaProvider {
 }
 
 /// Converts a `Message` into the Ollama API message format.
-/// Ollama uses the same roles as OpenAI: system, user, assistant.
+///
+/// Ollama supports the same roles and tool calling format as OpenAI since
+/// v0.3.0 (July 2024): system, user, assistant, tool.
 pub fn convert_message(message: &Message) -> Value {
     let role = match message.role {
         Role::System => "system",
         Role::User => "user",
         Role::Assistant => "assistant",
-        // Ollama has no tool role; represent as user with context
-        Role::Tool => "user",
+        Role::Tool => "tool",
     };
-    json!({ "role": role, "content": message.content.as_text() })
+
+    let mut obj = serde_json::Map::new();
+    obj.insert("role".to_owned(), json!(role));
+    obj.insert("content".to_owned(), json!(message.content.as_text()));
+
+    // Include tool_call_id for tool-result messages.
+    if let Some(ref tc_id) = message.tool_call_id {
+        obj.insert("tool_call_id".to_owned(), json!(tc_id));
+    }
+
+    // Include tool_calls for assistant messages that requested tool use.
+    if !message.tool_calls.is_empty() {
+        let tool_calls: Vec<Value> = message
+            .tool_calls
+            .iter()
+            .map(|tc| {
+                json!({
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": tc.arguments.to_string(),
+                    }
+                })
+            })
+            .collect();
+        obj.insert("tool_calls".to_owned(), json!(tool_calls));
+    }
+
+    Value::Object(obj)
+}
+
+/// Converts a `ToolSchema` into the Ollama tool format (same as OpenAI).
+fn convert_tool(tool: &ToolSchema) -> Value {
+    json!({
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+        }
+    })
 }
 
 /// Builds the Ollama `/api/chat` request body from a `CompletionRequest`.
-/// Ollama does not support tools natively, so the tools field is always omitted.
+///
+/// Ollama supports tool calling since v0.3.0 (July 2024) using the same
+/// format as OpenAI: tools array with function definitions.
 pub fn build_request_body(request: &CompletionRequest) -> Value {
     let messages: Vec<Value> = request.messages.iter().map(convert_message).collect();
+    let tools: Vec<Value> = request.tools.iter().map(convert_tool).collect();
     let model_name = request.model.model_name();
 
-    json!({
+    let mut body = json!({
         "model": model_name,
         "messages": messages,
         "stream": true,
-    })
+    });
+
+    if !tools.is_empty() {
+        body["tools"] = Value::Array(tools);
+    }
+
+    if let Some(temp) = request.temperature {
+        body["temperature"] = json!(temp);
+    }
+
+    body
 }
 
 /// Returns the health check URL for an Ollama instance.
@@ -90,8 +149,43 @@ pub fn parse_ndjson_line(line: &str) -> Vec<ProviderEvent> {
         return events;
     }
 
-    // Non-final chunk: extract content token
-    if let Some(content) = value["message"]["content"].as_str() {
+    // Non-final chunk: check for tool calls first, then content.
+    let message = &value["message"];
+
+    // Tool call response — Ollama returns tool_calls in the message.
+    if let Some(tool_calls) = message["tool_calls"].as_array() {
+        let mut events = Vec::new();
+        for tc in tool_calls {
+            let name = tc["function"]["name"].as_str().unwrap_or("").to_owned();
+            let id = tc["id"]
+                .as_str()
+                .unwrap_or(&format!("call_{}", name))
+                .to_owned();
+
+            // Parse arguments: Ollama may return them as a string or object.
+            let arguments = match &tc["function"]["arguments"] {
+                Value::String(s) => {
+                    serde_json::from_str(s).unwrap_or_else(|_| json!({"raw": s}))
+                }
+                Value::Object(_) => tc["function"]["arguments"].clone(),
+                other => json!({"raw": other.to_string()}),
+            };
+
+            if !name.is_empty() {
+                events.push(ProviderEvent::ToolCall(ToolCallRequest {
+                    id,
+                    name,
+                    arguments,
+                }));
+            }
+        }
+        if !events.is_empty() {
+            return events;
+        }
+    }
+
+    // Content token.
+    if let Some(content) = message["content"].as_str() {
         if !content.is_empty() {
             return vec![ProviderEvent::Token { text: content.to_owned() }];
         }
@@ -113,29 +207,50 @@ impl ModelProvider for OllamaProvider {
     fn supported_models(&self) -> Vec<ModelInfo> {
         vec![
             ModelInfo {
+                id: ModelId::new("ollama:qwen2.5-coder:7b"),
+                display_name: "Qwen 2.5 Coder 7B".to_owned(),
+                context_length: 128_000,
+                supports_tools: true,
+                supports_streaming: true,
+            },
+            ModelInfo {
+                id: ModelId::new("ollama:qwen2.5-coder:14b"),
+                display_name: "Qwen 2.5 Coder 14B".to_owned(),
+                context_length: 128_000,
+                supports_tools: true,
+                supports_streaming: true,
+            },
+            ModelInfo {
                 id: ModelId::new("ollama:llama3.2"),
                 display_name: "Llama 3.2".to_owned(),
                 context_length: 128_000,
-                supports_tools: false,
+                supports_tools: true,
+                supports_streaming: true,
+            },
+            ModelInfo {
+                id: ModelId::new("ollama:llama3.3"),
+                display_name: "Llama 3.3 70B".to_owned(),
+                context_length: 128_000,
+                supports_tools: true,
+                supports_streaming: true,
+            },
+            ModelInfo {
+                id: ModelId::new("ollama:mistral"),
+                display_name: "Mistral 7B".to_owned(),
+                context_length: 32_000,
+                supports_tools: true,
+                supports_streaming: true,
+            },
+            ModelInfo {
+                id: ModelId::new("ollama:deepseek-coder-v2"),
+                display_name: "DeepSeek Coder V2".to_owned(),
+                context_length: 128_000,
+                supports_tools: true,
                 supports_streaming: true,
             },
             ModelInfo {
                 id: ModelId::new("ollama:codellama"),
                 display_name: "Code Llama".to_owned(),
-                context_length: 16_000,
-                supports_tools: false,
-                supports_streaming: true,
-            },
-            ModelInfo {
-                id: ModelId::new("ollama:mistral"),
-                display_name: "Mistral".to_owned(),
-                context_length: 32_000,
-                supports_tools: false,
-                supports_streaming: true,
-            },
-            ModelInfo {
-                id: ModelId::new("ollama:deepseek-coder"),
-                display_name: "DeepSeek Coder".to_owned(),
                 context_length: 16_000,
                 supports_tools: false,
                 supports_streaming: true,
