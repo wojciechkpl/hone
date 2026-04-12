@@ -2,6 +2,7 @@ pub mod agent_def;
 pub mod agent_registry;
 pub mod clarify;
 pub mod context_injector;
+pub mod hierarchical_skeleton;
 pub mod egress_log;
 pub mod injection_detector;
 pub mod metrics;

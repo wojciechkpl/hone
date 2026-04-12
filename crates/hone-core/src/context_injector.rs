@@ -40,6 +40,8 @@ use ignore::WalkBuilder;
 use tiktoken_rs::CoreBPE;
 use tokio::process::Command;
 
+use crate::hierarchical_skeleton::HierarchicalSkeleton;
+
 // ---------------------------------------------------------------------------
 // Token counting
 // ---------------------------------------------------------------------------
@@ -68,10 +70,19 @@ pub enum SkeletonStrategy {
     DependencyGraph,
     /// Function-level call graph (most detailed). Capped at 30 functions.
     /// Achieved 100% patch rate on SWE-bench sample (+30pp over V1 baseline).
-    #[default]
     CallGraph,
     /// Dependency graph + call details for top-5 BM25-relevant files.
     Hybrid,
+    /// Adaptive hierarchical skeleton — automatically selects detail level
+    /// based on repo size and query relevance, staying within a strict token
+    /// budget regardless of repo size.
+    ///
+    /// - < 20 files: effectively equivalent to CallGraph (full detail fits)
+    /// - 20–100 files: dir tree + signatures for query-relevant files
+    /// - 100–500 files: dir tree + call graph for top-5 relevant files
+    /// - 500+ files: directory tree only + focused expansion
+    #[default]
+    Adaptive,
 }
 
 impl SkeletonStrategy {
@@ -85,6 +96,7 @@ impl SkeletonStrategy {
             "dependency_graph" | "dependency-graph" | "deps" => Some(Self::DependencyGraph),
             "call_graph" | "call-graph" | "calls" => Some(Self::CallGraph),
             "hybrid" => Some(Self::Hybrid),
+            "adaptive" => Some(Self::Adaptive),
             _ => None,
         }
     }
@@ -458,6 +470,10 @@ impl ContextInjector {
             SkeletonStrategy::Hybrid => {
                 self.skeleton_hybrid_inner(root, query, index, &mut newest_mtime)
                     .await
+            }
+            SkeletonStrategy::Adaptive => {
+                let h = HierarchicalSkeleton::new(self.max_injection_tokens.saturating_sub(400));
+                h.generate(root, query, index, &mut newest_mtime).await
             }
         };
         // Count source files for new-file detection in cache.
@@ -1833,6 +1849,14 @@ pub fn login() -> bool { connect() }
         assert_eq!(
             SkeletonStrategy::from_str("hybrid"),
             Some(SkeletonStrategy::Hybrid)
+        );
+        assert_eq!(
+            SkeletonStrategy::from_str("adaptive"),
+            Some(SkeletonStrategy::Adaptive)
+        );
+        assert_eq!(
+            SkeletonStrategy::from_str("Adaptive"),
+            Some(SkeletonStrategy::Adaptive)
         );
         assert_eq!(SkeletonStrategy::from_str("unknown"), None);
         assert_eq!(SkeletonStrategy::from_str(""), None);
