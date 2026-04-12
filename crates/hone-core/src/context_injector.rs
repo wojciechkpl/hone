@@ -153,30 +153,32 @@ impl InjectionResult {
 // ContextInjector
 // ---------------------------------------------------------------------------
 
-/// Cached repository skeleton with mtime-based invalidation.
+/// Cached repository skeleton with mtime + file-count invalidation.
 ///
-/// The skeleton is expensive to generate (tree-sitter parsing of every file),
-/// so we cache it and only regenerate when the working directory's contents
-/// have changed. Staleness is detected by tracking the most recent mtime
-/// across all source files at generation time.
+/// Staleness is detected by:
+/// 1. Any source file having a newer mtime than when the skeleton was built
+/// 2. The total number of source files changing (agent created/deleted files)
+/// 3. The skeleton strategy changing
+///
+/// We scan ALL source files (not a sample) to avoid missing changes in large
+/// repos. This is a stat-only scan (~1ms for 500 files) — no file reads.
 #[derive(Debug)]
 struct SkeletonCache {
-    /// The cached skeleton string.
     skeleton: String,
-    /// Newest mtime (as secs since epoch) seen when the skeleton was built.
+    /// Newest mtime (millis since epoch) seen when the skeleton was built.
     newest_mtime: u64,
-    /// Working directory the skeleton was built for.
+    /// Number of source files when the skeleton was built.
+    file_count: usize,
     root: std::path::PathBuf,
-    /// Strategy used to produce this skeleton (different strategy → cache miss).
     strategy: SkeletonStrategy,
 }
 
 impl SkeletonCache {
-    /// Check if the cache is still valid by sampling mtimes.
+    /// Check if the cache is still valid.
     ///
-    /// Instead of scanning every file (expensive), we check a sample of
-    /// up to 20 source files. If any has a newer mtime than when the
-    /// skeleton was built, the cache is stale.
+    /// Scans all source files (stat only, no reads) to detect:
+    /// - Any file modified since the skeleton was built
+    /// - Files added or deleted (count changed)
     fn is_fresh(&self) -> bool {
         let walker = WalkBuilder::new(&self.root)
             .hidden(true)
@@ -184,7 +186,7 @@ impl SkeletonCache {
             .git_ignore(true)
             .build();
 
-        let mut checked = 0u32;
+        let mut file_count = 0usize;
         for entry in walker {
             let Ok(entry) = entry else { continue };
             if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
@@ -195,21 +197,22 @@ impl SkeletonCache {
             if !matches!(ext, "rs" | "py" | "ts" | "js" | "go" | "java" | "c" | "cpp" | "h") {
                 continue;
             }
+            file_count += 1;
             if let Ok(meta) = std::fs::metadata(path) {
                 if let Ok(mtime) = meta.modified() {
-                    let secs = mtime
+                    let ms = mtime
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64;
-                    if secs > self.newest_mtime {
-                        return false; // stale
+                    if ms > self.newest_mtime {
+                        return false; // file modified since skeleton was built
                     }
                 }
             }
-            checked += 1;
-            if checked >= 20 {
-                break;
-            }
+        }
+        // Detect new or deleted files.
+        if file_count != self.file_count {
+            return false;
         }
         true
     }
@@ -420,11 +423,12 @@ impl ContextInjector {
 
         if needs_refresh {
             tracing::debug!("skeleton cache miss — regenerating");
-            let (skeleton, newest_mtime) =
+            let (skeleton, newest_mtime, file_count) =
                 self.skeleton_from_strategy_with_mtime(root, query, index).await;
             self.skeleton_cache = Some(SkeletonCache {
                 skeleton: skeleton.clone(),
                 newest_mtime,
+                file_count,
                 root: root.to_path_buf(),
                 strategy: self.strategy,
             });
@@ -440,8 +444,9 @@ impl ContextInjector {
         root: &Path,
         query: &str,
         index: Option<&SqliteIndex>,
-    ) -> (String, u64) {
+    ) -> (String, u64, usize) {
         let mut newest_mtime = 0u64;
+        let mut file_count = 0usize;
         let skeleton = match self.strategy {
             SkeletonStrategy::Flat => self.skeleton_from_dir_inner(root, &mut newest_mtime),
             SkeletonStrategy::DependencyGraph => {
@@ -455,7 +460,18 @@ impl ContextInjector {
                     .await
             }
         };
-        (skeleton, newest_mtime)
+        // Count source files for new-file detection in cache.
+        let walker = WalkBuilder::new(root)
+            .hidden(true).ignore(true).git_ignore(true).build();
+        for entry in walker.into_iter().flatten() {
+            if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                let ext = entry.path().extension().and_then(|e| e.to_str()).unwrap_or("");
+                if matches!(ext, "rs" | "py" | "ts" | "js" | "go" | "java" | "c" | "cpp" | "h") {
+                    file_count += 1;
+                }
+            }
+        }
+        (skeleton, newest_mtime, file_count)
     }
 
     // -----------------------------------------------------------------------
