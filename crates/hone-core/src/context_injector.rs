@@ -100,16 +100,78 @@ impl InjectionResult {
 // ContextInjector
 // ---------------------------------------------------------------------------
 
+/// Cached repository skeleton with mtime-based invalidation.
+///
+/// The skeleton is expensive to generate (tree-sitter parsing of every file),
+/// so we cache it and only regenerate when the working directory's contents
+/// have changed. Staleness is detected by tracking the most recent mtime
+/// across all source files at generation time.
+#[derive(Debug)]
+struct SkeletonCache {
+    /// The cached skeleton string.
+    skeleton: String,
+    /// Newest mtime (as secs since epoch) seen when the skeleton was built.
+    newest_mtime: u64,
+    /// Working directory the skeleton was built for.
+    root: std::path::PathBuf,
+}
+
+impl SkeletonCache {
+    /// Check if the cache is still valid by sampling mtimes.
+    ///
+    /// Instead of scanning every file (expensive), we check a sample of
+    /// up to 20 source files. If any has a newer mtime than when the
+    /// skeleton was built, the cache is stale.
+    fn is_fresh(&self) -> bool {
+        let walker = WalkBuilder::new(&self.root)
+            .hidden(true)
+            .ignore(true)
+            .git_ignore(true)
+            .build();
+
+        let mut checked = 0u32;
+        for entry in walker {
+            let Ok(entry) = entry else { continue };
+            if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                continue;
+            }
+            let path = entry.path();
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if !matches!(ext, "rs" | "py" | "ts" | "js" | "go" | "java" | "c" | "cpp" | "h") {
+                continue;
+            }
+            if let Ok(meta) = std::fs::metadata(path) {
+                if let Ok(mtime) = meta.modified() {
+                    let secs = mtime
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    if secs > self.newest_mtime {
+                        return false; // stale
+                    }
+                }
+            }
+            checked += 1;
+            if checked >= 20 {
+                break;
+            }
+        }
+        true
+    }
+}
+
 /// Core injection engine.
 ///
-/// Construct once per task and call [`ContextInjector::inject`] before the
-/// first `run_turn` invocation.  The injector is intentionally stateless so it
-/// can be re-created cheaply without caching concerns.
+/// Construct once per session and call [`ContextInjector::inject`] before each
+/// `run_turn` invocation. The skeleton is cached and automatically refreshed
+/// when source files change (mtime-based invalidation).
 pub struct ContextInjector {
     /// Maximum tokens the entire injected block may consume.
     max_injection_tokens: u32,
     /// BM25 score-gap ratio above which tier-2 snippet injection fires.
     confidence_threshold: f32,
+    /// Cached repo skeleton (refreshed on file changes).
+    skeleton_cache: Option<SkeletonCache>,
 }
 
 impl ContextInjector {
@@ -118,6 +180,7 @@ impl ContextInjector {
         Self {
             max_injection_tokens,
             confidence_threshold,
+            skeleton_cache: None,
         }
     }
 
@@ -136,13 +199,13 @@ impl ContextInjector {
     /// this session; in that case tier-2 is skipped and only the skeleton is
     /// returned.
     pub async fn inject(
-        &self,
+        &mut self,
         query: &str,
         working_dir: &Path,
         index: Option<&SqliteIndex>,
     ) -> InjectionResult {
-        // --- Tier 1: repo skeleton -------------------------------------------
-        let skeleton = self.skeleton_from_dir(working_dir);
+        // --- Tier 1: repo skeleton (cached, refreshed on file changes) -------
+        let skeleton = self.get_or_refresh_skeleton(working_dir);
         let mut block = format!("## Repository Structure\n{skeleton}");
 
         // --- Tier 2: confidence-gated snippet injection ----------------------
@@ -272,6 +335,36 @@ impl ContextInjector {
     // Alternative approach a: skeleton_from_dir
     // -----------------------------------------------------------------------
 
+    /// Get the cached skeleton or regenerate if files have changed.
+    fn get_or_refresh_skeleton(&mut self, root: &Path) -> String {
+        // Check if we have a valid cache for this root.
+        let needs_refresh = match &self.skeleton_cache {
+            Some(cache) if cache.root == root => !cache.is_fresh(),
+            _ => true,
+        };
+
+        if needs_refresh {
+            tracing::debug!("skeleton cache miss — regenerating");
+            let (skeleton, newest_mtime) = self.skeleton_from_dir_with_mtime(root);
+            self.skeleton_cache = Some(SkeletonCache {
+                skeleton: skeleton.clone(),
+                newest_mtime,
+                root: root.to_path_buf(),
+            });
+            skeleton
+        } else {
+            tracing::debug!("skeleton cache hit — reusing");
+            self.skeleton_cache.as_ref().unwrap().skeleton.clone()
+        }
+    }
+
+    /// Generate a compact repo skeleton and return (skeleton, newest_mtime).
+    fn skeleton_from_dir_with_mtime(&self, root: &Path) -> (String, u64) {
+        let mut newest_mtime = 0u64;
+        let skeleton = self.skeleton_from_dir_inner(root, &mut newest_mtime);
+        (skeleton, newest_mtime)
+    }
+
     /// Generate a compact repo skeleton: one line per file with its symbols.
     ///
     /// Respects `.gitignore` via the `ignore` crate. Caps at 50 files.
@@ -281,6 +374,11 @@ impl ContextInjector {
     /// src/main.rs: fn main()
     /// ```
     pub fn skeleton_from_dir(&self, root: &Path) -> String {
+        let mut _mtime = 0u64;
+        self.skeleton_from_dir_inner(root, &mut _mtime)
+    }
+
+    fn skeleton_from_dir_inner(&self, root: &Path, newest_mtime: &mut u64) -> String {
         let mut extractor = SymbolExtractor::new();
         let mut lines: Vec<String> = Vec::new();
         let mut file_count = 0usize;
@@ -321,6 +419,19 @@ impl ContextInjector {
 
             if file_count >= 50 {
                 break;
+            }
+
+            // Track mtime for cache invalidation.
+            if let Ok(meta) = std::fs::metadata(path) {
+                if let Ok(mtime) = meta.modified() {
+                    let secs = mtime
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    if secs > *newest_mtime {
+                        *newest_mtime = secs;
+                    }
+                }
             }
 
             let content = match std::fs::read_to_string(path) {

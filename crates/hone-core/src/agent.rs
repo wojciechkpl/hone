@@ -292,7 +292,7 @@ impl Agent {
         // when explicitly enabled via `inject_context`.
         let effective_input: std::borrow::Cow<'_, str> =
             if self.turn_count == 1 && self.config.inject_context {
-                let injector = ContextInjector::with_defaults();
+                let mut injector = ContextInjector::with_defaults();
                 let index_ref = self.config.index.as_deref();
                 let injection = injector
                     .inject(user_input, &self.config.working_dir, index_ref)
