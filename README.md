@@ -804,6 +804,65 @@ Binaries:
 - `hone-cli` — Interactive terminal agent
 - `honed` — HTTP/2 daemon
 
+## How Hone Compares
+
+An honest comparison. We list where competitors are better, not just where Hone wins.
+
+| Feature | Hone | Claude Code | Codex CLI | Goose | Kiro | Gemini CLI |
+|---------|------|------------|-----------|-------|------|------------|
+| **Open source** | MIT/Apache-2.0 | Proprietary | Open (Apache-2.0) | Open (Apache-2.0) | Proprietary | Apache-2.0 |
+| **Terminal-native** | Yes | Yes | Yes | Yes (+ Electron) | No (VS Code only) | Yes |
+| **Multi-agent orchestration** | DAG + ensemble + RALPH | No | No | No | No | No |
+| **Kernel sandboxing** | Seatbelt + Landlock | Container | Container | No | No | No |
+| **Encrypted memory** | AES-256-GCM | No | No | No | No | No |
+| **MCP extensions** | 70+ via .hone/mcp.json | Yes (native) | No | 70+ | Yes | Yes |
+| **Provider support** | 7+ (any OpenAI-compat) | Claude only | OpenAI only | 30+ | Bedrock only | Gemini only |
+| **Context optimization** | BM25 + call graph + adaptive | Basic | Basic | Summarization | Unknown | 1M+ window |
+| **Tool calling** | Native + text fallback | Native | Native | Native | Native | Native |
+| **Session management** | SQLite + resume | Yes | No | Yes | No | No |
+| **Recipes/workflows** | 9 built-in YAML | No | No | No | Spec-driven plans | No |
+| **Cost tracking** | Live status bar + audit | No | No | CLI command | No | No |
+| **TDD mode** | :tdd file watcher | No | No | No | No | No |
+| **Review mode** | Hunk accept/reject | No | No | No | No | No |
+
+### Where Competitors Are Better (honestly)
+
+| Area | Winner | Why |
+|------|--------|-----|
+| **SWE-bench resolve rate** | Claude Code (72%) | Hone: 19.3%. Claude Code uses Sonnet 4.5 ($3/task vs Hone's $0.03). |
+| **Community size** | Claude Code (~71K stars) | Hone is new. Goose has ~20K, Gemini CLI ~50K. |
+| **Context window** | Gemini CLI (1M+ tokens) | Eliminates context management complexity entirely. |
+| **IDE integration** | Kiro, Cursor | VS Code native. Hone is terminal-only (web UI planned). |
+| **Free usage** | Gemini CLI (free tier) | Corporate-subsidized. Hone requires your own API key. |
+| **Spec-driven planning** | Kiro | Generates requirements docs before coding. Hone has recipes but not specs. |
+| **Desktop GUI** | Goose (Electron) | Hone is terminal-only. |
+
+### Where Hone Wins
+
+| Area | Detail |
+|------|--------|
+| **Cost efficiency** | $0.03/task vs $0.50-$3.00. 50-100x cheaper. |
+| **Privacy** | Kernel sandbox + encrypted memory + no telemetry. Nothing leaves your machine. |
+| **Multi-agent** | Only agent with DAG orchestration, ensemble voting, RALPH loop, reviewer. |
+| **Flexibility** | Works with any OpenAI-compatible model. DeepSeek, Qwen, Ollama (local, $0). |
+| **Observability** | Hierarchical tracing, egress audit, injection detection, cost tracking. |
+| **Structured workflows** | 9 recipes, TDD mode, review mode, scope clarification, @agent dispatch. |
+
+### Choose Hone If...
+- You want to run AI coding with **your own models** (not locked to one vendor)
+- **Privacy matters** — kernel sandbox, encrypted memory, no telemetry
+- You need **multi-agent orchestration** for complex tasks
+- You want **$0.03/task** instead of $3/task
+- You prefer **terminal-native** tools over IDE extensions
+- You need **structured workflows** (TDD, security audit, code review recipes)
+
+### Choose Something Else If...
+- You need the **highest possible SWE-bench score** → Claude Code
+- You want **IDE integration** → Kiro or Cursor
+- You want a **desktop GUI** → Goose
+- You want **free unlimited usage** → Gemini CLI
+- You need **1M+ token context** → Gemini CLI
+
 ## Documentation
 
 **Core Documentation:**
