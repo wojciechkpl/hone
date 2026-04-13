@@ -72,6 +72,7 @@ fn render_plan_markdown(plan: &TaskPlan, results: &[WorkerResult]) -> String {
         let marker = match status {
             Some(WorkerStatus::Completed) => "[x]",
             Some(WorkerStatus::Failed(_)) => "[!]",
+            Some(WorkerStatus::TimedOut(_)) => "[T]",
             None => "[ ]",
         };
         out.push_str(&format!("- {marker} **{}** (agent: `{}`)\n", task.id, task.agent));
@@ -85,17 +86,30 @@ fn render_plan_markdown(plan: &TaskPlan, results: &[WorkerResult]) -> String {
                 out.push_str(&format!("    {}. {}\n", i + 1, test));
             }
         }
-        if let Some(WorkerStatus::Failed(reason)) = status {
-            out.push_str(&format!("  - FAILED: {reason}\n"));
+        match status {
+            Some(WorkerStatus::Failed(reason)) => {
+                out.push_str(&format!("  - FAILED: {reason}\n"));
+            }
+            Some(WorkerStatus::TimedOut(reason)) => {
+                out.push_str(&format!("  - TIMED OUT: {reason}\n"));
+            }
+            _ => {}
         }
     }
 
     out.push_str("\n## Status\n\n");
     let completed = results.iter().filter(|r| r.status == WorkerStatus::Completed).count();
     let failed = results.iter().filter(|r| matches!(r.status, WorkerStatus::Failed(_))).count();
+    let timed_out = results
+        .iter()
+        .filter(|r| matches!(r.status, WorkerStatus::TimedOut(_)))
+        .count();
     out.push_str(&format!("- Completed: {completed}/{}\n", plan.subtasks.len()));
     if failed > 0 {
         out.push_str(&format!("- Failed: {failed}\n"));
+    }
+    if timed_out > 0 {
+        out.push_str(&format!("- Timed out: {timed_out}\n"));
     }
 
     out

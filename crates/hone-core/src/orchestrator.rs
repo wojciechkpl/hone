@@ -1,24 +1,37 @@
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
+use std::time::Duration;
 
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
 use crate::agent::{Agent, AgentConfig};
 use crate::agent_registry::AgentRegistry;
+use crate::checkpoint::CheckpointStore;
 use crate::error::AgentError;
 use crate::plan_store::PlanStore;
 use crate::task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
 use hone_proto::{AgentEvent, TokenUsage};
+
+/// Default per-worker timeout: 5 minutes.
+const DEFAULT_WORKER_TIMEOUT_SECS: u64 = 300;
 
 /// Orchestrates a multi-agent workflow: decompose → execute → merge.
 pub struct Orchestrator {
     lead_config: AgentConfig,
     registry: AgentRegistry,
     max_workers: usize,
+    /// Maximum number of worker agents allowed to run simultaneously.
+    /// Enforced via a `tokio::sync::Semaphore`.  Defaults to `max_workers`.
+    max_concurrent: usize,
     worker_budget: Option<f64>,
     total_budget: Option<f64>,
     plan_store: Option<PlanStore>,
+    /// Per-worker timeout in seconds. Workers that exceed this are cancelled
+    /// and recorded as `WorkerStatus::TimedOut`. Defaults to 300 s.
+    worker_timeout_secs: u64,
+    /// Optional crash-recovery checkpoint store.
+    checkpoint_store: Option<CheckpointStore>,
 }
 
 impl Orchestrator {
@@ -26,10 +39,13 @@ impl Orchestrator {
         Self {
             lead_config,
             registry,
+            max_concurrent: max_workers,
             max_workers,
             worker_budget: None,
             total_budget: None,
             plan_store: None,
+            worker_timeout_secs: DEFAULT_WORKER_TIMEOUT_SECS,
+            checkpoint_store: None,
         }
     }
 
@@ -50,6 +66,36 @@ impl Orchestrator {
     /// after decomposition and again after all workers complete.
     pub fn with_plan_store(mut self, store: PlanStore) -> Self {
         self.plan_store = Some(store);
+        self
+    }
+
+    /// Cap the number of sub-agents that may run concurrently.
+    ///
+    /// The effective limit is `n.min(max_workers)` — it cannot exceed the
+    /// batch size.  Setting `n = 1` serialises all workers, which is useful
+    /// when calling a rate-limited provider.
+    pub fn with_max_concurrent(mut self, n: usize) -> Self {
+        self.max_concurrent = n;
+        self
+    }
+
+    /// Set the per-worker wall-clock timeout in seconds.
+    ///
+    /// Workers that exceed the limit are cancelled and recorded with
+    /// `WorkerStatus::TimedOut`.  The orchestrator then continues with the
+    /// remaining tasks rather than aborting the whole run.
+    pub fn with_worker_timeout(mut self, secs: u64) -> Self {
+        self.worker_timeout_secs = secs;
+        self
+    }
+
+    /// Attach a crash-recovery checkpoint store.
+    ///
+    /// When set, the orchestration state is persisted to SQLite after each
+    /// worker completes.  Use `Orchestrator::resume` to continue an
+    /// interrupted run.
+    pub fn with_checkpoint_store(mut self, store: CheckpointStore) -> Self {
+        self.checkpoint_store = Some(store);
         self
     }
 
@@ -81,7 +127,9 @@ impl Orchestrator {
         }
 
         // 2. Execute subtasks in dependency order.
-        let workers = self.execute_plan(plan.clone(), events.clone()).await;
+        let workers = self
+            .execute_plan(plan.clone(), None, events.clone())
+            .await;
 
         // Persist final plan state with worker results.
         if let Some(ref store) = self.plan_store {
@@ -99,6 +147,90 @@ impl Orchestrator {
             goal: plan.goal,
             merged_response: merged,
             workers,
+            total_cost_usd: total_cost,
+        })
+    }
+
+    /// Resume an interrupted orchestration run from a checkpoint.
+    ///
+    /// Loads the saved `OrchestrationCheckpoint` identified by `run_id`,
+    /// skips all already-completed tasks, and continues execution.  The
+    /// final `OrchestratorResult` combines the previously-completed workers
+    /// with the newly-completed ones.
+    ///
+    /// Returns `AgentError::Cancelled` when no checkpoint store is attached
+    /// or the `run_id` is not found.
+    #[tracing::instrument(skip(self, events))]
+    pub async fn resume(
+        &mut self,
+        run_id: &str,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Result<OrchestratorResult, AgentError> {
+        let store = self
+            .checkpoint_store
+            .as_ref()
+            .ok_or(AgentError::Cancelled)?;
+
+        let checkpoint = store
+            .load(run_id)
+            .await
+            .map_err(|_| AgentError::Cancelled)?
+            .ok_or(AgentError::Cancelled)?;
+
+        tracing::info!(
+            run_id,
+            completed = checkpoint.completed_workers.len(),
+            pending = checkpoint.pending_task_ids.len(),
+            "resuming orchestration from checkpoint"
+        );
+
+        let already_done: HashSet<String> = checkpoint
+            .completed_workers
+            .iter()
+            .map(|w| w.task_id.clone())
+            .collect();
+
+        // Reconstruct the plan with only pending tasks.
+        let remaining_plan = TaskPlan {
+            goal: checkpoint.goal.clone(),
+            subtasks: checkpoint
+                .plan
+                .subtasks
+                .into_iter()
+                .filter(|t| !already_done.contains(&t.id))
+                .collect(),
+        };
+
+        let _ = events
+            .send(AgentEvent::PlanCreated {
+                goal: remaining_plan.goal.clone(),
+                subtask_count: remaining_plan.subtasks.len(),
+            })
+            .await;
+
+        // Pass the pre-accumulated cost so budget tracking is consistent.
+        let mut new_workers = self
+            .execute_plan(
+                remaining_plan.clone(),
+                Some(checkpoint.total_cost_usd),
+                events.clone(),
+            )
+            .await;
+
+        // Combine previous results with new ones.
+        let mut all_workers = checkpoint.completed_workers;
+        all_workers.append(&mut new_workers);
+
+        let merged = self
+            .merge_results(&checkpoint.goal, &all_workers, events.clone())
+            .await;
+
+        let total_cost = all_workers.iter().map(|w| w.cost_usd).sum::<f64>();
+
+        Ok(OrchestratorResult {
+            goal: checkpoint.goal,
+            merged_response: merged,
+            workers: all_workers,
             total_cost_usd: total_cost,
         })
     }
@@ -157,16 +289,26 @@ impl Orchestrator {
     // Execute
     // -----------------------------------------------------------------------
 
+    /// Execute a task plan, respecting dependency order, concurrency limits,
+    /// per-worker timeouts, and the total budget cap.
+    ///
+    /// `prior_spend_usd` is the cost already accumulated from a resumed
+    /// checkpoint; pass `None` (or `Some(0.0)`) for a fresh run.
     pub async fn execute_plan(
         &self,
         plan: TaskPlan,
+        prior_spend_usd: Option<f64>,
         events: mpsc::Sender<AgentEvent>,
     ) -> Vec<WorkerResult> {
         let total_tasks = plan.subtasks.len();
         let mut pending: VecDeque<SubTask> = plan.subtasks.into_iter().collect();
         let mut completed: HashSet<String> = HashSet::new();
         let mut results: Vec<WorkerResult> = Vec::new();
-        let mut spent_usd: f64 = 0.0;
+        let mut spent_usd: f64 = prior_spend_usd.unwrap_or(0.0);
+
+        // The effective concurrency cap cannot exceed the batch size.
+        let concurrency = self.max_concurrent.min(self.max_workers).max(1);
+        let semaphore = Arc::new(Semaphore::new(concurrency));
 
         while !pending.is_empty() {
             // Check total budget before starting next batch.
@@ -218,6 +360,7 @@ impl Orchestrator {
             }
 
             // Chunk ready tasks by max_workers and spawn batches.
+            // The semaphore provides the real-time cap within (and across) batches.
             for batch in ready.chunks(self.max_workers) {
                 let mut set: JoinSet<WorkerResult> = JoinSet::new();
 
@@ -227,6 +370,8 @@ impl Orchestrator {
                     let worker_config = self.build_worker_config(&task);
                     // Per-task budget from the plan overrides the default worker budget.
                     let effective_budget = task.budget_usd.or(self.worker_budget);
+                    let timeout_secs = self.worker_timeout_secs;
+                    let sem = semaphore.clone();
 
                     let _ = events
                         .send(AgentEvent::WorkerStarted {
@@ -236,8 +381,22 @@ impl Orchestrator {
                         })
                         .await;
 
+                    // Acquire a permit *before* spawning so the spawn happens
+                    // only when there is capacity.  The permit is moved into
+                    // the async block and dropped when the task finishes.
+                    let permit = sem
+                        .acquire_owned()
+                        .await
+                        .expect("semaphore never closed");
+
                     set.spawn(async move {
-                        run_worker(task, worker_config, effective_budget, events).await
+                        let result =
+                            run_worker(task, worker_config, effective_budget, timeout_secs, events)
+                                .await;
+                        // Explicit drop documents the intent; the borrow-checker
+                        // guarantees the permit is released here regardless.
+                        drop(permit);
+                        result
                     });
                 }
 
@@ -246,6 +405,20 @@ impl Orchestrator {
                         Ok(worker_result) => {
                             spent_usd += worker_result.cost_usd;
                             completed.insert(worker_result.task_id.clone());
+
+                            // Persist state after each completion when a
+                            // checkpoint store is attached.
+                            if let Some(ref cp_store) = self.checkpoint_store {
+                                let pending_ids: Vec<String> =
+                                    pending.iter().map(|t| t.id.clone()).collect();
+                                if let Err(e) = cp_store
+                                    .save_progress(&results, &pending_ids, spent_usd)
+                                    .await
+                                {
+                                    tracing::warn!("checkpoint: failed to save progress: {e}");
+                                }
+                            }
+
                             results.push(worker_result);
 
                             // Emit budget progress.
@@ -292,6 +465,7 @@ impl Orchestrator {
                 let status = match &r.status {
                     WorkerStatus::Completed => "completed".to_owned(),
                     WorkerStatus::Failed(msg) => format!("failed: {msg}"),
+                    WorkerStatus::TimedOut(msg) => format!("timed out: {msg}"),
                 };
                 format!(
                     "### Task {} (agent: {}, status: {})\n{}",
@@ -403,6 +577,7 @@ async fn run_worker(
     task: SubTask,
     mut config: AgentConfig,
     worker_budget: Option<f64>,
+    timeout_secs: u64,
     events: mpsc::Sender<AgentEvent>,
 ) -> WorkerResult {
     let task_id = task.id.clone();
@@ -416,17 +591,17 @@ async fn run_worker(
 
     let mut agent = Agent::new(config);
     let prompt = format!("{}\n\n{}", task.description, task.context);
+    let timeout = Duration::from_secs(timeout_secs);
 
-    match agent.run_turn(&prompt, events.clone()).await {
-        Ok(turn) => {
+    match tokio::time::timeout(timeout, agent.run_turn(&prompt, events.clone())).await {
+        Ok(Ok(turn)) => {
             let cost = turn.cost_usd;
-            let status_str = "completed".to_owned();
 
             let _ = events
                 .send(AgentEvent::WorkerCompleted {
                     task_id: task_id.clone(),
                     agent: agent_name.clone(),
-                    status: status_str,
+                    status: "completed".to_owned(),
                     cost_usd: cost,
                 })
                 .await;
@@ -440,7 +615,7 @@ async fn run_worker(
                 cost_usd: cost,
             }
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             let err_msg = e.to_string();
             let _ = events
                 .send(AgentEvent::WorkerCompleted {
@@ -455,6 +630,33 @@ async fn run_worker(
                 task_id,
                 agent: agent_name,
                 status: WorkerStatus::Failed(err_msg),
+                response: String::new(),
+                usage: TokenUsage::default(),
+                cost_usd: 0.0,
+            }
+        }
+        Err(_elapsed) => {
+            let msg = format!("exceeded {timeout_secs}s");
+            tracing::warn!(
+                task_id = %task_id,
+                agent = %agent_name,
+                timeout_secs,
+                "worker timed out"
+            );
+
+            let _ = events
+                .send(AgentEvent::WorkerCompleted {
+                    task_id: task_id.clone(),
+                    agent: agent_name.clone(),
+                    status: "timed_out".to_owned(),
+                    cost_usd: 0.0,
+                })
+                .await;
+
+            WorkerResult {
+                task_id,
+                agent: agent_name,
+                status: WorkerStatus::TimedOut(msg),
                 response: String::new(),
                 usage: TokenUsage::default(),
                 cost_usd: 0.0,

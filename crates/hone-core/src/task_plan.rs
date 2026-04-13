@@ -46,6 +46,9 @@ pub struct WorkerResult {
 pub enum WorkerStatus {
     Completed,
     Failed(String),
+    /// The worker was killed because it exceeded its timeout budget.
+    /// The inner string describes the limit that was exceeded (e.g. "exceeded 300s").
+    TimedOut(String),
 }
 
 /// The final output of the orchestrator after all workers have finished.
@@ -71,6 +74,7 @@ impl OrchestratorResult {
                         "FAIL".to_owned()
                     }
                 }
+                WorkerStatus::TimedOut(_) => "TIMEOUT".to_owned(),
             };
             lines.push(format!(
                 "  [{}] {}/{}: ${:.4} ({} in, {} out)",
