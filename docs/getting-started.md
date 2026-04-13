@@ -27,6 +27,7 @@ This comprehensive guide walks you through installing Hone, configuring your fir
    - Orchestrate Mode
    - Ensemble Mode
    - Recipe Mode
+   - RALPH Loop Mode
    - Agent Persona Mode
 9. [Scope Clarification Mode](#9-scope-clarification-mode)
 10. [Inline Agent Dispatch](#10-inline-agent-dispatch)
@@ -1248,6 +1249,57 @@ Each recipe is a YAML workflow defining the steps, prompts, and validation rules
 
 ---
 
+### RALPH Loop Mode (Iterative Feedback Cycle)
+
+Run the RALPH (Review, Analyze, Learn, Plan, Heal) loop for structured iterative improvement with adversarial review.
+
+```bash
+hone --ralph "implement a secure authentication module"
+```
+
+**How it works:**
+
+1. **Review** — Adversarial reviewer critiques the solution and identifies issues
+2. **Analyze** — Agent analyzes root causes of each issue
+3. **Learn** — Extract patterns to prevent similar bugs in the future
+4. **Plan** — Create targeted fix plans for each issue
+5. **Heal** — Apply fixes, verify, and check for regressions
+6. **Loop** — Repeat until reviewer approves or max iterations reached
+
+**Configuration:**
+
+```bash
+# Control max iterations (default 3)
+hone --ralph "prompt" --ralph-max-iterations 5
+
+# Enable test verification after each Heal step
+hone --ralph "prompt" --ralph-verify-tests "cargo test"
+
+# Record learned patterns for future sessions
+hone --ralph "prompt" --ralph-learn
+```
+
+**Use when:**
+
+- Task quality is critical (security, architecture, complex logic)
+- You want to capture learnings for future similar tasks
+- You prefer iterative refinement to single-shot generation
+- You need detailed issue tracking and resolution history
+
+**Example output:**
+
+```
+[RALPH iteration 1/3]
+[Review] Found 2 issues: missing input validation, SQL injection risk
+[Analyze] Root cause 1: no validation on user input. Root cause 2: dynamic query construction
+[Learn] Pattern: Always validate inputs before database operations
+[Plan] Fix 1: Add validation layer. Fix 2: Use parameterized queries
+[Heal] Applied both fixes, re-reading modified code...
+[RALPH] Approved after 1 iterations (2 issues found, 0 blocking)
+```
+
+---
+
 ### Agent Persona Mode
 
 Switch to a specialized agent persona.
@@ -1280,6 +1332,7 @@ hone --agent code-reviewer "Review the PR changes"
 | Complex feature (API + tests + CLI) | Orchestrate | `hone --orchestrate "..."` |
 | Choose best of 3 solutions | Ensemble | `hone --ensemble 3 "..."` |
 | TDD workflow | Recipe | `hone --recipe tdd-feature` |
+| Iterative improvement with review | RALPH Loop | `hone --ralph "..."` |
 | Code review focus | Agent | `hone --agent code-reviewer` |
 | Complex reasoning problem | Agent | `hone --agent ai-researcher` |
 

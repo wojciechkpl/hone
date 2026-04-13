@@ -20,6 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Model override fixes** — `--model ollama` now directly creates OllamaProvider without falling back to Claude CLI when user explicitly requests Ollama.
 - **Text-based tool call parser for Ollama** — Detects JSON tool calls in content field (for models that don't use tool_calls field). Strips markdown code fences automatically. Known limitation: Qwen 2.5 Coder sends tool calls as text but cannot process results back (use for testing only).
 - **DeepSeek Direct compatibility** — Works for interactive use and simple tasks. SWE-bench benchmarks: lower output tokens than OpenRouter cause pipe blocking and empty patches (290/300 failed). OpenRouter remains recommended for benchmarks.
+- **RALPH loop (Review, Analyze, Learn, Plan, Heal)** — Structured feedback cycle combining adversarial review with root cause analysis and pattern learning. Max 3 iterations (configurable), stops when reviewer approves. Captures learned patterns for cross-session improvement. Optional test verification after each Heal step. Research basis: Self-Refine (NeurIPS 2023), ChatDev, MASAI, and AgentCoder patterns. Implementation: `crates/hone-core/src/ralph_loop.rs`.
+- **Token count in status bar** — Inline compact display (e.g., "42t") and full fraction format in wide mode (e.g., "42/200000 tokens"). Helps track context usage at a glance during interactive sessions.
+- **9 recipes (expanded from 4)** — New recipes for security-audit, performance, migration, documentation, and onboarding workflows. Template variable support enables per-project customization with `--var KEY=VALUE`.
 
 ### Added
 

@@ -86,6 +86,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Test-verification loop** — AgentCoder pattern that runs tests after each iteration (+40% bugs caught early).
 - **Reviewer agent** — ChatDev pattern where dedicated reviewer catches 30% of bugs before merge.
 - **Self-refine loop** — Iterative improvement (NeurIPS 2023, +8-15% quality gain).
+- **RALPH loop** — Review, Analyze, Learn, Plan, Heal: structured feedback cycle combining adversarial review with root cause analysis. Max 3 iterations (configurable), stops when reviewer approves. Captures learned patterns for cross-session improvement. Optional test verification after each Heal step. Research basis: Self-Refine (NeurIPS 2023) + ChatDev + MASAI + AgentCoder.
 - **Universal model support** — Anthropic, OpenAI, Azure, Ollama, local providers, CLI pass-through (ACP) with tool delegation. 75+ adapters.
 - **Kernel-enforced sandboxing** — Seatbelt on macOS, Landlock on Linux 5.13+, seccomp elsewhere. Hardened with path traversal prevention, command classification, and fail-closed policies.
 - **Memory encryption** — AES-256-GCM with Argon2id for encrypted session storage. Opt-in via `--features encrypted-memory`. Keys stored in system keychain.
@@ -100,7 +101,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Real bore tunnel** — Automatic SSH tunnel when bore CLI installed.
 - **Client-server architecture** — hone CLI for local use, honed daemon for remote access. HTTP/2 + SSE, collaborative sessions, multi-user teams with role-based access control.
 - **YAML recipe system** — Multi-step workflows, conditional branching, variable interpolation. Recipes compose tools and agents into reproducible tasks.
-- **Redesigned status bar** — Three-zone layout (left: model/session/phase, center: tool icon, right: context bar with cost), width-adaptive (80/120/160+ cols), NO_COLOR support.
+- **Redesigned status bar** — Three-zone layout (left: model/session/phase, center: tool icon, right: context bar with cost). Token count shows inline (compact: "42t") and full fraction in wide mode ("42/200000 tokens"). Width-adaptive (80/120/160+ cols), NO_COLOR support.
 - **Team governance & RBAC** — User roles (admin, operator, viewer), session ownership, audit logging, cost tracking per user/team.
 - **Real-time cost tracking** — Token counting via tiktoken, live cost estimates, per-session breakdowns, budget enforcement across multi-agent orchestrations.
 - **Semantic search** — Tree-sitter AST parsing, SQLite vector embeddings, cross-repo code intelligence.
@@ -111,11 +112,11 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Model override fixes** — `--model ollama` now directly creates OllamaProvider without falling back to Claude CLI when Ollama is explicitly requested.
 - **Text-based tool call parser** — Detects JSON tool calls in model content for Ollama (handles models that don't use tool_calls field). Strips markdown code fences automatically.
 - **DeepSeek Direct compatibility** — Works for interactive use; for SWE-bench benchmarks, OpenRouter is recommended due to token output limits.
-- **Built-in agents** — 12 specialized agent personas (code reviewer, debugger, security auditor, ML engineer, etc.) with `@agent-name` inline dispatch. Plus 4 recipe templates for common workflows.
+- **Built-in agents** — 12 specialized agent personas (code reviewer, debugger, security auditor, ML engineer, etc.) with `@agent-name` inline dispatch. Plus 9 recipe templates for common workflows.
 
 ## Built-in Agents and Recipes
 
-Hone ships with 12 pre-configured agents and 4 recipe templates for common development tasks.
+Hone ships with 12 pre-configured agents and 9 recipe templates for common development tasks.
 
 ### Built-in Agents
 
@@ -146,6 +147,11 @@ Recipes are multi-step YAML workflows that guide the agent through structured pr
 | `bug-fix` | Fix a bug using systematic debugging with regression test |
 | `code-review` | Perform a comprehensive code review covering correctness, security, and performance |
 | `refactor` | Safely refactor code with test verification at each step |
+| `security-audit` | Scan for OWASP Top 10 vulnerabilities, secrets, and dependency issues |
+| `performance` | Profile, optimize, and measure performance improvements |
+| `migration` | Plan and execute safe dependency or framework migrations |
+| `documentation` | Inventory code, generate API docs, update README, and verify coverage |
+| `onboarding` | Understand a new codebase structure, key files, and common workflows |
 
 ### Using Built-in Agents and Recipes
 
