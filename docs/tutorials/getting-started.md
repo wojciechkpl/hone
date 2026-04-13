@@ -214,6 +214,26 @@ hone --ephemeral
 
 This is useful for sensitive work, one-off queries, or testing.
 
+### Crash Recovery and Checkpoint Resume
+
+When using multi-agent orchestration, Hone saves checkpoints after each worker completes. If the process is interrupted (network failure, timeout, kill signal), you can resume the run from where it left off:
+
+```bash
+# Start an orchestrated task (auto-generates a run_id)
+hone --orchestrate "Build a complex feature" 2>&1 | tee run.log
+
+# If interrupted, resume the run using the run_id
+hone --resume run_id_from_log
+```
+
+Checkpoints store:
+- The original task plan and goal
+- Completed worker results with costs and token usage
+- Pending task IDs to resume
+- Total cost accrued so far
+
+This allows long-running orchestrations to survive transient failures without re-executing completed work.
+
 ## One-Shot Mode
 
 Run a single command without the interactive loop:
