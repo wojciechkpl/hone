@@ -29,20 +29,20 @@ keywords = ["ai", "coding-agent", "terminal", "llm", "tools"]
 categories = ["command-line-utilities", "development-tools"]
 
 [workspace.dependencies]
-# Internal crates
-hone-cache = { path = "crates/hone-cache" }
-hone-proto = { path = "crates/hone-proto" }
-hone-config = { path = "crates/hone-config" }
-hone-sandbox = { path = "crates/hone-sandbox" }
-hone-providers = { path = "crates/hone-providers" }
-hone-tools = { path = "crates/hone-tools" }
-hone-mcp = { path = "crates/hone-mcp" }
-hone-index = { path = "crates/hone-index" }
-hone-memory = { path = "crates/hone-memory" }
-hone-core = { path = "crates/hone-core" }
-hone-recipes = { path = "crates/hone-recipes" }
-hone-server = { path = "crates/hone-server" }
-hone-tui = { path = "crates/hone-tui" }
+# Internal crates (path for local dev, version for crates.io publish)
+hone-cache = { version = "0.1.0", path = "crates/hone-cache" }
+hone-proto = { version = "0.1.0", path = "crates/hone-proto" }
+hone-config = { version = "0.1.0", path = "crates/hone-config" }
+hone-sandbox = { version = "0.1.0", path = "crates/hone-sandbox" }
+hone-providers = { version = "0.1.0", path = "crates/hone-providers" }
+hone-tools = { version = "0.1.0", path = "crates/hone-tools" }
+hone-mcp = { version = "0.1.0", path = "crates/hone-mcp" }
+hone-index = { version = "0.1.0", path = "crates/hone-index" }
+hone-memory = { version = "0.1.0", path = "crates/hone-memory" }
+hone-core = { version = "0.1.0", path = "crates/hone-core" }
+hone-recipes = { version = "0.1.0", path = "crates/hone-recipes" }
+hone-server = { version = "0.1.0", path = "crates/hone-server" }
+hone-tui = { version = "0.1.0", path = "crates/hone-tui" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
