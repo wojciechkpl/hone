@@ -68,47 +68,55 @@ sudo apt-get install build-essential pkg-config libssl-dev
 
 ## 2. Installation
 
-### Clone and Build from Source
+### Install from crates.io (recommended)
 
-Clone the Hone repository and build the release binary:
+The fastest way to install Hone:
+
+```bash
+cargo install hone-cli honed
+```
+
+This installs both the `hone` CLI and the `honed` server daemon to `~/.cargo/bin/`.
+
+### Build from Source
+
+For the latest development version:
 
 ```bash
 git clone https://github.com/wojciechkpl/hone.git
 cd hone
 cargo build --release
-```
-
-The binary is located at `target/release/hone`. Copy it to your PATH:
-
-```bash
-# Option 1: Copy to a directory already in PATH
-sudo cp target/release/hone /usr/local/bin/
-
-# Option 2: Add the build directory to your shell profile
-echo 'export PATH="$HOME/path/to/hone/target/release:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+sudo cp target/release/hone target/release/honed /usr/local/bin/
 ```
 
 ### Verify Installation
 
 ```bash
-hone --version
+hone --version    # hone-cli 0.1.0
+honed --version   # honed 0.1.0
 ```
 
-Expected output:
-```
-hone 0.1.0
-```
+### Crates Published
 
-If you also intend to run the daemon server:
+Hone is published as 15 crates on [crates.io](https://crates.io):
 
-```bash
-cargo build --release --bin honed
-hone --version
-honed --version
-```
-
-Both `hone` and `honed` should now be available in your PATH.
+| Crate | Purpose |
+|-------|---------|
+| `hone-cli` | The `hone` terminal command (binary) |
+| `honed` | The HTTP/2 server daemon (binary) |
+| `hone-core` | Agent loop, orchestration, context management |
+| `hone-tools` | File, shell, git, LSP, screen capture tools |
+| `hone-providers` | Anthropic, OpenAI, Ollama, CLI adapters |
+| `hone-proto` | Shared types and serialization |
+| `hone-tui` | Terminal UI (ratatui) |
+| `hone-mcp` | MCP client for 70+ extensions |
+| `hone-sandbox` | Kernel sandboxing (Seatbelt/Landlock) |
+| `hone-memory` | Encrypted SQLite memory store |
+| `hone-index` | Tree-sitter symbol index |
+| `hone-cache` | Tool result cache |
+| `hone-config` | Configuration loading |
+| `hone-server` | HTTP server, SSE, sessions |
+| `hone-recipes` | YAML recipe engine |
 
 ---
 

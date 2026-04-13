@@ -342,22 +342,50 @@ graph TB
 
 ## Installation
 
+### Install from crates.io (recommended)
+
+```bash
+cargo install hone-cli honed
+```
+
+This installs both binaries (`hone` and `honed`) to `~/.cargo/bin/`. Make sure it's on your PATH.
+
 ### Prerequisites
 
 - Rust 1.85+ (via [rustup](https://rustup.rs))
-- macOS or Linux with git support
+- macOS or Linux
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/honelang/hone.git
+git clone https://github.com/wojciechkpl/hone.git
 cd hone
 cargo build --release
 sudo cp target/release/hone /usr/local/bin/
 sudo cp target/release/honed /usr/local/bin/
 ```
 
-The binaries are in `target/release/`. Hone is self-contained—no external dependencies.
+### Verify Installation
+
+```bash
+hone --version
+honed --version
+```
+
+### First-Time Setup
+
+```bash
+# Interactive setup wizard — configures provider, API key, default model
+hone configure
+
+# Or set an API key directly
+export ANTHROPIC_API_KEY=sk-ant-...   # Claude (best tool calling)
+export OPENAI_API_KEY=sk-...          # OpenAI / DeepSeek / OpenRouter
+
+# Or use a free local model
+ollama pull qwen2.5-coder:14b
+hone --model ollama:qwen2.5-coder:14b "hello"
+```
 
 ## Quick Start
 

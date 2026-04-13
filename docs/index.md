@@ -126,11 +126,17 @@ Hone ships with 12 pre-configured agents and 4 recipe templates for common devel
 
 ### 1. Installation
 
+**From crates.io (recommended):**
+```bash
+cargo install hone-cli honed
+```
+
+**Or build from source:**
 ```bash
 git clone https://github.com/wojciechkpl/hone.git
 cd hone
 cargo build --release
-export PATH="$PWD/target/release:$PATH"
+sudo cp target/release/hone target/release/honed /usr/local/bin/
 ```
 
 ### 2. Configure
