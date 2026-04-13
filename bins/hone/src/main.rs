@@ -2,6 +2,7 @@ mod configure;
 mod session;
 mod system_prompt;
 mod tools;
+mod trace;
 
 use std::io;
 use std::io::IsTerminal as _;
@@ -86,6 +87,11 @@ enum HoneCmd {
     },
     /// Interactive setup wizard — writes ~/.config/hone/config.toml.
     Configure,
+    /// Inspect hierarchical tracing data from the egress audit log.
+    Trace {
+        #[command(subcommand)]
+        cmd: trace::TraceCmd,
+    },
 }
 
 #[derive(Parser)]
@@ -1567,6 +1573,24 @@ async fn main() -> Result<()> {
                 if !matches!(session_cmd, SessionCmd::Resume { .. }) {
                     return Ok(());
                 }
+            }
+            HoneCmd::Trace { cmd: trace_cmd } => {
+                let audit_path = std::env::current_dir()
+                    .unwrap_or_default()
+                    .join(".hone")
+                    .join("audit.jsonl");
+                match trace_cmd {
+                    trace::TraceCmd::List { limit } => {
+                        trace::cmd_list(&audit_path, *limit)?;
+                    }
+                    trace::TraceCmd::Show { id } => {
+                        trace::cmd_show(&audit_path, id)?;
+                    }
+                    trace::TraceCmd::Stats => {
+                        trace::cmd_stats(&audit_path)?;
+                    }
+                }
+                return Ok(());
             }
         }
     }

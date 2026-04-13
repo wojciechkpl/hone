@@ -16,7 +16,7 @@ use tokio::task::JoinSet;
 use crate::context::ContextManager;
 use crate::context_injector::{ContextInjector, SkeletonStrategy};
 use crate::cost::CostAccumulator;
-use crate::egress_log::{EgressEntry, EgressLog, now_rfc3339, preview};
+use crate::egress_log::{EgressEntry, EgressLog, SpanKind, TraceContext, now_rfc3339, preview};
 use crate::error::AgentError;
 use crate::injection_detector::InjectionDetector;
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
@@ -288,6 +288,10 @@ impl Agent {
         // Reset per-turn guard state for each new turn.
         self.guards.reset();
 
+        // Create a fresh trace context for this turn.  The turn's span_id
+        // becomes the parent for every tool call dispatched below.
+        let turn_trace = TraceContext::new();
+
         self.cost.check_budget(self.config.budget_limit)?;
 
         // Fetch memories before adding the user message so the query is clean.
@@ -505,6 +509,7 @@ impl Agent {
 
                                 // Egress log entry.
                                 if let Some(log) = &self.config.egress_log {
+                                    let (span_id, parent_span_id) = turn_trace.child_span();
                                     let entry = EgressEntry {
                                         timestamp: now_rfc3339(),
                                         tool: call.name.clone(),
@@ -514,6 +519,10 @@ impl Agent {
                                         block_reason: None,
                                         injection_risk: injection_label,
                                         duration_ms: 0,
+                                        trace_id: turn_trace.trace_id.clone(),
+                                        span_id,
+                                        parent_span_id,
+                                        span_kind: SpanKind::ToolCall,
                                     };
                                     log.lock().await.record(entry);
                                 }
@@ -670,6 +679,7 @@ impl Agent {
 
                             // Egress log entry for sequential tool call.
                             if let Some(log) = &self.config.egress_log {
+                                let (span_id, parent_span_id) = turn_trace.child_span();
                                 let entry = EgressEntry {
                                     timestamp: now_rfc3339(),
                                     tool: call.name.clone(),
@@ -679,6 +689,10 @@ impl Agent {
                                     block_reason: None,
                                     injection_risk: injection_label,
                                     duration_ms,
+                                    trace_id: turn_trace.trace_id.clone(),
+                                    span_id,
+                                    parent_span_id,
+                                    span_kind: SpanKind::ToolCall,
                                 };
                                 log.lock().await.record(entry);
                             }

@@ -23,11 +23,79 @@ pub enum EgressError {
 }
 
 // ---------------------------------------------------------------------------
+// Span / trace types
+// ---------------------------------------------------------------------------
+
+/// What kind of span an [`EgressEntry`] belongs to.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpanKind {
+    /// Top-level session span.
+    Session,
+    /// A single agent turn.
+    Turn,
+    /// Individual tool invocation.
+    ToolCall,
+    /// Orchestrator worker sub-agent.
+    Worker,
+    /// RALPH / reviewer turn.
+    Review,
+    /// Ensemble candidate.
+    Ensemble,
+}
+
+/// Lightweight tracing context passed through the agent call chain.
+///
+/// A new [`TraceContext`] is created at the start of each `run_turn` call;
+/// every tool call inside that turn inherits the turn's span as its parent.
+#[derive(Debug, Clone)]
+pub struct TraceContext {
+    /// Identifies the top-level session / orchestration run.
+    pub trace_id: String,
+    /// The span that owns the current scope (e.g. a turn span).
+    pub current_span_id: String,
+}
+
+impl TraceContext {
+    /// Create a brand-new trace (new `trace_id` and root `span_id`).
+    pub fn new() -> Self {
+        Self {
+            trace_id: uuid::Uuid::now_v7().to_string(),
+            current_span_id: uuid::Uuid::now_v7().to_string(),
+        }
+    }
+
+    /// Create a child trace context that shares the same `trace_id` but has a
+    /// fresh `span_id`.  Returns `(child_span_id, parent_span_id)`.
+    pub fn child_span(&self) -> (String, Option<String>) {
+        let child_id = uuid::Uuid::now_v7().to_string();
+        (child_id, Some(self.current_span_id.clone()))
+    }
+
+    /// Return a new `TraceContext` scoped to a child span (the child becomes
+    /// the "current" span so that nested calls inherit it correctly).
+    pub fn enter_child(&self) -> (Self, Option<String>) {
+        let (child_id, parent_id) = self.child_span();
+        let child_ctx = Self {
+            trace_id: self.trace_id.clone(),
+            current_span_id: child_id,
+        };
+        (child_ctx, parent_id)
+    }
+}
+
+impl Default for TraceContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Entry types
 // ---------------------------------------------------------------------------
 
 /// One tool-dispatch event recorded in the egress log.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct EgressEntry {
     /// RFC-3339 timestamp of when the tool call completed.
     pub timestamp: String,
@@ -45,6 +113,17 @@ pub struct EgressEntry {
     pub injection_risk: Option<String>,
     /// Wall-clock duration of the tool call in milliseconds.
     pub duration_ms: u64,
+
+    // ---- span hierarchy ----
+
+    /// Unique identifier for the top-level session / orchestration run.
+    pub trace_id: String,
+    /// Unique identifier for this individual span (tool call).
+    pub span_id: String,
+    /// Parent span identifier — links this entry to the enclosing turn/worker.
+    pub parent_span_id: Option<String>,
+    /// Semantic kind of this span.
+    pub span_kind: SpanKind,
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +266,10 @@ mod tests {
             },
             injection_risk: None,
             duration_ms: 12,
+            trace_id: "trace-test".to_owned(),
+            span_id: uuid::Uuid::now_v7().to_string(),
+            parent_span_id: None,
+            span_kind: SpanKind::ToolCall,
         }
     }
 
