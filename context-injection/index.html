@@ -715,16 +715,27 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-it-works-three-tier-system-with-callgraph" class="md-nav__link">
+  <a href="#how-it-works-three-tier-system-with-adaptive-hierarchical-skeleton" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How It Works: Three-Tier System with CallGraph
+        How It Works: Three-Tier System with Adaptive Hierarchical Skeleton
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="How It Works: Three-Tier System with CallGraph">
+    <nav class="md-nav" aria-label="How It Works: Three-Tier System with Adaptive Hierarchical Skeleton">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adaptive-strategy-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adaptive Strategy Selection
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#tier-1-repository-skeleton-always-injected" class="md-nav__link">
@@ -825,6 +836,17 @@
   
     <nav class="md-nav" aria-label="Skeleton Strategies">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adaptive-strategy-selection-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adaptive Strategy Selection (Default)
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#strategy-comparison" class="md-nav__link">
@@ -993,10 +1015,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#cli-flag" class="md-nav__link">
+  <a href="#default-adaptive-strategy-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CLI Flag
+        Default: Adaptive Strategy (Recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#override-with-cli-flag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Override with CLI Flag
       
     </span>
   </a>
@@ -1738,16 +1771,27 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-it-works-three-tier-system-with-callgraph" class="md-nav__link">
+  <a href="#how-it-works-three-tier-system-with-adaptive-hierarchical-skeleton" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How It Works: Three-Tier System with CallGraph
+        How It Works: Three-Tier System with Adaptive Hierarchical Skeleton
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="How It Works: Three-Tier System with CallGraph">
+    <nav class="md-nav" aria-label="How It Works: Three-Tier System with Adaptive Hierarchical Skeleton">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adaptive-strategy-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adaptive Strategy Selection
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#tier-1-repository-skeleton-always-injected" class="md-nav__link">
@@ -1848,6 +1892,17 @@
   
     <nav class="md-nav" aria-label="Skeleton Strategies">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adaptive-strategy-selection-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adaptive Strategy Selection (Default)
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#strategy-comparison" class="md-nav__link">
@@ -2016,10 +2071,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#cli-flag" class="md-nav__link">
+  <a href="#default-adaptive-strategy-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CLI Flag
+        Default: Adaptive Strategy (Recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#override-with-cli-flag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Override with CLI Flag
       
     </span>
   </a>
@@ -2482,10 +2548,20 @@
 <h2 id="what-is-context-injection">What is Context Injection?<a class="headerlink" href="#what-is-context-injection" title="Permanent link">&para;</a></h2>
 <p>Context injection is an automated, three-tier system that proactively provides the agent with code context before it starts executing tools. Instead of the agent discovering relevant code through search and exploration, Hone now prepares a strategic selection of code signatures and directory structure upfront. This reduces exploration time, improves tool selection accuracy, and dramatically increases task success rates. On SWE-bench Lite (300 real GitHub issues), context injection increased pass rates from 75% (V3) to 95% (V4) with larger, more confident patches.</p>
 <hr />
-<h2 id="how-it-works-three-tier-system-with-callgraph">How It Works: Three-Tier System with CallGraph<a class="headerlink" href="#how-it-works-three-tier-system-with-callgraph" title="Permanent link">&para;</a></h2>
-<p>Context injection operates as a three-tier system, each serving a specific purpose:</p>
+<h2 id="how-it-works-three-tier-system-with-adaptive-hierarchical-skeleton">How It Works: Three-Tier System with Adaptive Hierarchical Skeleton<a class="headerlink" href="#how-it-works-three-tier-system-with-adaptive-hierarchical-skeleton" title="Permanent link">&para;</a></h2>
+<p>Context injection operates as a three-tier system, each serving a specific purpose. The key innovation is the <strong>adaptive hierarchical skeleton</strong> which intelligently selects detail levels based on repository characteristics.</p>
+<h3 id="adaptive-strategy-selection">Adaptive Strategy Selection<a class="headerlink" href="#adaptive-strategy-selection" title="Permanent link">&para;</a></h3>
+<p>The skeleton strategy auto-selects based on repository characteristics:</p>
+<ul>
+<li><strong>Small repos (&lt;20 files):</strong> CallGraph (full call details, maximum accuracy)</li>
+<li><strong>Medium repos (20-500 files):</strong> Hybrid or Flat depending on token budget</li>
+<li><strong>Large repos (500+ files):</strong> Directory tree only, fast generation</li>
+<li><strong>Files &gt;100KB:</strong> Auto-skipped (too large for tree-sitter to parse efficiently)</li>
+<li><strong>Slow parses (&gt;100ms):</strong> Auto-skipped to avoid blocking on timeout</li>
+</ul>
+<p>Progressive budget filling ensures skeleton stays within token limits while maximizing detail where it matters most.</p>
 <h3 id="tier-1-repository-skeleton-always-injected">Tier 1: Repository Skeleton (Always Injected)<a class="headerlink" href="#tier-1-repository-skeleton-always-injected" title="Permanent link">&para;</a></h3>
-<p>The foundation of context injection. Provides a complete roadmap of the codebase structure without requiring any tool calls. The default strategy is <strong>CallGraph</strong> which shows function-level call relationships, achieving 100% patch rate on a 10-task SWE-bench sample (+30pp improvement over V1 baseline).</p>
+<p>The foundation of context injection. Provides a complete roadmap of the codebase structure without requiring any tool calls. The default strategy is <strong>CallGraph</strong> (for smaller repos) or <strong>Hybrid/Flat</strong> (for larger repos) which adapt based on repository size, achieving 100% patch rate on a 10-task SWE-bench sample (+30pp improvement over V1 baseline).</p>
 <p><strong>Content:</strong>
 - Function/class signatures (no bodies) for public APIs
 - Import statements and module structure
@@ -2608,7 +2684,23 @@ to explore and fix this issue. Prioritize:
 - Overall task time decreased due to fewer retries</p>
 <hr />
 <h2 id="skeleton-strategies">Skeleton Strategies<a class="headerlink" href="#skeleton-strategies" title="Permanent link">&para;</a></h2>
-<p>Hone offers four strategies for generating the repository skeleton. You can choose which strategy best fits your needs using the <code>--skeleton-strategy</code> CLI flag or <code>HONE_SKELETON_STRATEGY</code> environment variable.</p>
+<p>Hone offers four strategies for generating the repository skeleton. By default, Hone uses <strong>adaptive strategy selection</strong>: automatically choosing the best strategy based on repository size and characteristics. You can override this by manually specifying a strategy with the <code>--skeleton-strategy</code> CLI flag or <code>HONE_SKELETON_STRATEGY</code> environment variable.</p>
+<h3 id="adaptive-strategy-selection-default">Adaptive Strategy Selection (Default)<a class="headerlink" href="#adaptive-strategy-selection-default" title="Permanent link">&para;</a></h3>
+<p>When no strategy is explicitly set, Hone auto-selects based on repository characteristics:</p>
+<div class="highlight"><pre><span></span><code>Repository size check:
+  &lt; 20 files       → Use CallGraph (maximum detail)
+  20-500 files     → Use Hybrid (balanced)
+  &gt; 500 files      → Use Flat or Directory Tree (fast)
+
+File filtering:
+  &gt; 100KB          → Skip (too large for tree-sitter)
+  &gt; 100ms to parse → Skip (timeout risk)
+
+Token budget:
+  Use progressive filling to stay within limits
+  Cap at 1500 tokens by default
+</code></pre></div>
+<p><strong>Benefit:</strong> Adaptive selection ensures optimal accuracy per your repository without requiring manual tuning.</p>
 <h3 id="strategy-comparison">Strategy Comparison<a class="headerlink" href="#strategy-comparison" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2623,28 +2715,28 @@ to explore and fix this issue. Prioritize:
 </thead>
 <tbody>
 <tr>
-<td><strong>CallGraph</strong> (default)</td>
+<td><strong>CallGraph</strong> (small repos)</td>
 <td>Function-level calls</td>
 <td>Per-function</td>
 <td>850-1200</td>
 <td><strong>100%</strong></td>
-<td>Maximum accuracy, available token budget</td>
+<td>Maximum accuracy, &lt;20 files or explicit selection</td>
 </tr>
 <tr>
-<td><strong>Hybrid</strong></td>
+<td><strong>Hybrid</strong> (medium repos)</td>
 <td>Deps + call details for top-5</td>
 <td>Top-5 files only</td>
 <td>900-1300</td>
 <td>90%</td>
-<td>Balanced approach, moderate repos</td>
+<td>Balanced approach, 20-500 files</td>
 </tr>
 <tr>
-<td><strong>Flat</strong></td>
+<td><strong>Flat</strong> (large repos)</td>
 <td>Signatures only</td>
 <td>None</td>
 <td>600-900</td>
 <td>90%</td>
-<td>Token-constrained, need fast generation</td>
+<td>Token-constrained, 500+ files, fast generation</td>
 </tr>
 <tr>
 <td><strong>DependencyGraph</strong></td>
@@ -2877,18 +2969,20 @@ db/connection.py:
 <p>Hone's call graph is <strong>unique</strong> in offering function-level relationship visibility before the agent starts reasoning about code.</p>
 <hr />
 <h2 id="how-to-configure-the-skeleton-strategy">How to Configure the Skeleton Strategy<a class="headerlink" href="#how-to-configure-the-skeleton-strategy" title="Permanent link">&para;</a></h2>
-<h3 id="cli-flag">CLI Flag<a class="headerlink" href="#cli-flag" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="c1"># Use CallGraph (default)</span>
-hone<span class="w"> </span><span class="s2">&quot;fix the login function&quot;</span>
-
-<span class="c1"># Explicitly specify strategy</span>
+<h3 id="default-adaptive-strategy-recommended">Default: Adaptive Strategy (Recommended)<a class="headerlink" href="#default-adaptive-strategy-recommended" title="Permanent link">&para;</a></h3>
+<p>By default, Hone automatically selects the best strategy based on your repository size:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span><span class="s2">&quot;fix the login function&quot;</span>
+<span class="c1"># Automatically selects CallGraph for small repos, Hybrid/Flat for large repos</span>
+</code></pre></div>
+<h3 id="override-with-cli-flag">Override with CLI Flag<a class="headerlink" href="#override-with-cli-flag" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Force specific strategy (overrides adaptive behavior)</span>
 hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>flat<span class="w"> </span><span class="s2">&quot;find all parse functions&quot;</span>
 hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>call_graph<span class="w"> </span><span class="s2">&quot;debug this error&quot;</span>
 hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>hybrid<span class="w"> </span><span class="s2">&quot;refactor db module&quot;</span>
 hone<span class="w"> </span>--skeleton-strategy<span class="w"> </span>dependency_graph<span class="w"> </span><span class="s2">&quot;trace imports&quot;</span>
 </code></pre></div>
 <h3 id="environment-variable">Environment Variable<a class="headerlink" href="#environment-variable" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="c1"># Set globally</span>
+<div class="highlight"><pre><span></span><code><span class="c1"># Override adaptive selection</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">HONE_SKELETON_STRATEGY</span><span class="o">=</span>flat
 hone<span class="w"> </span><span class="s2">&quot;your task&quot;</span>
 
@@ -2898,17 +2992,35 @@ hone<span class="w"> </span><span class="s2">&quot;your task&quot;</span>
 <h3 id="configuration-file">Configuration File<a class="headerlink" href="#configuration-file" title="Permanent link">&para;</a></h3>
 <p>In <code>~/.config/hone/config.toml</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="k">[agent]</span>
-<span class="c1"># Default skeleton strategy (default: call_graph)</span>
-<span class="n">skeleton_strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;call_graph&quot;</span>
+<span class="c1"># Strategy: adaptive (default), call_graph, hybrid, flat, dependency_graph</span>
+<span class="c1"># adaptive = auto-select based on repo size</span>
+<span class="n">skeleton_strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;adaptive&quot;</span>
 
 <span class="c1"># Token budget for skeleton (affects how many functions are included)</span>
 <span class="n">context_skeleton_budget</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1500</span>
+
+<span class="c1"># Auto-skip large files</span>
+<span class="n">max_file_size_bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">102400</span><span class="w">  </span><span class="c1"># 100KB</span>
+
+<span class="c1"># Auto-skip slow parses</span>
+<span class="n">max_parse_time_ms</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">100</span>
 </code></pre></div>
 <h3 id="selection-guide">Selection Guide<a class="headerlink" href="#selection-guide" title="Permanent link">&para;</a></h3>
-<p><strong>Use CallGraph (default) if:</strong>
+<p><strong>Let Adaptive Handle It (Recommended):</strong></p>
+<p>In most cases, use the default adaptive behavior:</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span><span class="s2">&quot;your task&quot;</span>
+<span class="c1"># Hone automatically selects the best strategy</span>
+</code></pre></div>
+<p>Adaptive selection considers:
+- Repository size (file count)
+- File sizes (skips &gt;100KB)
+- Parse time (skips &gt;100ms)
+- Available token budget</p>
+<p><strong>Manually Override If You Want:</strong></p>
+<p><strong>Use CallGraph if:</strong>
+- Working on small codebases (&lt;20 files)
 - You have available token budget (200K context)
 - You want maximum accuracy
-- Working on medium-to-large codebases (100+ functions)
 - Fixing bugs or refactoring complex interactions</p>
 <p><strong>Use Flat if:</strong>
 - Working on token-constrained models (4K-8K context)
@@ -2916,9 +3028,9 @@ hone<span class="w"> </span><span class="s2">&quot;your task&quot;</span>
 - Need fast skeleton generation
 - Agent can discover relationships by reading files</p>
 <p><strong>Use Hybrid if:</strong>
-- Medium-sized codebase (1K-10K files)
-- Want balanced detail + token efficiency
-- Want full import graph plus detailed calls for top matches</p>
+- Medium-sized codebase (20-500 files) and want balanced detail + token efficiency
+- Want full import graph plus detailed calls for top matches
+- Need predictable token usage</p>
 <p><strong>Use DependencyGraph if:</strong>
 - Primarily concerned with module-level dependencies
 - Fixing circular import issues
@@ -3108,10 +3220,17 @@ Do not read other files. Do not use git blame.
     B --&gt; C["Check Skeleton Cache&lt;br/&gt;(mtime + file count)"]
     C --&gt;|Cache Hit| D1["Load Cached Skeleton"]
     C --&gt;|Cache Miss| D2["Generate New Skeleton"]
-    D2 --&gt; D2a["Strategy Selection&lt;br/&gt;(CallGraph/Hybrid/Flat/Deps)"]
-    D2a --&gt; D2b["CallGraph: Extract Calls&lt;br/&gt;DependencyGraph: Parse Imports&lt;br/&gt;Flat: Signatures Only"]
-    D2b --&gt; D2c["Format &amp; Cap at Token Budget"]
-    D2c --&gt; D1
+    D2 --&gt; D2a["Adaptive Strategy Selection"]
+    D2a --&gt; D2a1{"Repo Size?"}
+    D2a1 --&gt;|&lt;20 files| D2b["Use CallGraph&lt;br/&gt;(maximum detail)"]
+    D2a1 --&gt;|20-500 files| D2c["Use Hybrid&lt;br/&gt;(balanced)"]
+    D2a1 --&gt;|&gt;500 files| D2d["Use Flat&lt;br/&gt;(fast)"]
+    D2b --&gt; D2e["Filter Files&lt;br/&gt;(skip &gt;100KB, &gt;100ms)"]
+    D2c --&gt; D2e
+    D2d --&gt; D2e
+    D2e --&gt; D2f["Extract Calls/Imports&lt;br/&gt;Based on Strategy"]
+    D2f --&gt; D2g["Format &amp; Cap&lt;br/&gt;at Token Budget"]
+    D2g --&gt; D1
     D1 --&gt; E["BM25 Search&lt;br/&gt;(find top-3 matches)"]
     E --&gt; F{"Score Gap &gt; Threshold?"}
     F --&gt;|Yes| G["Generate Tier 2&lt;br/&gt;(inject top-3 signatures)"]
@@ -3124,8 +3243,11 @@ Do not read other files. Do not use git blame.
     L --&gt; M["agent.run_turn()"]
     M --&gt; N["Tool Execution Loop"]
 
-    style D2 fill:#2d6a2d,stroke:#4a4,color:#fff
-    style D2a fill:#2d8a3d,stroke:#5a5,color:#fff
+    style D2a fill:#2d6a2d,stroke:#4a4,color:#fff
+    style D2a1 fill:#2d8a3d,stroke:#5a5,color:#fff
+    style D2b fill:#1d5a2d,stroke:#3a3,color:#fff
+    style D2c fill:#1d5a2d,stroke:#3a3,color:#fff
+    style D2d fill:#1d5a2d,stroke:#3a3,color:#fff
     style D1 fill:#1d5a2d,stroke:#3a3,color:#fff
     style G fill:#1a5276,stroke:#5ac,color:#fff
     style J fill:#6e4a1a,stroke:#da5,color:#fff
