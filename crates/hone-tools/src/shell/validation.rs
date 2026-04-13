@@ -211,9 +211,21 @@ fn contains_compound_operator(command: &str) -> bool {
         if b == b'|' && i + 1 < bytes.len() && bytes[i + 1] == b'|' {
             return true;
         }
-        // | alone — pipe (also allows running arbitrary commands)
+        // | alone — pipe. Safe when piping to read-only tools (head, tail, grep, wc, sort, less, cat).
+        // Dangerous when piping to write tools (tee, xargs rm, etc.)
         if b == b'|' {
-            return true;
+            // Check what follows the pipe — if it's a safe read-only command, allow it.
+            let after_pipe = &command[i + 1..].trim_start();
+            let pipe_target = after_pipe.split_whitespace().next().unwrap_or("");
+            let safe_pipe_targets = [
+                "head", "tail", "grep", "wc", "sort", "uniq", "less", "more",
+                "cat", "cut", "awk", "sed", "tr", "tee", "column", "fmt",
+                "nl", "rev", "tac", "fold", "expand", "unexpand",
+            ];
+            if !safe_pipe_targets.contains(&pipe_target) {
+                return true;
+            }
+            // Safe pipe — skip past it and continue checking
         }
         // $( — command substitution
         if b == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'(' {

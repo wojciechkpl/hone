@@ -166,7 +166,7 @@ def localize_files(
 
     try:
         result = subprocess.run(
-            [hone_binary, "--model", f"openai:{model}", localization_prompt],
+            [hone_binary, "--no-clarify", "--model", f"openai:{model}", localization_prompt],
             cwd=repo_dir,
             env=env,
             capture_output=True,
@@ -260,7 +260,7 @@ def run_hone(repo_dir: Path, problem_statement: str, hone_binary: str, model: st
     start = time.time()
     try:
         result = subprocess.run(
-            [hone_binary, "--model", f"openai:{model}", prompt],
+            [hone_binary, "--no-clarify", "--model", f"openai:{model}", prompt],
             cwd=repo_dir,
             env=env,
             capture_output=True,
@@ -314,7 +314,7 @@ def run_hone_with_hint(
     start = time.time()
     try:
         result = subprocess.run(
-            [hone_binary, "--model", f"openai:{model}", prompt],
+            [hone_binary, "--no-clarify", "--model", f"openai:{model}", prompt],
             cwd=repo_dir,
             env=env,
             capture_output=True,
