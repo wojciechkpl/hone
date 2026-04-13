@@ -194,6 +194,45 @@ pub fn parse_ndjson_line(line: &str) -> Vec<ProviderEvent> {
     Vec::new()
 }
 
+/// Try to parse accumulated text as a JSON tool call.
+///
+/// Some models (Qwen 2.5 Coder, DeepSeek Coder) output tool calls as
+/// JSON text like `{"name": "read_file", "arguments": {"path": "foo.rs"}}`
+/// instead of using the structured `tool_calls` field.
+fn try_parse_text_tool_call(text: &str) -> Option<ProviderEvent> {
+    let mut trimmed = text.trim();
+
+    // Strip markdown code fences if present (```json ... ``` or ``` ... ```).
+    if trimmed.starts_with("```") {
+        // Remove opening fence (```json or ```)
+        if let Some(end_of_first_line) = trimmed.find('\n') {
+            trimmed = &trimmed[end_of_first_line + 1..];
+        }
+        // Remove closing fence
+        if let Some(pos) = trimmed.rfind("```") {
+            trimmed = &trimmed[..pos];
+        }
+        trimmed = trimmed.trim();
+    }
+
+    // Try parsing as a JSON object with "name" and "arguments".
+    let obj: Value = serde_json::from_str(trimmed).ok()?;
+    let name = obj.get("name")?.as_str()?.to_owned();
+    let arguments = obj.get("arguments").cloned().unwrap_or(json!({}));
+
+    if name.is_empty() {
+        return None;
+    }
+
+    let id = format!("call_text_{}", name);
+
+    Some(ProviderEvent::ToolCall(ToolCallRequest {
+        id,
+        name,
+        arguments,
+    }))
+}
+
 #[async_trait]
 impl ModelProvider for OllamaProvider {
     fn id(&self) -> &str {
@@ -348,7 +387,68 @@ impl ModelProvider for OllamaProvider {
         )
         .flatten();
 
-        Ok(Box::pin(event_stream))
+        // Wrap the stream to detect text-based tool calls.
+        // Some models (Qwen 2.5 Coder) output tool calls as JSON text in the
+        // content field instead of using the tool_calls field. We accumulate
+        // all tokens and, on Done, check if the text is a valid tool call JSON.
+        let has_tools = !request.tools.is_empty();
+        let wrapped = stream::unfold(
+            (event_stream.boxed(), String::new(), has_tools, Vec::new()),
+            |(mut inner, mut accumulated, has_tools, mut buffered)| async move {
+                loop {
+                    match inner.next().await {
+                        Some(ProviderEvent::Token { text }) => {
+                            if has_tools {
+                                accumulated.push_str(&text);
+                                buffered.push(ProviderEvent::Token { text });
+                                // Don't emit tokens yet — buffer until Done.
+                                continue;
+                            }
+                            return Some((
+                                stream::iter(vec![ProviderEvent::Token { text }]),
+                                (inner, accumulated, has_tools, buffered),
+                            ));
+                        }
+                        Some(ProviderEvent::Done) => {
+                            let mut final_events = Vec::new();
+
+                            // Check if accumulated text is a JSON tool call.
+                            if has_tools && !accumulated.is_empty() {
+                                if let Some(tc) = try_parse_text_tool_call(&accumulated) {
+                                    // Replace buffered tokens with a ToolCall event.
+                                    final_events.push(tc);
+                                } else {
+                                    // Not a tool call — emit buffered tokens.
+                                    final_events.append(&mut buffered);
+                                }
+                            }
+
+                            final_events.push(ProviderEvent::Done);
+                            return Some((
+                                stream::iter(final_events),
+                                (inner, String::new(), has_tools, Vec::new()),
+                            ));
+                        }
+                        Some(ProviderEvent::Usage(u)) => {
+                            return Some((
+                                stream::iter(vec![ProviderEvent::Usage(u)]),
+                                (inner, accumulated, has_tools, buffered),
+                            ));
+                        }
+                        Some(other) => {
+                            return Some((
+                                stream::iter(vec![other]),
+                                (inner, accumulated, has_tools, buffered),
+                            ));
+                        }
+                        None => return None,
+                    }
+                }
+            },
+        )
+        .flatten();
+
+        Ok(Box::pin(wrapped))
     }
 
     fn estimate_tokens(&self, messages: &[Message]) -> u32 {

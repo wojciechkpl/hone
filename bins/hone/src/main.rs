@@ -1600,7 +1600,48 @@ async fn main() -> Result<()> {
 
     tracing::debug!(system_prompt_len = system_prompt.len(), "system prompt ready");
 
-    let mut detected = detect_provider(&wizard_cfg).await;
+    // When --model explicitly specifies a provider, skip auto-detection and
+    // create the provider directly. This avoids issues where Claude CLI is
+    // detected first even though the user wants Ollama.
+    let mut detected = if let Some(ref m) = cli.model {
+        if m.starts_with("ollama:") {
+            tracing::info!("--model ollama: — using Ollama provider directly");
+            DetectedProvider {
+                provider: Arc::new(OllamaProvider::new("http://localhost:11434")),
+                model_id: ModelId::new(m),
+                supports_tools: true,
+            }
+        } else if m.starts_with("anthropic:") {
+            if let Some(key) = std::env::var("ANTHROPIC_API_KEY").ok().or(wizard_cfg.anthropic_api_key.clone()) {
+                DetectedProvider {
+                    provider: Arc::new(AnthropicProvider::new(key)),
+                    model_id: ModelId::new(m),
+                    supports_tools: true,
+                }
+            } else {
+                detect_provider(&wizard_cfg).await
+            }
+        } else if m.starts_with("openai:") {
+            if let Some(key) = std::env::var("OPENAI_API_KEY").ok().or(wizard_cfg.openai_api_key.clone()) {
+                let provider = if let Some(url) = std::env::var("HONE_OPENAI_BASE_URL").ok().or(wizard_cfg.openai_base_url.clone()) {
+                    OpenAiProvider::with_base_url(key, url)
+                } else {
+                    OpenAiProvider::new(key)
+                };
+                DetectedProvider {
+                    provider: Arc::new(provider),
+                    model_id: ModelId::new(m),
+                    supports_tools: true,
+                }
+            } else {
+                detect_provider(&wizard_cfg).await
+            }
+        } else {
+            detect_provider(&wizard_cfg).await
+        }
+    } else {
+        detect_provider(&wizard_cfg).await
+    };
 
     // Opt-in local response cache: set HONE_CACHE=1 (or any value) to wrap
     // the inner provider with an LRU cache. Useful for development/testing
