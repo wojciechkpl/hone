@@ -144,6 +144,9 @@ impl RalphLoop {
             let mut reviewer = ReviewerAgent::new(reviewer_config.clone());
             let review = reviewer.review(&final_response, events.clone()).await?;
             total_usage = total_usage + review.usage;
+            // Estimate review cost from usage (reviewer has no cost_usd field).
+            let review_cost = (review.usage.input as f64 * 3.0 + review.usage.output as f64 * 15.0) / 1_000_000.0;
+            total_cost += review_cost;
 
             let blocking_issues: Vec<&ReviewIssue> = review.issues.iter()
                 .filter(|i| is_blocking(i.severity, self.config.min_blocking_severity))
@@ -204,12 +207,27 @@ impl RalphLoop {
             total_usage = total_usage + learning.usage;
             total_cost += learning.cost_usd;
 
-            // Extract learnings (lines starting with - or *)
+            // Extract learnings from the response.
+            // Handles: bullet lists (- * •), numbered lists (1. 2.), and plain prose.
+            let mut found_any = false;
             for line in learning.response.lines() {
-                let trimmed = line.trim().trim_start_matches(&['-', '*', '•'][..]).trim();
-                if !trimmed.is_empty() && trimmed.len() > 10 {
-                    learnings.push(trimmed.to_string());
+                let trimmed = line.trim();
+                // Strip bullet markers: -, *, •
+                let stripped = trimmed.trim_start_matches(&['-', '*', '•'][..]).trim();
+                // Strip numbered list markers: 1. 2. etc.
+                let stripped = if stripped.len() > 2 && stripped.as_bytes()[0].is_ascii_digit() {
+                    stripped.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.').trim()
+                } else {
+                    stripped
+                };
+                if !stripped.is_empty() && stripped.len() > 10 {
+                    learnings.push(stripped.to_string());
+                    found_any = true;
                 }
+            }
+            // If no structured lines found, take the whole response as a single learning.
+            if !found_any && learning.response.trim().len() > 10 {
+                learnings.push(learning.response.trim().to_string());
             }
 
             // ── P: Plan ────────────────────────────────────────────────────
@@ -233,7 +251,7 @@ impl RalphLoop {
             total_cost += heal.cost_usd;
             final_response = heal.response.clone();
 
-            // Mark issues as resolved (optimistic — verified in next Review)
+            // Mark issues as tentatively resolved (confirmed only if next Review doesn't re-raise)
             for tracked in all_issues.iter_mut() {
                 if tracked.iteration_found == iteration && !tracked.resolved {
                     tracked.resolved = true;
