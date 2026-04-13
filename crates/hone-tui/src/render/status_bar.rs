@@ -206,16 +206,19 @@ fn center_zone(
     spans
 }
 
-/// Right zone: context bar + cost + budget bar (if set) + elapsed (if full).
+/// Right zone: context bar + tokens + cost + budget bar (if set) + elapsed (if full).
 fn right_zone(status: &StatusInfo, theme: &Theme, tier: WidthTier) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
 
-    // Context bar.
+    // Context bar with token count.
     let ctx_fraction = status.context_fraction();
     let ctx_pct = (ctx_fraction * 100.0).round() as u32;
     spans.push(sep(theme));
     spans.extend(bar_spans(ctx_fraction, BAR_WIDTH, theme));
     spans.push(muted(format!(" {ctx_pct}%"), theme));
+
+    // Token count — always shown. Format: "4.2k" or "1.2M".
+    spans.push(muted(format!(" ({})", status.format_tokens()), theme));
 
     // Cost.
     spans.push(sep(theme));
@@ -229,7 +232,7 @@ fn right_zone(status: &StatusInfo, theme: &Theme, tier: WidthTier) -> Vec<Span<'
         }
     }
 
-    // Full layout extras: elapsed + turn count.
+    // Full layout extras: elapsed + turn count + total session tokens.
     if tier == WidthTier::Full {
         let elapsed = status.format_elapsed();
         spans.push(sep(theme));
@@ -239,6 +242,10 @@ fn right_zone(status: &StatusInfo, theme: &Theme, tier: WidthTier) -> Vec<Span<'
             spans.push(sep(theme));
             spans.push(muted(format!("turn {}", status.turn_count), theme));
         }
+
+        // Context window usage as fraction (e.g., "42k / 128k").
+        spans.push(sep(theme));
+        spans.push(muted(status.format_context(), theme));
     }
 
     spans
