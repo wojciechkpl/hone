@@ -1143,6 +1143,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#crash-recovery-and-checkpoint-resume" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Crash Recovery and Checkpoint Resume
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1488,6 +1499,20 @@ hone<span class="w"> </span>--session<span class="w"> </span>debug-session
 hone<span class="w"> </span>--ephemeral
 </code></pre></div>
 <p>This is useful for sensitive work, one-off queries, or testing.</p>
+<h3 id="crash-recovery-and-checkpoint-resume">Crash Recovery and Checkpoint Resume<a class="headerlink" href="#crash-recovery-and-checkpoint-resume" title="Permanent link">&para;</a></h3>
+<p>When using multi-agent orchestration, Hone saves checkpoints after each worker completes. If the process is interrupted (network failure, timeout, kill signal), you can resume the run from where it left off:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start an orchestrated task (auto-generates a run_id)</span>
+hone<span class="w"> </span>--orchestrate<span class="w"> </span><span class="s2">&quot;Build a complex feature&quot;</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tee<span class="w"> </span>run.log
+
+<span class="c1"># If interrupted, resume the run using the run_id</span>
+hone<span class="w"> </span>--resume<span class="w"> </span>run_id_from_log
+</code></pre></div>
+<p>Checkpoints store:
+- The original task plan and goal
+- Completed worker results with costs and token usage
+- Pending task IDs to resume
+- Total cost accrued so far</p>
+<p>This allows long-running orchestrations to survive transient failures without re-executing completed work.</p>
 <h2 id="one-shot-mode">One-Shot Mode<a class="headerlink" href="#one-shot-mode" title="Permanent link">&para;</a></h2>
 <p>Run a single command without the interactive loop:</p>
 <div class="highlight"><pre><span></span><code>hone<span class="w"> </span><span class="s2">&quot;List all Python files in src/&quot;</span><span class="w"> </span>--model<span class="w"> </span>anthropic:claude-opus

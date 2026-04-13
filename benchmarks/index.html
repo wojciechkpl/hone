@@ -1014,6 +1014,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#agent-personas-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Personas Evaluation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reproducing" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1313,6 +1324,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#agent-personas-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Personas Evaluation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reproducing" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1576,6 +1598,39 @@ render_50_messages      time:   [78.142 µs 78.568 µs 79.063 µs]
 </code></pre></div>
 <p>The full TUI render cycle (header + conversation + input + status bar) takes <strong>~70µs empty</strong> and <strong>~79µs with 50 messages</strong>. At a 100ms tick rate, render uses <strong>&lt;0.1% of the frame budget</strong>. Plenty of headroom for animations, syntax highlighting, or split-pane scrolling.</p>
 <hr />
+<h2 id="agent-personas-evaluation">Agent Personas Evaluation<a class="headerlink" href="#agent-personas-evaluation" title="Permanent link">&para;</a></h2>
+<p><strong>Purpose:</strong> Validate that each of Hone's 12 built-in agent personas maintains correct domain knowledge, terminology, and decision-making patterns.</p>
+<p><strong>Scenarios:</strong> 35 keyword-matching scenarios across:
+- <strong>debugger</strong> (3 scenarios) — asks for stack traces, reproduction steps, avoids hallucinating fixes
+- <strong>security-auditor</strong> (4) — OWASP, SQL injection, XSS, secret rotation, least privilege
+- <strong>rust-expert</strong> (3) — ownership, idiomatic derives, zero-cost abstractions
+- <strong>python-expert</strong> (3) — type hints, PEP 8, pytest
+- <strong>ai-researcher</strong> (3) — evaluation metrics, RLHF, literature references
+- <strong>code-reviewer</strong> (4) — test coverage, naming, complexity, error handling
+- <strong>postgresql-expert</strong> (3) — indexing, EXPLAIN ANALYZE, VACUUM
+- <strong>test-architect</strong> (3) — test levels, coverage, isolation
+- <strong>fullstack-architect</strong> (3) — frontend/backend separation, API contracts, deployment
+- <strong>ml-recommendations-expert</strong> (3) — collaborative filtering, cold start, metrics
+- <strong>general-purpose</strong> (2) — helpful responses, appropriate domain jargon
+- <strong>quant-advisor</strong> (3) — Sharpe ratio, drawdown, backtesting caveats</p>
+<p><strong>Test harness:</strong> <code>benchmarks/persona_eval.py</code> calls the Hone server (or CLI in server mode) and verifies each scenario response contains all expected keywords and no forbidden keywords.</p>
+<p><strong>Running:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Start the server</span>
+honed<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span><span class="w"> </span><span class="p">&amp;</span>
+
+<span class="c1"># Run all persona evaluations</span>
+python<span class="w"> </span>benchmarks/persona_eval.py<span class="w"> </span>--url<span class="w"> </span>http://localhost:8080
+
+<span class="c1"># Run a single persona</span>
+python<span class="w"> </span>benchmarks/persona_eval.py<span class="w"> </span>--persona<span class="w"> </span>debugger
+
+<span class="c1"># Dry run (list scenarios only)</span>
+python<span class="w"> </span>benchmarks/persona_eval.py<span class="w"> </span>--dry-run
+
+<span class="c1"># Output JSON results</span>
+python<span class="w"> </span>benchmarks/persona_eval.py<span class="w"> </span>--out-dir<span class="w"> </span>/tmp/results
+</code></pre></div>
+<p><strong>Pass criteria:</strong> All 35 scenarios must pass (response contains all expected_keywords, contains no forbidden_keywords).</p>
 <h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>make<span class="w"> </span>bench
 
