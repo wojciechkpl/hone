@@ -1058,6 +1058,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#ralph-loop-mode-iterative-feedback-cycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RALPH Loop Mode (Iterative Feedback Cycle)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agent-persona-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2464,6 +2475,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#ralph-loop-mode-iterative-feedback-cycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RALPH Loop Mode (Iterative Feedback Cycle)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agent-persona-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2925,6 +2947,7 @@
 <li>Orchestrate Mode</li>
 <li>Ensemble Mode</li>
 <li>Recipe Mode</li>
+<li>RALPH Loop Mode</li>
 <li>Agent Persona Mode</li>
 <li><a href="#9-scope-clarification-mode">Scope Clarification Mode</a></li>
 <li><a href="#10-inline-agent-dispatch">Inline Agent Dispatch</a></li>
@@ -3963,6 +3986,46 @@ Total cost: $0.084 USD
 </ul>
 <p>Each recipe is a YAML workflow defining the steps, prompts, and validation rules.</p>
 <hr />
+<h3 id="ralph-loop-mode-iterative-feedback-cycle">RALPH Loop Mode (Iterative Feedback Cycle)<a class="headerlink" href="#ralph-loop-mode-iterative-feedback-cycle" title="Permanent link">&para;</a></h3>
+<p>Run the RALPH (Review, Analyze, Learn, Plan, Heal) loop for structured iterative improvement with adversarial review.</p>
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--ralph<span class="w"> </span><span class="s2">&quot;implement a secure authentication module&quot;</span>
+</code></pre></div>
+<p><strong>How it works:</strong></p>
+<ol>
+<li><strong>Review</strong> — Adversarial reviewer critiques the solution and identifies issues</li>
+<li><strong>Analyze</strong> — Agent analyzes root causes of each issue</li>
+<li><strong>Learn</strong> — Extract patterns to prevent similar bugs in the future</li>
+<li><strong>Plan</strong> — Create targeted fix plans for each issue</li>
+<li><strong>Heal</strong> — Apply fixes, verify, and check for regressions</li>
+<li><strong>Loop</strong> — Repeat until reviewer approves or max iterations reached</li>
+</ol>
+<p><strong>Configuration:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Control max iterations (default 3)</span>
+hone<span class="w"> </span>--ralph<span class="w"> </span><span class="s2">&quot;prompt&quot;</span><span class="w"> </span>--ralph-max-iterations<span class="w"> </span><span class="m">5</span>
+
+<span class="c1"># Enable test verification after each Heal step</span>
+hone<span class="w"> </span>--ralph<span class="w"> </span><span class="s2">&quot;prompt&quot;</span><span class="w"> </span>--ralph-verify-tests<span class="w"> </span><span class="s2">&quot;cargo test&quot;</span>
+
+<span class="c1"># Record learned patterns for future sessions</span>
+hone<span class="w"> </span>--ralph<span class="w"> </span><span class="s2">&quot;prompt&quot;</span><span class="w"> </span>--ralph-learn
+</code></pre></div>
+<p><strong>Use when:</strong></p>
+<ul>
+<li>Task quality is critical (security, architecture, complex logic)</li>
+<li>You want to capture learnings for future similar tasks</li>
+<li>You prefer iterative refinement to single-shot generation</li>
+<li>You need detailed issue tracking and resolution history</li>
+</ul>
+<p><strong>Example output:</strong></p>
+<div class="highlight"><pre><span></span><code>[RALPH iteration 1/3]
+[Review] Found 2 issues: missing input validation, SQL injection risk
+[Analyze] Root cause 1: no validation on user input. Root cause 2: dynamic query construction
+[Learn] Pattern: Always validate inputs before database operations
+[Plan] Fix 1: Add validation layer. Fix 2: Use parameterized queries
+[Heal] Applied both fixes, re-reading modified code...
+[RALPH] Approved after 1 iterations (2 issues found, 0 blocking)
+</code></pre></div>
+<hr />
 <h3 id="agent-persona-mode">Agent Persona Mode<a class="headerlink" href="#agent-persona-mode" title="Permanent link">&para;</a></h3>
 <p>Switch to a specialized agent persona.</p>
 <div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--agent<span class="w"> </span>debugger<span class="w"> </span><span class="s2">&quot;There&#39;s a segfault in main&quot;</span>
@@ -4015,6 +4078,11 @@ hone<span class="w"> </span>--agent<span class="w"> </span>code-reviewer<span cl
 <td>TDD workflow</td>
 <td>Recipe</td>
 <td><code>hone --recipe tdd-feature</code></td>
+</tr>
+<tr>
+<td>Iterative improvement with review</td>
+<td>RALPH Loop</td>
+<td><code>hone --ralph "..."</code></td>
 </tr>
 <tr>
 <td>Code review focus</td>
