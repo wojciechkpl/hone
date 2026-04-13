@@ -78,7 +78,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Vim mode** — Type `--vim` or `:set vim` for vim-style keybindings. Normal mode: j/k scroll, gg/G top/bottom, i/a insert, :q quit. Insert mode: type normally, Esc returns to normal.
 - **TDD mode** — Type `:tdd [command]` to watch source files and auto-run tests on change (300ms debounce). Shows PASS/FAIL inline. Type `:tdd off` to stop.
 - **Review mode** — Type `:review` to enter hunk-by-hunk review of git diff changes. Navigate with j/k, accept/reject hunks with a/r, accept/reject all with A/R, quit with q.
-- **Multi-agent orchestration** — Decompose complex tasks via research-backed patterns (Anthropic, MASAI, CodeR). Orchestrator-worker pipeline with message merging.
+- **Multi-agent orchestration** — Decompose complex tasks via research-backed patterns (Anthropic, MASAI, CodeR). Orchestrator-worker pipeline with message merging. Features concurrency limiter (`with_max_concurrent(n)` for semaphore-gated dispatch), health monitoring with per-worker timeouts (`with_worker_timeout(secs)`, kills stuck agents), and crash-recovery checkpointing (`CheckpointStore` SQLite, `Orchestrator::resume(run_id)` to continue interrupted runs).
 - **Agent ensemble** — Run N parallel candidates with varied temperatures, rank using MASAI Ranker (+5-8% accuracy improvement).
 - **Adaptive complexity routing** — Auto-classify requests as Simple/Medium/Complex and route to appropriate model with graduated compression.
 - **Adaptive hierarchical skeleton** — Proactive context injection with intelligent strategy selection: auto-detects repository size and auto-selects detail level. 4-level hierarchy: directory → file list → signatures → call graph. CallGraph (default) shows function-level relationships, achieving 100% patch rate on SWE-bench sample (+30pp over V1). Adaptive strategy skips large files (>100KB) and slow parses (>100ms). Progressive budget filling ensures efficient token use. Disable with `--no-inject` or `HONE_NO_INJECTION=1`.
@@ -188,6 +188,15 @@ For detailed information on how agents work and how to create custom ones, see [
 | TUI render (50 messages) | ~92 us | < 0.1% of 100ms frame budget |
 | CLI startup (warm) | <10ms | Binary size 12MB, cached in page cache |
 | Memory footprint (idle) | ~8MB | 6x under PRD target |
+
+### Agent Personas Evaluation
+
+**Persona evals** — 35 scenarios across 12 built-in agents (debugger, security-auditor, code-reviewer, rust-expert, python-expert, ai-researcher, postgresql-expert, ml-engineer, data-engineer, test-architect, fullstack-architect, ml-recommendations-expert, quant-advisor). Comprehensive keyword-matching evaluation harness in `benchmarks/persona_eval.py`. Run with:
+
+```bash
+python benchmarks/persona_eval.py --url http://localhost:8080
+python benchmarks/persona_eval.py --persona debugger --dry-run
+```
 
 ### SWE-bench Results
 
@@ -613,7 +622,7 @@ Binaries:
 
 ## Testing
 
-Hone passes **210+ unit tests** across 13 crates with zero clippy warnings.
+Hone passes **408 unit tests** across 13 crates with zero clippy warnings.
 
 ```bash
 # Run all tests

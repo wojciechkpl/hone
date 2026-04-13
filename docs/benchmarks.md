@@ -77,6 +77,47 @@ The full TUI render cycle (header + conversation + input + status bar) takes **~
 
 ---
 
+## Agent Personas Evaluation
+
+**Purpose:** Validate that each of Hone's 12 built-in agent personas maintains correct domain knowledge, terminology, and decision-making patterns.
+
+**Scenarios:** 35 keyword-matching scenarios across:
+- **debugger** (3 scenarios) — asks for stack traces, reproduction steps, avoids hallucinating fixes
+- **security-auditor** (4) — OWASP, SQL injection, XSS, secret rotation, least privilege
+- **rust-expert** (3) — ownership, idiomatic derives, zero-cost abstractions
+- **python-expert** (3) — type hints, PEP 8, pytest
+- **ai-researcher** (3) — evaluation metrics, RLHF, literature references
+- **code-reviewer** (4) — test coverage, naming, complexity, error handling
+- **postgresql-expert** (3) — indexing, EXPLAIN ANALYZE, VACUUM
+- **test-architect** (3) — test levels, coverage, isolation
+- **fullstack-architect** (3) — frontend/backend separation, API contracts, deployment
+- **ml-recommendations-expert** (3) — collaborative filtering, cold start, metrics
+- **general-purpose** (2) — helpful responses, appropriate domain jargon
+- **quant-advisor** (3) — Sharpe ratio, drawdown, backtesting caveats
+
+**Test harness:** `benchmarks/persona_eval.py` calls the Hone server (or CLI in server mode) and verifies each scenario response contains all expected keywords and no forbidden keywords.
+
+**Running:**
+
+```bash
+# Start the server
+honed --port 8080 &
+
+# Run all persona evaluations
+python benchmarks/persona_eval.py --url http://localhost:8080
+
+# Run a single persona
+python benchmarks/persona_eval.py --persona debugger
+
+# Dry run (list scenarios only)
+python benchmarks/persona_eval.py --dry-run
+
+# Output JSON results
+python benchmarks/persona_eval.py --out-dir /tmp/results
+```
+
+**Pass criteria:** All 35 scenarios must pass (response contains all expected_keywords, contains no forbidden_keywords).
+
 ## Reproducing
 
 ```bash

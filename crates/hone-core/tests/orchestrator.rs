@@ -222,7 +222,7 @@ async fn test_dependency_ordering_logic() {
     let orchestrator = Orchestrator::new(config, empty_registry(), 4);
 
     let (tx, _rx) = mpsc::channel(256);
-    let results = orchestrator.execute_plan(plan, tx).await;
+    let results = orchestrator.execute_plan(plan, None, tx).await;
 
     assert_eq!(results.len(), 2);
 
@@ -262,7 +262,7 @@ async fn test_max_workers_respected() {
     let orchestrator = Orchestrator::new(config, empty_registry(), 2);
 
     let (tx, _rx) = mpsc::channel(256);
-    let results = orchestrator.execute_plan(plan, tx).await;
+    let results = orchestrator.execute_plan(plan, None, tx).await;
 
     // All 5 tasks should have completed.
     assert_eq!(results.len(), 5);
