@@ -1,10 +1,9 @@
-use std::collections::HashMap;
 use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt, stream};
 use hone_proto::{
-    Content, Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, Role, TokenUsage,
+    Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, Role, TokenUsage,
     ToolCallRequest, ToolSchema,
 };
 use reqwest::Client;

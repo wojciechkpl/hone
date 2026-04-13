@@ -237,9 +237,9 @@ pub fn build_apply_commands(session: &ReviewSession, working_dir: &Path) -> Vec<
 
     // If there are accepted hunks, apply them
     if session.accepted_count() > 0 {
-        let patch = session.accepted_patch();
+        let _patch = session.accepted_patch();
         let patch_path = working_dir.join(".hone/review-patch.diff");
-        // Write patch file (caller handles this)
+        // TODO: Write patch file (caller handles this)
         cmds.push(format!(
             "git stash pop && git apply --allow-empty {}",
             patch_path.display()
