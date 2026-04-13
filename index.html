@@ -1705,11 +1705,15 @@
 </table>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <h3 id="1-installation">1. Installation<a class="headerlink" href="#1-installation" title="Permanent link">&para;</a></h3>
+<p><strong>From crates.io (recommended):</strong>
+<div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>install<span class="w"> </span>hone-cli<span class="w"> </span>honed
+</code></pre></div></p>
+<p><strong>Or build from source:</strong>
 <div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/wojciechkpl/hone.git
 <span class="nb">cd</span><span class="w"> </span>hone
 cargo<span class="w"> </span>build<span class="w"> </span>--release
-<span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">/target/release:</span><span class="nv">$PATH</span><span class="s2">&quot;</span>
-</code></pre></div>
+sudo<span class="w"> </span>cp<span class="w"> </span>target/release/hone<span class="w"> </span>target/release/honed<span class="w"> </span>/usr/local/bin/
+</code></pre></div></p>
 <h3 id="2-configure">2. Configure<a class="headerlink" href="#2-configure" title="Permanent link">&para;</a></h3>
 <p>Run the interactive configuration wizard:</p>
 <div class="highlight"><pre><span></span><code>hone<span class="w"> </span>configure

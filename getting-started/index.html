@@ -582,10 +582,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#clone-and-build-from-source" class="md-nav__link">
+  <a href="#install-from-cratesio-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Clone and Build from Source
+        Install from crates.io (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build from Source
       
     </span>
   </a>
@@ -597,6 +608,17 @@
     <span class="md-ellipsis">
       
         Verify Installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#crates-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Crates Published
       
     </span>
   </a>
@@ -1999,10 +2021,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#clone-and-build-from-source" class="md-nav__link">
+  <a href="#install-from-cratesio-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Clone and Build from Source
+        Install from crates.io (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build from Source
       
     </span>
   </a>
@@ -2014,6 +2047,17 @@
     <span class="md-ellipsis">
       
         Verify Installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#crates-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Crates Published
       
     </span>
   </a>
@@ -2978,32 +3022,94 @@ sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w
 - <strong>Node.js 18+</strong> (for MCP JavaScript extensions)</p>
 <hr />
 <h2 id="2-installation">2. Installation<a class="headerlink" href="#2-installation" title="Permanent link">&para;</a></h2>
-<h3 id="clone-and-build-from-source">Clone and Build from Source<a class="headerlink" href="#clone-and-build-from-source" title="Permanent link">&para;</a></h3>
-<p>Clone the Hone repository and build the release binary:</p>
+<h3 id="install-from-cratesio-recommended">Install from crates.io (recommended)<a class="headerlink" href="#install-from-cratesio-recommended" title="Permanent link">&para;</a></h3>
+<p>The fastest way to install Hone:</p>
+<div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>install<span class="w"> </span>hone-cli<span class="w"> </span>honed
+</code></pre></div>
+<p>This installs both the <code>hone</code> CLI and the <code>honed</code> server daemon to <code>~/.cargo/bin/</code>.</p>
+<h3 id="build-from-source">Build from Source<a class="headerlink" href="#build-from-source" title="Permanent link">&para;</a></h3>
+<p>For the latest development version:</p>
 <div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/wojciechkpl/hone.git
 <span class="nb">cd</span><span class="w"> </span>hone
 cargo<span class="w"> </span>build<span class="w"> </span>--release
-</code></pre></div>
-<p>The binary is located at <code>target/release/hone</code>. Copy it to your PATH:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Option 1: Copy to a directory already in PATH</span>
-sudo<span class="w"> </span>cp<span class="w"> </span>target/release/hone<span class="w"> </span>/usr/local/bin/
-
-<span class="c1"># Option 2: Add the build directory to your shell profile</span>
-<span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export PATH=&quot;$HOME/path/to/hone/target/release:$PATH&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.zshrc
-<span class="nb">source</span><span class="w"> </span>~/.zshrc
+sudo<span class="w"> </span>cp<span class="w"> </span>target/release/hone<span class="w"> </span>target/release/honed<span class="w"> </span>/usr/local/bin/
 </code></pre></div>
 <h3 id="verify-installation">Verify Installation<a class="headerlink" href="#verify-installation" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--version
+<div class="highlight"><pre><span></span><code>hone<span class="w"> </span>--version<span class="w">    </span><span class="c1"># hone-cli 0.1.0</span>
+honed<span class="w"> </span>--version<span class="w">   </span><span class="c1"># honed 0.1.0</span>
 </code></pre></div>
-<p>Expected output:
-<div class="highlight"><pre><span></span><code>hone 0.1.0
-</code></pre></div></p>
-<p>If you also intend to run the daemon server:</p>
-<div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>build<span class="w"> </span>--release<span class="w"> </span>--bin<span class="w"> </span>honed
-hone<span class="w"> </span>--version
-honed<span class="w"> </span>--version
-</code></pre></div>
-<p>Both <code>hone</code> and <code>honed</code> should now be available in your PATH.</p>
+<h3 id="crates-published">Crates Published<a class="headerlink" href="#crates-published" title="Permanent link">&para;</a></h3>
+<p>Hone is published as 15 crates on <a href="https://crates.io">crates.io</a>:</p>
+<table>
+<thead>
+<tr>
+<th>Crate</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hone-cli</code></td>
+<td>The <code>hone</code> terminal command (binary)</td>
+</tr>
+<tr>
+<td><code>honed</code></td>
+<td>The HTTP/2 server daemon (binary)</td>
+</tr>
+<tr>
+<td><code>hone-core</code></td>
+<td>Agent loop, orchestration, context management</td>
+</tr>
+<tr>
+<td><code>hone-tools</code></td>
+<td>File, shell, git, LSP, screen capture tools</td>
+</tr>
+<tr>
+<td><code>hone-providers</code></td>
+<td>Anthropic, OpenAI, Ollama, CLI adapters</td>
+</tr>
+<tr>
+<td><code>hone-proto</code></td>
+<td>Shared types and serialization</td>
+</tr>
+<tr>
+<td><code>hone-tui</code></td>
+<td>Terminal UI (ratatui)</td>
+</tr>
+<tr>
+<td><code>hone-mcp</code></td>
+<td>MCP client for 70+ extensions</td>
+</tr>
+<tr>
+<td><code>hone-sandbox</code></td>
+<td>Kernel sandboxing (Seatbelt/Landlock)</td>
+</tr>
+<tr>
+<td><code>hone-memory</code></td>
+<td>Encrypted SQLite memory store</td>
+</tr>
+<tr>
+<td><code>hone-index</code></td>
+<td>Tree-sitter symbol index</td>
+</tr>
+<tr>
+<td><code>hone-cache</code></td>
+<td>Tool result cache</td>
+</tr>
+<tr>
+<td><code>hone-config</code></td>
+<td>Configuration loading</td>
+</tr>
+<tr>
+<td><code>hone-server</code></td>
+<td>HTTP server, SSE, sessions</td>
+</tr>
+<tr>
+<td><code>hone-recipes</code></td>
+<td>YAML recipe engine</td>
+</tr>
+</tbody>
+</table>
 <hr />
 <h2 id="3-first-time-setup-hone-configure">3. First-Time Setup (hone configure)<a class="headerlink" href="#3-first-time-setup-hone-configure" title="Permanent link">&para;</a></h2>
 <p>Before running your first session, complete the interactive configuration wizard:</p>
