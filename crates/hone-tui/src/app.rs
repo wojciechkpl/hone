@@ -690,7 +690,11 @@ impl App {
                 self.handle_clarify_command(prompt);
             }
             Command::Unknown(name) => {
-                let msg = format!("Unknown command: /{name}  (type /help for help)");
+                let msg = if name == "configure" {
+                    "To configure Hone, exit the TUI and run: hone configure".to_string()
+                } else {
+                    format!("Unknown command: /{name}  (type /help for help)")
+                };
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::Error, msg));
             }

@@ -124,18 +124,43 @@ impl ReviewerAgent {
 
         let raw = turn.response.trim();
 
+        // Strip markdown code fences if present (```json ... ```)
+        let json_str = if raw.starts_with("```") {
+            let stripped = raw
+                .trim_start_matches("```json")
+                .trim_start_matches("```")
+                .trim_end_matches("```")
+                .trim();
+            stripped
+        } else {
+            raw
+        };
+
         // Attempt to parse the model output as a JSON array of issues.
-        let (issues, approved) = match serde_json::from_str::<Vec<ReviewIssue>>(raw) {
+        // Fail-CLOSED: if the model returns malformed JSON, treat it as
+        // "review failed" with a synthetic Critical issue, NOT as approval.
+        let (issues, approved) = match serde_json::from_str::<Vec<ReviewIssue>>(json_str) {
             Ok(parsed) => {
-                // Approve when there are no critical or major issues.
                 let blocking = parsed.iter().any(|i| {
                     matches!(i.severity, ReviewSeverity::Critical | ReviewSeverity::Major)
                 });
                 (parsed, !blocking)
             }
-            Err(_) => {
-                // Cannot parse — fail-open: assume the code is fine.
-                (Vec::new(), true)
+            Err(parse_err) => {
+                tracing::warn!(
+                    "reviewer returned unparseable response (fail-closed): {parse_err}"
+                );
+                // Return a synthetic issue so the caller knows the review failed.
+                let synthetic = ReviewIssue {
+                    severity: ReviewSeverity::Critical,
+                    description: format!(
+                        "Reviewer output could not be parsed as JSON: {parse_err}. Raw response: {}",
+                        &raw[..200.min(raw.len())]
+                    ),
+                    file: None,
+                    suggestion: Some("Re-run the review or check the model's output format.".to_string()),
+                };
+                (vec![synthetic], false)
             }
         };
 

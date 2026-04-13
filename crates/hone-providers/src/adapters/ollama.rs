@@ -32,20 +32,52 @@ impl OllamaProvider {
 /// Ollama supports the same roles and tool calling format as OpenAI since
 /// v0.3.0 (July 2024): system, user, assistant, tool.
 pub fn convert_message(message: &Message) -> Value {
-    let role = match message.role {
-        Role::System => "system",
-        Role::User => "user",
-        Role::Assistant => "assistant",
-        Role::Tool => "tool",
+    // When the model used text-based tool calls (id starts with "call_text_"),
+    // it can't process structured tool-result messages. Convert tool results
+    // to user messages with the result embedded as text.
+    let is_text_tool_result = matches!(message.role, Role::Tool)
+        && message
+            .tool_call_id
+            .as_ref()
+            .map(|id| id.starts_with("call_text_"))
+            .unwrap_or(false);
+
+    let role = if is_text_tool_result {
+        "user" // Send as user message for text-based tool callers
+    } else {
+        match message.role {
+            Role::System => "system",
+            Role::User => "user",
+            Role::Assistant => "assistant",
+            Role::Tool => "tool",
+        }
     };
 
     let mut obj = serde_json::Map::new();
     obj.insert("role".to_owned(), json!(role));
-    obj.insert("content".to_owned(), json!(message.content.as_text()));
 
-    // Include tool_call_id for tool-result messages.
-    if let Some(ref tc_id) = message.tool_call_id {
-        obj.insert("tool_call_id".to_owned(), json!(tc_id));
+    if is_text_tool_result {
+        // Format tool result as readable text for the model
+        let tool_name = message
+            .tool_call_id
+            .as_ref()
+            .map(|id| id.trim_start_matches("call_text_").to_string())
+            .unwrap_or_else(|| "tool".to_string());
+        let content = format!(
+            "[Tool result from {}]:\n{}",
+            tool_name,
+            message.content.as_text()
+        );
+        obj.insert("content".to_owned(), json!(content));
+    } else {
+        obj.insert("content".to_owned(), json!(message.content.as_text()));
+    }
+
+    // Include tool_call_id for native tool-result messages (not text-based).
+    if !is_text_tool_result {
+        if let Some(ref tc_id) = message.tool_call_id {
+            obj.insert("tool_call_id".to_owned(), json!(tc_id));
+        }
     }
 
     // Include tool_calls for assistant messages that requested tool use.
