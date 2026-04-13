@@ -458,6 +458,144 @@ Run it:
 hone --recipe refactor.yaml
 ```
 
+## When to Use What
+
+Hone has many modes. Here's how to pick the right one:
+
+### Decision Flowchart
+
+```
+Is it a quick fix (typo, rename, one-liner)?
+  YES → hone "fix the typo in auth.rs"              (one-shot)
+
+Is the task ambiguous or underspecified?
+  YES → hone "improve the code"                      (auto-clarifies)
+     or → /clarify implement user auth               (force clarification)
+
+Do you need a specialist perspective?
+  YES → @security-auditor review src/auth.py          (@agent dispatch)
+     or → hone --agent debugger "why does test fail"  (--agent flag)
+
+Is it a structured workflow (TDD, review, audit)?
+  YES → hone --recipe tdd-feature --var feature_name=auth
+     or → hone --recipe security-audit
+
+Is it a large, multi-file task?
+  YES → hone --orchestrate "implement JWT auth"       (parallel workers)
+
+Do you want the best possible answer?
+  YES → hone --ensemble 3 "optimize this query"       (3 candidates, ranked)
+
+Are you in a CI/CD pipeline?
+  YES → hone --json --no-clarify "fix the lint errors" (structured output)
+
+Do you want to run tests automatically?
+  YES → :tdd cargo test                               (file watcher)
+```
+
+### Mode Comparison
+
+| Mode | Command | Best For | Cost | Speed |
+|------|---------|----------|------|-------|
+| **One-shot** | `hone "prompt"` | Quick fixes, single tasks | $0.001-0.01 | Fastest |
+| **Interactive** | `hone` | Exploration, multi-turn conversation | $0.01-0.05 | — |
+| **@agent** | `@debugger why...` | Specialist analysis (security, perf, debug) | $0.005-0.02 | Fast |
+| **Recipe** | `--recipe tdd-feature` | Structured workflows (TDD, review, audit) | $0.01-0.03 | Guided |
+| **Orchestrate** | `--orchestrate "..."` | Large multi-file tasks, parallel workers | $0.01-0.05 | 2-5 min |
+| **Ensemble** | `--ensemble 3 "..."` | Critical decisions, best-of-N quality | 3x base | 3x time |
+| **JSON/CI** | `--json "..."` | Automation, pipelines, batch processing | Same | Same |
+| **TDD** | `:tdd cargo test` | Active development, instant feedback | $0 (local) | Continuous |
+
+### Use Case Examples
+
+**"Fix a bug"** — One-shot is enough:
+```bash
+hone "The login endpoint returns 500 when email is null. Fix it."
+```
+
+**"I'm not sure what's wrong"** — Let clarification help:
+```bash
+hone "the app is slow"
+# Hone asks: "Which part? API latency? Startup time? Database queries?"
+# You answer, then it investigates with the right tools
+```
+
+**"Review my PR"** — Use the code-review recipe:
+```bash
+hone --recipe code-review
+# Automated: correctness → security → performance → test coverage → report
+```
+
+**"Audit for security"** — Use the specialist agent:
+```bash
+@security-auditor Scan this project for OWASP Top 10 vulnerabilities
+# or the structured recipe:
+hone --recipe security-audit
+```
+
+**"Build a whole feature"** — Orchestrate decomposes and parallelizes:
+```bash
+hone --orchestrate "Add user authentication with JWT, password hashing, and session management"
+# Creates 3 workers: auth-service, api-endpoints, test-suite
+# Runs in parallel with dependency ordering
+```
+
+**"I need the best refactoring"** — Ensemble generates N candidates:
+```bash
+hone --ensemble 3 "Refactor the payment processing module for clarity"
+# 3 candidates at different temperatures → ranker picks the best
+```
+
+**"Wire into CI"** — JSON output for scripting:
+```bash
+result=$(hone --json --no-clarify "fix lint errors")
+echo "$result" | jq -e '.success' || exit 1
+echo "Cost: $(echo "$result" | jq '.cost_usd')"
+```
+
+**"TDD workflow"** — Auto-test on every save:
+```
+> :tdd cargo test
+  [TDD] watching for changes...
+
+  (edit src/lib.rs)
+
+  [TDD] tests FAILED — test_new_feature: expected 42, got 0
+> fix it to return 42
+  [TDD] tests PASSED — 3 passed in 0.4s
+```
+
+### Available Recipes
+
+| Recipe | Command | What It Does |
+|--------|---------|-------------|
+| `tdd-feature` | `--recipe tdd-feature --var feature_name=X` | Red-Green-Refactor cycle |
+| `bug-fix` | `--recipe bug-fix` | Reproduce → regression test → fix → verify |
+| `code-review` | `--recipe code-review` | Correctness, security, performance, tests |
+| `refactor` | `--recipe refactor` | Baseline → plan → execute one-at-a-time → verify |
+| `security-audit` | `--recipe security-audit` | OWASP Top 10, secrets, dependencies |
+| `performance` | `--recipe performance` | Baseline → profile → optimize → measure |
+| `migration` | `--recipe migration --var old_dependency=X --var new_dependency=Y` | Audit → plan → migrate → verify |
+| `documentation` | `--recipe documentation` | Inventory → API docs → README → verify |
+| `onboarding` | `--recipe onboarding` | Understand a new codebase |
+
+### Available Agents (via `@agent` or `--agent`)
+
+| Agent | Use When |
+|-------|----------|
+| `@code-reviewer` | You want a code review with severity ratings |
+| `@debugger` | A test fails or something crashes |
+| `@security-auditor` | You need to find vulnerabilities |
+| `@performance-optimizer` | Something is slow |
+| `@rust-expert` | Rust-specific questions (ownership, lifetimes, async) |
+| `@python-expert` | Python-specific questions (typing, pytest, FastAPI) |
+| `@documentation-agent` | Docs need writing or updating |
+| `@api-designer` | Designing REST/GraphQL/gRPC APIs |
+| `@tdd-workflow` | Enforcing Red-Green-Refactor discipline |
+| `@researcher` | Literature review, experiment design |
+| `@ml-engineer` | Model training, deployment, MLOps |
+| `@data-engineer` | ETL pipelines, schema design |
+
 ## Configuration
 
 Hone uses a three-level config hierarchy:
