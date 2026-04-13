@@ -188,6 +188,21 @@ fn load_builtin_recipe(name: &str) -> Option<&'static str> {
         "refactor" => Some(include_str!(
             "../../../crates/hone-recipes/recipes/refactor.yaml"
         )),
+        "security-audit" => Some(include_str!(
+            "../../../crates/hone-recipes/recipes/security-audit.yaml"
+        )),
+        "performance" => Some(include_str!(
+            "../../../crates/hone-recipes/recipes/performance-optimization.yaml"
+        )),
+        "migration" => Some(include_str!(
+            "../../../crates/hone-recipes/recipes/migration.yaml"
+        )),
+        "documentation" => Some(include_str!(
+            "../../../crates/hone-recipes/recipes/documentation.yaml"
+        )),
+        "onboarding" => Some(include_str!(
+            "../../../crates/hone-recipes/recipes/onboarding.yaml"
+        )),
         _ => None,
     }
 }
@@ -195,20 +210,40 @@ fn load_builtin_recipe(name: &str) -> Option<&'static str> {
 fn list_builtin_recipes() {
     println!("Available recipes:");
     println!(
-        "  {:<16} Implement a feature using Test-Driven Development",
+        "  {:<20} Implement a feature using Test-Driven Development",
         "tdd-feature"
     );
     println!(
-        "  {:<16} Fix a bug using systematic debugging with regression test",
+        "  {:<20} Fix a bug with regression test",
         "bug-fix"
     );
     println!(
-        "  {:<16} Perform a comprehensive code review",
+        "  {:<20} Comprehensive code review (correctness, security, performance)",
         "code-review"
     );
     println!(
-        "  {:<16} Safely refactor code with test verification at each step",
+        "  {:<20} Safely refactor with test verification at each step",
         "refactor"
+    );
+    println!(
+        "  {:<20} Full OWASP Top 10 security audit",
+        "security-audit"
+    );
+    println!(
+        "  {:<20} Profile, analyze, and optimize performance",
+        "performance"
+    );
+    println!(
+        "  {:<20} Migrate between frameworks, libraries, or API versions",
+        "migration"
+    );
+    println!(
+        "  {:<20} Generate or update project documentation",
+        "documentation"
+    );
+    println!(
+        "  {:<20} Understand a new codebase (architecture, patterns, entry points)",
+        "onboarding"
     );
 }
 

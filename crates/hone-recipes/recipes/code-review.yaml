@@ -1,13 +1,43 @@
 name: code-review
-description: Perform a comprehensive code review
+description: Perform a comprehensive code review with security and performance analysis
 steps:
   - name: overview
-    prompt: "Read the changed files. Understand the intent and scope of the changes."
+    prompt: >
+      Read the changed files using git_diff. Understand the intent and scope.
+      Summarize: what changed, why (based on commit messages), and how many files/lines.
   - name: correctness
-    prompt: "Check for logical errors, edge cases, and off-by-one bugs."
+    prompt: >
+      Check for logical errors, edge cases, off-by-one bugs, and error handling gaps.
+      Verify that new code follows existing patterns and naming conventions.
+      Flag any TODO/FIXME that should be resolved before merge.
   - name: security
-    prompt: "Scan for injection vulnerabilities, secret leakage, and auth issues."
+    prompt: >
+      Scan for OWASP Top 10 vulnerabilities: injection, broken auth, sensitive data exposure,
+      XSS, insecure deserialization. Check for hardcoded secrets, missing input validation,
+      and path traversal risks. Use grep to search for common patterns.
   - name: performance
-    prompt: "Identify unnecessary allocations, N+1 queries, and hot-path issues."
+    prompt: >
+      Identify unnecessary allocations, N+1 queries, unbounded loops, missing pagination,
+      and hot-path inefficiencies. Check for blocking calls in async contexts.
+  - name: tests
+    prompt: >
+      Are the changes adequately tested? Check test coverage for new code paths.
+      Are there edge case tests? Integration tests? Do existing tests still pass?
   - name: report
-    prompt: "Summarize findings in a table sorted by severity (CRITICAL > HIGH > MEDIUM > LOW > INFO)."
+    prompt: >
+      Produce a structured review report:
+
+      ## Summary
+      One-paragraph overview of the changes.
+
+      ## Issues
+      | Severity | File:Line | Description |
+      |----------|-----------|-------------|
+      | CRITICAL | ... | ... |
+      | HIGH | ... | ... |
+
+      ## Positive Highlights
+      What's done well.
+
+      ## Verdict
+      APPROVE / REQUEST CHANGES / NEEDS DISCUSSION

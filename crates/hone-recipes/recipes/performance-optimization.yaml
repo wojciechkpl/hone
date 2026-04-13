@@ -1,0 +1,30 @@
+name: performance-optimization
+description: Profile, analyze, and optimize application performance
+steps:
+  - name: baseline
+    prompt: >
+      Establish performance baseline:
+      - Run existing benchmarks or create a simple timing test
+      - Measure: startup time, request latency, memory usage, throughput
+      - Record exact numbers for before/after comparison
+  - name: profile
+    prompt: >
+      Identify bottlenecks using code analysis:
+      - grep for N+1 queries, unbounded loops, excessive allocations
+      - Check for blocking I/O in async code paths
+      - Look for missing caching, redundant computation, large copies
+      - Use lsp_diagnostics to find type inefficiencies
+  - name: optimize
+    prompt: >
+      Apply targeted optimizations (one at a time):
+      - Replace allocations with references where possible
+      - Add caching for repeated computations
+      - Batch database queries
+      - Use lazy initialization for expensive resources
+      Run `{{test_command}}` after each change to verify correctness.
+  - name: measure
+    prompt: >
+      Re-run the same benchmarks from the baseline step.
+      Report improvement: percentage change for each metric.
+      If improvement is < 5%, the optimization may not be worth the complexity.
+test_cmd: "{{test_command}}"

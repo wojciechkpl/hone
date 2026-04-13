@@ -1,0 +1,53 @@
+name: security-audit
+description: Full security audit covering OWASP Top 10, secrets, and dependency vulnerabilities
+steps:
+  - name: inventory
+    prompt: >
+      Map the attack surface. Use glob and grep to find:
+      - HTTP endpoints and route handlers
+      - Authentication/authorization logic
+      - Database queries and ORM usage
+      - File upload/download handlers
+      - External API integrations
+      - Configuration files with potential secrets
+  - name: injection
+    prompt: >
+      Check for injection vulnerabilities:
+      - SQL injection: grep for raw SQL, string interpolation in queries
+      - Command injection: grep for subprocess, exec, system calls
+      - XSS: grep for unescaped HTML output, innerHTML, dangerouslySetInnerHTML
+      - Path traversal: check file operations for user-controlled paths
+  - name: auth
+    prompt: >
+      Review authentication and authorization:
+      - Password hashing (must be bcrypt/argon2, not MD5/SHA1)
+      - Session management (secure cookies, expiry, rotation)
+      - JWT validation (algorithm confusion, expiry, signature)
+      - Missing auth checks on endpoints
+      - Privilege escalation paths
+  - name: secrets
+    prompt: >
+      Search for hardcoded secrets:
+      - grep for API keys, passwords, tokens in source code
+      - Check .env files committed to git
+      - Check for secrets in logs or error messages
+      - Verify .gitignore covers sensitive files
+  - name: dependencies
+    prompt: >
+      Check dependency security:
+      - Look for known vulnerable versions in lock files
+      - Check for unmaintained dependencies
+      - Flag any dependencies with excessive permissions
+  - name: report
+    prompt: >
+      Produce a security audit report:
+
+      ## Executive Summary
+      Overall risk level (CRITICAL/HIGH/MEDIUM/LOW).
+
+      ## Findings
+      | # | Severity | Category | File:Line | Description | Remediation |
+      |---|----------|----------|-----------|-------------|-------------|
+
+      ## Recommendations
+      Prioritized list of fixes.

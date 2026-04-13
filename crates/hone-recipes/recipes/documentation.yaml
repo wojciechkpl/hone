@@ -1,0 +1,32 @@
+name: documentation
+description: Generate or update project documentation from code
+steps:
+  - name: inventory
+    prompt: >
+      Survey the codebase structure:
+      - Use glob to find all source files
+      - Use symbol_search to catalog public APIs
+      - Check for existing docs (README, docs/, comments)
+      - Identify undocumented public functions and types
+  - name: api-docs
+    prompt: >
+      For each undocumented public function/type:
+      - Read the implementation to understand what it does
+      - Write a concise docstring (what, parameters, returns, errors)
+      - Add inline comments only where the logic is non-obvious
+      - Match the existing documentation style
+  - name: readme
+    prompt: >
+      Update or create the README with:
+      - Project description (one paragraph)
+      - Installation instructions
+      - Quick start example
+      - API overview (link to detailed docs)
+      - Configuration reference
+  - name: verify
+    prompt: >
+      Check documentation quality:
+      - All public APIs have docstrings
+      - Examples in docs are syntactically valid
+      - Links are not broken
+      - No TODO/placeholder documentation remains

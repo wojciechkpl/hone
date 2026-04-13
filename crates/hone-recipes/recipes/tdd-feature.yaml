@@ -1,14 +1,29 @@
 name: tdd-feature
-description: Implement a feature using Test-Driven Development
+description: Implement a feature using Test-Driven Development (Red-Green-Refactor)
 steps:
-  - name: understand
-    prompt: "Read the relevant code and understand the current architecture. Summarize what you find."
+  - name: clarify
+    prompt: >
+      Before writing any code, clarify the requirements for {{feature_name}}.
+      What are the expected inputs, outputs, and edge cases?
+      If anything is ambiguous, state your assumptions.
   - name: red
-    prompt: "Write failing tests that describe the desired behavior of {{feature_name}}. Run them to confirm they fail."
+    prompt: >
+      Write failing tests that describe the desired behavior of {{feature_name}}.
+      Run them with `{{test_command}}` to confirm they fail.
+      Each test should cover one specific behavior.
   - name: green
-    prompt: "Write the minimum code to make the tests pass. Do not add extra features."
+    prompt: >
+      Write the MINIMUM code to make the failing tests pass.
+      Do not add extra features, error handling, or optimizations yet.
+      Run `{{test_command}}` after each change to verify progress.
   - name: refactor
-    prompt: "Refactor the implementation for clarity and quality. All tests must still pass."
+    prompt: >
+      Refactor the implementation for clarity and quality.
+      Extract shared logic, improve naming, remove duplication.
+      Run `{{test_command}}` after each refactoring step — all tests must stay green.
   - name: verify
-    prompt: "Run all tests one final time. Report the results."
+    prompt: >
+      Run the full test suite one final time with `{{test_command}}`.
+      Report: tests passed/failed, code coverage if available.
+      Use lsp_diagnostics to check for type errors or warnings.
 test_cmd: "{{test_command}}"

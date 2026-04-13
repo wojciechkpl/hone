@@ -1,0 +1,44 @@
+name: onboarding
+description: Understand a new codebase — architecture, patterns, entry points
+steps:
+  - name: structure
+    prompt: >
+      Map the project structure:
+      - Use glob to find all source files by language
+      - Count: files, lines of code, directories
+      - Identify the build system (Cargo.toml, package.json, pyproject.toml, go.mod)
+      - List top-level modules/packages
+  - name: entry-points
+    prompt: >
+      Find the main entry points:
+      - grep for main(), fn main, if __name__, app.listen, serve
+      - Identify the request flow: entry → routing → handlers → data layer
+      - Find configuration loading (env vars, config files)
+  - name: architecture
+    prompt: >
+      Analyze the architecture:
+      - What patterns are used? (MVC, hexagonal, microservices, monolith)
+      - How is state managed? (database, in-memory, external service)
+      - What are the key abstractions? (traits, interfaces, base classes)
+      - Draw a dependency graph of the main modules
+  - name: report
+    prompt: >
+      Produce an onboarding summary:
+
+      ## Project Overview
+      One-paragraph description.
+
+      ## Tech Stack
+      Languages, frameworks, databases, key dependencies.
+
+      ## Architecture
+      Module map with dependency arrows.
+
+      ## Entry Points
+      Where to start reading for different tasks.
+
+      ## Key Patterns
+      Coding conventions, error handling, testing approach.
+
+      ## Gotchas
+      Non-obvious things a new developer should know.
