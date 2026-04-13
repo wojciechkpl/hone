@@ -54,7 +54,7 @@ pub use task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerS
 pub use test_loop::{
     GreenCommands, GreenContract, GreenLevel, TestLoopResult, TestStatus, TestVerificationLoop,
 };
-pub use egress_log::{EgressEntry, EgressLog};
+pub use egress_log::{EgressEntry, EgressLog, SpanKind, TraceContext};
 pub use injection_detector::{InjectionDetector, InjectionRisk};
 pub use recovery::{FailureScenario, RecoveryAction};
 pub use retry::{is_transient_error, retry, RetryConfig};
