@@ -6,13 +6,25 @@ Context injection is an automated, three-tier system that proactively provides t
 
 ---
 
-## How It Works: Three-Tier System with CallGraph
+## How It Works: Three-Tier System with Adaptive Hierarchical Skeleton
 
-Context injection operates as a three-tier system, each serving a specific purpose:
+Context injection operates as a three-tier system, each serving a specific purpose. The key innovation is the **adaptive hierarchical skeleton** which intelligently selects detail levels based on repository characteristics.
+
+### Adaptive Strategy Selection
+
+The skeleton strategy auto-selects based on repository characteristics:
+
+- **Small repos (<20 files):** CallGraph (full call details, maximum accuracy)
+- **Medium repos (20-500 files):** Hybrid or Flat depending on token budget
+- **Large repos (500+ files):** Directory tree only, fast generation
+- **Files >100KB:** Auto-skipped (too large for tree-sitter to parse efficiently)
+- **Slow parses (>100ms):** Auto-skipped to avoid blocking on timeout
+
+Progressive budget filling ensures skeleton stays within token limits while maximizing detail where it matters most.
 
 ### Tier 1: Repository Skeleton (Always Injected)
 
-The foundation of context injection. Provides a complete roadmap of the codebase structure without requiring any tool calls. The default strategy is **CallGraph** which shows function-level call relationships, achieving 100% patch rate on a 10-task SWE-bench sample (+30pp improvement over V1 baseline).
+The foundation of context injection. Provides a complete roadmap of the codebase structure without requiring any tool calls. The default strategy is **CallGraph** (for smaller repos) or **Hybrid/Flat** (for larger repos) which adapt based on repository size, achieving 100% patch rate on a 10-task SWE-bench sample (+30pp improvement over V1 baseline).
 
 **Content:**
 - Function/class signatures (no bodies) for public APIs
@@ -136,15 +148,36 @@ Despite injection adding 200-400 tokens to the initial prompt:
 
 ## Skeleton Strategies
 
-Hone offers four strategies for generating the repository skeleton. You can choose which strategy best fits your needs using the `--skeleton-strategy` CLI flag or `HONE_SKELETON_STRATEGY` environment variable.
+Hone offers four strategies for generating the repository skeleton. By default, Hone uses **adaptive strategy selection**: automatically choosing the best strategy based on repository size and characteristics. You can override this by manually specifying a strategy with the `--skeleton-strategy` CLI flag or `HONE_SKELETON_STRATEGY` environment variable.
+
+### Adaptive Strategy Selection (Default)
+
+When no strategy is explicitly set, Hone auto-selects based on repository characteristics:
+
+```
+Repository size check:
+  < 20 files       → Use CallGraph (maximum detail)
+  20-500 files     → Use Hybrid (balanced)
+  > 500 files      → Use Flat or Directory Tree (fast)
+
+File filtering:
+  > 100KB          → Skip (too large for tree-sitter)
+  > 100ms to parse → Skip (timeout risk)
+
+Token budget:
+  Use progressive filling to stay within limits
+  Cap at 1500 tokens by default
+```
+
+**Benefit:** Adaptive selection ensures optimal accuracy per your repository without requiring manual tuning.
 
 ### Strategy Comparison
 
 | Strategy | Format | Call Details | Token Usage | Patch Rate | Best For |
 |----------|--------|--------------|-------------|-----------|----------|
-| **CallGraph** (default) | Function-level calls | Per-function | 850-1200 | **100%** | Maximum accuracy, available token budget |
-| **Hybrid** | Deps + call details for top-5 | Top-5 files only | 900-1300 | 90% | Balanced approach, moderate repos |
-| **Flat** | Signatures only | None | 600-900 | 90% | Token-constrained, need fast generation |
+| **CallGraph** (small repos) | Function-level calls | Per-function | 850-1200 | **100%** | Maximum accuracy, <20 files or explicit selection |
+| **Hybrid** (medium repos) | Deps + call details for top-5 | Top-5 files only | 900-1300 | 90% | Balanced approach, 20-500 files |
+| **Flat** (large repos) | Signatures only | None | 600-900 | 90% | Token-constrained, 500+ files, fast generation |
 | **DependencyGraph** | Signatures + imports | Import arrows | 700-1000 | 85% | Understanding module relationships |
 
 ### CallGraph (Default)
@@ -397,13 +430,19 @@ Hone's call graph is **unique** in offering function-level relationship visibili
 
 ## How to Configure the Skeleton Strategy
 
-### CLI Flag
+### Default: Adaptive Strategy (Recommended)
+
+By default, Hone automatically selects the best strategy based on your repository size:
 
 ```bash
-# Use CallGraph (default)
 hone "fix the login function"
+# Automatically selects CallGraph for small repos, Hybrid/Flat for large repos
+```
 
-# Explicitly specify strategy
+### Override with CLI Flag
+
+```bash
+# Force specific strategy (overrides adaptive behavior)
 hone --skeleton-strategy flat "find all parse functions"
 hone --skeleton-strategy call_graph "debug this error"
 hone --skeleton-strategy hybrid "refactor db module"
@@ -413,7 +452,7 @@ hone --skeleton-strategy dependency_graph "trace imports"
 ### Environment Variable
 
 ```bash
-# Set globally
+# Override adaptive selection
 export HONE_SKELETON_STRATEGY=flat
 hone "your task"
 
@@ -427,19 +466,43 @@ In `~/.config/hone/config.toml`:
 
 ```toml
 [agent]
-# Default skeleton strategy (default: call_graph)
-skeleton_strategy = "call_graph"
+# Strategy: adaptive (default), call_graph, hybrid, flat, dependency_graph
+# adaptive = auto-select based on repo size
+skeleton_strategy = "adaptive"
 
 # Token budget for skeleton (affects how many functions are included)
 context_skeleton_budget = 1500
+
+# Auto-skip large files
+max_file_size_bytes = 102400  # 100KB
+
+# Auto-skip slow parses
+max_parse_time_ms = 100
 ```
 
 ### Selection Guide
 
-**Use CallGraph (default) if:**
+**Let Adaptive Handle It (Recommended):**
+
+In most cases, use the default adaptive behavior:
+
+```bash
+hone "your task"
+# Hone automatically selects the best strategy
+```
+
+Adaptive selection considers:
+- Repository size (file count)
+- File sizes (skips >100KB)
+- Parse time (skips >100ms)
+- Available token budget
+
+**Manually Override If You Want:**
+
+**Use CallGraph if:**
+- Working on small codebases (<20 files)
 - You have available token budget (200K context)
 - You want maximum accuracy
-- Working on medium-to-large codebases (100+ functions)
 - Fixing bugs or refactoring complex interactions
 
 **Use Flat if:**
@@ -449,9 +512,9 @@ context_skeleton_budget = 1500
 - Agent can discover relationships by reading files
 
 **Use Hybrid if:**
-- Medium-sized codebase (1K-10K files)
-- Want balanced detail + token efficiency
+- Medium-sized codebase (20-500 files) and want balanced detail + token efficiency
 - Want full import graph plus detailed calls for top matches
+- Need predictable token usage
 
 **Use DependencyGraph if:**
 - Primarily concerned with module-level dependencies
@@ -712,10 +775,17 @@ graph TD
     B --> C["Check Skeleton Cache<br/>(mtime + file count)"]
     C -->|Cache Hit| D1["Load Cached Skeleton"]
     C -->|Cache Miss| D2["Generate New Skeleton"]
-    D2 --> D2a["Strategy Selection<br/>(CallGraph/Hybrid/Flat/Deps)"]
-    D2a --> D2b["CallGraph: Extract Calls<br/>DependencyGraph: Parse Imports<br/>Flat: Signatures Only"]
-    D2b --> D2c["Format & Cap at Token Budget"]
-    D2c --> D1
+    D2 --> D2a["Adaptive Strategy Selection"]
+    D2a --> D2a1{"Repo Size?"}
+    D2a1 -->|<20 files| D2b["Use CallGraph<br/>(maximum detail)"]
+    D2a1 -->|20-500 files| D2c["Use Hybrid<br/>(balanced)"]
+    D2a1 -->|>500 files| D2d["Use Flat<br/>(fast)"]
+    D2b --> D2e["Filter Files<br/>(skip >100KB, >100ms)"]
+    D2c --> D2e
+    D2d --> D2e
+    D2e --> D2f["Extract Calls/Imports<br/>Based on Strategy"]
+    D2f --> D2g["Format & Cap<br/>at Token Budget"]
+    D2g --> D1
     D1 --> E["BM25 Search<br/>(find top-3 matches)"]
     E --> F{"Score Gap > Threshold?"}
     F -->|Yes| G["Generate Tier 2<br/>(inject top-3 signatures)"]
@@ -728,8 +798,11 @@ graph TD
     L --> M["agent.run_turn()"]
     M --> N["Tool Execution Loop"]
     
-    style D2 fill:#2d6a2d,stroke:#4a4,color:#fff
-    style D2a fill:#2d8a3d,stroke:#5a5,color:#fff
+    style D2a fill:#2d6a2d,stroke:#4a4,color:#fff
+    style D2a1 fill:#2d8a3d,stroke:#5a5,color:#fff
+    style D2b fill:#1d5a2d,stroke:#3a3,color:#fff
+    style D2c fill:#1d5a2d,stroke:#3a3,color:#fff
+    style D2d fill:#1d5a2d,stroke:#3a3,color:#fff
     style D1 fill:#1d5a2d,stroke:#3a3,color:#fff
     style G fill:#1a5276,stroke:#5ac,color:#fff
     style J fill:#6e4a1a,stroke:#da5,color:#fff

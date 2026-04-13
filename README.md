@@ -81,7 +81,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Multi-agent orchestration** — Decompose complex tasks via research-backed patterns (Anthropic, MASAI, CodeR). Orchestrator-worker pipeline with message merging.
 - **Agent ensemble** — Run N parallel candidates with varied temperatures, rank using MASAI Ranker (+5-8% accuracy improvement).
 - **Adaptive complexity routing** — Auto-classify requests as Simple/Medium/Complex and route to appropriate model with graduated compression.
-- **Proactive context injection** — Automated three-tier system with **CallGraph** skeleton strategy (function-level call relationships) prepares code context before tool execution. Default CallGraph achieves 100% patch rate on SWE-bench sample (+30pp over V1). Disable with `--no-inject` or `HONE_NO_INJECTION=1`.
+- **Adaptive hierarchical skeleton** — Proactive context injection with intelligent strategy selection: auto-detects repository size and auto-selects detail level. 4-level hierarchy: directory → file list → signatures → call graph. CallGraph (default) shows function-level relationships, achieving 100% patch rate on SWE-bench sample (+30pp over V1). Adaptive strategy skips large files (>100KB) and slow parses (>100ms). Progressive budget filling ensures efficient token use. Disable with `--no-inject` or `HONE_NO_INJECTION=1`.
 - **Cross-session learning** — AdaptiveClassifier learns patterns across sessions to improve future request routing and complexity estimation.
 - **Test-verification loop** — AgentCoder pattern that runs tests after each iteration (+40% bugs caught early).
 - **Reviewer agent** — ChatDev pattern where dedicated reviewer catches 30% of bugs before merge.
@@ -104,7 +104,14 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Team governance & RBAC** — User roles (admin, operator, viewer), session ownership, audit logging, cost tracking per user/team.
 - **Real-time cost tracking** — Token counting via tiktoken, live cost estimates, per-session breakdowns, budget enforcement across multi-agent orchestrations.
 - **Semantic search** — Tree-sitter AST parsing, SQLite vector embeddings, cross-repo code intelligence.
-- **Built-in agents** — 12 specialized agent personas (code reviewer, debugger, security auditor, ML engineer, etc.) plus 4 recipe templates for common workflows.
+- **Scope clarification mode** — Auto-detects ambiguous requests using 4 heuristics and asks clarifying questions before coding. Use `/clarify` to trigger manually or `--no-clarify` for CI/scripting without prompts.
+- **Inline agent dispatch** — Use `@agent-name` syntax to swap system prompts on the fly (e.g., `@security-auditor "audit this code"`, `@debugger "fix this bug"`). 12 built-in agents available. Restores original prompt after the turn.
+- **Safe pipe operator** — Pipes to head/tail/grep/wc/sort now allowed in shell commands (were previously blocked). Pipes to unknown commands still treated as destructive.
+- **Ollama tool calling** — OllamaProvider now supports full tool calling (previously hardcoded to skip). Qwen 2.5 Coder 14B recommended for local use.
+- **Model override fixes** — `--model ollama` now directly creates OllamaProvider without falling back to Claude CLI when Ollama is explicitly requested.
+- **Text-based tool call parser** — Detects JSON tool calls in model content for Ollama (handles models that don't use tool_calls field). Strips markdown code fences automatically.
+- **DeepSeek Direct compatibility** — Works for interactive use; for SWE-bench benchmarks, OpenRouter is recommended due to token output limits.
+- **Built-in agents** — 12 specialized agent personas (code reviewer, debugger, security auditor, ML engineer, etc.) with `@agent-name` inline dispatch. Plus 4 recipe templates for common workflows.
 
 ## Built-in Agents and Recipes
 
@@ -517,6 +524,8 @@ Up to five candidates are supported (`--ensemble 5`).
 | `hone configure` | Interactive setup wizard for providers, API keys, and models |
 | `hone` | Start interactive CLI session |
 | `hone "prompt"` | One-shot mode: single prompt and exit |
+| `hone --clarify "prompt"` | Enable scope clarification mode (auto-detects ambiguous requests, asks clarifying questions) |
+| `hone --no-clarify "prompt"` | Disable scope clarification for CI/scripting |
 | `hone --orchestrate "prompt"` | Multi-agent orchestrator (decompose-execute-merge) |
 | `hone --ensemble N "prompt"` | Run N candidates with varied temperatures, rank the best |
 | `hone --recipe <name>` | Run a built-in recipe (tdd-feature, bug-fix, code-review, refactor) |
@@ -526,15 +535,16 @@ Up to five candidates are supported (`--ensemble 5`).
 | `hone --vim` | Start in vim mode (vim-style keybindings) |
 | `hone --json` | Output structured JSON for CI/CD automation |
 | `hone --no-inject` | Disable proactive context injection (also set HONE_NO_INJECTION=1) |
-| `hone --skeleton-strategy call_graph` | Select skeleton strategy: call_graph (default), hybrid, flat, dependency_graph |
+| `hone --skeleton-strategy call_graph` | Select skeleton strategy: call_graph (default, adaptive), hybrid, flat, dependency_graph |
 | `hone --inject-context` | Explicitly enable context injection (already default, useful for config overrides) |
 | `hone --audit` | Enable JSONL egress audit log (also set HONE_AUDIT_LOG=1) |
 | `hone --var KEY=VALUE` | Substitute template variables in recipes (repeatable) |
+| `hone --model <name>` | Use a specific model (e.g., `--model ollama` for Ollama, `--model gpt-4o` for OpenAI) |
+| `hone --model ollama` | Use Ollama with tool calling support (now fully enabled) |
 | `hone session list` | List all saved sessions |
 | `hone session resume NAME` | Resume a previous session |
 | `hone session rename OLD NEW` | Rename a session |
 | `hone session delete NAME` | Delete a session |
-| `hone --model <name>` | Use a specific model |
 | `hone --dir <path>` | Target a specific directory |
 | `hone --remote <host:port>` | Connect to remote daemon |
 | `honed` | Start the HTTP/2 server daemon |
@@ -547,11 +557,14 @@ In interactive mode, use these commands:
 | `!command` | Run shell command (e.g., `!cargo test`, `!git status`) |
 | `!cd path` | Change directory (confined to project) |
 | `!nvim file` | Suspend TUI, open editor, restore on exit |
+| `@agent-name prompt` | Dispatch to inline agent (e.g., `@security-auditor "audit this"`, `@debugger "fix this bug"`) |
+| `:clarify` | Manually trigger scope clarification for ambiguous requests |
 | `:set vim` | Enable vim-style keybindings |
 | `:set novim` | Disable vim-style keybindings |
-| `:tdd [command]` | Watch files, auto-run tests on change |
+| `:set no-clarify` | Disable automatic clarification prompts |
+| `:tdd [command]` | Watch files, auto-run tests on change (300ms debounce) |
 | `:tdd off` | Stop TDD mode |
-| `:review` | Enter hunk-by-hunk review mode (a/r/A/R/q navigation) |
+| `:review` | Enter hunk-by-hunk review mode (j/k navigate, a/r accept/reject, A/R all, q quit) |
 
 See `hone --help` for full options.
 

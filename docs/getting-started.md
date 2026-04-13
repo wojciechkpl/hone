@@ -8,6 +8,13 @@ This comprehensive guide walks you through installing Hone, configuring your fir
 2. [Installation](#2-installation)
 3. [First-Time Setup](#3-first-time-setup-hone-configure)
 4. [Provider Setup](#4-provider-setup)
+   - Anthropic (Recommended)
+   - OpenAI
+   - DeepSeek
+   - OpenRouter
+   - Ollama (with Tool Calling)
+   - Claude CLI
+   - Gemini CLI
 5. [Configuration Reference](#5-configuration-reference)
 6. [Your First Task](#6-your-first-task)
 7. [Session Management](#7-session-management)
@@ -21,10 +28,12 @@ This comprehensive guide walks you through installing Hone, configuring your fir
    - Ensemble Mode
    - Recipe Mode
    - Agent Persona Mode
-9. [MCP Extensions](#9-mcp-extensions)
-10. [Remote Access (honed)](#10-remote-access-honed)
-11. [Next Steps](#11-next-steps)
-12. [Troubleshooting](#12-troubleshooting)
+9. [Scope Clarification Mode](#9-scope-clarification-mode)
+10. [Inline Agent Dispatch](#10-inline-agent-dispatch)
+11. [MCP Extensions](#11-mcp-extensions)
+12. [Remote Access (honed)](#12-remote-access-honed)
+13. [Next Steps](#13-next-steps)
+14. [Troubleshooting](#14-troubleshooting)
 
 ---
 
@@ -443,11 +452,34 @@ ollama list
 - No API key needed
 - Works offline
 
+**Tool Calling Support:**
+
+Hone now supports full tool calling with Ollama-compatible models. The following models are recommended:
+
+- `qwen2.5-coder:14b` — **Recommended for code generation** with tool calling support
+- `llama2` — Limited tool support
+- `mistral` — Limited tool support
+
+To use Ollama with tools:
+
+```bash
+ollama pull qwen2.5-coder:14b
+hone --model ollama:qwen2.5-coder:14b "fix the bug in main.rs"
+```
+
+**Pros:**
+
+- Completely free
+- Runs locally (privacy)
+- No API key needed
+- Works offline
+- Full tool calling support (new)
+
 **Cons:**
 
 - Slower than cloud (depends on your GPU/CPU)
 - Less capable than Claude Opus
-- No tool calling support (yet)
+- Model quality varies (test locally before relying on production)
 
 ---
 
@@ -593,8 +625,10 @@ All environment variables in one place. CLI flags and config file override these
 | `RUST_LOG` | Logging verbosity | `debug`, `info`, `warn`, `error` |
 | `HONE_CONFIG` | Override config file path | `~/.config/hone/config.toml` |
 | `HONE_NO_INJECTION` | Disable context injection for this run | `1` |
-| `HONE_SKELETON_STRATEGY` | Skeleton strategy for context injection | `call_graph`, `hybrid`, `flat`, `dependency_graph` |
+| `HONE_SKELETON_STRATEGY` | Skeleton strategy for context injection (adaptive by default) | `call_graph`, `hybrid`, `flat`, `dependency_graph` |
 | `HONE_INJECT_CONTEXT` | Explicitly enable context injection (already default) | `1` |
+| `HONE_OPENAI_BASE_URL` | Override OpenAI endpoint for DeepSeek, Qwen, OpenRouter | `https://api.deepseek.com` |
+| `HONE_OPENAI_MODEL` | Override model name for custom OpenAI-compatible endpoints | `deepseek-chat`, `qwen-max` |
 
 ### Config File Format
 
@@ -1251,7 +1285,170 @@ hone --agent code-reviewer "Review the PR changes"
 
 ---
 
-## 9. MCP Extensions
+## 9. Scope Clarification Mode
+
+Hone automatically detects ambiguous requests and asks clarifying questions before proceeding. This prevents wasted time on misunderstandings.
+
+### What Gets Clarified?
+
+Hone uses 4 heuristics to detect ambiguity:
+
+1. **Missing file context** — Request mentions code but doesn't specify which file(s)
+   - Example: "Fix the typo in the login function"
+   - Clarification: "There are multiple login functions. Which file?"
+
+2. **Unclear scope** — Request is vague about what needs to change
+   - Example: "Make the API faster"
+   - Clarification: "Faster for which endpoint? Users? Database?"
+
+3. **Vague terminology** — Request uses terms without specifics
+   - Example: "Refactor the authentication module"
+   - Clarification: "Change the API interface, internal structure, or both?"
+
+4. **Contradictory hints** — Request seems to contradict itself
+   - Example: "Add a new feature but don't modify any existing code"
+   - Clarification: "Do you want to add files, or modify existing ones?"
+
+### Enable/Disable
+
+**Enable (default):**
+
+Clarification is on by default. Hone automatically detects ambiguous requests:
+
+```bash
+hone "fix the bug in the parse function"
+# If ambiguous, asks: "Which parse function? There are 3 in the codebase."
+```
+
+**Disable for CI/scripting:**
+
+```bash
+hone --no-clarify "fix the bug in the parse function"
+```
+
+Or in config.toml:
+
+```toml
+[agent]
+scope_clarification = false
+```
+
+### Manual Clarification
+
+In interactive mode, manually trigger clarification:
+
+```
+You: fix the import error
+Assistant: That request seems ambiguous. Let me ask some questions...
+
+1. Which file has the import error?
+   a) src/main.rs
+   b) src/models.rs
+   c) src/utils.rs
+
+You: (a) src/main.rs
+Assistant: Which import specifically? I see: datetime, json, requests...
+```
+
+Or use the command:
+
+```
+:clarify
+> your ambiguous request
+```
+
+---
+
+## 10. Inline Agent Dispatch
+
+Dynamically swap to a specialized agent for a single turn using `@agent-name` syntax.
+
+### 12 Built-In Agents
+
+| Agent | Specialty | Example |
+|-------|-----------|---------|
+| `@code-reviewer` | Code quality, security, performance | `@code-reviewer "review this function"` |
+| `@debugger` | Systematic debugging with scientific method | `@debugger "why is this test failing?"` |
+| `@security-auditor` | Vulnerability scanning, OWASP review | `@security-auditor "audit this code"` |
+| `@performance-optimizer` | Database, API, memory optimization | `@performance-optimizer "make this faster"` |
+| `@documentation-agent` | API docs, READMEs, architecture diagrams | `@documentation-agent "document this API"` |
+| `@api-designer` | REST, GraphQL, gRPC design | `@api-designer "design the auth endpoint"` |
+| `@tdd-workflow` | Test-Driven Development | `@tdd-workflow "add user signup feature"` |
+| `@rust-expert` | Rust idioms, ownership, async/await | `@rust-expert "fix the lifetime issue"` |
+| `@python-expert` | PEP 484 typing, pytest, FastAPI | `@python-expert "optimize the data pipeline"` |
+| `@researcher` | Literature review, experiment design | `@researcher "research ML approaches"` |
+| `@ml-engineer` | Model training, evaluation, MLOps | `@ml-engineer "train a classifier"` |
+| `@data-engineer` | ETL pipelines, schemas, data quality | `@data-engineer "design the data pipeline"` |
+
+### Usage in Interactive Mode
+
+```bash
+hone --session my-session
+```
+
+Then in the session:
+
+```
+You: I have a security concern
+Assistant: I can help. What's the concern?
+
+You: @security-auditor check if this code is vulnerable to SQL injection
+
+[Security Auditor mode enabled]
+Assistant: I'll perform a security audit focused on SQL injection vulnerabilities...
+[audits the code]
+
+[Returning to default agent]
+
+You: Next question...
+```
+
+### Usage in One-Shot Mode
+
+```bash
+hone '@debugger "why does this test fail?"'
+hone '@code-reviewer "review the auth module for quality"'
+hone '@security-auditor "look for secrets in this code"'
+```
+
+### How It Works
+
+When you use `@agent-name`:
+
+1. The system prompt swaps to the specified agent's specialized persona
+2. Agent-specific tools and instructions load (e.g., `@debugger` uses scientific method)
+3. Agent runs for one turn
+4. System prompt returns to your default agent
+5. Context and session history are preserved
+
+This allows you to **temporarily bring in expertise** for focused tasks without leaving your session.
+
+### Custom Agents
+
+You can define custom agents in `.hone/agents/my-agent.md`:
+
+```markdown
+---
+name: my-agent
+description: My specialized agent
+tools: [read, write, shell, grep]
+model: claude-sonnet-4
+---
+
+You are an expert in [your specialty].
+Your role is to [specific task].
+Always [principles].
+```
+
+Then use it:
+
+```
+@my-agent "your task here"
+```
+
+---
+
+## 11. MCP Extensions
 
 Model Context Protocol (MCP) servers extend Hone with external tools: GitHub, Slack, databases, custom integrations.
 
@@ -1314,7 +1511,7 @@ See the [MCP Extensions Guide](tutorials/mcp-extensions.md) for a complete list 
 
 ---
 
-## 10. Remote Access (honed)
+## 12. Remote Access (honed)
 
 Run Hone as a persistent daemon server accessible over the network.
 
@@ -1369,7 +1566,7 @@ See [Server & Remote Guide](tutorials/server-and-remote.md) for full details.
 
 ---
 
-## 11. Next Steps
+## 13. Next Steps
 
 You've completed the Getting Started guide. Here's where to go next:
 
@@ -1399,7 +1596,7 @@ You've completed the Getting Started guide. Here's where to go next:
 
 ---
 
-## 12. Troubleshooting
+## 14. Troubleshooting
 
 ### API Key Not Found
 

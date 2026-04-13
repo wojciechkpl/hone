@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- **Adaptive hierarchical skeleton** — Context injection auto-selects detail level based on repo size: <20 files = full call graph, 500+ files = directory tree only. 4-level hierarchy (directory → file list → signatures → call graph) with progressive budget filling. Smart file relevance detection skips files >100KB and slow parses (>100ms). Delivers optimal accuracy while respecting token budgets.
+- **Scope clarification mode (`/clarify`, `--no-clarify`)** — Auto-detects ambiguous requests using 4 heuristics (missing file context, unclear scope, vague terminology, contradictory hints). Asks clarifying questions before coding. `--no-clarify` flag disables for CI/scripting. `/clarify` command manually triggers within interactive session.
+- **Inline agent dispatch (`@agent-name`)** — Use `@security-auditor`, `@debugger`, `@code-reviewer`, etc. inline to swap system prompt for the turn. 12 built-in agents available. System prompt restores after the turn completes. Example: `@security-auditor "audit this code"`.
+- **Safe pipe operator** — Pipes to head/tail/grep/wc/sort now allowed in shell commands (previously blocked as destructive). Pipes to unknown commands still escalate as destructive for safety.
+- **Ollama tool calling enabled** — OllamaProvider now supports full tool calling (was previously hardcoded to skip). Qwen 2.5 Coder 14B is recommended local model for code generation with tool support.
+- **Model override fixes** — `--model ollama` now directly creates OllamaProvider without falling back to Claude CLI when user explicitly requests Ollama.
+- **Text-based tool call parser for Ollama** — Detects JSON tool calls in content field (for models that don't use tool_calls field). Strips markdown code fences automatically. Known limitation: Qwen 2.5 Coder sends tool calls as text but cannot process results back (use for testing only).
+- **DeepSeek Direct compatibility** — Works for interactive use and simple tasks. SWE-bench benchmarks: lower output tokens than OpenRouter cause pipe blocking and empty patches (290/300 failed). OpenRouter remains recommended for benchmarks.
+
+### Added
+
 - **Shell escape (`!command`)** — Execute native shell commands directly from Hone prompt. `!ls`, `!git status`, `!cargo test` show inline output. `!cd src` changes directory persistently (confined to project root). `!nvim file.rs` suspends TUI, runs editor, restores on exit.
 - **Vim mode (`--vim` or `:set vim`)** — Full vim-style keybindings in interactive mode. Normal mode: j/k for scroll, gg/G for top/bottom, i/a for insert, :q to quit. Insert mode: type normally, Esc returns to normal. Toggle with `:set vim` and `:set novim`.
 - **TDD mode (`:tdd [command]`)** — File watcher + auto-test workflow. Watches source files with 300ms debounce, auto-runs test command on change, displays PASS/FAIL inline. Stop with `:tdd off`.
