@@ -126,7 +126,12 @@ Hone ships with 12 pre-configured agents and 4 recipe templates for common devel
 
 ### 1. Installation
 
-**From crates.io (recommended):**
+**Install Rust** (if you don't have it):
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+**Install Hone from crates.io:**
 ```bash
 cargo install hone-cli honed
 ```

@@ -342,34 +342,66 @@ graph TB
 
 ## Installation
 
-### Install from crates.io (recommended)
+### Option 1: Install from crates.io (recommended)
+
+Requires [Rust 1.85+](https://rustup.rs). If you don't have Rust, install it first:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Then install Hone:
 
 ```bash
 cargo install hone-cli honed
 ```
 
-This installs both binaries (`hone` and `honed`) to `~/.cargo/bin/`. Make sure it's on your PATH.
+This installs both `hone` (CLI agent) and `honed` (server daemon) to `~/.cargo/bin/`.
 
-### Prerequisites
-
-- Rust 1.85+ (via [rustup](https://rustup.rs))
-- macOS or Linux
-
-### Build from Source
+### Option 2: Build from Source
 
 ```bash
 git clone https://github.com/wojciechkpl/hone.git
 cd hone
 cargo build --release
-sudo cp target/release/hone /usr/local/bin/
-sudo cp target/release/honed /usr/local/bin/
+sudo cp target/release/hone target/release/honed /usr/local/bin/
 ```
+
+### Option 3: Run without Installing
+
+```bash
+git clone https://github.com/wojciechkpl/hone.git
+cd hone
+cargo run --release --bin hone -- "fix the bug"
+```
+
+### Platform Support
+
+| Platform | Architecture | Status |
+|----------|-------------|--------|
+| macOS | Apple Silicon (arm64) | Fully supported, Seatbelt sandboxing |
+| macOS | Intel (x86_64) | Fully supported |
+| Linux | x86_64 | Fully supported, Landlock sandboxing |
+| Linux | arm64 | Supported (cross-compile) |
+| Windows | x86_64 | Not supported (no sandbox backend) |
 
 ### Verify Installation
 
 ```bash
-hone --version
-honed --version
+hone --version    # hone-cli 0.1.0
+honed --version   # honed 0.1.0
+```
+
+### Update
+
+```bash
+cargo install hone-cli honed --force
+```
+
+### Uninstall
+
+```bash
+cargo uninstall hone-cli honed
 ```
 
 ### First-Time Setup
