@@ -631,36 +631,102 @@ echo "Cost: $(echo "$result" | jq '.cost_usd')"
   [TDD] tests PASSED — 3 passed in 0.4s
 ```
 
-### Available Recipes
+### Launching Recipes
 
-| Recipe | Command | What It Does |
-|--------|---------|-------------|
-| `tdd-feature` | `--recipe tdd-feature --var feature_name=X` | Red-Green-Refactor cycle |
-| `bug-fix` | `--recipe bug-fix` | Reproduce → regression test → fix → verify |
-| `code-review` | `--recipe code-review` | Correctness, security, performance, tests |
-| `refactor` | `--recipe refactor` | Baseline → plan → execute one-at-a-time → verify |
-| `security-audit` | `--recipe security-audit` | OWASP Top 10, secrets, dependencies |
-| `performance` | `--recipe performance` | Baseline → profile → optimize → measure |
-| `migration` | `--recipe migration --var old_dependency=X --var new_dependency=Y` | Audit → plan → migrate → verify |
-| `documentation` | `--recipe documentation` | Inventory → API docs → README → verify |
-| `onboarding` | `--recipe onboarding` | Understand a new codebase |
+Recipes are multi-step structured workflows. Run from the terminal:
 
-### Available Agents (via `@agent` or `--agent`)
+```bash
+# TDD: Red → Green → Refactor cycle
+hone --recipe tdd-feature --var feature_name=auth --var test_command="cargo test"
 
-| Agent | Use When |
-|-------|----------|
-| `@code-reviewer` | You want a code review with severity ratings |
-| `@debugger` | A test fails or something crashes |
-| `@security-auditor` | You need to find vulnerabilities |
-| `@performance-optimizer` | Something is slow |
-| `@rust-expert` | Rust-specific questions (ownership, lifetimes, async) |
-| `@python-expert` | Python-specific questions (typing, pytest, FastAPI) |
-| `@documentation-agent` | Docs need writing or updating |
-| `@api-designer` | Designing REST/GraphQL/gRPC APIs |
-| `@tdd-workflow` | Enforcing Red-Green-Refactor discipline |
-| `@researcher` | Literature review, experiment design |
-| `@ml-engineer` | Model training, deployment, MLOps |
-| `@data-engineer` | ETL pipelines, schema design |
+# Bug fix: reproduce → regression test → fix → verify
+hone --recipe bug-fix --var test_command="pytest"
+
+# Security audit: OWASP Top 10, secrets, dependencies
+hone --recipe security-audit
+
+# Code review: correctness, security, performance, test coverage
+hone --recipe code-review
+
+# Refactor safely with tests at each step
+hone --recipe refactor --var test_command="cargo test"
+
+# Performance: baseline → profile → optimize → measure
+hone --recipe performance --var test_command="cargo bench"
+
+# Migrate between libraries
+hone --recipe migration --var old_dependency=reqwest --var new_dependency=ureq
+
+# Generate/update documentation
+hone --recipe documentation
+
+# Understand a new codebase
+hone --recipe onboarding
+
+# List all available recipes
+hone --list-recipes
+```
+
+| Recipe | Variables | Steps |
+|--------|-----------|-------|
+| `tdd-feature` | `feature_name`, `test_command` | clarify → red → green → refactor → verify |
+| `bug-fix` | `test_command` | reproduce → regression test → fix → verify → review |
+| `code-review` | — | overview → correctness → security → performance → tests → report |
+| `refactor` | `test_command` | baseline → analyze → execute → verify |
+| `security-audit` | — | inventory → injection → auth → secrets → dependencies → report |
+| `performance` | `test_command` | baseline → profile → optimize → measure |
+| `migration` | `old_dependency`, `new_dependency`, `test_command` | audit → plan → migrate → verify |
+| `documentation` | — | inventory → api-docs → readme → verify |
+| `onboarding` | — | structure → entry-points → architecture → report |
+
+### Launching Agents
+
+Agents are specialized personas. Two ways to use them:
+
+**From terminal (one-shot):**
+```bash
+hone --agent security-auditor "review src/auth.rs for OWASP issues"
+hone --agent debugger "test_login fails with AttributeError"
+hone --agent code-reviewer "review my latest changes"
+hone --agent rust-expert "how to handle lifetimes in this struct"
+```
+
+**Inside TUI (inline `@` dispatch):**
+```
+> @security-auditor review src/auth.rs for vulnerabilities
+> @debugger why does test_login fail?
+> @code-reviewer check the latest diff
+> @performance-optimizer this database query is slow
+> @python-expert convert this function to async
+> @rust-expert fix the lifetime error in agent.rs
+> @ml-engineer design a recommendation model for user preferences
+> @documentation-agent update the API docs
+```
+
+| Agent | Specialty | Example |
+|-------|-----------|---------|
+| `@code-reviewer` | Code quality, severity ratings | "review src/ for bugs" |
+| `@debugger` | Test failures, stack traces | "why does test_login fail?" |
+| `@security-auditor` | OWASP, injection, secrets | "audit auth.py for vulnerabilities" |
+| `@performance-optimizer` | N+1 queries, hot paths, memory | "this query takes 3 seconds" |
+| `@rust-expert` | Ownership, lifetimes, async tokio | "fix the borrow checker error" |
+| `@python-expert` | Typing, pytest, FastAPI, async | "add type hints to this module" |
+| `@documentation-agent` | READMEs, API docs, changelogs | "document the public API" |
+| `@api-designer` | REST, GraphQL, gRPC, OpenAPI | "design a user management API" |
+| `@tdd-workflow` | Red-Green-Refactor discipline | "implement auth with TDD" |
+| `@researcher` | Literature review, experiments | "review papers on transformers" |
+| `@ml-engineer` | Training, deployment, MLOps | "optimize model inference" |
+| `@data-engineer` | ETL, schemas, data quality | "design the data pipeline" |
+
+### Recipes vs Agents
+
+| | Recipes | Agents |
+|---|---------|--------|
+| **What** | Multi-step structured workflow | Specialized persona |
+| **Steps** | 3-6 defined phases | Single turn or conversation |
+| **Variables** | `--var key=value` | None needed |
+| **Best for** | Repeatable processes | Ad-hoc specialist questions |
+| **Inside TUI** | CLI only (`--recipe`) | `@agent-name prompt` |
 
 ## Configuration
 
