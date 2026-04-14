@@ -183,31 +183,31 @@ struct Cli {
 fn load_builtin_recipe(name: &str) -> Option<&'static str> {
     match name {
         "tdd-feature" => Some(include_str!(
-            "../../../crates/hone-recipes/recipes/tdd-feature.yaml"
+            "../recipes/tdd-feature.yaml"
         )),
         "bug-fix" => Some(include_str!(
-            "../../../crates/hone-recipes/recipes/bug-fix.yaml"
+            "../recipes/bug-fix.yaml"
         )),
         "code-review" => Some(include_str!(
-            "../../../crates/hone-recipes/recipes/code-review.yaml"
+            "../recipes/code-review.yaml"
         )),
         "refactor" => Some(include_str!(
-            "../../../crates/hone-recipes/recipes/refactor.yaml"
+            "../recipes/refactor.yaml"
         )),
         "security-audit" => Some(include_str!(
-            "../../../crates/hone-recipes/recipes/security-audit.yaml"
+            "../recipes/security-audit.yaml"
         )),
         "performance" => Some(include_str!(
-            "../../../crates/hone-recipes/recipes/performance-optimization.yaml"
+            "../recipes/performance-optimization.yaml"
         )),
         "migration" => Some(include_str!(
-            "../../../crates/hone-recipes/recipes/migration.yaml"
+            "../recipes/migration.yaml"
         )),
         "documentation" => Some(include_str!(
-            "../../../crates/hone-recipes/recipes/documentation.yaml"
+            "../recipes/documentation.yaml"
         )),
         "onboarding" => Some(include_str!(
-            "../../../crates/hone-recipes/recipes/onboarding.yaml"
+            "../recipes/onboarding.yaml"
         )),
         _ => None,
     }

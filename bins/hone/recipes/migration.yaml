@@ -1,0 +1,34 @@
+name: migration
+description: Safely migrate between frameworks, libraries, or API versions
+steps:
+  - name: audit
+    prompt: >
+      Audit current usage of {{old_dependency}}:
+      - grep for all imports and usages across the codebase
+      - Count: how many files, how many call sites
+      - Identify patterns: simple replacements vs complex refactors
+      - List any features used that don't have equivalents in {{new_dependency}}
+  - name: plan
+    prompt: >
+      Create a migration plan:
+      1. Which files can be migrated with simple find-and-replace?
+      2. Which files need manual refactoring?
+      3. What new dependencies need to be added?
+      4. What configuration changes are needed?
+      Order by: least risky first (utility functions, then core logic, then entry points).
+  - name: migrate
+    prompt: >
+      Execute the migration plan step by step.
+      After each file:
+        1. Run lsp_diagnostics to catch type errors
+        2. Run `{{test_command}}` to verify no regressions
+      Use multi_edit for bulk renames across files.
+      If a test breaks, fix it before proceeding.
+  - name: verify
+    prompt: >
+      Final verification:
+      - Run `{{test_command}}` — all tests must pass
+      - grep for any remaining references to {{old_dependency}}
+      - Check that no old imports remain
+      - Verify the build completes cleanly
+test_cmd: "{{test_command}}"

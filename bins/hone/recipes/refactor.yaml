@@ -1,0 +1,28 @@
+name: refactor
+description: Safely refactor code with test verification at each step
+steps:
+  - name: baseline
+    prompt: >
+      Run `{{test_command}}` to establish a green baseline.
+      Report the results. If any tests fail, stop and fix them first.
+  - name: analyze
+    prompt: >
+      Analyze the code to refactor. Use symbol_search and grep to find all usages.
+      Identify: code smells, duplication, poor naming, missing abstractions.
+      Create a numbered refactoring plan with the safest changes first.
+  - name: execute
+    prompt: >
+      Apply the refactoring changes ONE AT A TIME in the order planned.
+      After each change:
+        1. Use lsp_diagnostics to catch type errors
+        2. Run `{{test_command}}` to verify no regressions
+        3. If a test breaks, revert and try a different approach
+      Use multi_edit for renames that touch multiple files.
+  - name: verify
+    prompt: >
+      Run the full test suite with `{{test_command}}`.
+      All tests must pass. Report before/after comparison:
+      - Lines of code (reduced?)
+      - Number of functions/classes (simplified?)
+      - Duplication removed?
+test_cmd: "{{test_command}}"

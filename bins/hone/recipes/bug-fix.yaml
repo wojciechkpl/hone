@@ -1,0 +1,28 @@
+name: bug-fix
+description: Fix a bug using systematic debugging with regression test
+steps:
+  - name: reproduce
+    prompt: >
+      Read the bug report carefully. Search for the relevant code using
+      grep and symbol_search. Read the affected files.
+      Identify the root cause — not just the symptom.
+  - name: regression-test
+    prompt: >
+      Write a regression test that captures the exact bug behavior.
+      Run `{{test_command}}` to verify the test FAILS with the current code.
+      The test should pass once the bug is fixed.
+  - name: fix
+    prompt: >
+      Write the minimal fix for the root cause.
+      Do not refactor surrounding code. Do not add unrelated improvements.
+      Use edit_file for targeted changes (not write_file).
+  - name: verify
+    prompt: >
+      Run `{{test_command}}` — the regression test should now pass.
+      All existing tests must also pass (no regressions).
+      Use lsp_diagnostics to verify no type errors were introduced.
+  - name: review
+    prompt: >
+      Review your own fix: is it minimal? Does it handle edge cases?
+      Could it break anything else? If unsure, add another test.
+test_cmd: "{{test_command}}"
