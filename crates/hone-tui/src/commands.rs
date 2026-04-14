@@ -30,6 +30,11 @@ pub enum Command {
     /// `/clarify <prompt>` — ask clarifying questions about `<prompt>`.
     /// `/clarify` alone — ask the user to provide a prompt, then clarify it.
     Clarify(String),
+    /// In-TUI configuration.
+    /// `/configure provider` — change provider
+    /// `/configure model <id>` — change model
+    /// `/configure` — show current configuration
+    Configure(String),
     /// A `/` prefixed word that was not recognised.
     Unknown(String),
 }
@@ -46,7 +51,7 @@ pub enum TddSubcommand {
 /// All known command names for autocomplete.
 pub const COMMAND_NAMES: &[&str] = &[
     "model", "undo", "redo", "cost", "quit", "q", "help", "split", "panel", "theme",
-    "theme-preview", "set", "tdd", "review", "clarify",
+    "theme-preview", "set", "tdd", "review", "clarify", "configure",
 ];
 
 /// Agent persona names available for `@agent-name` inline dispatch.
@@ -99,6 +104,7 @@ impl Command {
             },
             "review" => Command::Review,
             "clarify" => Command::Clarify(arg.to_string()),
+            "configure" => Command::Configure(arg.to_string()),
             other => Command::Unknown(other.to_string()),
         };
         Some(cmd)

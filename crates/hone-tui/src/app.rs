@@ -610,12 +610,21 @@ impl App {
             }
             Command::Help => {
                 let help = "\
-/model <id>  — switch model\n\
-/cost        — show session cost\n\
-/undo        — undo last action\n\
-/redo        — redo\n\
-/quit  /q    — quit\n\
-/help        — this message";
+/configure         — show/change config (model, theme, budget, vim)\n\
+/model <id>        — switch model\n\
+/cost              — show session cost\n\
+/tdd [command]     — start TDD file watcher (:tdd off to stop)\n\
+/review            — review session changes (hunk accept/reject)\n\
+/clarify [prompt]  — ask clarifying questions before coding\n\
+/set vim | novim   — toggle vim keybindings\n\
+/theme <name>      — switch theme (crimson, neon, chalk, minimal)\n\
+/undo              — undo last action\n\
+/redo              — redo\n\
+/quit  /q          — quit\n\
+/help              — this message\n\
+\n\
+@agent-name [prompt] — invoke specialist (e.g. @debugger why does test fail?)\n\
+!command             — run shell command (e.g. !cargo test, !cd src, !nvim file)";
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::System, help));
             }
@@ -689,12 +698,11 @@ impl App {
             Command::Clarify(prompt) => {
                 self.handle_clarify_command(prompt);
             }
+            Command::Configure(arg) => {
+                self.handle_configure_command(&arg);
+            }
             Command::Unknown(name) => {
-                let msg = if name == "configure" {
-                    "To configure Hone, exit the TUI and run: hone configure".to_string()
-                } else {
-                    format!("Unknown command: /{name}  (type /help for help)")
-                };
+                let msg = format!("Unknown command: /{name}  (type /help for help)");
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::Error, msg));
             }
@@ -754,6 +762,90 @@ impl App {
     // -----------------------------------------------------------------------
     // Review command handling
     // -----------------------------------------------------------------------
+
+    fn handle_configure_command(&mut self, arg: &str) {
+        let trimmed = arg.trim();
+
+        if trimmed.is_empty() {
+            // Show current configuration
+            let info = format!(
+                "Current Configuration:\n\
+                 \n\
+                 Model:    {}\n\
+                 Mode:     {}\n\
+                 Session:  {}\n\
+                 Cost:     {}\n\
+                 Context:  {}\n\
+                 Phase:    {}\n\
+                 \n\
+                 Commands:\n\
+                 /configure model <provider:model>  — change model\n\
+                 /configure theme <name>            — change theme (crimson, neon, chalk, minimal)\n\
+                 /configure budget <usd>            — set session budget\n\
+                 /configure vim on|off              — toggle vim keybindings\n\
+                 \n\
+                 For full setup: exit and run 'hone configure'",
+                if self.status.model.is_empty() { "none" } else { &self.status.model },
+                &self.status.mode,
+                self.status.session_name.as_deref().unwrap_or("(unnamed)"),
+                self.status.format_cost(),
+                self.status.format_context(),
+                self.status.phase_long(),
+            );
+            self.messages.push(DisplayMessage::new(DisplayRole::System, info));
+            return;
+        }
+
+        // Parse subcommands
+        let (subcmd, value) = match trimmed.split_once(char::is_whitespace) {
+            Some((k, v)) => (k.trim(), v.trim()),
+            None => (trimmed, ""),
+        };
+
+        match subcmd {
+            "model" if !value.is_empty() => {
+                self.status.model = value.to_string();
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::System,
+                    format!("Model changed to: {value}  (takes effect on next turn)"),
+                ));
+                // Note: actually swapping the provider requires the event loop in main.rs
+                // to pick this up. We store it and let main.rs handle the swap.
+                self.pending_shell_cmd = Some(format!("__configure_model:{value}"));
+            }
+            "theme" if !value.is_empty() => {
+                // Dispatch to existing theme switch
+                self.handle_command(Command::ThemeSwitch(value.to_string()));
+            }
+            "budget" if !value.is_empty() => {
+                match value.parse::<f64>() {
+                    Ok(usd) => {
+                        self.status.budget_usd = Some(usd);
+                        self.messages.push(DisplayMessage::new(
+                            DisplayRole::System,
+                            format!("Session budget set to ${usd:.2}"),
+                        ));
+                    }
+                    Err(_) => {
+                        self.messages.push(DisplayMessage::new(
+                            DisplayRole::Error,
+                            format!("Invalid budget: '{value}' — use a number like 1.00"),
+                        ));
+                    }
+                }
+            }
+            "vim" => {
+                let enable = matches!(value, "on" | "true" | "1" | "yes" | "");
+                self.handle_command(Command::SetVim(enable));
+            }
+            _ => {
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::Error,
+                    format!("Unknown configure option: '{subcmd}'. Try: model, theme, budget, vim"),
+                ));
+            }
+        }
+    }
 
     fn handle_review_command(&mut self) {
         self.messages.push(DisplayMessage::new(
