@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 /// shell metacharacter injection if `binary` ever comes from config.
 pub async fn check_binary_available(binary: &str) -> ProviderHealth {
     // Reject names that look like paths or contain shell metacharacters.
-    if binary.is_empty() || binary.contains(|c: char| matches!(c, '/' | '\0' | ';' | '&' | '|')) {
+    if binary.is_empty() || binary.contains(['/', '\0', ';', '&', '|']) {
         return ProviderHealth::Unavailable {
             reason: format!("invalid binary name: '{binary}'"),
         };
