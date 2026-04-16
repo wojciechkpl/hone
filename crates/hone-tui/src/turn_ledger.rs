@@ -51,6 +51,24 @@ fn instant_now() -> Instant {
     Instant::now()
 }
 
+/// Truncate a string to at most `max_chars` Unicode scalar values.
+///
+/// If truncation occurs, an ellipsis character (`…`) is appended so the total
+/// display length stays within `max_chars + 1`.  Slicing is always on a valid
+/// char boundary, so multi-byte characters (emoji, CJK, etc.) are safe.
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    let mut char_count = 0;
+    for (byte_idx, _) in s.char_indices() {
+        if char_count == max_chars {
+            // We've reached the limit — truncate here.
+            return format!("{}…", &s[..byte_idx]);
+        }
+        char_count += 1;
+    }
+    // The string fits within the budget — return as-is.
+    s.to_string()
+}
+
 /// A file that was touched during this turn.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileTouch {
@@ -261,13 +279,14 @@ impl TurnLedger {
     }
 
     /// Record a memory recall.
+    ///
+    /// The snippet is truncated to at most 79 Unicode scalar values (+ `…`),
+    /// ensuring the stored string is always ≤ 80 display characters.  Slicing
+    /// is done on char boundaries so multi-byte characters (emoji, CJK, etc.)
+    /// never trigger a panic.
     pub fn record_memory_recall(&mut self, key: impl Into<String>, snippet: impl Into<String>) {
         let snippet = snippet.into();
-        let snippet = if snippet.len() > 80 {
-            format!("{}…", &snippet[..79])
-        } else {
-            snippet
-        };
+        let snippet = truncate_chars(&snippet, 79);
         self.memory_recalls.push(MemoryRecall {
             key: key.into(),
             snippet,
@@ -434,6 +453,57 @@ mod tests {
         // Snippet should be truncated — at most 79 'x' chars + "…" (3-byte UTF-8).
         let chars: Vec<char> = l.memory_recalls[0].snippet.chars().collect();
         assert!(chars.len() <= 80, "snippet should be truncated to ≤80 chars, got {}", chars.len());
+    }
+
+    /// Regression test: byte-slicing a multi-byte string would panic under the
+    /// old `&s[..79]` implementation.  Emoji (4-byte) and CJK (3-byte) chars
+    /// must be truncated at a valid char boundary.
+    #[test]
+    fn record_memory_recall_multibyte_no_panic() {
+        let mut l = make_ledger();
+
+        // Build a snippet longer than 79 chars using emoji (4 bytes each).
+        // 100 emoji = 100 Unicode scalar values, which exceeds the 79-char limit.
+        let emoji_snippet: String = "🦀".repeat(100); // 100 emoji = 100 char-length
+        l.record_memory_recall("emoji-key", emoji_snippet);
+        let snippet = &l.memory_recalls[0].snippet;
+        // Must be valid UTF-8 (no panic) and ≤ 80 chars displayed.
+        let char_count: usize = snippet.chars().count();
+        assert!(char_count <= 80, "emoji snippet too long: {char_count} chars");
+        // The original string should have been trimmed.
+        assert!(snippet.contains('…'), "expected ellipsis in truncated emoji snippet");
+
+        // Also test CJK characters (3 bytes each).
+        let cjk_snippet: String = "你好世界".repeat(25); // 100 CJK chars
+        l.record_memory_recall("cjk-key", cjk_snippet);
+        let snippet2 = &l.memory_recalls[1].snippet;
+        let char_count2: usize = snippet2.chars().count();
+        assert!(char_count2 <= 80, "CJK snippet too long: {char_count2} chars");
+        assert!(snippet2.contains('…'), "expected ellipsis in truncated CJK snippet");
+
+        // A short snippet (≤ 79 chars) must be returned unchanged.
+        let short = "hello 世界 🦀";
+        l.record_memory_recall("short-key", short);
+        assert_eq!(l.memory_recalls[2].snippet, short);
+    }
+
+    #[test]
+    fn truncate_chars_handles_ascii() {
+        assert_eq!(truncate_chars("hello", 10), "hello");
+        assert_eq!(truncate_chars("hello world", 5), "hello…");
+    }
+
+    #[test]
+    fn truncate_chars_handles_exact_boundary() {
+        // Exactly at limit should not truncate.
+        let s = "a".repeat(79);
+        assert_eq!(truncate_chars(&s, 79), s);
+        // One over the limit must truncate.
+        let s2 = "a".repeat(80);
+        let result = truncate_chars(&s2, 79);
+        let chars: Vec<char> = result.chars().collect();
+        assert_eq!(chars.last(), Some(&'…'));
+        assert_eq!(chars.len(), 80); // 79 'a' + '…'
     }
 
     #[test]
