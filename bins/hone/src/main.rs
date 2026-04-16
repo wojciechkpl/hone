@@ -1605,8 +1605,9 @@ async fn main() -> Result<()> {
                     .join(".hone")
                     .join("reports");
                 match reports_sub {
-                    reports_cmd::ReportsCmd::List { limit, .. } => {
-                        reports_cmd::cmd_list(&reports_dir, *limit)?;
+                    reports_cmd::ReportsCmd::List { limit, keep_all } => {
+                        let effective_limit = if *keep_all { 0 } else { *limit };
+                        reports_cmd::cmd_list(&reports_dir, effective_limit)?;
                     }
                     reports_cmd::ReportsCmd::Show { id } => {
                         reports_cmd::cmd_show(&reports_dir, id)?;
