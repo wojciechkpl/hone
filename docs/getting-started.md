@@ -864,6 +864,16 @@ Session my-project saved.
 4. **Context Optimization**: Hone automatically keeps relevant code in context
 5. **Session Memory**: Previous turns are remembered and compressed when context gets large
 
+### Observability After Your First Turn
+
+After completing your first interactive turn, you can inspect what the agent did:
+
+- **Press `Ctrl+R`** to toggle the **Agent Rail** sidebar (on wide terminals). Shows files touched, injected context, and memory recalls for the current turn in real-time.
+- **Type `/quit`** to end the session. A detailed **session report** is auto-generated to `.hone/reports/<timestamp>-<session>.md`, including cost, token usage, file stats, and tool timelines.
+- **View reports** with `hone reports list`, `hone reports show <id>`, or `hone reports diff <a> <b>`.
+
+See [docs/observability.md](../observability.md) and [docs/session-reports.md](../session-reports.md) for details on accessibility flags, retention, and JSON export.
+
 ---
 
 ## 7. Session Management

@@ -65,6 +65,8 @@ nav:
     - Architecture: architecture.md
     - Context Injection: context-injection.md
     - Call Graph: call-graph.md
+    - Observability: observability.md
+    - Session Reports: session-reports.md
     - Tools & Agents: tutorials/tools-and-mcp.md
     - MCP Extensions: tutorials/mcp-extensions.md
     - Security: tutorials/security.md
