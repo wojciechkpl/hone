@@ -45,6 +45,12 @@ pub struct Theme {
     pub budget_high: Color,
     // Flags
     pub no_color: bool,
+    /// When `true`, suppress all spinner animation.  Spinners show a static
+    /// glyph (`·`) instead of cycling.  Set via `HONE_REDUCED_MOTION=1`.
+    pub reduced_motion: bool,
+    /// When `true`, replace all Unicode box-drawing characters with their
+    /// plain ASCII equivalents.  Set via `HONE_ASCII_ONLY=1`.
+    pub ascii_only: bool,
 }
 
 impl Theme {
@@ -93,6 +99,8 @@ impl Theme {
             budget_high: Color::Indexed(203),
             // Flags
             no_color: false,
+            reduced_motion: false,
+            ascii_only: false,
         }
     }
 
@@ -163,27 +171,234 @@ impl Theme {
             budget_mid: Color::Reset,
             budget_high: Color::Reset,
             no_color: true,
+            reduced_motion: false,
+            ascii_only: false,
         }
     }
 
     /// Detect the appropriate theme from environment variables.
     ///
-    /// Checks NO_COLOR first, then HONE_THEME, defaulting to crimson.
+    /// Priority:
+    /// 1. `NO_COLOR` or `HONE_NO_COLOR` → full minimal/ASCII mode
+    /// 2. `HONE_THEME` → named theme base
+    /// 3. Default: crimson
+    ///
+    /// After the base theme is selected, overlay accessibility flags:
+    /// - `HONE_REDUCED_MOTION=1` → set `reduced_motion = true`
+    /// - `HONE_ASCII_ONLY=1` → set `ascii_only = true`
     pub fn detect() -> Self {
-        if std::env::var("NO_COLOR").is_ok() {
-            return Self::minimal();
+        let no_color = std::env::var("NO_COLOR").is_ok()
+            || std::env::var("HONE_NO_COLOR").is_ok();
+
+        let mut theme = if no_color {
+            Self::minimal()
+        } else {
+            match std::env::var("HONE_THEME").as_deref() {
+                Ok("neon") => Self::neon(),
+                Ok("chalk") => Self::chalk(),
+                Ok("minimal") => Self::minimal(),
+                _ => Self::crimson(),
+            }
+        };
+
+        // Accessibility overlays — readable from env even in color builds.
+        if env_flag("HONE_REDUCED_MOTION") {
+            theme.reduced_motion = true;
         }
-        match std::env::var("HONE_THEME").as_deref() {
-            Ok("neon") => Self::neon(),
-            Ok("chalk") => Self::chalk(),
-            Ok("minimal") => Self::minimal(),
-            _ => Self::crimson(),
+        if env_flag("HONE_ASCII_ONLY") {
+            theme.ascii_only = true;
+        }
+
+        theme
+    }
+
+    /// Apply accessibility flags supplied at runtime (e.g. from CLI args).
+    pub fn with_reduced_motion(mut self, enabled: bool) -> Self {
+        self.reduced_motion = enabled;
+        self
+    }
+
+    /// Apply ascii-only flag supplied at runtime.
+    pub fn with_ascii_only(mut self, enabled: bool) -> Self {
+        self.ascii_only = enabled;
+        self
+    }
+
+    /// Return the spinner glyph for the current tick.
+    ///
+    /// When `reduced_motion` is true, always returns a static `·` regardless
+    /// of the tick counter.
+    pub fn spinner_glyph(&self, tick: u64) -> char {
+        if self.reduced_motion || self.no_color {
+            '·'
+        } else {
+            const FRAMES: [char; 8] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
+            FRAMES[(tick as usize) % FRAMES.len()]
         }
     }
+
+    /// Return the appropriate box-drawing character set.
+    ///
+    /// When `ascii_only` or `no_color` is true, returns plain ASCII characters
+    /// (`+`, `-`, `|`) instead of Unicode box-drawing (`┌`, `─`, `│`).
+    pub fn box_chars(&self) -> BoxChars {
+        if self.ascii_only || self.no_color {
+            BoxChars::ASCII
+        } else {
+            BoxChars::UNICODE
+        }
+    }
+}
+
+/// A set of box-drawing characters (unicode or ASCII).
+#[derive(Debug, Clone, Copy)]
+pub struct BoxChars {
+    pub top_left: char,
+    pub top_right: char,
+    pub bottom_left: char,
+    pub bottom_right: char,
+    pub horizontal: char,
+    pub vertical: char,
+    pub tee_right: char,
+    pub tee_left: char,
+}
+
+impl BoxChars {
+    pub const UNICODE: Self = Self {
+        top_left: '┌',
+        top_right: '┐',
+        bottom_left: '└',
+        bottom_right: '┘',
+        horizontal: '─',
+        vertical: '│',
+        tee_right: '├',
+        tee_left: '┤',
+    };
+
+    pub const ASCII: Self = Self {
+        top_left: '+',
+        top_right: '+',
+        bottom_left: '+',
+        bottom_right: '+',
+        horizontal: '-',
+        vertical: '|',
+        tee_right: '+',
+        tee_left: '+',
+    };
+}
+
+/// Return `true` when an environment variable is set to a non-empty value.
+fn env_flag(name: &str) -> bool {
+    std::env::var(name).map(|v| !v.is_empty()).unwrap_or(false)
 }
 
 impl Default for Theme {
     fn default() -> Self {
         Self::crimson()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reduced_motion_false_by_default() {
+        let t = Theme::crimson();
+        assert!(!t.reduced_motion);
+    }
+
+    #[test]
+    fn ascii_only_false_by_default() {
+        let t = Theme::crimson();
+        assert!(!t.ascii_only);
+    }
+
+    #[test]
+    fn spinner_glyph_cycles_when_motion_enabled() {
+        let t = Theme::crimson();
+        // Different ticks should produce different glyphs.
+        let g0 = t.spinner_glyph(0);
+        let g1 = t.spinner_glyph(1);
+        assert_ne!(g0, g1, "spinner should cycle");
+    }
+
+    #[test]
+    fn spinner_glyph_static_when_reduced_motion() {
+        let t = Theme::crimson().with_reduced_motion(true);
+        let g0 = t.spinner_glyph(0);
+        let g1 = t.spinner_glyph(99);
+        assert_eq!(g0, g1, "reduced_motion should yield same glyph every tick");
+        assert_eq!(g0, '·');
+    }
+
+    #[test]
+    fn spinner_glyph_static_in_no_color_mode() {
+        let t = Theme::minimal(); // no_color = true
+        let g = t.spinner_glyph(3);
+        assert_eq!(g, '·');
+    }
+
+    #[test]
+    fn box_chars_unicode_by_default() {
+        let t = Theme::crimson();
+        let bc = t.box_chars();
+        assert_eq!(bc.top_left, '┌');
+        assert_eq!(bc.horizontal, '─');
+    }
+
+    #[test]
+    fn box_chars_ascii_when_ascii_only() {
+        let t = Theme::crimson().with_ascii_only(true);
+        let bc = t.box_chars();
+        assert_eq!(bc.top_left, '+');
+        assert_eq!(bc.horizontal, '-');
+    }
+
+    #[test]
+    fn box_chars_ascii_in_no_color_mode() {
+        let t = Theme::minimal(); // no_color = true
+        let bc = t.box_chars();
+        assert_eq!(bc.top_left, '+');
+    }
+
+    #[test]
+    fn with_reduced_motion_builder() {
+        let t = Theme::crimson().with_reduced_motion(true);
+        assert!(t.reduced_motion);
+        // Base color flags unchanged.
+        assert!(!t.no_color);
+    }
+
+    #[test]
+    fn with_ascii_only_builder() {
+        let t = Theme::crimson().with_ascii_only(true);
+        assert!(t.ascii_only);
+        assert!(!t.no_color);
+    }
+
+    #[test]
+    fn detect_reads_hone_no_color() {
+        // SAFETY: single-threaded test; no other thread reads this var.
+        unsafe { std::env::set_var("HONE_NO_COLOR", "1") };
+        let t = Theme::detect();
+        unsafe { std::env::remove_var("HONE_NO_COLOR") };
+        assert!(t.no_color);
+    }
+
+    #[test]
+    fn detect_reads_hone_reduced_motion() {
+        unsafe { std::env::set_var("HONE_REDUCED_MOTION", "1") };
+        let t = Theme::detect();
+        unsafe { std::env::remove_var("HONE_REDUCED_MOTION") };
+        assert!(t.reduced_motion);
+    }
+
+    #[test]
+    fn detect_reads_hone_ascii_only() {
+        unsafe { std::env::set_var("HONE_ASCII_ONLY", "1") };
+        let t = Theme::detect();
+        unsafe { std::env::remove_var("HONE_ASCII_ONLY") };
+        assert!(t.ascii_only);
     }
 }

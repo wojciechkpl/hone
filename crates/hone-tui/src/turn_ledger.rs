@@ -431,7 +431,9 @@ mod tests {
         let mut l = make_ledger();
         let long = "x".repeat(200);
         l.record_memory_recall("key", long);
-        assert!(l.memory_recalls[0].snippet.len() <= 81); // 79 chars + "…"
+        // Snippet should be truncated — at most 79 'x' chars + "…" (3-byte UTF-8).
+        let chars: Vec<char> = l.memory_recalls[0].snippet.chars().collect();
+        assert!(chars.len() <= 80, "snippet should be truncated to ≤80 chars, got {}", chars.len());
     }
 
     #[test]
