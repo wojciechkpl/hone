@@ -11,6 +11,7 @@ use crate::{
     commands::Command,
     layout::LayoutMode,
     render::{
+        agent_rail::{AgentRailState, AgentRailWidget, split_with_rail},
         conversation::ConversationWidget,
         file_preview::FilePreviewWidget,
         header::render_header,
@@ -84,9 +85,21 @@ fn render_header_bar(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 fn render_content_area(app: &App, frame: &mut Frame, area: Rect) {
+    // When the agent rail is visible and the terminal is wide enough, split off
+    // the rail column from the right side of the content area first, then apply
+    // the normal layout logic to the remaining area.
+    let (main_area, rail_area) = if app.agent_rail_visible() {
+        match split_with_rail(area) {
+            Some([conv_area, rail_area]) => (conv_area, Some(rail_area)),
+            None => (area, None),
+        }
+    } else {
+        (area, None)
+    };
+
     match app.layout() {
         LayoutMode::SinglePane => {
-            render_conversation(app, frame, area);
+            render_conversation(app, frame, main_area);
         }
         LayoutMode::SplitHorizontal { ratio } => {
             let ratio = *ratio;
@@ -96,7 +109,7 @@ fn render_content_area(app: &App, frame: &mut Frame, area: Rect) {
                     Constraint::Percentage(ratio),
                     Constraint::Percentage(100 - ratio),
                 ])
-                .split(area);
+                .split(main_area);
 
             render_conversation(app, frame, chunks[0]);
             render_file_preview(app, frame, chunks[1]);
@@ -105,12 +118,27 @@ fn render_content_area(app: &App, frame: &mut Frame, area: Rect) {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-                .split(area);
+                .split(main_area);
 
             render_conversation(app, frame, chunks[0]);
             render_tool_panel(app, frame, chunks[1]);
         }
     }
+
+    // Render the agent rail if it is visible and space was allocated.
+    if let Some(rail_rect) = rail_area {
+        render_agent_rail(app, frame, rail_rect);
+    }
+}
+
+fn render_agent_rail(app: &App, frame: &mut Frame, area: Rect) {
+    let is_active = app.state() == &crate::app::AppState::WaitingForResponse;
+    let ledger = app.active_ledger();
+    let widget = AgentRailWidget::new(ledger, app.theme(), is_active);
+    let mut state = AgentRailState {
+        scroll: app.rail_scroll(),
+    };
+    frame.render_stateful_widget(widget, area, &mut state);
 }
 
 fn render_conversation(app: &App, frame: &mut Frame, area: Rect) {

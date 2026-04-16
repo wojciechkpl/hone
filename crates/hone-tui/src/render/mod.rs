@@ -1,3 +1,4 @@
+pub mod agent_rail;
 pub mod code_block;
 pub mod conversation;
 pub mod diff_block;
