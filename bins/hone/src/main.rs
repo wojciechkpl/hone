@@ -1,4 +1,5 @@
 mod configure;
+mod report;
 mod session;
 mod system_prompt;
 mod tools;
@@ -2021,6 +2022,40 @@ async fn os_signal(_sigint: &mut ()) {
     let _ = tokio::signal::ctrl_c().await;
 }
 
+/// Return the context window size (in tokens) for a given model identifier.
+fn model_context_limit(model: &str) -> u32 {
+    let model_lower = model.to_ascii_lowercase();
+    // Strip provider prefix (e.g. "anthropic:claude-sonnet-4-5" -> "claude-sonnet-4-5").
+    let name = model_lower.split(':').last().unwrap_or(&model_lower);
+
+    if name.contains("claude") {
+        // All Claude 3+ models have a 200k context window.
+        200_000
+    } else if name.contains("gemini") {
+        1_000_000
+    } else if name.contains("o1") || name.contains("o3") || name.contains("o4") {
+        200_000
+    } else if name.contains("gpt-4o") || name.contains("gpt-4-turbo") {
+        128_000
+    } else if name.contains("gpt-4") {
+        8_192
+    } else if name.contains("gpt-3.5") {
+        16_385
+    } else if name.contains("deepseek") {
+        if name.contains("v3") || name.contains("chat") || name.contains("r1") {
+            64_000
+        } else {
+            16_000
+        }
+    } else if name.contains("qwen") {
+        if name.contains("2.5") { 32_768 } else { 8_192 }
+    } else if name.contains("llama") {
+        if name.contains("3.2") || name.contains("3.1") { 128_000 } else { 8_192 }
+    } else {
+        128_000 // reasonable default
+    }
+}
+
 async fn run_tui(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     agent: AgentHandle,
@@ -2030,8 +2065,9 @@ async fn run_tui(
 ) -> Result<()> {
     let mut app = if vim { App::with_vim() } else { App::new() };
 
-    // Show which model is active in the status bar.
+    // Show which model is active in the status bar and set the context limit.
     app.status_mut().model = model_id.to_string();
+    app.status_mut().context_limit = model_context_limit(model_id.as_str());
 
     let (agent_tx, mut agent_rx) = mpsc::channel::<AgentEvent>(256);
 
@@ -2112,7 +2148,16 @@ async fn run_tui(
                                 let working_dir = app.working_dir().to_path_buf();
                                 let result = execute_shell_escape(&cmd, &working_dir).await;
                                 app.handle_shell_escape_result(result);
-                            } else if !is_command && !is_shell_escape && matches!(app.state(), AppState::WaitingForResponse) {
+                            }
+
+                            // Handle pending model changes from /model or /configure model.
+                            if let Some(new_model) = app.take_pending_model_change() {
+                                let model = ModelId::new(&new_model);
+                                agent.set_model(model).await;
+                                app.status_mut().context_limit = model_context_limit(&new_model);
+                            }
+
+                            if !is_command && !is_shell_escape && matches!(app.state(), AppState::WaitingForResponse) {
                                 // Only spawn an AI turn for regular messages, not commands or
                                 // shell escapes.
 
@@ -2277,7 +2322,84 @@ async fn run_tui(
         app.tick();
     }
 
+    // Generate and write the session report on exit.
+    write_session_report(
+        &app,
+        model_id.as_str(),
+        report::SessionMode::Interactive,
+        None, // session name from app if needed
+    );
+
     Ok(())
+}
+
+/// Aggregate turn ledgers from the App and write a session report to disk.
+///
+/// Errors are logged as warnings so a report failure never prevents the
+/// clean exit path from completing.
+fn write_session_report(
+    app: &App,
+    model: &str,
+    mode: report::SessionMode,
+    session_name: Option<&str>,
+) {
+    let ledgers = app.completed_turns();
+    if ledgers.is_empty() {
+        return; // Nothing to report.
+    }
+
+    let session_id = session_name
+        .unwrap_or("session")
+        .to_string();
+
+    let status = app.status();
+    let now = chrono_like_timestamp();
+    let report_data = report::ReportData::from_ledgers(
+        ledgers,
+        session_id,
+        mode,
+        model,
+        status.session_cost_usd,
+        status.token_count as u64,
+        0, // tokens_out not separately tracked
+        0, // cache_read not separately tracked
+        status.elapsed_secs,
+        now,
+        None,
+        true, // partial since audit may not be enabled
+    );
+
+    // Print concise stdout summary.
+    let no_color = std::env::var("NO_COLOR").is_ok();
+    let summary = report::render_stdout(&report_data, no_color);
+    println!("\n{summary}");
+
+    // Write report files.
+    let cwd = std::env::current_dir().unwrap_or_default();
+    match report::write_report(&cwd, &report_data, report::DEFAULT_REPORT_RETENTION) {
+        Ok(path) => {
+            if !no_color {
+                println!("  Report       {}", path.display());
+            } else {
+                println!("  Report       {}", path.display());
+            }
+        }
+        Err(e) => {
+            tracing::warn!("failed to write session report: {e}");
+        }
+    }
+}
+
+fn chrono_like_timestamp() -> String {
+    // Simple RFC3339-like timestamp without pulling in the chrono crate.
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    // Format as approximate UTC datetime (seconds since epoch → rough date).
+    // This gives a sortable, filesystem-safe string.
+    // We use the same approach as egress_log: best-effort; not perfect UTC.
+    format!("{secs}")
 }
 
 // ---------------------------------------------------------------------------
