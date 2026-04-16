@@ -1,5 +1,6 @@
 mod configure;
 mod report;
+mod reports_cmd;
 mod session;
 mod system_prompt;
 mod tools;
@@ -92,6 +93,11 @@ enum HoneCmd {
     Trace {
         #[command(subcommand)]
         cmd: trace::TraceCmd,
+    },
+    /// List, show, and diff session and task reports.
+    Reports {
+        #[command(subcommand)]
+        cmd: reports_cmd::ReportsCmd,
     },
 }
 
@@ -1589,6 +1595,24 @@ async fn main() -> Result<()> {
                     }
                     trace::TraceCmd::Stats => {
                         trace::cmd_stats(&audit_path)?;
+                    }
+                }
+                return Ok(());
+            }
+            HoneCmd::Reports { cmd: reports_sub } => {
+                let reports_dir = std::env::current_dir()
+                    .unwrap_or_default()
+                    .join(".hone")
+                    .join("reports");
+                match reports_sub {
+                    reports_cmd::ReportsCmd::List { limit, .. } => {
+                        reports_cmd::cmd_list(&reports_dir, *limit)?;
+                    }
+                    reports_cmd::ReportsCmd::Show { id } => {
+                        reports_cmd::cmd_show(&reports_dir, id)?;
+                    }
+                    reports_cmd::ReportsCmd::Diff { a, b } => {
+                        reports_cmd::cmd_diff(&reports_dir, a, b)?;
                     }
                 }
                 return Ok(());
