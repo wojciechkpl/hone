@@ -265,6 +265,11 @@ impl Tool for CachingToolWrapper {
         let input_for_compute = input.clone();
         let ctx_for_compute = ctx.clone();
 
+        // Probe the backend first so we can distinguish hit from miss.
+        let invalidator_for_probe = invalidator.clone();
+        let probe_key = Self::build_key(tool_name, &input, invalidator_for_probe);
+        let is_hit = self.cache.backend().get(&probe_key).await.ok().flatten().is_some();
+
         let bytes = self
             .cache
             .get_or_compute(key, move || async move {
@@ -288,7 +293,11 @@ impl Tool for CachingToolWrapper {
         let value: Value = serde_json::from_slice(&bytes)
             .map_err(|e| ToolError::Other(format!("cache deserialize: {e}")))?;
 
-        Ok(ToolOutput::new(value))
+        if is_hit {
+            Ok(ToolOutput::from_cache(value))
+        } else {
+            Ok(ToolOutput::new(value))
+        }
     }
 
     fn layer(&self) -> ToolLayer {
@@ -302,30 +311,6 @@ mod tests {
     use hone_cache::{CacheBackend, InMemoryBackend, ToolResultCache};
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
-
-    struct CountingTool {
-        calls: Arc<AtomicU32>,
-    }
-
-    #[async_trait]
-    impl Tool for CountingTool {
-        fn name(&self) -> &str {
-            "read_file"
-        }
-        fn description(&self) -> &str {
-            "test"
-        }
-        fn schema(&self) -> Value {
-            serde_json::json!({})
-        }
-        async fn call(&self, _input: ToolInput, _ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-            self.calls.fetch_add(1, Ordering::Relaxed);
-            Ok(ToolOutput::new(serde_json::json!({"content": "hello"})))
-        }
-        fn layer(&self) -> ToolLayer {
-            ToolLayer::Native
-        }
-    }
 
     fn make_ctx() -> ToolContext {
         ToolContext {
@@ -381,5 +366,70 @@ mod tests {
         let h1 = hash_content(b"hello");
         let h2 = hash_content(b"world");
         assert_ne!(h1, h2);
+    }
+
+    /// A cacheable tool whose invalidation tag is always `None` (never expires),
+    /// making it safe for deterministic cache-hit tests regardless of the
+    /// working directory or file-system state.
+    struct NeverExpiresTool {
+        calls: Arc<AtomicU32>,
+    }
+
+    #[async_trait]
+    impl Tool for NeverExpiresTool {
+        fn name(&self) -> &str { "glob" } // "glob" → Ttl(now + 300), but we override below
+        fn description(&self) -> &str { "test" }
+        fn schema(&self) -> Value { serde_json::json!({}) }
+        async fn call(&self, _input: ToolInput, _ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Ok(ToolOutput::new(serde_json::json!({"files": ["a.rs"]})))
+        }
+        fn layer(&self) -> ToolLayer { ToolLayer::Native }
+    }
+
+    /// Verify that `cache_hit` is `false` on the first call (cache miss) and
+    /// `true` on the second call (cache hit) for a cacheable tool.
+    ///
+    /// Uses the `glob` tool class so that invalidation is TTL-based (300 s),
+    /// which is always valid for the duration of this test.
+    #[tokio::test]
+    async fn cache_hit_flag_reflects_actual_cache_state() {
+        let calls = Arc::new(AtomicU32::new(0));
+        let inner = Arc::new(NeverExpiresTool { calls: Arc::clone(&calls) });
+        let backend = Arc::new(InMemoryBackend::new());
+        let cache = Arc::new(ToolResultCache::new(backend.clone()));
+        let wrapper = CachingToolWrapper::new(inner, cache).with_shadow_rate(0.0);
+        let ctx = make_ctx();
+
+        let input = ToolInput::new(serde_json::json!({"pattern": "**/*.rs"}));
+
+        // First call: cache miss — the inner tool executes, cache_hit must be false.
+        let out1 = wrapper
+            .call(input.clone(), &ctx)
+            .await
+            .expect("first call should succeed");
+        assert!(
+            !out1.cache_hit,
+            "first call should be a cache miss (cache_hit = false)"
+        );
+        assert_eq!(calls.load(Ordering::Relaxed), 1, "inner tool should have executed once");
+
+        // Second call: cache hit — inner tool must NOT execute again, cache_hit must be true.
+        let out2 = wrapper
+            .call(input.clone(), &ctx)
+            .await
+            .expect("second call should succeed");
+        assert!(
+            out2.cache_hit,
+            "second call should be a cache hit (cache_hit = true)"
+        );
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "inner tool should not have been called again on cache hit"
+        );
+
+        // Values must be identical.
+        assert_eq!(out1.value, out2.value, "cached result must match original");
     }
 }

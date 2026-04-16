@@ -661,6 +661,7 @@ impl Agent {
 
                     match result {
                         Ok(output) => {
+                            let tool_cache_hit = output.cache_hit;
                             let value = output.into_value();
 
                             // Injection scan on sequential (side-effecting) results.
@@ -741,6 +742,7 @@ impl Agent {
                                     result: value.clone(),
                                     is_error: false,
                                     duration_ms,
+                                    cache_hit: tool_cache_hit,
                                 })
                                 .await;
 
@@ -769,6 +771,7 @@ impl Agent {
                                     result: err_val.clone(),
                                     is_error: true,
                                     duration_ms,
+                                    cache_hit: false,
                                 })
                                 .await;
                             self.context.add_message(Message::tool_result(
@@ -913,20 +916,22 @@ async fn dispatch_parallel(
                 .await;
 
             let call_start = std::time::Instant::now();
-            let result: Result<Value, AgentError> = match tool {
+            let raw_result: Result<ToolOutput, AgentError> = match tool {
                 None => Err(AgentError::ToolNotFound {
                     name: call.name.clone(),
                 }),
                 Some(t) => t
                     .call(ToolInput::new(call.arguments.clone()), &ctx_clone)
                     .await
-                    .map(|o| o.into_value())
                     .map_err(|e| AgentError::Tool {
                         name: call.name.clone(),
                         source: e,
                     }),
             };
             let parallel_duration_ms = call_start.elapsed().as_millis() as u64;
+
+            let parallel_cache_hit = raw_result.as_ref().map(|o| o.cache_hit).unwrap_or(false);
+            let result: Result<Value, AgentError> = raw_result.map(|o| o.into_value());
 
             let is_error = result.is_err();
             let result_value = match &result {
@@ -943,6 +948,7 @@ async fn dispatch_parallel(
                     result: result_value,
                     is_error,
                     duration_ms: parallel_duration_ms,
+                    cache_hit: parallel_cache_hit,
                 })
                 .await;
 

@@ -433,6 +433,7 @@ fn test_tool_call_events() {
         result: serde_json::json!("file contents here"),
         is_error: false,
         duration_ms: 120,
+        cache_hit: false,
     });
     app.handle_agent_event(AgentEvent::Token {
         text: "I read the file.".to_string(),

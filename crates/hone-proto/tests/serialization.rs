@@ -296,6 +296,7 @@ fn agent_event_variants_roundtrip() {
             result: serde_json::json!("contents"),
             is_error: false,
             duration_ms: 80,
+            cache_hit: false,
         },
         AgentEvent::Done {
             usage: TokenUsage {

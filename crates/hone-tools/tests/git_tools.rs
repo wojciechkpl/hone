@@ -60,9 +60,9 @@ async fn test_git_status_clean_repo() {
         .await
         .expect("call should succeed");
 
-    assert_eq!(output.0["modified"].as_array().unwrap().len(), 0);
-    assert_eq!(output.0["staged"].as_array().unwrap().len(), 0);
-    assert_eq!(output.0["untracked"].as_array().unwrap().len(), 0);
+    assert_eq!(output.value["modified"].as_array().unwrap().len(), 0);
+    assert_eq!(output.value["staged"].as_array().unwrap().len(), 0);
+    assert_eq!(output.value["untracked"].as_array().unwrap().len(), 0);
 }
 
 #[tokio::test]
@@ -84,7 +84,7 @@ async fn test_git_status_with_changes() {
         .await
         .expect("call should succeed");
 
-    let modified: Vec<&str> = output.0["modified"]
+    let modified: Vec<&str> = output.value["modified"]
         .as_array()
         .unwrap()
         .iter()
@@ -95,7 +95,7 @@ async fn test_git_status_with_changes() {
         "expected README.md in modified: {modified:?}"
     );
 
-    let untracked: Vec<&str> = output.0["untracked"]
+    let untracked: Vec<&str> = output.value["untracked"]
         .as_array()
         .unwrap()
         .iter()
@@ -129,7 +129,7 @@ async fn test_git_commit_creates_commit() {
     let input = ToolInput::new(json!({ "message": "add staged.txt" }));
     let output = tool.call(input, &ctx).await.expect("call should succeed");
 
-    let sha = output.0["sha"].as_str().expect("sha should be a string");
+    let sha = output.value["sha"].as_str().expect("sha should be a string");
     assert!(!sha.is_empty(), "sha should not be empty");
     // A git SHA is 40 hex chars.
     assert_eq!(sha.len(), 40, "SHA should be 40 characters, got: {sha}");
@@ -152,7 +152,7 @@ async fn test_git_diff_shows_changes() {
     let input = ToolInput::new(json!({ "staged": false }));
     let output = tool.call(input, &ctx).await.expect("call should succeed");
 
-    let diff = output.0["diff"].as_str().expect("diff should be a string");
+    let diff = output.value["diff"].as_str().expect("diff should be a string");
     assert!(!diff.is_empty(), "diff should not be empty for modified file");
     assert!(
         diff.contains("changed content") || diff.contains("README"),

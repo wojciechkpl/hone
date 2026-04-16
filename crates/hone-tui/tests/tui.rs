@@ -223,6 +223,7 @@ fn test_app_handle_tool_events() {
         result: serde_json::json!({"content": "file content"}),
         is_error: false,
         duration_ms: 100,
+        cache_hit: false,
     });
     let msgs = app.messages();
     assert_eq!(msgs.len(), 2);
@@ -542,6 +543,7 @@ fn test_active_tool_tracked() {
         result: serde_json::json!("ok"),
         is_error: false,
         duration_ms: 50,
+        cache_hit: false,
     });
     assert!(
         app.status().active_tool.is_none(),

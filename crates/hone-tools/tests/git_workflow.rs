@@ -117,7 +117,7 @@ async fn test_undo_reverts_last_commit() {
         .await
         .expect("undo should succeed");
 
-    let reverted_sha = output.0["reverted_sha"]
+    let reverted_sha = output.value["reverted_sha"]
         .as_str()
         .expect("reverted_sha should be a string");
     assert_eq!(reverted_sha.len(), 40, "SHA should be 40 hex chars");
@@ -157,7 +157,7 @@ async fn test_branch_create_and_switch() {
         .expect("branch create should succeed");
 
     assert_eq!(
-        output.0["branch"].as_str().unwrap(),
+        output.value["branch"].as_str().unwrap(),
         "feature/new-thing"
     );
     assert_eq!(current_branch(dir.path()).await, "feature/new-thing");
@@ -198,11 +198,11 @@ async fn test_checkout_switches_branch() {
         .await
         .expect("checkout should succeed");
 
-    let result_branch = output.0["branch"].as_str().unwrap();
+    let result_branch = output.value["branch"].as_str().unwrap();
     assert_eq!(result_branch, default_branch);
     assert_eq!(current_branch(dir.path()).await, default_branch);
 
-    let head_sha = output.0["head"].as_str().unwrap();
+    let head_sha = output.value["head"].as_str().unwrap();
     assert_eq!(head_sha.len(), 40);
 
     // Now use GitCheckoutTool to switch back to other-branch.
@@ -214,7 +214,7 @@ async fn test_checkout_switches_branch() {
         .await
         .expect("checkout other-branch");
 
-    assert_eq!(output2.0["branch"].as_str().unwrap(), "other-branch");
+    assert_eq!(output2.value["branch"].as_str().unwrap(), "other-branch");
     assert_eq!(current_branch(dir.path()).await, "other-branch");
 }
 

@@ -36,17 +36,30 @@ impl ToolInput {
 
 /// Wrapper around raw JSON output produced by a tool.
 #[derive(Debug, Clone)]
-pub struct ToolOutput(pub Value);
+pub struct ToolOutput {
+    /// The result value returned by the tool.
+    pub value: Value,
+    /// Whether this result was served from the tool-result cache.
+    ///
+    /// Set to `true` only by [`CachingToolWrapper`] on a cache hit; all other
+    /// tools leave this as `false`.
+    pub cache_hit: bool,
+}
 
 impl ToolOutput {
-    /// Create a new `ToolOutput` from a JSON value.
+    /// Create a new `ToolOutput` from a JSON value (cache_hit = false).
     pub fn new(value: Value) -> Self {
-        Self(value)
+        Self { value, cache_hit: false }
+    }
+
+    /// Create a `ToolOutput` that was served from the cache.
+    pub fn from_cache(value: Value) -> Self {
+        Self { value, cache_hit: true }
     }
 
     /// Consume the wrapper and return the inner JSON value.
     pub fn into_value(self) -> Value {
-        self.0
+        self.value
     }
 }
 

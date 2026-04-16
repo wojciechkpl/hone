@@ -28,7 +28,7 @@ async fn test_read_file_returns_content() {
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
     // Content is now line-numbered; the single line "hello world" should appear.
-    let content = output.0["content"].as_str().expect("content is a string");
+    let content = output.value["content"].as_str().expect("content is a string");
     assert!(
         content.contains("hello world"),
         "expected 'hello world' in content, got: {content:?}"
@@ -63,7 +63,7 @@ async fn test_read_file_returns_line_numbered_content() {
     let input = ToolInput::new(json!({ "path": "three.txt" }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    let content = output.0["content"].as_str().expect("content is a string");
+    let content = output.value["content"].as_str().expect("content is a string");
     assert!(content.contains("1 |"), "missing line 1 prefix");
     assert!(content.contains("2 |"), "missing line 2 prefix");
     assert!(content.contains("3 |"), "missing line 3 prefix");
@@ -83,7 +83,7 @@ async fn test_read_file_respects_offset() {
     let input = ToolInput::new(json!({ "path": "ten.txt", "offset": 5 }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    let content = output.0["content"].as_str().expect("content is a string");
+    let content = output.value["content"].as_str().expect("content is a string");
 
     // First returned line should be line 5.
     let first_line = content.lines().next().unwrap_or("");
@@ -101,7 +101,7 @@ async fn test_read_file_respects_offset() {
         !content.contains("1 | line1\n"),
         "line1 should not appear when offset=5"
     );
-    assert_eq!(output.0["start_line"], 5);
+    assert_eq!(output.value["start_line"], 5);
 }
 
 #[tokio::test]
@@ -115,11 +115,11 @@ async fn test_read_file_respects_limit() {
     let input = ToolInput::new(json!({ "path": "ten.txt", "limit": 3 }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    let content = output.0["content"].as_str().expect("content is a string");
+    let content = output.value["content"].as_str().expect("content is a string");
     let returned_lines = content.lines().count();
     assert_eq!(returned_lines, 3, "expected exactly 3 lines, got {returned_lines}");
-    assert_eq!(output.0["truncated"], true);
-    assert_eq!(output.0["end_line"], 3);
+    assert_eq!(output.value["truncated"], true);
+    assert_eq!(output.value["end_line"], 3);
 }
 
 #[tokio::test]
@@ -134,8 +134,8 @@ async fn test_read_file_reports_total_lines() {
     let input = ToolInput::new(json!({ "path": "hundred.txt", "limit": 10 }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    assert_eq!(output.0["total_lines"], 100);
-    assert_eq!(output.0["truncated"], true);
+    assert_eq!(output.value["total_lines"], 100);
+    assert_eq!(output.value["truncated"], true);
 }
 
 #[tokio::test]
@@ -164,7 +164,7 @@ async fn test_write_file_creates_file() {
     let input = ToolInput::new(json!({ "path": "new_file.txt", "content": "created" }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    assert_eq!(output.0["bytes_written"], 7);
+    assert_eq!(output.value["bytes_written"], 7);
 
     let on_disk = std::fs::read_to_string(dir.path().join("new_file.txt")).unwrap();
     assert_eq!(on_disk, "created");
@@ -204,7 +204,7 @@ async fn test_edit_file_applies_replacement() {
     }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    assert_eq!(output.0["applied"], true);
+    assert_eq!(output.value["applied"], true);
 
     let on_disk = std::fs::read_to_string(dir.path().join("edit_me.txt")).unwrap();
     assert_eq!(on_disk, "foo QUX baz");
@@ -224,7 +224,7 @@ async fn test_edit_file_no_match_returns_not_applied() {
     }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    assert_eq!(output.0["applied"], false);
+    assert_eq!(output.value["applied"], false);
 
     // File should be unchanged.
     let on_disk = std::fs::read_to_string(dir.path().join("no_match.txt")).unwrap();
@@ -290,7 +290,7 @@ async fn test_edit_file_unique_match_succeeds() {
         .call(input, &ctx)
         .await
         .expect("unique match should succeed");
-    assert_eq!(output.0["applied"], true);
+    assert_eq!(output.value["applied"], true);
 
     let on_disk = std::fs::read_to_string(dir.path().join("unique.txt")).unwrap();
     assert_eq!(on_disk, "fn new_function() {}\nfn another() {}");
@@ -349,7 +349,7 @@ async fn test_multi_edit_applies_multiple_edits_to_one_file() {
     }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    assert_eq!(output.0["files_modified"], 1);
+    assert_eq!(output.value["files_modified"], 1);
 
     let on_disk = std::fs::read_to_string(dir.path().join("target.txt")).unwrap();
     assert_eq!(on_disk, "FOO\nbar\nBAZ\n");
@@ -371,7 +371,7 @@ async fn test_multi_edit_across_multiple_files() {
     }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    assert_eq!(output.0["files_modified"], 2);
+    assert_eq!(output.value["files_modified"], 2);
 
     let a = std::fs::read_to_string(dir.path().join("a.txt")).unwrap();
     assert_eq!(a, "goodbye world");
@@ -525,7 +525,7 @@ async fn test_glob_finds_matching_files() {
     let input = ToolInput::new(json!({ "pattern": "*.rs" }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    let files = output.0["files"]
+    let files = output.value["files"]
         .as_array()
         .expect("files should be an array");
 
@@ -567,7 +567,7 @@ async fn test_grep_finds_literal_match() {
     let input = ToolInput::new(json!({ "pattern": "authenticate" }));
 
     let output = tool.call(input, &ctx).await.expect("grep failed");
-    let v = &output.0;
+    let v = &output.value;
     assert_eq!(v["count"], 1, "expected 1 match, got: {v}");
     assert_eq!(v["matches"][0]["file"], "a.rs");
     assert_eq!(v["matches"][0]["line"], 1);
@@ -592,7 +592,7 @@ async fn test_grep_regex_pattern() {
     let input = ToolInput::new(json!({ "pattern": "= \\d+" }));
 
     let output = tool.call(input, &ctx).await.expect("grep failed");
-    let v = &output.0;
+    let v = &output.value;
     // "let x = 42;" and "let y = 100;" should match; "let z = hello;" should not.
     assert_eq!(v["count"], 2, "expected 2 matches, got: {v}");
 }
@@ -614,7 +614,7 @@ async fn test_grep_case_insensitive() {
     }));
 
     let output = tool.call(input, &ctx).await.expect("grep failed");
-    let v = &output.0;
+    let v = &output.value;
     assert_eq!(v["count"], 2, "expected 2 case-insensitive matches, got: {v}");
 }
 
@@ -638,7 +638,7 @@ async fn test_grep_honors_gitignore() {
     let input = ToolInput::new(json!({ "pattern": "^fn " }));
 
     let output = tool.call(input, &ctx).await.expect("grep failed");
-    let v = &output.0;
+    let v = &output.value;
     // Only src.rs should match.
     assert_eq!(v["count"], 1, "target/ should be ignored; got: {v}");
     let file = v["matches"][0]["file"].as_str().unwrap();
@@ -660,7 +660,7 @@ async fn test_grep_respects_max_results() {
     }));
 
     let output = tool.call(input, &ctx).await.expect("grep failed");
-    let v = &output.0;
+    let v = &output.value;
     assert_eq!(v["count"], 5, "expected exactly 5 results (max_results); got: {v}");
     assert_eq!(v["truncated"], true, "truncated should be true");
 }
@@ -680,7 +680,7 @@ async fn test_grep_include_glob() {
     }));
 
     let output = tool.call(input, &ctx).await.expect("grep failed");
-    let v = &output.0;
+    let v = &output.value;
     assert_eq!(v["count"], 1, "only *.rs files should be searched; got: {v}");
     assert_eq!(v["matches"][0]["file"], "main.rs");
 }
@@ -724,7 +724,7 @@ async fn test_write_file_verification_succeeds_on_normal_write() {
 
     // A successful write should pass verification silently and return the expected output.
     let output = tool.call(input, &ctx).await.expect("write with verification should succeed");
-    assert_eq!(output.0["bytes_written"], 16);
+    assert_eq!(output.value["bytes_written"], 16);
 
     // Confirm the file on disk has the correct content.
     let on_disk = std::fs::read_to_string(dir.path().join("verified.txt")).unwrap();
@@ -746,7 +746,7 @@ async fn test_edit_file_verification_succeeds() {
 
     // A successful edit should pass verification silently and report applied: true.
     let output = tool.call(input, &ctx).await.expect("edit with verification should succeed");
-    assert_eq!(output.0["applied"], true);
+    assert_eq!(output.value["applied"], true);
 
     // Confirm the file on disk has the updated content.
     let on_disk = std::fs::read_to_string(dir.path().join("verify_edit.txt")).unwrap();
@@ -812,7 +812,7 @@ async fn test_read_file_accepts_nested_path_inside_working_dir() {
     let input = ToolInput::new(json!({ "path": "sub/inner.txt" }));
 
     let output = tool.call(input, &ctx).await.expect("nested path inside working dir should succeed");
-    assert!(output.0["content"].as_str().unwrap().contains("nested content"));
+    assert!(output.value["content"].as_str().unwrap().contains("nested content"));
 }
 
 #[tokio::test]

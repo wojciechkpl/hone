@@ -1112,7 +1112,7 @@ impl App {
                 self.pending_tool_start = Some((id, name, args));
             }
 
-            AgentEvent::ToolCallEnd { id, result, is_error, duration_ms } => {
+            AgentEvent::ToolCallEnd { id, result, is_error, duration_ms, cache_hit } => {
                 self.status.active_tool = None;
                 let content = if is_error {
                     format!("error: {result}")
@@ -1142,7 +1142,7 @@ impl App {
                         .filter(|(start_id, _, _)| start_id == &id)
                         .map(|(_, n, _)| n.clone())
                         .unwrap_or_default();
-                    ledger.record_tool_call(tool_name, duration_ms, false, error_str);
+                    ledger.record_tool_call(tool_name, duration_ms, cache_hit, error_str);
                 }
                 self.pending_tool_start = None;
 

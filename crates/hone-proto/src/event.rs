@@ -38,6 +38,13 @@ pub enum AgentEvent {
         /// Duration of this tool call in milliseconds.
         #[serde(default)]
         duration_ms: u64,
+        /// Whether the result was served from the tool-result cache.
+        ///
+        /// `false` means the tool was actually executed (cache miss or
+        /// non-cacheable tool).  Old serialized events that lack this field
+        /// deserialize to `false` via `#[serde(default)]`.
+        #[serde(default)]
+        cache_hit: bool,
     },
     /// The turn completed successfully.
     Done {

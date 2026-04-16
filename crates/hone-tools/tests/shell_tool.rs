@@ -20,7 +20,7 @@ async fn test_shell_captures_stdout() {
     let input = ToolInput::new(json!({ "command": "echo hello" }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    assert_eq!(output.0["stdout"], "hello\n");
+    assert_eq!(output.value["stdout"], "hello\n");
 }
 
 #[tokio::test]
@@ -32,7 +32,7 @@ async fn test_shell_captures_stderr() {
     let input = ToolInput::new(json!({ "command": "echo error_msg >&2" }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    assert_eq!(output.0["stderr"], "error_msg\n");
+    assert_eq!(output.value["stderr"], "error_msg\n");
 }
 
 #[tokio::test]
@@ -43,7 +43,7 @@ async fn test_shell_exit_code() {
     let input = ToolInput::new(json!({ "command": "false" }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    let exit_code = output.0["exit_code"].as_i64().expect("exit_code should be integer");
+    let exit_code = output.value["exit_code"].as_i64().expect("exit_code should be integer");
     assert_ne!(exit_code, 0, "exit code of `false` should be non-zero");
 }
 
