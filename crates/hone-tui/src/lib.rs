@@ -12,6 +12,7 @@ pub mod status;
 pub mod syntax;
 pub mod tdd_mode;
 pub mod theme;
+pub mod turn_ledger;
 pub mod vim_mode;
 
 pub use animation::AnimationState;

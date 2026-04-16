@@ -216,11 +216,13 @@ fn test_app_handle_tool_events() {
     app.handle_agent_event(AgentEvent::ToolCallStart {
         id: "call_1".to_string(),
         name: "read_file".to_string(),
+        args: serde_json::json!({"path": "src/main.rs"}),
     });
     app.handle_agent_event(AgentEvent::ToolCallEnd {
         id: "call_1".to_string(),
         result: serde_json::json!({"content": "file content"}),
         is_error: false,
+        duration_ms: 100,
     });
     let msgs = app.messages();
     assert_eq!(msgs.len(), 2);
@@ -528,6 +530,7 @@ fn test_active_tool_tracked() {
     app.handle_agent_event(AgentEvent::ToolCallStart {
         id: "call_1".to_string(),
         name: "read_file".to_string(),
+        args: serde_json::json!({"path": "src/lib.rs"}),
     });
     assert_eq!(
         app.status().active_tool.as_deref(),
@@ -538,6 +541,7 @@ fn test_active_tool_tracked() {
         id: "call_1".to_string(),
         result: serde_json::json!("ok"),
         is_error: false,
+        duration_ms: 50,
     });
     assert!(
         app.status().active_tool.is_none(),

@@ -426,11 +426,13 @@ fn test_tool_call_events() {
     app.handle_agent_event(AgentEvent::ToolCallStart {
         id: "call_1".to_string(),
         name: "read_file".to_string(),
+        args: serde_json::json!({"path": "src/main.rs"}),
     });
     app.handle_agent_event(AgentEvent::ToolCallEnd {
         id: "call_1".to_string(),
         result: serde_json::json!("file contents here"),
         is_error: false,
+        duration_ms: 120,
     });
     app.handle_agent_event(AgentEvent::Token {
         text: "I read the file.".to_string(),

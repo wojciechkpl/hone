@@ -15,6 +15,7 @@ use crate::{
     status::{ProviderStatus, StatusInfo},
     tdd_mode::{TddEvent, TddWatcher},
     theme::Theme,
+    turn_ledger::{Phase, TurnLedger, extract_path, tool_op},
     vim_mode::{VimAction, VimMode, VimOverlay},
 };
 
@@ -77,6 +78,10 @@ pub struct App {
     /// Pending non-interactive shell command awaiting async execution.
     pub(crate) pending_shell_cmd: Option<String>,
 
+    /// Pending model change — the model ID string to apply on the next event
+    /// loop iteration.  Set by `/model <id>` and `/configure model <id>`.
+    pub(crate) pending_model_change: Option<String>,
+
     // --- Review mode ----------------------------------------------------------
     /// Active review session (hunk-by-hunk accept/reject).
     pub(crate) review_session: Option<crate::review_mode::ReviewSession>,
@@ -92,6 +97,18 @@ pub struct App {
     /// When `true`, the next user prompt will be pre-processed through the
     /// clarification detector regardless of heuristics (forced by `/clarify`).
     pub(crate) force_clarify: bool,
+
+    // --- Agent rail / TurnLedger --------------------------------------------
+    /// Whether the agent rail sidebar is currently visible.
+    pub(crate) agent_rail_visible: bool,
+    /// Ledger for the turn currently in progress.
+    pub(crate) current_turn: Option<TurnLedger>,
+    /// Sealed ledgers for completed turns (most recent last).
+    pub(crate) completed_turns: Vec<TurnLedger>,
+    /// Rail scroll offset (j/k navigation within the rail).
+    pub(crate) rail_scroll: usize,
+    /// Pending tool call ID → name mapping for ToolCallEnd duration tracking.
+    pub(crate) pending_tool_start: Option<(String, String, serde_json::Value)>,
 }
 
 impl App {
@@ -121,10 +138,16 @@ impl App {
             tdd_rx: None,
             pending_interactive: None,
             pending_shell_cmd: None,
+            pending_model_change: None,
             review_session: None,
             pending_review: false,
             inline_agent: None,
             force_clarify: false,
+            agent_rail_visible: false,
+            current_turn: None,
+            completed_turns: Vec::new(),
+            rail_scroll: 0,
+            pending_tool_start: None,
         }
     }
 
@@ -209,6 +232,37 @@ impl App {
     pub fn set_preview(&mut self, content: Option<String>, path: Option<String>) {
         self.preview_content = content;
         self.preview_path = path;
+    }
+
+    // --- Agent rail ---------------------------------------------------------
+
+    /// Toggle the agent rail sidebar on/off.
+    pub fn toggle_agent_rail(&mut self) {
+        self.agent_rail_visible = !self.agent_rail_visible;
+        self.rail_scroll = 0;
+    }
+
+    /// Whether the agent rail is currently visible.
+    pub fn agent_rail_visible(&self) -> bool {
+        self.agent_rail_visible
+    }
+
+    /// The active turn ledger: in-progress if a turn is running, otherwise the
+    /// most recent completed turn.
+    pub fn active_ledger(&self) -> Option<&TurnLedger> {
+        self.current_turn
+            .as_ref()
+            .or_else(|| self.completed_turns.last())
+    }
+
+    /// Completed turn ledgers (read-only slice for reports).
+    pub fn completed_turns(&self) -> &[TurnLedger] {
+        &self.completed_turns
+    }
+
+    /// Rail scroll offset.
+    pub fn rail_scroll(&self) -> usize {
+        self.rail_scroll
     }
 
     /// The current effective working directory for shell escapes.
@@ -378,6 +432,10 @@ impl App {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
             }
+            // Ctrl+R — toggle agent rail sidebar.
+            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.toggle_agent_rail();
+            }
             KeyCode::Enter => {
                 self.submit_input();
             }
@@ -521,6 +579,12 @@ impl App {
         self.pending_shell_cmd.take()
     }
 
+    /// Take the pending model change request set by `/model` or
+    /// `/configure model`.  Returns `None` when no change is pending.
+    pub fn take_pending_model_change(&mut self) -> Option<String> {
+        self.pending_model_change.take()
+    }
+
     /// Apply the result of an async shell escape execution to the app state.
     pub fn handle_shell_escape_result(&mut self, result: ShellEscapeResult) {
         match result {
@@ -598,7 +662,22 @@ impl App {
                 self.should_quit = true;
             }
             Command::Model(id) => {
-                self.status.model = id;
+                if id.is_empty() {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::Error,
+                        "Usage: /model <provider:model-id>".to_string(),
+                    ));
+                } else {
+                    self.status.model = id.clone();
+                    self.pending_model_change = Some(id);
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::System,
+                        format!(
+                            "Model changed to: {}  (takes effect on next turn)",
+                            self.status.model
+                        ),
+                    ));
+                }
             }
             Command::Cost => {
                 let msg = format!(
@@ -805,13 +884,11 @@ impl App {
         match subcmd {
             "model" if !value.is_empty() => {
                 self.status.model = value.to_string();
+                self.pending_model_change = Some(value.to_string());
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::System,
                     format!("Model changed to: {value}  (takes effect on next turn)"),
                 ));
-                // Note: actually swapping the provider requires the event loop in main.rs
-                // to pick this up. We store it and let main.rs handle the swap.
-                self.pending_shell_cmd = Some(format!("__configure_model:{value}"));
             }
             "theme" if !value.is_empty() => {
                 // Dispatch to existing theme switch
@@ -1001,17 +1078,41 @@ impl App {
                 self.messages.push(msg);
             }
 
-            AgentEvent::ToolCallStart { name, .. } => {
+            AgentEvent::ToolCallStart { id, name, args } => {
                 self.status.update_phase_from_tool(&name);
                 self.status.active_tool = Some(name.clone());
                 self.status.provider_status = ProviderStatus::Connected;
                 self.messages.push(DisplayMessage::new(
-                    DisplayRole::ToolCall { name },
+                    DisplayRole::ToolCall { name: name.clone() },
                     String::new(),
                 ));
+
+                // Ensure we have an active ledger for this turn.
+                if self.current_turn.is_none() {
+                    let turn_index = self.completed_turns.len();
+                    self.current_turn = Some(TurnLedger::new(turn_index));
+                }
+
+                // Record phase and file touch in the ledger.
+                if let Some(ledger) = &mut self.current_turn {
+                    let phase = Phase::from_label(&self.status.phase);
+                    // Only record a transition if this is the first tool call.
+                    if ledger.phase_transitions.is_empty() {
+                        ledger.record_phase_transition(phase);
+                    }
+                    // Record file touch if the tool touches a file.
+                    if let Some(op) = tool_op(&name) {
+                        if let Some(path) = extract_path(&args) {
+                            ledger.record_file_touch(path, op, None);
+                        }
+                    }
+                }
+
+                // Store pending tool start for duration tracking on ToolCallEnd.
+                self.pending_tool_start = Some((id, name, args));
             }
 
-            AgentEvent::ToolCallEnd { result, is_error, .. } => {
+            AgentEvent::ToolCallEnd { id, result, is_error, duration_ms } => {
                 self.status.active_tool = None;
                 let content = if is_error {
                     format!("error: {result}")
@@ -1027,11 +1128,34 @@ impl App {
                     }
                 }
 
+                // Record tool call in the ledger.
+                if let Some(ledger) = &mut self.current_turn {
+                    let error_str = if is_error {
+                        Some(result.to_string())
+                    } else {
+                        None
+                    };
+                    // Find tool name from pending start.
+                    let tool_name = self
+                        .pending_tool_start
+                        .as_ref()
+                        .filter(|(start_id, _, _)| start_id == &id)
+                        .map(|(_, n, _)| n.clone())
+                        .unwrap_or_default();
+                    ledger.record_tool_call(tool_name, duration_ms, false, error_str);
+                }
+                self.pending_tool_start = None;
+
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::ToolResult, content));
             }
 
             AgentEvent::Done { usage } => {
+                // Seal the current turn ledger.
+                if let Some(ledger) = self.current_turn.take() {
+                    self.completed_turns.push(ledger);
+                }
+
                 // Mark the last streaming message as complete.
                 if let Some(last) = self.messages.last_mut() {
                     if last.is_streaming {

@@ -289,11 +289,13 @@ fn agent_event_variants_roundtrip() {
         AgentEvent::ToolCallStart {
             id: "tc_1".into(),
             name: "read_file".into(),
+            args: serde_json::json!({"path": "src/main.rs"}),
         },
         AgentEvent::ToolCallEnd {
             id: "tc_1".into(),
             result: serde_json::json!("contents"),
             is_error: false,
+            duration_ms: 80,
         },
         AgentEvent::Done {
             usage: TokenUsage {

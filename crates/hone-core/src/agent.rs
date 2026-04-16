@@ -634,6 +634,7 @@ impl Agent {
                         .send(AgentEvent::ToolCallStart {
                             id: call.id.clone(),
                             name: call.name.clone(),
+                            args: call.arguments.clone(),
                         })
                         .await;
 
@@ -739,6 +740,7 @@ impl Agent {
                                     id: call.id.clone(),
                                     result: value.clone(),
                                     is_error: false,
+                                    duration_ms,
                                 })
                                 .await;
 
@@ -766,6 +768,7 @@ impl Agent {
                                     id: call.id.clone(),
                                     result: err_val.clone(),
                                     is_error: true,
+                                    duration_ms,
                                 })
                                 .await;
                             self.context.add_message(Message::tool_result(
@@ -905,9 +908,11 @@ async fn dispatch_parallel(
                 .send(AgentEvent::ToolCallStart {
                     id: call.id.clone(),
                     name: call.name.clone(),
+                    args: call.arguments.clone(),
                 })
                 .await;
 
+            let call_start = std::time::Instant::now();
             let result: Result<Value, AgentError> = match tool {
                 None => Err(AgentError::ToolNotFound {
                     name: call.name.clone(),
@@ -921,6 +926,7 @@ async fn dispatch_parallel(
                         source: e,
                     }),
             };
+            let parallel_duration_ms = call_start.elapsed().as_millis() as u64;
 
             let is_error = result.is_err();
             let result_value = match &result {
@@ -936,6 +942,7 @@ async fn dispatch_parallel(
                     id: call.id.clone(),
                     result: result_value,
                     is_error,
+                    duration_ms: parallel_duration_ms,
                 })
                 .await;
 
@@ -987,6 +994,10 @@ enum AgentCommand {
     SetSystemPrompt {
         prompt: String,
     },
+    /// Change the model identifier used for subsequent turns.
+    SetModel {
+        model: ModelId,
+    },
     Shutdown,
 }
 
@@ -1036,6 +1047,9 @@ impl AgentHandle {
                     }
                     AgentCommand::SetSystemPrompt { prompt } => {
                         agent.config.system_prompt = prompt;
+                    }
+                    AgentCommand::SetModel { model } => {
+                        agent.config.model = model;
                     }
                     AgentCommand::Shutdown => break,
                 }
@@ -1138,6 +1152,14 @@ impl AgentHandle {
             .cmd_tx
             .send(AgentCommand::SetSystemPrompt { prompt: prompt.into() })
             .await;
+    }
+
+    /// Change the model identifier used for subsequent turns.
+    ///
+    /// Fire-and-forget — the command is queued; it takes effect before the next
+    /// `run_turn` call because the actor processes commands sequentially.
+    pub async fn set_model(&self, model: ModelId) {
+        let _ = self.cmd_tx.send(AgentCommand::SetModel { model }).await;
     }
 
     /// Signal the actor to shut down.  The actor will finish processing any

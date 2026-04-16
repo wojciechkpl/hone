@@ -24,12 +24,20 @@ pub enum AgentEvent {
     ToolCallStart {
         id: String,
         name: String,
+        /// Tool arguments as a JSON object.  Used by the TUI to extract file
+        /// paths, line ranges, and other observability data without re-parsing
+        /// the conversation log.
+        #[serde(default)]
+        args: serde_json::Value,
     },
     /// A tool call completed.
     ToolCallEnd {
         id: String,
         result: serde_json::Value,
         is_error: bool,
+        /// Duration of this tool call in milliseconds.
+        #[serde(default)]
+        duration_ms: u64,
     },
     /// The turn completed successfully.
     Done {
