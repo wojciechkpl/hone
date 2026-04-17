@@ -162,7 +162,7 @@ async fn test_reviewer_approves_clean_code() {
 }
 
 /// When the model returns invalid (non-JSON) output the reviewer should
-/// fail-open: `approved = true` and `issues` is empty.
+/// fail-closed: `approved = false` with a synthetic Critical issue.
 #[tokio::test]
 async fn test_reviewer_handles_invalid_json() {
     let provider = Arc::new(SequencedProvider::new(vec![
@@ -177,7 +177,8 @@ async fn test_reviewer_handles_invalid_json() {
         .await
         .expect("review should succeed even with unparseable output");
 
-    // Fail-open: unparseable output must not block the pipeline.
-    assert!(result.approved);
-    assert!(result.issues.is_empty());
+    // Fail-closed: unparseable output must block the pipeline with a synthetic issue.
+    assert!(!result.approved);
+    assert_eq!(result.issues.len(), 1);
+    assert_eq!(result.issues[0].severity, hone_core::reviewer::ReviewSeverity::Critical);
 }

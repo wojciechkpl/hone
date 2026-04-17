@@ -17,7 +17,7 @@ fn test_tdd_feature_recipe_parses() {
 fn test_bug_fix_recipe_parses() {
     let recipe = Recipe::from_yaml(BUG_FIX).expect("bug-fix.yaml should parse");
     assert_eq!(recipe.name, "bug-fix");
-    assert_eq!(recipe.steps.len(), 4, "expected 4 steps in bug-fix");
+    assert_eq!(recipe.steps.len(), 5, "expected 5 steps in bug-fix");
     assert!(
         recipe.test_cmd.is_some(),
         "bug-fix recipe should have a test_cmd"
@@ -28,7 +28,7 @@ fn test_bug_fix_recipe_parses() {
 fn test_code_review_recipe_parses() {
     let recipe = Recipe::from_yaml(CODE_REVIEW).expect("code-review.yaml should parse");
     assert_eq!(recipe.name, "code-review");
-    assert_eq!(recipe.steps.len(), 5, "expected 5 steps in code-review");
+    assert_eq!(recipe.steps.len(), 6, "expected 6 steps in code-review");
 }
 
 #[test]

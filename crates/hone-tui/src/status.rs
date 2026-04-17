@@ -67,7 +67,7 @@ impl Default for StatusInfo {
             budget_usd: None,
             active_tool: None,
             context_tokens: 0,
-            context_limit: 128_000,
+            context_limit: 0,
             session_name: None,
             phase: "Exploration".to_string(),
             turn_count: 0,

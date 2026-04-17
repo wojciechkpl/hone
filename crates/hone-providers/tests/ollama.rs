@@ -47,9 +47,10 @@ fn test_ollama_build_request_body() {
 }
 
 #[test]
-fn test_ollama_build_request_body_no_tools_even_if_provided() {
-    // Even if the CompletionRequest contains tools, the Ollama adapter must not
-    // include them in the request body (Ollama tool support is experimental/limited).
+fn test_ollama_build_request_body_includes_tools_when_provided() {
+    // Ollama now supports tool calling (structured for models like Llama 3.1+,
+    // text-based fallback for Qwen-style models). When tools are provided, the
+    // adapter must emit them in the request body.
     let request = CompletionRequest {
         model: ModelId::new("ollama:llama3.2"),
         messages: vec![Message::user("hi")],
@@ -64,7 +65,11 @@ fn test_ollama_build_request_body_no_tools_even_if_provided() {
     };
 
     let body = build_request_body(&request);
-    assert!(body["tools"].is_null(), "Ollama adapter must never emit a tools field");
+    assert!(
+        !body["tools"].is_null(),
+        "Ollama adapter must emit tools when the request contains tools"
+    );
+    assert_eq!(body["tools"][0]["function"]["name"], "read_file");
 }
 
 // ---------------------------------------------------------------------------
