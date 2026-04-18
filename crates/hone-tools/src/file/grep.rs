@@ -193,4 +193,8 @@ impl Tool for GrepTool {
     fn layer(&self) -> ToolLayer {
         ToolLayer::Native
     }
+
+    fn is_read_only(&self) -> bool {
+        true
+    }
 }

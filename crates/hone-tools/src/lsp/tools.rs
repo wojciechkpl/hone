@@ -64,6 +64,10 @@ impl Tool for LspDiagnosticsTool {
     fn layer(&self) -> ToolLayer {
         ToolLayer::Native
     }
+
+    fn is_read_only(&self) -> bool {
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +136,10 @@ impl Tool for LspHoverTool {
 
     fn layer(&self) -> ToolLayer {
         ToolLayer::Native
+    }
+
+    fn is_read_only(&self) -> bool {
+        true
     }
 }
 
@@ -205,5 +213,50 @@ impl Tool for LspCodeActionTool {
 
     fn layer(&self) -> ToolLayer {
         ToolLayer::Native
+    }
+
+    fn is_read_only(&self) -> bool {
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lsp::MockLspBridge;
+    use crate::registry::ToolRegistry;
+
+    fn make_lsp_registry() -> ToolRegistry {
+        let bridge: Arc<dyn LspBridge> = Arc::new(MockLspBridge::builder().build());
+        ToolRegistry::builder()
+            .register(Box::new(LspDiagnosticsTool::new(Arc::clone(&bridge))))
+            .register(Box::new(LspHoverTool::new(Arc::clone(&bridge))))
+            .register(Box::new(LspCodeActionTool::new(Arc::clone(&bridge))))
+            .build()
+    }
+
+    /// The registry must expose all three LSP tool names when built with a bridge.
+    #[test]
+    fn lsp_tools_registered_in_registry() {
+        let registry = make_lsp_registry();
+        assert!(
+            registry.get("lsp_diagnostics").is_some(),
+            "lsp_diagnostics must be in registry"
+        );
+        assert!(
+            registry.get("lsp_hover").is_some(),
+            "lsp_hover must be in registry"
+        );
+        assert!(
+            registry.get("lsp_code_actions").is_some(),
+            "lsp_code_actions must be in registry"
+        );
+    }
+
+    /// The registry correctly reports its size after registration.
+    #[test]
+    fn lsp_registry_has_correct_count() {
+        let registry = make_lsp_registry();
+        assert_eq!(registry.len(), 3, "expected exactly 3 LSP tools");
     }
 }

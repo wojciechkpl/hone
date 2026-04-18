@@ -50,6 +50,8 @@ pub fn messages_to_prompt(messages: &[Message]) -> String {
             Role::User => "USER",
             Role::Assistant => "ASSISTANT",
             Role::Tool => "TOOL",
+            // Forward-compat: unknown roles are labelled generically.
+            _ => "UNKNOWN",
         };
         let text = msg.content.as_text();
         parts.push(format!("{role_label}:\n{text}"));

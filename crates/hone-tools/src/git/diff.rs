@@ -79,4 +79,8 @@ impl Tool for GitDiffTool {
     fn layer(&self) -> ToolLayer {
         ToolLayer::Native
     }
+
+    fn is_read_only(&self) -> bool {
+        true
+    }
 }

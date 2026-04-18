@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use crate::error::ProviderError;
+use crate::retry_after::parse_retry_after;
 use crate::traits::{CompletionRequest, ModelProvider};
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com";
@@ -87,6 +88,11 @@ pub fn convert_message(message: &Message) -> Value {
                 "tool_call_id": tool_call_id,
                 "content": message.content.as_text(),
             })
+        }
+        // Forward-compat: unknown roles fall back to a plain user message so
+        // the conversation remains well-formed for the OpenAI API.
+        _ => {
+            json!({ "role": "user", "content": message.content.as_text() })
         }
     }
 }
@@ -330,12 +336,15 @@ impl ModelProvider for OpenAiProvider {
         let status = response.status();
         if !status.is_success() {
             let status_code = status.as_u16();
+            // Read headers BEFORE consuming the body — `response.text()` moves
+            // the response and makes headers inaccessible afterward.
+            let retry_after_secs = parse_retry_after(response.headers());
             let body_text = response.text().await.unwrap_or_default();
 
             if status_code == 429 {
                 return Err(ProviderError::RateLimit {
                     provider: "openai".to_owned(),
-                    retry_after_secs: 60,
+                    retry_after_secs,
                 });
             }
 

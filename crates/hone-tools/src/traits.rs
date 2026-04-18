@@ -89,4 +89,16 @@ pub trait Tool: Send + Sync + 'static {
 
     /// Which layer this tool belongs to (always [`ToolLayer::Native`] for this crate).
     fn layer(&self) -> ToolLayer;
+
+    /// Returns `true` if this tool is safe to run concurrently with other
+    /// read-only tools — i.e. it produces no observable side-effects on the
+    /// filesystem, repository, or any external system.
+    ///
+    /// Defaults to `false` for safety.  Override to `true` for native tools
+    /// that only read state (read_file, glob, grep, git_status, git_diff,
+    /// lsp_diagnostics, lsp_hover, lsp_code_actions).  MCP-backed tools and
+    /// any unknown dynamic tools are conservatively assumed to be stateful.
+    fn is_read_only(&self) -> bool {
+        false
+    }
 }

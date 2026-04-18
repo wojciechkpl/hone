@@ -5,6 +5,7 @@ use crate::tool::ToolCallRequest;
 
 /// The role of a message participant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     System,

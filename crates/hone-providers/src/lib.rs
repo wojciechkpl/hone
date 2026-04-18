@@ -1,11 +1,13 @@
 pub mod acp;
 pub mod adapters;
 pub mod caching_provider;
+pub mod context_windows;
 pub mod error;
 pub mod fallback;
 pub mod mock;
 pub mod pricing;
 pub mod registry;
+pub mod retry_after;
 pub mod router;
 pub mod traits;
 
@@ -19,6 +21,7 @@ pub use caching_provider::{CacheStats, CachingProvider};
 pub use error::ProviderError;
 pub use fallback::FallbackChain;
 pub use mock::MockProvider;
+pub use context_windows::ContextWindowTable;
 pub use pricing::PricingTable;
 pub use registry::ProviderRegistry;
 pub use router::{ModelRouter, RoutingRule};

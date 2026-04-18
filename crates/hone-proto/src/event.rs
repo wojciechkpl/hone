@@ -5,6 +5,7 @@ use crate::tool::ToolCallRequest;
 
 /// Events streamed from a model provider during completion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProviderEvent {
     Token { text: String },
@@ -16,6 +17,7 @@ pub enum ProviderEvent {
 
 /// Events streamed from the agent loop to the UI layer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentEvent {
     /// A token from the model's response.
@@ -83,5 +85,14 @@ pub enum AgentEvent {
         budget_usd: Option<f64>,
         workers_completed: usize,
         workers_total: usize,
+    },
+    /// Emitted once per session on the first successful completion to inform
+    /// the TUI of the active model's real context-window size.
+    ///
+    /// The TUI uses this to populate `StatusInfo::context_limit`.  A default
+    /// of 128 000 is used until this event arrives, so no context bar is shown
+    /// as empty — the event refines the display once the provider responds.
+    ModelInfo {
+        context_window: u32,
     },
 }

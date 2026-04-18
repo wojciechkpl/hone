@@ -21,6 +21,11 @@ pub fn encode_event(event: &AgentEvent, event_id: u64) -> String {
         AgentEvent::WorkerStarted { .. } => "worker_started",
         AgentEvent::WorkerCompleted { .. } => "worker_completed",
         AgentEvent::BudgetProgress { .. } => "budget_progress",
+        AgentEvent::ModelInfo { .. } => "model_info",
+        // Forward-compat: new event variants added in the future are forwarded
+        // as an "unknown" SSE event type so connected clients can log and ignore
+        // them rather than missing the event entirely.
+        _ => "unknown",
     };
 
     let data = serde_json::to_string(event).unwrap_or_else(|_| "{}".to_owned());

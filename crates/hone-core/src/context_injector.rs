@@ -1148,6 +1148,53 @@ pub fn parse_dependencies(path: &Path, content: &str) -> Vec<String> {
     deps
 }
 
+// ---------------------------------------------------------------------------
+// Module-level regex statics
+//
+// Compiling a `Regex` is expensive (~microseconds per call).  These parsers
+// run once per source file per skeleton pass, so hoisting them to module-level
+// `LazyLock` statics ensures each pattern is compiled exactly once for the
+// lifetime of the process.
+// ---------------------------------------------------------------------------
+
+static RUST_USE_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"use\s+(?:crate|super|self)::([a-zA-Z_][a-zA-Z0-9_]*)")
+        .expect("RUST_USE_RE is a valid regex")
+});
+
+static RUST_MOD_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"\bmod\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*;")
+        .expect("RUST_MOD_RE is a valid regex")
+});
+
+static PYTHON_IMPORT_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"^import\s+([a-zA-Z_][a-zA-Z0-9_.]*)")
+        .expect("PYTHON_IMPORT_RE is a valid regex")
+});
+
+static PYTHON_FROM_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"^from\s+\.{0,2}([a-zA-Z_][a-zA-Z0-9_]*)\s+import")
+        .expect("PYTHON_FROM_RE is a valid regex")
+});
+
+static JS_ESM_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r#"from\s+['"](?:\./|\.\./)([^'"./][^'"]*)['"]\s*"#)
+        .expect("JS_ESM_RE is a valid regex")
+});
+
+static JS_CJS_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r#"require\s*\(\s*['"](?:\./|\.\./)([^'"./][^'"]*)['"]\s*\)"#)
+        .expect("JS_CJS_RE is a valid regex")
+});
+
+static GO_SINGLE_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r#"import\s+"[^"]*/([^"]+)""#).expect("GO_SINGLE_RE is a valid regex")
+});
+
+static GO_GROUPED_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r#"^\s+"[^"]*/([^"]+)""#).expect("GO_GROUPED_RE is a valid regex")
+});
+
 /// Extract module names from Rust `use` statements.
 ///
 /// Handles:
@@ -1155,16 +1202,11 @@ pub fn parse_dependencies(path: &Path, content: &str) -> Vec<String> {
 /// - `use super::module;`
 /// - `mod module;`
 fn parse_rust_imports(content: &str) -> Vec<String> {
-    // Compile once per call — these are called infrequently (one per file).
-    let use_re =
-        regex::Regex::new(r"use\s+(?:crate|super|self)::([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
-    let mod_re = regex::Regex::new(r"\bmod\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*;").unwrap();
-
     let mut mods: Vec<String> = Vec::new();
-    for cap in use_re.captures_iter(content) {
+    for cap in RUST_USE_RE.captures_iter(content) {
         mods.push(cap[1].to_string());
     }
-    for cap in mod_re.captures_iter(content) {
+    for cap in RUST_MOD_RE.captures_iter(content) {
         mods.push(cap[1].to_string());
     }
     mods
@@ -1177,18 +1219,14 @@ fn parse_rust_imports(content: &str) -> Vec<String> {
 /// - `from module import ...`
 /// - `from .module import ...` (relative)
 fn parse_python_imports(content: &str) -> Vec<String> {
-    let import_re = regex::Regex::new(r"^import\s+([a-zA-Z_][a-zA-Z0-9_.]*)").unwrap();
-    let from_re =
-        regex::Regex::new(r"^from\s+\.{0,2}([a-zA-Z_][a-zA-Z0-9_]*)\s+import").unwrap();
-
     let mut mods: Vec<String> = Vec::new();
     for line in content.lines() {
         let line = line.trim();
-        if let Some(cap) = import_re.captures(line) {
+        if let Some(cap) = PYTHON_IMPORT_RE.captures(line) {
             // Take only the top-level package name.
             let top = cap[1].split('.').next().unwrap_or(&cap[1]).to_string();
             mods.push(top);
-        } else if let Some(cap) = from_re.captures(line) {
+        } else if let Some(cap) = PYTHON_FROM_RE.captures(line) {
             mods.push(cap[1].to_string());
         }
     }
@@ -1202,14 +1240,8 @@ fn parse_python_imports(content: &str) -> Vec<String> {
 /// - `import ... from '../module'`
 /// - `require('./module')`
 fn parse_js_imports(content: &str) -> Vec<String> {
-    let esm_re =
-        regex::Regex::new(r#"from\s+['"](?:\./|\.\./)([^'"./][^'"]*)['"]\s*"#).unwrap();
-    let cjs_re =
-        regex::Regex::new(r#"require\s*\(\s*['"](?:\./|\.\./)([^'"./][^'"]*)['"]\s*\)"#)
-            .unwrap();
-
     let mut mods: Vec<String> = Vec::new();
-    for cap in esm_re.captures_iter(content) {
+    for cap in JS_ESM_RE.captures_iter(content) {
         // Strip path separators and file extensions — keep only the leaf name.
         let raw = &cap[1];
         let leaf = raw.split('/').last().unwrap_or(raw);
@@ -1221,7 +1253,7 @@ fn parse_js_imports(content: &str) -> Vec<String> {
             .trim_end_matches(".jsx");
         mods.push(name.to_string());
     }
-    for cap in cjs_re.captures_iter(content) {
+    for cap in JS_CJS_RE.captures_iter(content) {
         let raw = &cap[1];
         let leaf = raw.split('/').last().unwrap_or(raw);
         let name = leaf
@@ -1238,17 +1270,12 @@ fn parse_js_imports(content: &str) -> Vec<String> {
 ///
 /// Handles single-line `import "pkg/sub"` and grouped `import (...)`.
 fn parse_go_imports(content: &str) -> Vec<String> {
-    // Single-line: import "pkg/sub/module"
-    let single_re = regex::Regex::new(r#"import\s+"[^"]*/([^"]+)""#).unwrap();
-    // Inside grouped import block lines: \t"pkg/sub/module"
-    let grouped_re = regex::Regex::new(r#"^\s+"[^"]*/([^"]+)""#).unwrap();
-
     let mut mods: Vec<String> = Vec::new();
-    for cap in single_re.captures_iter(content) {
+    for cap in GO_SINGLE_RE.captures_iter(content) {
         mods.push(cap[1].to_string());
     }
     for line in content.lines() {
-        if let Some(cap) = grouped_re.captures(line) {
+        if let Some(cap) = GO_GROUPED_RE.captures(line) {
             mods.push(cap[1].to_string());
         }
     }

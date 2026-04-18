@@ -362,7 +362,13 @@ impl Orchestrator {
             // Chunk ready tasks by max_workers and spawn batches.
             // The semaphore provides the real-time cap within (and across) batches.
             for batch in ready.chunks(self.max_workers) {
-                let mut set: JoinSet<WorkerResult> = JoinSet::new();
+                // Side-table: spawn-order index → (task_id, agent).
+                // Each future returns `(idx, WorkerResult)`.  If a future panics,
+                // `join_next` yields `Err(JoinError)` which carries no user data,
+                // so we find the missing index by exclusion and look up the real
+                // identifiers from `spawn_meta`.
+                let mut spawn_meta: Vec<(String, String)> = Vec::new();
+                let mut set: JoinSet<(usize, WorkerResult)> = JoinSet::new();
 
                 for task in batch {
                     let task = task.clone();
@@ -381,6 +387,11 @@ impl Orchestrator {
                         })
                         .await;
 
+                    // Record identity at spawn time so we can recover it even if
+                    // the future panics (JoinError carries no payload).
+                    let idx = spawn_meta.len();
+                    spawn_meta.push((task.id.clone(), task.agent.clone()));
+
                     // Acquire a permit *before* spawning so the spawn happens
                     // only when there is capacity.  The permit is moved into
                     // the async block and dropped when the task finishes.
@@ -396,52 +407,88 @@ impl Orchestrator {
                         // Explicit drop documents the intent; the borrow-checker
                         // guarantees the permit is released here regardless.
                         drop(permit);
-                        result
+                        (idx, result)
                     });
                 }
 
+                // Collect all outcomes; panicked tasks are identified by the
+                // indices absent from `completed_indices`.
+                let total_spawned = spawn_meta.len();
+                let mut completed_indices: Vec<usize> = Vec::with_capacity(total_spawned);
+                let mut batch_results: Vec<(usize, WorkerResult)> =
+                    Vec::with_capacity(total_spawned);
+
                 while let Some(res) = set.join_next().await {
                     match res {
-                        Ok(worker_result) => {
-                            spent_usd += worker_result.cost_usd;
-                            completed.insert(worker_result.task_id.clone());
-
-                            // Persist state after each completion when a
-                            // checkpoint store is attached.
-                            if let Some(ref cp_store) = self.checkpoint_store {
-                                let pending_ids: Vec<String> =
-                                    pending.iter().map(|t| t.id.clone()).collect();
-                                if let Err(e) = cp_store
-                                    .save_progress(&results, &pending_ids, spent_usd)
-                                    .await
-                                {
-                                    tracing::warn!("checkpoint: failed to save progress: {e}");
-                                }
-                            }
-
-                            results.push(worker_result);
-
-                            // Emit budget progress.
-                            let _ = events
-                                .send(AgentEvent::BudgetProgress {
-                                    spent_usd,
-                                    budget_usd: self.total_budget,
-                                    workers_completed: results.len(),
-                                    workers_total: total_tasks,
-                                })
-                                .await;
+                        Ok((idx, worker_result)) => {
+                            completed_indices.push(idx);
+                            batch_results.push((idx, worker_result));
                         }
                         Err(join_err) => {
-                            results.push(WorkerResult {
-                                task_id: "unknown".to_owned(),
-                                agent: "unknown".to_owned(),
-                                status: WorkerStatus::Failed(join_err.to_string()),
+                            // A future panicked.  We cannot tell *which* index
+                            // panicked from the JoinError alone, so we log it and
+                            // resolve missing indices after the loop.
+                            tracing::error!(
+                                "worker task panicked (join error): {join_err}"
+                            );
+                        }
+                    }
+                }
+
+                // Synthesize failure results for any panicked tasks.
+                let completed_set: std::collections::HashSet<usize> =
+                    completed_indices.into_iter().collect();
+                for idx in 0..total_spawned {
+                    if !completed_set.contains(&idx) {
+                        let (task_id, agent) = spawn_meta[idx].clone();
+                        batch_results.push((
+                            idx,
+                            WorkerResult {
+                                task_id,
+                                agent,
+                                status: WorkerStatus::Failed(
+                                    "worker task panicked".to_owned(),
+                                ),
                                 response: String::new(),
                                 usage: TokenUsage::default(),
                                 cost_usd: 0.0,
-                            });
+                            },
+                        ));
+                    }
+                }
+
+                // Sort by spawn order so checkpointing and budget progress are
+                // deterministic, then process each result.
+                batch_results.sort_by_key(|(idx, _)| *idx);
+
+                for (_, worker_result) in batch_results {
+                    spent_usd += worker_result.cost_usd;
+                    completed.insert(worker_result.task_id.clone());
+
+                    // Persist state after each completion when a checkpoint store
+                    // is attached.
+                    if let Some(ref cp_store) = self.checkpoint_store {
+                        let pending_ids: Vec<String> =
+                            pending.iter().map(|t| t.id.clone()).collect();
+                        if let Err(e) = cp_store
+                            .save_progress(&results, &pending_ids, spent_usd)
+                            .await
+                        {
+                            tracing::warn!("checkpoint: failed to save progress: {e}");
                         }
                     }
+
+                    results.push(worker_result);
+
+                    // Emit budget progress.
+                    let _ = events
+                        .send(AgentEvent::BudgetProgress {
+                            spent_usd,
+                            budget_usd: self.total_budget,
+                            workers_completed: results.len(),
+                            workers_total: total_tasks,
+                        })
+                        .await;
                 }
             }
         }

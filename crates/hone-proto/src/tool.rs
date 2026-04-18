@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Which layer a tool belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ToolLayer {
     /// Layer 2: Native Rust hot-path tools.
     Native,

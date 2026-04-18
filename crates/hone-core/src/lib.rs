@@ -30,8 +30,9 @@ mod error;
 pub mod relevance;
 mod turn;
 
+#[allow(deprecated)]
 pub use agent::{Agent, AgentConfig, AgentHandle, is_read_only_tool};
-pub use checkpoint::{CheckpointStore, OrchestrationCheckpoint};
+pub use checkpoint::{CheckpointError, CheckpointStore, OrchestrationCheckpoint};
 pub use clarify::ClarificationDetector;
 pub use context_injector::{ContextInjector, InjectionResult, RetrievalConfidence, SkeletonStrategy};
 pub use metrics::{ContextMetrics, MetricsSnapshot};

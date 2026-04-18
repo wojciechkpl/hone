@@ -23,12 +23,47 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 
 use crate::task_plan::{TaskPlan, WorkerResult, WorkerStatus};
 use hone_proto::TokenUsage;
+
+// ---------------------------------------------------------------------------
+// Error type
+// ---------------------------------------------------------------------------
+
+/// Errors that can occur during checkpoint operations.
+#[derive(Debug, thiserror::Error)]
+pub enum CheckpointError {
+    /// The checkpoint database could not be opened or created.
+    #[error("failed to open checkpoint database at {path}: {source}")]
+    Open {
+        path: std::path::PathBuf,
+        #[source]
+        source: sqlx::Error,
+    },
+    /// A required DDL or DML statement failed.
+    #[error("checkpoint SQL error: {context}: {source}")]
+    Sql {
+        context: String,
+        #[source]
+        source: sqlx::Error,
+    },
+    /// The checkpoint store was used before `bind_run` was called.
+    #[error("checkpoint store is not bound to a run")]
+    NotBound,
+    /// The stored JSON could not be deserialised — the record is corrupted.
+    #[error("checkpoint data is corrupted ({context}): {source}")]
+    Corrupted {
+        context: String,
+        #[source]
+        source: serde_json::Error,
+    },
+    /// The requested checkpoint run was not found.
+    #[error("checkpoint run '{run_id}' not found")]
+    NotFound { run_id: String },
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -133,14 +168,17 @@ pub struct CheckpointStore {
 
 impl CheckpointStore {
     /// Open (or create) the checkpoint database at `path`.
-    pub async fn open(path: &Path) -> Result<Self> {
+    pub async fn open(path: &Path) -> Result<Self, CheckpointError> {
         let opts = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true);
 
-        let pool = SqlitePool::connect_with(opts)
-            .await
-            .with_context(|| format!("failed to open checkpoint db at {}", path.display()))?;
+        let pool = SqlitePool::connect_with(opts).await.map_err(|e| {
+            CheckpointError::Open {
+                path: path.to_path_buf(),
+                source: e,
+            }
+        })?;
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS orchestration_checkpoints (
@@ -157,20 +195,35 @@ impl CheckpointStore {
         )
         .execute(&pool)
         .await
-        .context("failed to create orchestration_checkpoints table")?;
+        .map_err(|e| CheckpointError::Sql {
+            context: "failed to create orchestration_checkpoints table".to_owned(),
+            source: e,
+        })?;
 
         Ok(Self { pool, run_id: None })
     }
 
     /// Bind this store to a specific run.  Must be called before
     /// `save_progress`.  Inserts the initial checkpoint row.
-    pub async fn bind_run(&mut self, run_id: &str, goal: &str, plan: &TaskPlan) -> Result<()> {
+    pub async fn bind_run(
+        &mut self,
+        run_id: &str,
+        goal: &str,
+        plan: &TaskPlan,
+    ) -> Result<(), CheckpointError> {
         self.run_id = Some(run_id.to_owned());
 
-        let plan_json = serde_json::to_string(plan).context("failed to serialise plan")?;
+        let plan_json =
+            serde_json::to_string(plan).map_err(|e| CheckpointError::Corrupted {
+                context: "failed to serialise plan".to_owned(),
+                source: e,
+            })?;
         let pending_ids: Vec<String> = plan.subtasks.iter().map(|t| t.id.clone()).collect();
         let pending_json =
-            serde_json::to_string(&pending_ids).context("failed to serialise pending ids")?;
+            serde_json::to_string(&pending_ids).map_err(|e| CheckpointError::Corrupted {
+                context: "failed to serialise pending ids".to_owned(),
+                source: e,
+            })?;
         let now = unix_now();
 
         sqlx::query(
@@ -187,7 +240,10 @@ impl CheckpointStore {
         .bind(now)
         .execute(&self.pool)
         .await
-        .context("failed to insert initial checkpoint")?;
+        .map_err(|e| CheckpointError::Sql {
+            context: "failed to insert initial checkpoint".to_owned(),
+            source: e,
+        })?;
 
         Ok(())
     }
@@ -200,17 +256,20 @@ impl CheckpointStore {
         completed_workers: &[WorkerResult],
         pending_task_ids: &[String],
         total_cost_usd: f64,
-    ) -> Result<()> {
-        let run_id = self
-            .run_id
-            .as_deref()
-            .context("checkpoint store not bound to a run")?;
+    ) -> Result<(), CheckpointError> {
+        let run_id = self.run_id.as_deref().ok_or(CheckpointError::NotBound)?;
 
         let dtos: Vec<WorkerResultDto> = completed_workers.iter().map(Into::into).collect();
         let completed_json =
-            serde_json::to_string(&dtos).context("failed to serialise completed workers")?;
-        let pending_json = serde_json::to_string(pending_task_ids)
-            .context("failed to serialise pending ids")?;
+            serde_json::to_string(&dtos).map_err(|e| CheckpointError::Corrupted {
+                context: "failed to serialise completed workers".to_owned(),
+                source: e,
+            })?;
+        let pending_json =
+            serde_json::to_string(pending_task_ids).map_err(|e| CheckpointError::Corrupted {
+                context: "failed to serialise pending ids".to_owned(),
+                source: e,
+            })?;
 
         sqlx::query(
             "UPDATE orchestration_checkpoints
@@ -224,21 +283,35 @@ impl CheckpointStore {
         .bind(run_id)
         .execute(&self.pool)
         .await
-        .context("failed to update checkpoint")?;
+        .map_err(|e| CheckpointError::Sql {
+            context: "failed to update checkpoint".to_owned(),
+            source: e,
+        })?;
 
         Ok(())
     }
 
     /// Save a complete `OrchestrationCheckpoint` (used for explicit saves and tests).
-    pub async fn save(&self, checkpoint: &OrchestrationCheckpoint) -> Result<()> {
+    pub async fn save(&self, checkpoint: &OrchestrationCheckpoint) -> Result<(), CheckpointError> {
         let plan_json =
-            serde_json::to_string(&checkpoint.plan).context("failed to serialise plan")?;
+            serde_json::to_string(&checkpoint.plan).map_err(|e| CheckpointError::Corrupted {
+                context: "failed to serialise plan".to_owned(),
+                source: e,
+            })?;
         let dtos: Vec<WorkerResultDto> =
             checkpoint.completed_workers.iter().map(Into::into).collect();
         let completed_json =
-            serde_json::to_string(&dtos).context("failed to serialise completed workers")?;
-        let pending_json = serde_json::to_string(&checkpoint.pending_task_ids)
-            .context("failed to serialise pending ids")?;
+            serde_json::to_string(&dtos).map_err(|e| CheckpointError::Corrupted {
+                context: "failed to serialise completed workers".to_owned(),
+                source: e,
+            })?;
+        let pending_json =
+            serde_json::to_string(&checkpoint.pending_task_ids).map_err(|e| {
+                CheckpointError::Corrupted {
+                    context: "failed to serialise pending ids".to_owned(),
+                    source: e,
+                }
+            })?;
 
         sqlx::query(
             "INSERT OR REPLACE INTO orchestration_checkpoints
@@ -256,14 +329,20 @@ impl CheckpointStore {
         .bind(checkpoint.updated_at as i64)
         .execute(&self.pool)
         .await
-        .context("failed to save checkpoint")?;
+        .map_err(|e| CheckpointError::Sql {
+            context: "failed to save checkpoint".to_owned(),
+            source: e,
+        })?;
 
         Ok(())
     }
 
     /// Load a checkpoint by `run_id`.  Returns `None` when not found or
     /// when the run has already been marked as finished.
-    pub async fn load(&self, run_id: &str) -> Result<Option<OrchestrationCheckpoint>> {
+    pub async fn load(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<OrchestrationCheckpoint>, CheckpointError> {
         let row: Option<(String, String, String, String, String, f64, i64, i64)> =
             sqlx::query_as(
                 "SELECT goal, plan_json, completed_json, pending_ids_json, run_id,
@@ -274,7 +353,10 @@ impl CheckpointStore {
             .bind(run_id)
             .fetch_optional(&self.pool)
             .await
-            .context("failed to query checkpoint")?;
+            .map_err(|e| CheckpointError::Sql {
+                context: "failed to query checkpoint".to_owned(),
+                source: e,
+            })?;
 
         let Some((goal, plan_json, completed_json, pending_json, rid, cost, created, updated)) =
             row
@@ -283,12 +365,21 @@ impl CheckpointStore {
         };
 
         let plan: TaskPlan =
-            serde_json::from_str(&plan_json).context("failed to deserialise plan")?;
+            serde_json::from_str(&plan_json).map_err(|e| CheckpointError::Corrupted {
+                context: "failed to deserialise plan".to_owned(),
+                source: e,
+            })?;
         let dtos: Vec<WorkerResultDto> =
-            serde_json::from_str(&completed_json).context("failed to deserialise workers")?;
+            serde_json::from_str(&completed_json).map_err(|e| CheckpointError::Corrupted {
+                context: "failed to deserialise workers".to_owned(),
+                source: e,
+            })?;
         let completed_workers: Vec<WorkerResult> = dtos.into_iter().map(Into::into).collect();
         let pending_task_ids: Vec<String> =
-            serde_json::from_str(&pending_json).context("failed to deserialise pending ids")?;
+            serde_json::from_str(&pending_json).map_err(|e| CheckpointError::Corrupted {
+                context: "failed to deserialise pending ids".to_owned(),
+                source: e,
+            })?;
 
         Ok(Some(OrchestrationCheckpoint {
             run_id: rid,
@@ -303,19 +394,22 @@ impl CheckpointStore {
     }
 
     /// Return the `run_id`s of all incomplete (not yet finished) checkpoints.
-    pub async fn list_incomplete(&self) -> Result<Vec<String>> {
+    pub async fn list_incomplete(&self) -> Result<Vec<String>, CheckpointError> {
         let rows: Vec<(String,)> =
             sqlx::query_as("SELECT run_id FROM orchestration_checkpoints WHERE finished = 0")
                 .fetch_all(&self.pool)
                 .await
-                .context("failed to list incomplete checkpoints")?;
+                .map_err(|e| CheckpointError::Sql {
+                    context: "failed to list incomplete checkpoints".to_owned(),
+                    source: e,
+                })?;
 
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
     /// Mark a run as successfully finished so it no longer appears in
     /// `list_incomplete`.
-    pub async fn mark_finished(&self, run_id: &str) -> Result<()> {
+    pub async fn mark_finished(&self, run_id: &str) -> Result<(), CheckpointError> {
         sqlx::query(
             "UPDATE orchestration_checkpoints
              SET finished = 1, updated_at = ?
@@ -325,18 +419,24 @@ impl CheckpointStore {
         .bind(run_id)
         .execute(&self.pool)
         .await
-        .context("failed to mark checkpoint finished")?;
+        .map_err(|e| CheckpointError::Sql {
+            context: "failed to mark checkpoint finished".to_owned(),
+            source: e,
+        })?;
 
         Ok(())
     }
 
     /// Delete a checkpoint row entirely.
-    pub async fn delete(&self, run_id: &str) -> Result<()> {
+    pub async fn delete(&self, run_id: &str) -> Result<(), CheckpointError> {
         sqlx::query("DELETE FROM orchestration_checkpoints WHERE run_id = ?")
             .bind(run_id)
             .execute(&self.pool)
             .await
-            .context("failed to delete checkpoint")?;
+            .map_err(|e| CheckpointError::Sql {
+                context: "failed to delete checkpoint".to_owned(),
+                source: e,
+            })?;
 
         Ok(())
     }

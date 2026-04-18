@@ -1220,6 +1220,9 @@ impl App {
                 self.status.phase = "Orchestrating".to_string();
                 self.status.provider_status = ProviderStatus::Connected;
             }
+
+            // Forward-compat: unknown AgentEvent variants are silently ignored by the TUI.
+            _ => {}
         }
     }
 }

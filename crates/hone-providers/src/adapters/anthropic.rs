@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use crate::error::ProviderError;
+use crate::retry_after::parse_retry_after;
 use crate::traits::{CompletionRequest, ModelProvider};
 
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -89,6 +90,9 @@ pub fn convert_message(message: &Message) -> Option<Value> {
                 }]
             }))
         }
+        // Forward-compat: unknown roles are silently skipped (no mapping to
+        // the Anthropic API exists yet).
+        _ => None,
     }
 }
 
@@ -376,12 +380,15 @@ impl ModelProvider for AnthropicProvider {
         let status = response.status();
         if !status.is_success() {
             let status_code = status.as_u16();
+            // Read headers BEFORE consuming the body — `response.text()` moves
+            // the response and makes headers inaccessible afterward.
+            let retry_after_secs = parse_retry_after(response.headers());
             let body_text = response.text().await.unwrap_or_default();
 
             if status_code == 429 {
                 return Err(ProviderError::RateLimit {
                     provider: "anthropic".to_owned(),
-                    retry_after_secs: 60,
+                    retry_after_secs,
                 });
             }
 

@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use crate::error::ProviderError;
+use crate::retry_after::parse_retry_after;
 use crate::traits::{CompletionRequest, ModelProvider};
 
 pub struct OllamaProvider {
@@ -50,6 +51,8 @@ pub fn convert_message(message: &Message) -> Value {
             Role::User => "user",
             Role::Assistant => "assistant",
             Role::Tool => "tool",
+            // Forward-compat: unknown roles are treated as user messages.
+            _ => "user",
         }
     };
 
@@ -81,6 +84,9 @@ pub fn convert_message(message: &Message) -> Value {
     }
 
     // Include tool_calls for assistant messages that requested tool use.
+    // Ollama expects `arguments` as a JSON object, not a stringified JSON
+    // blob. Sending a string triggers the Go server's
+    // "Value looks like object, but can't find closing '}' symbol" 400.
     if !message.tool_calls.is_empty() {
         let tool_calls: Vec<Value> = message
             .tool_calls
@@ -91,7 +97,7 @@ pub fn convert_message(message: &Message) -> Value {
                     "type": "function",
                     "function": {
                         "name": tc.name,
-                        "arguments": tc.arguments.to_string(),
+                        "arguments": tc.arguments.clone(),
                     }
                 })
             })
@@ -356,7 +362,18 @@ impl ModelProvider for OllamaProvider {
         let status = response.status();
         if !status.is_success() {
             let status_code = status.as_u16();
+            // Read headers BEFORE consuming the body — `response.text()` moves
+            // the response and makes headers inaccessible afterward.
+            let retry_after_secs = parse_retry_after(response.headers());
             let body_text = response.text().await.unwrap_or_default();
+
+            if status_code == 429 {
+                return Err(ProviderError::RateLimit {
+                    provider: "ollama".to_owned(),
+                    retry_after_secs,
+                });
+            }
+
             return Err(ProviderError::Http {
                 provider: "ollama".to_owned(),
                 status: status_code,

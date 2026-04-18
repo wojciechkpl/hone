@@ -100,4 +100,8 @@ impl Tool for GlobTool {
     fn layer(&self) -> ToolLayer {
         ToolLayer::Native
     }
+
+    fn is_read_only(&self) -> bool {
+        true
+    }
 }

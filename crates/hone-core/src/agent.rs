@@ -6,7 +6,7 @@ use futures::StreamExt;
 use hone_index::SqliteIndex;
 use hone_memory::{Memory, MemoryQuery, MemoryStore};
 use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ProviderEvent, ToolCallRequest, TokenUsage};
-use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
+use hone_providers::{CompletionRequest, ContextWindowTable, ModelProvider, ProviderError};
 use hone_sandbox::Sandbox;
 use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput, ToolRegistry};
 use serde_json::Value;
@@ -163,6 +163,12 @@ pub struct Agent {
     metrics: Arc<ContextMetrics>,
     /// Per-turn guard state (reset at the top of each `run_turn` call).
     guards: TurnGuards,
+    /// Whether `AgentEvent::ModelInfo` has already been emitted this session.
+    ///
+    /// The event is emitted exactly once — on the first successful provider
+    /// response — so the TUI can populate `StatusInfo::context_limit` early
+    /// without re-emitting on every subsequent turn.
+    model_info_emitted: bool,
 }
 
 impl Agent {
@@ -178,6 +184,7 @@ impl Agent {
             turn_count: 0,
             metrics,
             guards: TurnGuards::default(),
+            model_info_emitted: false,
         }
     }
 
@@ -401,7 +408,20 @@ impl Agent {
                         self.cost.add(usage, &self.config.pricing);
                     }
 
-                    ProviderEvent::Done => break,
+                    ProviderEvent::Done => {
+                        // Emit ModelInfo exactly once per session on the first
+                        // successful provider completion so the TUI can show the
+                        // real context-window size for this model.
+                        if !self.model_info_emitted {
+                            self.model_info_emitted = true;
+                            let cw = ContextWindowTable::default_table()
+                                .get(&self.config.model);
+                            let _ = events
+                                .send(AgentEvent::ModelInfo { context_window: cw })
+                                .await;
+                        }
+                        break;
+                    }
 
                     ProviderEvent::Error { message } => {
                         let _ = events.send(AgentEvent::Error { message: message.clone() }).await;
@@ -413,6 +433,8 @@ impl Agent {
                             },
                         ));
                     }
+                    // Forward-compat: unknown ProviderEvent variants are silently ignored.
+                    _ => {}
                 }
             }
 
@@ -443,13 +465,14 @@ impl Agent {
                 working_dir: self.config.working_dir.clone(),
             };
 
+            let registry_ref = &self.config.tools;
             let mut i = 0;
             while i < pending_tool_calls.len() {
-                if is_read_only_tool(&pending_tool_calls[i].name) {
+                if tool_is_read_only(registry_ref, &pending_tool_calls[i].name) {
                     // Find the end of the consecutive read-only run.
                     let mut j = i;
                     while j < pending_tool_calls.len()
-                        && is_read_only_tool(&pending_tool_calls[j].name)
+                        && tool_is_read_only(registry_ref, &pending_tool_calls[j].name)
                     {
                         j += 1;
                     }
@@ -880,9 +903,45 @@ async fn dispatch_with_recovery(
 // Parallel tool dispatch helpers
 // ---------------------------------------------------------------------------
 
+/// Check whether a tool is safe to execute concurrently by consulting the
+/// registry first and falling back to the hardcoded name-list for backwards
+/// compatibility.
+///
+/// Registry-backed tools (native or MCP) are queried via [`Tool::is_read_only`].
+/// Tools that are not in the registry but appear in the legacy name-list are
+/// still treated as read-only.  If neither matches, `false` is returned so
+/// unknown tools default to sequential dispatch.
+fn tool_is_read_only(registry: &ToolRegistry, name: &str) -> bool {
+    if let Some(tool) = registry.get(name) {
+        return tool.is_read_only();
+    }
+    // Fall back to the hardcoded list for tools that are registered under a
+    // different registry instance or have not been migrated yet.
+    #[allow(deprecated)]
+    if is_read_only_tool(name) {
+        tracing::warn!(
+            tool = name,
+            "is_read_only_tool: falling back to hardcoded list for unregistered tool; \
+             consider registering the tool so it can advertise is_read_only() directly"
+        );
+        return true;
+    }
+    false
+}
+
 /// Returns `true` for tools that are safe to execute concurrently because they
 /// are read-only and produce no observable side-effects on the filesystem, the
 /// repository, or any external system.
+///
+/// # Deprecation
+///
+/// Prefer consulting the tool registry directly via `Tool::is_read_only()`.
+/// This function is kept for backwards compatibility; dynamic tools (e.g. MCP
+/// tools) that are not in the hardcoded list will always return `false` here,
+/// even if they advertise `is_read_only() == true`.
+#[deprecated(
+    note = "use Tool::is_read_only via the dispatcher or tool_is_read_only(registry, name)"
+)]
 pub fn is_read_only_tool(name: &str) -> bool {
     matches!(
         name,
