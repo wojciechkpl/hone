@@ -92,9 +92,45 @@ impl Tool for ShellTool {
         let mut std_cmd = std::process::Command::new("sh");
         std_cmd.arg("-c").arg(&command);
 
-        let policy = SandboxPolicyBuilder::new(SandboxMode::Manual)
-            .build()
-            .expect("manual policy with no constraints is always valid");
+        // Build a concrete policy anchored to the working directory.
+        //
+        // Minimum surfaces:
+        //   - working_dir: read + write (the agent's project root)
+        //   - /tmp (/private/tmp on macOS): writable temp space
+        //   - /bin, /usr/bin: readable so sh, cat, ls etc. can exec
+        //   - /etc: readable for config files (ssl certs, resolv.conf, …)
+        //   - $HOME/.cache, $HOME/.cargo: readable for toolchain caches,
+        //     only when not already under working_dir
+        //
+        // SandboxMode::Autonomous requires at least one readable path and is
+        // the most restrictive mode available — use it so the builder rejects
+        // a misconfigured policy at build time.
+        let mut builder = SandboxPolicyBuilder::new(SandboxMode::Autonomous)
+            .allow_write(ctx.working_dir.clone())   // implies read
+            .allow_write(std::path::PathBuf::from("/tmp"))
+            .allow_read(std::path::PathBuf::from("/bin"))
+            .allow_read(std::path::PathBuf::from("/usr/bin"))
+            .allow_read(std::path::PathBuf::from("/usr/lib"))
+            .allow_read(std::path::PathBuf::from("/usr/share"))
+            .allow_read(std::path::PathBuf::from("/etc"));
+
+        // Allow user cache dirs only when outside working_dir, so that
+        // toolchain tools (cargo, pip …) can read their caches.
+        if let Ok(home) = std::env::var("HOME") {
+            let home_path = std::path::PathBuf::from(&home);
+            for cache_rel in [".cache", ".cargo", ".rustup"] {
+                let cache_path = home_path.join(cache_rel);
+                if !cache_path.starts_with(&ctx.working_dir) {
+                    builder = builder.allow_read(cache_path);
+                }
+            }
+        }
+
+        let policy = builder.build().map_err(|e| ToolError::SandboxDenied {
+            tool: "shell".to_string(),
+            action: format!("policy build failed: {e}"),
+        })?;
+
         ctx.sandbox
             .restrict_child(&mut std_cmd, &policy)
             .map_err(|e| ToolError::SandboxDenied {

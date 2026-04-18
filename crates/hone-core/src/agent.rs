@@ -541,6 +541,17 @@ impl Agent {
                                     serde_json::to_string(&err_val).unwrap_or_default(),
                                 ));
                             }
+                            // A tool task panicked — treat it as a non-fatal tool
+                            // error so the model can be informed and the turn can
+                            // continue.  The ToolCallEnd event was already emitted
+                            // by dispatch_parallel with is_error: true.
+                            Err(AgentError::Internal { ref detail }) => {
+                                let err_val = serde_json::json!({ "error": detail });
+                                self.context.add_message(Message::tool_result(
+                                    call.id.clone(),
+                                    serde_json::to_string(&err_val).unwrap_or_default(),
+                                ));
+                            }
                             // Fatal errors are returned immediately with ownership.
                             Err(e) => return Err(e),
                         }
@@ -893,12 +904,29 @@ pub fn is_read_only_tool(name: &str) -> bool {
 /// Results are returned in the **same order** as `calls`, regardless of
 /// completion order.  Each call emits `ToolCallStart` / `ToolCallEnd` events
 /// on `events`.
+///
+/// # Panic safety
+///
+/// If a tool implementation panics, the spawned task terminates with a
+/// [`tokio::task::JoinError`].  Rather than silently dropping the result
+/// (which would shorten the return vec and confuse callers), we track call
+/// metadata in a side-table keyed by sequential index so that panicked tasks
+/// can be identified by exclusion.  A synthetic `ToolCallEnd { is_error: true }`
+/// event is emitted for each panicked call and the corresponding slot in the
+/// result vec is populated with [`AgentError::Internal`].
 async fn dispatch_parallel(
     registry: &ToolRegistry,
     ctx: &ToolContext,
     calls: Vec<ToolCallRequest>,
     events: &mpsc::Sender<AgentEvent>,
 ) -> Vec<Result<Value, AgentError>> {
+    // Side-table: idx → (call_id, call_name) so we can reconstruct metadata
+    // for any task that panics (its JoinError carries no user data).
+    let call_meta: Vec<(String, String)> = calls
+        .iter()
+        .map(|c| (c.id.clone(), c.name.clone()))
+        .collect();
+
     let mut join_set: JoinSet<(usize, Result<Value, AgentError>)> = JoinSet::new();
 
     for (idx, call) in calls.into_iter().enumerate() {
@@ -957,13 +985,50 @@ async fn dispatch_parallel(
     }
 
     // Collect completions in any order, then sort by original index.
-    let mut indexed: Vec<(usize, Result<Value, AgentError>)> =
-        Vec::with_capacity(join_set.len());
+    let total = call_meta.len();
+    let mut indexed: Vec<(usize, Result<Value, AgentError>)> = Vec::with_capacity(total);
     while let Some(joined) = join_set.join_next().await {
-        if let Ok(pair) = joined {
-            indexed.push(pair);
+        match joined {
+            Ok(pair) => indexed.push(pair),
+            Err(join_err) => {
+                // A task panicked. Log it — we'll synthesise the missing entries
+                // below once all tasks have settled.
+                tracing::error!(
+                    "tool task panicked in parallel dispatch: {:?}",
+                    join_err
+                );
+            }
         }
     }
+
+    // Any index absent from `indexed` corresponds to a panicked task.
+    // Synthesise an Internal error entry and emit a ToolCallEnd event for it.
+    if indexed.len() < total {
+        let completed: std::collections::HashSet<usize> =
+            indexed.iter().map(|(i, _)| *i).collect();
+        for idx in 0..total {
+            if !completed.contains(&idx) {
+                let (call_id, call_name) = &call_meta[idx];
+                let err = AgentError::Internal {
+                    detail: format!("tool '{}' task panicked", call_name),
+                };
+                let err_json =
+                    serde_json::json!({ "error": err.to_string() });
+                // Emit synthetic end event so the caller/TUI sees it.
+                let _ = events
+                    .send(AgentEvent::ToolCallEnd {
+                        id: call_id.clone(),
+                        result: err_json,
+                        is_error: true,
+                        duration_ms: 0,
+                        cache_hit: false,
+                    })
+                    .await;
+                indexed.push((idx, Err(err)));
+            }
+        }
+    }
+
     indexed.sort_by_key(|(idx, _)| *idx);
     indexed.into_iter().map(|(_, r)| r).collect()
 }

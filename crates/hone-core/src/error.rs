@@ -28,4 +28,7 @@ pub enum AgentError {
 
     #[error("code mode error: {detail}")]
     CodeMode { detail: String },
+
+    #[error("internal error: {detail}")]
+    Internal { detail: String },
 }
