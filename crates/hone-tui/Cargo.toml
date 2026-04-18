@@ -29,3 +29,6 @@ criterion = { workspace = true }
 [[bench]]
 name = "render_perf"
 harness = false
+
+[lints]
+workspace = true

@@ -31,3 +31,6 @@ utoipa = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 reqwest = { workspace = true }
+
+[lints]
+workspace = true

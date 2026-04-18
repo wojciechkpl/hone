@@ -34,3 +34,6 @@ criterion = { workspace = true }
 [[bench]]
 name = "index_perf"
 harness = false
+
+[lints]
+workspace = true

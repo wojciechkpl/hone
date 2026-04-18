@@ -24,3 +24,6 @@ git2 = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true
