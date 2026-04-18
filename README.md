@@ -62,7 +62,7 @@ A `.cast` file is included at `assets/demo.cast` — recorded from a real Hone r
 
 ## Overview
 
-Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rust. It runs locally in your terminal with kernel-enforced sandboxing, supports 75+ model providers (Anthropic, OpenAI, Ollama, local, CLI pass-through), and learns patterns across sessions through adaptive memory. Work with your models, on your machine, under your rules.
+Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rust. It runs locally in your terminal with kernel-enforced sandboxing, supports 7 first-party provider adapters plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL`, and learns patterns across sessions through adaptive memory. Work with your models, on your machine, under your rules.
 
 ## Why Hone
 
@@ -88,7 +88,17 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Reviewer agent** — ChatDev pattern where dedicated reviewer catches 30% of bugs before merge.
 - **Self-refine loop** — Iterative improvement (NeurIPS 2023, +8-15% quality gain).
 - **RALPH loop** — Review, Analyze, Learn, Plan, Heal: structured feedback cycle combining adversarial review with root cause analysis. Max 3 iterations (configurable), stops when reviewer approves. Captures learned patterns for cross-session improvement. Optional test verification after each Heal step. Research basis: Self-Refine (NeurIPS 2023) + ChatDev + MASAI + AgentCoder.
-- **Universal model support** — Anthropic, OpenAI, Azure, Ollama, local providers, CLI pass-through (ACP) with tool delegation. 75+ adapters.
+- **Universal model support** — 7 first-party adapters (Anthropic, OpenAI, Ollama, Claude CLI, Gemini CLI, ACP, and a mock adapter for testing) plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL` (DeepSeek, Qwen, Kimi, OpenRouter, and others work out of the box). Full tool-calling support on Anthropic, OpenAI, and Ollama adapters; CLI pass-through adapters delegate to the underlying binary.
+
+  | Adapter | Tool calling | Stream | Notes |
+  |---|---|---|---|
+  | Anthropic | Yes | SSE | claude-sonnet-4-5 default |
+  | OpenAI | Yes | SSE | gpt-4o default; override with `HONE_OPENAI_MODEL` |
+  | Ollama | Yes | stream | llama3.2 default; requires local `ollama serve` |
+  | Claude CLI | No | text | `claude` binary on PATH |
+  | Gemini CLI | No | text | `gemini` binary on PATH |
+  | ACP | Yes | SSE | Agent-to-agent protocol |
+  | Mock | Yes | in-process | Test double only |
 - **Kernel-enforced sandboxing** — Seatbelt on macOS, Landlock on Linux 5.13+, seccomp elsewhere. Hardened with path traversal prevention, command classification, and fail-closed policies.
 - **Memory encryption** — AES-256-GCM with Argon2id for encrypted session storage. Opt-in via `--features encrypted-memory`. Keys stored in system keychain.
 - **Layered tool architecture** — Native Rust layer (Layer 2) for zero-cost file/shell/git/LSP. MCP client for 70+ community extensions (Layer 1) with `.hone/mcp.json` config. Skills in markdown (Layer 3). Tool decorators for cost tracking and governance (Layer 4).
@@ -184,12 +194,12 @@ For detailed information on how agents work and how to create custom ones, see [
 
 ## Observability
 
-Hone tracks every turn with the **Agent Rail** sidebar and **session reports**:
+Hone tracks every turn with the **Agent Rail** sidebar and **session reports** (interactive TUI mode):
 
 - **Agent Rail** (`Ctrl+R`) — Toggleable right sidebar on wide terminals (≥100 cols) showing files touched, injected context, and memory recalls per turn. Zero overhead, updates live.
 - **Session Reports** — Auto-generated on `/quit` to `.hone/reports/<timestamp>-<session>.md` with full cost, token, file, tool, and timeline data. Includes JSON sidecar for scripting. Retention: 100 reports, oldest deleted first.
 - **CLI** — `hone reports list [--limit N]` / `show <id>` / `diff <a> <b>` for viewing and comparing past sessions.
-- **Accessibility** — `HONE_REDUCED_MOTION=1` disables animation. `HONE_ASCII_ONLY=1` uses ASCII borders. `NO_COLOR=1` disables color.
+- **Accessibility** — `HONE_REDUCED_MOTION=1` disables animation (Agent Rail spinner). `HONE_ASCII_ONLY=1` uses ASCII borders. `NO_COLOR=1` disables color.
 
 For detailed setup and examples, see [docs/observability.md](docs/observability.md) and [docs/session-reports.md](docs/session-reports.md).
 
@@ -321,7 +331,7 @@ graph TB
 
     subgraph L0["Layer 0 — Model Providers"]
         direction LR
-        Providers["75+ provider adapters<br/>(Anthropic, OpenAI, Ollama, ACP)"]
+        Providers["7 first-party adapters + OpenAI-compatible<br/>(Anthropic, OpenAI, Ollama, Claude CLI, Gemini CLI, ACP, Mock)"]
     end
 
     subgraph Storage["Storage & Observability"]

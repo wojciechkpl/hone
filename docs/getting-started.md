@@ -231,7 +231,7 @@ Hone supports multiple providers. Choose based on your needs: capability, cost, 
 | **OpenAI** | Yes | $ | Budget teams | 2 min |
 | **DeepSeek** | Yes | $ | Cheap alternatives | 2 min |
 | **OpenRouter** | Yes | $ | Multi-model access | 2 min |
-| **Ollama** | No | Free | Local/offline work | 5 min |
+| **Ollama** | Yes | Free | Local/offline work with tools | 5 min |
 | **Claude CLI** | No | Varies | Existing users | 1 min |
 | **Gemini CLI** | No | Free tier | No setup needed | 1 min |
 
@@ -409,7 +409,7 @@ See the full list at https://openrouter.ai/models
 
 ### Ollama (Free, Local)
 
-Run open-source models locally. No internet, no API key, completely free.
+Run open-source models locally with full tool-calling support. No internet, no API key, completely free. Requires Ollama v0.3.0+ for tool calling.
 
 **Install and start Ollama:**
 
@@ -420,16 +420,16 @@ Run open-source models locally. No internet, no API key, completely free.
 ollama serve
 ```
 
-In another terminal, pull and test a model:
+In another terminal, pull a model with tool support:
 
 ```bash
-ollama pull llama3.2
+ollama pull qwen2.5-coder:7b  # recommended for tool calling
 ```
 
 **Configure Hone:**
 
 ```bash
-hone --model ollama:llama3.2 "hello"
+hone --model ollama:qwen2.5-coder:7b "fix the bug"
 ```
 
 Or add to config:
@@ -440,13 +440,14 @@ base_url = "http://localhost:11434"
 timeout_secs = 300
 ```
 
-**Available models:**
+**Available models with tool support:**
 
-- `llama3.2` — Latest, 8B
-- `llama3.1` — Previous, 8B
+- `qwen2.5-coder:7b` — Code-specialized, 128K context (recommended)
+- `qwen2.5-coder:14b` — Larger variant
+- `llama3.2` — Multi-modal, 8B+
+- `llama3.3` — Latest release
 - `mistral` — Fast, 7B
-- `neural-chat` — Conversational
-- `qwen2.5-coder` — Code generation
+- `deepseek-coder` — Code generation
 
 **List installed models:**
 
@@ -868,7 +869,7 @@ Session my-project saved.
 
 After completing your first interactive turn, you can inspect what the agent did:
 
-- **Press `Ctrl+R`** to toggle the **Agent Rail** sidebar (on wide terminals). Shows files touched, injected context, and memory recalls for the current turn in real-time.
+- **Press `Ctrl+R`** to toggle the **Agent Rail** sidebar (requires ≥100 terminal columns). Shows files touched, injected context, and memory recalls for the current turn in real-time.
 - **Type `/quit`** to end the session. A detailed **session report** is auto-generated to `.hone/reports/<timestamp>-<session>.md`, including cost, token usage, file stats, and tool timelines.
 - **View reports** with `hone reports list`, `hone reports show <id>`, or `hone reports diff <a> <b>`.
 

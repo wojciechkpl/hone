@@ -188,6 +188,7 @@ hone session list  # view all
 - **[Getting Started Guide](getting-started.md)** — Installation, configuration, first session
 - **[Configuration Reference](configuration.md)** — All config options and environment variables
 - **[Architecture](architecture.md)** — Technical design, crates, layer architecture
+  - **[Multi-Agent Coordination and Memory](architecture/multi-agent-and-memory.md)** — Agent turn lifecycle, orchestrator pipeline, context trimming, cross-session learning
 - **[Tools & Agents](tutorials/tools-and-mcp.md)** — Tool usage, custom agents, MCP integration
 - **[Security Guide](tutorials/security.md)** — Sandboxing, threat model, best practices
 - **[Provider Setup](tutorials/providers.md)** — Configure Anthropic, OpenAI, DeepSeek, Ollama, and 70+ more

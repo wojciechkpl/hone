@@ -77,7 +77,7 @@ Three environment variables control rail rendering for accessibility:
 
 #### `HONE_REDUCED_MOTION=1`
 
-Disables animation in spinners and loading indicators. Currently defined but not yet wired into all animation code (follow-up coming). Set this if you experience motion discomfort.
+Disables animation in spinners and loading indicators. The Agent Rail spinner respects this flag; full wiring into the animation system is planned. Set this if you experience motion discomfort.
 
 #### `HONE_ASCII_ONLY=1`
 
@@ -158,6 +158,11 @@ On each agent turn:
 1. Tool calls, file operations, memory recalls, and skeleton injections are recorded to `TurnLedger`.
 2. The **Agent Rail** renders the current ledger in the sidebar (updated live, scroll resets per turn).
 3. On session end (`/quit`), all completed ledgers are aggregated into a **Session Report** and written to disk.
+
+## Known Limitations
+
+- **Agent Rail Inspect overlay** — The `Ctrl+I` overlay for detailed turn inspection is not yet implemented. Use `hone reports show` for detailed post-session analysis.
+- **Animation wiring** — `HONE_REDUCED_MOTION` currently only affects the Agent Rail spinner. The main TUI animation system (e.g., generic loading indicators) will be updated in a follow-up to also respect this flag.
 
 ## See Also
 

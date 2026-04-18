@@ -30,7 +30,7 @@ Hone supports 5 working providers + ACP. Here's how they compare:
 |----------|-------------|-----------|------|----------|
 | **Anthropic API** | Yes | Yes | $$ | Production (most capable) |
 | **OpenAI API + compatible** | Yes | Yes | $ | Budget-conscious teams, custom endpoints |
-| **Ollama** | No | Yes | Free | Local/offline work |
+| **Ollama** | Yes | Yes | Free | Local/offline work with tool support |
 | **Claude CLI** | No | Yes | Subscription | Existing CLI users |
 | **Gemini CLI** | No | Yes | Free tier | No API key setup |
 | **ACP** | Yes | Yes | Subscription | Custom tool servers |
@@ -113,12 +113,12 @@ timeout_secs = 30
 
 ### Ollama (Local Models)
 
-Zero-cost local inference.
+Zero-cost local inference with full tool-calling support (Ollama v0.3.0+).
 
 ```bash
-ollama pull llama2
+ollama pull qwen2.5-coder:7b  # recommended for tool calling
 ollama serve  # terminal 1
-hone --model ollama:llama2  # terminal 2
+hone --model ollama:qwen2.5-coder:7b  # terminal 2
 ```
 
 **Configuration:**
@@ -130,6 +130,8 @@ timeout_secs = 300  # local models may be slower
 ```
 
 **Available models:** Any model you `ollama pull`. Run `ollama list` to see installed models.
+
+**Tool calling:** Hone supports native function calling on models that implement the tool_calls API (Qwen 2.5 Coder, Llama 3.2+, Mistral, DeepSeek Coder). Models that output tool calls as text (Qwen 2.5 Coder in text mode) are also supported with automatic JSON parsing.
 
 ### Claude CLI Pass-Through (Generation 1)
 

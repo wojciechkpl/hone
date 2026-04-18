@@ -4,18 +4,18 @@ At the end of each interactive session, Hone generates a detailed **session repo
 
 ## When Reports Are Generated
 
-**Interactive TUI sessions** (`hone` with no mode flag, or `hone --session <name>`):
-- Report is written automatically when you type `/quit` or press `Ctrl+C`.
+**Interactive TUI sessions only** (currently):
+- Reports are written automatically when you type `/quit` or press `Ctrl+C`.
 - Filename: `.hone/reports/<timestamp>-<session-id>.md` (plus `.md.json` sidecar).
 - Includes full TurnLedger data from all completed turns.
 
-**Known limitations** — reports are **not yet** generated for:
+**Currently not supported** — reports are **not yet** generated for:
 - Recipe mode (`--recipe`)
 - Orchestration mode (`--orchestrate`)
 - Ensemble mode (`--ensemble`)
 - One-shot mode (piped prompt, no interactive turns)
 
-These modes are planned for a follow-up. For now, use the session reports feature in interactive mode.
+These modes are planned for a follow-up. For now, reports are only available in interactive TUI mode.
 
 ## Report Location
 
@@ -300,14 +300,11 @@ Reports are written **locally only** to `.hone/reports/` — they do not phone h
 
 **Recommendation**: Add `.hone/reports/` to `.gitignore` and do not share reports in public forums without review.
 
-## Known Gaps & Future Work
+## Known Limitations & Future Work
 
-- **Auto-reports in non-TUI modes** — recipes, orchestration, ensemble, one-shot modes do not yet generate reports. Planned for a follow-up pass.
-- **Token split tracking** — `tokens_out` and `cache_read_tokens` are currently set to 0. Per-turn token usage breakdown is planned.
-- **Memory write tracking** — `memory_writes` is not yet incremented at the ledger level; `memory_reads` is accurate.
-- **Retries tracking** — `retries` field is not yet wired to the agent loop.
+- **Reports only in TUI mode** — Currently reports are only written when exiting an interactive TUI session (`/quit`). Recipe, orchestration, ensemble, and one-shot modes do not yet generate reports. This is planned for a follow-up pass.
 - **Sharing & export** — A future `/share-report` command is planned for collaborative report sharing (encrypted upload + link). For now, reports are local-only.
-- **Interactive rate limiter** — Cannot yet disable automatic retention per-session.
+- **Retention configuration** — The retention limit is currently hardcoded to 100 reports. An environment variable to customize this is planned.
 
 ## Frequently Asked Questions
 

@@ -28,9 +28,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **RALPH loop (Review, Analyze, Learn, Plan, Heal)** — Structured feedback cycle combining adversarial review with root cause analysis and pattern learning. Max 3 iterations (configurable), stops when reviewer approves. Captures learned patterns for cross-session improvement. Optional test verification after each Heal step. Research basis: Self-Refine (NeurIPS 2023), ChatDev, MASAI, and AgentCoder patterns. Implementation: `crates/hone-core/src/ralph_loop.rs`.
 - **Token count in status bar** — Inline compact display (e.g., "42t") and full fraction format in wide mode (e.g., "42/200000 tokens"). Helps track context usage at a glance during interactive sessions.
 - **9 recipes (expanded from 4)** — New recipes for security-audit, performance, migration, documentation, and onboarding workflows. Template variable support enables per-project customization with `--var KEY=VALUE`.
-
-### Added
-
 - **Shell escape (`!command`)** — Execute native shell commands directly from Hone prompt. `!ls`, `!git status`, `!cargo test` show inline output. `!cd src` changes directory persistently (confined to project root). `!nvim file.rs` suspends TUI, runs editor, restores on exit.
 - **Vim mode (`--vim` or `:set vim`)** — Full vim-style keybindings in interactive mode. Normal mode: j/k for scroll, gg/G for top/bottom, i/a for insert, :q to quit. Insert mode: type normally, Esc returns to normal. Toggle with `:set vim` and `:set novim`.
 - **TDD mode (`:tdd [command]`)** — File watcher + auto-test workflow. Watches source files with 300ms debounce, auto-runs test command on change, displays PASS/FAIL inline. Stop with `:tdd off`.
@@ -93,6 +90,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- **Ollama tool_call arguments serialization** — Fixed multi-turn tool-call replay: `convert_message` now sends `tool_calls[].function.arguments` as a JSON object (was stringified), matching Ollama's `/api/chat` wire format. Ollama's Go server was rejecting stringified arguments with HTTP 400 "Value looks like object, but can't find closing '}' symbol".
 - **Shell injection vulnerability** — Command classification now prevents execution of compound shell operators without explicit user consent.
 - **Path canonicalization race** — symlink targets are now validated to be in allowlist at tool execution time, preventing TOCTOU exploits.
 - **Subprocess credential leakage** — API keys and tokens no longer exposed in process arguments; moved to stdin or environment (with whitelist).
