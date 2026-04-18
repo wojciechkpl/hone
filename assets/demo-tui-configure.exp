@@ -1,0 +1,45 @@
+#!/usr/bin/expect -f
+# Drives the hone TUI to showcase /configure subcommands with local Ollama.
+set timeout 15
+set env(HONE_DISABLE_PERSISTENT_STORES) "1"
+
+spawn ./target/release/hone --model ollama:qwen2.5-coder:1.5b
+
+# Wait for splash / first render.
+sleep 3
+
+# Show the summary of current config.
+send "/configure\r"
+sleep 3
+
+# Change budget.
+send "/configure budget 0.25\r"
+sleep 2
+
+# Switch theme to demonstrate reuse.
+send "/configure theme neon\r"
+sleep 2
+
+# Enable vim mode.
+send "/configure vim on\r"
+sleep 2
+
+# Attempt provider change (emits restart hint).
+send "/configure provider openai\r"
+sleep 2
+
+# Show help.
+send "/configure help\r"
+sleep 3
+
+# Turn off budget.
+send "/configure budget off\r"
+sleep 2
+
+# Unknown subcommand → error path.
+send "/configure wibble\r"
+sleep 2
+
+# Quit cleanly.
+send "/quit\r"
+expect eof

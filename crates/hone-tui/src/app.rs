@@ -689,14 +689,20 @@ impl App {
             }
             Command::Help => {
                 let help = "\
-/configure         — show/change config (model, theme, budget, vim)\n\
-/model <id>        — switch model\n\
+/configure                       — show current config summary\n\
+/configure model <provider:id>   — switch model (takes effect on next turn)\n\
+/configure theme <name>          — switch theme (crimson, neon, chalk, minimal)\n\
+/configure vim on|off            — toggle vim keybindings\n\
+/configure budget <usd>          — set session budget; 'off' to clear\n\
+/configure provider <name>       — note: requires session restart\n\
+/configure help                  — list configure subcommands\n\
+/model <id>        — switch model (shorthand)\n\
 /cost              — show session cost\n\
 /tdd [command]     — start TDD file watcher (:tdd off to stop)\n\
 /review            — review session changes (hunk accept/reject)\n\
 /clarify [prompt]  — ask clarifying questions before coding\n\
 /set vim | novim   — toggle vim keybindings\n\
-/theme <name>      — switch theme (crimson, neon, chalk, minimal)\n\
+/theme <name>      — switch theme (shorthand)\n\
 /undo              — undo last action\n\
 /redo              — redo\n\
 /quit  /q          — quit\n\
@@ -846,30 +852,41 @@ impl App {
         let trimmed = arg.trim();
 
         if trimmed.is_empty() {
-            // Show current configuration
+            // Show current configuration summary.
+            let budget_str = match self.status.budget_usd {
+                Some(b) => format!("${b:.2}"),
+                None => "not set".to_string(),
+            };
+            let vim_str = if self.vim_enabled { "on" } else { "off" };
+            let provider_str = match self.status.model.split_once(':') {
+                Some((provider, _)) => provider.to_string(),
+                None if self.status.model.is_empty() => "(unknown)".to_string(),
+                None => self.status.model.clone(),
+            };
             let info = format!(
                 "Current Configuration:\n\
                  \n\
-                 Model:    {}\n\
-                 Mode:     {}\n\
-                 Session:  {}\n\
-                 Cost:     {}\n\
-                 Context:  {}\n\
-                 Phase:    {}\n\
+                 Model:    {model}\n\
+                 Provider: {provider}\n\
+                 Theme:    (use /configure theme to change)\n\
+                 Vim mode: {vim}\n\
+                 Budget:   {budget}\n\
+                 Mode:     {mode}\n\
+                 Session:  {session}\n\
+                 Cost:     {cost}\n\
+                 Context:  {context}\n\
+                 Phase:    {phase}\n\
                  \n\
-                 Commands:\n\
-                 /configure model <provider:model>  — change model\n\
-                 /configure theme <name>            — change theme (crimson, neon, chalk, minimal)\n\
-                 /configure budget <usd>            — set session budget\n\
-                 /configure vim on|off              — toggle vim keybindings\n\
-                 \n\
-                 For full setup: exit and run 'hone configure'",
-                if self.status.model.is_empty() { "none" } else { &self.status.model },
-                &self.status.mode,
-                self.status.session_name.as_deref().unwrap_or("(unnamed)"),
-                self.status.format_cost(),
-                self.status.format_context(),
-                self.status.phase_long(),
+                 Use /configure help for subcommand list.",
+                model = if self.status.model.is_empty() { "none" } else { &self.status.model },
+                provider = provider_str,
+                vim = vim_str,
+                budget = budget_str,
+                mode = &self.status.mode,
+                session = self.status.session_name.as_deref().unwrap_or("(unnamed)"),
+                cost = self.status.format_cost(),
+                context = self.status.format_context(),
+                phase = self.status.phase_long(),
             );
             self.messages.push(DisplayMessage::new(DisplayRole::System, info));
             return;
@@ -882,43 +899,85 @@ impl App {
         };
 
         match subcmd {
-            "model" if !value.is_empty() => {
-                self.status.model = value.to_string();
-                self.pending_model_change = Some(value.to_string());
-                self.messages.push(DisplayMessage::new(
-                    DisplayRole::System,
-                    format!("Model changed to: {value}  (takes effect on next turn)"),
-                ));
+            "help" => {
+                let help = "\
+/configure                       — show current config summary\n\
+/configure model <provider:id>   — switch model (takes effect on next turn)\n\
+/configure theme <name>          — switch theme (crimson, neon, chalk, minimal)\n\
+/configure vim on|off            — toggle vim keybindings\n\
+/configure budget <usd>          — set session budget (e.g. 5.00)\n\
+/configure budget off            — clear session budget\n\
+/configure provider <name>       — note: requires session restart\n\
+/configure help                  — this message";
+                self.messages.push(DisplayMessage::new(DisplayRole::System, help));
             }
-            "theme" if !value.is_empty() => {
-                // Dispatch to existing theme switch
+            "model" => {
+                // Delegate to the existing Command::Model handler (reuses its
+                // validation and pending_model_change logic).
+                self.handle_command(Command::Model(value.to_string()));
+            }
+            "theme" => {
+                // Delegate to the existing theme-switch handler.
                 self.handle_command(Command::ThemeSwitch(value.to_string()));
-            }
-            "budget" if !value.is_empty() => {
-                match value.parse::<f64>() {
-                    Ok(usd) => {
-                        self.status.budget_usd = Some(usd);
-                        self.messages.push(DisplayMessage::new(
-                            DisplayRole::System,
-                            format!("Session budget set to ${usd:.2}"),
-                        ));
-                    }
-                    Err(_) => {
-                        self.messages.push(DisplayMessage::new(
-                            DisplayRole::Error,
-                            format!("Invalid budget: '{value}' — use a number like 1.00"),
-                        ));
-                    }
-                }
             }
             "vim" => {
                 let enable = matches!(value, "on" | "true" | "1" | "yes" | "");
                 self.handle_command(Command::SetVim(enable));
             }
+            "budget" => {
+                if value == "off" || value == "none" || value == "clear" {
+                    self.status.budget_usd = None;
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::System,
+                        "Session budget cleared".to_string(),
+                    ));
+                } else if value.is_empty() {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::Error,
+                        "Usage: /configure budget <usd>  or  /configure budget off".to_string(),
+                    ));
+                } else {
+                    match value.parse::<f64>() {
+                        Ok(usd) => {
+                            self.status.budget_usd = Some(usd);
+                            self.messages.push(DisplayMessage::new(
+                                DisplayRole::System,
+                                format!("Session budget set to ${usd:.2}"),
+                            ));
+                        }
+                        Err(_) => {
+                            self.messages.push(DisplayMessage::new(
+                                DisplayRole::Error,
+                                format!(
+                                    "Invalid budget: '{value}' — use a number like 1.00, or 'off'"
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+            "provider" => {
+                if value.is_empty() {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::Error,
+                        "Usage: /configure provider <name>".to_string(),
+                    ));
+                } else {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::System,
+                        format!(
+                            "Provider change to '{value}' noted — restart the session to apply. \
+                             (Mid-session provider swap is not supported.)"
+                        ),
+                    ));
+                }
+            }
             _ => {
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::Error,
-                    format!("Unknown configure option: '{subcmd}'. Try: model, theme, budget, vim"),
+                    format!(
+                        "Unknown configure subcommand: {subcmd}. Try /configure help."
+                    ),
                 ));
             }
         }
@@ -1221,6 +1280,10 @@ impl App {
                 self.status.provider_status = ProviderStatus::Connected;
             }
 
+            AgentEvent::ModelInfo { context_window } => {
+                self.status.context_limit = context_window;
+            }
+
             // Forward-compat: unknown AgentEvent variants are silently ignored by the TUI.
             _ => {}
         }
@@ -1255,4 +1318,233 @@ fn detect_test_cmd_for_dir(dir: &std::path::Path) -> Option<String> {
         return Some("go test ./...".to_string());
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hone_proto::AgentEvent;
+
+    /// Sending `AgentEvent::ModelInfo` must update `status.context_limit`.
+    #[test]
+    fn model_info_event_updates_context_limit() {
+        let mut app = App::new();
+        // Default should be the conservative fallback (128 000).
+        assert_eq!(app.status.context_limit, 128_000);
+
+        app.handle_agent_event(AgentEvent::ModelInfo {
+            context_window: 200_000,
+        });
+
+        assert_eq!(app.status.context_limit, 200_000,
+            "context_limit should be updated by ModelInfo event");
+    }
+
+    /// A second ModelInfo event with a different value must also update.
+    #[test]
+    fn model_info_event_is_idempotent_with_same_value() {
+        let mut app = App::new();
+        app.handle_agent_event(AgentEvent::ModelInfo { context_window: 200_000 });
+        app.handle_agent_event(AgentEvent::ModelInfo { context_window: 200_000 });
+        assert_eq!(app.status.context_limit, 200_000);
+    }
+
+    // -----------------------------------------------------------------------
+    // /configure command tests
+    // -----------------------------------------------------------------------
+
+    fn last_system_msg(app: &App) -> &str {
+        app.messages
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, DisplayRole::System))
+            .map(|m| m.content.as_str())
+            .unwrap_or("")
+    }
+
+    fn last_error_msg(app: &App) -> &str {
+        app.messages
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, DisplayRole::Error))
+            .map(|m| m.content.as_str())
+            .unwrap_or("")
+    }
+
+    /// `/configure` with no args produces a status summary message that
+    /// includes key fields: model, provider, vim, budget.
+    #[test]
+    fn configure_no_args_shows_summary() {
+        let mut app = App::new();
+        app.status.model = "anthropic:claude-3-5-sonnet".to_string();
+        app.vim_enabled = true;
+        app.status.budget_usd = Some(3.50);
+
+        app.handle_command(Command::Configure(String::new()));
+
+        let msg = last_system_msg(&app);
+        assert!(msg.contains("Current Configuration"), "should contain header");
+        assert!(msg.contains("anthropic:claude-3-5-sonnet"), "should contain model");
+        assert!(msg.contains("anthropic"), "should contain provider");
+        assert!(msg.contains("on"), "should show vim on");
+        assert!(msg.contains("$3.50"), "should show budget");
+    }
+
+    /// `/configure model <id>` triggers the model-switch path (sets
+    /// `pending_model_change` and appends a system message).
+    #[test]
+    fn configure_model_delegates_to_model_handler() {
+        let mut app = App::new();
+        app.handle_command(Command::Configure("model anthropic:claude-opus-4".to_string()));
+
+        assert_eq!(
+            app.pending_model_change.as_deref(),
+            Some("anthropic:claude-opus-4"),
+            "pending_model_change must be set"
+        );
+        assert_eq!(app.status.model, "anthropic:claude-opus-4");
+        let msg = last_system_msg(&app);
+        assert!(msg.contains("Model changed to"), "should produce model-changed message");
+    }
+
+    /// `/configure model` with no id produces the usage error from Command::Model.
+    #[test]
+    fn configure_model_empty_id_is_error() {
+        let mut app = App::new();
+        app.handle_command(Command::Configure("model".to_string()));
+
+        assert!(
+            app.pending_model_change.is_none(),
+            "should not set pending_model_change"
+        );
+        let msg = last_error_msg(&app);
+        assert!(msg.contains("Usage"), "should print usage hint");
+    }
+
+    /// `/configure budget 5.0` sets `status.budget_usd = Some(5.0)`.
+    #[test]
+    fn configure_budget_sets_value() {
+        let mut app = App::new();
+        app.handle_command(Command::Configure("budget 5.0".to_string()));
+
+        assert!(
+            (app.status.budget_usd.unwrap() - 5.0).abs() < 1e-9,
+            "budget_usd should be 5.0"
+        );
+        let msg = last_system_msg(&app);
+        assert!(msg.contains("$5.00"), "should confirm budget in message");
+    }
+
+    /// `/configure budget off` clears `status.budget_usd`.
+    #[test]
+    fn configure_budget_off_clears_value() {
+        let mut app = App::new();
+        app.status.budget_usd = Some(10.0);
+        app.handle_command(Command::Configure("budget off".to_string()));
+
+        assert!(app.status.budget_usd.is_none(), "budget_usd should be cleared");
+        let msg = last_system_msg(&app);
+        assert!(msg.contains("cleared"), "should confirm budget cleared");
+    }
+
+    /// `/configure budget` with no value produces a usage error.
+    #[test]
+    fn configure_budget_no_value_is_error() {
+        let mut app = App::new();
+        app.handle_command(Command::Configure("budget".to_string()));
+
+        let msg = last_error_msg(&app);
+        assert!(msg.contains("Usage"), "should print usage hint");
+    }
+
+    /// `/configure budget notanumber` produces an error message.
+    #[test]
+    fn configure_budget_invalid_value_is_error() {
+        let mut app = App::new();
+        app.handle_command(Command::Configure("budget notanumber".to_string()));
+
+        assert!(app.status.budget_usd.is_none());
+        let msg = last_error_msg(&app);
+        assert!(msg.contains("notanumber"), "should include offending value");
+    }
+
+    /// `/configure provider <name>` emits a "session restart required" hint.
+    #[test]
+    fn configure_provider_emits_restart_hint() {
+        let mut app = App::new();
+        app.handle_command(Command::Configure("provider deepseek".to_string()));
+
+        let msg = last_system_msg(&app);
+        assert!(msg.contains("deepseek"), "should mention provider name");
+        assert!(
+            msg.to_lowercase().contains("restart"),
+            "should mention restart"
+        );
+    }
+
+    /// `/configure provider` with no name produces an error.
+    #[test]
+    fn configure_provider_no_name_is_error() {
+        let mut app = App::new();
+        app.handle_command(Command::Configure("provider".to_string()));
+
+        let msg = last_error_msg(&app);
+        assert!(msg.contains("Usage"), "should print usage hint");
+    }
+
+    /// `/configure help` produces a list of subcommands.
+    #[test]
+    fn configure_help_produces_subcommand_list() {
+        let mut app = App::new();
+        app.handle_command(Command::Configure("help".to_string()));
+
+        let msg = last_system_msg(&app);
+        assert!(msg.contains("model"), "help should list 'model'");
+        assert!(msg.contains("budget"), "help should list 'budget'");
+        assert!(msg.contains("theme"), "help should list 'theme'");
+        assert!(msg.contains("vim"), "help should list 'vim'");
+        assert!(msg.contains("provider"), "help should list 'provider'");
+    }
+
+    /// `/configure <badsubcmd>` produces an error mentioning the unknown subcommand.
+    #[test]
+    fn configure_unknown_subcommand_produces_error() {
+        let mut app = App::new();
+        app.handle_command(Command::Configure("badsubcmd".to_string()));
+
+        let msg = last_error_msg(&app);
+        assert!(msg.contains("badsubcmd"), "error should name the bad subcommand");
+        assert!(
+            msg.to_lowercase().contains("try /configure help"),
+            "error should suggest /configure help"
+        );
+    }
+
+    /// `/configure vim on` enables vim mode.
+    #[test]
+    fn configure_vim_on_enables_vim() {
+        let mut app = App::new();
+        assert!(!app.vim_enabled);
+        app.handle_command(Command::Configure("vim on".to_string()));
+        assert!(app.vim_enabled);
+    }
+
+    /// `/configure vim off` disables vim mode.
+    #[test]
+    fn configure_vim_off_disables_vim() {
+        let mut app = App::new();
+        app.vim_enabled = true;
+        app.handle_command(Command::Configure("vim off".to_string()));
+        assert!(!app.vim_enabled);
+    }
+
+    /// `/configure theme crimson` switches the theme (delegates to ThemeSwitch).
+    #[test]
+    fn configure_theme_delegates_to_theme_switch() {
+        let mut app = App::new();
+        app.handle_command(Command::Configure("theme crimson".to_string()));
+
+        let msg = last_system_msg(&app);
+        assert!(msg.contains("crimson"), "should confirm theme switch");
+    }
 }

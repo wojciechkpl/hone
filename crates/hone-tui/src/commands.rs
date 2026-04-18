@@ -159,6 +159,67 @@ pub fn parse_inline_agent(input: &str) -> Option<(&str, &str)> {
 mod tests {
     use super::*;
 
+    // --- Command::parse for /configure -------------------------------------
+
+    #[test]
+    fn parse_configure_no_arg() {
+        let cmd = Command::parse("/configure").unwrap();
+        assert_eq!(cmd, Command::Configure(String::new()));
+    }
+
+    #[test]
+    fn parse_configure_model() {
+        let cmd = Command::parse("/configure model anthropic:claude-3-5-sonnet").unwrap();
+        assert_eq!(cmd, Command::Configure("model anthropic:claude-3-5-sonnet".to_string()));
+    }
+
+    #[test]
+    fn parse_configure_budget() {
+        let cmd = Command::parse("/configure budget 5.00").unwrap();
+        assert_eq!(cmd, Command::Configure("budget 5.00".to_string()));
+    }
+
+    #[test]
+    fn parse_configure_budget_off() {
+        let cmd = Command::parse("/configure budget off").unwrap();
+        assert_eq!(cmd, Command::Configure("budget off".to_string()));
+    }
+
+    #[test]
+    fn parse_configure_vim_on() {
+        let cmd = Command::parse("/configure vim on").unwrap();
+        assert_eq!(cmd, Command::Configure("vim on".to_string()));
+    }
+
+    #[test]
+    fn parse_configure_vim_off() {
+        let cmd = Command::parse("/configure vim off").unwrap();
+        assert_eq!(cmd, Command::Configure("vim off".to_string()));
+    }
+
+    #[test]
+    fn parse_configure_provider() {
+        let cmd = Command::parse("/configure provider deepseek").unwrap();
+        assert_eq!(cmd, Command::Configure("provider deepseek".to_string()));
+    }
+
+    #[test]
+    fn parse_configure_help() {
+        let cmd = Command::parse("/configure help").unwrap();
+        assert_eq!(cmd, Command::Configure("help".to_string()));
+    }
+
+    #[test]
+    fn parse_configure_unknown_subcommand() {
+        let cmd = Command::parse("/configure badsubcmd").unwrap();
+        assert_eq!(cmd, Command::Configure("badsubcmd".to_string()));
+    }
+
+    #[test]
+    fn configure_in_command_names() {
+        assert!(COMMAND_NAMES.contains(&"configure"));
+    }
+
     // --- Command::parse for /clarify ----------------------------------------
 
     #[test]
