@@ -6,7 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Security
+
+- **Shell sandbox policy anchored to the working directory.** The `SandboxPolicy::Manual` used for shell tool calls previously shipped with empty read/write allow lists, making the policy effectively trivial. It now pins the project's working directory (read+write) and the standard system read paths (`/usr/`, `/bin/`, `/System/Library/`, etc.), so Seatbelt/Landlock deny-by-default actually denies anything outside the project. `crates/hone-tools/src/shell.rs`.
+- **Per-store random salt for encrypted memory.** Argon2id derivation for `--features encrypted-memory` was using a fixed salt constant, meaning every vault on the machine derived the same key from the same passphrase. Each store now generates a random 16-byte salt on first use and persists it (plus a version byte) as a sentinel memory record, so rotating the passphrase or cloning the DB yields a different key. `crates/hone-memory/src/encrypted.rs`.
+- **Parallel tool dispatch recovers from panicked tasks.** `AgentContext::dispatch_parallel` spawned tool calls into a `JoinSet` and silently discarded entries whose task panicked. It now keeps a sidecar `(call_id, tool_name)` table indexed by spawn order and, when a join returns `Err(JoinError)`, emits a synthetic `ToolCallEnd { is_error: true }` with the panic message plus a tool result message so the turn loop can recover instead of hanging. `crates/hone-core/src/agent.rs`.
+
 ### Added
+
+- **Typed `/configure` subcommands in the TUI.** `/configure` is now a router over `model`, `theme`, `vim on|off`, `budget <usd>|off`, `provider`, and `help`, replacing the single-shot display. The bare `/configure` form prints a full session summary (provider, model, theme, vim, budget, cost, context, phase). Default `context_limit` is now 128 000 so the context meter renders before the first `ModelInfo` event arrives. `crates/hone-tui/src/app.rs`, `crates/hone-tui/src/commands.rs`.
+- **`HONE_DISABLE_PERSISTENT_STORES=1` env var.** Same effect as `--ephemeral` but toggleable without a CLI flag; used by the new TUI demo expect script and any CI harness that wants to skip SQLite session/memory setup. `bins/hone/src/main.rs`.
+- **Workspace-wide clippy/rust lint policy.** Root `Cargo.toml` now carries a `[workspace.lints]` block and every crate opts in via `[lints] workspace = true`. This ensures new crates cannot silently diverge from the project's deny/warn policy. `Cargo.toml` + all `crates/*/Cargo.toml`.
+- **Multi-agent + memory architecture note.** New `docs/architecture/multi-agent-and-memory.md` walks through the agent turn lifecycle, orchestrator pipeline, context-trimming strategy, and cross-session learning. Linked from `README.md` and `docs/index.md`.
+- **`Tool::is_read_only()` trait method.** Replaces hard-coded tool-name allow lists scattered across the MCP and permission layers. Each tool now declares its own read-only status so dynamic MCP tools can be classified without hand-maintenance. `crates/hone-tools/src/lib.rs`.
+- **Integration-test coverage for agent turns, orchestrator, memory, Ollama, and session flow.** Five disjoint suites — `crates/hone-core/tests/agent_turn.rs`, `crates/hone-core/tests/orchestrator.rs`, `crates/hone-providers/tests/ollama.rs`, `crates/hone-memory/src/sqlite_store.rs` (inline), and `crates/hone-server/tests/e2e_session_flow.rs` — covering `ModelInfo` emission + pricing, worker panic recovery, Ollama `tool_call.arguments` as a JSON object, write persistence across `SqliteStore` instances, and the SSE server stack end-to-end.
+- **CI bench compile check.** New `cargo bench --no-run` job guards against benchmark bit-rot. Workspace clippy is currently wired at `-W` until every crate converges on the new lint policy. `.github/workflows/ci.yml`.
+
+### Changed
+
+- **`AgentEvent`, `ProviderEvent`, `Role`, and `ToolLayer` are now `#[non_exhaustive]`.** External crates matching on these enums must add a `_ => …` arm. This gives us room to add variants (e.g., new streaming events) without a major bump. All first-party matchers were updated accordingly; look for forward-compat `_ => {}` arms in `crates/hone-tui/src/app.rs` and `crates/hone-providers/src/ollama.rs`.
+- **`AgentError::Internal` and typed `CheckpointError`.** Replaced several `anyhow::Error` bailouts inside `hone-core` with thiserror variants so callers can pattern-match on the failure mode. The agent loop now surfaces `AgentError::Internal { detail }` as a tool-result message instead of aborting the turn. `crates/hone-core/src/agent.rs`, `crates/hone-core/src/checkpoint.rs`.
+- **`Retry-After` parser follows RFC 9110.** HTTP 429/503 retry hints are now parsed as integer seconds first, HTTP-date second, with a bounded max to prevent runaway sleeps. Module-level regexes hoisted into `std::sync::LazyLock<Regex>` to avoid per-call recompilation. `crates/hone-providers/src/retry.rs`.
+- **`hone reports list` respects `--keep-all`.** The flag was previously accepted and ignored; `cmd_list` now threads it through to the retention check. `bins/hone/src/reports_cmd.rs`.
+- **Cache hit propagation.** `ToolOutput` and `AgentEvent::ToolCallEnd` now carry a `cache_hit` bit so the TUI status line and session reports tag cached results correctly. `crates/hone-cache/src/tool_cache.rs`, `bins/hone/src/tools/caching_tool.rs`.
+- **Reports writer is testable.** `cmd_list` split into a writer-taking helper, so integration tests can capture output without hijacking `stdout`. `bins/hone/src/reports_cmd.rs`.
+
+### Fixed
+
+- **`.cast` demos regenerated.** All asciinema recordings refreshed against the current TUI; new scripts added for `/configure`, CLI flow, Ollama tool-calling, agent rail, reports, model switch, and accessibility modes. Note that new-style `assets/demo-*.cast` is covered by `.gitignore` — the previously-tracked casts remain versioned.
+- **`ops.drain(..)` that silently discarded diff output** in the reports pipeline (`8518e6d`).
+- **Byte-slice truncation in `record_memory_recall`** that could panic on multi-byte UTF-8 (`8330b95`).
+- **Fail-closed reviewer doc.** `reviewer.approved` comment incorrectly described the behaviour as fail-open; corrected to match the code. `crates/hone-core/src/reviewer.rs`.
+
+### Added (earlier in this development cycle)
 
 - **Agent Rail observability sidebar** — Press `Ctrl+R` to toggle a real-time per-turn sidebar showing files touched (with R/W/X badges), injected context (skeleton + BM25 ranked entries with scores), and memory recalls. Width-adaptive (≥100 cols). Scrollable with j/k (future). Only appears in interactive TUI mode.
 - **TurnLedger per-turn accumulator** — Internal data structure recording file operations, skeleton injections, memory recalls, tool invocations, and phase transitions. Automatically aggregated into session reports on `/quit`.

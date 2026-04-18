@@ -17,13 +17,20 @@
 <p align="center">
   <img alt="Rust 1.85+" src="https://img.shields.io/badge/rust-1.85+-orange.svg">
   <img alt="MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-781%20passing-brightgreen.svg">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-1100%2B%20passing-brightgreen.svg">
   <img alt="SWE-bench" src="https://img.shields.io/badge/SWE--bench%20v1-58%2F300%20(19.3%25)-green.svg">
 </p>
 
 ---
 
 ## Demo
+
+<p align="center">
+  <img src="assets/demo.svg" alt="Hone demo — fixing a ZeroDivisionError end-to-end">
+</p>
+
+<details>
+<summary>Illustrative example (text fallback)</summary>
 
 ```
 $ hone "divide(10, 0) raises ZeroDivisionError. Fix it to return None."
@@ -43,9 +50,10 @@ $ hone "divide(10, 0) raises ZeroDivisionError. Fix it to return None."
 
   claude-sonnet │ $0.001 │ ▓▓░░░░░░░░ 18% ctx │ 5s
 ```
+</details>
 
 <details>
-<summary>Play the full recording locally</summary>
+<summary>Play the recording locally</summary>
 
 ```bash
 # Install asciinema
@@ -55,7 +63,7 @@ brew install asciinema  # or: pip install asciinema
 asciinema play assets/demo.cast
 ```
 
-A `.cast` file is included at `assets/demo.cast` — recorded from a real Hone run on DeepSeek V3 via OpenRouter (~$0.001 per task).
+The `.cast` source is at `assets/demo.cast` — recorded from a real Hone run on DeepSeek V3 via OpenRouter (~$0.001 per task). The embedded `assets/demo.svg` above is regenerated from it with `svg-term --in assets/demo.cast --out assets/demo.svg --window --no-cursor`.
 </details>
 
 ---
@@ -100,7 +108,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
   | ACP | Yes | SSE | Agent-to-agent protocol |
   | Mock | Yes | in-process | Test double only |
 - **Kernel-enforced sandboxing** — Seatbelt on macOS, Landlock on Linux 5.13+, seccomp elsewhere. Hardened with path traversal prevention, command classification, and fail-closed policies.
-- **Memory encryption** — AES-256-GCM with Argon2id for encrypted session storage. Opt-in via `--features encrypted-memory`. Keys stored in system keychain.
+- **Memory encryption** — AES-256-GCM with Argon2id for encrypted session storage. Opt-in via `--features encrypted-memory`. Keys stored in system keychain. Each store now persists its own random 16-byte salt (plus a version marker) as a sentinel memory record, so keys rotate per-vault and cannot be cross-replayed against a hardcoded constant.
 - **Layered tool architecture** — Native Rust layer (Layer 2) for zero-cost file/shell/git/LSP. MCP client for 70+ community extensions (Layer 1) with `.hone/mcp.json` config. Skills in markdown (Layer 3). Tool decorators for cost tracking and governance (Layer 4).
 - **Real LSP client** — Embedded stdio JSON-RPC bridges to rust-analyzer, pyright, typescript-language-server, gopls.
 - **Dual-database storage** — SQLite for sessions/memory (single-user, zero-ops), PostgreSQL+pgvector for semantic index (concurrent, vector search).
@@ -795,6 +803,12 @@ Hone respects the following environment variables for provider setup:
 | `OPENAI_API_KEY` | OpenAI API key (or compatible endpoint) | `sk-...` |
 | `HONE_OPENAI_BASE_URL` | Override OpenAI endpoint for custom providers | `https://api.deepseek.com` |
 | `HONE_OPENAI_MODEL` | Override model name for custom endpoints | `deepseek-coder`, `qwen-max`, `claude-3-sonnet` |
+| `HONE_DISABLE_PERSISTENT_STORES` | Skip SQLite session/memory setup for this run (same effect as `--ephemeral`; useful for CI, demos, and TUI expect scripts) | `1` |
+| `HONE_AUDIT_LOG` | Enable JSONL egress audit log (equivalent to `--audit`) | `1` |
+| `HONE_CONTEXT_INJECTION` / `HONE_NO_INJECTION` | Force-enable or force-disable proactive context injection | `1` |
+| `HONE_REDUCED_MOTION` | Disable Agent Rail animation | `1` |
+| `HONE_ASCII_ONLY` | Force ASCII box drawing and file-op badges | `1` |
+| `NO_COLOR` | Disable all colorized output | `1` |
 
 The provider auto-detection order is: **ANTHROPIC > OPENAI (+ custom endpoints) > Claude CLI > Gemini CLI > Ollama**.
 
@@ -859,6 +873,13 @@ In interactive mode, use these commands:
 | `!cd path` | Change directory (confined to project) |
 | `!nvim file` | Suspend TUI, open editor, restore on exit |
 | `@agent-name prompt` | Dispatch to inline agent (e.g., `@security-auditor "audit this"`, `@debugger "fix this bug"`) |
+| `/configure` | Show session summary (provider, model, theme, vim, budget, cost, phase) |
+| `/configure model <name>` | Switch model mid-session (e.g., `/configure model claude-sonnet-4-5`) |
+| `/configure theme <name>` | Change UI theme |
+| `/configure vim on\|off` | Toggle vim-style keybindings |
+| `/configure budget <usd>\|off` | Set or clear a session cost ceiling |
+| `/configure provider` | Print the active provider adapter |
+| `/configure help` | Show the full `/configure` subcommand list |
 | `:clarify` | Manually trigger scope clarification for ambiguous requests |
 | `:set vim` | Enable vim-style keybindings |
 | `:set novim` | Disable vim-style keybindings |
@@ -957,6 +978,7 @@ An honest comparison. We list where competitors are better, not just where Hone 
 - **[README](README.md)** — Features, installation, quick start, benchmarks
 - **[CHANGELOG](CHANGELOG.md)** — Recent changes, improvements, security hardening (Phase 2 complete)
 - **[Architecture](docs/architecture.md)** — Layer design, crate dependencies, data flow, context optimization, memory encryption, security model
+- **[Multi-Agent Coordination and Memory](docs/architecture/multi-agent-and-memory.md)** — Agent turn lifecycle, orchestrator pipeline, context trimming, cross-session learning
 - **[Configuration](docs/configuration.md)** — Config hierarchy, all options, examples, environment variables
 - **[Benchmarks](docs/benchmarks.md)** — Performance analysis, microbenchmarks, SWE-bench results
 
@@ -973,7 +995,7 @@ An honest comparison. We list where competitors are better, not just where Hone 
 
 ## Testing
 
-Hone passes **408 unit tests** across 13 crates with zero clippy warnings.
+Hone passes **1,100+ tests** (unit + integration) across 13 crates with the workspace clippy/rust lint policy applied to every crate.
 
 ```bash
 # Run all tests

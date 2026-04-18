@@ -2,7 +2,7 @@
   <img src="assets/banner.png" alt="Hone — The Universal Terminal AI Coding Agent" style="max-width: 600px; width: 100%; border-radius: 12px;">
 </div>
 
-**Hone** is a privacy-first, provider-agnostic AI coding agent built entirely in Rust. It runs locally in your terminal with kernel-enforced sandboxing, supports 75+ model providers (Anthropic, OpenAI, Ollama, local, CLI pass-through), and learns patterns across sessions through adaptive memory. Work with your models, on your machine, under your rules.
+**Hone** is a privacy-first, provider-agnostic AI coding agent built entirely in Rust. It runs locally in your terminal with kernel-enforced sandboxing, works with 7 first-party model adapters (Anthropic, OpenAI, Ollama, Claude CLI, Gemini CLI, ACP, mock) plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL` (DeepSeek, Qwen, Kimi, OpenRouter, …), and learns patterns across sessions through adaptive memory. Work with your models, on your machine, under your rules.
 
 ## Why Hone
 
@@ -48,13 +48,13 @@ $ hone "divide(10, 0) raises ZeroDivisionError. Fix it to return None."
 
 ### Model Support
 
-- **Universal model support** — Anthropic, OpenAI, Azure, Ollama, local providers, CLI pass-through (ACP) with tool delegation. 75+ adapters.
+- **Universal model support** — 7 first-party adapters (Anthropic, OpenAI, Ollama, Claude CLI, Gemini CLI, ACP, mock) plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL`. Full tool calling on Anthropic, OpenAI, Ollama, and ACP.
 - **Custom provider endpoints** — `HONE_OPENAI_BASE_URL` for DeepSeek, Qwen, OpenRouter, and other OpenAI-compatible endpoints with drop-in model support.
 
 ### Security & Privacy
 
 - **Kernel-enforced sandboxing** — Seatbelt on macOS, Landlock on Linux 5.13+, seccomp elsewhere. Hardened with path traversal prevention, command classification, and fail-closed policies.
-- **Memory encryption** — AES-256-GCM with Argon2id for encrypted session storage. Opt-in via `--features encrypted-memory`. Keys stored in system keychain.
+- **Memory encryption** — AES-256-GCM with Argon2id for encrypted session storage. Opt-in via `--features encrypted-memory`. Keys stored in system keychain. Each store persists its own random 16-byte salt (plus a version marker), so keys rotate per-vault and cannot be cross-replayed against a hardcoded constant.
 
 ### Tools & Integration
 
@@ -233,7 +233,7 @@ graph TB
 
     subgraph L0["Layer 0 — Model Providers"]
         direction LR
-        Providers["75+ provider adapters<br/>(Anthropic, OpenAI, Ollama, ACP)"]
+        Providers["7 first-party adapters<br/>+ any OpenAI-compatible endpoint"]
     end
 
     subgraph Storage["Storage & Observability"]

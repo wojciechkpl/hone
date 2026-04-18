@@ -449,6 +449,12 @@ provider = "ollama:llama2"
 | `HONE_CONFIG` | Override config file path |
 | `DATABASE_URL` | PostgreSQL connection string (if not in config) |
 | `OLLAMA_HOST` | Ollama server URL (default: `http://localhost:11434`) |
+| `HONE_DISABLE_PERSISTENT_STORES` | Skip SQLite session/memory setup for this run (same effect as `--ephemeral`; set to `1` in CI, demos, or expect scripts) |
+| `HONE_AUDIT_LOG` | Enable JSONL egress audit log (equivalent to `--audit`) |
+| `HONE_CONTEXT_INJECTION` / `HONE_NO_INJECTION` | Force-enable or force-disable proactive context injection |
+| `HONE_REDUCED_MOTION` | Disable Agent Rail animation |
+| `HONE_ASCII_ONLY` | Force ASCII box drawing and file-op badges |
+| `NO_COLOR` | Disable all colorized output |
 
 ## CLI Flags
 
