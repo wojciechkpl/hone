@@ -8,6 +8,10 @@
 # - Agent ensemble (MASAI Ranker)
 # - Interactive TUI with themes, split pane, autocomplete
 # - Slash commands
+# - Agent Rail observability sidebar (Ctrl+R)
+# - Live /model switch with context-limit update
+# - Accessibility flags (HONE_ASCII_ONLY, HONE_REDUCED_MOTION, NO_COLOR)
+# - Session reports and hone reports CLI
 
 Output demo.gif
 Output demo.mp4
@@ -124,6 +128,87 @@ Sleep 12s
 # Show /cost again with the cumulative tally
 Type "/cost"
 Sleep 500ms
+Enter
+Sleep 2s
+
+# ─────────────────────────────────────────────────────────
+# Section 5: Agent Rail observability sidebar
+# ─────────────────────────────────────────────────────────
+
+# Terminal must be ≥100 columns wide for the Agent Rail to appear
+# Ctrl+R toggles the 18-column right sidebar
+
+Type "read the auth module and explain the flow"
+Sleep 500ms
+Enter
+Sleep 10s
+
+# Toggle Agent Rail on — shows Files, Context, Memory sections
+Ctrl+r
+Sleep 3s
+
+# Toggle Agent Rail off
+Ctrl+r
+Sleep 1s
+
+# ─────────────────────────────────────────────────────────
+# Section 6: Live /model switch
+# ─────────────────────────────────────────────────────────
+
+# /model lists available models, switch updates the agent AND the context bar
+Type "/model"
+Sleep 500ms
+Enter
+Sleep 2s
+
+Type "/model anthropic:claude-opus-4-6"
+Sleep 500ms
+Enter
+Sleep 2s
+
+# Status bar now shows "claude-opus-4-6 │ … 0% (0/200k)"
+Sleep 1s
+
+# ─────────────────────────────────────────────────────────
+# Section 7: Accessibility flags
+# ─────────────────────────────────────────────────────────
+
+# Quit and relaunch with HONE_ASCII_ONLY=1
+Type "/quit"
+Enter
+Sleep 1s
+
+Type "HONE_ASCII_ONLY=1 hone"
+Enter
+Sleep 3s
+
+Type "/quit"
+Enter
+Sleep 1s
+
+# HONE_REDUCED_MOTION=1 — static spinner instead of animation frames
+Type "HONE_REDUCED_MOTION=1 hone"
+Enter
+Sleep 3s
+
+Type "/quit"
+Enter
+Sleep 1s
+
+# ─────────────────────────────────────────────────────────
+# Section 8: Session reports
+# ─────────────────────────────────────────────────────────
+
+# Reports are written automatically on /quit to .hone/reports/
+Type "hone reports list"
+Enter
+Sleep 2s
+
+Type "hone reports show 2026"
+Enter
+Sleep 2s
+
+Type "hone reports diff"
 Enter
 Sleep 2s
 
