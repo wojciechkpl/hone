@@ -5,3 +5,15 @@ priv/
 .hone/plan/
 .venv-docs/
 site/
+.cache/
+logs/
+.claude/agent-memory/
+Formula/
+hello.txt
+hone+*.json
+assets/demo-*.cast
+benchmarks/results/
+benchmarks/.venv/
+benchmarks/aider-repo/
+*.debug-eval.json
+*.debug-single.json

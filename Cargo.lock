@@ -1329,7 +1329,6 @@ dependencies = [
 name = "hone-core"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "criterion",
  "futures",
