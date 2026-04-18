@@ -248,6 +248,71 @@ impl MemoryStore for SqliteStore {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::MemoryStore as _;
+    use tempfile::TempDir;
+
+    fn make_memory(id: &str, content: &str) -> Memory {
+        Memory {
+            id: id.to_owned(),
+            content: content.to_owned(),
+            tags: vec![],
+            weight: 1.0,
+            created_at: 1_000_000,
+            decay_at: None,
+        }
+    }
+
+    /// Writes made through one `SqliteStore` instance must be visible when the
+    /// same database file is opened by a second `SqliteStore` instance.  This
+    /// verifies that the persistent store is actually persisting.
+    #[tokio::test]
+    async fn writes_persist_across_instances() {
+        let dir = TempDir::new().expect("create tempdir");
+        let db_path = dir.path().join("memory.db");
+
+        // First instance: record a memory.
+        {
+            let mut store = SqliteStore::open(&db_path).await
+                .expect("open first instance");
+            store.record(make_memory("id-1", "persistent content")).await
+                .expect("record");
+            // store is dropped here, closing the pool.
+        }
+
+        // Second instance: open the same path and recall.
+        {
+            let store = SqliteStore::open(&db_path).await
+                .expect("open second instance");
+            let results = store.recall(&MemoryQuery {
+                text: "persistent".to_owned(),
+                limit: 10,
+            }).await.expect("recall");
+
+            assert_eq!(results.len(), 1, "expected 1 memory after re-opening DB");
+            assert_eq!(results[0].id, "id-1");
+            assert_eq!(results[0].content, "persistent content");
+        }
+    }
+
+    /// An empty query should return all stored memories (up to limit).
+    #[tokio::test]
+    async fn empty_query_returns_all() {
+        let mut store = SqliteStore::in_memory().await.expect("in_memory");
+        store.record(make_memory("a", "alpha")).await.expect("record a");
+        store.record(make_memory("b", "beta")).await.expect("record b");
+
+        let results = store.recall(&MemoryQuery {
+            text: String::new(),
+            limit: 100,
+        }).await.expect("recall");
+
+        assert_eq!(results.len(), 2, "expected 2 memories from empty query");
+    }
+}
+
 /// Count overlapping case-insensitive occurrences of `query_lower` in the
 /// memory content.  Mirrors the scoring used by `InMemoryStore`.
 fn relevance_score(memory: &Memory, query_lower: &str) -> f64 {

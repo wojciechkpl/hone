@@ -72,6 +72,37 @@ fn test_ollama_build_request_body_includes_tools_when_provided() {
     assert_eq!(body["tools"][0]["function"]["name"], "read_file");
 }
 
+#[test]
+fn test_ollama_tool_call_arguments_serialized_as_object_not_string() {
+    // Regression: when the conversation includes a prior assistant tool_call,
+    // Ollama expects `arguments` to be a JSON object. Sending it as a
+    // JSON-encoded string triggers:
+    //   HTTP 400 {"error":"Value looks like object, but can't find closing '}' symbol"}
+    let mut assistant = Message::assistant("");
+    assistant.tool_calls = vec![hone_proto::ToolCallRequest {
+        id: "call_1".to_owned(),
+        name: "glob".to_owned(),
+        arguments: serde_json::json!({"pattern": "src/**"}),
+    }];
+
+    let request = make_request(vec![
+        Message::user("list files"),
+        assistant,
+        Message::tool_result("call_1".to_owned(), "src/main.rs"),
+    ]);
+
+    let body = build_request_body(&request);
+    let messages = body["messages"].as_array().expect("messages array");
+    let tool_call = &messages[1]["tool_calls"][0];
+
+    assert!(
+        tool_call["function"]["arguments"].is_object(),
+        "arguments must be a JSON object; got {:?}",
+        tool_call["function"]["arguments"]
+    );
+    assert_eq!(tool_call["function"]["arguments"]["pattern"], "src/**");
+}
+
 // ---------------------------------------------------------------------------
 // NDJSON parsing — token chunks
 // ---------------------------------------------------------------------------

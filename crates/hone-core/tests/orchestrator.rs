@@ -1,10 +1,13 @@
+use std::pin::Pin;
 use std::sync::Arc;
 
+use async_trait::async_trait;
+use futures::Stream;
 use hone_core::{
     AgentConfig, AgentRegistry, Orchestrator, SubTask, TaskPlan, WorkerResult, WorkerStatus,
 };
-use hone_proto::{ModelId, PricingEntry, TokenUsage};
-use hone_providers::MockProvider;
+use hone_proto::{Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, TokenUsage};
+use hone_providers::{CompletionRequest, ModelProvider, MockProvider, ProviderError};
 use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
 use tokio::sync::mpsc;
@@ -325,4 +328,152 @@ fn test_subtask_backwards_compat() {
     assert!(task.acceptance_tests.is_empty(), "acceptance_tests should default to empty");
     assert!(task.budget_usd.is_none(), "budget_usd should default to None");
     assert!(task.scope.is_empty(), "scope should default to empty");
+}
+
+// ---------------------------------------------------------------------------
+// P1.2: Panicked worker task_id recovery
+// ---------------------------------------------------------------------------
+
+/// A provider that panics unconditionally.  Injecting this as the worker agent's
+/// provider causes `run_worker` to panic, producing a `JoinError` in the
+/// orchestrator's `JoinSet`.
+struct PanicProvider;
+
+#[async_trait]
+impl ModelProvider for PanicProvider {
+    fn id(&self) -> &str {
+        "panic-provider"
+    }
+    fn display_name(&self) -> &str {
+        "Panic Provider"
+    }
+    fn supported_models(&self) -> Vec<ModelInfo> {
+        vec![]
+    }
+    async fn complete(
+        &self,
+        _req: CompletionRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
+        panic!("deliberate panic in PanicProvider::complete");
+    }
+    fn estimate_tokens(&self, _: &[Message]) -> u32 {
+        1
+    }
+    async fn health(&self) -> ProviderHealth {
+        ProviderHealth::Healthy
+    }
+}
+
+fn panic_agent_config() -> AgentConfig {
+    AgentConfig {
+        provider: Arc::new(PanicProvider),
+        tools: ToolRegistry::new(),
+        sandbox: Arc::new(NullSandbox),
+        system_prompt: "You are a panicking worker.".to_owned(),
+        model: ModelId::new("panic:test"),
+        max_tokens: None,
+        temperature: None,
+        budget_limit: None,
+        pricing: PricingEntry {
+            model: ModelId::new("panic:test"),
+            input_per_million: 0.0,
+            output_per_million: 0.0,
+            cache_read_per_million: None,
+        },
+        working_dir: std::path::PathBuf::from("/tmp"),
+        memory_store: None,
+        retry_config: hone_core::RetryConfig::default(),
+        index: None,
+        inject_context: false,
+        skeleton_strategy: Default::default(),
+        egress_log: None,
+    }
+}
+
+/// A `SequencedProvider` alternates between a normal first response (for
+/// orchestrator decompose / merge calls) and delegates worker calls to an inner
+/// config that uses a panicking provider.  We instead test this via a dedicated
+/// plan with `execute_plan` directly.
+///
+/// The orchestrator's `AgentRegistry` determines which `AgentConfig` is used
+/// for each worker task.  The default `empty_registry()` falls back to the
+/// orchestrator's own config.  To inject a panicking provider for *worker* tasks
+/// only (not the lead), we build an `AgentRegistry` that maps the worker agent
+/// name to the panic config.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_panicked_worker_has_correct_task_id() {
+    // Plan with three tasks: task-A and task-C use a normal provider;
+    // task-B uses the panicking provider.  Since execute_plan uses the
+    // orchestrator's own config for all workers (unless a registry is supplied),
+    // we inject a panic by registering a panic-agent-name in the registry.
+    //
+    // Simpler approach: all three tasks are independent, orchestrator config
+    // uses the panic provider, so ALL workers panic.  We then verify that the
+    // resulting WorkerResults have task_ids matching the planted tasks, not
+    // "unknown".
+    let plan = TaskPlan {
+        goal: "test panic recovery".to_owned(),
+        subtasks: vec![
+            SubTask {
+                id: "task-panic-A".to_owned(),
+                description: "first panicking task".to_owned(),
+                agent: "debugger".to_owned(),
+                context: String::new(),
+                depends_on: vec![],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
+            },
+            SubTask {
+                id: "task-panic-B".to_owned(),
+                description: "second panicking task".to_owned(),
+                agent: "debugger".to_owned(),
+                context: String::new(),
+                depends_on: vec![],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
+            },
+            SubTask {
+                id: "task-panic-C".to_owned(),
+                description: "third panicking task".to_owned(),
+                agent: "debugger".to_owned(),
+                context: String::new(),
+                depends_on: vec![],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
+            },
+        ],
+    };
+
+    // Use the panic provider as the orchestrator config; all workers will panic.
+    let config = panic_agent_config();
+    let orchestrator = Orchestrator::new(config, empty_registry(), 4);
+
+    let (tx, _rx) = mpsc::channel(256);
+    let results = orchestrator.execute_plan(plan, None, tx).await;
+
+    assert_eq!(results.len(), 3, "all three panicked tasks should produce a result");
+
+    // Every result must have a task_id that matches one of the planted tasks,
+    // NOT "unknown" (the old buggy value).
+    let known_ids: Vec<&str> = vec!["task-panic-A", "task-panic-B", "task-panic-C"];
+    for r in &results {
+        assert!(
+            known_ids.contains(&r.task_id.as_str()),
+            "expected task_id to be one of {known_ids:?}, got {:?}",
+            r.task_id
+        );
+        assert!(
+            matches!(r.status, WorkerStatus::Failed(_)),
+            "panicked task should have Failed status, got {:?}",
+            r.status
+        );
+    }
+
+    // All three distinct task_ids must be present.
+    let mut result_ids: Vec<&str> = results.iter().map(|r| r.task_id.as_str()).collect();
+    result_ids.sort_unstable();
+    assert_eq!(result_ids, vec!["task-panic-A", "task-panic-B", "task-panic-C"]);
 }

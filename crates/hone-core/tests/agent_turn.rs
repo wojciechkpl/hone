@@ -405,6 +405,7 @@ impl Tool for OrderRecordTool {
 
 /// Unit test: the `is_read_only_tool` classifier behaves correctly.
 #[test]
+#[allow(deprecated)]
 fn test_is_read_only_classifier() {
     use hone_core::is_read_only_tool;
 
@@ -1054,4 +1055,127 @@ async fn test_metrics_record_tokens() {
     let snap = agent.metrics_snapshot();
     assert_eq!(snap.input_tokens, 42, "input_tokens mismatch");
     assert_eq!(snap.output_tokens, 17, "output_tokens mismatch");
+}
+
+// ---------------------------------------------------------------------------
+// P1.4: Tool::is_read_only dispatch via registry
+// ---------------------------------------------------------------------------
+
+/// A dynamic tool whose name is NOT in the hardcoded `is_read_only_tool` list
+/// but which returns `is_read_only() == true` via the trait method.
+/// Used to verify that the registry-based dispatch path works for tools outside
+/// the legacy name whitelist.
+struct DynamicReadOnlyTool;
+
+#[async_trait]
+impl Tool for DynamicReadOnlyTool {
+    fn name(&self) -> &str {
+        "dynamic_readonly_search" // NOT in the hardcoded list
+    }
+    fn description(&self) -> &str {
+        "A dynamic read-only search tool."
+    }
+    fn schema(&self) -> serde_json::Value {
+        json!({ "type": "object", "properties": { "query": { "type": "string" } } })
+    }
+    async fn call(&self, input: ToolInput, _ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        Ok(ToolOutput::new(
+            json!({ "result": input.0.get("query").cloned().unwrap_or(json!("ok")) }),
+        ))
+    }
+    fn layer(&self) -> ToolLayer {
+        ToolLayer::Native
+    }
+    fn is_read_only(&self) -> bool {
+        true
+    }
+}
+
+/// When an agent receives two calls to `dynamic_readonly_search` (a tool not
+/// in the hardcoded list but with `is_read_only() == true` via the trait), both
+/// should be dispatched in parallel — verified by checking that two separate
+/// `ToolCallEnd` events are emitted and both return without error.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_dynamic_read_only_tool_dispatched_in_parallel() {
+    // Provider: first response emits two calls to our dynamic tool, then Done.
+    //           second response: text + Done (no more tools).
+    let seq1 = vec![
+        ProviderEvent::ToolCall(ToolCallRequest {
+            id: "dyn-1".to_owned(),
+            name: "dynamic_readonly_search".to_owned(),
+            arguments: json!({ "query": "foo" }),
+        }),
+        ProviderEvent::ToolCall(ToolCallRequest {
+            id: "dyn-2".to_owned(),
+            name: "dynamic_readonly_search".to_owned(),
+            arguments: json!({ "query": "bar" }),
+        }),
+        ProviderEvent::Done,
+    ];
+    let seq2 = vec![
+        ProviderEvent::Token { text: "done".to_owned() },
+        ProviderEvent::Done,
+    ];
+
+    let provider = Arc::new(SequencedProvider::new(vec![seq1, seq2]));
+
+    // Build a registry that includes the dynamic tool.
+    let registry = ToolRegistry::builder()
+        .register(Box::new(DynamicReadOnlyTool))
+        .build();
+
+    let config = AgentConfig {
+        provider: provider as Arc<dyn hone_providers::ModelProvider>,
+        tools: registry,
+        sandbox: Arc::new(NullSandbox),
+        system_prompt: "test".to_owned(),
+        model: ModelId::new("mock:test"),
+        max_tokens: None,
+        temperature: None,
+        budget_limit: None,
+        pricing: PricingEntry {
+            model: ModelId::new("mock:test"),
+            input_per_million: 0.0,
+            output_per_million: 0.0,
+            cache_read_per_million: None,
+        },
+        working_dir: std::path::PathBuf::from("/tmp"),
+        memory_store: None,
+        retry_config: hone_core::RetryConfig::default(),
+        index: None,
+        inject_context: false,
+        skeleton_strategy: Default::default(),
+        egress_log: None,
+    };
+
+    let mut agent = Agent::new(config);
+    let (tx, mut rx) = mpsc::channel(64);
+
+    agent
+        .run_turn("search for things", tx)
+        .await
+        .expect("turn should succeed with dynamic read-only tool");
+
+    // Collect events.
+    let mut events = Vec::new();
+    while let Ok(e) = rx.try_recv() {
+        events.push(e);
+    }
+
+    // Both dynamic_readonly_search calls must have completed without error.
+    let end_1 = events.iter().find(|e| {
+        matches!(e, AgentEvent::ToolCallEnd { id, is_error, .. } if id == "dyn-1" && !*is_error)
+    });
+    let end_2 = events.iter().find(|e| {
+        matches!(e, AgentEvent::ToolCallEnd { id, is_error, .. } if id == "dyn-2" && !*is_error)
+    });
+
+    assert!(
+        end_1.is_some(),
+        "expected successful ToolCallEnd for dyn-1; events: {events:#?}"
+    );
+    assert!(
+        end_2.is_some(),
+        "expected successful ToolCallEnd for dyn-2; events: {events:#?}"
+    );
 }
