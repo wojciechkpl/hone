@@ -19,8 +19,9 @@ pub struct ReviewerAgent {
 pub struct ReviewResult {
     /// Issues identified by the reviewer.
     pub issues: Vec<ReviewIssue>,
-    /// `true` when no `Critical` or `Major` issues were found, or when the
-    /// reviewer output could not be parsed (fail-open).
+    /// `true` when no `Critical` or `Major` issues were found.
+    /// `false` when a blocking issue is present, or when the reviewer output
+    /// could not be parsed (fail-closed).
     pub approved: bool,
     /// The raw text response returned by the model.
     pub response: String,

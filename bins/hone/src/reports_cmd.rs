@@ -104,11 +104,19 @@ fn resolve_one(reports_dir: &Path, prefix: &str) -> Result<PathBuf> {
 // ---------------------------------------------------------------------------
 
 pub fn cmd_list(reports_dir: &Path, limit: usize) -> Result<()> {
+    cmd_list_to_writer(reports_dir, limit, &mut std::io::stdout())
+}
+
+pub fn cmd_list_to_writer(
+    reports_dir: &Path,
+    limit: usize,
+    w: &mut dyn std::io::Write,
+) -> Result<()> {
     let paths = list_report_files(reports_dir)?;
 
     if paths.is_empty() {
-        println!("No reports found in {}.", reports_dir.display());
-        println!("Reports are generated automatically on session exit.");
+        writeln!(w, "No reports found in {}.", reports_dir.display())?;
+        writeln!(w, "Reports are generated automatically on session exit.")?;
         return Ok(());
     }
 
@@ -122,8 +130,8 @@ pub fn cmd_list(reports_dir: &Path, limit: usize) -> Result<()> {
         .unwrap_or(20)
         .min(60);
 
-    println!("{:<id_width$}  {:>8}", "REPORT ID", "SIZE");
-    println!("{}", "-".repeat(id_width + 10));
+    writeln!(w, "{:<id_width$}  {:>8}", "REPORT ID", "SIZE")?;
+    writeln!(w, "{}", "-".repeat(id_width + 10))?;
 
     for path in display_paths {
         let stem = path
@@ -138,11 +146,11 @@ pub fn cmd_list(reports_dir: &Path, limit: usize) -> Result<()> {
         } else {
             format!("{size}B")
         };
-        println!("{:<id_width$}  {:>8}", stem, size_str, id_width = id_width);
+        writeln!(w, "{:<id_width$}  {:>8}", stem, size_str, id_width = id_width)?;
     }
 
     if paths.len() > truncated {
-        println!("… {} more (use --limit 0 to see all)", paths.len() - truncated);
+        writeln!(w, "… {} more (use --limit 0 to see all)", paths.len() - truncated)?;
     }
 
     Ok(())
@@ -423,7 +431,7 @@ mod tests {
     }
 
     /// Verify that `cmd_list` with `limit=0` (the --keep-all semantic) shows all
-    /// reports, while the default limit of 20 shows at most 20.
+    /// reports, while `limit=20` shows at most 20.
     ///
     /// The `keep_all` flag was previously a no-op because the match arm in
     /// `main.rs` used `..` to discard all fields except `limit`.
@@ -431,25 +439,34 @@ mod tests {
     fn cmd_list_keep_all_shows_all_reports() {
         let (tmp, dir) = setup_reports_dir();
 
-        // Create 120 fake report files.
         for i in 0..120usize {
-            write_report_file(&dir, &format!("2026-04-{:02}T{:06}-sess-{i}", i % 28 + 1, i), &format!("# Report {i}"));
+            write_report_file(
+                &dir,
+                &format!("2026-04-{:02}T{:06}-sess-{i}", i % 28 + 1, i),
+                &format!("# Report {i}"),
+            );
         }
 
-        let all_paths = list_report_files(&dir).expect("listing should succeed");
-        assert_eq!(all_paths.len(), 120, "should have 120 report files");
+        // With limit=20 the output must contain exactly 20 report rows (not counting
+        // the header, separator, and "… N more" trailer).
+        let mut buf = Vec::<u8>::new();
+        cmd_list_to_writer(&dir, 20, &mut buf).expect("cmd_list limit=20 must succeed");
+        let report_lines_20 = std::str::from_utf8(&buf)
+            .unwrap()
+            .lines()
+            .filter(|l| l.starts_with("2026-"))
+            .count();
+        assert_eq!(report_lines_20, 20, "limit=20 should show exactly 20 report rows");
 
-        // With limit=20 (default) only 20 should be shown (no assertion on
-        // stdout content, but cmd_list must not error).
-        cmd_list(&dir, 20).expect("cmd_list limit=20 must succeed");
-
-        // With limit=0 (keep-all), all 120 must be listed.
-        // We verify via list_report_files directly since cmd_list writes to stdout.
-        let truncated_none = if 0 == 0 { all_paths.len() } else { all_paths.len().min(0) };
-        assert_eq!(truncated_none, 120, "keep_all (limit=0) must return all 120 reports");
-
-        // And the actual cmd_list call with limit=0 must succeed.
-        cmd_list(&dir, 0).expect("cmd_list limit=0 (keep-all) must succeed");
+        // With limit=0 (keep-all) all 120 rows must appear.
+        buf.clear();
+        cmd_list_to_writer(&dir, 0, &mut buf).expect("cmd_list limit=0 (keep-all) must succeed");
+        let report_lines_all = std::str::from_utf8(&buf)
+            .unwrap()
+            .lines()
+            .filter(|l| l.starts_with("2026-"))
+            .count();
+        assert_eq!(report_lines_all, 120, "limit=0 should show all 120 report rows");
 
         drop(tmp);
     }

@@ -22,6 +22,11 @@ impl ToolResultCache {
 
     /// Look up a cached entry, or compute and store one on miss.
     ///
+    /// Returns `(bytes, cache_hit)`.  `cache_hit` is `true` iff the entry was
+    /// served from the cache without invoking `compute`.  The flag is set
+    /// atomically with the read, eliminating the TOCTOU race that a separate
+    /// probe would introduce.
+    ///
     /// The `compute` closure returns `(bytes, invalidator)`.  The invalidator
     /// is attached to the stored entry so that future lookups can determine
     /// whether the cached value is still valid.
@@ -29,14 +34,14 @@ impl ToolResultCache {
         &self,
         key: CacheKey,
         compute: F,
-    ) -> Result<Vec<u8>, CacheError>
+    ) -> Result<(Vec<u8>, bool), CacheError>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<(Vec<u8>, InvalidationTag), CacheError>>,
     {
         if let Some(entry) = self.backend.get(&key).await? {
             tracing::debug!(namespace = %key.namespace, "tool cache hit");
-            return Ok(entry.bytes.to_vec());
+            return Ok((entry.bytes.to_vec(), true));
         }
 
         tracing::debug!(namespace = %key.namespace, "tool cache miss — computing");
@@ -49,7 +54,7 @@ impl ToolResultCache {
         let entry = CacheEntry::new(bytes.clone(), invalidator);
         self.backend.put(&stored_key, entry).await?;
 
-        Ok(bytes)
+        Ok((bytes, false))
     }
 
     /// Access the underlying backend (e.g. to call `stats` or

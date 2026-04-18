@@ -1630,7 +1630,14 @@ async fn main() -> Result<()> {
     // Initialise SQLite persistence (non-blocking; errors are warnings only).
     // The returned handles keep the memory store and file watcher alive for
     // the process lifetime.
-    let persistence = init_persistence(cli.ephemeral).await;
+    //
+    // Persistence is skipped when `--ephemeral` is passed OR when the env var
+    // `HONE_DISABLE_PERSISTENT_STORES=1` is set (useful for automated tests).
+    let skip_persistence = cli.ephemeral
+        || std::env::var("HONE_DISABLE_PERSISTENT_STORES")
+            .map(|v| v == "1")
+            .unwrap_or(false);
+    let persistence = init_persistence(skip_persistence).await;
     let memory_store = persistence.memory.clone();
     let index = persistence.index.clone();
 

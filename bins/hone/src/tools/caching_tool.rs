@@ -265,12 +265,7 @@ impl Tool for CachingToolWrapper {
         let input_for_compute = input.clone();
         let ctx_for_compute = ctx.clone();
 
-        // Probe the backend first so we can distinguish hit from miss.
-        let invalidator_for_probe = invalidator.clone();
-        let probe_key = Self::build_key(tool_name, &input, invalidator_for_probe);
-        let is_hit = self.cache.backend().get(&probe_key).await.ok().flatten().is_some();
-
-        let bytes = self
+        let (bytes, is_hit) = self
             .cache
             .get_or_compute(key, move || async move {
                 let output = inner
