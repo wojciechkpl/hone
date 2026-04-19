@@ -2479,13 +2479,10 @@ async fn run_tui(
             app.restore_queued_message_if_idle();
         }
 
-        // Refresh context-window stats in the status bar after every tick.
-        // The actor handles the query asynchronously so we don't stall the event
-        // loop — if the agent is busy the reply arrives on the next iteration.
-        {
-            let tokens = agent.context_tokens().await;
-            app.status_mut().context_tokens = tokens;
-        }
+        // Refresh context-window stats in the status bar.
+        // context_tokens() reads an atomic snapshot — never blocks, safe during
+        // long-running tool calls.
+        app.status_mut().context_tokens = agent.context_tokens().await;
 
         app.tick();
     }

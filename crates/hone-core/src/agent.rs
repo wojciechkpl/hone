@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use futures::StreamExt;
 use hone_index::SqliteIndex;
@@ -1175,15 +1176,22 @@ enum AgentCommand {
 /// All calls are serialized through a command channel so no `Mutex` is needed
 /// at the call site.  The actor owns the `Agent` exclusively and processes one
 /// command at a time.
+///
+/// `context_tokens_cache` is an atomic snapshot updated after each turn and
+/// history load so `context_tokens()` never needs to enter the command channel
+/// — keeping the TUI responsive even during long-running tool calls.
 #[derive(Clone)]
 pub struct AgentHandle {
     cmd_tx: mpsc::Sender<AgentCommand>,
+    context_tokens_cache: Arc<AtomicU32>,
 }
 
 impl AgentHandle {
     /// Spawn an agent actor task and return a handle to it.
     pub fn spawn(config: AgentConfig) -> Self {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<AgentCommand>(32);
+        let context_tokens_cache = Arc::new(AtomicU32::new(0));
+        let tokens_writer = Arc::clone(&context_tokens_cache);
 
         tokio::spawn(async move {
             let mut agent = Agent::new(config);
@@ -1195,6 +1203,7 @@ impl AgentHandle {
                         reply,
                     } => {
                         let result = agent.run_turn(&user_input, events).await;
+                        tokens_writer.store(agent.context_token_count(), Ordering::Relaxed);
                         let _ = reply.send(result);
                     }
                     AgentCommand::SwapProvider { provider } => {
@@ -1210,6 +1219,7 @@ impl AgentHandle {
                         for msg in messages {
                             agent.context.add_message(msg);
                         }
+                        tokens_writer.store(agent.context_token_count(), Ordering::Relaxed);
                     }
                     AgentCommand::GetMessages { reply } => {
                         let _ = reply.send(agent.messages());
@@ -1225,7 +1235,7 @@ impl AgentHandle {
             }
         });
 
-        Self { cmd_tx }
+        Self { cmd_tx, context_tokens_cache }
     }
 
     /// Run a single conversation turn.  Awaits until the actor has finished
@@ -1270,15 +1280,9 @@ impl AgentHandle {
 
     /// Return the estimated token count of the current context window.
     pub async fn context_tokens(&self) -> u32 {
-        let (tx, rx) = oneshot::channel();
-        if self.cmd_tx
-            .send(AgentCommand::GetContextTokens { reply: tx })
-            .await
-            .is_err()
-        {
-            return 0;
-        }
-        rx.await.unwrap_or(0)
+        // Read the atomic snapshot — never blocks, safe to call from the TUI
+        // event loop even while a turn is running.
+        self.context_tokens_cache.load(Ordering::Relaxed)
     }
 
     /// Bulk-load historical messages into the context window (for session resume).
