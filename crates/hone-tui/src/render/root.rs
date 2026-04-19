@@ -16,8 +16,11 @@ use crate::{
         file_preview::FilePreviewWidget,
         header::render_header,
         help::HelpOverlay,
+        command_palette::render_command_palette,
         history_search::render_history_search,
         input_widget::InputWidget,
+        search_bar::render_search_bar,
+        session_anatomy::render_session_anatomy,
         splash::SplashWidget,
         status_bar::render_status_bar,
     },
@@ -59,8 +62,23 @@ pub fn render(app: &App, frame: &mut Frame) {
     // History-search overlay above the input area (shown when Ctrl+F is active)
     render_history_search(app, frame, chunks[2]);
 
+    // Scrollback search bar at bottom of content area
+    if app.search_open {
+        render_search_bar(app, frame, chunks[1]);
+    }
+
     if app.show_help() {
         render_help_overlay(app, frame, area);
+    }
+
+    // Command palette — full-area overlay
+    if app.palette_open {
+        render_command_palette(app, frame, area);
+    }
+
+    // Session Anatomy — full-area overlay, rendered last
+    if app.anatomy_open {
+        render_session_anatomy(app, frame, area);
     }
 }
 

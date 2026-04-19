@@ -131,6 +131,29 @@ pub struct App {
     pub(crate) history_search_query: String,
     /// Currently highlighted row in the history-search overlay (0-based, None = none).
     pub(crate) history_search_index: Option<usize>,
+    // --- Command palette (Ctrl+K) -------------------------------------------
+    /// Whether the command palette overlay is open.
+    pub palette_open: bool,
+    /// Current filter query typed in the palette.
+    pub(crate) palette_query: String,
+    /// Currently selected row in the filtered palette list (0-based).
+    pub(crate) palette_selection: usize,
+    // --- Scrollback search (Ctrl+/) -----------------------------------------
+    /// Whether the scrollback search bar is open.
+    pub search_open: bool,
+    /// Current search query string.
+    pub(crate) search_query: String,
+    /// Indices into `self.messages` that match the current query.
+    pub(crate) search_matches: Vec<usize>,
+    /// Current match index into `search_matches`.
+    pub(crate) search_cursor: usize,
+    // --- Session Anatomy overlay --------------------------------------------
+    /// Whether the Session Anatomy full-screen overlay is open.
+    pub anatomy_open: bool,
+    /// Active tab: 0 = Phase Timeline, 1 = Memory Graph.
+    pub(crate) anatomy_tab: usize,
+    /// Vertical scroll offset within the anatomy overlay.
+    pub(crate) anatomy_scroll: usize,
 }
 
 impl App {
@@ -178,6 +201,16 @@ impl App {
             history_search_open: false,
             history_search_query: String::new(),
             history_search_index: None,
+            palette_open: false,
+            palette_query: String::new(),
+            palette_selection: 0,
+            search_open: false,
+            search_query: String::new(),
+            search_matches: Vec::new(),
+            search_cursor: 0,
+            anatomy_open: false,
+            anatomy_tab: 0,
+            anatomy_scroll: 0,
         }
     }
 
@@ -487,6 +520,21 @@ impl App {
 
     /// Process a terminal key event and update state accordingly.
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // Session Anatomy overlay consumes all keys while open.
+        if self.anatomy_open {
+            self.handle_key_anatomy(key);
+            return;
+        }
+        // Command palette takes priority over everything.
+        if self.palette_open {
+            self.handle_key_palette(key);
+            return;
+        }
+        // Scrollback search takes priority over normal input.
+        if self.search_open {
+            self.handle_key_search(key);
+            return;
+        }
         // When vim mode is active, route through the overlay first.
         if self.vim_enabled {
             if let Some(action) = self.vim.process(key) {
@@ -551,6 +599,23 @@ impl App {
                 self.history_search_query.clear();
                 self.history_search_index = None;
                 return;
+            }
+            // Ctrl+K — open command palette.
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.palette_open = true;
+                self.palette_query.clear();
+                self.palette_selection = 0;
+            }
+            // Ctrl+/ — open scrollback search.
+            KeyCode::Char('/') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.search_open = true;
+                self.search_query.clear();
+                self.recompute_search_matches();
+            }
+            // Ctrl+A — toggle Session Anatomy overlay.
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.anatomy_open = !self.anatomy_open;
+                self.anatomy_scroll = 0;
             }
             // Ctrl+R — toggle agent rail sidebar.
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -785,6 +850,134 @@ impl App {
                 // Reset selection when query changes.
                 self.history_search_index = None;
             }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Command palette key handling
+    // -----------------------------------------------------------------------
+    fn handle_key_palette(&mut self, key: KeyEvent) {
+        use crate::render::command_palette::PALETTE_COMMANDS;
+        match key.code {
+            KeyCode::Esc => {
+                self.palette_open = false;
+            }
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.palette_open = false;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.palette_selection = self.palette_selection.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let count = PALETTE_COMMANDS
+                    .iter()
+                    .filter(|e| palette_matches(e.name, e.description, &self.palette_query))
+                    .count();
+                if count > 0 {
+                    self.palette_selection = (self.palette_selection + 1).min(count - 1);
+                }
+            }
+            KeyCode::Enter => {
+                let selected = PALETTE_COMMANDS
+                    .iter()
+                    .filter(|e| palette_matches(e.name, e.description, &self.palette_query))
+                    .nth(self.palette_selection)
+                    .map(|e| e.name);
+                if let Some(name) = selected {
+                    self.input.buffer = format!("/{name} ");
+                    self.input.cursor_position = self.input.buffer.len();
+                }
+                self.palette_open = false;
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.palette_query.push(c);
+                self.palette_selection = 0;
+            }
+            KeyCode::Backspace => {
+                self.palette_query.pop();
+            }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Scrollback search key handling
+    // -----------------------------------------------------------------------
+    fn handle_key_search(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.search_open = false;
+                self.search_matches.clear();
+                self.search_cursor = 0;
+            }
+            KeyCode::Enter | KeyCode::Char('n') => {
+                if !self.search_matches.is_empty() {
+                    self.search_cursor = (self.search_cursor + 1) % self.search_matches.len();
+                }
+            }
+            KeyCode::Char('N') => {
+                if !self.search_matches.is_empty() {
+                    self.search_cursor = self.search_cursor
+                        .checked_sub(1)
+                        .unwrap_or(self.search_matches.len() - 1);
+                }
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.search_query.push(c);
+                self.recompute_search_matches();
+            }
+            KeyCode::Backspace => {
+                self.search_query.pop();
+                self.recompute_search_matches();
+            }
+            _ => {}
+        }
+    }
+
+    fn recompute_search_matches(&mut self) {
+        self.search_matches.clear();
+        self.search_cursor = 0;
+        if self.search_query.is_empty() {
+            return;
+        }
+        let query_lower = self.search_query.to_lowercase();
+        for (i, msg) in self.messages.iter().enumerate() {
+            if msg.content.to_lowercase().contains(&query_lower) {
+                self.search_matches.push(i);
+            }
+        }
+    }
+
+    pub fn palette_query(&self) -> &str { &self.palette_query }
+    pub fn palette_selection(&self) -> usize { self.palette_selection }
+    pub fn search_query(&self) -> &str { &self.search_query }
+    pub fn search_matches(&self) -> &[usize] { &self.search_matches }
+    pub fn search_cursor(&self) -> usize { self.search_cursor }
+    pub fn recompute_search_matches_pub(&mut self) { self.recompute_search_matches(); }
+    pub fn handle_key_search_pub(&mut self, key: KeyEvent) { self.handle_key_search(key); }
+    pub fn handle_key_palette_pub(&mut self, key: KeyEvent) { self.handle_key_palette(key); }
+
+    // -----------------------------------------------------------------------
+    // Session Anatomy key handling
+    // -----------------------------------------------------------------------
+    pub fn handle_key_anatomy(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => { self.anatomy_open = false; }
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.anatomy_open = false;
+            }
+            KeyCode::Tab => {
+                self.anatomy_tab = (self.anatomy_tab + 1) % 2;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.anatomy_scroll = self.anatomy_scroll.saturating_add(1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.anatomy_scroll = self.anatomy_scroll.saturating_sub(1);
+            }
+            KeyCode::Char('g') => { self.anatomy_scroll = 0; }
+            KeyCode::Char('G') => { self.anatomy_scroll = usize::MAX / 2; }
             _ => {}
         }
     }
@@ -1680,6 +1873,15 @@ impl Default for App {
     }
 }
 
+/// Returns `true` when `name` or `description` contains `query` (case-insensitive).
+pub(crate) fn palette_matches(name: &str, description: &str, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    let q = query.to_lowercase();
+    name.to_lowercase().contains(&q) || description.to_lowercase().contains(&q)
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -2166,6 +2368,7 @@ mod tests {
 
     /// g) Non-ToolResult messages (User, Assistant) are not toggled by Enter.
     #[test]
+    #[allow(clippy::bool_assert_comparison)]
     fn enter_does_not_toggle_non_tool_result_message() {
         let mut app = App::new();
         app.show_splash = false;

@@ -12,6 +12,7 @@ use crate::{
     theme::Theme,
 };
 
+use super::markdown::markdown_to_lines;
 use super::tool_call::render_tool_call;
 
 /// Maximum number of lines rendered for a ToolResult message before the
@@ -121,32 +122,29 @@ impl<'a> ConversationWidget<'a> {
     fn render_assistant(&self, msg: &DisplayMessage) -> Vec<Line<'static>> {
         let theme = self.theme;
         let label_style = Style::default().fg(theme.role_assistant);
-        let content_style = Style::default().fg(theme.text_primary);
 
         let label = Line::from(Span::styled("hone", label_style));
         let mut lines = vec![label];
 
         let content = &msg.content;
-        let source_lines: Vec<&str> = content.lines().collect();
+        let mut md_lines = markdown_to_lines(content, theme);
 
-        for (idx, text_line) in source_lines.iter().enumerate() {
-            let is_last = idx == source_lines.len().saturating_sub(1);
-            let show_cursor = is_last && msg.is_streaming && self.anim.blink_visible();
-
-            let mut spans: Vec<Span<'static>> = vec![
-                Span::styled((*text_line).to_string(), content_style),
-            ];
-            if show_cursor {
-                spans.push(Span::styled("_", Style::default().fg(theme.accent_hot)));
+        // If streaming, append a blinking cursor on the last content line.
+        if msg.is_streaming && self.anim.blink_visible() {
+            let cursor = Span::styled("_", Style::default().fg(theme.accent_hot));
+            if let Some(last) = md_lines.last_mut() {
+                last.spans.push(cursor);
+            } else {
+                md_lines.push(Line::from(cursor));
             }
-            lines.push(Line::from(spans));
         }
 
         // If content is empty but still streaming, show just the cursor.
         if content.is_empty() && msg.is_streaming && self.anim.blink_visible() {
-            lines.push(Line::from(Span::styled("_", Style::default().fg(theme.accent_hot))));
+            md_lines.push(Line::from(Span::styled("_", Style::default().fg(theme.accent_hot))));
         }
 
+        lines.extend(md_lines);
         lines
     }
 }
