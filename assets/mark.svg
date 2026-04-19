@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="hone-mark-title hone-mark-desc">
+  <title id="hone-mark-title">Hone</title>
+  <desc id="hone-mark-desc">Four stacked chevrons converging to a single apex with an arrowhead. The gradient from burgundy to coral maps to Hone's layered tool architecture: skills, native, mcp, and code.</desc>
+
+  <g fill="#7B1E36">
+    <polygon points="28,52 52,52 214,128"/>
+    <polygon points="28,204 52,204 214,128"/>
+  </g>
+  <g fill="#A02440">
+    <polygon points="48,72 72,72 214,128"/>
+    <polygon points="48,184 72,184 214,128"/>
+  </g>
+  <g fill="#D32E5C">
+    <polygon points="68,92 92,92 214,128"/>
+    <polygon points="68,164 92,164 214,128"/>
+  </g>
+  <g fill="#EE3F6E">
+    <polygon points="88,112 112,112 214,128"/>
+    <polygon points="88,144 112,144 214,128"/>
+    <polygon points="202,118 228,128 202,138"/>
+  </g>
+</svg>
