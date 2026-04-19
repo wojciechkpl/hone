@@ -256,9 +256,10 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
 
     let theme = app.theme();
     let count = matches.len().min(8) as u16;
-    let popup_y = input_area.y.saturating_sub(count);
+    let popup_height = count + 2; // +2 for top/bottom border rows
+    let popup_y = input_area.y.saturating_sub(popup_height);
     let popup_width = 36u16.min(input_area.width);
-    let popup_area = Rect::new(input_area.x + 1, popup_y, popup_width, count);
+    let popup_area = Rect::new(input_area.x + 1, popup_y, popup_width, popup_height);
 
     use ratatui::widgets::Clear;
     frame.render_widget(Clear, popup_area);
