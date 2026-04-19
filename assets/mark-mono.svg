@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor" role="img" aria-labelledby="hone-mono-title">
+  <title id="hone-mono-title">Hone</title>
+  <polygon points="28,52 52,52 214,128"/>
+  <polygon points="28,204 52,204 214,128"/>
+  <polygon points="48,72 72,72 214,128"/>
+  <polygon points="48,184 72,184 214,128"/>
+  <polygon points="68,92 92,92 214,128"/>
+  <polygon points="68,164 92,164 214,128"/>
+  <polygon points="88,112 112,112 214,128"/>
+  <polygon points="88,144 112,144 214,128"/>
+  <polygon points="202,118 228,128 202,138"/>
+</svg>
