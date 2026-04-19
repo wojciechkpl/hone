@@ -1639,6 +1639,35 @@ impl App {
                 self.status.context_limit = context_window;
             }
 
+            AgentEvent::ContextInjected { strategy, tokens_used, bm25_hits, confidence: _ } => {
+                if self.current_turn.is_none() {
+                    let turn_index = self.completed_turns.len();
+                    self.current_turn = Some(TurnLedger::new(turn_index));
+                }
+                if let Some(ledger) = &mut self.current_turn {
+                    if bm25_hits.is_empty() {
+                        ledger.record_skeleton_entry("(skeleton)", &strategy, None, tokens_used);
+                    } else {
+                        let per_file = tokens_used / (bm25_hits.len() as u32).max(1);
+                        for (path, score) in &bm25_hits {
+                            ledger.record_skeleton_entry(path, &strategy, Some(*score), per_file);
+                        }
+                    }
+                }
+            }
+
+            AgentEvent::MemoryRecalled { entries } => {
+                if self.current_turn.is_none() {
+                    let turn_index = self.completed_turns.len();
+                    self.current_turn = Some(TurnLedger::new(turn_index));
+                }
+                if let Some(ledger) = &mut self.current_turn {
+                    for (key, snippet) in entries {
+                        ledger.record_memory_recall(key, snippet);
+                    }
+                }
+            }
+
             // Forward-compat: unknown AgentEvent variants are silently ignored by the TUI.
             _ => {}
         }

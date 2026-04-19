@@ -225,11 +225,14 @@ impl Agent {
     }
 
     /// Query the memory store for entries relevant to `query` and format them
-    /// as an appendix for the system prompt.  Returns an empty string when no
-    /// store is configured or no relevant memories exist.
-    async fn fetch_relevant_memories(&self, query: &str) -> String {
+    /// as an appendix for the system prompt.
+    ///
+    /// Returns a tuple of:
+    /// - The formatted prompt text (empty when no store is configured or no relevant memories exist).
+    /// - `(memory_id, short_snippet <= 80 chars)` pairs for each recalled memory.
+    async fn fetch_relevant_memories(&self, query: &str) -> (String, Vec<(String, String)>) {
         let Some(store) = &self.config.memory_store else {
-            return String::new();
+            return (String::new(), vec![]);
         };
 
         let memory_query = MemoryQuery {
@@ -240,12 +243,15 @@ impl Agent {
         match store.lock().await.recall(&memory_query).await {
             Ok(memories) if !memories.is_empty() => {
                 let mut prompt = String::from("\n\n## Relevant context from memory:\n");
+                let mut recalled_entries: Vec<(String, String)> = Vec::new();
                 for mem in &memories {
                     prompt.push_str(&format!("- {}\n", mem.content));
+                    let snippet: String = mem.content.chars().take(80).collect();
+                    recalled_entries.push((mem.id.clone(), snippet));
                 }
-                prompt
+                (prompt, recalled_entries)
             }
-            _ => String::new(),
+            _ => (String::new(), vec![]),
         }
     }
 
@@ -302,7 +308,10 @@ impl Agent {
         self.cost.check_budget(self.config.budget_limit)?;
 
         // Fetch memories before adding the user message so the query is clean.
-        let memories = self.fetch_relevant_memories(user_input).await;
+        let (memories, recalled_entries) = self.fetch_relevant_memories(user_input).await;
+        if !recalled_entries.is_empty() {
+            let _ = events.send(AgentEvent::MemoryRecalled { entries: recalled_entries }).await;
+        }
 
         // Proactive context injection — runs on the first turn only and only
         // when explicitly enabled via `inject_context`.
@@ -322,6 +331,12 @@ impl Agent {
                         budget = injection.exploration_budget,
                         "context injection applied"
                     );
+                    let _ = events.send(AgentEvent::ContextInjected {
+                        strategy: format!("{:?}", self.config.skeleton_strategy),
+                        tokens_used: injection.tokens_used,
+                        bm25_hits: injection.bm25_hits.clone(),
+                        confidence: injection.confidence.label().to_string(),
+                    }).await;
                     std::borrow::Cow::Owned(format!(
                         "{}\n\n---\n\n{}",
                         injection.context_block, user_input

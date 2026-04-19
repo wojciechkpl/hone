@@ -95,4 +95,19 @@ pub enum AgentEvent {
     ModelInfo {
         context_window: u32,
     },
+    /// Emitted once per turn when proactive context injection fires.
+    ContextInjected {
+        strategy: String,
+        tokens_used: u32,
+        /// (file_path, bm25_score) pairs from tier-2 BM25 retrieval.
+        /// Empty when confidence was Low (tier-2 did not fire).
+        bm25_hits: Vec<(String, f32)>,
+        /// "High", "Medium", or "Low"
+        confidence: String,
+    },
+    /// Emitted once per turn when the memory store returns relevant entries.
+    MemoryRecalled {
+        /// (memory_id, short_snippet <= 80 chars) pairs.
+        entries: Vec<(String, String)>,
+    },
 }

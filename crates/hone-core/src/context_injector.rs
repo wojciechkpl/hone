@@ -127,11 +127,11 @@ impl RetrievalConfidence {
         }
     }
 
-    fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::High => "high",
-            Self::Medium => "medium",
-            Self::Low => "low",
+            Self::High => "High",
+            Self::Medium => "Medium",
+            Self::Low => "Low",
         }
     }
 }
@@ -147,6 +147,9 @@ pub struct InjectionResult {
     pub confidence: RetrievalConfidence,
     /// Suggested exploration budget (tool call soft cap).
     pub exploration_budget: u32,
+    /// (file_path, bm25_score) pairs from tier-2 BM25 retrieval.
+    /// Empty when confidence was Low (tier-2 did not fire).
+    pub bm25_hits: Vec<(String, f32)>,
 }
 
 impl InjectionResult {
@@ -157,6 +160,7 @@ impl InjectionResult {
             tokens_used: 0,
             confidence: RetrievalConfidence::Low,
             exploration_budget: RetrievalConfidence::Low.exploration_budget(),
+            bm25_hits: vec![],
         }
     }
 }
@@ -292,10 +296,10 @@ impl ContextInjector {
         let mut block = format!("## Repository Structure\n{skeleton}");
 
         // --- Tier 2: confidence-gated snippet injection ----------------------
-        let confidence = if let Some(idx) = index {
+        let (confidence, bm25_hits) = if let Some(idx) = index {
             self.inject_snippets(query, idx, &mut block).await
         } else {
-            RetrievalConfidence::Low
+            (RetrievalConfidence::Low, vec![])
         };
 
         // --- Tier 3: exploration budget hint ---------------------------------
@@ -329,6 +333,7 @@ impl ContextInjector {
             tokens_used,
             confidence,
             exploration_budget: budget,
+            bm25_hits,
         }
     }
 
@@ -340,25 +345,31 @@ impl ContextInjector {
     /// confidence level, and append relevant signatures to `block` when
     /// confidence is HIGH.
     ///
-    /// Returns the computed [`RetrievalConfidence`].
+    /// Returns the computed [`RetrievalConfidence`] and all (file_path, score)
+    /// pairs from the BM25 results (empty when no results).
     async fn inject_snippets(
         &self,
         query: &str,
         index: &SqliteIndex,
         block: &mut String,
-    ) -> RetrievalConfidence {
+    ) -> (RetrievalConfidence, Vec<(String, f32)>) {
         // Search the index for the top symbols matching the query.
         let results = match index.search(query, 10).await {
             Ok(r) => r,
-            Err(_) => return RetrievalConfidence::Low,
+            Err(_) => return (RetrievalConfidence::Low, vec![]),
         };
 
         if results.is_empty() {
-            return RetrievalConfidence::Low;
+            return (RetrievalConfidence::Low, vec![]);
         }
 
-        // Collect raw scores.
+        // Collect raw scores and bm25 hits for all results.
         let scores: Vec<f32> = results.iter().map(|r| r.score as f32).collect();
+        let bm25_hits: Vec<(String, f32)> = results
+            .iter()
+            .map(|r| (r.symbol.file.to_string_lossy().to_string(), r.score as f32))
+            .collect();
+
         let confidence = self.compute_confidence(&scores);
 
         if confidence == RetrievalConfidence::High {
@@ -384,7 +395,7 @@ impl ContextInjector {
             }
         }
 
-        confidence
+        (confidence, bm25_hits)
     }
 
     /// Compute `RetrievalConfidence` from a slice of BM25 scores (descending).
