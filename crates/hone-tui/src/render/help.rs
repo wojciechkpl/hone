@@ -9,19 +9,39 @@ use ratatui::{
 use crate::theme::Theme;
 
 const KEYBINDINGS: &[(&str, &str)] = &[
+    // Input
     ("Enter", "send message"),
-    ("Ctrl-C", "quit"),
-    ("F1", "toggle this help"),
-    ("Tab", "cycle focus"),
-    ("PageUp / PageDown", "scroll conversation"),
+    ("Shift+Enter / Alt+Enter", "insert newline"),
+    ("Up / Down", "prompt history"),
+    ("Ctrl+F", "history search"),
+    ("Ctrl+K", "command palette"),
+    ("Esc (typing)", "clear input"),
     ("", ""),
+    // Navigation
+    ("Ctrl+/", "scrollback search"),
+    ("j / k (conv focus)", "navigate messages"),
+    ("Enter / Space", "expand/collapse tool card"),
+    ("PageUp / PageDown", "scroll conversation"),
+    ("Tab", "cycle focus panes"),
+    ("", ""),
+    // Overlays
+    ("Ctrl+A", "session anatomy (turn stats)"),
+    ("Ctrl+M", "prompt mirror (context preview)"),
+    ("Ctrl+O", "session switcher"),
+    ("Ctrl+R", "toggle agent rail sidebar"),
+    ("F1", "toggle this help"),
+    ("", ""),
+    // Agent control
+    ("Esc (mid-turn)", "cancel current turn"),
+    ("--step flag", "step-through debugger"),
+    ("", ""),
+    // Commands
     ("/help", "show help text"),
     ("/model <id>", "switch model"),
     ("/cost", "show session cost"),
     ("/split", "toggle split layout"),
-    ("/panel", "toggle bottom panel"),
-    ("/theme <name>", "switch theme (crimson/neon/chalk/minimal)"),
     ("/quit", "quit"),
+    ("Ctrl+C", "quit"),
 ];
 
 /// Help overlay widget: a centered floating panel with keybinding reference.
@@ -128,6 +148,10 @@ mod tests {
     use super::*;
     use crate::theme::Theme;
 
+    fn all_keys_text() -> String {
+        KEYBINDINGS.iter().map(|(k, _)| k.to_string()).collect::<Vec<_>>().join("\n")
+    }
+
     #[test]
     fn test_help_contains_quit_binding() {
         let theme = Theme::crimson();
@@ -137,7 +161,17 @@ mod tests {
             .iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
             .collect();
-        assert!(all_text.contains("Ctrl-C"), "help must mention Ctrl-C");
+        assert!(all_text.contains("Ctrl+C"), "help must mention Ctrl+C");
         assert!(all_text.contains("quit"));
+    }
+
+    #[test]
+    fn help_keybindings_contain_ctrl_k() {
+        assert!(all_keys_text().contains("Ctrl+K"), "KEYBINDINGS must include Ctrl+K");
+    }
+
+    #[test]
+    fn help_keybindings_contain_ctrl_a() {
+        assert!(all_keys_text().contains("Ctrl+A"), "KEYBINDINGS must include Ctrl+A");
     }
 }

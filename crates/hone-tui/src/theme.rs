@@ -224,6 +224,56 @@ impl Theme {
         self
     }
 
+    /// Apply overrides from a flat TOML file (`key = "#rrggbb"` lines).
+    ///
+    /// Silently does nothing if the file doesn't exist, can't be read, or
+    /// contains unparseable lines — only valid hex color overrides are applied.
+    pub fn apply_toml_overrides(&mut self, path: &std::path::Path) {
+        let Ok(content) = std::fs::read_to_string(path) else { return };
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+            let Some((key, val)) = line.split_once('=') else { continue };
+            let key = key.trim();
+            let val = val.trim().trim_matches('"');
+            let Some(color) = parse_hex_color(val) else { continue };
+            match key {
+                "accent" | "accent_hot" => self.accent_hot = color,
+                "accent_mid" => self.accent_mid = color,
+                "accent_deep" => self.accent_deep = color,
+                "text_primary" => self.text_primary = color,
+                "text_secondary" => self.text_secondary = color,
+                "text_muted" => self.text_muted = color,
+                "role_user" => self.role_user = color,
+                "role_assistant" => self.role_assistant = color,
+                "role_tool_call" | "role_tool" => self.role_tool = color,
+                "role_tool_result" => self.role_tool_result = color,
+                "role_error" => self.role_error = color,
+                "surface" | "surface_base" => self.surface_base = color,
+                "surface_raised" => self.surface_raised = color,
+                "surface_overlay" => self.surface_overlay = color,
+                "surface_focus" => self.surface_focus = color,
+                "surface_border" => self.surface_border = color,
+                "budget_low" => self.budget_low = color,
+                "budget_mid" => self.budget_mid = color,
+                "budget_high" => self.budget_high = color,
+                _ => {}
+            }
+        }
+    }
+
+    /// Detect the base theme then apply `~/.config/hone/theme.toml` overrides.
+    pub fn detect_with_overrides() -> Self {
+        let mut theme = Self::detect();
+        let config_path = std::env::var("HOME")
+            .map(|h| std::path::PathBuf::from(h).join(".config/hone/theme.toml"))
+            .unwrap_or_default();
+        theme.apply_toml_overrides(&config_path);
+        theme
+    }
+
     /// Return the spinner glyph for the current tick.
     ///
     /// When `reduced_motion` is true, always returns a static `·` regardless
@@ -285,6 +335,18 @@ impl BoxChars {
         tee_right: '+',
         tee_left: '+',
     };
+}
+
+/// Parse a CSS-style hex color string (`#rrggbb`) into a [`Color::Rgb`].
+fn parse_hex_color(s: &str) -> Option<ratatui::style::Color> {
+    let s = s.trim().strip_prefix('#')?;
+    if s.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+    Some(ratatui::style::Color::Rgb(r, g, b))
 }
 
 /// Return `true` when an environment variable is set to a non-empty value.
@@ -400,5 +462,59 @@ mod tests {
         let t = Theme::detect();
         unsafe { std::env::remove_var("HONE_ASCII_ONLY") };
         assert!(t.ascii_only);
+    }
+
+    #[test]
+    fn theme_apply_hex_color_override() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("theme.toml");
+        let mut f = std::fs::File::create(&path).expect("create");
+        write!(f, "accent = \"#ff0000\"\n").expect("write");
+        drop(f);
+
+        let mut t = Theme::crimson();
+        t.apply_toml_overrides(&path);
+        assert_eq!(t.accent_hot, Color::Rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn theme_invalid_color_ignored() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("theme.toml");
+        let mut f = std::fs::File::create(&path).expect("create");
+        write!(f, "accent = \"not-a-color\"\n").expect("write");
+        drop(f);
+
+        let base_accent = Theme::crimson().accent_hot;
+        let mut t = Theme::crimson();
+        t.apply_toml_overrides(&path);
+        assert_eq!(t.accent_hot, base_accent);
+    }
+
+    #[test]
+    fn theme_missing_file_is_noop() {
+        let path = std::path::Path::new("/tmp/hone_theme_does_not_exist_xyz.toml");
+        let base_accent = Theme::crimson().accent_hot;
+        let mut t = Theme::crimson();
+        t.apply_toml_overrides(path);
+        assert_eq!(t.accent_hot, base_accent);
+    }
+
+    #[test]
+    fn parse_hex_color_valid() {
+        assert_eq!(parse_hex_color("#ff6b6b"), Some(Color::Rgb(255, 107, 107)));
+        assert_eq!(parse_hex_color("#000000"), Some(Color::Rgb(0, 0, 0)));
+        assert_eq!(parse_hex_color("#ffffff"), Some(Color::Rgb(255, 255, 255)));
+    }
+
+    #[test]
+    fn parse_hex_color_invalid() {
+        assert_eq!(parse_hex_color("ff6b6b"), None, "missing # prefix");
+        assert_eq!(parse_hex_color("#ff6b6"), None, "too short");
+        assert_eq!(parse_hex_color("#ff6b6b00"), None, "too long");
+        assert_eq!(parse_hex_color("#zzzzzz"), None, "invalid hex digits");
+        assert_eq!(parse_hex_color(""), None, "empty string");
     }
 }

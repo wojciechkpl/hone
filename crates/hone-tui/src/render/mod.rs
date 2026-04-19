@@ -13,6 +13,7 @@ pub mod markdown;
 pub mod prompt_mirror;
 pub mod root;
 pub mod search_bar;
+pub mod session_switcher;
 pub mod session_anatomy;
 pub mod splash;
 pub mod status_bar;

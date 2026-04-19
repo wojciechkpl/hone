@@ -163,6 +163,20 @@ pub struct App {
     pub(crate) debugger_paused_args: Option<serde_json::Value>,
     pub(crate) debugger_paused_id: Option<String>,
     pub(crate) step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
+
+    /// Wall-clock start of the current agent turn; used to ring the bell when a
+    /// turn completes after more than 10 seconds.
+    pub(crate) turn_start: Option<Instant>,
+
+    // --- Session switcher overlay -------------------------------------------
+    /// Whether the session-switcher overlay is open (Ctrl+O).
+    pub sessions_open: bool,
+    /// Sessions available for switching, populated at startup by main.rs.
+    pub(crate) sessions_list: Vec<crate::SessionSummary>,
+    /// Cursor row within the sessions list.
+    pub(crate) sessions_cursor: usize,
+    /// Set when the user selects a session to switch to; causes the TUI to quit.
+    pub pending_session_switch: Option<String>,
 }
 
 impl App {
@@ -178,7 +192,7 @@ impl App {
             layout: LayoutMode::default(),
             focus: FocusTarget::default(),
             scroll_offset: 0,
-            theme: Theme::detect(),
+            theme: Theme::detect_with_overrides(),
             show_help: false,
             show_splash: true,
             splash_start: Some(Instant::now()),
@@ -227,6 +241,11 @@ impl App {
             debugger_paused_args: None,
             debugger_paused_id: None,
             step_tx: None,
+            turn_start: None,
+            sessions_open: false,
+            sessions_list: Vec::new(),
+            sessions_cursor: 0,
+            pending_session_switch: None,
         };
         // Restore draft from previous session if present.
         let draft_file = draft_path();
@@ -290,6 +309,7 @@ impl App {
         // Clear stale per-turn tracking so the next turn starts fresh.
         self.pending_tool_start = None;
         self.current_turn = None;
+        self.turn_start = None;
         self.messages.push(DisplayMessage::new(
             DisplayRole::System,
             "⚡ interrupted".to_string(),
@@ -546,6 +566,12 @@ impl App {
 
     /// Process a terminal key event and update state accordingly.
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // Session-switcher overlay captures all keys while open.
+        if self.sessions_open {
+            self.handle_key_sessions(key);
+            return;
+        }
+
         // Debugger overlay takes highest priority.
         if self.debugger_open {
             self.handle_key_debugger(key);
@@ -661,6 +687,11 @@ impl App {
             // Ctrl+R — toggle agent rail sidebar.
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.toggle_agent_rail();
+            }
+            // Ctrl+O — open/close the session switcher overlay.
+            KeyCode::Char('o') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.sessions_open = !self.sessions_open;
+                self.sessions_cursor = 0;
             }
             // Alt+Right — widen left pane (+5%, ceiling 70).
             KeyCode::Right if key.modifiers.contains(KeyModifiers::ALT) => {
@@ -1075,6 +1106,39 @@ impl App {
         self.step_tx = Some(tx);
     }
 
+    // --- Session switcher ---------------------------------------------------
+
+    /// Handle key events while the session-switcher overlay is open.
+    pub fn handle_key_sessions(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.sessions_open = false;
+            }
+            KeyCode::Char('o') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.sessions_open = false;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                let max = self.sessions_list.len().saturating_sub(1);
+                self.sessions_cursor = (self.sessions_cursor + 1).min(max);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.sessions_cursor = self.sessions_cursor.saturating_sub(1);
+            }
+            KeyCode::Enter => {
+                if let Some(session) = self.sessions_list.get(self.sessions_cursor) {
+                    self.pending_session_switch = Some(session.name.clone());
+                    self.should_quit = true;
+                }
+                self.sessions_open = false;
+            }
+            _ => {}
+        }
+    }
+
+    pub fn set_sessions(&mut self, sessions: Vec<crate::SessionSummary>) {
+        self.sessions_list = sessions;
+    }
+
     // -----------------------------------------------------------------------
     // Draft persistence
     // -----------------------------------------------------------------------
@@ -1175,6 +1239,7 @@ impl App {
 
             self.messages.push(DisplayMessage::new(DisplayRole::User, display_text));
             self.state = AppState::WaitingForResponse;
+            self.turn_start = Some(Instant::now());
             return;
         }
 
@@ -1182,6 +1247,7 @@ impl App {
         self.history.push(&text);
         self.messages.push(DisplayMessage::new(DisplayRole::User, text));
         self.state = AppState::WaitingForResponse;
+        self.turn_start = Some(Instant::now());
     }
 
     /// Begin handling a shell escape (`!command`).
@@ -1901,6 +1967,13 @@ impl App {
                 self.status.turn_count += 1;
                 self.status.provider_status = ProviderStatus::Connected;
                 self.state = AppState::Idle;
+
+                // Ring the terminal bell when the turn took more than 10 s.
+                if let Some(start) = self.turn_start.take() {
+                    if start.elapsed() >= Duration::from_secs(10) {
+                        let _ = std::io::Write::write_all(&mut std::io::stderr(), b"\x07");
+                    }
+                }
             }
 
             AgentEvent::Error { message } => {
@@ -2515,5 +2588,83 @@ mod tests {
         // Enter on a User message should NOT change is_collapsed (stays false).
         assert!(!app.messages[0].is_collapsed,
             "Enter on User message must not change is_collapsed");
+    }
+
+    // -----------------------------------------------------------------------
+    // Session switcher tests
+    // -----------------------------------------------------------------------
+
+    fn make_session_list() -> Vec<crate::SessionSummary> {
+        vec![
+            crate::SessionSummary { name: "alpha".to_string(), updated_at: 0, message_count: 3 },
+            crate::SessionSummary { name: "beta".to_string(), updated_at: 0, message_count: 7 },
+            crate::SessionSummary { name: "gamma".to_string(), updated_at: 0, message_count: 1 },
+        ]
+    }
+
+    #[test]
+    fn sessions_j_increments_cursor() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.sessions_open = true;
+        app.set_sessions(make_session_list());
+        app.sessions_cursor = 0;
+        app.handle_key_sessions(make_key(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.sessions_cursor, 1);
+    }
+
+    #[test]
+    fn sessions_k_decrements_cursor_floor_zero() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.sessions_open = true;
+        app.set_sessions(make_session_list());
+        app.sessions_cursor = 0;
+        app.handle_key_sessions(make_key(KeyCode::Char('k'), KeyModifiers::NONE));
+        assert_eq!(app.sessions_cursor, 0, "k at position 0 must not underflow");
+    }
+
+    #[test]
+    fn sessions_enter_sets_pending_switch_and_quits() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.sessions_open = true;
+        app.set_sessions(make_session_list());
+        app.sessions_cursor = 1;
+        app.handle_key_sessions(make_key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.pending_session_switch.as_deref(), Some("beta"));
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn sessions_esc_closes_overlay() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.sessions_open = true;
+        app.set_sessions(make_session_list());
+        app.handle_key_sessions(make_key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!app.sessions_open, "Esc must close the sessions overlay");
+    }
+
+    #[test]
+    fn ctrl_o_opens_and_closes_overlay() {
+        let mut app = App::new();
+        app.show_splash = false;
+        assert!(!app.sessions_open);
+        app.handle_key(make_key(KeyCode::Char('o'), KeyModifiers::CONTROL));
+        assert!(app.sessions_open, "Ctrl+O must open the overlay");
+        app.handle_key(make_key(KeyCode::Char('o'), KeyModifiers::CONTROL));
+        assert!(!app.sessions_open, "Ctrl+O inside overlay must close it");
+    }
+
+    #[test]
+    fn sessions_cursor_capped_at_list_end() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.sessions_open = true;
+        app.set_sessions(make_session_list());
+        app.sessions_cursor = 2;
+        app.handle_key_sessions(make_key(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.sessions_cursor, 2, "cursor must not exceed list length");
     }
 }

@@ -23,6 +23,7 @@ use crate::{
         prompt_mirror::render_prompt_mirror,
         search_bar::render_search_bar,
         session_anatomy::render_session_anatomy,
+        session_switcher::render_session_switcher,
         splash::SplashWidget,
         status_bar::render_status_bar,
     },
@@ -91,6 +92,11 @@ pub fn render(app: &App, frame: &mut Frame) {
     // Agent Debugger — full-area overlay, highest z-order
     if app.debugger_open {
         render_debugger(app, frame, area);
+    }
+
+    // Session Switcher — full-area overlay
+    if app.sessions_open {
+        render_session_switcher(app, frame, area);
     }
 }
 

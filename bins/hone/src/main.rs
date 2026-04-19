@@ -2126,6 +2126,22 @@ async fn run_tui(
     app.status_mut().model = model_id.to_string();
     app.status_mut().context_limit = model_context_limit(model_id.as_str());
 
+    // Load saved sessions into the session-switcher overlay.
+    if let Some(store) = open_session_store().await {
+        if let Ok(sessions) = store.list_sessions().await {
+            app.set_sessions(
+                sessions
+                    .into_iter()
+                    .map(|s| hone_tui::SessionSummary {
+                        name: s.name,
+                        updated_at: s.updated_at,
+                        message_count: s.message_count,
+                    })
+                    .collect(),
+            );
+        }
+    }
+
     let (agent_tx, mut agent_rx) = mpsc::channel::<AgentEvent>(256);
 
     let tick = Duration::from_millis(100);
@@ -2413,6 +2429,14 @@ async fn run_tui(
 
     // Persist any in-progress input for next session.
     app.save_draft();
+
+    // If the user selected a session to switch to via Ctrl+O, print a resume hint.
+    if let Some(session_name) = app.pending_session_switch.as_deref() {
+        eprintln!(
+            "\nTo resume session '{}': hone session resume {}",
+            session_name, session_name
+        );
+    }
 
     // Generate and write the session report on exit.
     write_session_report(
