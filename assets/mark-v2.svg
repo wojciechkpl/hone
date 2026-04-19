@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="hone-v2-title hone-v2-desc">
+  <title id="hone-v2-title">Hone (v2 silhouette, 2-tone palette)</title>
+  <desc id="hone-v2-desc">Tapered-blade variant. Each layer narrows toward the apex to read as a sharpened blade. Two-tone palette (deep crimson + coral) trims the 4-stop gradient that muddies at favicon scale.</desc>
+
+  <defs>
+    <linearGradient id="hone-v2-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7B1E36"/>
+      <stop offset="100%" stop-color="#EE3F6E"/>
+    </linearGradient>
+  </defs>
+
+  <g fill="url(#hone-v2-grad)">
+    <polygon points="28,52 60,52 214,126 214,128"/>
+    <polygon points="28,204 60,204 214,130 214,128"/>
+
+    <polygon points="58,78 86,78 214,126 214,128"/>
+    <polygon points="58,178 86,178 214,130 214,128"/>
+
+    <polygon points="88,104 112,104 214,126 214,128"/>
+    <polygon points="88,152 112,152 214,130 214,128"/>
+  </g>
+
+  <polygon fill="#EE3F6E" points="202,118 230,128 202,138"/>
+</svg>

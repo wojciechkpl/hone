@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="hone-social-title">
+  <title id="hone-social-title">Hone — The Universal Terminal AI Code Agent</title>
+
+  <rect width="1280" height="640" fill="#0d1117"/>
+
+  <g transform="translate(160 192)">
+    <g fill="#7B1E36">
+      <polygon points="28,52 52,52 214,128"/>
+      <polygon points="28,204 52,204 214,128"/>
+    </g>
+    <g fill="#A02440">
+      <polygon points="48,72 72,72 214,128"/>
+      <polygon points="48,184 72,184 214,128"/>
+    </g>
+    <g fill="#D32E5C">
+      <polygon points="68,92 92,92 214,128"/>
+      <polygon points="68,164 92,164 214,128"/>
+    </g>
+    <g fill="#EE3F6E">
+      <polygon points="88,112 112,112 214,128"/>
+      <polygon points="88,144 112,144 214,128"/>
+      <polygon points="202,118 228,128 202,138"/>
+    </g>
+  </g>
+
+  <line x1="460" y1="220" x2="460" y2="420" stroke="#30363d" stroke-width="2"/>
+
+  <text x="500" y="328"
+        font-family="'Inter', 'Helvetica Neue', -apple-system, 'Segoe UI', Arial, sans-serif"
+        font-weight="700"
+        font-size="152"
+        letter-spacing="14"
+        fill="#e8ecf2">HONE</text>
+
+  <text x="504" y="388"
+        font-family="'Inter', 'Helvetica Neue', -apple-system, 'Segoe UI', Arial, sans-serif"
+        font-weight="400"
+        font-size="28"
+        letter-spacing="3"
+        fill="#8b949e">THE UNIVERSAL TERMINAL AI CODE AGENT</text>
+
+  <text x="504" y="430"
+        font-family="'SF Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace"
+        font-weight="400"
+        font-size="22"
+        fill="#6e7681">rust · kernel-sandboxed · provider-agnostic · local-first</text>
+</svg>
