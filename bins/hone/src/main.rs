@@ -24,9 +24,9 @@ use hone_cache::{SqliteBackend, ToolResultCache};
 use hone_config::{Config, HoneMd, McpConfig};
 use hone_mcp::McpManager;
 use hone_core::{
-    AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry, ClarificationDetector,
-    ComplexityClassifier, ComplexityTier, Orchestrator, PlanStore, SelfRefineLoop,
-    SkeletonStrategy, TestVerificationLoop,
+    AdaptiveClassifier, AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry,
+    ClarificationDetector, ComplexityClassifier, ComplexityTier, Orchestrator, OutcomeRecord,
+    PlanStore, SelfRefineLoop, SkeletonStrategy, TestVerificationLoop,
 };
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
@@ -2108,6 +2108,52 @@ fn model_context_limit(model: &str) -> u32 {
     }
 }
 
+fn record_outcome_for_event(
+    event: &AgentEvent,
+    adaptive: &Option<Arc<AdaptiveClassifier>>,
+    current_tier: &mut Option<ComplexityTier>,
+    model: &str,
+    input_per_million: f64,
+    output_per_million: f64,
+    turn_prompt: &str,
+) {
+    let Some(adaptive_ref) = adaptive else { return };
+    match event {
+        AgentEvent::Done { usage } => {
+            if let Some(tier) = current_tier.take() {
+                let cost_usd = (usage.input as f64 * input_per_million
+                    + usage.output as f64 * output_per_million)
+                    / 1_000_000.0;
+                let record = OutcomeRecord {
+                    tier,
+                    model: model.to_string(),
+                    success: true,
+                    cost_usd,
+                    total_tokens: u64::from(usage.total()),
+                    task_summary: turn_prompt.to_string(),
+                };
+                let a = Arc::clone(adaptive_ref);
+                tokio::spawn(async move { a.record_outcome(record).await; });
+            }
+        }
+        AgentEvent::Error { .. } => {
+            if let Some(tier) = current_tier.take() {
+                let record = OutcomeRecord {
+                    tier,
+                    model: model.to_string(),
+                    success: false,
+                    cost_usd: 0.0,
+                    total_tokens: 0,
+                    task_summary: turn_prompt.to_string(),
+                };
+                let a = Arc::clone(adaptive_ref);
+                tokio::spawn(async move { a.record_outcome(record).await; });
+            }
+        }
+        _ => {}
+    }
+}
+
 async fn run_tui(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     agent: AgentHandle,
@@ -2149,6 +2195,14 @@ async fn run_tui(
     let mut events = EventStream::new();
     // Abort handle for the currently running agent task; cleared on completion.
     let mut current_task_abort: Option<tokio::task::AbortHandle> = None;
+
+    // Adaptive classifier: wired only when a memory store is available.
+    let adaptive: Option<Arc<AdaptiveClassifier>> = base_config
+        .memory_store
+        .as_ref()
+        .map(|store| Arc::new(AdaptiveClassifier::new(Arc::clone(store))));
+    let mut current_tier: Option<ComplexityTier> = None;
+    let mut current_turn_prompt = String::new();
 
     // Install a SIGINT handler so the process shuts down cleanly when the
     // terminal sends Ctrl+C at the OS level (e.g. from a wrapper script).
@@ -2275,7 +2329,14 @@ async fn run_tui(
 
                                 // Adaptive routing: classify complexity and pick the
                                 // appropriate execution strategy.
-                                let tier = ComplexityClassifier::classify(&effective_text);
+                                let tier = if let Some(ref a) = adaptive {
+                                    a.suggest_tier(&effective_text).await
+                                        .unwrap_or_else(|| ComplexityClassifier::classify(&effective_text))
+                                } else {
+                                    ComplexityClassifier::classify(&effective_text)
+                                };
+                                current_tier = Some(tier);
+                                current_turn_prompt = effective_text.chars().take(200).collect::<String>();
 
                                 // Spawn the appropriate turn.
                                 let agent_clone = agent.clone();
@@ -2384,6 +2445,7 @@ async fn run_tui(
             // Agent events from the provider task
             maybe_agent = agent_rx.recv() => {
                 if let Some(event) = maybe_agent {
+                    record_outcome_for_event(&event, &adaptive, &mut current_tier, base_config.model.as_str(), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
                     app.handle_agent_event(event);
                     // When a turn completes, clear the abort handle and restore
                     // any follow-up message the user typed while waiting.
@@ -2406,6 +2468,7 @@ async fn run_tui(
 
         // Drain any remaining agent events that arrived during the select branch.
         while let Ok(event) = agent_rx.try_recv() {
+            record_outcome_for_event(&event, &adaptive, &mut current_tier, base_config.model.as_str(), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
             app.handle_agent_event(event);
         }
         // Mirror the post-select restore logic for the drain path: if the drain

@@ -60,3 +60,4 @@ pub use injection_detector::{InjectionDetector, InjectionRisk};
 pub use recovery::{FailureScenario, RecoveryAction};
 pub use retry::{is_transient_error, retry, RetryConfig};
 pub use turn::TurnResult;
+pub use learning::{AdaptiveClassifier, OutcomeRecord};
