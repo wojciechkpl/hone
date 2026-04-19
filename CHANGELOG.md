@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## TUI & Web UI Enhancements
+
+### Added
+
+- **Session switcher overlay (Ctrl+O)** — Browse and switch between saved sessions with a full-screen overlay showing session name, last-updated relative time (e.g., "5 mins ago"), and message count per session. Keyboard navigation with j/k, Enter to select, q to close. Makes resuming past work frictionless. `crates/hone-tui/src/app.rs`.
+- **Configurable theme via `~/.config/hone/theme.toml`** — Flat `key = "#rrggbb"` key-value pairs override any named theme color (e.g., `accent-hot`, `bg-normal`, `text-muted`). Merges with the selected theme instead of replacing it. Supports 24-bit RGB only (no fallback to 8-color palette). `crates/hone-tui/src/theme.rs`.
+- **Notification bell on long-running turns** — Terminal bell (`\x07`) fires when a turn takes ≥10 seconds, useful for notifications in terminals with bell support. Can be disabled with `HONE_NO_BELL=1`. `crates/hone-tui/src/app.rs`.
+- **Expanded keybindings help (Ctrl+?)** — Help overlay now shows 31 keybindings organized across 5 sections: Input (Enter, Shift+Enter, Ctrl+Z), Navigation (Page Up/Down, gg/G in vim mode), Overlays (Ctrl+O, Ctrl+R, Ctrl+?), Agent control (Ctrl+C, Tab for model switcher), and Commands (/help, /quit, /session). `crates/hone-tui/src/help.rs`.
+- **Web UI (`GET /` on honed)** — Single-page chat interface served from the daemon. Dark theme by default, includes model selector, working directory input, streaming token-by-token display, tool-call cards with JSON previews, and minimal markdown rendering (bold, lists, code blocks). Built with vanilla HTML/CSS/JS (no external CDN dependencies). `crates/hone-server/src/assets/index.html`.
+- **Stateless HTTP execution endpoint (`POST /run` on honed)** — Client sends `{prompt, model?, history?, working_dir?}`, server streams `AgentEvent`s as Server-Sent Events (SSE). No session persistence (use `POST /sessions` for persistent sessions). No API key needed on client—server reads `ANTHROPIC_API_KEY` from environment. Perfect for programmatic one-off tasks and embedded UIs. `crates/hone-server/src/handlers.rs`.
+- **Cross-session learning (AdaptiveClassifier)** — When a memory store is configured, the agent records each turn's outcome (tier classification, tokens used, cost, success/failure). On subsequent sessions, the AdaptiveClassifier uses historical success rates to adjust complexity routing (Simple/Medium/Complex) automatically. Improves estimation accuracy and tool selection. Transparent fallback to rule-based `ComplexityClassifier` when no memory store is present. `crates/hone-core/src/classifier.rs`.
+- **Better HTTP API error messages** — Provider errors (Anthropic/OpenAI/Ollama) now extract the JSON `error.message` field instead of dumping the full response body. 401 responses surface a human-readable hint pointing to the relevant env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `OLLAMA_HOST`). Error format: `"anthropic error (400): invalid API key"` (was `"HTTP error from provider: status 400, body: {...}"`). `crates/hone-providers/src/error.rs`.
+- **Integration tests for provider error handling** — New `crates/hone-providers/tests/real_api.rs` with `#[ignore]` tests validating invalid-key error messages (Anthropic + OpenAI, no env vars needed) and tool-call happy paths (requires actual keys). Run with: `cargo test -p hone-providers --test real_api -- --ignored`. `crates/hone-providers/tests/real_api.rs`.
+
+### Changed
+
+### Fixed
+
+### Documentation
+
+- **Web UI guide** — New section in `getting-started.md` explaining how to run `hone serve` and access the embedded chat at `http://localhost:8080`. Includes `POST /run` example for scripting. `docs/getting-started.md`.
+- **Theme customization guide** — New section in `getting-started.md` with example `~/.config/hone/theme.toml` showing RGB color overrides. Updated `docs/configuration.md` with full theme color key reference. `docs/getting-started.md`, `docs/configuration.md`.
+- **Session switcher docs** — Updated keybindings in `getting-started.md` and the expanded help text in help overlay. Documented in observability section with session management context.
+- **Adaptive routing docs** — Updated `docs/observability.md` to explain how the AdaptiveClassifier uses memory store outcomes to improve future complexity classification. Cross-references the multi-agent architecture guide.
+
+---
+
+## [Previous]
+
 ### Security
 
 - **Shell sandbox policy anchored to the working directory.** The `SandboxPolicy::Manual` used for shell tool calls previously shipped with empty read/write allow lists, making the policy effectively trivial. It now pins the project's working directory (read+write) and the standard system read paths (`/usr/`, `/bin/`, `/System/Library/`, etc.), so Seatbelt/Landlock deny-by-default actually denies anything outside the project. `crates/hone-tools/src/shell.rs`.

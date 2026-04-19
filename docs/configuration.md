@@ -437,6 +437,50 @@ condition = "true"  # default
 provider = "ollama:llama2"
 ```
 
+## Theme Customization
+
+Create `~/.config/hone/theme.toml` to override theme colors with 24-bit RGB hex values:
+
+```toml
+# Accent colors
+accent-hot = "#FF1744"
+accent-muted = "#FFB74D"
+
+# Background colors
+bg-normal = "#0d1117"
+bg-secondary = "#1C1C24"
+
+# Text colors
+text-normal = "#E6E1E8"
+text-muted = "#8B8B8B"
+
+# Status colors
+success = "#27AE60"
+error = "#E74C3C"
+warning = "#F39C12"
+info = "#3498DB"
+```
+
+**All available color keys:**
+
+| Key | Purpose |
+|-----|---------|
+| `accent-hot` | Active/focused elements (cursor, selection) |
+| `accent-muted` | Secondary accent (disabled, dimmed) |
+| `bg-normal` | Main background |
+| `bg-secondary` | Secondary background (panels, sidebar) |
+| `text-normal` | Primary text color |
+| `text-muted` | Dimmed text (hints, timestamps) |
+| `text-link` | Hyperlink text |
+| `border-normal` | Normal borders |
+| `border-muted` | Dimmed borders |
+| `success` | Success states (green, checkmarks) |
+| `error` | Error states (red) |
+| `warning` | Warning states (yellow) |
+| `info` | Information states (blue) |
+
+Only list colors you want to override; all others use the theme defaults. Colors are merged with the selected theme, not replacing it entirely.
+
 ## Environment Variables
 
 | Variable | Purpose |
@@ -454,6 +498,7 @@ provider = "ollama:llama2"
 | `HONE_CONTEXT_INJECTION` / `HONE_NO_INJECTION` | Force-enable or force-disable proactive context injection |
 | `HONE_REDUCED_MOTION` | Disable Agent Rail animation |
 | `HONE_ASCII_ONLY` | Force ASCII box drawing and file-op badges |
+| `HONE_NO_BELL` | Disable terminal bell on 10s+ turns |
 | `NO_COLOR` | Disable all colorized output |
 
 ## CLI Flags

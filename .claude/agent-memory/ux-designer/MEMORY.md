@@ -1,1 +1,2 @@
-- [Hone TUI Design Context](project_hone_tui.md) — Brand palette, accent rules, spec location, key structural decisions for the Ratatui TUI
+- [Hone TUI Design Context](project_hone_tui.md) — Brand palette, accent rules, spec locations, key structural decisions including Levels 3–5 (Prompt Mirror / Session Anatomy / Agent Debugger)
+- [Hone Web UI PRD](project_hone_webui_prd.md) — PRD at priv/webui-prd.md; personas, 7-state model, phase scope, bundle/perf constraints

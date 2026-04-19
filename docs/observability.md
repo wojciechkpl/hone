@@ -159,6 +159,18 @@ On each agent turn:
 2. The **Agent Rail** renders the current ledger in the sidebar (updated live, scroll resets per turn).
 3. On session end (`/quit`), all completed ledgers are aggregated into a **Session Report** and written to disk.
 
+## Cross-Session Learning (AdaptiveClassifier)
+
+When memory is enabled (default), the agent automatically records metadata from each session: complexity tier (Simple/Medium/Complex), tokens consumed, API cost, and whether the task succeeded. This data accumulates across sessions in the memory store.
+
+The **AdaptiveClassifier** uses this historical record to improve routing decisions:
+
+- **On each new task**, the classifier examines similar past tasks (by embedding) and computes the success rate for each complexity tier.
+- **Tier selection** — Instead of using only rule-based heuristics (request length, keyword patterns), the classifier weights historical outcomes. If Simple-tier tasks succeeded 95% of the time on similar problems, it will prefer routing there.
+- **Transparency** — If no memory store is configured (e.g., `--ephemeral` mode), the classifier silently falls back to rule-based routing. No errors or degradation.
+
+This learning is completely local—patterns never leave your machine. See [docs/architecture/multi-agent-and-memory.md](architecture/multi-agent-and-memory.md) for details on the memory layer and privacy model.
+
 ## Known Limitations
 
 - **Agent Rail Inspect overlay** — The `Ctrl+I` overlay for detailed turn inspection is not yet implemented. Use `hone reports show` for detailed post-session analysis.

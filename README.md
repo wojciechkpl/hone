@@ -90,6 +90,8 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Vim mode** — Type `--vim` or `:set vim` for vim-style keybindings. Normal mode: j/k scroll, gg/G top/bottom, i/a insert, :q quit. Insert mode: type normally, Esc returns to normal.
 - **TDD mode** — Type `:tdd [command]` to watch source files and auto-run tests on change (300ms debounce). Shows PASS/FAIL inline. Type `:tdd off` to stop.
 - **Review mode** — Type `:review` to enter hunk-by-hunk review of git diff changes. Navigate with j/k, accept/reject hunks with a/r, accept/reject all with A/R, quit with q.
+- **Session switcher overlay** — Press `Ctrl+O` to browse and switch between saved sessions with a full-screen overlay showing name, last-updated relative time, and message count. Navigate with j/k, Enter to select, q to close.
+- **Expanded keybindings help** — Press `Ctrl+?` to see 31 keybindings across 5 sections (Input, Navigation, Overlays, Agent control, Commands) with descriptions.
 - **Observability sidebar & session reports** — Press `Ctrl+R` to toggle the Agent Rail sidebar showing files touched, context injected, and memory recalls per turn. On session end, detailed reports are auto-generated with cost, tokens, files, tools, and timelines. View with `hone reports list/show/diff`.
 - **Multi-agent orchestration** — Decompose complex tasks via research-backed patterns (Anthropic, MASAI, CodeR). Orchestrator-worker pipeline with message merging. Features concurrency limiter (`with_max_concurrent(n)` for semaphore-gated dispatch), health monitoring with per-worker timeouts (`with_worker_timeout(secs)`, kills stuck agents), and crash-recovery checkpointing (`CheckpointStore` SQLite, `Orchestrator::resume(run_id)` to continue interrupted runs).
 - **Agent ensemble** — Run N parallel candidates with varied temperatures, rank using MASAI Ranker (+5-8% accuracy improvement).
@@ -204,6 +206,24 @@ Custom agents can be placed in `.hone/agents/` (project-level) or `~/.config/hon
 
 For detailed information on how agents work and how to create custom ones, see [docs/tutorials/tools-and-mcp.md](docs/tutorials/tools-and-mcp.md#agents).
 
+## Remote Access & Web UI
+
+The `honed` daemon provides HTTP/2 + SSE endpoints for remote access, team collaboration, and browser-based chat:
+
+- **Web UI** (`GET /`) — Single-page chat interface at `http://localhost:8080`. Dark theme, model selector, working directory input, token-by-token streaming, tool-call cards with JSON previews, and minimal markdown rendering. Start with `hone serve` or `honed --config ~/.config/hone/config.toml`.
+- **Stateless execution endpoint** (`POST /run`) — Send `{prompt, model?, history?, working_dir?}`, receive `AgentEvent`s as SSE. No session persistence. Perfect for one-off tasks and embedded UIs. Client does not need API key—server reads `ANTHROPIC_API_KEY` from env.
+- **Session management endpoints** (`POST /sessions`, `GET /sessions/{id}`, etc.) — Persistent multi-turn sessions with Bearer token auth, team governance, and audit logging. See [docs/api/http-api.md](docs/api/http-api.md) for full reference.
+
+For deployment, see [docs/getting-started.md](docs/getting-started.md#12-remote-access-honed) and [docs/configuration.md](docs/configuration.md#server-configuration).
+
+## Customization
+
+- **Theme colors** (`~/.config/hone/theme.toml`) — Override any named theme color with `key = "#rrggbb"` (24-bit RGB). Example: `accent-hot = "#FF1744"`, `bg-normal = "#0d1117"`. Merges with the selected theme instead of replacing it.
+- **Session switcher** (`Ctrl+O`) — Full-screen overlay to browse and switch between saved sessions. Shows session name, last-updated relative time, and message count. Navigate with j/k, Enter to select, q to close.
+- **Notification bell** (`\x07` on 10s+ turns) — Terminal bell fires for long-running turns. Disable with `HONE_NO_BELL=1`.
+
+See [docs/getting-started.md](docs/getting-started.md) for examples and detailed configuration.
+
 ## Observability
 
 Hone tracks every turn with the **Agent Rail** sidebar and **session reports** (interactive TUI mode):
@@ -211,6 +231,7 @@ Hone tracks every turn with the **Agent Rail** sidebar and **session reports** (
 - **Agent Rail** (`Ctrl+R`) — Toggleable right sidebar on wide terminals (≥100 cols) showing files touched, injected context, and memory recalls per turn. Zero overhead, updates live.
 - **Session Reports** — Auto-generated on `/quit` to `.hone/reports/<timestamp>-<session>.md` with full cost, token, file, tool, and timeline data. Includes JSON sidecar for scripting. Retention: 100 reports, oldest deleted first.
 - **CLI** — `hone reports list [--limit N]` / `show <id>` / `diff <a> <b>` for viewing and comparing past sessions.
+- **Cross-session learning** — When memory is enabled, the AdaptiveClassifier records each turn's outcome (tier, tokens, cost, success) and uses historical patterns to improve future complexity routing (Simple/Medium/Complex). Transparent fallback to rule-based classification when no memory store is present.
 - **Accessibility** — `HONE_REDUCED_MOTION=1` disables animation (Agent Rail spinner). `HONE_ASCII_ONLY=1` uses ASCII borders. `NO_COLOR=1` disables color.
 
 For detailed setup and examples, see [docs/observability.md](docs/observability.md) and [docs/session-reports.md](docs/session-reports.md).

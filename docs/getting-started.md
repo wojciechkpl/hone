@@ -32,9 +32,13 @@ This comprehensive guide walks you through installing Hone, configuring your fir
 9. [Scope Clarification Mode](#9-scope-clarification-mode)
 10. [Inline Agent Dispatch](#10-inline-agent-dispatch)
 11. [MCP Extensions](#11-mcp-extensions)
-12. [Remote Access (honed)](#12-remote-access-honed)
-13. [Next Steps](#13-next-steps)
-14. [Troubleshooting](#14-troubleshooting)
+12. [Theme Customization](#12-theme-customization)
+13. [Session Switcher & Notification Bell](#13-session-switcher--notification-bell)
+14. [Remote Access (honed)](#14-remote-access-honed)
+   - Web UI
+   - Stateless Execution Endpoint
+15. [Next Steps](#15-next-steps)
+16. [Troubleshooting](#16-troubleshooting)
 
 ---
 
@@ -1583,62 +1587,256 @@ See the [MCP Extensions Guide](tutorials/mcp-extensions.md) for a complete list 
 
 ---
 
-## 12. Remote Access (honed)
+## 12. Theme Customization
 
-Run Hone as a persistent daemon server accessible over the network.
+Hone ships with built-in themes (default: dark theme), and you can override any color with a simple TOML file.
+
+### Override Theme Colors
+
+Create `~/.config/hone/theme.toml`:
+
+```toml
+# Override specific colors (24-bit RGB)
+accent-hot = "#FF1744"
+accent-muted = "#FFB74D"
+bg-normal = "#0d1117"
+text-normal = "#E6E1E8"
+text-muted = "#8B8B8B"
+success = "#27AE60"
+error = "#E74C3C"
+```
+
+Only list the colors you want to override. All others use the theme defaults. When Hone starts, it merges these overrides with the selected theme.
+
+### Available Color Keys
+
+Common keys you can override:
+
+| Key | Purpose | Example |
+|-----|---------|---------|
+| `accent-hot` | Active/highlight color (cursor, focus) | `#FF1744` |
+| `accent-muted` | Secondary accent (disabled, dimmed) | `#FFB74D` |
+| `bg-normal` | Main background | `#0d1117` |
+| `bg-secondary` | Secondary background (panels, rail) | `#1C1C24` |
+| `text-normal` | Primary text | `#E6E1E8` |
+| `text-muted` | Dimmed text (hints, timestamps) | `#8B8B8B` |
+| `success` | Success states (PASS, green) | `#27AE60` |
+| `error` | Error states (FAIL, red) | `#E74C3C` |
+| `warning` | Warnings (yellow) | `#F39C12` |
+| `info` | Info messages (blue) | `#3498DB` |
+
+For a complete list, see your selected theme in the Hone source code or run `/configure theme` in an interactive session.
+
+### Example Themes
+
+**Light Theme Override:**
+```toml
+bg-normal = "#FFFFFF"
+bg-secondary = "#F5F5F5"
+text-normal = "#1A1A1A"
+text-muted = "#666666"
+accent-hot = "#0066CC"
+```
+
+**High Contrast:**
+```toml
+bg-normal = "#000000"
+bg-secondary = "#111111"
+text-normal = "#FFFFFF"
+text-muted = "#CCCCCC"
+accent-hot = "#00FF00"
+error = "#FF0000"
+```
+
+---
+
+## 13. Session Switcher & Notification Bell
+
+### Session Switcher (Ctrl+O)
+
+Press **Ctrl+O** during an interactive session to open the session switcher overlay. This allows you to quickly browse and switch between all saved sessions.
+
+**Features:**
+- Full-screen overlay showing session names, last-updated relative times (e.g., "2 hours ago"), and message counts
+- Navigate with j/k (or arrow keys), Enter to switch, q to close
+- Sorted by most recent first
+- Useful for resuming past work without typing session names
+
+**Example:**
+```
+┌─ Sessions (10 total) ────────────────────────┐
+│ > auth-refactor          5 mins ago  18 msgs  │
+│   api-design             2 hours ago 42 msgs  │
+│   docs-update            3 days ago  12 msgs  │
+│   bugfix-cache           1 week ago  5 msgs   │
+└──────────────────────────────────────────────┘
+```
+
+### Notification Bell
+
+When a turn takes **10 or more seconds**, Hone rings the terminal bell (`\x07`). This useful for long-running tasks when your attention is elsewhere.
+
+**Disable the bell:**
+```bash
+export HONE_NO_BELL=1
+hone
+```
+
+---
+
+## 14. Remote Access (honed)
+
+Run Hone as a persistent daemon server accessible over the network with HTTP/2 + SSE for remote access, team collaboration, and web-based chat.
 
 ### Start the Daemon
 
 ```bash
-honed 7070  # Listen on port 7070
+honed --config ~/.config/hone/config.toml
+# or: hone serve
 ```
 
-**With auth token:**
-
-```bash
-export HONE_AUTH_TOKEN="sk-hone-abc123def456..."
-honed 7070
-```
-
-**With custom session database path:**
-
-```bash
-export HONE_SESSION_DB="$HOME/.local/share/hone/sessions.db"
-honed 7070
-```
+**Default address:** `http://0.0.0.0:8080`
 
 **Daemon output:**
 
 ```
 honed 0.1.0
 
-Listening on http://0.0.0.0:7070
-Auth enabled: true
+Listening on http://0.0.0.0:8080
+Auth enabled: false
 Session storage: SQLite at /Users/user/.local/share/hone/sessions.db
 ```
+
+### Web UI
+
+Once the daemon is running, open your browser to **`http://localhost:8080`**.
+
+The embedded single-page chat interface includes:
+
+- **Model selector** — Switch models without restarting
+- **Working directory input** — Set project context
+- **Streaming display** — Tokens appear as they're generated
+- **Tool-call cards** — Collapsible JSON previews of tool arguments and results
+- **Markdown rendering** — Bold, lists, and code blocks
+- **Dark theme** — Optimized for long sessions
+
+**Example usage:**
+
+1. Start `hone serve` or `honed`
+2. Navigate to `http://localhost:8080`
+3. Type a prompt and press Enter
+4. Watch the response stream in real-time
+
+No API key needed on the client—the server reads `ANTHROPIC_API_KEY` from its environment.
+
+### Stateless Execution Endpoint (POST /run)
+
+For programmatic one-off tasks, use the `/run` endpoint:
+
+```bash
+curl -X POST http://localhost:8080/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Fix the divide-by-zero error in calculator.py",
+    "model": "anthropic:claude-sonnet-4-5",
+    "working_dir": "/path/to/project"
+  }' \
+  --no-buffer
+```
+
+The server streams `AgentEvent`s as Server-Sent Events (SSE):
+
+```
+event: ProviderEvent
+data: {"model_info":{"provider":"anthropic","model":"claude-sonnet-4-5",...}}
+
+event: AgentEvent
+data: {"type":"ReadFile","path":"calculator.py",...}
+
+event: AgentEvent
+data: {"type":"ToolCallStart","tool":"edit_file",...}
+
+...
+```
+
+**Request fields:**
+
+| Field | Type | Required | Default |
+|-------|------|----------|---------|
+| `prompt` | string | Yes | — |
+| `model` | string | No | From config |
+| `working_dir` | string | No | Current dir |
+| `history` | array | No | Empty |
+
+**Perfect for:**
+- CI/CD integration
+- Embedded UIs
+- Scripting
+- One-shot task execution
+
+### Persistent Sessions (POST /sessions)
+
+For multi-turn conversations, use the full session API:
+
+```bash
+# Create a session
+SESSION_ID=$(curl -X POST http://localhost:8080/sessions \
+  -H "Content-Type: application/json" \
+  -d '{}' | jq -r '.session_id')
+
+# Send a turn
+curl -X POST http://localhost:8080/sessions/$SESSION_ID/turns \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Your task here",
+    "model": "anthropic:claude-sonnet-4-5"
+  }' \
+  --no-buffer
+```
+
+See [API Reference](api/http-api.md) for full endpoint documentation.
 
 ### Connect from Another Machine
 
 ```bash
 curl -H "Authorization: Bearer sk-hone-abc123..." \
-  https://remote-hone-server.example.com:7070/health
+  https://remote-hone-server.example.com:8080/health
 ```
 
-### API Endpoints
+Configure auth in `~/.config/hone/config.toml`:
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `POST` | `/sessions` | Create a new session |
-| `GET` | `/sessions/{id}` | Get session info |
-| `DELETE` | `/sessions/{id}` | Delete a session |
-| `GET` | `/health` | Health check |
-| `GET` | `/openapi.json` | OpenAPI spec |
+```toml
+[server.auth]
+enabled = true
 
-See [Server & Remote Guide](tutorials/server-and-remote.md) for full details.
+[[server.auth.tokens]]
+token = "sk-hone-abc123def456..."
+user = "alice@example.com"
+```
+
+### TLS/SSL Configuration
+
+For production, use TLS:
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 8443
+tls_cert = "/etc/hone/cert.pem"
+tls_key = "/etc/hone/key.pem"
+```
+
+Then connect with:
+
+```bash
+curl https://hone.example.com:8443/health \
+  --cacert /path/to/ca.pem \
+  -H "Authorization: Bearer sk-hone-..."
+```
 
 ---
 
-## 13. Next Steps
+## 15. Next Steps
 
 You've completed the Getting Started guide. Here's where to go next:
 
@@ -1668,7 +1866,7 @@ You've completed the Getting Started guide. Here's where to go next:
 
 ---
 
-## 14. Troubleshooting
+## 16. Troubleshooting
 
 ### API Key Not Found
 
