@@ -239,23 +239,27 @@ fn render_status_bar_area(app: &App, frame: &mut Frame, area: Rect) {
 
 fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
     let buf = &app.input().buffer;
-    if !buf.starts_with('/') || buf.len() < 2 {
+
+    let (matches, sigil): (Vec<&'static str>, char) = if buf.starts_with('/') && buf.len() >= 2 {
+        (Command::completions(&buf[1..]), '/')
+    } else if buf.starts_with('@') && buf.len() >= 2 {
+        (Command::agent_completions(&buf[1..]), '@')
+    } else {
         return;
-    }
-    let prefix = &buf[1..]; // strip leading /
-    let matches = Command::completions(prefix);
-    if matches.is_empty() || matches.len() == 1 && format!("/{}", matches[0]) == *buf {
-        return; // exact match or no matches — hide dropdown
+    };
+
+    if matches.is_empty()
+        || (matches.len() == 1 && format!("{sigil}{}", matches[0]) == *buf)
+    {
+        return;
     }
 
     let theme = app.theme();
     let count = matches.len().min(8) as u16;
-    // Position the dropdown above the input area
     let popup_y = input_area.y.saturating_sub(count);
-    let popup_width = 30u16.min(input_area.width);
+    let popup_width = 36u16.min(input_area.width);
     let popup_area = Rect::new(input_area.x + 1, popup_y, popup_width, count);
 
-    // Clear the area first
     use ratatui::widgets::Clear;
     frame.render_widget(Clear, popup_area);
 
@@ -263,9 +267,7 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
     let items: Vec<Line<'static>> = matches
         .iter()
         .take(8)
-        .map(|name| {
-            Line::from(Span::styled(format!(" /{name}"), bg))
-        })
+        .map(|name| Line::from(Span::styled(format!(" {sigil}{name}"), bg)))
         .collect();
 
     let block = Block::default()
@@ -273,8 +275,7 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
         .border_type(ratatui::widgets::BorderType::Rounded)
         .border_style(Style::default().fg(theme.surface_border))
         .style(Style::default().bg(theme.surface_overlay));
-    let para = Paragraph::new(items).block(block);
-    frame.render_widget(para, popup_area);
+    frame.render_widget(Paragraph::new(items).block(block), popup_area);
 }
 
 fn render_help_overlay(app: &App, frame: &mut Frame, area: Rect) {

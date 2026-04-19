@@ -455,7 +455,20 @@ impl App {
                 self.show_help = !self.show_help;
             }
             KeyCode::Tab => {
-                self.focus = self.focus.cycle();
+                let buf = &self.input.buffer;
+                let completion: Option<String> = if buf.starts_with('/') && buf.len() >= 2 {
+                    Command::completions(&buf[1..]).into_iter().next().map(|m| format!("/{m} "))
+                } else if buf.starts_with('@') && buf.len() >= 2 {
+                    Command::agent_completions(&buf[1..]).into_iter().next().map(|m| format!("@{m} "))
+                } else {
+                    None
+                };
+                if let Some(completed) = completion {
+                    self.input.cursor_position = completed.len();
+                    self.input.buffer = completed;
+                } else {
+                    self.focus = self.focus.cycle();
+                }
             }
             KeyCode::PageUp => {
                 self.scroll_offset = self.scroll_offset.saturating_add(10);
