@@ -60,16 +60,18 @@ impl<'a> ConversationWidget<'a> {
                 render_tool_call("tool-result", &msg.content, is_error, theme)
             }
             DisplayRole::Error => {
-                vec![Line::from(Span::styled(
-                    msg.content.clone(),
-                    Style::default().fg(theme.role_error),
-                ))]
+                let style = Style::default().fg(theme.role_error);
+                msg.content
+                    .lines()
+                    .map(|l| Line::from(Span::styled(l.to_string(), style)))
+                    .collect()
             }
             DisplayRole::System => {
-                vec![Line::from(Span::styled(
-                    msg.content.clone(),
-                    Style::default().fg(theme.role_system),
-                ))]
+                let style = Style::default().fg(theme.role_system);
+                msg.content
+                    .lines()
+                    .map(|l| Line::from(Span::styled(l.to_string(), style)))
+                    .collect()
             }
         }
     }
