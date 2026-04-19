@@ -13,6 +13,10 @@ description = "HTTP/2 + SSE daemon for Hone"
 [dependencies]
 hone-proto = { workspace = true }
 hone-core = { workspace = true }
+hone-providers = { workspace = true }
+hone-sandbox = { workspace = true }
+hone-tools = { workspace = true }
+futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -3,6 +3,7 @@ pub mod bore_tunnel;
 pub mod collaborative;
 pub mod collaborative_routes;
 pub mod error;
+pub mod execution;
 pub mod governance;
 pub mod governance_routes;
 pub mod openapi;
@@ -15,6 +16,7 @@ pub mod sse;
 pub mod state;
 pub mod tunnel;
 pub mod tunnel_routes;
+pub mod web;
 
 pub use collaborative::{CollaborativeStore, Participant, ParticipantRole};
 pub use governance::{GovernanceStore, ModelUsage, TeamMember, TeamPolicy, TeamUsage};

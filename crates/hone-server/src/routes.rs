@@ -10,14 +10,18 @@ use serde_json::json;
 
 use crate::collaborative_routes::collaborative_router;
 use crate::error::ServerError;
+use crate::execution::run_handler;
 use crate::governance_routes::governance_router;
 use crate::session::SessionInfo;
 use crate::rate_limit::rate_limit_middleware;
 use crate::state::AppState;
 use crate::tunnel_routes::tunnel_router;
+use crate::web::serve_ui;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(serve_ui))
+        .route("/run", post(run_handler))
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/gc", delete(gc_sessions))

@@ -22,6 +22,8 @@ pub struct AppState {
     pub governance: Arc<GovernanceStore>,
     pub collaborative: Arc<CollaborativeStore>,
     pub rate_limiter: RateLimiter,
+    /// Anthropic API key from `ANTHROPIC_API_KEY` env var. Drives `POST /run`.
+    pub provider_key: Option<String>,
 }
 
 impl AppState {
@@ -33,6 +35,7 @@ impl AppState {
             governance: GovernanceStore::new(),
             collaborative: Arc::new(CollaborativeStore::new()),
             rate_limiter: RateLimiter::new(DEFAULT_RATE_LIMIT, DEFAULT_RATE_WINDOW),
+            provider_key: std::env::var("ANTHROPIC_API_KEY").ok(),
         }
     }
 
@@ -44,6 +47,7 @@ impl AppState {
             governance: GovernanceStore::new(),
             collaborative: Arc::new(CollaborativeStore::new()),
             rate_limiter: RateLimiter::new(DEFAULT_RATE_LIMIT, DEFAULT_RATE_WINDOW),
+            provider_key: std::env::var("ANTHROPIC_API_KEY").ok(),
         }
     }
 
@@ -58,6 +62,7 @@ impl AppState {
             governance: GovernanceStore::new(),
             collaborative: Arc::new(CollaborativeStore::new()),
             rate_limiter: RateLimiter::new(DEFAULT_RATE_LIMIT, DEFAULT_RATE_WINDOW),
+            provider_key: std::env::var("ANTHROPIC_API_KEY").ok(),
         }
     }
 
@@ -70,6 +75,12 @@ impl AppState {
     /// Build a state with a custom rate limiter (useful for tests).
     pub fn with_rate_limiter(mut self, limiter: RateLimiter) -> Self {
         self.rate_limiter = limiter;
+        self
+    }
+
+    /// Override the provider key (useful for tests).
+    pub fn with_provider_key(mut self, key: Option<String>) -> Self {
+        self.provider_key = key;
         self
     }
 }
