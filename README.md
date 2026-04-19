@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/terminal-banner.png" alt="Hone" width="600">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/lockup-horizontal-v2-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/lockup-horizontal-v2-light.png">
+    <img src="assets/lockup-horizontal-v2-dark.png" alt="Hone" width="480">
+  </picture>
 </p>
 
 <p align="center">

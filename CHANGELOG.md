@@ -14,6 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- **SVG-first brand assets.** `assets/mark.svg` (256×256, 4-layer chevron mark), `assets/mark-v2.svg` (tapered-blade silhouette with 2-tone `#7B1E36`→`#EE3F6E` gradient), `assets/favicon.svg` (32×32 single-stroke glyph), `assets/lockup-horizontal.svg` (768×256 mark + HONE wordmark using `currentColor`), and `assets/social-preview.svg` (1280×640 GitHub og:image). Replaces the previous ad-hoc raster pipeline with SVG source-of-truth → `rsvg-convert` exports.
+- **Monochrome mark variants.** `assets/mark-mono.svg` (currentColor), `assets/mark-mono-black.svg` (#0d1117), `assets/mark-mono-white.svg` (#ffffff) for print, embossing, and single-color contexts.
+- **PNG export set.** `mark-{32,64,128,256,512,1024}.png`, `mark-v2-{32,64,128,256,512,1024}.png`, `favicon-{16,48}.png`, `lockup-horizontal-v2-{light,dark}.png`, and `social-preview.png` rasterised from SVG sources.
+- **Retired orphan rasters.** Removed `assets/mark-transparent.png`, `assets/lockup-horizontal-{light,dark}.png`, `assets/favicon-32.png`, and `assets/favicon-64.png` — none had any in-repo references.
+
 - **Typed `/configure` subcommands in the TUI.** `/configure` is now a router over `model`, `theme`, `vim on|off`, `budget <usd>|off`, `provider`, and `help`, replacing the single-shot display. The bare `/configure` form prints a full session summary (provider, model, theme, vim, budget, cost, context, phase). Default `context_limit` is now 128 000 so the context meter renders before the first `ModelInfo` event arrives. `crates/hone-tui/src/app.rs`, `crates/hone-tui/src/commands.rs`.
 - **`HONE_DISABLE_PERSISTENT_STORES=1` env var.** Same effect as `--ephemeral` but toggleable without a CLI flag; used by the new TUI demo expect script and any CI harness that wants to skip SQLite session/memory setup. `bins/hone/src/main.rs`.
 - **Workspace-wide clippy/rust lint policy.** Root `Cargo.toml` now carries a `[workspace.lints]` block and every crate opts in via `[lints] workspace = true`. This ensures new crates cannot silently diverge from the project's deny/warn policy. `Cargo.toml` + all `crates/*/Cargo.toml`.
