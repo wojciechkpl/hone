@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde_json::{Value, json};
 use tracing::debug;
 
-use crate::error::ProviderError;
+use crate::error::{ProviderError, extract_api_error_message};
 use crate::retry_after::parse_retry_after;
 use crate::traits::{CompletionRequest, ModelProvider};
 
@@ -392,10 +392,15 @@ impl ModelProvider for AnthropicProvider {
                 });
             }
 
+            let body = if status_code == 401 {
+                "invalid or expired API key — check your ANTHROPIC_API_KEY environment variable".to_owned()
+            } else {
+                extract_api_error_message(&body_text)
+            };
             return Err(ProviderError::Http {
                 provider: "anthropic".to_owned(),
                 status: status_code,
-                body: body_text,
+                body,
             });
         }
 

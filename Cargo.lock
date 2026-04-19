@@ -1478,8 +1478,12 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "futures",
  "hone-core",
  "hone-proto",
+ "hone-providers",
+ "hone-sandbox",
+ "hone-tools",
  "hyper",
  "reqwest",
  "serde",

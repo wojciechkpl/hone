@@ -10,7 +10,7 @@ use reqwest::Client;
 use serde_json::{Value, json};
 use tracing::debug;
 
-use crate::error::ProviderError;
+use crate::error::{ProviderError, extract_api_error_message};
 use crate::retry_after::parse_retry_after;
 use crate::traits::{CompletionRequest, ModelProvider};
 
@@ -377,7 +377,7 @@ impl ModelProvider for OllamaProvider {
             return Err(ProviderError::Http {
                 provider: "ollama".to_owned(),
                 status: status_code,
-                body: body_text,
+                body: extract_api_error_message(&body_text),
             });
         }
 
