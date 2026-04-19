@@ -15,7 +15,7 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use crossterm::{
-    event::{Event, EventStream, KeyCode},
+    event::{DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -2017,7 +2017,7 @@ async fn run_selected_mode(
     // TUI mode.
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -2025,7 +2025,7 @@ async fn run_selected_mode(
 
     // Always restore terminal even on error.
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), DisableBracketedPaste, LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     if result.is_ok() {
@@ -2308,17 +2308,23 @@ async fn run_tui(
                             app.handle_key(key);
                         }
 
-                        // Escape pressed during a turn — abort the task.
+                        // Escape pressed during an AI turn — abort the task.
+                        // Only act if there is actually a task to abort; without
+                        // this guard, Escape during a shell escape would fire
+                        // cancel_turn() spuriously and discard the shell output.
                         if app.take_pending_cancel() {
                             if let Some(abort) = current_task_abort.take() {
                                 abort.abort();
+                                app.cancel_turn();
                             }
-                            app.cancel_turn();
                         }
 
                         if app.should_quit() {
                             break;
                         }
+                    }
+                    Some(Ok(Event::Paste(text))) => {
+                        app.handle_paste(&text);
                     }
                     Some(Ok(Event::Resize(_, _))) => {
                         // Terminal resized; the next draw will pick up the new size.
@@ -2357,6 +2363,13 @@ async fn run_tui(
         // Drain any remaining agent events that arrived during the select branch.
         while let Ok(event) = agent_rx.try_recv() {
             app.handle_agent_event(event);
+        }
+        // Mirror the post-select restore logic for the drain path: if the drain
+        // loop caused a transition to Idle or Error, clear the abort handle and
+        // restore any queued follow-up message.
+        if matches!(app.state(), AppState::Idle | AppState::Error(_)) && current_task_abort.is_some() {
+            current_task_abort = None;
+            app.restore_queued_message_if_idle();
         }
 
         // Refresh context-window stats in the status bar after every tick.

@@ -614,4 +614,36 @@ mod tests {
         let filled_count = text.chars().filter(|&c| c == BAR_FILLED).count();
         assert_eq!(filled_count, 1, "only context bar present when no budget");
     }
+
+    #[test]
+    fn render_thinking_indicator_when_waiting_no_tool() {
+        let status = StatusInfo::default();
+        let theme = Theme::crimson();
+        let anim = AnimationState::new();
+        let line = render_status_bar(&status, &theme, &anim, 120, true);
+        let text = text_of(&line);
+        assert!(text.contains("thinking"), "thinking indicator must appear when waiting with no active tool");
+    }
+
+    #[test]
+    fn render_tool_name_when_waiting_with_active_tool() {
+        let mut status = StatusInfo::default();
+        status.active_tool = Some("write_file".to_string());
+        let theme = Theme::crimson();
+        let anim = AnimationState::new();
+        let line = render_status_bar(&status, &theme, &anim, 120, true);
+        let text = text_of(&line);
+        assert!(text.contains("write_file"), "tool name must appear when tool is active");
+        assert!(!text.contains("thinking"), "thinking indicator must not appear when tool is active");
+    }
+
+    #[test]
+    fn render_no_thinking_indicator_when_not_waiting() {
+        let status = StatusInfo::default();
+        let theme = Theme::crimson();
+        let anim = AnimationState::new();
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
+        let text = text_of(&line);
+        assert!(!text.contains("thinking"), "thinking indicator must not appear when not waiting");
+    }
 }

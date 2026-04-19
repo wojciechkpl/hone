@@ -209,15 +209,18 @@ impl App {
         }
         self.status.active_tool = None;
         self.state = AppState::Idle;
+        // Clear stale per-turn tracking so the next turn starts fresh.
+        self.pending_tool_start = None;
+        self.current_turn = None;
         self.messages.push(DisplayMessage::new(
             DisplayRole::System,
             "⚡ interrupted".to_string(),
         ));
     }
 
-    /// If idle and a queued follow-up message exists, restore it to the input box.
+    /// If idle or errored and a queued follow-up message exists, restore it to the input box.
     pub fn restore_queued_message_if_idle(&mut self) {
-        if matches!(self.state, AppState::Idle) {
+        if matches!(self.state, AppState::Idle | AppState::Error(_)) {
             if let Some(msg) = self.queued_message.take() {
                 self.input.buffer = msg;
                 self.input.cursor_position = self.input.buffer.len();
@@ -501,6 +504,21 @@ impl App {
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.toggle_agent_rail();
             }
+            // Alt+Right — widen left pane (+5%, ceiling 70).
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::ALT) => {
+                self.layout = self.layout.adjust_ratio(5);
+            }
+            // Alt+Left — narrow left pane (-5%, floor 30).
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::ALT) => {
+                self.layout = self.layout.adjust_ratio(-5);
+            }
+            // Shift+Enter or Alt+Enter — insert a literal newline without submitting.
+            KeyCode::Enter
+                if key.modifiers.contains(KeyModifiers::SHIFT)
+                    || key.modifiers.contains(KeyModifiers::ALT) =>
+            {
+                self.input.insert_char('\n');
+            }
             KeyCode::Enter => {
                 // Accept highlighted completion if one is selected.
                 let (matches, sigil) = self.active_completions();
@@ -573,6 +591,10 @@ impl App {
             KeyCode::Esc => {
                 if matches!(self.state, AppState::WaitingForResponse) {
                     self.request_cancel();
+                } else if matches!(self.state, AppState::Idle) {
+                    self.input.buffer.clear();
+                    self.input.cursor_position = 0;
+                    self.completion_index = None;
                 }
             }
             KeyCode::PageUp => {
@@ -603,6 +625,15 @@ impl App {
             let is_cmd = self.input.buffer.starts_with('/');
             let is_shell = self.input.buffer.starts_with('!');
             if !is_cmd && !is_shell {
+                if self.queued_message.is_some() {
+                    // Already one message queued — only one slot is supported.
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::System,
+                        "⚠ only one message can be queued at a time — previous follow-up kept".to_string(),
+                    ));
+                    self.input.take_input();
+                    return;
+                }
                 self.queued_message = Some(self.input.take_input());
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::System,
@@ -775,6 +806,14 @@ impl App {
             DisplayRole::System,
             "(interactive command exited — TUI restored)".to_string(),
         ));
+    }
+
+    /// Insert all characters from a bracketed-paste event, including newlines,
+    /// without triggering submission. Called by the event loop on `Event::Paste`.
+    pub fn handle_paste(&mut self, text: &str) {
+        for c in text.chars() {
+            self.input.insert_char(c);
+        }
     }
 
     /// Helper used by tests to populate the input buffer without going through
@@ -1679,5 +1718,88 @@ mod tests {
 
         let msg = last_system_msg(&app);
         assert!(msg.contains("crimson"), "should confirm theme switch");
+    }
+
+    // -----------------------------------------------------------------------
+    // Input ergonomics tests
+    // -----------------------------------------------------------------------
+
+    fn make_key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, modifiers)
+    }
+
+    #[test]
+    fn shift_enter_inserts_newline_does_not_submit() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.type_text("hello");
+        app.handle_key(make_key(KeyCode::Enter, KeyModifiers::SHIFT));
+        assert!(app.input.buffer.contains('\n'), "buffer must contain newline after Shift+Enter");
+        assert_eq!(app.messages.len(), 0, "Shift+Enter must not submit");
+        assert!(matches!(app.state, AppState::Idle));
+    }
+
+    #[test]
+    fn enter_submits_buffer_to_messages() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.type_text("hello world");
+        app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.input.buffer.is_empty(), "buffer must be cleared after submit");
+        assert_eq!(app.messages.len(), 1, "one user message must be created");
+        assert_eq!(app.messages[0].content, "hello world");
+    }
+
+    #[test]
+    fn handle_paste_inserts_with_newlines_without_submit() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.handle_paste("line one\nline two\n");
+        assert_eq!(app.input.buffer, "line one\nline two\n");
+        assert_eq!(app.messages.len(), 0, "paste must not submit");
+    }
+
+    #[test]
+    fn submit_empty_input_is_noop() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.messages.len(), 0, "empty submit must produce no messages");
+    }
+
+    #[test]
+    fn escape_clears_input_buffer_when_idle() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.type_text("some text");
+        app.handle_key(make_key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.input.buffer.is_empty(), "Esc in Idle must clear the input buffer");
+        assert_eq!(app.input.cursor_position, 0);
+    }
+
+    #[test]
+    fn second_queue_attempt_warns_and_keeps_first() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.state = AppState::WaitingForResponse;
+        app.type_text("first message");
+        app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
+        let first = app.queued_message.clone();
+        app.type_text("second message");
+        app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.queued_message, first, "first queued message must be preserved");
+        let warn = app.messages.iter().any(|m| m.content.contains("only one message"));
+        assert!(warn, "a warning must be shown when a second queue is attempted");
+    }
+
+    #[test]
+    fn cancel_turn_clears_stale_ledger_and_tool_start() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.current_turn = Some(TurnLedger::new(0));
+        app.pending_tool_start = Some(("id".into(), "read_file".into(), serde_json::Value::Null));
+        app.cancel_turn();
+        assert!(app.current_turn.is_none(), "cancel_turn must clear current_turn");
+        assert!(app.pending_tool_start.is_none(), "cancel_turn must clear pending_tool_start");
     }
 }

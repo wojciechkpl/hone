@@ -104,4 +104,24 @@ mod tests {
         assert_eq!(FocusTarget::Conversation.cycle(), FocusTarget::Preview);
         assert_eq!(FocusTarget::Preview.cycle(), FocusTarget::Input);
     }
+
+    #[test]
+    fn split_ratio_alt_right_from_50_goes_to_55() {
+        assert_eq!(LayoutMode::SplitHorizontal { ratio: 50 }.adjust_ratio(5), LayoutMode::SplitHorizontal { ratio: 55 });
+    }
+
+    #[test]
+    fn split_ratio_alt_right_at_ceiling_stays_at_70() {
+        assert_eq!(LayoutMode::SplitHorizontal { ratio: 70 }.adjust_ratio(5), LayoutMode::SplitHorizontal { ratio: 70 });
+    }
+
+    #[test]
+    fn split_ratio_alt_left_from_50_goes_to_45() {
+        assert_eq!(LayoutMode::SplitHorizontal { ratio: 50 }.adjust_ratio(-5), LayoutMode::SplitHorizontal { ratio: 45 });
+    }
+
+    #[test]
+    fn split_ratio_alt_left_at_floor_stays_at_30() {
+        assert_eq!(LayoutMode::SplitHorizontal { ratio: 30 }.adjust_ratio(-5), LayoutMode::SplitHorizontal { ratio: 30 });
+    }
 }

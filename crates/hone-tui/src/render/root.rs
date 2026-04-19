@@ -372,4 +372,57 @@ mod tests {
         assert_eq!(cell_char(&terminal, popup_x, popup_y), '╭',
             "expected top-left corner of @-agent popup at ({popup_x},{popup_y})");
     }
+
+    fn cell_bg(terminal: &Terminal<TestBackend>, x: u16, y: u16) -> ratatui::style::Color {
+        terminal.backend().buffer().cell((x, y))
+            .map(|c| c.style().bg.unwrap_or(ratatui::style::Color::Reset))
+            .unwrap_or(ratatui::style::Color::Reset)
+    }
+
+    #[test]
+    fn autocomplete_exact_match_hides_popup() {
+        // "/quit" is an exact match → popup suppressed (1 match, input == "/quit").
+        let app = app_with_input("/quit");
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(&app, f)).unwrap();
+        // 1 match → popup_height=3, popup_y=20-3=17
+        assert_ne!(cell_char(&terminal, 1, 17), '╭', "popup must not render for exact match");
+    }
+
+    #[test]
+    fn autocomplete_partial_match_shows_popup() {
+        // "/qu" → ["quit"] — one non-exact match → popup shown
+        let app = app_with_input("/qu");
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(&app, f)).unwrap();
+        // 1 match → popup_height=3, popup_y=20-3=17
+        assert_eq!(cell_char(&terminal, 1, 17), '╭', "popup must render for partial match");
+    }
+
+    #[test]
+    fn autocomplete_empty_input_shows_no_popup() {
+        let app = app_with_input("");
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(&app, f)).unwrap();
+        assert_ne!(cell_char(&terminal, 1, 10), '╭', "no popup for empty input");
+    }
+
+    #[test]
+    fn autocomplete_selected_row_has_accent_bg() {
+        // "/" → 8 matches, popup_height=10, popup_y=10. Row 0 is at y=11.
+        let mut app = app_with_input("/");
+        app.completion_index = Some(0);
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(&app, f)).unwrap();
+
+        let theme = crate::theme::Theme::crimson();
+        let selected_bg = cell_bg(&terminal, 2, 11); // x=popup_x+1=2, y=popup_y+1=11
+        assert_eq!(selected_bg, theme.accent_hot, "selected row must have accent_hot bg");
+        let unselected_bg = cell_bg(&terminal, 2, 12);
+        assert_ne!(unselected_bg, theme.accent_hot, "unselected row must not have accent_hot bg");
+    }
 }
