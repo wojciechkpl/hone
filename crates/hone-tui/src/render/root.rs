@@ -295,13 +295,21 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
     }
 
     // Write suggestion lines inside the border.
+    let selected = app.completion_index();
+    let sel_style = Style::default().bg(theme.accent_hot).fg(theme.surface_base);
     let inner_width = (popup_width.saturating_sub(2)) as usize;
     for (i, name) in matches.iter().take(count as usize).enumerate() {
         let row = area.y + 1 + i as u16;
+        let is_sel = selected == Some(i);
+        let row_style = if is_sel { sel_style } else { bg_style };
+        // Fill the whole inner row with the row background first.
+        for col in 0..inner_width as u16 {
+            buf[(area.x + 1 + col, row)].set_char(' ').set_style(row_style);
+        }
         let text = format!(" {sigil}{name}");
         let mut col = area.x + 1;
         for ch in text.chars().take(inner_width) {
-            buf[(col, row)].set_char(ch).set_style(bg_style);
+            buf[(col, row)].set_char(ch).set_style(row_style);
             col += 1;
         }
     }

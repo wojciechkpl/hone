@@ -109,6 +109,9 @@ pub struct App {
     pub(crate) rail_scroll: usize,
     /// Pending tool call ID → name mapping for ToolCallEnd duration tracking.
     pub(crate) pending_tool_start: Option<(String, String, serde_json::Value)>,
+    /// Currently highlighted row in the autocomplete dropdown (0-based).
+    /// `None` means no row is selected.
+    pub(crate) completion_index: Option<usize>,
 }
 
 impl App {
@@ -148,6 +151,7 @@ impl App {
             completed_turns: Vec::new(),
             rail_scroll: 0,
             pending_tool_start: None,
+            completion_index: None,
         }
     }
 
@@ -174,6 +178,22 @@ impl App {
 
     pub fn input(&self) -> &InputState {
         &self.input
+    }
+
+    pub fn completion_index(&self) -> Option<usize> {
+        self.completion_index
+    }
+
+    /// Returns the current autocomplete matches and sigil for the input buffer.
+    pub fn active_completions(&self) -> (Vec<&'static str>, char) {
+        let buf = &self.input.buffer;
+        if buf.starts_with('/') {
+            (Command::completions(&buf[1..]), '/')
+        } else if buf.starts_with('@') {
+            (Command::agent_completions(&buf[1..]), '@')
+        } else {
+            (vec![], '/')
+        }
     }
 
     pub fn messages(&self) -> &[DisplayMessage] {
@@ -437,10 +457,47 @@ impl App {
                 self.toggle_agent_rail();
             }
             KeyCode::Enter => {
+                // Accept highlighted completion if one is selected.
+                let (matches, sigil) = self.active_completions();
+                let count = matches.len().min(8);
+                if let Some(idx) = self.completion_index {
+                    if idx < count {
+                        let completed = format!("{sigil}{} ", matches[idx]);
+                        self.input.cursor_position = completed.len();
+                        self.input.buffer = completed;
+                        self.completion_index = None;
+                        return;
+                    }
+                }
                 self.submit_input();
+            }
+            KeyCode::Up => {
+                let (matches, _) = self.active_completions();
+                let count = matches.len().min(8);
+                if count > 0 {
+                    self.completion_index = Some(match self.completion_index {
+                        None | Some(0) => count - 1,
+                        Some(i) => i - 1,
+                    });
+                } else {
+                    self.scroll_offset = self.scroll_offset.saturating_add(1);
+                }
+            }
+            KeyCode::Down => {
+                let (matches, _) = self.active_completions();
+                let count = matches.len().min(8);
+                if count > 0 {
+                    self.completion_index = Some(match self.completion_index {
+                        None => 0,
+                        Some(i) => (i + 1) % count,
+                    });
+                } else {
+                    self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                }
             }
             KeyCode::Backspace => {
                 self.input.delete_char();
+                self.completion_index = None;
             }
             KeyCode::Left => {
                 self.input.move_cursor_left();
@@ -450,22 +507,20 @@ impl App {
             }
             KeyCode::Char(c) => {
                 self.input.insert_char(c);
+                self.completion_index = None;
             }
             KeyCode::F(1) => {
                 self.show_help = !self.show_help;
             }
             KeyCode::Tab => {
-                let buf = &self.input.buffer;
-                let completion: Option<String> = if buf.starts_with('/') && buf.len() >= 2 {
-                    Command::completions(&buf[1..]).into_iter().next().map(|m| format!("/{m} "))
-                } else if buf.starts_with('@') && buf.len() >= 2 {
-                    Command::agent_completions(&buf[1..]).into_iter().next().map(|m| format!("@{m} "))
-                } else {
-                    None
-                };
-                if let Some(completed) = completion {
+                let (matches, sigil) = self.active_completions();
+                let count = matches.len().min(8);
+                let pick = self.completion_index.filter(|&i| i < count).unwrap_or(0);
+                if count > 0 {
+                    let completed = format!("{sigil}{} ", matches[pick]);
                     self.input.cursor_position = completed.len();
                     self.input.buffer = completed;
+                    self.completion_index = None;
                 } else {
                     self.focus = self.focus.cycle();
                 }
