@@ -182,25 +182,30 @@ fn left_zone(status: &StatusInfo, theme: &Theme, tier: WidthTier) -> Vec<Span<'s
     spans
 }
 
-/// Center zone: spinner + icon + tool name (accent colored), or empty.
+/// Center zone: spinner + icon + tool name (accent colored), or "thinking…".
 fn center_zone(
     status: &StatusInfo,
     theme: &Theme,
     anim: &AnimationState,
     tier: WidthTier,
+    is_waiting: bool,
 ) -> Vec<Span<'static>> {
     if tier < WidthTier::Standard {
         return Vec::new();
     }
 
     let mut spans = Vec::new();
+    let spinner = anim.spinner_char();
 
     if let Some(ref tool) = status.active_tool {
         let icon = tool_icon(tool, theme.no_color);
-        let spinner = anim.spinner_char();
         let text = format!("{spinner} {icon} {tool}");
         spans.push(sep(theme));
         spans.push(accent(text, theme));
+    } else if is_waiting {
+        let ellipsis = if theme.no_color { "..." } else { "…" };
+        spans.push(sep(theme));
+        spans.push(muted(format!("{spinner} thinking{ellipsis}"), theme));
     }
 
     spans
@@ -299,6 +304,7 @@ pub fn render_status_bar(
     theme: &Theme,
     anim: &AnimationState,
     terminal_cols: u16,
+    is_waiting: bool,
 ) -> Line<'static> {
     let tier = WidthTier::from_width(terminal_cols);
 
@@ -310,8 +316,8 @@ pub fn render_status_bar(
     // Left zone.
     spans.extend(left_zone(status, theme, tier));
 
-    // Center zone (tool activity).
-    spans.extend(center_zone(status, theme, anim, tier));
+    // Center zone (tool activity / thinking indicator).
+    spans.extend(center_zone(status, theme, anim, tier, is_waiting));
 
     // Right zone (resource gauges).
     spans.extend(right_zone(status, theme, tier));
@@ -446,7 +452,7 @@ mod tests {
         status.model = "claude-opus-4".to_string();
         let theme = Theme::crimson();
         let anim = AnimationState::new();
-        let line = render_status_bar(&status, &theme, &anim, 120);
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         assert!(text.contains("claude-opus-4"), "model name must appear");
     }
@@ -459,7 +465,7 @@ mod tests {
         let theme = Theme::crimson();
         let anim = AnimationState::new();
         // 80 cols → Minimal tier
-        let line = render_status_bar(&status, &theme, &anim, 80);
+        let line = render_status_bar(&status, &theme, &anim, 80, false);
         let text = text_of(&line);
         assert!(!text.contains("my-session"), "session name hidden in minimal");
         assert!(!text.contains("[W]"), "phase hidden in minimal");
@@ -472,7 +478,7 @@ mod tests {
         status.phase = "Editing".to_string();
         let theme = Theme::crimson();
         let anim = AnimationState::new();
-        let line = render_status_bar(&status, &theme, &anim, 120);
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         assert!(text.contains("my-session"), "session name shown at 120 cols");
         assert!(text.contains("[W]"), "short phase shown at 120 cols");
@@ -486,7 +492,7 @@ mod tests {
         status.turn_count = 3;
         let theme = Theme::crimson();
         let anim = AnimationState::new();
-        let line = render_status_bar(&status, &theme, &anim, 160);
+        let line = render_status_bar(&status, &theme, &anim, 160, false);
         let text = text_of(&line);
         assert!(text.contains("[Editing]"), "long phase shown at 160 cols");
         assert!(text.contains("01:30"), "elapsed shown at 160 cols");
@@ -502,7 +508,7 @@ mod tests {
         };
         let theme = Theme::crimson();
         let anim = AnimationState::new();
-        let line = render_status_bar(&status, &theme, &anim, 120);
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         // 62% context → 6 filled cells
         let filled = text.chars().filter(|&c| c == BAR_FILLED).count();
@@ -519,7 +525,7 @@ mod tests {
         };
         let theme = Theme::minimal();
         let anim = AnimationState::new();
-        let line = render_status_bar(&status, &theme, &anim, 120);
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         assert!(text.contains('#'), "ASCII bar '#' must appear in no_color");
         assert!(!text.contains('▓'), "unicode '▓' must not appear in no_color");
@@ -531,7 +537,7 @@ mod tests {
         status.active_tool = Some("read_file".to_string());
         let theme = Theme::crimson();
         let anim = AnimationState::new();
-        let line = render_status_bar(&status, &theme, &anim, 120);
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         assert!(text.contains("read_file"), "tool name must appear");
         assert!(text.contains('✦'), "read icon must appear");
@@ -544,7 +550,7 @@ mod tests {
         let theme = Theme::crimson();
         let anim = AnimationState::new();
         // 80 cols → Minimal
-        let line = render_status_bar(&status, &theme, &anim, 80);
+        let line = render_status_bar(&status, &theme, &anim, 80, false);
         let text = text_of(&line);
         assert!(!text.contains("bash"), "tool name hidden in minimal layout");
     }
@@ -554,7 +560,7 @@ mod tests {
         let status = StatusInfo::default(); // Connected by default
         let theme = Theme::crimson();
         let anim = AnimationState::new();
-        let line = render_status_bar(&status, &theme, &anim, 120);
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         assert!(text.contains('●'), "connected badge must appear");
     }
@@ -565,7 +571,7 @@ mod tests {
         status.provider_status = ProviderStatus::Error("timeout".to_string());
         let theme = Theme::crimson();
         let anim = AnimationState::new();
-        let line = render_status_bar(&status, &theme, &anim, 120);
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         assert!(text.contains('✕'), "error badge must appear");
         assert!(text.contains("timeout"), "error message must appear");
@@ -583,7 +589,7 @@ mod tests {
         let theme = Theme::crimson();
         let anim = AnimationState::new();
         // Standard tier → budget bar appears
-        let line = render_status_bar(&status, &theme, &anim, 120);
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         // Two bar segments: context bar (10%) + budget bar (50%)
         let filled_count = text.chars().filter(|&c| c == BAR_FILLED).count();
@@ -602,7 +608,7 @@ mod tests {
         };
         let theme = Theme::crimson();
         let anim = AnimationState::new();
-        let line = render_status_bar(&status, &theme, &anim, 120);
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         // Only context bar (10%) → 1 filled cell
         let filled_count = text.chars().filter(|&c| c == BAR_FILLED).count();

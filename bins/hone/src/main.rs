@@ -890,7 +890,7 @@ fn spawn_agent_turn(
     agent: AgentHandle,
     user_text: String,
     tx: mpsc::Sender<AgentEvent>,
-) {
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Use an intermediate channel so we can observe events before
         // forwarding them to the caller and track which tools were used.
@@ -923,7 +923,7 @@ fn spawn_agent_turn(
 
         // After the turn completes, run test verification if applicable.
         maybe_run_test_verification(&agent, &tx, &tools_used).await;
-    });
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -934,7 +934,7 @@ fn spawn_medium_turn(
     agent: AgentHandle,
     user_text: String,
     tx: mpsc::Sender<AgentEvent>,
-) {
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Use an intermediate channel to observe events and track tool usage.
         let (inner_tx, mut inner_rx) = mpsc::channel::<AgentEvent>(256);
@@ -989,7 +989,7 @@ fn spawn_medium_turn(
         // respects the code-modifying tool guard, so Q&A turns don't trigger
         // an unnecessary test run.
         maybe_run_test_verification(&agent, &tx, &tools_used).await;
-    });
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1000,7 +1000,7 @@ fn spawn_orchestrated_turn(
     lead_config: AgentConfig,
     user_text: String,
     tx: mpsc::Sender<AgentEvent>,
-) {
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut registry = AgentRegistry::new();
         registry.load_builtins();
@@ -1029,7 +1029,7 @@ fn spawn_orchestrated_turn(
                     .await;
             }
         }
-    });
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -2106,6 +2106,8 @@ async fn run_tui(
     let tick = Duration::from_millis(100);
 
     let mut events = EventStream::new();
+    // Abort handle for the currently running agent task; cleared on completion.
+    let mut current_task_abort: Option<tokio::task::AbortHandle> = None;
 
     // Install a SIGINT handler so the process shuts down cleanly when the
     // terminal sends Ctrl+C at the OS level (e.g. from a wrapper script).
@@ -2242,22 +2244,21 @@ async fn run_tui(
                                 let original_prompt = base_config.system_prompt.clone();
                                 let restore_prompt = maybe_inline_agent.is_some();
 
-                                match tier {
+                                let task_handle: tokio::task::JoinHandle<()> = match tier {
                                     ComplexityTier::Simple => {
                                         tracing::debug!("complexity: Simple — direct agent turn");
                                         if restore_prompt {
                                             tokio::spawn(async move {
                                                 let (tx2, rx2) = mpsc::channel(256);
                                                 spawn_agent_turn(agent_clone.clone(), effective_text_clone, tx2);
-                                                // Forward all events then restore the prompt.
                                                 let mut rx2 = rx2;
                                                 while let Some(ev) = rx2.recv().await {
                                                     let _ = agent_tx_clone.send(ev).await;
                                                 }
                                                 agent_clone.set_system_prompt(original_prompt).await;
-                                            });
+                                            })
                                         } else {
-                                            spawn_agent_turn(agent.clone(), effective_text, agent_tx.clone());
+                                            spawn_agent_turn(agent.clone(), effective_text, agent_tx.clone())
                                         }
                                     }
                                     ComplexityTier::Medium => {
@@ -2271,9 +2272,9 @@ async fn run_tui(
                                                     let _ = agent_tx_clone.send(ev).await;
                                                 }
                                                 agent_clone.set_system_prompt(original_prompt).await;
-                                            });
+                                            })
                                         } else {
-                                            spawn_medium_turn(agent.clone(), effective_text, agent_tx.clone());
+                                            spawn_medium_turn(agent.clone(), effective_text, agent_tx.clone())
                                         }
                                     }
                                     ComplexityTier::Complex => {
@@ -2287,12 +2288,13 @@ async fn run_tui(
                                                     let _ = agent_tx_clone.send(ev).await;
                                                 }
                                                 agent_clone.set_system_prompt(original_prompt).await;
-                                            });
+                                            })
                                         } else {
-                                            spawn_orchestrated_turn(base_config.clone(), effective_text, agent_tx.clone());
+                                            spawn_orchestrated_turn(base_config.clone(), effective_text, agent_tx.clone())
                                         }
                                     }
-                                }
+                                };
+                                current_task_abort = Some(task_handle.abort_handle());
 
                                 // After the turn is dispatched, clear the mode label
                                 // if we had an inline agent (the spawned task restores
@@ -2304,6 +2306,14 @@ async fn run_tui(
                             }
                         } else {
                             app.handle_key(key);
+                        }
+
+                        // Escape pressed during a turn — abort the task.
+                        if app.take_pending_cancel() {
+                            if let Some(abort) = current_task_abort.take() {
+                                abort.abort();
+                            }
+                            app.cancel_turn();
                         }
 
                         if app.should_quit() {
@@ -2325,6 +2335,12 @@ async fn run_tui(
             maybe_agent = agent_rx.recv() => {
                 if let Some(event) = maybe_agent {
                     app.handle_agent_event(event);
+                    // When a turn completes, clear the abort handle and restore
+                    // any follow-up message the user typed while waiting.
+                    if matches!(app.state(), AppState::Idle | AppState::Error(_)) {
+                        current_task_abort = None;
+                        app.restore_queued_message_if_idle();
+                    }
                 }
             }
 

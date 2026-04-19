@@ -112,6 +112,11 @@ pub struct App {
     /// Currently highlighted row in the autocomplete dropdown (0-based).
     /// `None` means no row is selected.
     pub(crate) completion_index: Option<usize>,
+    /// Set by Escape during WaitingForResponse; the event loop aborts the task
+    /// and calls cancel_turn().
+    pub(crate) pending_cancel: bool,
+    /// Message typed while a turn was active; restored to the input box on Done.
+    pub(crate) queued_message: Option<String>,
 }
 
 impl App {
@@ -152,6 +157,8 @@ impl App {
             rail_scroll: 0,
             pending_tool_start: None,
             completion_index: None,
+            pending_cancel: false,
+            queued_message: None,
         }
     }
 
@@ -182,6 +189,44 @@ impl App {
 
     pub fn completion_index(&self) -> Option<usize> {
         self.completion_index
+    }
+
+    /// Signal that the current agent turn should be aborted.
+    /// The event loop calls `cancel_turn()` after aborting the task.
+    pub fn request_cancel(&mut self) {
+        self.pending_cancel = true;
+    }
+
+    /// Drain the cancel flag; returns `true` once after `request_cancel`.
+    pub fn take_pending_cancel(&mut self) -> bool {
+        std::mem::take(&mut self.pending_cancel)
+    }
+
+    /// Immediately reset to Idle after the task has been aborted externally.
+    pub fn cancel_turn(&mut self) {
+        if let Some(msg) = self.messages.last_mut() {
+            msg.is_streaming = false;
+        }
+        self.status.active_tool = None;
+        self.state = AppState::Idle;
+        self.messages.push(DisplayMessage::new(
+            DisplayRole::System,
+            "⚡ interrupted".to_string(),
+        ));
+    }
+
+    /// If idle and a queued follow-up message exists, restore it to the input box.
+    pub fn restore_queued_message_if_idle(&mut self) {
+        if matches!(self.state, AppState::Idle) {
+            if let Some(msg) = self.queued_message.take() {
+                self.input.buffer = msg;
+                self.input.cursor_position = self.input.buffer.len();
+            }
+        }
+    }
+
+    pub fn has_queued_message(&self) -> bool {
+        self.queued_message.is_some()
     }
 
     /// Returns the current autocomplete matches and sigil for the input buffer.
@@ -525,6 +570,11 @@ impl App {
                     self.focus = self.focus.cycle();
                 }
             }
+            KeyCode::Esc => {
+                if matches!(self.state, AppState::WaitingForResponse) {
+                    self.request_cancel();
+                }
+            }
             KeyCode::PageUp => {
                 self.scroll_offset = self.scroll_offset.saturating_add(10);
             }
@@ -545,6 +595,21 @@ impl App {
     pub fn submit_input(&mut self) {
         if self.input.is_empty() {
             return;
+        }
+
+        // During an active turn, queue regular messages as a follow-up.
+        // Commands (/) and shell escapes (!) pass through immediately.
+        if matches!(self.state, AppState::WaitingForResponse) {
+            let is_cmd = self.input.buffer.starts_with('/');
+            let is_shell = self.input.buffer.starts_with('!');
+            if !is_cmd && !is_shell {
+                self.queued_message = Some(self.input.take_input());
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::System,
+                    "↪ queued — will send when this turn completes".to_string(),
+                ));
+                return;
+            }
         }
 
         let text = self.input.take_input();

@@ -231,7 +231,8 @@ fn render_input_area(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 fn render_status_bar_area(app: &App, frame: &mut Frame, area: Rect) {
-    let line = render_status_bar(app.status(), app.theme(), app.animation(), area.width);
+    let is_waiting = matches!(app.state(), crate::app::AppState::WaitingForResponse);
+    let line = render_status_bar(app.status(), app.theme(), app.animation(), area.width, is_waiting);
     let para = Paragraph::new(line)
         .style(Style::default().bg(app.theme().surface_base));
     frame.render_widget(para, area);
@@ -318,4 +319,57 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
 fn render_help_overlay(app: &App, frame: &mut Frame, area: Rect) {
     let widget = HelpOverlay::new(app.theme());
     frame.render_widget(widget, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{Terminal, backend::TestBackend};
+    use crate::app::App;
+    use super::render;
+
+    fn app_with_input(text: &str) -> App {
+        let mut app = App::new();
+        app.show_splash = false;
+        for ch in text.chars() {
+            app.input.insert_char(ch);
+        }
+        app
+    }
+
+    fn cell_char(terminal: &Terminal<TestBackend>, x: u16, y: u16) -> char {
+        terminal.backend().buffer().cell((x, y))
+            .map(|c| c.symbol().chars().next().unwrap_or(' '))
+            .unwrap_or(' ')
+    }
+
+    #[test]
+    fn autocomplete_slash_renders_border() {
+        let app = app_with_input("/");
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(&app, f)).unwrap();
+
+        // Layout: header(1) + content(19) + input(3) + status(1) on 24-row term.
+        // Input area y = 20. With 8 matches, popup_height = 10, popup_y = 10.
+        // popup_x = input_area.x + 1 = 1.
+        let popup_x: u16 = 1;
+        let popup_y: u16 = 10;
+        assert_eq!(cell_char(&terminal, popup_x, popup_y), '╭',
+            "expected top-left corner of autocomplete popup at ({popup_x},{popup_y})");
+        assert_eq!(cell_char(&terminal, popup_x + 1, popup_y + 1), ' ',
+            "expected leading space of first suggestion row");
+    }
+
+    #[test]
+    fn autocomplete_at_renders_border() {
+        let app = app_with_input("@");
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(&app, f)).unwrap();
+
+        let popup_x: u16 = 1;
+        let popup_y: u16 = 10; // 12 agents → count=8 → popup_height=10 → y=20-10=10
+        assert_eq!(cell_char(&terminal, popup_x, popup_y), '╭',
+            "expected top-left corner of @-agent popup at ({popup_x},{popup_y})");
+    }
 }

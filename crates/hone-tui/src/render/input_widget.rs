@@ -36,14 +36,21 @@ impl<'a> Widget for InputWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let theme = self.theme;
 
+        let is_waiting = matches!(self.state, AppState::WaitingForResponse);
+
         // Border color depends on app state and focus.
         let border_color = match self.state {
             AppState::Error(_) => theme.role_error,
+            AppState::WaitingForResponse => theme.accent_mid,
             _ if *self.focus == FocusTarget::Input => theme.surface_focus,
             _ => theme.surface_border,
         };
 
-        let title_style = Style::default().fg(theme.accent_hot);
+        let title_style = if is_waiting {
+            Style::default().fg(theme.accent_mid)
+        } else {
+            Style::default().fg(theme.accent_hot)
+        };
         let border_style = Style::default().fg(border_color);
         let content_style = Style::default().fg(theme.text_primary);
         let hint_style = Style::default().fg(theme.text_muted);
@@ -66,8 +73,12 @@ impl<'a> Widget for InputWidget<'a> {
         let content = &self.input.buffer;
 
         if content.is_empty() {
-            // Hint line when nothing has been typed.
-            let hint = Line::from(Span::styled("/help for commands", hint_style));
+            let hint_text = if is_waiting {
+                "Esc to interrupt  •  type to queue follow-up"
+            } else {
+                "/help for commands"
+            };
+            let hint = Line::from(Span::styled(hint_text, hint_style));
             let y = inner.top();
             let mut x = inner.left();
             for span in &hint.spans {
