@@ -86,6 +86,8 @@ impl ReviewerAgent {
             inject_context: false,
             skeleton_strategy: Default::default(),
             egress_log: None,
+            step_mode: false,
+            step_rx: None,
         };
 
         Self { agent_config }
@@ -119,6 +121,8 @@ impl ReviewerAgent {
             inject_context: false,
             skeleton_strategy: Default::default(),
             egress_log: None,
+            step_mode: false,
+            step_rx: None,
         });
 
         let turn = agent.run_turn(context, events).await?;

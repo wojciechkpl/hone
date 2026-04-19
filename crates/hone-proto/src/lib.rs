@@ -10,7 +10,7 @@ mod tool;
 pub use content::{Content, ContentPart};
 pub use cost::{CostEstimate, PricingEntry};
 pub use error::ProtoError;
-pub use event::{AgentEvent, ProviderEvent};
+pub use event::{AgentEvent, ProviderEvent, StepAction};
 pub use message::{Message, Role};
 pub use model::{ModelId, ModelInfo, ProviderHealth, TokenUsage};
 pub use session::{SessionId, TurnId};

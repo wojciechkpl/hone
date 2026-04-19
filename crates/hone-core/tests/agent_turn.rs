@@ -126,6 +126,8 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
+        step_mode: false,
+        step_rx: None,
     }
 }
 
@@ -1146,6 +1148,8 @@ async fn test_dynamic_read_only_tool_dispatched_in_parallel() {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
+        step_mode: false,
+        step_rx: None,
     };
 
     let mut agent = Agent::new(config);

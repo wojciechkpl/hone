@@ -17,8 +17,10 @@ use crate::{
         header::render_header,
         help::HelpOverlay,
         command_palette::render_command_palette,
+        debugger::render_debugger,
         history_search::render_history_search,
         input_widget::InputWidget,
+        prompt_mirror::render_prompt_mirror,
         search_bar::render_search_bar,
         session_anatomy::render_session_anatomy,
         splash::SplashWidget,
@@ -79,6 +81,16 @@ pub fn render(app: &App, frame: &mut Frame) {
     // Session Anatomy — full-area overlay, rendered last
     if app.anatomy_open {
         render_session_anatomy(app, frame, area);
+    }
+
+    // Prompt Mirror — full-area overlay
+    if app.mirror_open {
+        render_prompt_mirror(app, frame, area);
+    }
+
+    // Agent Debugger — full-area overlay, highest z-order
+    if app.debugger_open {
+        render_debugger(app, frame, area);
     }
 }
 

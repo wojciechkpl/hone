@@ -15,7 +15,7 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use crossterm::{
-    event::{DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyCode},
+    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, EventStream, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -177,6 +177,11 @@ struct Cli {
     /// before the agent begins executing.
     #[arg(long)]
     no_clarify: bool,
+
+    /// Enable step-through debugger: pause before each sequential tool call.
+    /// Press Space/Enter to proceed, s to skip, Esc to proceed.
+    #[arg(long, default_value_t = false)]
+    step: bool,
 
     /// Subcommand (session management, configure wizard, etc.)
     #[command(subcommand)]
@@ -789,6 +794,8 @@ fn build_agent_config(
         inject_context,
         skeleton_strategy,
         egress_log,
+        step_mode: false,
+        step_rx: None,
     }
 }
 
@@ -2017,15 +2024,28 @@ async fn run_selected_mode(
     // TUI mode.
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_tui(&mut terminal, agent.clone(), model_id, base_config, cli.vim).await;
+    // Build the step-mode channel if --step was passed.
+    let (step_tx, step_rx_arc) = if cli.step {
+        let (tx, rx) = tokio::sync::mpsc::channel::<hone_proto::StepAction>(1);
+        (Some(tx), Some(std::sync::Arc::new(tokio::sync::Mutex::new(rx))))
+    } else {
+        (None, None)
+    };
+    let mut base_config = base_config;
+    if let Some(rx) = step_rx_arc {
+        base_config.step_mode = true;
+        base_config.step_rx = Some(rx);
+    }
+
+    let result = run_tui(&mut terminal, agent.clone(), model_id, base_config, cli.vim, step_tx).await;
 
     // Always restore terminal even on error.
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), DisableBracketedPaste, LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), DisableBracketedPaste, DisableMouseCapture, LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     if result.is_ok() {
@@ -2094,8 +2114,13 @@ async fn run_tui(
     model_id: ModelId,
     base_config: AgentConfig,
     vim: bool,
+    step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
 ) -> Result<()> {
     let mut app = if vim { App::with_vim() } else { App::new() };
+    // Wire step-mode sender into app so it can unblock the agent.
+    if let Some(tx) = step_tx {
+        app.set_step_tx(tx);
+    }
 
     // Show which model is active in the status bar and set the context limit.
     app.status_mut().model = model_id.to_string();
@@ -2326,6 +2351,9 @@ async fn run_tui(
                     Some(Ok(Event::Paste(text))) => {
                         app.handle_paste(&text);
                     }
+                    Some(Ok(Event::Mouse(mouse_event))) => {
+                        app.handle_mouse(mouse_event);
+                    }
                     Some(Ok(Event::Resize(_, _))) => {
                         // Terminal resized; the next draw will pick up the new size.
                     }
@@ -2382,6 +2410,9 @@ async fn run_tui(
 
         app.tick();
     }
+
+    // Persist any in-progress input for next session.
+    app.save_draft();
 
     // Generate and write the session report on exit.
     write_session_report(

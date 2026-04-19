@@ -99,6 +99,8 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
+        step_mode: false,
+        step_rx: None,
     }
 }
 

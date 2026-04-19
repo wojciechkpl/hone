@@ -34,6 +34,8 @@ fn make_config(tokens: Vec<String>) -> AgentConfig {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
+        step_mode: false,
+        step_rx: None,
     }
 }
 
@@ -174,6 +176,8 @@ async fn test_ensemble_handles_candidate_failure() {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
+        step_mode: false,
+        step_rx: None,
     };
 
     let ensemble = AgentEnsemble::new(failing_config, vec![0.0, 0.3]);

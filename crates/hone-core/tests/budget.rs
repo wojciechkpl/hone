@@ -54,6 +54,8 @@ async fn test_budget_cap_blocks_new_turn() {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
+        step_mode: false,
+        step_rx: None,
     };
 
     let mut agent = Agent::new(config);

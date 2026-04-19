@@ -1,6 +1,7 @@
 pub mod agent_rail;
 pub mod code_block;
 pub mod command_palette;
+pub mod debugger;
 pub mod conversation;
 pub mod diff_block;
 pub mod file_preview;
@@ -9,6 +10,7 @@ pub mod help;
 pub mod history_search;
 pub mod input_widget;
 pub mod markdown;
+pub mod prompt_mirror;
 pub mod root;
 pub mod search_bar;
 pub mod session_anatomy;

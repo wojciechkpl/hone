@@ -39,6 +39,8 @@ fn base_config(provider: Arc<MockProvider>) -> AgentConfig {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
+        step_mode: false,
+        step_rx: None,
     }
 }
 
@@ -387,6 +389,8 @@ fn panic_agent_config() -> AgentConfig {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
+        step_mode: false,
+        step_rx: None,
     }
 }
 

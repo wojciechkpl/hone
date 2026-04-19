@@ -95,19 +95,35 @@ pub enum AgentEvent {
     ModelInfo {
         context_window: u32,
     },
+    /// Emitted in step mode just before a sequential tool call executes.
+    /// The agent is paused and will not proceed until it receives a StepAction.
+    ToolCallPaused {
+        id: String,
+        name: String,
+        args: serde_json::Value,
+    },
     /// Emitted once per turn when proactive context injection fires.
     ContextInjected {
         strategy: String,
         tokens_used: u32,
         /// (file_path, bm25_score) pairs from tier-2 BM25 retrieval.
-        /// Empty when confidence was Low (tier-2 did not fire).
         bm25_hits: Vec<(String, f32)>,
         /// "High", "Medium", or "Low"
         confidence: String,
     },
     /// Emitted once per turn when the memory store returns relevant entries.
     MemoryRecalled {
-        /// (memory_id, short_snippet <= 80 chars) pairs.
+        /// (memory_id, short_snippet ≤ 80 chars) pairs.
         entries: Vec<(String, String)>,
     },
+}
+
+/// Action sent from the TUI to the agent when step mode is active and the
+/// agent is paused before a tool call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StepAction {
+    /// Execute the tool call normally.
+    Proceed,
+    /// Skip the tool call; the agent receives an empty/stub result.
+    Skip,
 }

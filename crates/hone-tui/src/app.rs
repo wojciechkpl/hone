@@ -154,12 +154,21 @@ pub struct App {
     pub(crate) anatomy_tab: usize,
     /// Vertical scroll offset within the anatomy overlay.
     pub(crate) anatomy_scroll: usize,
+    // --- Prompt Mirror (Ctrl+M) ---------------------------------------------
+    pub mirror_open: bool,
+    pub(crate) mirror_scroll: usize,
+    // --- Agent Debugger / step mode -----------------------------------------
+    pub debugger_open: bool,
+    pub(crate) debugger_paused_name: Option<String>,
+    pub(crate) debugger_paused_args: Option<serde_json::Value>,
+    pub(crate) debugger_paused_id: Option<String>,
+    pub(crate) step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
 }
 
 impl App {
     /// Create a new, empty application.
     pub fn new() -> Self {
-        Self {
+        let mut app = Self {
             state: AppState::Idle,
             input: InputState::new(),
             messages: Vec::new(),
@@ -211,7 +220,24 @@ impl App {
             anatomy_open: false,
             anatomy_tab: 0,
             anatomy_scroll: 0,
+            mirror_open: false,
+            mirror_scroll: 0,
+            debugger_open: false,
+            debugger_paused_name: None,
+            debugger_paused_args: None,
+            debugger_paused_id: None,
+            step_tx: None,
+        };
+        // Restore draft from previous session if present.
+        let draft_file = draft_path();
+        if let Ok(content) = std::fs::read_to_string(&draft_file) {
+            if !content.is_empty() {
+                app.input.buffer = content.trim_end_matches('\n').to_string();
+                app.input.cursor_position = app.input.buffer.len();
+                let _ = std::fs::remove_file(&draft_file);
+            }
         }
+        app
     }
 
     /// Create a new application with vim mode pre-enabled (for `--vim` flag).
@@ -520,6 +546,16 @@ impl App {
 
     /// Process a terminal key event and update state accordingly.
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // Debugger overlay takes highest priority.
+        if self.debugger_open {
+            self.handle_key_debugger(key);
+            return;
+        }
+        // Prompt Mirror overlay.
+        if self.mirror_open {
+            self.handle_key_mirror(key);
+            return;
+        }
         // Session Anatomy overlay consumes all keys while open.
         if self.anatomy_open {
             self.handle_key_anatomy(key);
@@ -616,6 +652,11 @@ impl App {
             KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.anatomy_open = !self.anatomy_open;
                 self.anatomy_scroll = 0;
+            }
+            // Ctrl+M — toggle Prompt Mirror overlay.
+            KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.mirror_open = !self.mirror_open;
+                self.mirror_scroll = 0;
             }
             // Ctrl+R — toggle agent rail sidebar.
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -978,6 +1019,86 @@ impl App {
             }
             KeyCode::Char('g') => { self.anatomy_scroll = 0; }
             KeyCode::Char('G') => { self.anatomy_scroll = usize::MAX / 2; }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Prompt Mirror key handling
+    // -----------------------------------------------------------------------
+    pub fn handle_key_mirror(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => { self.mirror_open = false; }
+            KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.mirror_open = false;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.mirror_scroll = self.mirror_scroll.saturating_add(1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.mirror_scroll = self.mirror_scroll.saturating_sub(1);
+            }
+            KeyCode::Char('g') => { self.mirror_scroll = 0; }
+            KeyCode::Char('G') => { self.mirror_scroll = usize::MAX / 2; }
+            _ => {}
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Debugger key handling
+    // -----------------------------------------------------------------------
+    pub fn handle_key_debugger(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char(' ') | KeyCode::Enter => {
+                if let Some(tx) = &self.step_tx {
+                    let _ = tx.try_send(hone_proto::StepAction::Proceed);
+                }
+                self.debugger_open = false;
+            }
+            KeyCode::Char('s') => {
+                if let Some(tx) = &self.step_tx {
+                    let _ = tx.try_send(hone_proto::StepAction::Skip);
+                }
+                self.debugger_open = false;
+            }
+            KeyCode::Esc => {
+                if let Some(tx) = &self.step_tx {
+                    let _ = tx.try_send(hone_proto::StepAction::Proceed);
+                }
+                self.debugger_open = false;
+            }
+            _ => {}
+        }
+    }
+
+    pub fn set_step_tx(&mut self, tx: tokio::sync::mpsc::Sender<hone_proto::StepAction>) {
+        self.step_tx = Some(tx);
+    }
+
+    // -----------------------------------------------------------------------
+    // Draft persistence
+    // -----------------------------------------------------------------------
+    pub fn save_draft(&self) {
+        if self.input.buffer.is_empty() {
+            let _ = std::fs::remove_file(draft_path());
+            return;
+        }
+        let path = draft_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, self.input.buffer.as_bytes());
+    }
+
+    pub fn handle_mouse(&mut self, event: crossterm::event::MouseEvent) {
+        use crossterm::event::MouseEventKind;
+        match event.kind {
+            MouseEventKind::ScrollDown => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(3);
+            }
+            MouseEventKind::ScrollUp => {
+                self.scroll_offset = self.scroll_offset.saturating_add(3);
+            }
             _ => {}
         }
     }
@@ -1861,6 +1982,13 @@ impl App {
                 }
             }
 
+            AgentEvent::ToolCallPaused { id, name, args } => {
+                self.debugger_paused_id = Some(id);
+                self.debugger_paused_name = Some(name);
+                self.debugger_paused_args = Some(args);
+                self.debugger_open = true;
+            }
+
             // Forward-compat: unknown AgentEvent variants are silently ignored by the TUI.
             _ => {}
         }
@@ -1887,6 +2015,12 @@ pub(crate) fn palette_matches(name: &str, description: &str, query: &str) -> boo
 // ---------------------------------------------------------------------------
 
 /// Detect an appropriate test command for `dir` based on project manifests.
+fn draft_path() -> std::path::PathBuf {
+    std::env::var("HOME")
+        .map(|h| std::path::PathBuf::from(h).join(".local/state/hone/draft"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/hone/draft"))
+}
+
 fn detect_test_cmd_for_dir(dir: &std::path::Path) -> Option<String> {
     if dir.join("Cargo.toml").exists() {
         return Some("cargo test".to_string());
