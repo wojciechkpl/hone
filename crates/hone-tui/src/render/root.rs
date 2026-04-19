@@ -16,6 +16,7 @@ use crate::{
         file_preview::FilePreviewWidget,
         header::render_header,
         help::HelpOverlay,
+        history_search::render_history_search,
         input_widget::InputWidget,
         splash::SplashWidget,
         status_bar::render_status_bar,
@@ -54,6 +55,9 @@ pub fn render(app: &App, frame: &mut Frame) {
 
     // Autocomplete dropdown above the input area
     render_autocomplete(app, frame, chunks[2]);
+
+    // History-search overlay above the input area (shown when Ctrl+F is active)
+    render_history_search(app, frame, chunks[2]);
 
     if app.show_help() {
         render_help_overlay(app, frame, area);

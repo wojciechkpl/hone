@@ -55,6 +55,9 @@ pub struct StatusInfo {
     pub elapsed_secs: u64,
     /// Health of the model provider.
     pub provider_status: ProviderStatus,
+    /// Incremented each render tick (~10fps). Used to rotate status-bar hints
+    /// every 40 ticks (≈4 seconds).
+    pub hint_tick: usize,
 }
 
 impl Default for StatusInfo {
@@ -73,6 +76,7 @@ impl Default for StatusInfo {
             turn_count: 0,
             elapsed_secs: 0,
             provider_status: ProviderStatus::Connected,
+            hint_tick: 0,
         }
     }
 }

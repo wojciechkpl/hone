@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 use crate::{
     animation::AnimationState,
     commands::{Command, TddSubcommand, parse_inline_agent},
+    history::PromptHistory,
     input::InputState,
     layout::{FocusTarget, LayoutMode},
     message::{DisplayMessage, DisplayRole},
@@ -112,11 +113,24 @@ pub struct App {
     /// Currently highlighted row in the autocomplete dropdown (0-based).
     /// `None` means no row is selected.
     pub(crate) completion_index: Option<usize>,
+    /// Index of the message that has keyboard focus in the conversation pane.
+    /// `None` means no message is focused.
+    pub(crate) focus_msg_index: Option<usize>,
     /// Set by Escape during WaitingForResponse; the event loop aborts the task
     /// and calls cancel_turn().
     pub(crate) pending_cancel: bool,
     /// Message typed while a turn was active; restored to the input box on Done.
     pub(crate) queued_message: Option<String>,
+
+    // --- Prompt history -----------------------------------------------------
+    /// Persistent per-session prompt history (Up/Down navigation, Ctrl+F search).
+    pub(crate) history: PromptHistory,
+    /// Whether the history-search overlay is currently open.
+    pub(crate) history_search_open: bool,
+    /// The query string currently typed in the history-search overlay.
+    pub(crate) history_search_query: String,
+    /// Currently highlighted row in the history-search overlay (0-based, None = none).
+    pub(crate) history_search_index: Option<usize>,
 }
 
 impl App {
@@ -157,8 +171,13 @@ impl App {
             rail_scroll: 0,
             pending_tool_start: None,
             completion_index: None,
+            focus_msg_index: None,
             pending_cancel: false,
             queued_message: None,
+            history: PromptHistory::load(),
+            history_search_open: false,
+            history_search_query: String::new(),
+            history_search_index: None,
         }
     }
 
@@ -302,6 +321,23 @@ impl App {
         self.preview_path = path;
     }
 
+    /// Return the current conversation message focus index.
+    pub fn focus_msg_index(&self) -> Option<usize> {
+        self.focus_msg_index
+    }
+
+    /// Toggle `is_collapsed` on the currently focused message if it is a `ToolResult`.
+    /// Non-ToolResult messages are not collapsed regardless of the flag.
+    fn toggle_focused_message_collapse(&mut self) {
+        if let Some(idx) = self.focus_msg_index {
+            if let Some(msg) = self.messages.get_mut(idx) {
+                if matches!(msg.role, DisplayRole::ToolResult) {
+                    msg.is_collapsed = !msg.is_collapsed;
+                }
+            }
+        }
+    }
+
     // --- Agent rail ---------------------------------------------------------
 
     /// Toggle the agent rail sidebar on/off.
@@ -387,6 +423,9 @@ impl App {
 
         // Sync elapsed time into StatusInfo so the status bar can render it.
         self.status.elapsed_secs = self.animation.elapsed_secs();
+
+        // Advance hint rotation tick.
+        self.status.hint_tick = self.status.hint_tick.wrapping_add(1);
 
         // Auto-dismiss splash after SPLASH_DURATION.
         if self.show_splash {
@@ -496,9 +535,22 @@ impl App {
 
     /// Non-vim key handling (also used as the passthrough target from vim Insert mode).
     fn handle_key_normal(&mut self, key: KeyEvent) {
+        // --- History-search overlay intercepts most keys when open. -----------
+        if self.history_search_open {
+            self.handle_key_history_search(key);
+            return;
+        }
+
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
+            }
+            // Ctrl+F — open history-search overlay.
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.history_search_open = true;
+                self.history_search_query.clear();
+                self.history_search_index = None;
+                return;
             }
             // Ctrl+R — toggle agent rail sidebar.
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -520,6 +572,11 @@ impl App {
                 self.input.insert_char('\n');
             }
             KeyCode::Enter => {
+                // When conversation pane is focused, toggle collapse on the focused message.
+                if self.focus == FocusTarget::Conversation {
+                    self.toggle_focused_message_collapse();
+                    return;
+                }
                 // Accept highlighted completion if one is selected.
                 let (matches, sigil) = self.active_completions();
                 let count = matches.len().min(8);
@@ -534,26 +591,95 @@ impl App {
                 }
                 self.submit_input();
             }
+            KeyCode::Char(' ') if self.focus == FocusTarget::Conversation => {
+                self.toggle_focused_message_collapse();
+            }
+            KeyCode::Char('j') if self.focus == FocusTarget::Conversation => {
+                let count = self.messages.len();
+                if count > 0 {
+                    self.focus_msg_index = Some(match self.focus_msg_index {
+                        None => 0,
+                        Some(i) => (i + 1).min(count - 1),
+                    });
+                }
+            }
+            KeyCode::Char('k') if self.focus == FocusTarget::Conversation => {
+                if let Some(i) = self.focus_msg_index {
+                    self.focus_msg_index = Some(i.saturating_sub(1));
+                }
+            }
             KeyCode::Up => {
+                // When conversation pane is focused, Up navigates focus_msg_index.
+                if self.focus == FocusTarget::Conversation {
+                    if let Some(i) = self.focus_msg_index {
+                        self.focus_msg_index = Some(i.saturating_sub(1));
+                    }
+                    return;
+                }
                 let (matches, _) = self.active_completions();
                 let count = matches.len().min(8);
                 if count > 0 {
+                    // Autocomplete popup is open — navigate it.
                     self.completion_index = Some(match self.completion_index {
                         None | Some(0) => count - 1,
                         Some(i) => i - 1,
                     });
+                } else if !self.input.buffer.starts_with('/')
+                    && !self.input.buffer.starts_with('@')
+                {
+                    // No autocomplete and no sigil prefix — navigate history.
+                    let live = self.input.buffer.clone();
+                    if let Some(entry) = self.history.prev(&live) {
+                        self.input.buffer = entry.to_string();
+                        self.input.cursor_position = self.input.buffer.len();
+                    }
                 } else {
+                    // Sigil prefix with no completion — scroll conversation.
                     self.scroll_offset = self.scroll_offset.saturating_add(1);
                 }
             }
             KeyCode::Down => {
+                // When conversation pane is focused, Down navigates focus_msg_index.
+                if self.focus == FocusTarget::Conversation {
+                    let count = self.messages.len();
+                    if count > 0 {
+                        self.focus_msg_index = Some(match self.focus_msg_index {
+                            None => 0,
+                            Some(i) => (i + 1).min(count - 1),
+                        });
+                    }
+                    return;
+                }
                 let (matches, _) = self.active_completions();
                 let count = matches.len().min(8);
                 if count > 0 {
+                    // Autocomplete popup is open — navigate it.
                     self.completion_index = Some(match self.completion_index {
                         None => 0,
                         Some(i) => (i + 1) % count,
                     });
+                } else if !self.input.buffer.starts_with('/')
+                    && !self.input.buffer.starts_with('@')
+                    && self.history.is_navigating()
+                {
+                    // In history navigation mode — go forward.
+                    match self.history.next() {
+                        Some(entry) => {
+                            self.input.buffer = entry.to_string();
+                            self.input.cursor_position = self.input.buffer.len();
+                        }
+                        None => {
+                            // Past the end — restore the live draft.
+                            let draft = self.history.draft().to_string();
+                            self.input.buffer = draft;
+                            self.input.cursor_position = self.input.buffer.len();
+                        }
+                    }
+                } else if !self.input.buffer.starts_with('/')
+                    && !self.input.buffer.starts_with('@')
+                {
+                    // Not in history mode and no autocomplete — scroll conversation.
+                    self.scroll_offset = self.scroll_offset.saturating_sub(1);
                 } else {
                     self.scroll_offset = self.scroll_offset.saturating_sub(1);
                 }
@@ -602,6 +728,62 @@ impl App {
             }
             KeyCode::PageDown => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(10);
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle a key event while the history-search overlay is open.
+    fn handle_key_history_search(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                // Cancel — close overlay, leave input unchanged.
+                self.history_search_open = false;
+                self.history_search_index = None;
+            }
+            KeyCode::Enter => {
+                // Accept the highlighted entry (or the first match).
+                let matches = self.history.search(&self.history_search_query, 8);
+                let idx = self.history_search_index.unwrap_or(0);
+                if let Some(entry) = matches.get(idx) {
+                    let text = (*entry).to_string();
+                    self.input.buffer = text;
+                    self.input.cursor_position = self.input.buffer.len();
+                }
+                self.history_search_open = false;
+                self.history_search_index = None;
+            }
+            KeyCode::Up => {
+                // Move selection up (toward index 0 = most recent).
+                let matches = self.history.search(&self.history_search_query, 8);
+                let count = matches.len();
+                if count > 0 {
+                    self.history_search_index = Some(match self.history_search_index {
+                        None | Some(0) => 0,
+                        Some(i) => i - 1,
+                    });
+                }
+            }
+            KeyCode::Down => {
+                // Move selection down (toward older entries).
+                let matches = self.history.search(&self.history_search_query, 8);
+                let count = matches.len();
+                if count > 0 {
+                    self.history_search_index = Some(match self.history_search_index {
+                        None => 0,
+                        Some(i) => (i + 1).min(count - 1),
+                    });
+                }
+            }
+            KeyCode::Backspace => {
+                self.history_search_query.pop();
+                // Reset selection when query changes.
+                self.history_search_index = None;
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.history_search_query.push(c);
+                // Reset selection when query changes.
+                self.history_search_index = None;
             }
             _ => {}
         }
@@ -683,6 +865,7 @@ impl App {
         }
 
         // Plain message — add it to the conversation and start waiting.
+        self.history.push(&text);
         self.messages.push(DisplayMessage::new(DisplayRole::User, text));
         self.state = AppState::WaitingForResponse;
     }
@@ -1801,5 +1984,170 @@ mod tests {
         app.cancel_turn();
         assert!(app.current_turn.is_none(), "cancel_turn must clear current_turn");
         assert!(app.pending_tool_start.is_none(), "cancel_turn must clear pending_tool_start");
+    }
+
+    // -----------------------------------------------------------------------
+    // Feature A: tool-card collapse toggle
+    // -----------------------------------------------------------------------
+
+    /// a) New DisplayMessage for ToolResult role has is_collapsed=true by default.
+    #[test]
+    fn tool_result_message_is_collapsed_by_default() {
+        let msg = DisplayMessage::new(DisplayRole::ToolResult, "output data");
+        assert!(msg.is_collapsed, "ToolResult messages must start collapsed");
+    }
+
+    /// a) Non-ToolResult messages are NOT collapsed by default.
+    #[test]
+    fn user_message_is_not_collapsed_by_default() {
+        let msg = DisplayMessage::new(DisplayRole::User, "hello");
+        assert!(!msg.is_collapsed, "User messages must not start collapsed");
+    }
+
+    #[test]
+    fn assistant_message_is_not_collapsed_by_default() {
+        let msg = DisplayMessage::new(DisplayRole::Assistant, "hello");
+        assert!(!msg.is_collapsed, "Assistant messages must not start collapsed");
+    }
+
+    /// b) App has a focus_msg_index: Option<usize> field, defaults to None.
+    #[test]
+    fn app_focus_msg_index_defaults_to_none() {
+        let app = App::new();
+        assert!(app.focus_msg_index.is_none(), "focus_msg_index must default to None");
+    }
+
+    /// c) When FocusTarget::Conversation and j pressed, focus_msg_index increments.
+    #[test]
+    fn j_key_advances_focus_msg_index_in_conversation_pane() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.focus = FocusTarget::Conversation;
+        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg0"));
+        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg1"));
+        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg2"));
+
+        // First j: None → 0
+        app.handle_key(make_key(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.focus_msg_index, Some(0));
+
+        // Second j: 0 → 1
+        app.handle_key(make_key(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.focus_msg_index, Some(1));
+    }
+
+    /// c) Down arrow also advances focus_msg_index when Conversation focused.
+    #[test]
+    fn down_key_advances_focus_msg_index_in_conversation_pane() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.focus = FocusTarget::Conversation;
+        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg0"));
+        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg1"));
+
+        app.handle_key(make_key(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.focus_msg_index, Some(0));
+
+        app.handle_key(make_key(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.focus_msg_index, Some(1));
+    }
+
+    /// c) j floors at last message index (no wrap-around past the end).
+    #[test]
+    fn j_key_floors_at_last_message() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.focus = FocusTarget::Conversation;
+        app.messages.push(DisplayMessage::new(DisplayRole::System, "only"));
+        app.focus_msg_index = Some(0);
+
+        app.handle_key(make_key(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.focus_msg_index, Some(0), "j must not advance past the last message");
+    }
+
+    /// d) When FocusTarget::Conversation and k pressed, focus_msg_index decrements (floor 0).
+    #[test]
+    fn k_key_decrements_focus_msg_index_in_conversation_pane() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.focus = FocusTarget::Conversation;
+        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg0"));
+        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg1"));
+        app.focus_msg_index = Some(1);
+
+        app.handle_key(make_key(KeyCode::Char('k'), KeyModifiers::NONE));
+        assert_eq!(app.focus_msg_index, Some(0));
+    }
+
+    /// d) k is floored at 0 (does not underflow).
+    #[test]
+    fn k_key_floors_at_zero() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.focus = FocusTarget::Conversation;
+        app.messages.push(DisplayMessage::new(DisplayRole::System, "only"));
+        app.focus_msg_index = Some(0);
+
+        app.handle_key(make_key(KeyCode::Char('k'), KeyModifiers::NONE));
+        assert_eq!(app.focus_msg_index, Some(0), "k must floor at 0");
+    }
+
+    /// e) Enter on a focused collapsed ToolResult message sets is_collapsed=false.
+    #[test]
+    fn enter_expands_focused_collapsed_tool_result() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.focus = FocusTarget::Conversation;
+        app.messages.push(DisplayMessage::new(DisplayRole::ToolResult, "result data\nline two\nline three"));
+        app.focus_msg_index = Some(0);
+        assert!(app.messages[0].is_collapsed, "message must start collapsed");
+
+        app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(!app.messages[0].is_collapsed, "Enter must expand a collapsed ToolResult");
+    }
+
+    /// f) Enter on a focused expanded ToolResult message sets is_collapsed=true (toggle).
+    #[test]
+    fn enter_collapses_focused_expanded_tool_result() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.focus = FocusTarget::Conversation;
+        let mut msg = DisplayMessage::new(DisplayRole::ToolResult, "result data");
+        msg.is_collapsed = false;
+        app.messages.push(msg);
+        app.focus_msg_index = Some(0);
+
+        app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.messages[0].is_collapsed, "Enter must collapse an expanded ToolResult");
+    }
+
+    /// Space also toggles collapse on a focused ToolResult.
+    #[test]
+    fn space_toggles_focused_tool_result_collapse() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.focus = FocusTarget::Conversation;
+        app.messages.push(DisplayMessage::new(DisplayRole::ToolResult, "result"));
+        app.focus_msg_index = Some(0);
+        assert!(app.messages[0].is_collapsed);
+
+        app.handle_key(make_key(KeyCode::Char(' '), KeyModifiers::NONE));
+        assert!(!app.messages[0].is_collapsed, "Space must expand a collapsed ToolResult");
+    }
+
+    /// g) Non-ToolResult messages (User, Assistant) are not toggled by Enter.
+    #[test]
+    fn enter_does_not_toggle_non_tool_result_message() {
+        let mut app = App::new();
+        app.show_splash = false;
+        app.focus = FocusTarget::Conversation;
+        app.messages.push(DisplayMessage::new(DisplayRole::User, "hello"));
+        app.focus_msg_index = Some(0);
+        assert!(!app.messages[0].is_collapsed);
+
+        app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
+        // Enter on a User message should NOT change is_collapsed (stays false).
+        assert!(!app.messages[0].is_collapsed,
+            "Enter on User message must not change is_collapsed");
     }
 }

@@ -14,6 +14,10 @@ use crate::{
 
 use super::tool_call::render_tool_call;
 
+/// Maximum number of lines rendered for a ToolResult message before the
+/// output is truncated and a "[+N more lines]" trailer is appended.
+const MAX_TOOL_PREVIEW_LINES: usize = 40;
+
 /// Widget that renders the full conversation message list.
 pub struct ConversationWidget<'a> {
     pub messages: &'a [DisplayMessage],
@@ -57,7 +61,12 @@ impl<'a> ConversationWidget<'a> {
             }
             DisplayRole::ToolResult => {
                 let is_error = msg.content.starts_with("error:");
-                render_tool_call("tool-result", &msg.content, is_error, theme)
+                if msg.is_collapsed {
+                    render_tool_result_collapsed(&msg.content, is_error, theme)
+                } else {
+                    let content = truncate_tool_output(&msg.content, theme);
+                    render_tool_call("tool-result", &*content, is_error, theme)
+                }
             }
             DisplayRole::Error => {
                 let style = Style::default().fg(theme.role_error);
@@ -142,6 +151,53 @@ impl<'a> ConversationWidget<'a> {
     }
 }
 
+/// Render a collapsed ToolResult as a single summary line.
+///
+/// Shows `▶ <first line of content> [enter to expand]` (or `> ` in NO_COLOR mode).
+fn render_tool_result_collapsed(content: &str, is_error: bool, theme: &Theme) -> Vec<Line<'static>> {
+    let border_color = if is_error {
+        theme.role_error
+    } else {
+        theme.role_tool_result
+    };
+
+    let border_style = Style::default().fg(border_color);
+    let content_style = Style::default().fg(theme.text_secondary);
+    let hint_style = Style::default().fg(theme.text_muted);
+
+    let arrow = if theme.no_color { "> " } else { "▶ " };
+    let first_line = content.lines().next().unwrap_or("").to_string();
+    let hint = " [enter to expand]";
+
+    let line = Line::from(vec![
+        Span::styled(arrow.to_string(), border_style),
+        Span::styled(first_line, content_style),
+        Span::styled(hint.to_string(), hint_style),
+    ]);
+
+    vec![line]
+}
+
+/// Truncate tool output to `MAX_TOOL_PREVIEW_LINES` lines.
+///
+/// If the content has more than `MAX_TOOL_PREVIEW_LINES` lines, return a new
+/// `String` with only the first `MAX_TOOL_PREVIEW_LINES` lines followed by a
+/// dim "[+N more lines]" trailer line.  Otherwise return the original content
+/// unchanged (no allocation).
+fn truncate_tool_output<'a>(content: &'a str, _theme: &Theme) -> std::borrow::Cow<'a, str> {
+    let total: usize = content.lines().count();
+    if total <= MAX_TOOL_PREVIEW_LINES {
+        return std::borrow::Cow::Borrowed(content);
+    }
+    let truncated: String = content
+        .lines()
+        .take(MAX_TOOL_PREVIEW_LINES)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let remaining = total - MAX_TOOL_PREVIEW_LINES;
+    std::borrow::Cow::Owned(format!("{truncated}\n[+{remaining} more lines]"))
+}
+
 impl<'a> Widget for ConversationWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let all_lines = self.build_lines();
@@ -168,5 +224,104 @@ impl<'a> Widget for ConversationWidget<'a> {
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Widget};
+    use crate::{
+        animation::AnimationState,
+        message::{DisplayMessage, DisplayRole},
+        theme::Theme,
+    };
+    use super::ConversationWidget;
+
+    fn render_conversation_to_string(messages: &[DisplayMessage], width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = Theme::crimson();
+        let anim = AnimationState::new();
+
+        terminal.draw(|f| {
+            let widget = ConversationWidget::new(messages, &theme, &anim, 0);
+            f.render_widget(widget, Rect::new(0, 0, width, height));
+        }).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let mut result = String::new();
+        for row in 0..height {
+            for col in 0..width {
+                let ch = buf.cell((col, row))
+                    .map(|c| c.symbol().chars().next().unwrap_or(' '))
+                    .unwrap_or(' ');
+                result.push(ch);
+            }
+            result.push('\n');
+        }
+        result
+    }
+
+    /// A collapsed ToolResult shows the triangle arrow and first line only.
+    #[test]
+    fn collapsed_tool_result_shows_arrow_and_first_line() {
+        let mut msg = DisplayMessage::new(DisplayRole::ToolResult, "first line\nsecond line\nthird line");
+        msg.is_collapsed = true;
+
+        let rendered = render_conversation_to_string(&[msg], 80, 5);
+
+        assert!(rendered.contains('▶'), "collapsed tool result must show '▶' arrow");
+        assert!(rendered.contains("first line"), "collapsed tool result must show first line");
+    }
+
+    /// A collapsed ToolResult does NOT show lines beyond the first.
+    #[test]
+    fn collapsed_tool_result_hides_subsequent_lines() {
+        let mut msg = DisplayMessage::new(DisplayRole::ToolResult, "first line\nsecond line\nthird line");
+        msg.is_collapsed = true;
+
+        let rendered = render_conversation_to_string(&[msg], 80, 5);
+
+        assert!(!rendered.contains("second line"), "collapsed tool result must not show second line");
+        assert!(!rendered.contains("third line"), "collapsed tool result must not show third line");
+    }
+
+    /// A collapsed ToolResult shows the expand hint.
+    #[test]
+    fn collapsed_tool_result_shows_expand_hint() {
+        let mut msg = DisplayMessage::new(DisplayRole::ToolResult, "output");
+        msg.is_collapsed = true;
+
+        let rendered = render_conversation_to_string(&[msg], 80, 5);
+
+        assert!(rendered.contains("enter to expand"), "collapsed tool result must show expand hint");
+    }
+
+    /// An expanded ToolResult shows all content lines.
+    #[test]
+    fn expanded_tool_result_shows_all_lines() {
+        let mut msg = DisplayMessage::new(DisplayRole::ToolResult, "first line\nsecond line");
+        msg.is_collapsed = false;
+
+        let rendered = render_conversation_to_string(&[msg], 80, 10);
+
+        assert!(rendered.contains("first line"), "expanded tool result must show first line");
+        assert!(rendered.contains("second line"), "expanded tool result must show second line");
+    }
+
+    /// An expanded ToolResult does NOT show the `▶` collapse arrow or the expand hint.
+    #[test]
+    fn expanded_tool_result_does_not_show_collapsed_indicator() {
+        let mut msg = DisplayMessage::new(DisplayRole::ToolResult, "output content");
+        msg.is_collapsed = false;
+
+        let rendered = render_conversation_to_string(&[msg], 80, 10);
+
+        assert!(!rendered.contains('▶'), "expanded tool result must not show '▶'");
+        assert!(!rendered.contains("enter to expand"), "expanded tool result must not show expand hint");
     }
 }

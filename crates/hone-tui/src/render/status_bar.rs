@@ -6,6 +6,38 @@ use ratatui::{
 use crate::{animation::AnimationState, status::StatusInfo, theme::Theme};
 
 // ---------------------------------------------------------------------------
+// Rotating hints
+// ---------------------------------------------------------------------------
+
+/// Hints shown when the app is idle.
+const IDLE_HINTS: &[&str] = &[
+    "? /help",
+    "Ctrl+K palette",
+    "@ agent",
+    "/ commands",
+    "Ctrl+O sessions",
+];
+
+/// Hints shown when waiting for a response with no active tool.
+const WAITING_HINTS: &[&str] = &["Esc cancel", "Esc interrupt"];
+
+/// Hints shown when a tool is actively running.
+const TOOL_HINTS: &[&str] = &["Space toggle", "Enter expand"];
+
+/// Pick the current hint based on app state and tick counter.
+///
+/// Rotates every 40 ticks (~4 seconds at 10 fps).
+fn current_hint(hint_tick: usize, is_waiting: bool, active_tool: Option<&str>) -> &'static str {
+    let hints: &[&str] = match (is_waiting, active_tool) {
+        (true, Some(_)) => TOOL_HINTS,
+        (true, None) => WAITING_HINTS,
+        _ => IDLE_HINTS,
+    };
+    let idx = (hint_tick / 40) % hints.len();
+    hints[idx]
+}
+
+// ---------------------------------------------------------------------------
 // Bar rendering
 // ---------------------------------------------------------------------------
 
@@ -321,6 +353,11 @@ pub fn render_status_bar(
 
     // Right zone (resource gauges).
     spans.extend(right_zone(status, theme, tier));
+
+    // Rotating hint — always shown, muted style.
+    let hint = current_hint(status.hint_tick, is_waiting, status.active_tool.as_deref());
+    spans.push(sep(theme));
+    spans.push(muted(hint.to_string(), theme));
 
     // Provider health badge — always shown.
     spans.push(sep(theme));
@@ -645,5 +682,76 @@ mod tests {
         let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         assert!(!text.contains("thinking"), "thinking indicator must not appear when not waiting");
+    }
+
+    // -----------------------------------------------------------------------
+    // Feature B: rotating status-bar hints
+    // -----------------------------------------------------------------------
+
+    /// a) At tick=0 in Idle state, hint contains one of the known idle hint strings.
+    #[test]
+    fn hint_at_tick_zero_is_idle_hint() {
+        let status = StatusInfo { hint_tick: 0, ..Default::default() };
+        let theme = Theme::crimson();
+        let anim = AnimationState::new();
+        let line = render_status_bar(&status, &theme, &anim, 120, false);
+        let text = text_of(&line);
+
+        let known_idle: &[&str] = &["? /help", "Ctrl+K palette", "@ agent", "/ commands", "Ctrl+O sessions"];
+        let found = known_idle.iter().any(|h| text.contains(h));
+        assert!(found, "at tick=0 idle hint must be one of the known idle hints, got: {text}");
+    }
+
+    /// b) At tick=40 (after one rotation), hint contains a different idle hint string.
+    #[test]
+    fn hint_at_tick_40_is_second_idle_hint() {
+        let status0 = StatusInfo { hint_tick: 0, ..Default::default() };
+        let status40 = StatusInfo { hint_tick: 40, ..Default::default() };
+        let theme = Theme::crimson();
+        let anim = AnimationState::new();
+
+        let text0 = text_of(&render_status_bar(&status0, &theme, &anim, 120, false));
+        let text40 = text_of(&render_status_bar(&status40, &theme, &anim, 120, false));
+
+        assert_ne!(text0, text40, "hint must change between tick=0 and tick=40");
+    }
+
+    /// c) In WaitingForResponse with no tool, hint contains "Esc" (cancel hint).
+    #[test]
+    fn hint_while_waiting_no_tool_contains_esc() {
+        let status = StatusInfo { hint_tick: 0, ..Default::default() };
+        let theme = Theme::crimson();
+        let anim = AnimationState::new();
+        let line = render_status_bar(&status, &theme, &anim, 120, true); // is_waiting=true
+        let text = text_of(&line);
+
+        assert!(text.contains("Esc"), "waiting hint must contain 'Esc', got: {text}");
+    }
+
+    /// d) In WaitingForResponse with active_tool set, hint contains "Space" (expand hint).
+    #[test]
+    fn hint_while_waiting_with_tool_contains_space() {
+        let status = StatusInfo {
+            hint_tick: 0,
+            active_tool: Some("read_file".to_string()),
+            ..Default::default()
+        };
+        let theme = Theme::crimson();
+        let anim = AnimationState::new();
+        let line = render_status_bar(&status, &theme, &anim, 120, true); // is_waiting=true
+        let text = text_of(&line);
+
+        assert!(text.contains("Space"), "tool hint must contain 'Space', got: {text}");
+    }
+
+    /// hint_tick increments on each App::tick() call.
+    #[test]
+    fn app_tick_increments_hint_tick() {
+        use crate::app::App;
+        let mut app = App::new();
+        app.skip_splash();
+        let before = app.status.hint_tick;
+        app.tick();
+        assert_eq!(app.status.hint_tick, before + 1, "hint_tick must increment each tick");
     }
 }

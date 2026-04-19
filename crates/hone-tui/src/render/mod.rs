@@ -5,6 +5,7 @@ pub mod diff_block;
 pub mod file_preview;
 pub mod header;
 pub mod help;
+pub mod history_search;
 pub mod input_widget;
 pub mod root;
 pub mod splash;
