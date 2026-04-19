@@ -238,45 +238,73 @@ fn render_status_bar_area(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
-    let buf = &app.input().buffer;
+    let input_buf = &app.input().buffer;
 
-    let (matches, sigil): (Vec<&'static str>, char) = if buf.starts_with('/') && buf.len() >= 2 {
-        (Command::completions(&buf[1..]), '/')
-    } else if buf.starts_with('@') && buf.len() >= 2 {
-        (Command::agent_completions(&buf[1..]), '@')
+    let (matches, sigil): (Vec<&'static str>, char) = if input_buf.starts_with('/') {
+        (Command::completions(&input_buf[1..]), '/')
+    } else if input_buf.starts_with('@') {
+        (Command::agent_completions(&input_buf[1..]), '@')
     } else {
         return;
     };
 
+    // Hide when no completions or the single match is already exact.
     if matches.is_empty()
-        || (matches.len() == 1 && format!("{sigil}{}", matches[0]) == *buf)
+        || (matches.len() == 1 && format!("{sigil}{}", matches[0]) == *input_buf)
     {
         return;
     }
 
     let theme = app.theme();
     let count = matches.len().min(8) as u16;
-    let popup_height = count + 2; // +2 for top/bottom border rows
-    let popup_y = input_area.y.saturating_sub(popup_height);
-    let popup_width = 36u16.min(input_area.width);
-    let popup_area = Rect::new(input_area.x + 1, popup_y, popup_width, popup_height);
+    // Popup height: one row per suggestion + top/bottom border.
+    let popup_height = count + 2;
+    let popup_width = 34u16.min(input_area.width.saturating_sub(2));
+    if popup_width < 6 || input_area.y < popup_height {
+        return; // not enough space
+    }
+    let popup_y = input_area.y - popup_height;
+    let popup_x = input_area.x + 1;
+    let area = Rect::new(popup_x, popup_y, popup_width, popup_height);
 
-    use ratatui::widgets::Clear;
-    frame.render_widget(Clear, popup_area);
+    let bg_style = Style::default().bg(theme.surface_overlay).fg(theme.text_primary);
+    let border_style = Style::default().bg(theme.surface_overlay).fg(theme.surface_border);
+    let buf = frame.buffer_mut();
 
-    let bg = Style::default().bg(theme.surface_overlay).fg(theme.text_primary);
-    let items: Vec<Line<'static>> = matches
-        .iter()
-        .take(8)
-        .map(|name| Line::from(Span::styled(format!(" {sigil}{name}"), bg)))
-        .collect();
+    // Fill background.
+    for row in 0..popup_height {
+        for col in 0..popup_width {
+            buf[(area.x + col, area.y + row)].set_char(' ').set_style(bg_style);
+        }
+    }
 
-    let block = Block::default()
-        .borders(ratatui::widgets::Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Rounded)
-        .border_style(Style::default().fg(theme.surface_border))
-        .style(Style::default().bg(theme.surface_overlay));
-    frame.render_widget(Paragraph::new(items).block(block), popup_area);
+    // Draw rounded border.
+    let right = area.x + popup_width - 1;
+    let bottom = area.y + popup_height - 1;
+    buf[(area.x, area.y)].set_char('╭').set_style(border_style);
+    buf[(right, area.y)].set_char('╮').set_style(border_style);
+    buf[(area.x, bottom)].set_char('╰').set_style(border_style);
+    buf[(right, bottom)].set_char('╯').set_style(border_style);
+    for col in 1..popup_width - 1 {
+        buf[(area.x + col, area.y)].set_char('─').set_style(border_style);
+        buf[(area.x + col, bottom)].set_char('─').set_style(border_style);
+    }
+    for row in 1..popup_height - 1 {
+        buf[(area.x, area.y + row)].set_char('│').set_style(border_style);
+        buf[(right, area.y + row)].set_char('│').set_style(border_style);
+    }
+
+    // Write suggestion lines inside the border.
+    let inner_width = (popup_width.saturating_sub(2)) as usize;
+    for (i, name) in matches.iter().take(count as usize).enumerate() {
+        let row = area.y + 1 + i as u16;
+        let text = format!(" {sigil}{name}");
+        let mut col = area.x + 1;
+        for ch in text.chars().take(inner_width) {
+            buf[(col, row)].set_char(ch).set_style(bg_style);
+            col += 1;
+        }
+    }
 }
 
 fn render_help_overlay(app: &App, frame: &mut Frame, area: Rect) {
