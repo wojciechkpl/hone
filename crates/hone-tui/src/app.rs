@@ -503,6 +503,12 @@ impl App {
         // Sync elapsed time into StatusInfo so the status bar can render it.
         self.status.elapsed_secs = self.animation.elapsed_secs();
 
+        // Sync turn-elapsed so the status bar can show "thinking… 5s".
+        self.status.turn_elapsed_secs = self
+            .turn_start
+            .map(|s| s.elapsed().as_secs())
+            .unwrap_or(0);
+
         // Advance hint rotation tick.
         self.status.hint_tick = self.status.hint_tick.wrapping_add(1);
 

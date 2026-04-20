@@ -236,8 +236,14 @@ fn center_zone(
         spans.push(accent(text, theme));
     } else if is_waiting {
         let ellipsis = if theme.no_color { "..." } else { "…" };
+        let elapsed = status.turn_elapsed_secs;
+        let text = if elapsed >= 2 {
+            format!("{spinner} thinking{ellipsis} {elapsed}s")
+        } else {
+            format!("{spinner} thinking{ellipsis}")
+        };
         spans.push(sep(theme));
-        spans.push(muted(format!("{spinner} thinking{ellipsis}"), theme));
+        spans.push(muted(text, theme));
     }
 
     spans
@@ -682,6 +688,30 @@ mod tests {
         let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         assert!(!text.contains("thinking"), "thinking indicator must not appear when not waiting");
+    }
+
+    #[test]
+    fn render_thinking_shows_elapsed_after_two_seconds() {
+        let mut status = StatusInfo::default();
+        status.turn_elapsed_secs = 5;
+        let theme = Theme::crimson();
+        let anim = AnimationState::new();
+        let line = render_status_bar(&status, &theme, &anim, 120, true);
+        let text = text_of(&line);
+        assert!(text.contains("thinking"), "thinking indicator present");
+        assert!(text.contains("5s"), "elapsed seconds shown when >= 2");
+    }
+
+    #[test]
+    fn render_thinking_hides_elapsed_below_threshold() {
+        let mut status = StatusInfo::default();
+        status.turn_elapsed_secs = 1;
+        let theme = Theme::crimson();
+        let anim = AnimationState::new();
+        let line = render_status_bar(&status, &theme, &anim, 120, true);
+        let text = text_of(&line);
+        assert!(text.contains("thinking"), "thinking indicator present");
+        assert!(!text.contains("1s"), "elapsed not shown below 2s threshold");
     }
 
     // -----------------------------------------------------------------------

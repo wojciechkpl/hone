@@ -53,6 +53,8 @@ pub struct StatusInfo {
     pub turn_count: u32,
     /// Seconds elapsed since session start (updated externally).
     pub elapsed_secs: u64,
+    /// Seconds elapsed since the current turn started (0 when idle).
+    pub turn_elapsed_secs: u64,
     /// Health of the model provider.
     pub provider_status: ProviderStatus,
     /// Incremented each render tick (~10fps). Used to rotate status-bar hints
@@ -75,6 +77,7 @@ impl Default for StatusInfo {
             phase: "Exploration".to_string(),
             turn_count: 0,
             elapsed_secs: 0,
+            turn_elapsed_secs: 0,
             provider_status: ProviderStatus::Connected,
             hint_tick: 0,
         }
