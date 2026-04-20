@@ -23,6 +23,7 @@ fn test_encode_done_event() {
             output: 20,
             cache_read: 0,
         },
+        cost_usd: 0.0,
     };
     let encoded = encode_event(&event, 42);
 

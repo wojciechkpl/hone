@@ -1235,7 +1235,7 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
                         "is_error": is_error,
                     }));
                 }
-                AgentEvent::Done { usage: u } => {
+                AgentEvent::Done { usage: u, .. } => {
                     usage = serde_json::json!({
                         "input": u.input,
                         "output": u.output,
@@ -2119,7 +2119,7 @@ fn record_outcome_for_event(
 ) {
     let Some(adaptive_ref) = adaptive else { return };
     match event {
-        AgentEvent::Done { usage } => {
+        AgentEvent::Done { usage, .. } => {
             if let Some(tier) = current_tier.take() {
                 let cost_usd = (usage.input as f64 * input_per_million
                     + usage.output as f64 * output_per_million)

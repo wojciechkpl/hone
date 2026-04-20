@@ -40,7 +40,8 @@ pub async fn check_binary_available(binary: &str) -> ProviderHealth {
 /// Build a prompt string from a list of `Message`s.
 ///
 /// Each message is prefixed with its role label so the CLI sees a clear
-/// conversation structure.
+/// conversation structure.  Tool calls on assistant messages and tool result
+/// IDs are appended so the CLI receives the full turn.
 pub fn messages_to_prompt(messages: &[Message]) -> String {
     let mut parts = Vec::with_capacity(messages.len());
 
@@ -53,7 +54,16 @@ pub fn messages_to_prompt(messages: &[Message]) -> String {
             // Forward-compat: unknown roles are labelled generically.
             _ => "UNKNOWN",
         };
-        let text = msg.content.as_text();
+        let mut text = msg.content.as_text().to_owned();
+        // Append tool calls for assistant messages so the CLI sees the full turn.
+        for tc in &msg.tool_calls {
+            let args = serde_json::to_string(&tc.arguments).unwrap_or_default();
+            text.push_str(&format!("\n[tool_use id={} name={} input={}]", tc.id, tc.name, args));
+        }
+        // For tool result messages, include the call ID for traceability.
+        if let Some(ref id) = msg.tool_call_id {
+            text = format!("[tool_result id={id}]\n{text}");
+        }
         parts.push(format!("{role_label}:\n{text}"));
     }
 

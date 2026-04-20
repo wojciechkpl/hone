@@ -140,6 +140,7 @@ fn spawn_claude_stream_with_stdin(mut cmd: Command, prompt: String) -> Pin<Box<d
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())   // capture instead of /dev/null
+            .kill_on_drop(true)       // kill subprocess when the task is aborted/dropped
             .spawn();
 
         let mut child = match child_result {
@@ -189,7 +190,16 @@ fn spawn_claude_stream_with_stdin(mut cmd: Command, prompt: String) -> Pin<Box<d
                         // Only forward lines that look like errors to avoid
                         // forwarding normal startup/status noise.
                         let lower = trimmed.to_ascii_lowercase();
-                        if lower.contains("error") || lower.contains("fatal") || lower.contains("fail") {
+                        // Forward stderr lines that look like fatal errors (start with a recognised
+                        // severity keyword). Avoid forwarding lines that merely mention "error" as
+                        // part of a status message (e.g. "0 failures").
+                        let is_error_line = lower.starts_with("error")
+                            || lower.starts_with("fatal")
+                            || lower.starts_with("uncaught")
+                            || lower.starts_with("panic")
+                            || (lower.contains("authentication") && lower.contains("fail"))
+                            || (lower.contains("unauthorized") || lower.contains("403"));
+                        if is_error_line {
                             let _ = stderr_tx.send(ProviderEvent::Error {
                                 message: format!("claude: {trimmed}"),
                             }).await;
@@ -216,6 +226,7 @@ fn spawn_claude_stream_with_stdin(mut cmd: Command, prompt: String) -> Pin<Box<d
 
                     match json.get("type").and_then(|t| t.as_str()) {
                         Some("assistant") => {
+                            last_text = String::new();  // reset for each assistant block
                             let content = json
                                 .get("message")
                                 .and_then(|m| m.get("content"))

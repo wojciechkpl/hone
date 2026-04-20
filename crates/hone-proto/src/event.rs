@@ -66,6 +66,8 @@ pub enum AgentEvent {
     /// The turn completed successfully.
     Done {
         usage: TokenUsage,
+        #[serde(default)]
+        cost_usd: f64,
     },
     /// An error occurred during the turn.
     Error {

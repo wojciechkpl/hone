@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -108,8 +109,8 @@ pub struct App {
     pub(crate) completed_turns: Vec<TurnLedger>,
     /// Rail scroll offset (j/k navigation within the rail).
     pub(crate) rail_scroll: usize,
-    /// Pending tool call ID → name mapping for ToolCallEnd duration tracking.
-    pub(crate) pending_tool_start: Option<(String, String, serde_json::Value)>,
+    /// Pending tool call ID → (name, args) mapping for ToolCallEnd duration tracking.
+    pub(crate) pending_tool_start: HashMap<String, (String, serde_json::Value)>,
     /// Currently highlighted row in the autocomplete dropdown (0-based).
     /// `None` means no row is selected.
     pub(crate) completion_index: Option<usize>,
@@ -215,7 +216,7 @@ impl App {
             current_turn: None,
             completed_turns: Vec::new(),
             rail_scroll: 0,
-            pending_tool_start: None,
+            pending_tool_start: HashMap::new(),
             completion_index: None,
             focus_msg_index: None,
             pending_cancel: false,
@@ -301,13 +302,16 @@ impl App {
 
     /// Immediately reset to Idle after the task has been aborted externally.
     pub fn cancel_turn(&mut self) {
+        for msg in &mut self.messages {
+            msg.is_active = false;
+        }
         if let Some(msg) = self.messages.last_mut() {
             msg.is_streaming = false;
         }
         self.status.active_tool = None;
         self.state = AppState::Idle;
         // Clear stale per-turn tracking so the next turn starts fresh.
-        self.pending_tool_start = None;
+        self.pending_tool_start.clear();
         self.current_turn = None;
         self.turn_start = None;
         self.messages.push(DisplayMessage::new(
@@ -1911,7 +1915,7 @@ impl App {
                 }
 
                 // Store pending tool start for duration tracking on ToolCallEnd.
-                self.pending_tool_start = Some((id, name, args));
+                self.pending_tool_start.insert(id.clone(), (name.clone(), args.clone()));
             }
 
             AgentEvent::ToolCallEnd { id, result, is_error, duration_ms, cache_hit } => {
@@ -1936,6 +1940,13 @@ impl App {
                     }
                 }
 
+                // Remove the pending start entry regardless of whether we have an active ledger.
+                let tool_name = self
+                    .pending_tool_start
+                    .remove(&id)
+                    .map(|(n, _)| n)
+                    .unwrap_or_default();
+
                 // Record tool call in the ledger.
                 if let Some(ledger) = &mut self.current_turn {
                     let error_str = if is_error {
@@ -1943,22 +1954,14 @@ impl App {
                     } else {
                         None
                     };
-                    // Find tool name from pending start.
-                    let tool_name = self
-                        .pending_tool_start
-                        .as_ref()
-                        .filter(|(start_id, _, _)| start_id == &id)
-                        .map(|(_, n, _)| n.clone())
-                        .unwrap_or_default();
                     ledger.record_tool_call(tool_name, duration_ms, cache_hit, error_str);
                 }
-                self.pending_tool_start = None;
 
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::ToolResult, content));
             }
 
-            AgentEvent::Done { usage } => {
+            AgentEvent::Done { usage, cost_usd } => {
                 // Seal the current turn ledger.
                 if let Some(ledger) = self.current_turn.take() {
                     self.completed_turns.push(ledger);
@@ -1971,12 +1974,7 @@ impl App {
                     }
                 }
                 self.status.token_count += usage.total();
-                // Update context window estimate from cumulative token usage.
-                self.status.context_tokens = usage.total();
-                // Estimate cost: $3/M input, $15/M output (Sonnet pricing).
-                let cost =
-                    (usage.input as f64 * 3.0 + usage.output as f64 * 15.0) / 1_000_000.0;
-                self.status.session_cost_usd += cost;
+                self.status.session_cost_usd += cost_usd;
                 self.status.active_tool = None;
                 self.status.turn_count += 1;
                 self.status.provider_status = ProviderStatus::Connected;
@@ -2428,14 +2426,18 @@ mod tests {
     }
 
     #[test]
-    fn cancel_turn_clears_stale_ledger_and_tool_start() {
+    fn cancel_turn_clears_stale_state() {
         let mut app = App::new();
         app.show_splash = false;
         app.current_turn = Some(TurnLedger::new(0));
-        app.pending_tool_start = Some(("id".into(), "read_file".into(), serde_json::Value::Null));
+        app.pending_tool_start.insert("id".into(), ("read_file".into(), serde_json::Value::Null));
+        let mut tool_msg = DisplayMessage::new(DisplayRole::ToolCall { name: "bash".into() }, String::new());
+        tool_msg.is_active = true;
+        app.messages.push(tool_msg);
         app.cancel_turn();
         assert!(app.current_turn.is_none(), "cancel_turn must clear current_turn");
-        assert!(app.pending_tool_start.is_none(), "cancel_turn must clear pending_tool_start");
+        assert!(app.pending_tool_start.is_empty(), "cancel_turn must clear pending_tool_start");
+        assert!(!app.messages.iter().any(|m| m.is_active), "cancel_turn must clear is_active on all messages");
     }
 
     // -----------------------------------------------------------------------

@@ -304,6 +304,7 @@ fn agent_event_variants_roundtrip() {
                 output: 50,
                 cache_read: 0,
             },
+            cost_usd: 0.0,
         },
         AgentEvent::Error {
             message: "boom".into(),

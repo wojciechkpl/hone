@@ -190,6 +190,7 @@ fn test_app_handle_done_event() {
             output: 5,
             cache_read: 0,
         },
+        cost_usd: 0.0,
     });
     assert!(matches!(app.state(), AppState::Idle));
     let msgs = app.messages();
@@ -516,8 +517,9 @@ fn test_cost_updates_on_done() {
             output: 500,
             cache_read: 0,
         },
+        cost_usd: 0.0105,
     });
-    // input: 1000 * $3/M = $0.003, output: 500 * $15/M = $0.0075 → total $0.0105
+    // cost_usd is now passed directly from the agent
     assert!(
         app.status().session_cost_usd > 0.0,
         "session_cost_usd should be positive after Done"

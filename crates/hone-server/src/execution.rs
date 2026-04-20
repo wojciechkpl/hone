@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn event_type_maps_all_variants() {
         assert_eq!(event_type(&AgentEvent::Token { text: "hi".into() }), "token");
-        assert_eq!(event_type(&AgentEvent::Done { usage: Default::default() }), "done");
+        assert_eq!(event_type(&AgentEvent::Done { usage: Default::default(), cost_usd: 0.0 }), "done");
         assert_eq!(
             event_type(&AgentEvent::Error { message: "oops".into() }),
             "error"
