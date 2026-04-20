@@ -9,7 +9,7 @@ use axum::Json;
 use futures::stream;
 use hone_core::{AgentConfig, AgentHandle, RetryConfig, SkeletonStrategy};
 use hone_proto::{AgentEvent, Message, ModelId, PricingEntry};
-use hone_providers::AnthropicProvider;
+use hone_providers::{AnthropicProvider, PricingTable};
 use hone_sandbox::NullSandbox;
 use hone_tools::{EditFileTool, GlobTool, GrepTool, ReadFileTool, ShellTool, ToolRegistry, WriteFileTool};
 use serde::Deserialize;
@@ -115,11 +115,18 @@ pub async fn run_handler(
                 max_tokens: None,
                 temperature: None,
                 budget_limit: None,
-                pricing: PricingEntry {
-                    model: model_id,
-                    input_per_million: 3.0,
-                    output_per_million: 15.0,
-                    cache_read_per_million: None,
+                pricing: {
+                    let table = PricingTable::default_table();
+                    let prefixed = ModelId::new(format!(
+                        "anthropic:{}",
+                        model_id.as_str()
+                    ));
+                    table.get(&prefixed).cloned().unwrap_or(PricingEntry {
+                        model: model_id.clone(),
+                        input_per_million: 3.0,
+                        output_per_million: 15.0,
+                        cache_read_per_million: None,
+                    })
                 },
                 working_dir,
                 memory_store: None,

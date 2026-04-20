@@ -14,7 +14,26 @@ impl PricingTable {
             entries: HashMap::new(),
         };
 
-        // Anthropic models
+        // Anthropic models (Claude 4.x)
+        table.insert(PricingEntry {
+            model: ModelId::new("anthropic:claude-opus-4-7"),
+            input_per_million: 15.0,
+            output_per_million: 75.0,
+            cache_read_per_million: Some(1.50),
+        });
+        table.insert(PricingEntry {
+            model: ModelId::new("anthropic:claude-sonnet-4-6"),
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+            cache_read_per_million: Some(0.30),
+        });
+        table.insert(PricingEntry {
+            model: ModelId::new("anthropic:claude-haiku-4-5-20251001"),
+            input_per_million: 0.80,
+            output_per_million: 4.0,
+            cache_read_per_million: Some(0.08),
+        });
+        // Claude 4.5 generation (still in service)
         table.insert(PricingEntry {
             model: ModelId::new("anthropic:claude-opus-4-5"),
             input_per_million: 15.0,
@@ -35,6 +54,18 @@ impl PricingTable {
         });
 
         // Claude CLI models (mirrors Anthropic pricing)
+        table.insert(PricingEntry {
+            model: ModelId::new("claude-cli:claude-opus-4-7"),
+            input_per_million: 15.0,
+            output_per_million: 75.0,
+            cache_read_per_million: Some(1.50),
+        });
+        table.insert(PricingEntry {
+            model: ModelId::new("claude-cli:claude-sonnet-4-6"),
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+            cache_read_per_million: Some(0.30),
+        });
         table.insert(PricingEntry {
             model: ModelId::new("claude-cli:claude-opus-4-5"),
             input_per_million: 15.0,
