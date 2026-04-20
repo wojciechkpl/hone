@@ -198,7 +198,7 @@ fn render_conversation(app: &App, frame: &mut Frame, area: Rect) {
             .constraints([Constraint::Length(1), Constraint::Min(0)])
             .split(area);
 
-        let indicator = format!("^ {scroll} lines above");
+        let indicator = format!("↓ {scroll} lines below  (G to jump to latest)");
         let muted = Style::default().fg(app.theme().text_muted);
         let line = Line::from(Span::styled(indicator, muted));
         let para = Paragraph::new(line);

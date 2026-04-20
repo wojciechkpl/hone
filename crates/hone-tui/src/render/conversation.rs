@@ -205,11 +205,19 @@ impl<'a> Widget for ConversationWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let all_lines = self.build_lines();
 
-        // Apply scroll: skip `scroll_offset` lines from the top.
+        // scroll_offset is "distance from bottom": 0 = newest messages visible,
+        // increasing = scrolled further up into history.
+        let total = all_lines.len();
+        let available = area.height as usize;
+        let start = if total > available {
+            (total - available).saturating_sub(self.scroll_offset)
+        } else {
+            0
+        };
         let visible: Vec<&Line<'static>> = all_lines
             .iter()
-            .skip(self.scroll_offset)
-            .take(area.height as usize)
+            .skip(start)
+            .take(available)
             .collect();
 
         for (row, line) in visible.iter().enumerate() {
