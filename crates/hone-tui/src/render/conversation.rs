@@ -58,7 +58,12 @@ impl<'a> ConversationWidget<'a> {
             DisplayRole::User => self.render_user(msg),
             DisplayRole::Assistant => self.render_assistant(msg),
             DisplayRole::ToolCall { name } => {
-                render_tool_call(name, &msg.content, false, theme)
+                let spinner = if msg.is_active {
+                    Some(self.anim.spinner_char())
+                } else {
+                    None
+                };
+                render_tool_call(name, &msg.content, false, theme, spinner)
             }
             DisplayRole::ToolResult => {
                 let is_error = msg.content.starts_with("error:");
@@ -66,7 +71,7 @@ impl<'a> ConversationWidget<'a> {
                     render_tool_result_collapsed(&msg.content, is_error, theme)
                 } else {
                     let content = truncate_tool_output(&msg.content, theme);
-                    render_tool_call("tool-result", &*content, is_error, theme)
+                    render_tool_call("tool-result", &*content, is_error, theme, None)
                 }
             }
             DisplayRole::Error => {

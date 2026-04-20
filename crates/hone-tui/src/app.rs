@@ -1882,10 +1882,12 @@ impl App {
                 self.status.update_phase_from_tool(&name);
                 self.status.active_tool = Some(name.clone());
                 self.status.provider_status = ProviderStatus::Connected;
-                self.messages.push(DisplayMessage::new(
+                let mut tool_msg = DisplayMessage::new(
                     DisplayRole::ToolCall { name: name.clone() },
                     String::new(),
-                ));
+                );
+                tool_msg.is_active = true;
+                self.messages.push(tool_msg);
 
                 // Ensure we have an active ledger for this turn.
                 if self.current_turn.is_none() {
@@ -1914,6 +1916,12 @@ impl App {
 
             AgentEvent::ToolCallEnd { id, result, is_error, duration_ms, cache_hit } => {
                 self.status.active_tool = None;
+                // Clear the in-progress animation on the matching tool call message.
+                if let Some(msg) = self.messages.iter_mut().rev().find(|m| {
+                    matches!(&m.role, DisplayRole::ToolCall { .. }) && m.is_active
+                }) {
+                    msg.is_active = false;
+                }
                 let content = if is_error {
                     format!("error: {result}")
                 } else {

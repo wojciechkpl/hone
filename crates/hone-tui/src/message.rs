@@ -19,6 +19,9 @@ pub struct DisplayMessage {
     /// `true` when the message body is collapsed to a single summary line.
     /// Defaults to `true` for `ToolResult` messages, `false` for all others.
     pub is_collapsed: bool,
+    /// `true` while this tool call is currently executing (ToolCallStart received,
+    /// ToolCallEnd not yet received). Drives the animated spinner in the tool box.
+    pub is_active: bool,
 }
 
 impl DisplayMessage {
@@ -29,6 +32,7 @@ impl DisplayMessage {
             content: content.into(),
             is_streaming: false,
             is_collapsed,
+            is_active: false,
         }
     }
 
@@ -39,6 +43,7 @@ impl DisplayMessage {
             content: String::new(),
             is_streaming: true,
             is_collapsed,
+            is_active: false,
         }
     }
 }
