@@ -40,9 +40,11 @@ async fn test_gemini_cli_health_when_binary_missing() {
 fn test_claude_cli_supported_models() {
     let provider = ClaudeCliProvider::new();
     let models = provider.supported_models();
-    assert_eq!(models.len(), 3, "expected 3 models, got {}", models.len());
+    assert_eq!(models.len(), 5, "expected 5 models, got {}", models.len());
 
     let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+    assert!(ids.contains(&"claude-cli:claude-sonnet-4-6"));
+    assert!(ids.contains(&"claude-cli:claude-opus-4-7"));
     assert!(ids.contains(&"claude-cli:claude-sonnet-4-5"));
     assert!(ids.contains(&"claude-cli:claude-opus-4-5"));
     assert!(ids.contains(&"claude-cli:claude-haiku-3-5"));

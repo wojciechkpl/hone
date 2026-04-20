@@ -13,6 +13,21 @@ pub enum ProviderEvent {
     Usage(TokenUsage),
     Done,
     Error { message: String },
+    /// A tool call that the provider/CLI is executing on its own behalf
+    /// (i.e. not dispatched through hone's ToolRegistry). The agent
+    /// forwards these as `AgentEvent::ToolCallStart/End` for UI visibility
+    /// but does NOT execute them — the provider already handles execution.
+    ObservedToolStart {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    /// Completion of a provider-handled tool call started by `ObservedToolStart`.
+    ObservedToolEnd {
+        id: String,
+        result: String,
+        is_error: bool,
+    },
 }
 
 /// Events streamed from the agent loop to the UI layer.

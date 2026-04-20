@@ -440,6 +440,27 @@ impl Agent {
                             },
                         ));
                     }
+
+                    // Provider-handled tool calls (e.g. claude CLI's own bash/read tools).
+                    // Forward to the TUI for visibility; hone does NOT execute these.
+                    ProviderEvent::ObservedToolStart { id, name, input } => {
+                        let _ = events.send(AgentEvent::ToolCallStart {
+                            id,
+                            name,
+                            args: input,
+                        }).await;
+                    }
+
+                    ProviderEvent::ObservedToolEnd { id, result, is_error } => {
+                        let _ = events.send(AgentEvent::ToolCallEnd {
+                            id,
+                            result: serde_json::Value::String(result),
+                            is_error,
+                            duration_ms: 0,
+                            cache_hit: false,
+                        }).await;
+                    }
+
                     // Forward-compat: unknown ProviderEvent variants are silently ignored.
                     _ => {}
                 }
