@@ -100,11 +100,23 @@ impl ModelProvider for ClaudeCliProvider {
         let model_name = request.model.model_name().to_owned();
         let prompt = messages_to_prompt(&request.messages);
 
+        // The `claude` CLI has its own permission gate when invoked in headless
+        // (`-p`) mode. Without `--permission-mode` it refuses file edits outright,
+        // surfacing as "Claude requested permissions to write" errors that hone's
+        // own approval UI cannot satisfy (different process). Default to
+        // `acceptEdits` which auto-approves Edit/Write but still gates Bash and
+        // network. Override via `HONE_CLAUDE_PERMISSION_MODE` (e.g. `plan`,
+        // `bypassPermissions`) for power users.
+        let permission_mode = std::env::var("HONE_CLAUDE_PERMISSION_MODE")
+            .unwrap_or_else(|_| "acceptEdits".to_owned());
+
         let mut cmd = Command::new(&self.binary);
         cmd.arg("-p")
             .arg("--output-format")
             .arg("stream-json")
             .arg("--verbose")
+            .arg("--permission-mode")
+            .arg(&permission_mode)
             .arg("--model")
             .arg(&model_name);
 
