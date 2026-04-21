@@ -126,6 +126,7 @@ pub async fn run_handler(
                         input_per_million: 3.0,
                         output_per_million: 15.0,
                         cache_read_per_million: None,
+                        cache_creation_per_million: None,
                     })
                 },
                 working_dir,

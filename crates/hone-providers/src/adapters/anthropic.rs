@@ -96,6 +96,30 @@ pub fn convert_message(message: &Message) -> Option<Value> {
     }
 }
 
+/// Adds `cache_control: { "type": "ephemeral" }` to the last content block of a
+/// user-role Anthropic message value.  If content is a plain string it is first
+/// promoted to a single-element text-block array so the cache_control can be
+/// attached.
+fn inject_cache_control_into_user_message(msg: &mut Value) {
+    let content = &mut msg["content"];
+    match content {
+        Value::String(text) => {
+            // Promote to array form so cache_control can be attached.
+            let text = text.clone();
+            *content = json!([{
+                "type": "text",
+                "text": text,
+                "cache_control": { "type": "ephemeral" },
+            }]);
+        }
+        Value::Array(arr) if !arr.is_empty() => {
+            let last = arr.last_mut().unwrap();
+            last["cache_control"] = json!({ "type": "ephemeral" });
+        }
+        _ => {}
+    }
+}
+
 fn content_to_anthropic(content: &Content) -> Value {
     match content {
         Content::Text(text) => Value::String(text.clone()),
@@ -150,11 +174,30 @@ pub fn build_request_body(request: &CompletionRequest) -> Value {
         .find(|m| m.role == Role::System)
         .map(|m| m.content.as_text());
 
-    let messages: Vec<Value> = request
+    let mut messages: Vec<Value> = request
         .messages
         .iter()
         .filter_map(convert_message)
         .collect();
+
+    // Add a 3rd cache breakpoint on the last real user message of the
+    // second-to-last turn so that the full conversation prefix is cached on
+    // repeated calls.
+    //
+    // `Role::Tool` messages are also mapped to `role: "user"` (with a
+    // `tool_result` content block); we must skip those — caching at a
+    // tool_result boundary is legal JSON but caches the wrong prefix in
+    // agentic turns where the conversation ends
+    // `… -> tool_result -> assistant -> user(new question)`.
+    if messages.len() >= 2 {
+        let search_len = messages.len() - 1;
+        if let Some(idx) = (0..search_len).rev().find(|&i| {
+            messages[i]["role"].as_str() == Some("user")
+                && messages[i]["content"][0]["type"].as_str() != Some("tool_result")
+        }) {
+            inject_cache_control_into_user_message(&mut messages[idx]);
+        }
+    }
 
     // Apply cache_control to the last tool so Anthropic caches all tool schemas.
     let tools: Vec<Value> = match request.tools.len() {
@@ -274,6 +317,7 @@ pub fn parse_sse_data(
                 input: 0,
                 output: output_tokens,
                 cache_read: 0,
+                cache_creation: 0,
             }));
         }
         "message_start" => {
@@ -281,11 +325,14 @@ pub fn parse_sse_data(
             let usage = &value["message"]["usage"];
             let input_tokens = usage["input_tokens"].as_u64().unwrap_or(0) as u32;
             let cache_read = usage["cache_read_input_tokens"].as_u64().unwrap_or(0) as u32;
-            if input_tokens > 0 || cache_read > 0 {
+            let cache_creation =
+                usage["cache_creation_input_tokens"].as_u64().unwrap_or(0) as u32;
+            if input_tokens > 0 || cache_read > 0 || cache_creation > 0 {
                 events.push(ProviderEvent::Usage(TokenUsage {
                     input: input_tokens,
                     output: 0,
                     cache_read,
+                    cache_creation,
                 }));
             }
         }

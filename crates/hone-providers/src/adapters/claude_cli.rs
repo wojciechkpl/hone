@@ -323,6 +323,7 @@ fn spawn_claude_stream_with_stdin(mut cmd: Command, prompt: String) -> Pin<Box<d
                                     input,
                                     output,
                                     cache_read,
+                                    cache_creation: 0,
                                 })).await;
                             }
                             // Check for error result subtype.

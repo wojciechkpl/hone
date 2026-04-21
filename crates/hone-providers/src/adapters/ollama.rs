@@ -179,6 +179,7 @@ pub fn parse_ndjson_line(line: &str) -> Vec<ProviderEvent> {
                 input: prompt_tokens,
                 output: completion_tokens,
                 cache_read: 0,
+                cache_creation: 0,
             }));
         }
 

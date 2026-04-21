@@ -7,6 +7,7 @@ fn pricing() -> PricingEntry {
         input_per_million: 3.0,
         output_per_million: 15.0,
         cache_read_per_million: None,
+        cache_creation_per_million: None,
     }
 }
 
@@ -20,6 +21,7 @@ fn test_cost_accumulator_sums_turns() {
         input: 1_000_000,
         output: 1_000_000,
         cache_read: 0,
+        cache_creation: 0,
     };
 
     acc.add(usage, &p);
@@ -46,6 +48,7 @@ fn test_budget_exceeded() {
             input: 10_000,
             output: 0,
             cache_read: 0,
+            cache_creation: 0,
         },
         &p,
     );
@@ -68,6 +71,7 @@ fn test_budget_none_never_exceeds() {
             input: 1_000_000,
             output: 1_000_000,
             cache_read: 0,
+            cache_creation: 0,
         },
         &p,
     );

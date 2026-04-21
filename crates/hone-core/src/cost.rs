@@ -16,7 +16,12 @@ impl CostAccumulator {
 
     /// Record usage from a completed turn, converting tokens to USD via pricing.
     pub fn add(&mut self, usage: TokenUsage, pricing: &PricingEntry) {
-        let cost = pricing.calculate_cost(usage.input, usage.output, usage.cache_read);
+        let cost = pricing.calculate_cost(
+            usage.input,
+            usage.output,
+            usage.cache_read,
+            usage.cache_creation,
+        );
         self.total_usd += cost;
         self.total_usage = self.total_usage + usage;
     }
@@ -56,6 +61,7 @@ mod tests {
             input_per_million: 3.0,
             output_per_million: 15.0,
             cache_read_per_million: None,
+            cache_creation_per_million: None,
         }
     }
 
@@ -69,6 +75,7 @@ mod tests {
             input: 1_000_000,
             output: 1_000_000,
             cache_read: 0,
+            cache_creation: 0,
         };
 
         acc.add(usage, &p);
@@ -91,6 +98,7 @@ mod tests {
                 input: 10_000,
                 output: 0,
                 cache_read: 0,
+                cache_creation: 0,
             },
             &p,
         );
@@ -110,6 +118,7 @@ mod tests {
                 input: 1_000_000,
                 output: 1_000_000,
                 cache_read: 0,
+                cache_creation: 0,
             },
             &p,
         );

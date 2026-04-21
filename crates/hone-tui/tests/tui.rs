@@ -189,6 +189,7 @@ fn test_app_handle_done_event() {
             input: 10,
             output: 5,
             cache_read: 0,
+            cache_creation: 0,
         },
         cost_usd: 0.0,
     });
@@ -516,6 +517,7 @@ fn test_cost_updates_on_done() {
             input: 1000,
             output: 500,
             cache_read: 0,
+            cache_creation: 0,
         },
         cost_usd: 0.0105,
     });

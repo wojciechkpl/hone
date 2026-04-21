@@ -202,6 +202,7 @@ pub fn parse_sse_chunk(data: &str, tool_states: &mut HashMap<usize, ToolCallStat
                 input,
                 output,
                 cache_read: cached,
+                cache_creation: 0,
             }));
         }
     }

@@ -27,6 +27,7 @@ fn base_config(provider: Arc<dyn hone_providers::ModelProvider>) -> AgentConfig 
             input_per_million: 0.0,
             output_per_million: 0.0,
             cache_read_per_million: None,
+            cache_creation_per_million: None,
         },
         working_dir: PathBuf::from("."),
         memory_store: None,

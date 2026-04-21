@@ -54,7 +54,7 @@ async fn test_mock_provider_with_tool_call() {
 
 #[tokio::test]
 async fn test_mock_provider_usage_event() {
-    let usage = TokenUsage { input: 10, output: 20, cache_read: 0 };
+    let usage = TokenUsage { input: 10, output: 20, cache_read: 0, cache_creation: 0 };
     let provider = MockProvider::new(vec!["hi".into()]).with_usage(usage);
     let stream = provider.complete(simple_request()).await.unwrap();
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use hone_proto::{Message, ModelId, ProviderEvent, ToolSchema};
+use hone_proto::{Message, ModelId, PricingEntry, ProviderEvent, ToolSchema};
 use hone_providers::adapters::anthropic::{build_request_body, extract_sse_events, parse_sse_data};
 use hone_providers::traits::CompletionRequest;
 
@@ -399,5 +399,200 @@ fn test_single_tool_gets_cache_control() {
     assert!(
         tools[0].get("cache_control").is_some(),
         "the only tool must have cache_control when it is also the last"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Message-prefix caching — 3rd cache breakpoint on second-to-last user message
+// ---------------------------------------------------------------------------
+
+/// Builds a 3-turn conversation and checks that exactly 3 cache_control
+/// breakpoints appear in the expected positions:
+///   1. system block (ephemeral)
+///   2. last tool (ephemeral)
+///   3. last user message before the final message (ephemeral)
+#[test]
+fn test_three_cache_breakpoints_on_multi_turn_conversation() {
+    let request = CompletionRequest {
+        model: ModelId::new("anthropic:claude-sonnet-4-5"),
+        messages: vec![
+            Message::system("You are a helpful assistant."),
+            // turn 1
+            Message::user("first question"),
+            Message::assistant("first answer"),
+            // turn 2
+            Message::user("second question"),
+            Message::assistant("second answer"),
+            // turn 3 — current user turn (no cache_control here)
+            Message::user("third question"),
+        ],
+        tools: vec![ToolSchema {
+            name: "read_file".to_owned(),
+            description: "read a file".to_owned(),
+            parameters: serde_json::json!({"type": "object"}),
+        }],
+        temperature: None,
+        max_tokens: None,
+        stop: Vec::new(),
+    };
+
+    let body = build_request_body(&request);
+
+    // --- breakpoint 1: system block ---
+    let system = body["system"].as_array().expect("system must be an array");
+    assert!(
+        system.last().unwrap().get("cache_control").is_some(),
+        "system block must have cache_control"
+    );
+
+    // --- breakpoint 2: last tool ---
+    let tools = body["tools"].as_array().expect("tools must be present");
+    assert!(
+        tools.last().unwrap().get("cache_control").is_some(),
+        "last tool must have cache_control"
+    );
+
+    // --- breakpoint 3: second-to-last user message ---
+    // Converted messages (system is stripped): user, assistant, user, assistant, user
+    // Indices:                                    0        1        2       3      4
+    // The second-to-last user message is at index 2 ("second question").
+    let messages = body["messages"].as_array().expect("messages must be present");
+    assert_eq!(messages.len(), 5, "should have 5 non-system messages");
+
+    // The final message (index 4) must NOT have cache_control.
+    let last_msg = &messages[4];
+    assert_eq!(last_msg["role"].as_str(), Some("user"));
+    let last_content_has_cc = last_msg["content"]
+        .as_array()
+        .and_then(|a| a.last())
+        .and_then(|b| b.get("cache_control"))
+        .is_some();
+    assert!(
+        !last_content_has_cc,
+        "the last (current) user message must NOT have cache_control"
+    );
+
+    // The second-to-last user message (index 2) MUST have cache_control.
+    let second_to_last_user = &messages[2];
+    assert_eq!(second_to_last_user["role"].as_str(), Some("user"));
+    let content = &second_to_last_user["content"];
+    let has_cc = match content {
+        serde_json::Value::Array(arr) => arr
+            .last()
+            .and_then(|b| b.get("cache_control"))
+            .is_some(),
+        _ => false,
+    };
+    assert!(
+        has_cc,
+        "second-to-last user message must have cache_control, got: {content:?}"
+    );
+
+    // Count total cache_control occurrences across the whole body to confirm exactly 3.
+    let body_str = serde_json::to_string(&body).unwrap();
+    let count = body_str.matches("\"cache_control\"").count();
+    assert_eq!(
+        count, 3,
+        "expected exactly 3 cache_control breakpoints in the request body, found {count}"
+    );
+}
+
+/// With fewer than 2 user messages, no message-prefix breakpoint is added
+/// (fewer than 2 means there's no prefix to cache).
+#[test]
+fn test_no_prefix_cache_breakpoint_when_single_user_message() {
+    let request = make_request(vec![
+        Message::system("sys"),
+        Message::user("only question"),
+    ]);
+
+    let body = build_request_body(&request);
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 1);
+
+    // The sole message must NOT have cache_control.
+    let content = &messages[0]["content"];
+    let has_cc = match content {
+        serde_json::Value::Array(arr) => arr.last().and_then(|b| b.get("cache_control")).is_some(),
+        serde_json::Value::String(_) => false,
+        _ => false,
+    };
+    assert!(!has_cc, "single user message must not get a prefix cache breakpoint");
+}
+
+/// In agentic turns ending `... -> tool_result -> assistant -> user(question)`,
+/// the 3rd cache breakpoint must land on the earlier real user question, not
+/// on the `tool_result` message which is also mapped to role=user.
+#[test]
+fn test_prefix_breakpoint_skips_tool_result_pseudo_user() {
+    let request = make_request(vec![
+        Message::system("sys"),
+        Message::user("first real question"),
+        Message::assistant("thinking…"),
+        Message::tool_result("call_1".to_owned(), "tool output"),
+        Message::assistant("answer after tool"),
+        Message::user("second real question"),
+    ]);
+
+    let body = build_request_body(&request);
+    let messages = body["messages"].as_array().unwrap();
+
+    // Locate the breakpoint and verify it is on the *first real user* message,
+    // not on the tool_result pseudo-user message.
+    let cached: Vec<(usize, &serde_json::Value)> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| {
+            m["content"]
+                .as_array()
+                .and_then(|arr| arr.last())
+                .and_then(|b| b.get("cache_control"))
+                .is_some()
+        })
+        .collect();
+
+    assert_eq!(cached.len(), 1, "expected exactly 1 cached message, found {}", cached.len());
+    let (_, msg) = cached[0];
+    assert_eq!(msg["role"].as_str(), Some("user"));
+    let first_block_type = msg["content"][0]["type"].as_str();
+    assert_ne!(
+        first_block_type,
+        Some("tool_result"),
+        "breakpoint must not land on a tool_result pseudo-user message"
+    );
+    assert_eq!(
+        msg["content"][0]["text"].as_str(),
+        Some("first real question"),
+        "breakpoint must target the real user message",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Cost ordering: cache_read < input < cache_creation for the same volume
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_cache_cost_ordering() {
+    let pricing = PricingEntry {
+        model: ModelId::new("anthropic:claude-sonnet-4-5"),
+        input_per_million: 3.0,
+        output_per_million: 15.0,
+        cache_read_per_million: Some(0.30),
+        cache_creation_per_million: Some(3.75),
+    };
+
+    let one_million = 1_000_000u32;
+
+    let cost_cache_read = pricing.calculate_cost(0, 0, one_million, 0);
+    let cost_input = pricing.calculate_cost(one_million, 0, 0, 0);
+    let cost_cache_creation = pricing.calculate_cost(0, 0, 0, one_million);
+
+    assert!(
+        cost_cache_read < cost_input,
+        "cache_read (${cost_cache_read}) must be cheaper than input (${cost_input})"
+    );
+    assert!(
+        cost_input < cost_cache_creation,
+        "input (${cost_input}) must be cheaper than cache_creation (${cost_cache_creation})"
     );
 }

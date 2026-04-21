@@ -63,11 +63,14 @@ pub struct TokenUsage {
     pub input: u32,
     pub output: u32,
     pub cache_read: u32,
+    /// Tokens written into the prompt cache on this request (billed at 1.25× input rate).
+    #[serde(default)]
+    pub cache_creation: u32,
 }
 
 impl TokenUsage {
     pub fn total(&self) -> u32 {
-        self.input + self.output + self.cache_read
+        self.input + self.output + self.cache_read + self.cache_creation
     }
 }
 
@@ -79,6 +82,7 @@ impl Add for TokenUsage {
             input: self.input + rhs.input,
             output: self.output + rhs.output,
             cache_read: self.cache_read + rhs.cache_read,
+            cache_creation: self.cache_creation + rhs.cache_creation,
         }
     }
 }

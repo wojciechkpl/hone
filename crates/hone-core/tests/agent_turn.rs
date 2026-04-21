@@ -118,6 +118,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
             input_per_million: 0.0,
             output_per_million: 0.0,
             cache_read_per_million: None,
+            cache_creation_per_million: None,
         },
         working_dir: std::path::PathBuf::from("."),
         memory_store: None,
@@ -257,6 +258,7 @@ async fn test_agent_tracks_cost() {
             input: 100,
             output: 50,
             cache_read: 0,
+            cache_creation: 0,
         }),
         ProviderEvent::Done,
     ];
@@ -1041,6 +1043,7 @@ async fn test_metrics_record_tokens() {
             input: 42,
             output: 17,
             cache_read: 0,
+            cache_creation: 0,
         }),
         ProviderEvent::Done,
     ];
@@ -1140,6 +1143,7 @@ async fn test_dynamic_read_only_tool_dispatched_in_parallel() {
             input_per_million: 0.0,
             output_per_million: 0.0,
             cache_read_per_million: None,
+            cache_creation_per_million: None,
         },
         working_dir: std::path::PathBuf::from("/tmp"),
         memory_store: None,

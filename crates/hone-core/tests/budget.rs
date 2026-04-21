@@ -15,6 +15,7 @@ fn real_pricing() -> PricingEntry {
         input_per_million: 3.0,
         output_per_million: 15.0,
         cache_read_per_million: None,
+        cache_creation_per_million: None,
     }
 }
 
@@ -31,6 +32,7 @@ async fn test_budget_cap_blocks_new_turn() {
         input: 100,
         output: 100,
         cache_read: 0,
+        cache_creation: 0,
     };
     let provider = Arc::new(
         MockProvider::new(vec!["hello".to_owned()])

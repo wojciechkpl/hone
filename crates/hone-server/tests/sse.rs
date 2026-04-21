@@ -22,6 +22,7 @@ fn test_encode_done_event() {
             input: 10,
             output: 20,
             cache_read: 0,
+            cache_creation: 0,
         },
         cost_usd: 0.0,
     };

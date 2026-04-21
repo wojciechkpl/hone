@@ -381,7 +381,7 @@ mod tests {
             ],
             learnings: vec!["Always use parameterized queries".to_string()],
             final_response: "Fixed".to_string(),
-            total_usage: TokenUsage { input: 5000, output: 2000, cache_read: 0 },
+            total_usage: TokenUsage { input: 5000, output: 2000, cache_read: 0, cache_creation: 0 },
             total_cost_usd: 0.012,
         };
         let summary = result.summary();

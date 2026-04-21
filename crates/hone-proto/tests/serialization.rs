@@ -118,11 +118,13 @@ fn token_usage_add() {
         input: 100,
         output: 50,
         cache_read: 10,
+        cache_creation: 0,
     };
     let b = TokenUsage {
         input: 200,
         output: 75,
         cache_read: 20,
+        cache_creation: 0,
     };
     let sum = a + b;
     assert_eq!(
@@ -131,6 +133,7 @@ fn token_usage_add() {
             input: 300,
             output: 125,
             cache_read: 30,
+            cache_creation: 0,
         }
     );
 }
@@ -141,6 +144,7 @@ fn token_usage_total() {
         input: 100,
         output: 50,
         cache_read: 10,
+        cache_creation: 0,
     };
     assert_eq!(u.total(), 160);
 }
@@ -157,16 +161,19 @@ fn token_usage_add_is_associative() {
         input: 10,
         output: 20,
         cache_read: 5,
+        cache_creation: 0,
     };
     let b = TokenUsage {
         input: 30,
         output: 40,
         cache_read: 15,
+        cache_creation: 0,
     };
     let c = TokenUsage {
         input: 50,
         output: 60,
         cache_read: 25,
+        cache_creation: 0,
     };
     assert_eq!((a + b) + c, a + (b + c));
 }
@@ -303,6 +310,7 @@ fn agent_event_variants_roundtrip() {
                 input: 100,
                 output: 50,
                 cache_read: 0,
+                cache_creation: 0,
             },
             cost_usd: 0.0,
         },
@@ -328,11 +336,12 @@ fn pricing_entry_calculate_cost() {
         input_per_million: 15.0,
         output_per_million: 75.0,
         cache_read_per_million: Some(1.5),
+        cache_creation_per_million: None,
     };
     // 1000 input tokens = $0.015
     // 500 output tokens = $0.0375
-    // 200 cache tokens = $0.0003
-    let cost = entry.calculate_cost(1000, 500, 200);
+    // 200 cache_read tokens = $0.0003
+    let cost = entry.calculate_cost(1000, 500, 200, 0);
     let expected = 0.015 + 0.0375 + 0.0003;
     assert!((cost - expected).abs() < 1e-10);
 }
@@ -344,8 +353,9 @@ fn pricing_entry_no_cache_rate() {
         input_per_million: 0.0,
         output_per_million: 0.0,
         cache_read_per_million: None,
+        cache_creation_per_million: None,
     };
-    let cost = entry.calculate_cost(10000, 5000, 1000);
+    let cost = entry.calculate_cost(10000, 5000, 1000, 0);
     assert_eq!(cost, 0.0);
 }
 

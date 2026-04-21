@@ -31,6 +31,7 @@ fn base_config(provider: Arc<MockProvider>) -> AgentConfig {
             input_per_million: 0.0,
             output_per_million: 0.0,
             cache_read_per_million: None,
+            cache_creation_per_million: None,
         },
         working_dir: std::path::PathBuf::from("."),
         memory_store: None,
@@ -168,7 +169,7 @@ fn test_worker_result_types() {
         agent: "rust-expert".to_owned(),
         status: WorkerStatus::Completed,
         response: "Done!".to_owned(),
-        usage: TokenUsage { input: 10, output: 20, cache_read: 0 },
+        usage: TokenUsage { input: 10, output: 20, cache_read: 0, cache_creation: 0 },
         cost_usd: 0.001,
     };
 
@@ -381,6 +382,7 @@ fn panic_agent_config() -> AgentConfig {
             input_per_million: 0.0,
             output_per_million: 0.0,
             cache_read_per_million: None,
+            cache_creation_per_million: None,
         },
         working_dir: std::path::PathBuf::from("/tmp"),
         memory_store: None,

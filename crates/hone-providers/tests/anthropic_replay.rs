@@ -238,3 +238,67 @@ async fn test_anthropic_parses_cache_read_tokens() {
         "expected a Done event in the stream"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Prompt caching — cache_creation_input_tokens is surfaced in TokenUsage
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_anthropic_parses_cache_creation_tokens() {
+    let server = MockServer::start().await;
+    let body = include_str!("fixtures/anthropic_cache_creation.sse");
+
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", "test-key"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = AnthropicProvider::with_base_url("test-key", server.uri());
+    let stream = provider.complete(make_request()).await.unwrap();
+    let events: Vec<ProviderEvent> = stream.collect().await;
+
+    // Sum cache_creation across all Usage events.
+    let total_cache_creation: u32 = events.iter().fold(0u32, |acc, e| match e {
+        ProviderEvent::Usage(u) => acc + u.cache_creation,
+        _ => acc,
+    });
+
+    assert_eq!(
+        total_cache_creation, 5000,
+        "expected cache_creation=5000 from the cache_creation fixture, got {total_cache_creation}"
+    );
+
+    // Regular input tokens are also billed.
+    let total_input: u32 = events.iter().fold(0u32, |acc, e| match e {
+        ProviderEvent::Usage(u) => acc + u.input,
+        _ => acc,
+    });
+
+    assert_eq!(
+        total_input, 20,
+        "expected input_tokens=20 from the cache_creation fixture, got {total_input}"
+    );
+
+    // cache_read must be zero on a cache write turn.
+    let total_cache_read: u32 = events.iter().fold(0u32, |acc, e| match e {
+        ProviderEvent::Usage(u) => acc + u.cache_read,
+        _ => acc,
+    });
+
+    assert_eq!(
+        total_cache_read, 0,
+        "expected cache_read=0 on a cache-creation turn, got {total_cache_read}"
+    );
+
+    // Done must be present.
+    assert!(
+        events.iter().any(|e| matches!(e, ProviderEvent::Done)),
+        "expected a Done event in the stream"
+    );
+}

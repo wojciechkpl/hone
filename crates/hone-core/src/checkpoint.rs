@@ -103,6 +103,8 @@ struct WorkerResultDto {
     input_tokens: u32,
     output_tokens: u32,
     cache_read_tokens: u32,
+    #[serde(default)]
+    cache_creation_tokens: u32,
     cost_usd: f64,
 }
 
@@ -128,6 +130,7 @@ impl From<&WorkerResult> for WorkerResultDto {
             input_tokens: r.usage.input,
             output_tokens: r.usage.output,
             cache_read_tokens: r.usage.cache_read,
+            cache_creation_tokens: r.usage.cache_creation,
             cost_usd: r.cost_usd,
         }
     }
@@ -148,6 +151,7 @@ impl From<WorkerResultDto> for WorkerResult {
                 input: d.input_tokens,
                 output: d.output_tokens,
                 cache_read: d.cache_read_tokens,
+                cache_creation: d.cache_creation_tokens,
             },
             cost_usd: d.cost_usd,
         }
@@ -501,6 +505,7 @@ mod tests {
                 input: 10,
                 output: 5,
                 cache_read: 0,
+                cache_creation: 0,
             },
             cost_usd: 0.001,
         }
@@ -644,5 +649,35 @@ mod tests {
         assert_eq!(loaded.completed_workers.len(), 1);
         assert_eq!(loaded.pending_task_ids, vec!["t2"]);
         assert!((loaded.total_cost_usd - 0.001).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn cache_creation_tokens_round_trip() {
+        let (mut store, _dir) = open_store().await;
+        let plan = make_plan("goal");
+        store.bind_run("run-cache", "goal", &plan).await.expect("bind");
+
+        let worker = WorkerResult {
+            task_id: "t1".to_owned(),
+            agent: "rust-expert".to_owned(),
+            status: WorkerStatus::Completed,
+            response: "done".to_owned(),
+            usage: TokenUsage {
+                input: 100,
+                output: 50,
+                cache_read: 2_000,
+                cache_creation: 5_000,
+            },
+            cost_usd: 0.01,
+        };
+        store
+            .save_progress(&[worker], &["t2".to_owned()], 0.01)
+            .await
+            .expect("save_progress");
+
+        let loaded = store.load("run-cache").await.expect("load").expect("some");
+        let restored = &loaded.completed_workers[0];
+        assert_eq!(restored.usage.cache_creation, 5_000, "cache_creation must survive roundtrip");
+        assert_eq!(restored.usage.cache_read, 2_000);
     }
 }
