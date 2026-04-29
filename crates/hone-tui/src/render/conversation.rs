@@ -34,7 +34,12 @@ impl<'a> ConversationWidget<'a> {
         anim: &'a AnimationState,
         scroll_offset: usize,
     ) -> Self {
-        Self { messages, theme, anim, scroll_offset }
+        Self {
+            messages,
+            theme,
+            anim,
+            scroll_offset,
+        }
     }
 
     /// Convert all messages to a flat list of `Line`s for rendering.
@@ -104,7 +109,10 @@ impl<'a> ConversationWidget<'a> {
         // Top: ╭──────────
         let top = Line::from(vec![
             Span::styled("\u{256D}", border_style),
-            Span::styled("\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}", border_style),
+            Span::styled(
+                "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
+                border_style,
+            ),
         ]);
 
         let mut lines = vec![label, top];
@@ -117,9 +125,10 @@ impl<'a> ConversationWidget<'a> {
         }
 
         // Bottom: ╰──────────
-        lines.push(Line::from(vec![
-            Span::styled("\u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}", border_style),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            "\u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
+            border_style,
+        )]));
 
         lines
     }
@@ -146,7 +155,10 @@ impl<'a> ConversationWidget<'a> {
 
         // If content is empty but still streaming, show just the cursor.
         if content.is_empty() && msg.is_streaming && self.anim.blink_visible() {
-            md_lines.push(Line::from(Span::styled("_", Style::default().fg(theme.accent_hot))));
+            md_lines.push(Line::from(Span::styled(
+                "_",
+                Style::default().fg(theme.accent_hot),
+            )));
         }
 
         lines.extend(md_lines);
@@ -157,7 +169,11 @@ impl<'a> ConversationWidget<'a> {
 /// Render a collapsed ToolResult as a single summary line.
 ///
 /// Shows `▶ <first line of content> [enter to expand]` (or `> ` in NO_COLOR mode).
-fn render_tool_result_collapsed(content: &str, is_error: bool, theme: &Theme) -> Vec<Line<'static>> {
+fn render_tool_result_collapsed(
+    content: &str,
+    is_error: bool,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
     let border_color = if is_error {
         theme.role_error
     } else {
@@ -214,11 +230,7 @@ impl<'a> Widget for ConversationWidget<'a> {
         } else {
             0
         };
-        let visible: Vec<&Line<'static>> = all_lines
-            .iter()
-            .skip(start)
-            .take(available)
-            .collect();
+        let visible: Vec<&Line<'static>> = all_lines.iter().skip(start).take(available).collect();
 
         for (row, line) in visible.iter().enumerate() {
             let y = area.top() + row as u16;
@@ -244,30 +256,37 @@ impl<'a> Widget for ConversationWidget<'a> {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Widget};
+    use super::ConversationWidget;
     use crate::{
         animation::AnimationState,
         message::{DisplayMessage, DisplayRole},
         theme::Theme,
     };
-    use super::ConversationWidget;
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
-    fn render_conversation_to_string(messages: &[DisplayMessage], width: u16, height: u16) -> String {
+    fn render_conversation_to_string(
+        messages: &[DisplayMessage],
+        width: u16,
+        height: u16,
+    ) -> String {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
         let theme = Theme::crimson();
         let anim = AnimationState::new();
 
-        terminal.draw(|f| {
-            let widget = ConversationWidget::new(messages, &theme, &anim, 0);
-            f.render_widget(widget, Rect::new(0, 0, width, height));
-        }).unwrap();
+        terminal
+            .draw(|f| {
+                let widget = ConversationWidget::new(messages, &theme, &anim, 0);
+                f.render_widget(widget, Rect::new(0, 0, width, height));
+            })
+            .unwrap();
 
         let buf = terminal.backend().buffer().clone();
         let mut result = String::new();
         for row in 0..height {
             for col in 0..width {
-                let ch = buf.cell((col, row))
+                let ch = buf
+                    .cell((col, row))
                     .map(|c| c.symbol().chars().next().unwrap_or(' '))
                     .unwrap_or(' ');
                 result.push(ch);
@@ -280,25 +299,43 @@ mod tests {
     /// A collapsed ToolResult shows the triangle arrow and first line only.
     #[test]
     fn collapsed_tool_result_shows_arrow_and_first_line() {
-        let mut msg = DisplayMessage::new(DisplayRole::ToolResult, "first line\nsecond line\nthird line");
+        let mut msg = DisplayMessage::new(
+            DisplayRole::ToolResult,
+            "first line\nsecond line\nthird line",
+        );
         msg.is_collapsed = true;
 
         let rendered = render_conversation_to_string(&[msg], 80, 5);
 
-        assert!(rendered.contains('▶'), "collapsed tool result must show '▶' arrow");
-        assert!(rendered.contains("first line"), "collapsed tool result must show first line");
+        assert!(
+            rendered.contains('▶'),
+            "collapsed tool result must show '▶' arrow"
+        );
+        assert!(
+            rendered.contains("first line"),
+            "collapsed tool result must show first line"
+        );
     }
 
     /// A collapsed ToolResult does NOT show lines beyond the first.
     #[test]
     fn collapsed_tool_result_hides_subsequent_lines() {
-        let mut msg = DisplayMessage::new(DisplayRole::ToolResult, "first line\nsecond line\nthird line");
+        let mut msg = DisplayMessage::new(
+            DisplayRole::ToolResult,
+            "first line\nsecond line\nthird line",
+        );
         msg.is_collapsed = true;
 
         let rendered = render_conversation_to_string(&[msg], 80, 5);
 
-        assert!(!rendered.contains("second line"), "collapsed tool result must not show second line");
-        assert!(!rendered.contains("third line"), "collapsed tool result must not show third line");
+        assert!(
+            !rendered.contains("second line"),
+            "collapsed tool result must not show second line"
+        );
+        assert!(
+            !rendered.contains("third line"),
+            "collapsed tool result must not show third line"
+        );
     }
 
     /// A collapsed ToolResult shows the expand hint.
@@ -309,7 +346,10 @@ mod tests {
 
         let rendered = render_conversation_to_string(&[msg], 80, 5);
 
-        assert!(rendered.contains("enter to expand"), "collapsed tool result must show expand hint");
+        assert!(
+            rendered.contains("enter to expand"),
+            "collapsed tool result must show expand hint"
+        );
     }
 
     /// An expanded ToolResult shows all content lines.
@@ -320,8 +360,14 @@ mod tests {
 
         let rendered = render_conversation_to_string(&[msg], 80, 10);
 
-        assert!(rendered.contains("first line"), "expanded tool result must show first line");
-        assert!(rendered.contains("second line"), "expanded tool result must show second line");
+        assert!(
+            rendered.contains("first line"),
+            "expanded tool result must show first line"
+        );
+        assert!(
+            rendered.contains("second line"),
+            "expanded tool result must show second line"
+        );
     }
 
     /// An expanded ToolResult does NOT show the `▶` collapse arrow or the expand hint.
@@ -332,7 +378,13 @@ mod tests {
 
         let rendered = render_conversation_to_string(&[msg], 80, 10);
 
-        assert!(!rendered.contains('▶'), "expanded tool result must not show '▶'");
-        assert!(!rendered.contains("enter to expand"), "expanded tool result must not show expand hint");
+        assert!(
+            !rendered.contains('▶'),
+            "expanded tool result must not show '▶'"
+        );
+        assert!(
+            !rendered.contains("enter to expand"),
+            "expanded tool result must not show expand hint"
+        );
     }
 }

@@ -8,8 +8,8 @@ use hone_proto::{AgentEvent, TokenUsage};
 use hone_tui::commands::Command;
 use hone_tui::render::root;
 use hone_tui::{App, AppState};
-use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use ratatui::backend::TestBackend;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -105,6 +105,7 @@ fn test_full_lifecycle() {
             input: 10,
             output: 5,
             cache_read: 0,
+            cache_creation: 0,
         },
         cost_usd: 0.0,
     });
@@ -233,7 +234,10 @@ fn test_splash_auto_dismiss() {
     // Set splash start to far in the past so tick() will dismiss it.
     app.set_splash_start(std::time::Instant::now() - std::time::Duration::from_secs(5));
     app.tick();
-    assert!(!app.show_splash(), "splash should auto-dismiss after duration");
+    assert!(
+        !app.show_splash(),
+        "splash should auto-dismiss after duration"
+    );
 }
 
 #[test]
@@ -363,10 +367,7 @@ fn test_ctrl_c_quits() {
     let mut app = App::new();
     app.skip_splash();
 
-    app.handle_key(KeyEvent::new(
-        KeyCode::Char('c'),
-        KeyModifiers::CONTROL,
-    ));
+    app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
     assert!(app.should_quit());
 }
 

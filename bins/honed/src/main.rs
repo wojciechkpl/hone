@@ -29,8 +29,21 @@ async fn main() -> Result<()> {
         println!("  -V, --version  Print version");
         println!();
         println!("Environment:");
-        println!("  HONE_AUTH_TOKEN    Bearer token for auth (sent as: Authorization: Bearer <token>)");
-        println!("  HONE_SESSION_DB    Path to SQLite file (default ~/.local/share/hone/sessions.db)");
+        println!(
+            "  HONE_AUTH_TOKEN    Bearer token for auth (sent as: Authorization: Bearer <token>)"
+        );
+        println!(
+            "                     Required when binding non-loopback (see HONE_BIND, HONE_ALLOW_UNAUTH)"
+        );
+        println!(
+            "  HONE_BIND          Host to bind (default: 0.0.0.0). Use 127.0.0.1 for loopback-only"
+        );
+        println!(
+            "  HONE_ALLOW_UNAUTH  Set to '1' to allow unauthenticated non-loopback bind (NOT recommended)"
+        );
+        println!(
+            "  HONE_SESSION_DB    Path to SQLite file (default ~/.local/share/hone/sessions.db)"
+        );
         println!("  HONE_EPHEMERAL     Disable session persistence entirely");
         println!();
         println!("Endpoints:");
@@ -57,7 +70,25 @@ async fn main() -> Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(3117);
 
-    let auth_token = std::env::var("HONE_AUTH_TOKEN").ok();
+    // Evaluate the auth gate as a pure function so it can be unit-tested.
+    let bind_host = std::env::var("HONE_BIND").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let (auth_token, warn_unauth) = match evaluate_auth_gate(
+        std::env::var("HONE_AUTH_TOKEN").ok().as_deref(),
+        &bind_host,
+        std::env::var("HONE_ALLOW_UNAUTH").ok().as_deref(),
+    ) {
+        Ok(outcome) => (outcome.normalized_token, outcome.warn_unauth),
+        Err(refusal) => {
+            eprintln!("honed: {}", refusal.message);
+            std::process::exit(2);
+        }
+    };
+    if warn_unauth {
+        tracing::warn!(
+            "starting WITHOUT bearer-token authentication (HONE_AUTH_TOKEN unset or empty); \
+             all routes are unauthenticated"
+        );
+    }
 
     // Session storage:
     // - HONE_EPHEMERAL=1 forces in-memory only (no persistence)
@@ -125,7 +156,7 @@ async fn main() -> Result<()> {
 
     let app = router(state);
 
-    let addr = format!("0.0.0.0:{port}");
+    let addr = format!("{bind_host}:{port}");
     tracing::info!("honed listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -165,5 +196,185 @@ async fn shutdown_signal() {
         _ = terminate => {
             tracing::info!("SIGTERM received, shutting down gracefully");
         }
+    }
+}
+
+/// Successful gate evaluation.
+#[derive(Debug)]
+struct AuthGateOk {
+    /// Normalised token: `None` if absent, empty, or whitespace-only.
+    /// Otherwise the trimmed token (whitespace stripped, never empty).
+    normalized_token: Option<String>,
+    /// True iff the daemon is starting without a token (loopback or
+    /// HONE_ALLOW_UNAUTH=1).  Caller should emit a runtime warning.
+    warn_unauth: bool,
+}
+
+/// Gate refusal — startup must not proceed.
+#[derive(Debug)]
+struct AuthGateBlock {
+    message: String,
+}
+
+/// Decide whether `honed` is allowed to start given environment.
+///
+/// Pure function: takes the raw env-var values and returns a verdict so the
+/// gate's policy can be unit-tested without spawning a process or touching
+/// the network stack.
+///
+/// Rules:
+/// - HONE_AUTH_TOKEN set to a non-empty, non-whitespace value → allow.
+/// - bind host is loopback (anything in 127.0.0.0/8, ::1, or the literal
+///   "localhost") → allow even without a token (with a warning).
+/// - HONE_ALLOW_UNAUTH is exactly "1" → allow even without a token (with a
+///   warning).  Any other value (including "", "0", "true", "yes") does NOT
+///   bypass the gate.
+/// - Otherwise → block.
+fn evaluate_auth_gate(
+    auth_token_raw: Option<&str>,
+    bind_host: &str,
+    allow_unauth_raw: Option<&str>,
+) -> Result<AuthGateOk, AuthGateBlock> {
+    // Normalise the token: trim whitespace, treat empty as absent.  An empty
+    // `expected` token in the auth middleware would compare equal to a
+    // request bearing `Authorization: Bearer ` and bypass auth entirely.
+    let normalized_token = auth_token_raw
+        .map(|t| t.trim().to_owned())
+        .filter(|t| !t.is_empty());
+
+    let is_loopback = bind_host == "localhost"
+        || bind_host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+
+    let allow_unauth = allow_unauth_raw == Some("1");
+
+    if normalized_token.is_some() {
+        return Ok(AuthGateOk {
+            normalized_token,
+            warn_unauth: false,
+        });
+    }
+    if is_loopback || allow_unauth {
+        return Ok(AuthGateOk {
+            normalized_token: None,
+            warn_unauth: true,
+        });
+    }
+    Err(AuthGateBlock {
+        message: format!(
+            "refusing to start: no HONE_AUTH_TOKEN set (or it is empty) and binding to non-loopback host {bind_host}.\n\
+             Either set HONE_AUTH_TOKEN=<secret>, bind to loopback via HONE_BIND=127.0.0.1,\n\
+             or explicitly opt in with HONE_ALLOW_UNAUTH=1 (NOT recommended)."
+        ),
+    })
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod auth_gate_tests {
+    use super::*;
+
+    // -- Block cases (expect Err) --
+
+    #[test]
+    fn no_token_default_bind_blocks() {
+        let r = evaluate_auth_gate(None, "0.0.0.0", None);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn empty_token_default_bind_blocks() {
+        let r = evaluate_auth_gate(Some(""), "0.0.0.0", None);
+        assert!(r.is_err(), "empty token must NOT count as configured");
+    }
+
+    #[test]
+    fn whitespace_token_default_bind_blocks() {
+        let r = evaluate_auth_gate(Some("   \t\n"), "0.0.0.0", None);
+        assert!(r.is_err(), "whitespace-only token must NOT count as configured");
+    }
+
+    #[test]
+    fn allow_unauth_zero_does_not_bypass() {
+        let r = evaluate_auth_gate(None, "0.0.0.0", Some("0"));
+        assert!(r.is_err(), "HONE_ALLOW_UNAUTH=0 must NOT bypass the gate");
+    }
+
+    #[test]
+    fn allow_unauth_empty_does_not_bypass() {
+        let r = evaluate_auth_gate(None, "0.0.0.0", Some(""));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn allow_unauth_true_does_not_bypass() {
+        // Documented semantic: only "1" exactly disables the gate.
+        let r = evaluate_auth_gate(None, "0.0.0.0", Some("true"));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn ipv6_wildcard_is_not_loopback() {
+        let r = evaluate_auth_gate(None, "::", None);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn ipv4_mapped_ipv6_loopback_is_treated_as_non_loopback() {
+        // Rust stdlib's Ipv6Addr::is_loopback only recognises ::1 exactly,
+        // not ::ffff:127.0.0.1.  Document this with a test so the behaviour
+        // is intentional, not accidental.
+        let r = evaluate_auth_gate(None, "::ffff:127.0.0.1", None);
+        assert!(r.is_err());
+    }
+
+    // -- Allow cases (expect Ok) --
+
+    #[test]
+    fn loopback_127_0_0_1_allows_no_token() {
+        let r = evaluate_auth_gate(None, "127.0.0.1", None).expect("should allow");
+        assert!(r.normalized_token.is_none());
+        assert!(r.warn_unauth);
+    }
+
+    #[test]
+    fn loopback_127_0_0_2_allows_no_token() {
+        // The whole 127.0.0.0/8 block routes to loopback.  Verifies the
+        // IpAddr::is_loopback() rewrite (vs the original string allowlist).
+        let r = evaluate_auth_gate(None, "127.0.0.2", None).expect("should allow");
+        assert!(r.warn_unauth);
+    }
+
+    #[test]
+    fn loopback_ipv6_allows_no_token() {
+        let r = evaluate_auth_gate(None, "::1", None).expect("should allow");
+        assert!(r.warn_unauth);
+    }
+
+    #[test]
+    fn loopback_literal_allows_no_token() {
+        let r = evaluate_auth_gate(None, "localhost", None).expect("should allow");
+        assert!(r.warn_unauth);
+    }
+
+    #[test]
+    fn allow_unauth_one_bypasses_gate() {
+        let r = evaluate_auth_gate(None, "0.0.0.0", Some("1")).expect("should allow");
+        assert!(r.normalized_token.is_none());
+        assert!(r.warn_unauth);
+    }
+
+    #[test]
+    fn valid_token_allows_non_loopback_bind() {
+        let r = evaluate_auth_gate(Some("secret123"), "0.0.0.0", None).expect("should allow");
+        assert_eq!(r.normalized_token.as_deref(), Some("secret123"));
+        assert!(!r.warn_unauth, "warn flag must be off when a real token is set");
+    }
+
+    #[test]
+    fn token_is_trimmed_before_storing() {
+        let r = evaluate_auth_gate(Some("  secret  "), "0.0.0.0", None).expect("should allow");
+        assert_eq!(r.normalized_token.as_deref(), Some("secret"));
     }
 }

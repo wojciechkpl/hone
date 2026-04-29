@@ -54,6 +54,7 @@ const SALT_SENTINEL_ID: &str = "__encrypted_store_salt__";
 /// still be decrypted.
 ///
 /// TODO: for v2 params introduce `enc:v2:` prefix and detect in decrypt.
+#[allow(dead_code)]
 const ARGON2_VERSION_MARKER: &str = "argon2id/v0x13/m=19456/t=2/p=1";
 
 /// Wraps an inner [`MemoryStore`] with AES-256-GCM content encryption.
@@ -80,27 +81,17 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
     pub async fn new(mut inner: S, passphrase: &str) -> Result<Self, MemoryError> {
         let salt = load_or_init_salt(&mut inner).await?;
         let key = derive_key(passphrase, &salt)?;
-        let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| {
-            MemoryError::Io(std::io::Error::other(format!("cipher init: {e}")))
-        })?;
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| MemoryError::Io(std::io::Error::other(format!("cipher init: {e}"))))?;
         Ok(Self { inner, cipher })
     }
 
     fn encrypt_content(&self, plaintext: &str) -> Result<String, MemoryError> {
-        // Generate a random 96-bit nonce for each encryption.
-        let nonce_bytes: [u8; 12] = aes_gcm::aead::rand_core::RngCore::next_u64(&mut OsRng)
-            .to_le_bytes()
-            .iter()
-            .chain(
-                aes_gcm::aead::rand_core::RngCore::next_u64(&mut OsRng)
-                    .to_le_bytes()
-                    .iter(),
-            )
-            .take(12)
-            .copied()
-            .collect::<Vec<u8>>()
-            .try_into()
-            .unwrap();
+        // Generate a random 96-bit nonce for each encryption directly into a
+        // stack array.  Mirrors the salt-generation pattern at the bottom of
+        // this file and removes the need for a clippy::unwrap_used escape.
+        let mut nonce_bytes = [0u8; 12];
+        aes_gcm::aead::rand_core::RngCore::fill_bytes(&mut OsRng, &mut nonce_bytes);
 
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = self
@@ -119,13 +110,11 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
     }
 
     fn decrypt_content(&self, stored: &str) -> Result<String, MemoryError> {
-        let encoded = stored
-            .strip_prefix("enc:v1:")
-            .ok_or_else(|| {
-                MemoryError::Io(std::io::Error::other(
-                    "memory content not encrypted or unknown version",
-                ))
-            })?;
+        let encoded = stored.strip_prefix("enc:v1:").ok_or_else(|| {
+            MemoryError::Io(std::io::Error::other(
+                "memory content not encrypted or unknown version",
+            ))
+        })?;
 
         use base64::Engine;
         let combined = base64::engine::general_purpose::STANDARD
@@ -141,14 +130,11 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
         let (nonce_bytes, ciphertext) = combined.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        let plaintext = self
-            .cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|e| {
-                MemoryError::Io(std::io::Error::other(format!(
-                    "decrypt failed (wrong passphrase?): {e}"
-                )))
-            })?;
+        let plaintext = self.cipher.decrypt(nonce, ciphertext).map_err(|e| {
+            MemoryError::Io(std::io::Error::other(format!(
+                "decrypt failed (wrong passphrase?): {e}"
+            )))
+        })?;
 
         String::from_utf8(plaintext)
             .map_err(|e| MemoryError::Io(std::io::Error::other(format!("utf8: {e}"))))
@@ -318,9 +304,8 @@ async fn load_or_init_salt(store: &mut impl MemoryStore) -> Result<Vec<u8>, Memo
 /// Parameters are pinned (see `ARGON2_VERSION_MARKER`) so a crate update
 /// cannot silently change the derived key.
 fn derive_key(passphrase: &str, salt: &[u8]) -> Result<[u8; 32], MemoryError> {
-    let params = Params::new(19_456, 2, 1, Some(32)).map_err(|e| {
-        MemoryError::Io(std::io::Error::other(format!("argon2 params: {e}")))
-    })?;
+    let params = Params::new(19_456, 2, 1, Some(32))
+        .map_err(|e| MemoryError::Io(std::io::Error::other(format!("argon2 params: {e}"))))?;
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = [0u8; 32];
     argon
@@ -337,8 +322,9 @@ mod tests {
     #[tokio::test]
     async fn test_round_trip_encrypt_decrypt() {
         let inner = InMemoryStore::new();
-        let mut store =
-            EncryptedStore::new(inner, "test-passphrase").await.expect("create encrypted store");
+        let mut store = EncryptedStore::new(inner, "test-passphrase")
+            .await
+            .expect("create encrypted store");
 
         let memory = Memory {
             id: "m1".to_string(),
@@ -367,8 +353,9 @@ mod tests {
     #[tokio::test]
     async fn test_inner_store_has_encrypted_content() {
         let inner = InMemoryStore::new();
-        let mut store =
-            EncryptedStore::new(inner, "my-secret").await.expect("create encrypted store");
+        let mut store = EncryptedStore::new(inner, "my-secret")
+            .await
+            .expect("create encrypted store");
 
         store
             .record(Memory {
@@ -408,8 +395,9 @@ mod tests {
     #[tokio::test]
     async fn test_wrong_passphrase_fails() {
         let inner = InMemoryStore::new();
-        let mut store =
-            EncryptedStore::new(inner, "correct-passphrase").await.expect("create encrypted store");
+        let mut store = EncryptedStore::new(inner, "correct-passphrase")
+            .await
+            .expect("create encrypted store");
 
         store
             .record(Memory {
@@ -426,8 +414,9 @@ mod tests {
         // Create a new store wrapping the same inner but with wrong passphrase.
         // This must succeed (salt sentinel is present, key is derived) but
         // recall must fail because the ciphertext was encrypted with a different key.
-        let wrong_store =
-            EncryptedStore::new(store.inner, "wrong-passphrase").await.expect("create store");
+        let wrong_store = EncryptedStore::new(store.inner, "wrong-passphrase")
+            .await
+            .expect("create store");
 
         let result = wrong_store
             .recall(&MemoryQuery {
@@ -501,7 +490,10 @@ mod tests {
         // Read ciphertext from the inner stores directly.
         let ct_a = store_a
             .inner
-            .recall(&MemoryQuery { text: String::new(), limit: 10 })
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: 10,
+            })
             .await
             .unwrap()
             .into_iter()
@@ -511,7 +503,10 @@ mod tests {
 
         let ct_b = store_b
             .inner
-            .recall(&MemoryQuery { text: String::new(), limit: 10 })
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: 10,
+            })
             .await
             .unwrap()
             .into_iter()
@@ -571,7 +566,6 @@ mod tests {
     /// Missing sentinel with existing encrypted records must return an error.
     #[tokio::test]
     async fn test_missing_sentinel_with_encrypted_records_errors() {
-
         let mut inner = InMemoryStore::new();
 
         // Manually insert a record that looks encrypted (no sentinel).

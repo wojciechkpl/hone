@@ -1,16 +1,15 @@
 use hone_proto::{AgentEvent, TokenUsage};
 use hone_tui::{
-    AnimationState, FocusTarget, LayoutMode,
+    FocusTarget, LayoutMode,
     app::{App, AppState},
     commands::Command,
     input::InputState,
-    layout,
     message::DisplayRole,
     render::root,
     theme::Theme,
 };
-use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use ratatui::backend::TestBackend;
 
 // ---------------------------------------------------------------------------
 // InputState tests
@@ -488,7 +487,10 @@ fn test_file_preview_state() {
 
 #[test]
 fn test_theme_preview_command() {
-    assert_eq!(Command::parse("/theme-preview"), Some(Command::ThemePreview));
+    assert_eq!(
+        Command::parse("/theme-preview"),
+        Some(Command::ThemePreview)
+    );
 }
 
 #[test]
