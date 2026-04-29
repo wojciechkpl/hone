@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::os::unix::fs::PermissionsExt;
 
 use futures::StreamExt;
@@ -77,7 +79,8 @@ fn test_acp_types_notification_roundtrip() {
 
 #[test]
 fn test_acp_update_payload_message_chunk_parse() {
-    let json = r#"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello!"}}"#;
+    let json =
+        r#"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello!"}}"#;
     let payload: UpdatePayload = serde_json::from_str(json).expect("deserialize");
 
     match payload {
@@ -100,11 +103,16 @@ fn test_acp_update_payload_tool_call_parse() {
             title,
             kind,
             status,
+            raw_input,
         } => {
             assert_eq!(tool_call_id, "call_001");
             assert_eq!(title, "Reading file");
             assert_eq!(kind, "read");
             assert_eq!(status, "pending");
+            assert!(
+                raw_input.is_none(),
+                "expected absent rawInput to deserialize as None, got {raw_input:?}"
+            );
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -112,7 +120,8 @@ fn test_acp_update_payload_tool_call_parse() {
 
 #[test]
 fn test_acp_update_payload_tool_call_update_parse() {
-    let json = r#"{"sessionUpdate":"tool_call_update","toolCallId":"call_001","status":"completed"}"#;
+    let json =
+        r#"{"sessionUpdate":"tool_call_update","toolCallId":"call_001","status":"completed"}"#;
     let payload: UpdatePayload = serde_json::from_str(json).expect("deserialize");
 
     match payload {
@@ -185,12 +194,9 @@ async fn test_acp_transport_initialize() {
     };
     let (_dir, script_path) = create_mock_agent_script(&config).expect("create script");
 
-    let mut transport = AcpTransport::spawn(
-        script_path.to_str().unwrap(),
-        &[],
-    )
-    .await
-    .expect("spawn transport");
+    let mut transport = AcpTransport::spawn(script_path.to_str().unwrap(), &[])
+        .await
+        .expect("spawn transport");
 
     let params = serde_json::to_value(InitializeParams {
         protocol_version: 1,
@@ -222,12 +228,9 @@ async fn test_acp_transport_session_new() {
     };
     let (_dir, script_path) = create_mock_agent_script(&config).expect("create script");
 
-    let mut transport = AcpTransport::spawn(
-        script_path.to_str().unwrap(),
-        &[],
-    )
-    .await
-    .expect("spawn transport");
+    let mut transport = AcpTransport::spawn(script_path.to_str().unwrap(), &[])
+        .await
+        .expect("spawn transport");
 
     // initialize first
     let init_params = serde_json::to_value(InitializeParams {
@@ -269,12 +272,9 @@ async fn test_acp_transport_notify_does_not_block() {
     };
     let (_dir, script_path) = create_mock_agent_script(&config).expect("create script");
 
-    let mut transport = AcpTransport::spawn(
-        script_path.to_str().unwrap(),
-        &[],
-    )
-    .await
-    .expect("spawn transport");
+    let mut transport = AcpTransport::spawn(script_path.to_str().unwrap(), &[])
+        .await
+        .expect("spawn transport");
 
     // Sending a notification must not block waiting for a response.
     transport
@@ -294,10 +294,7 @@ async fn test_acp_transport_notify_does_not_block() {
 async fn test_acp_provider_complete_streams_tokens() {
     let config = MockAgentConfig {
         agent_name: "test-agent".to_owned(),
-        message_chunks: vec![
-            "Hello ".to_owned(),
-            "world!".to_owned(),
-        ],
+        message_chunks: vec!["Hello ".to_owned(), "world!".to_owned()],
     };
     let (_dir, script_path) = create_mock_agent_script(&config).expect("create script");
 
@@ -368,10 +365,7 @@ async fn test_acp_provider_done_is_last_event() {
     let stream = provider.complete(simple_request()).await.expect("complete");
     let events: Vec<ProviderEvent> = stream.collect().await;
 
-    assert!(
-        !events.is_empty(),
-        "expected at least one event (Done)"
-    );
+    assert!(!events.is_empty(), "expected at least one event (Done)");
 
     let last = events.last().unwrap();
     assert_eq!(
@@ -440,7 +434,9 @@ async fn test_acp_provider_tool_call_events() {
     let stream = provider.complete(simple_request()).await.expect("complete");
     let events: Vec<ProviderEvent> = stream.collect().await;
 
-    let tool_call = events.iter().find(|e| matches!(e, ProviderEvent::ToolCall(_)));
+    let tool_call = events
+        .iter()
+        .find(|e| matches!(e, ProviderEvent::ToolCall(_)));
     assert!(
         tool_call.is_some(),
         "expected a ToolCall event, got {events:?}"
@@ -471,13 +467,7 @@ async fn test_acp_provider_health_when_binary_missing() {
 
 #[test]
 fn test_acp_provider_id_and_name() {
-    let provider = AcpProvider::custom(
-        "some-binary",
-        &[],
-        "my-acp",
-        "My ACP Provider",
-        vec![],
-    );
+    let provider = AcpProvider::custom("some-binary", &[], "my-acp", "My ACP Provider", vec![]);
 
     assert_eq!(provider.id(), "my-acp");
     assert_eq!(provider.display_name(), "My ACP Provider");

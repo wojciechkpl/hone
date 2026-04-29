@@ -102,16 +102,18 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Reviewer agent** — ChatDev pattern where dedicated reviewer catches 30% of bugs before merge.
 - **Self-refine loop** — Iterative improvement (NeurIPS 2023, +8-15% quality gain).
 - **RALPH loop** — Review, Analyze, Learn, Plan, Heal: structured feedback cycle combining adversarial review with root cause analysis. Max 3 iterations (configurable), stops when reviewer approves. Captures learned patterns for cross-session improvement. Optional test verification after each Heal step. Research basis: Self-Refine (NeurIPS 2023) + ChatDev + MASAI + AgentCoder.
-- **Universal model support** — 7 first-party adapters (Anthropic, OpenAI, Ollama, Claude CLI, Gemini CLI, ACP, and a mock adapter for testing) plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL` (DeepSeek, Qwen, Kimi, OpenRouter, and others work out of the box). Full tool-calling support on Anthropic, OpenAI, and Ollama adapters; CLI pass-through adapters delegate to the underlying binary.
+- **Universal model support** — 7 first-party adapters (Anthropic, OpenAI, Ollama, Claude CLI, Gemini CLI, ACP, and a mock adapter for testing) plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL` (DeepSeek, Qwen, Kimi, OpenRouter, and others work out of the box). Full tool-calling support on Anthropic, OpenAI, Ollama, **and ACP** adapters (`claude --acp`, `gemini --acp`, or custom ACP servers); the legacy Claude/Gemini CLI pass-through adapters remain prose-only.
 
   | Adapter | Tool calling | Stream | Notes |
   |---|---|---|---|
   | Anthropic | Yes | SSE | claude-sonnet-4-5 default |
   | OpenAI | Yes | SSE | gpt-4o default; override with `HONE_OPENAI_MODEL` |
   | Ollama | Yes | stream | llama3.2 default; requires local `ollama serve` |
-  | Claude CLI | No | text | `claude` binary on PATH |
-  | Gemini CLI | No | text | `gemini` binary on PATH |
-  | ACP | Yes | SSE | Agent-to-agent protocol |
+  | Claude CLI (legacy) | No | text | `claude` binary on PATH; prose-only passthrough |
+  | Gemini CLI (legacy) | No | text | `gemini` binary on PATH; prose-only passthrough |
+  | ACP — `claude --acp` | Yes | JSON-RPC | Subscription Claude with full bidirectional tool dispatch |
+  | ACP — `gemini --acp` | Yes | JSON-RPC | Free-tier Gemini with full bidirectional tool dispatch |
+  | ACP — custom | Yes | JSON-RPC | Self-hosted ACP servers; see [`docs/api/acp-protocol.md`](docs/api/acp-protocol.md) |
   | Mock | Yes | in-process | Test double only |
 - **Kernel-enforced sandboxing** — Seatbelt on macOS, Landlock on Linux 5.13+, seccomp elsewhere. Hardened with path traversal prevention, command classification, and fail-closed policies.
 - **Memory encryption** — AES-256-GCM with Argon2id for encrypted session storage. Opt-in via `--features encrypted-memory`. Keys stored in system keychain. Each store now persists its own random 16-byte salt (plus a version marker) as a sentinel memory record, so keys rotate per-vault and cannot be cross-replayed against a hardcoded constant.
@@ -138,6 +140,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Text-based tool call parser** — Detects JSON tool calls in model content for Ollama (handles models that don't use tool_calls field). Strips markdown code fences automatically.
 - **DeepSeek Direct compatibility** — Works for interactive use; for SWE-bench benchmarks, OpenRouter is recommended due to token output limits.
 - **Built-in agents** — 12 specialized agent personas (code reviewer, debugger, security auditor, ML engineer, etc.) with `@agent-name` inline dispatch. Plus 9 recipe templates for common workflows.
+- **Agent-loop robustness** — Three pre-LLM safety checks break out of failure modes that tend to waste tokens: (1) **Doom-loop detector** — injects a corrective user message when the last 30 messages show 3+ identical consecutive tool calls or a repeating 2–5 step pattern; (2) **Context-budget graceful abort** — at 95 % of the model's context limit, strips tools from the next request and tells the model to finalize now instead of being mid-tool-call truncated; (3) **Output-truncation retry hint** — when the provider ends with `stop_reason = "max_tokens"` (Anthropic) or `finish_reason = "length"` (OpenAI), commits partial assistant text, drops the malformed tool-use block, and injects a user hint naming the lost tools so the model can retry with smaller content.
 
 ## Built-in Agents and Recipes
 

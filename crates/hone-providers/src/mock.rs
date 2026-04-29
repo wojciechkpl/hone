@@ -1,9 +1,14 @@
+//! Mock provider for tests - unwrap/expect are acceptable here.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use futures::{Stream, stream};
-use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, TokenUsage, ToolCallRequest};
+use hone_proto::{
+    Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, TokenUsage, ToolCallRequest,
+};
 
 use crate::error::ProviderError;
 use crate::traits::{CompletionRequest, ModelProvider};
@@ -119,10 +124,7 @@ impl ModelProvider for MockProvider {
 
     fn estimate_tokens(&self, messages: &[Message]) -> u32 {
         // Rough heuristic: 4 chars per token, minimum 1.
-        let total_chars: usize = messages
-            .iter()
-            .map(|m| m.content.as_text().len())
-            .sum();
+        let total_chars: usize = messages.iter().map(|m| m.content.as_text().len()).sum();
         ((total_chars / 4) as u32).max(1)
     }
 

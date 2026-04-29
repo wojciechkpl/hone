@@ -94,14 +94,8 @@ mod tests {
     }
 
     fn make_dispatcher() -> ToolDispatcher {
-        let registry = ToolRegistry::builder()
-            .register(Box::new(EchoTool))
-            .build();
-        ToolDispatcher::new(
-            registry,
-            Arc::new(NullSandbox),
-            PathBuf::from("/tmp"),
-        )
+        let registry = ToolRegistry::builder().register(Box::new(EchoTool)).build();
+        ToolDispatcher::new(registry, Arc::new(NullSandbox), PathBuf::from("/tmp"))
     }
 
     #[tokio::test]

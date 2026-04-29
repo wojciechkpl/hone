@@ -115,14 +115,12 @@ impl CacheBackend for SqliteBackend {
             .unwrap_or(0);
 
         if !invalidator.is_valid(now) {
-            sqlx::query(
-                "DELETE FROM cache_entries WHERE namespace = ?1 AND hash_hex = ?2",
-            )
-            .bind(&key.namespace)
-            .bind(&hex)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| CacheError::Backend(e.to_string()))?;
+            sqlx::query("DELETE FROM cache_entries WHERE namespace = ?1 AND hash_hex = ?2")
+                .bind(&key.namespace)
+                .bind(&hex)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| CacheError::Backend(e.to_string()))?;
 
             sqlx::query(
                 "UPDATE cache_stats \
@@ -198,13 +196,11 @@ impl CacheBackend for SqliteBackend {
 
         let removed = result.rows_affected();
         if removed > 0 {
-            sqlx::query(
-                "UPDATE cache_stats SET invalidations = invalidations + ?1 WHERE id = 1",
-            )
-            .bind(removed as i64)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| CacheError::Backend(e.to_string()))?;
+            sqlx::query("UPDATE cache_stats SET invalidations = invalidations + ?1 WHERE id = 1")
+                .bind(removed as i64)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| CacheError::Backend(e.to_string()))?;
         }
         Ok(removed)
     }

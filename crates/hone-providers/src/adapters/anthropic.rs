@@ -3,7 +3,10 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt, stream};
-use hone_proto::{Content, Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, Role, TokenUsage, ToolCallRequest, ToolSchema};
+use hone_proto::{
+    Content, Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, Role, TokenUsage,
+    ToolCallRequest, ToolSchema,
+};
 use reqwest::Client;
 use serde_json::{Value, json};
 use tracing::debug;
@@ -113,6 +116,8 @@ fn inject_cache_control_into_user_message(msg: &mut Value) {
             }]);
         }
         Value::Array(arr) if !arr.is_empty() => {
+            // Safe: !arr.is_empty() guard guarantees last_mut() returns Some.
+            #[allow(clippy::unwrap_used)]
             let last = arr.last_mut().unwrap();
             last["cache_control"] = json!({ "type": "ephemeral" });
         }
@@ -272,7 +277,14 @@ pub fn parse_sse_data(
             if block["type"].as_str() == Some("tool_use") {
                 let id = block["id"].as_str().unwrap_or("").to_owned();
                 let name = block["name"].as_str().unwrap_or("").to_owned();
-                tool_states.insert(index, ToolCallState { id, name, partial_json: String::new() });
+                tool_states.insert(
+                    index,
+                    ToolCallState {
+                        id,
+                        name,
+                        partial_json: String::new(),
+                    },
+                );
             }
         }
         "content_block_delta" => {
@@ -319,14 +331,26 @@ pub fn parse_sse_data(
                 cache_read: 0,
                 cache_creation: 0,
             }));
+
+            // If the model stopped because it hit its max_tokens ceiling, any
+            // tool-call blocks still in `tool_states` never received their
+            // `content_block_stop` — their JSON arguments are truncated and
+            // unparseable. Emit `Truncated` so the agent can drop them and
+            // tell the model to retry in smaller pieces.
+            if value["delta"]["stop_reason"].as_str() == Some("max_tokens") {
+                let lost: Vec<String> = tool_states.values().map(|s| s.name.clone()).collect();
+                events.push(ProviderEvent::Truncated {
+                    lost_tool_calls: lost,
+                });
+                tool_states.clear();
+            }
         }
         "message_start" => {
             // Extract input token count from the initial message event
             let usage = &value["message"]["usage"];
             let input_tokens = usage["input_tokens"].as_u64().unwrap_or(0) as u32;
             let cache_read = usage["cache_read_input_tokens"].as_u64().unwrap_or(0) as u32;
-            let cache_creation =
-                usage["cache_creation_input_tokens"].as_u64().unwrap_or(0) as u32;
+            let cache_creation = usage["cache_creation_input_tokens"].as_u64().unwrap_or(0) as u32;
             if input_tokens > 0 || cache_read > 0 || cache_creation > 0 {
                 events.push(ProviderEvent::Usage(TokenUsage {
                     input: input_tokens,
@@ -440,7 +464,8 @@ impl ModelProvider for AnthropicProvider {
             }
 
             let body = if status_code == 401 {
-                "invalid or expired API key — check your ANTHROPIC_API_KEY environment variable".to_owned()
+                "invalid or expired API key — check your ANTHROPIC_API_KEY environment variable"
+                    .to_owned()
             } else {
                 extract_api_error_message(&body_text)
             };
@@ -455,7 +480,11 @@ impl ModelProvider for AnthropicProvider {
         let byte_stream = response.bytes_stream();
 
         let event_stream = stream::unfold(
-            (byte_stream, String::new(), HashMap::<usize, ToolCallState>::new()),
+            (
+                byte_stream,
+                String::new(),
+                HashMap::<usize, ToolCallState>::new(),
+            ),
             |(mut byte_stream, mut buffer, mut tool_states)| async move {
                 loop {
                     // Try to process events already in the buffer
@@ -473,10 +502,7 @@ impl ModelProvider for AnthropicProvider {
                     }
 
                     if !emitted.is_empty() {
-                        return Some((
-                            stream::iter(emitted),
-                            (byte_stream, buffer, tool_states),
-                        ));
+                        return Some((stream::iter(emitted), (byte_stream, buffer, tool_states)));
                     }
 
                     // Need more bytes
@@ -519,10 +545,7 @@ impl ModelProvider for AnthropicProvider {
     }
 
     fn estimate_tokens(&self, messages: &[Message]) -> u32 {
-        let total_chars: usize = messages
-            .iter()
-            .map(|m| m.content.as_text().len())
-            .sum();
+        let total_chars: usize = messages.iter().map(|m| m.content.as_text().len()).sum();
         ((total_chars / 4) as u32).max(1)
     }
 

@@ -433,7 +433,10 @@ mod tests {
         assert_eq!(header_span.content.as_ref(), "My Title");
         // Second line should be the separator (─ chars)
         let sep_text = all_text(&lines[1..2]);
-        assert!(sep_text.contains('\u{2500}'), "separator must use ─ character");
+        assert!(
+            sep_text.contains('\u{2500}'),
+            "separator must use ─ character"
+        );
     }
 
     #[test]
@@ -486,9 +489,10 @@ mod tests {
             texts
         );
         // Inner lines should use the secondary (dim) color
-        let code_line = lines.iter().find(|l| {
-            l.spans.first().map(|s| s.content.as_ref()) == Some("let x = 1;")
-        }).unwrap();
+        let code_line = lines
+            .iter()
+            .find(|l| l.spans.first().map(|s| s.content.as_ref()) == Some("let x = 1;"))
+            .unwrap();
         assert_eq!(
             code_line.spans[0].style.fg,
             Some(theme.text_secondary),
@@ -551,7 +555,10 @@ mod tests {
         let lines = markdown_to_lines("---", &theme);
         assert_eq!(lines.len(), 1);
         let text = all_text(&lines);
-        assert!(text.contains('\u{2500}'), "horizontal rule must use ─ character");
+        assert!(
+            text.contains('\u{2500}'),
+            "horizontal rule must use ─ character"
+        );
     }
 
     #[test]

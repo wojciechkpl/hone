@@ -36,9 +36,7 @@ pub fn render_search_bar(app: &App, frame: &mut Frame, conversation_area: Rect) 
 
     // Fill bar background.
     for col in 0..bar_width {
-        buf[(bar_x + col, bar_y)]
-            .set_char(' ')
-            .set_style(bg_style);
+        buf[(bar_x + col, bar_y)].set_char(' ').set_style(bg_style);
     }
 
     // Build the text to display.
@@ -49,7 +47,11 @@ pub fn render_search_bar(app: &App, frame: &mut Frame, conversation_area: Rect) 
     } else if matches.is_empty() {
         "  No matches".to_string()
     } else {
-        format!("   {}/{} matches   n next  N prev  Esc close", cursor + 1, matches.len())
+        format!(
+            "   {}/{} matches   n next  N prev  Esc close",
+            cursor + 1,
+            matches.len()
+        )
     };
 
     let mut col = bar_x;
@@ -82,7 +84,11 @@ pub fn render_search_bar(app: &App, frame: &mut Frame, conversation_area: Rect) 
 
     // Write match info / hint.
     if !query.is_empty() {
-        let info_style = if matches.is_empty() { red_style } else { muted_style };
+        let info_style = if matches.is_empty() {
+            red_style
+        } else {
+            muted_style
+        };
         for ch in match_info.chars() {
             if col >= right {
                 break;
@@ -116,35 +122,39 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         for &c in contents {
-            app.messages.push(DisplayMessage::new(DisplayRole::System, c));
+            app.messages
+                .push(DisplayMessage::new(DisplayRole::System, c));
         }
         app
     }
 
     #[test]
     fn search_matches_case_insensitive() {
-        let mut app = make_app_with_messages(&[
-            "Hello World",
-            "foo bar",
-            "HELLO again",
-            "unrelated content",
-        ]);
+        let mut app =
+            make_app_with_messages(&["Hello World", "foo bar", "HELLO again", "unrelated content"]);
         app.search_open = true;
         app.search_query = "hello".to_string();
         app.recompute_search_matches_pub();
 
         let matches = app.search_matches();
-        assert_eq!(matches.len(), 2, "should match 'Hello World' and 'HELLO again'");
-        assert!(matches.contains(&0), "index 0 ('Hello World') must be in matches");
-        assert!(matches.contains(&2), "index 2 ('HELLO again') must be in matches");
+        assert_eq!(
+            matches.len(),
+            2,
+            "should match 'Hello World' and 'HELLO again'"
+        );
+        assert!(
+            matches.contains(&0),
+            "index 0 ('Hello World') must be in matches"
+        );
+        assert!(
+            matches.contains(&2),
+            "index 2 ('HELLO again') must be in matches"
+        );
     }
 
     #[test]
     fn search_matches_empty_when_no_hit() {
-        let mut app = make_app_with_messages(&[
-            "alpha beta",
-            "gamma delta",
-        ]);
+        let mut app = make_app_with_messages(&["alpha beta", "gamma delta"]);
         app.search_open = true;
         app.search_query = "zzznotfound".to_string();
         app.recompute_search_matches_pub();
@@ -182,6 +192,10 @@ mod tests {
         for _ in 0..3 {
             app.handle_key_search_pub(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
         }
-        assert_eq!(app.search_cursor(), 0, "cursor should wrap around after 3 advances on 3 matches");
+        assert_eq!(
+            app.search_cursor(),
+            0,
+            "cursor should wrap around after 3 advances on 3 matches"
+        );
     }
 }

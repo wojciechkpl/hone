@@ -1,7 +1,12 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::sync::Arc;
 
 use hone_sandbox::NullSandbox;
-use hone_tools::{EditFileTool, GlobTool, GrepTool, MultiEditTool, ReadFileTool, Tool, ToolContext, ToolInput, WriteFileTool};
+use hone_tools::{
+    EditFileTool, GlobTool, GrepTool, MultiEditTool, ReadFileTool, Tool, ToolContext, ToolInput,
+    WriteFileTool,
+};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -28,7 +33,9 @@ async fn test_read_file_returns_content() {
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
     // Content is now line-numbered; the single line "hello world" should appear.
-    let content = output.value["content"].as_str().expect("content is a string");
+    let content = output.value["content"]
+        .as_str()
+        .expect("content is a string");
     assert!(
         content.contains("hello world"),
         "expected 'hello world' in content, got: {content:?}"
@@ -63,7 +70,9 @@ async fn test_read_file_returns_line_numbered_content() {
     let input = ToolInput::new(json!({ "path": "three.txt" }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    let content = output.value["content"].as_str().expect("content is a string");
+    let content = output.value["content"]
+        .as_str()
+        .expect("content is a string");
     assert!(content.contains("1 |"), "missing line 1 prefix");
     assert!(content.contains("2 |"), "missing line 2 prefix");
     assert!(content.contains("3 |"), "missing line 3 prefix");
@@ -83,7 +92,9 @@ async fn test_read_file_respects_offset() {
     let input = ToolInput::new(json!({ "path": "ten.txt", "offset": 5 }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    let content = output.value["content"].as_str().expect("content is a string");
+    let content = output.value["content"]
+        .as_str()
+        .expect("content is a string");
 
     // First returned line should be line 5.
     let first_line = content.lines().next().unwrap_or("");
@@ -115,9 +126,14 @@ async fn test_read_file_respects_limit() {
     let input = ToolInput::new(json!({ "path": "ten.txt", "limit": 3 }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    let content = output.value["content"].as_str().expect("content is a string");
+    let content = output.value["content"]
+        .as_str()
+        .expect("content is a string");
     let returned_lines = content.lines().count();
-    assert_eq!(returned_lines, 3, "expected exactly 3 lines, got {returned_lines}");
+    assert_eq!(
+        returned_lines, 3,
+        "expected exactly 3 lines, got {returned_lines}"
+    );
     assert_eq!(output.value["truncated"], true);
     assert_eq!(output.value["end_line"], 3);
 }
@@ -145,7 +161,10 @@ async fn test_read_file_missing_file_errors() {
     let ctx = make_ctx(&dir);
     let input = ToolInput::new(json!({ "path": "ghost.txt" }));
 
-    let err = tool.call(input, &ctx).await.expect_err("should error on missing file");
+    let err = tool
+        .call(input, &ctx)
+        .await
+        .expect_err("should error on missing file");
     assert!(
         matches!(err, hone_tools::ToolError::IoError(_)),
         "expected IoError, got: {err:?}"
@@ -413,7 +432,10 @@ async fn test_multi_edit_atomic_on_failure() {
 
     // File must be untouched — atomic failure.
     let on_disk = std::fs::read_to_string(dir.path().join("atomic.txt")).unwrap();
-    assert_eq!(on_disk, "foo\nbar\nfoo", "file should be unchanged after atomic failure");
+    assert_eq!(
+        on_disk, "foo\nbar\nfoo",
+        "file should be unchanged after atomic failure"
+    );
 }
 
 #[tokio::test]
@@ -506,7 +528,10 @@ async fn test_multi_edit_not_found_fails_atomically() {
 
     // First edit must not have been committed.
     let on_disk = std::fs::read_to_string(dir.path().join("notfound.txt")).unwrap();
-    assert_eq!(on_disk, "alpha beta gamma", "file should be unchanged after atomic failure");
+    assert_eq!(
+        on_disk, "alpha beta gamma",
+        "file should be unchanged after atomic failure"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -572,7 +597,10 @@ async fn test_grep_finds_literal_match() {
     assert_eq!(v["matches"][0]["file"], "a.rs");
     assert_eq!(v["matches"][0]["line"], 1);
     assert!(
-        v["matches"][0]["content"].as_str().unwrap().contains("authenticate"),
+        v["matches"][0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("authenticate"),
         "content should contain match"
     );
 }
@@ -615,7 +643,10 @@ async fn test_grep_case_insensitive() {
 
     let output = tool.call(input, &ctx).await.expect("grep failed");
     let v = &output.value;
-    assert_eq!(v["count"], 2, "expected 2 case-insensitive matches, got: {v}");
+    assert_eq!(
+        v["count"], 2,
+        "expected 2 case-insensitive matches, got: {v}"
+    );
 }
 
 #[tokio::test]
@@ -661,7 +692,10 @@ async fn test_grep_respects_max_results() {
 
     let output = tool.call(input, &ctx).await.expect("grep failed");
     let v = &output.value;
-    assert_eq!(v["count"], 5, "expected exactly 5 results (max_results); got: {v}");
+    assert_eq!(
+        v["count"], 5,
+        "expected exactly 5 results (max_results); got: {v}"
+    );
     assert_eq!(v["truncated"], true, "truncated should be true");
 }
 
@@ -681,7 +715,10 @@ async fn test_grep_include_glob() {
 
     let output = tool.call(input, &ctx).await.expect("grep failed");
     let v = &output.value;
-    assert_eq!(v["count"], 1, "only *.rs files should be searched; got: {v}");
+    assert_eq!(
+        v["count"], 1,
+        "only *.rs files should be searched; got: {v}"
+    );
     assert_eq!(v["matches"][0]["file"], "main.rs");
 }
 
@@ -723,7 +760,10 @@ async fn test_write_file_verification_succeeds_on_normal_write() {
     let input = ToolInput::new(json!({ "path": "verified.txt", "content": "verified content" }));
 
     // A successful write should pass verification silently and return the expected output.
-    let output = tool.call(input, &ctx).await.expect("write with verification should succeed");
+    let output = tool
+        .call(input, &ctx)
+        .await
+        .expect("write with verification should succeed");
     assert_eq!(output.value["bytes_written"], 16);
 
     // Confirm the file on disk has the correct content.
@@ -745,7 +785,10 @@ async fn test_edit_file_verification_succeeds() {
     }));
 
     // A successful edit should pass verification silently and report applied: true.
-    let output = tool.call(input, &ctx).await.expect("edit with verification should succeed");
+    let output = tool
+        .call(input, &ctx)
+        .await
+        .expect("edit with verification should succeed");
     assert_eq!(output.value["applied"], true);
 
     // Confirm the file on disk has the updated content.
@@ -764,7 +807,10 @@ async fn test_read_file_rejects_dotdot_escape() {
     let ctx = make_ctx(&dir);
     let input = ToolInput::new(json!({ "path": "../../etc/passwd" }));
 
-    let err = tool.call(input, &ctx).await.expect_err("dotdot escape should be rejected");
+    let err = tool
+        .call(input, &ctx)
+        .await
+        .expect_err("dotdot escape should be rejected");
     match err {
         hone_tools::ToolError::InvalidInput { reason } => {
             assert!(
@@ -783,7 +829,10 @@ async fn test_write_file_rejects_absolute_escape() {
     let ctx = make_ctx(&dir);
     let input = ToolInput::new(json!({ "path": "/tmp/hone_escape_test.txt", "content": "pwned" }));
 
-    let err = tool.call(input, &ctx).await.expect_err("absolute path outside working dir should be rejected");
+    let err = tool
+        .call(input, &ctx)
+        .await
+        .expect_err("absolute path outside working dir should be rejected");
     match err {
         hone_tools::ToolError::InvalidInput { reason } => {
             assert!(
@@ -811,8 +860,16 @@ async fn test_read_file_accepts_nested_path_inside_working_dir() {
     let ctx = make_ctx(&dir);
     let input = ToolInput::new(json!({ "path": "sub/inner.txt" }));
 
-    let output = tool.call(input, &ctx).await.expect("nested path inside working dir should succeed");
-    assert!(output.value["content"].as_str().unwrap().contains("nested content"));
+    let output = tool
+        .call(input, &ctx)
+        .await
+        .expect("nested path inside working dir should succeed");
+    assert!(
+        output.value["content"]
+            .as_str()
+            .unwrap()
+            .contains("nested content")
+    );
 }
 
 #[tokio::test]
@@ -830,7 +887,10 @@ async fn test_edit_file_rejects_dotdot_in_middle() {
         "new_str": "pwned"
     }));
 
-    let err = tool.call(input, &ctx).await.expect_err("dotdot escape via middle should be rejected");
+    let err = tool
+        .call(input, &ctx)
+        .await
+        .expect_err("dotdot escape via middle should be rejected");
     match err {
         hone_tools::ToolError::InvalidInput { reason } => {
             assert!(
@@ -850,7 +910,10 @@ async fn test_glob_rejects_dotdot_path() {
     let ctx = make_ctx(&dir);
     let input = ToolInput::new(json!({ "pattern": "*.txt", "path": "../../" }));
 
-    let err = tool.call(input, &ctx).await.expect_err("dotdot path in glob should be rejected");
+    let err = tool
+        .call(input, &ctx)
+        .await
+        .expect_err("dotdot path in glob should be rejected");
     match err {
         hone_tools::ToolError::InvalidInput { reason } => {
             assert!(
@@ -869,7 +932,10 @@ async fn test_grep_rejects_dotdot_path() {
     let ctx = make_ctx(&dir);
     let input = ToolInput::new(json!({ "pattern": "root", "path": "../../../etc" }));
 
-    let err = tool.call(input, &ctx).await.expect_err("dotdot path in grep should be rejected");
+    let err = tool
+        .call(input, &ctx)
+        .await
+        .expect_err("dotdot path in grep should be rejected");
     match err {
         hone_tools::ToolError::InvalidInput { reason } => {
             assert!(

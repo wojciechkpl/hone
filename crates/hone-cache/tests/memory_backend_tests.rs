@@ -1,8 +1,8 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use hone_cache::{
-    CacheBackend, CacheEntry, CacheKey, InMemoryBackend, InvalidationTag,
-};
+use hone_cache::{CacheBackend, CacheEntry, CacheKey, InMemoryBackend, InvalidationTag};
 
 fn now_secs() -> i64 {
     SystemTime::now()
@@ -38,7 +38,11 @@ async fn test_put_then_get_returns_entry() {
     let entry = make_entry(b"file contents");
     backend.put(&key, entry).await.unwrap();
 
-    let fetched = backend.get(&key).await.unwrap().expect("entry should exist");
+    let fetched = backend
+        .get(&key)
+        .await
+        .unwrap()
+        .expect("entry should exist");
     assert_eq!(&*fetched.bytes, b"file contents");
 }
 
@@ -134,11 +138,7 @@ async fn test_ttl_invalidation_expires() {
 
     // TTL set to 1 second ago → already expired.
     let expired_at = now_secs() - 1;
-    let key = CacheKey::from_bytes(
-        "tool:web",
-        b"url",
-        InvalidationTag::Ttl(expired_at),
-    );
+    let key = CacheKey::from_bytes("tool:web", b"url", InvalidationTag::Ttl(expired_at));
     let entry = CacheEntry::new(b"stale data".to_vec(), InvalidationTag::Ttl(expired_at));
     backend.put(&key, entry).await.unwrap();
 
@@ -154,11 +154,7 @@ async fn test_ttl_valid_entry_is_returned() {
     let backend = InMemoryBackend::new();
 
     let far_future = i64::MAX;
-    let key = CacheKey::from_bytes(
-        "tool:web",
-        b"url_v2",
-        InvalidationTag::Ttl(far_future),
-    );
+    let key = CacheKey::from_bytes("tool:web", b"url_v2", InvalidationTag::Ttl(far_future));
     let entry = CacheEntry::new(b"fresh data".to_vec(), InvalidationTag::Ttl(far_future));
     backend.put(&key, entry).await.unwrap();
 

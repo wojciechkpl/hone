@@ -83,8 +83,15 @@ async fn test_ollama_event_ordering() {
         events.last()
     );
 
-    let done_pos = events.iter().position(|e| matches!(e, ProviderEvent::Done)).unwrap();
-    assert_eq!(done_pos, events.len() - 1, "Done must be the very last event");
+    let done_pos = events
+        .iter()
+        .position(|e| matches!(e, ProviderEvent::Done))
+        .unwrap();
+    assert_eq!(
+        done_pos,
+        events.len() - 1,
+        "Done must be the very last event"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +122,10 @@ async fn test_ollama_usage_values() {
         _ => (i, o),
     });
 
-    assert_eq!(total_input, 10, "expected 10 input tokens (prompt_eval_count)");
+    assert_eq!(
+        total_input, 10,
+        "expected 10 input tokens (prompt_eval_count)"
+    );
     assert_eq!(total_output, 2, "expected 2 output tokens (eval_count)");
 }
 

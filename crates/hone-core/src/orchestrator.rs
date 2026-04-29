@@ -127,9 +127,7 @@ impl Orchestrator {
         }
 
         // 2. Execute subtasks in dependency order.
-        let workers = self
-            .execute_plan(plan.clone(), None, events.clone())
-            .await;
+        let workers = self.execute_plan(plan.clone(), None, events.clone()).await;
 
         // Persist final plan state with worker results.
         if let Some(ref store) = self.plan_store {
@@ -139,7 +137,9 @@ impl Orchestrator {
         }
 
         // 3. Merge all worker results into a single response.
-        let merged = self.merge_results(&plan.goal, &workers, events.clone()).await;
+        let merged = self
+            .merge_results(&plan.goal, &workers, events.clone())
+            .await;
 
         let total_cost = workers.iter().map(|w| w.cost_usd).sum::<f64>();
 
@@ -343,10 +343,7 @@ impl Orchestrator {
             let mut still_waiting: VecDeque<SubTask> = VecDeque::new();
 
             for task in pending {
-                let deps_met = task
-                    .depends_on
-                    .iter()
-                    .all(|dep| completed.contains(dep));
+                let deps_met = task.depends_on.iter().all(|dep| completed.contains(dep));
                 if deps_met {
                     ready.push(task);
                 } else {
@@ -395,10 +392,7 @@ impl Orchestrator {
                     // Acquire a permit *before* spawning so the spawn happens
                     // only when there is capacity.  The permit is moved into
                     // the async block and dropped when the task finishes.
-                    let permit = sem
-                        .acquire_owned()
-                        .await
-                        .expect("semaphore never closed");
+                    let permit = sem.acquire_owned().await.expect("semaphore never closed");
 
                     set.spawn(async move {
                         let result =
@@ -428,9 +422,7 @@ impl Orchestrator {
                             // A future panicked.  We cannot tell *which* index
                             // panicked from the JoinError alone, so we log it and
                             // resolve missing indices after the loop.
-                            tracing::error!(
-                                "worker task panicked (join error): {join_err}"
-                            );
+                            tracing::error!("worker task panicked (join error): {join_err}");
                         }
                     }
                 }
@@ -446,9 +438,7 @@ impl Orchestrator {
                             WorkerResult {
                                 task_id,
                                 agent,
-                                status: WorkerStatus::Failed(
-                                    "worker task panicked".to_owned(),
-                                ),
+                                status: WorkerStatus::Failed("worker task panicked".to_owned()),
                                 response: String::new(),
                                 usage: TokenUsage::default(),
                                 cost_usd: 0.0,
@@ -583,8 +573,7 @@ impl Orchestrator {
             for (i, test) in task.acceptance_tests.iter().enumerate() {
                 system_prompt.push_str(&format!("{}. {}\n", i + 1, test));
             }
-            system_prompt
-                .push_str("\nVerify all criteria are met before reporting completion.\n");
+            system_prompt.push_str("\nVerify all criteria are met before reporting completion.\n");
         }
 
         if !task.scope.is_empty() {

@@ -1,12 +1,14 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use hone_sandbox::NullSandbox;
 use hone_tools::lsp::{
-    AutoFixLoop, CodeAction, Diagnostic, DiagnosticSeverity, Language,
-    LspDiagnosticsTool, LspHoverTool, MockLspBridge, detect_language,
+    AutoFixLoop, CodeAction, Diagnostic, DiagnosticSeverity, Language, LspDiagnosticsTool,
+    LspHoverTool, MockLspBridge, detect_language,
 };
 use hone_tools::{Tool, ToolContext, ToolInput};
-use hone_sandbox::NullSandbox;
 use serde_json::json;
 
 fn make_ctx() -> ToolContext {
@@ -34,11 +36,23 @@ fn make_diagnostic(file: &str, msg: &str) -> Diagnostic {
 #[test]
 fn test_language_detection_from_file_extensions() {
     assert_eq!(detect_language(&PathBuf::from("main.rs")), Language::Rust);
-    assert_eq!(detect_language(&PathBuf::from("script.py")), Language::Python);
-    assert_eq!(detect_language(&PathBuf::from("app.ts")), Language::TypeScript);
-    assert_eq!(detect_language(&PathBuf::from("index.js")), Language::JavaScript);
+    assert_eq!(
+        detect_language(&PathBuf::from("script.py")),
+        Language::Python
+    );
+    assert_eq!(
+        detect_language(&PathBuf::from("app.ts")),
+        Language::TypeScript
+    );
+    assert_eq!(
+        detect_language(&PathBuf::from("index.js")),
+        Language::JavaScript
+    );
     assert_eq!(detect_language(&PathBuf::from("main.go")), Language::Go);
-    assert_eq!(detect_language(&PathBuf::from("data.xyz")), Language::Unknown);
+    assert_eq!(
+        detect_language(&PathBuf::from("data.xyz")),
+        Language::Unknown
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -76,9 +90,7 @@ async fn test_lsp_diagnostics_returns_mock_results() {
 async fn test_lsp_hover_returns_text() {
     let expected_hover = "fn process(data: &[u8]) -> Result<Output>";
 
-    let bridge = MockLspBridge::builder()
-        .hover_text(expected_hover)
-        .build();
+    let bridge = MockLspBridge::builder().hover_text(expected_hover).build();
 
     let tool = LspHoverTool::new(Arc::new(bridge));
     let input = ToolInput::new(json!({ "file": "lib.rs", "line": 10, "col": 4 }));
@@ -103,10 +115,7 @@ async fn test_auto_fix_loop_applies_fixes() {
     let diag = make_diagnostic("main.rs", "unused import");
 
     let bridge = MockLspBridge::builder()
-        .diagnostics_sequence(vec![
-            vec![diag],
-            vec![],
-        ])
+        .diagnostics_sequence(vec![vec![diag], vec![]])
         .code_actions(vec![CodeAction {
             title: "Remove unused import".to_string(),
             kind: Some("quickfix".to_string()),

@@ -118,7 +118,10 @@ fn test_context_inserts_trim_marker() {
     let has_trim_marker = built
         .iter()
         .any(|m| m.content.as_text().contains("session history"));
-    assert!(has_trim_marker, "expected a session history marker in the message history");
+    assert!(
+        has_trim_marker,
+        "expected a session history marker in the message history"
+    );
 }
 
 #[test]
@@ -134,7 +137,10 @@ fn test_context_keeps_recent_messages() {
     // The most recently added message must be present after trimming.
     let built = ctx.build_messages("");
     let has_last = built.iter().any(|m| m.content.as_text().contains(last_msg));
-    assert!(has_last, "the most recently added message should survive trimming");
+    assert!(
+        has_last,
+        "the most recently added message should survive trimming"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +179,10 @@ fn test_preserves_system_prompt_and_first_user_message() {
             && m.content.as_text().contains("system prompt")
             && !m.content.as_text().starts_with("[session history:")
     });
-    assert!(has_seed_system, "stored system message (seed) should be preserved");
+    assert!(
+        has_seed_system,
+        "stored system message (seed) should be preserved"
+    );
 
     // The first user message must survive.
     let has_original = built
@@ -197,10 +206,13 @@ fn test_summary_marker_inserted_after_trim() {
     }
 
     let built = ctx.build_messages("sys");
-    let has_summary = built.iter().any(|m| {
-        matches!(m.role, Role::System) && m.content.as_text().contains("session history")
-    });
-    assert!(has_summary, "should have inserted session history summary after trimming");
+    let has_summary = built
+        .iter()
+        .any(|m| matches!(m.role, Role::System) && m.content.as_text().contains("session history"));
+    assert!(
+        has_summary,
+        "should have inserted session history summary after trimming"
+    );
 }
 
 /// Tool results older than 5 assistant turns should be compressed even when
@@ -231,9 +243,9 @@ fn test_old_tool_results_compressed() {
     let built = ctx.build_messages("sys");
 
     // The original 500-char tool output must have been compressed.
-    let still_has_full_output = built.iter().any(|m| {
-        matches!(m.role, Role::Tool) && m.content.as_text().len() >= 400
-    });
+    let still_has_full_output = built
+        .iter()
+        .any(|m| matches!(m.role, Role::Tool) && m.content.as_text().len() >= 400);
     assert!(
         !still_has_full_output,
         "old tool result (500 chars) should have been compressed to a short summary"
@@ -276,9 +288,9 @@ fn test_recent_tool_results_not_compressed() {
 
     let built = ctx.build_messages("sys");
 
-    let still_has_full_output = built.iter().any(|m| {
-        matches!(m.role, Role::Tool) && m.content.as_text().len() >= 200
-    });
+    let still_has_full_output = built
+        .iter()
+        .any(|m| matches!(m.role, Role::Tool) && m.content.as_text().len() >= 200);
     assert!(
         still_has_full_output,
         "recent tool result should NOT be compressed (only 2 turns old, threshold is 5)"
@@ -320,17 +332,26 @@ fn test_duplicate_tool_results_replaced_with_pointer() {
     let first_tool = built
         .iter()
         .find(|m| matches!(m.role, Role::Tool) && m.content.as_text().len() > 500);
-    assert!(first_tool.is_some(), "first tool message should have full content");
+    assert!(
+        first_tool.is_some(),
+        "first tool message should have full content"
+    );
 
     // Count total tool messages.
-    let tool_count = built.iter().filter(|m| matches!(m.role, Role::Tool)).count();
+    let tool_count = built
+        .iter()
+        .filter(|m| matches!(m.role, Role::Tool))
+        .count();
     assert!(tool_count >= 2);
 
     // At least one tool message should be a dedup pointer.
     let has_pointer = built
         .iter()
         .any(|m| matches!(m.role, Role::Tool) && m.content.as_text().contains("duplicate content"));
-    assert!(has_pointer, "second occurrence should be replaced with pointer");
+    assert!(
+        has_pointer,
+        "second occurrence should be replaced with pointer"
+    );
 }
 
 #[test]

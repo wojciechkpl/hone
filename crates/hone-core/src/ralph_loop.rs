@@ -96,9 +96,16 @@ pub enum RalphEvent {
     /// Plan phase completed.
     PlanCompleted { fixes_planned: usize },
     /// Heal phase completed.
-    HealCompleted { fixes_applied: usize, tests_passed: Option<bool> },
+    HealCompleted {
+        fixes_applied: usize,
+        tests_passed: Option<bool>,
+    },
     /// The full loop completed.
-    Completed { approved: bool, iterations: u32, total_issues: usize },
+    Completed {
+        approved: bool,
+        iterations: u32,
+        total_issues: usize,
+    },
 }
 
 /// The RALPH loop orchestrator.
@@ -136,19 +143,27 @@ impl RalphLoop {
 
         // ── RALPH iterations ───────────────────────────────────────────────
         for iteration in 1..=self.config.max_iterations {
-            let _ = events.send(AgentEvent::Token {
-                text: format!("\n[RALPH iteration {}/{}]\n", iteration, self.config.max_iterations),
-            }).await;
+            let _ = events
+                .send(AgentEvent::Token {
+                    text: format!(
+                        "\n[RALPH iteration {}/{}]\n",
+                        iteration, self.config.max_iterations
+                    ),
+                })
+                .await;
 
             // ── R: Review ──────────────────────────────────────────────────
             let mut reviewer = ReviewerAgent::new(reviewer_config.clone());
             let review = reviewer.review(&final_response, events.clone()).await?;
             total_usage = total_usage + review.usage;
             // Estimate review cost from usage (reviewer has no cost_usd field).
-            let review_cost = (review.usage.input as f64 * 3.0 + review.usage.output as f64 * 15.0) / 1_000_000.0;
+            let review_cost =
+                (review.usage.input as f64 * 3.0 + review.usage.output as f64 * 15.0) / 1_000_000.0;
             total_cost += review_cost;
 
-            let blocking_issues: Vec<&ReviewIssue> = review.issues.iter()
+            let blocking_issues: Vec<&ReviewIssue> = review
+                .issues
+                .iter()
                 .filter(|i| is_blocking(i.severity, self.config.min_blocking_severity))
                 .collect();
 
@@ -163,10 +178,16 @@ impl RalphLoop {
             }
 
             if review.approved || blocking_issues.is_empty() {
-                let _ = events.send(AgentEvent::Token {
-                    text: format!("[RALPH] Approved after {} iterations ({} issues found, {} blocking)\n",
-                        iteration, review.issues.len(), blocking_issues.len()),
-                }).await;
+                let _ = events
+                    .send(AgentEvent::Token {
+                        text: format!(
+                            "[RALPH] Approved after {} iterations ({} issues found, {} blocking)\n",
+                            iteration,
+                            review.issues.len(),
+                            blocking_issues.len()
+                        ),
+                    })
+                    .await;
 
                 return Ok(RalphResult {
                     iterations: iteration,
@@ -180,14 +201,22 @@ impl RalphLoop {
             }
 
             // ── A: Analyze ─────────────────────────────────────────────────
-            let issues_text = blocking_issues.iter()
+            let issues_text = blocking_issues
+                .iter()
                 .enumerate()
-                .map(|(i, issue)| format!(
-                    "{}. [{}] {}{}", i + 1,
-                    severity_label(issue.severity),
-                    issue.description,
-                    issue.file.as_ref().map(|f| format!(" (in {f})")).unwrap_or_default()
-                ))
+                .map(|(i, issue)| {
+                    format!(
+                        "{}. [{}] {}{}",
+                        i + 1,
+                        severity_label(issue.severity),
+                        issue.description,
+                        issue
+                            .file
+                            .as_ref()
+                            .map(|f| format!(" (in {f})"))
+                            .unwrap_or_default()
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join("\n");
 
@@ -216,7 +245,9 @@ impl RalphLoop {
                 let stripped = trimmed.trim_start_matches(&['-', '*', '•'][..]).trim();
                 // Strip numbered list markers: 1. 2. etc.
                 let stripped = if stripped.len() > 2 && stripped.as_bytes()[0].is_ascii_digit() {
-                    stripped.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.').trim()
+                    stripped
+                        .trim_start_matches(|c: char| c.is_ascii_digit() || c == '.')
+                        .trim()
                 } else {
                     stripped
                 };
@@ -313,7 +344,11 @@ impl RalphResult {
         out.push_str(&format!(
             "RALPH Loop: {} iterations, {} {}\n",
             self.iterations,
-            if self.approved { "APPROVED" } else { "MAX ITERATIONS" },
+            if self.approved {
+                "APPROVED"
+            } else {
+                "MAX ITERATIONS"
+            },
             if self.approved { "✓" } else { "⚠" }
         ));
         out.push_str(&format!(
@@ -322,7 +357,10 @@ impl RalphResult {
             self.all_issues.iter().filter(|i| i.resolved).count()
         ));
         if !self.learnings.is_empty() {
-            out.push_str(&format!("Learnings: {} patterns captured\n", self.learnings.len()));
+            out.push_str(&format!(
+                "Learnings: {} patterns captured\n",
+                self.learnings.len()
+            ));
             for (i, learning) in self.learnings.iter().take(5).enumerate() {
                 out.push_str(&format!("  {}. {}\n", i + 1, learning));
             }
@@ -344,7 +382,10 @@ mod tests {
         assert!(is_blocking(ReviewSeverity::Critical, ReviewSeverity::Major));
         assert!(is_blocking(ReviewSeverity::Major, ReviewSeverity::Major));
         assert!(!is_blocking(ReviewSeverity::Minor, ReviewSeverity::Major));
-        assert!(!is_blocking(ReviewSeverity::Suggestion, ReviewSeverity::Major));
+        assert!(!is_blocking(
+            ReviewSeverity::Suggestion,
+            ReviewSeverity::Major
+        ));
     }
 
     #[test]
@@ -366,22 +407,25 @@ mod tests {
         let result = RalphResult {
             iterations: 2,
             approved: true,
-            all_issues: vec![
-                TrackedIssue {
-                    issue: ReviewIssue {
-                        severity: ReviewSeverity::Major,
-                        description: "SQL injection".to_string(),
-                        file: Some("auth.rs".to_string()),
-                        suggestion: None,
-                    },
-                    iteration_found: 1,
-                    resolved: true,
-                    resolution: Some("Fixed".to_string()),
+            all_issues: vec![TrackedIssue {
+                issue: ReviewIssue {
+                    severity: ReviewSeverity::Major,
+                    description: "SQL injection".to_string(),
+                    file: Some("auth.rs".to_string()),
+                    suggestion: None,
                 },
-            ],
+                iteration_found: 1,
+                resolved: true,
+                resolution: Some("Fixed".to_string()),
+            }],
             learnings: vec!["Always use parameterized queries".to_string()],
             final_response: "Fixed".to_string(),
-            total_usage: TokenUsage { input: 5000, output: 2000, cache_read: 0, cache_creation: 0 },
+            total_usage: TokenUsage {
+                input: 5000,
+                output: 2000,
+                cache_read: 0,
+                cache_creation: 0,
+            },
             total_cost_usd: 0.012,
         };
         let summary = result.summary();

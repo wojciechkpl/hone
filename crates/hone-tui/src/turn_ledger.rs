@@ -306,10 +306,26 @@ impl TurnLedger {
 
     /// Return aggregate counts without cloning the full ledger.
     pub fn summary(&self) -> LedgerSummary {
-        let read_ops = self.files_touched.iter().filter(|f| f.op == FileOp::Read).count();
-        let write_ops = self.files_touched.iter().filter(|f| f.op == FileOp::Write).count();
-        let exec_ops = self.files_touched.iter().filter(|f| f.op == FileOp::Exec).count();
-        let errors = self.tools_invoked.iter().filter(|t| t.error.is_some()).count();
+        let read_ops = self
+            .files_touched
+            .iter()
+            .filter(|f| f.op == FileOp::Read)
+            .count();
+        let write_ops = self
+            .files_touched
+            .iter()
+            .filter(|f| f.op == FileOp::Write)
+            .count();
+        let exec_ops = self
+            .files_touched
+            .iter()
+            .filter(|f| f.op == FileOp::Exec)
+            .count();
+        let errors = self
+            .tools_invoked
+            .iter()
+            .filter(|t| t.error.is_some())
+            .count();
         LedgerSummary {
             files_touched: self.files_touched.len(),
             read_ops,
@@ -344,17 +360,29 @@ impl TurnLedger {
 /// not touch files (e.g. git_status, lsp_hover).
 pub fn tool_op(tool_name: &str) -> Option<FileOp> {
     let name = tool_name.to_ascii_lowercase();
-    if name.contains("write") || name.contains("edit") || name.contains("multi_edit")
+    if name.contains("write")
+        || name.contains("edit")
+        || name.contains("multi_edit")
         || name.contains("create")
     {
         Some(FileOp::Write)
-    } else if name.contains("read") || name.contains("grep") || name.contains("glob")
-        || name.contains("search") || name.contains("find") || name.contains("lsp")
-        || name.contains("symbol") || name.contains("git_diff") || name.contains("git_status")
+    } else if name.contains("read")
+        || name.contains("grep")
+        || name.contains("glob")
+        || name.contains("search")
+        || name.contains("find")
+        || name.contains("lsp")
+        || name.contains("symbol")
+        || name.contains("git_diff")
+        || name.contains("git_status")
     {
         Some(FileOp::Read)
-    } else if name.contains("shell") || name.contains("bash") || name.contains("exec")
-        || name.contains("run") || name.contains("cargo") || name.contains("pytest")
+    } else if name.contains("shell")
+        || name.contains("bash")
+        || name.contains("exec")
+        || name.contains("run")
+        || name.contains("cargo")
+        || name.contains("pytest")
         || name.contains("git_commit")
     {
         Some(FileOp::Exec)
@@ -452,7 +480,11 @@ mod tests {
         l.record_memory_recall("key", long);
         // Snippet should be truncated — at most 79 'x' chars + "…" (3-byte UTF-8).
         let chars: Vec<char> = l.memory_recalls[0].snippet.chars().collect();
-        assert!(chars.len() <= 80, "snippet should be truncated to ≤80 chars, got {}", chars.len());
+        assert!(
+            chars.len() <= 80,
+            "snippet should be truncated to ≤80 chars, got {}",
+            chars.len()
+        );
     }
 
     /// Regression test: byte-slicing a multi-byte string would panic under the
@@ -469,17 +501,29 @@ mod tests {
         let snippet = &l.memory_recalls[0].snippet;
         // Must be valid UTF-8 (no panic) and ≤ 80 chars displayed.
         let char_count: usize = snippet.chars().count();
-        assert!(char_count <= 80, "emoji snippet too long: {char_count} chars");
+        assert!(
+            char_count <= 80,
+            "emoji snippet too long: {char_count} chars"
+        );
         // The original string should have been trimmed.
-        assert!(snippet.contains('…'), "expected ellipsis in truncated emoji snippet");
+        assert!(
+            snippet.contains('…'),
+            "expected ellipsis in truncated emoji snippet"
+        );
 
         // Also test CJK characters (3 bytes each).
         let cjk_snippet: String = "你好世界".repeat(25); // 100 CJK chars
         l.record_memory_recall("cjk-key", cjk_snippet);
         let snippet2 = &l.memory_recalls[1].snippet;
         let char_count2: usize = snippet2.chars().count();
-        assert!(char_count2 <= 80, "CJK snippet too long: {char_count2} chars");
-        assert!(snippet2.contains('…'), "expected ellipsis in truncated CJK snippet");
+        assert!(
+            char_count2 <= 80,
+            "CJK snippet too long: {char_count2} chars"
+        );
+        assert!(
+            snippet2.contains('…'),
+            "expected ellipsis in truncated CJK snippet"
+        );
 
         // A short snippet (≤ 79 chars) must be returned unchanged.
         let short = "hello 世界 🦀";
@@ -590,7 +634,8 @@ mod tests {
         ledger.record_phase_transition(Phase::Editing);
 
         // Turn 2: edit_file
-        let args_write = serde_json::json!({ "path": "src/auth.rs", "start_line": 45, "end_line": 60 });
+        let args_write =
+            serde_json::json!({ "path": "src/auth.rs", "start_line": 45, "end_line": 60 });
         if let Some(op) = tool_op("edit_file") {
             let path = extract_path(&args_write).unwrap_or_default();
             ledger.record_file_touch(&path, op, Some(45..60));

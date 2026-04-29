@@ -17,7 +17,11 @@ pub struct FilePreviewWidget<'a> {
 
 impl<'a> FilePreviewWidget<'a> {
     pub fn new(content: Option<&'a str>, file_path: Option<&'a str>, theme: &'a Theme) -> Self {
-        Self { content, file_path, theme }
+        Self {
+            content,
+            file_path,
+            theme,
+        }
     }
 
     /// Infer language from file extension.
@@ -76,10 +80,7 @@ impl<'a> Widget for FilePreviewWidget<'a> {
                 }
             }
             Some(content) => {
-                let language = self
-                    .file_path
-                    .map(Self::language)
-                    .unwrap_or("text");
+                let language = self.file_path.map(Self::language).unwrap_or("text");
 
                 for (row, raw_line) in content.lines().enumerate() {
                     let y = inner.top() + row as u16;

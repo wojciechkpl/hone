@@ -135,7 +135,10 @@ impl LruCache {
 /// Hash a `CompletionRequest` for cache lookup.
 ///
 /// Includes: model ID, messages (role + text), tools (name only), temperature, max_tokens.
-/// Excludes: stop sequences (rarely change behavior in practice).
+/// Excludes: stop sequences (rarely change behavior in practice); `cancel`
+/// (a `CancellationToken` is not `Hash` and is not semantically a cache key —
+/// two requests with identical content but different cancel handles must hit
+/// the same cache entry).
 fn hash_request(req: &CompletionRequest) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
@@ -150,7 +153,10 @@ fn hash_request(req: &CompletionRequest) -> u64 {
         tool.name.hash(&mut hasher);
     }
 
-    req.temperature.map(|t| t.to_bits()).unwrap_or(0).hash(&mut hasher);
+    req.temperature
+        .map(|t| t.to_bits())
+        .unwrap_or(0)
+        .hash(&mut hasher);
     req.max_tokens.unwrap_or(0).hash(&mut hasher);
 
     hasher.finish()
@@ -210,6 +216,7 @@ impl ModelProvider for CachingProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::MockProvider;
@@ -220,10 +227,7 @@ mod tests {
         let inner = Arc::new(MockProvider::new(vec!["hi".to_string()]));
         let cached = CachingProvider::new(inner, 10);
 
-        let req = CompletionRequest::new(
-            ModelId::new("mock:test"),
-            vec![Message::user("query")],
-        );
+        let req = CompletionRequest::new(ModelId::new("mock:test"), vec![Message::user("query")]);
 
         let stream = cached.complete(req).await.unwrap();
         let events: Vec<ProviderEvent> = stream.collect().await;
@@ -240,10 +244,8 @@ mod tests {
         let inner = Arc::new(MockProvider::new(vec!["cached".to_string()]));
         let cached = CachingProvider::new(inner, 10);
 
-        let req1 = CompletionRequest::new(
-            ModelId::new("mock:test"),
-            vec![Message::user("same query")],
-        );
+        let req1 =
+            CompletionRequest::new(ModelId::new("mock:test"), vec![Message::user("same query")]);
 
         // First call: miss
         let stream = cached.complete(req1.clone()).await.unwrap();
@@ -264,17 +266,23 @@ mod tests {
         let inner = Arc::new(MockProvider::new(vec!["resp".to_string()]));
         let cached = CachingProvider::new(inner, 10);
 
-        let req1 = CompletionRequest::new(
-            ModelId::new("mock:test"),
-            vec![Message::user("query A")],
-        );
-        let req2 = CompletionRequest::new(
-            ModelId::new("mock:test"),
-            vec![Message::user("query B")],
-        );
+        let req1 =
+            CompletionRequest::new(ModelId::new("mock:test"), vec![Message::user("query A")]);
+        let req2 =
+            CompletionRequest::new(ModelId::new("mock:test"), vec![Message::user("query B")]);
 
-        let _ = cached.complete(req1).await.unwrap().collect::<Vec<_>>().await;
-        let _ = cached.complete(req2).await.unwrap().collect::<Vec<_>>().await;
+        let _ = cached
+            .complete(req1)
+            .await
+            .unwrap()
+            .collect::<Vec<_>>()
+            .await;
+        let _ = cached
+            .complete(req2)
+            .await
+            .unwrap()
+            .collect::<Vec<_>>()
+            .await;
 
         let stats = cached.stats().await;
         assert_eq!(stats.misses, 2);
@@ -292,7 +300,12 @@ mod tests {
                 ModelId::new("mock:test"),
                 vec![Message::user(format!("query {i}"))],
             );
-            let _ = cached.complete(req).await.unwrap().collect::<Vec<_>>().await;
+            let _ = cached
+                .complete(req)
+                .await
+                .unwrap()
+                .collect::<Vec<_>>()
+                .await;
         }
 
         let stats = cached.stats().await;
@@ -302,27 +315,15 @@ mod tests {
 
     #[test]
     fn test_hash_request_deterministic() {
-        let req1 = CompletionRequest::new(
-            ModelId::new("mock:test"),
-            vec![Message::user("hello")],
-        );
-        let req2 = CompletionRequest::new(
-            ModelId::new("mock:test"),
-            vec![Message::user("hello")],
-        );
+        let req1 = CompletionRequest::new(ModelId::new("mock:test"), vec![Message::user("hello")]);
+        let req2 = CompletionRequest::new(ModelId::new("mock:test"), vec![Message::user("hello")]);
         assert_eq!(hash_request(&req1), hash_request(&req2));
     }
 
     #[test]
     fn test_hash_request_different_models() {
-        let req1 = CompletionRequest::new(
-            ModelId::new("mock:a"),
-            vec![Message::user("hello")],
-        );
-        let req2 = CompletionRequest::new(
-            ModelId::new("mock:b"),
-            vec![Message::user("hello")],
-        );
+        let req1 = CompletionRequest::new(ModelId::new("mock:a"), vec![Message::user("hello")]);
+        let req2 = CompletionRequest::new(ModelId::new("mock:b"), vec![Message::user("hello")]);
         assert_ne!(hash_request(&req1), hash_request(&req2));
     }
 
@@ -331,14 +332,16 @@ mod tests {
         let inner = Arc::new(MockProvider::new(vec!["r".to_string()]));
         let cached = CachingProvider::new(inner, 10);
 
-        let req = CompletionRequest::new(
-            ModelId::new("mock:test"),
-            vec![Message::user("same")],
-        );
+        let req = CompletionRequest::new(ModelId::new("mock:test"), vec![Message::user("same")]);
 
         // 1 miss + 3 hits = 75% hit rate
         for _ in 0..4 {
-            let _ = cached.complete(req.clone()).await.unwrap().collect::<Vec<_>>().await;
+            let _ = cached
+                .complete(req.clone())
+                .await
+                .unwrap()
+                .collect::<Vec<_>>()
+                .await;
         }
 
         let stats = cached.stats().await;

@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use hone_core::ContextManager;
 use hone_proto::Message;
 
@@ -21,11 +21,13 @@ fn bench_context_build_messages(c: &mut Criterion) {
     }
 
     c.bench_function("build_messages_50", |b| {
-        b.iter(|| {
-            black_box(ctx.build_messages(black_box("system prompt")))
-        });
+        b.iter(|| black_box(ctx.build_messages(black_box("system prompt"))));
     });
 }
 
-criterion_group!(benches, bench_context_token_estimation, bench_context_build_messages);
+criterion_group!(
+    benches,
+    bench_context_token_estimation,
+    bench_context_build_messages
+);
 criterion_main!(benches);

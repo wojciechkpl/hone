@@ -116,69 +116,67 @@ impl Tool for GrepTool {
         // File traversal is synchronous; run it on the blocking thread pool so we
         // don't stall the async runtime.
         let search_root_clone = search_root.clone();
-        let matches =
-            tokio::task::spawn_blocking(move || -> Result<Vec<Value>, ToolError> {
-                let walker = WalkBuilder::new(&search_root_clone)
-                    .standard_filters(true) // respects .gitignore, .ignore, hidden files
-                    .build();
+        let matches = tokio::task::spawn_blocking(move || -> Result<Vec<Value>, ToolError> {
+            let walker = WalkBuilder::new(&search_root_clone)
+                .standard_filters(true) // respects .gitignore, .ignore, hidden files
+                .build();
 
-                let mut results: Vec<Value> = Vec::new();
-                let mut files_scanned: usize = 0;
+            let mut results: Vec<Value> = Vec::new();
+            let mut files_scanned: usize = 0;
 
-                'outer: for entry in walker {
-                    if results.len() >= max_results || files_scanned >= DEFAULT_MAX_FILES {
-                        break;
-                    }
+            'outer: for entry in walker {
+                if results.len() >= max_results || files_scanned >= DEFAULT_MAX_FILES {
+                    break;
+                }
 
-                    let Ok(entry) = entry else { continue };
-                    if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                let Ok(entry) = entry else { continue };
+                if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                    continue;
+                }
+
+                let path = entry.path();
+
+                // Apply optional include filter.
+                if let Some(matcher) = &include_matcher {
+                    if matcher.matched(path, false).is_ignore() {
                         continue;
-                    }
-
-                    let path = entry.path();
-
-                    // Apply optional include filter.
-                    if let Some(matcher) = &include_matcher {
-                        if matcher.matched(path, false).is_ignore() {
-                            continue;
-                        }
-                    }
-
-                    // Skip files that are too large to avoid OOM on huge repos.
-                    match std::fs::metadata(path) {
-                        Ok(m) if m.len() > MAX_FILE_BYTES => continue,
-                        Err(_) => continue,
-                        _ => {}
-                    }
-
-                    files_scanned += 1;
-
-                    // Attempt to read as UTF-8; silently skip binary files.
-                    let content = match std::fs::read_to_string(path) {
-                        Ok(c) => c,
-                        Err(_) => continue,
-                    };
-
-                    for (idx, line) in content.lines().enumerate() {
-                        if regex.is_match(line) {
-                            let rel_path =
-                                path.strip_prefix(&search_root_clone).unwrap_or(path);
-                            results.push(json!({
-                                "file": rel_path.to_string_lossy(),
-                                "line": idx + 1,
-                                "content": line,
-                            }));
-                            if results.len() >= max_results {
-                                break 'outer;
-                            }
-                        }
                     }
                 }
 
-                Ok(results)
-            })
-            .await
-            .map_err(|e| ToolError::Other(format!("grep task panicked: {e}")))??;
+                // Skip files that are too large to avoid OOM on huge repos.
+                match std::fs::metadata(path) {
+                    Ok(m) if m.len() > MAX_FILE_BYTES => continue,
+                    Err(_) => continue,
+                    _ => {}
+                }
+
+                files_scanned += 1;
+
+                // Attempt to read as UTF-8; silently skip binary files.
+                let content = match std::fs::read_to_string(path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                for (idx, line) in content.lines().enumerate() {
+                    if regex.is_match(line) {
+                        let rel_path = path.strip_prefix(&search_root_clone).unwrap_or(path);
+                        results.push(json!({
+                            "file": rel_path.to_string_lossy(),
+                            "line": idx + 1,
+                            "content": line,
+                        }));
+                        if results.len() >= max_results {
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+
+            Ok(results)
+        })
+        .await
+        .map_err(|e| ToolError::Other(format!("grep task panicked: {e}")))??;
 
         let truncated = matches.len() >= max_results;
 

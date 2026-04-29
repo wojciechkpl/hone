@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::sync::Arc;
 
 use hone_providers::{MockProvider, ModelProvider, ModelRouter, ProviderRegistry, RoutingRule};
@@ -5,8 +7,7 @@ use hone_providers::{MockProvider, ModelProvider, ModelRouter, ProviderRegistry,
 fn registry_with(ids: &[&str]) -> Arc<ProviderRegistry> {
     let registry = Arc::new(ProviderRegistry::new());
     for &id in ids {
-        let provider: Arc<dyn ModelProvider> =
-            Arc::new(MockProvider::new(vec![]).with_id(id));
+        let provider: Arc<dyn ModelProvider> = Arc::new(MockProvider::new(vec![]).with_id(id));
         registry.register(provider);
     }
     registry

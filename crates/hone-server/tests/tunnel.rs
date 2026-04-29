@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use hone_server::{router, AppState, MockTunnelManager};
+use hone_server::{AppState, MockTunnelManager, router};
 use tower::ServiceExt;
 
 fn make_state() -> AppState {
@@ -10,10 +10,7 @@ fn make_state() -> AppState {
 }
 
 fn make_state_with_auth(token: &str) -> AppState {
-    AppState::with_tunnel_manager(
-        Some(token.to_owned()),
-        Arc::new(MockTunnelManager::new()),
-    )
+    AppState::with_tunnel_manager(Some(token.to_owned()), Arc::new(MockTunnelManager::new()))
 }
 
 fn start_tunnel_request(local_port: u16) -> Request<Body> {
@@ -30,10 +27,7 @@ fn start_tunnel_request(local_port: u16) -> Request<Body> {
 #[tokio::test]
 async fn test_start_tunnel() {
     let app = router(make_state());
-    let response = app
-        .oneshot(start_tunnel_request(8080))
-        .await
-        .unwrap();
+    let response = app.oneshot(start_tunnel_request(8080)).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::CREATED);
 
@@ -158,10 +152,7 @@ async fn test_tunnel_requires_auth() {
     let app = router(make_state_with_auth("secret"));
 
     // POST /tunnel without Authorization header should return 401.
-    let response = app
-        .oneshot(start_tunnel_request(8080))
-        .await
-        .unwrap();
+    let response = app.oneshot(start_tunnel_request(8080)).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

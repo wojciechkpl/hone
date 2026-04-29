@@ -115,7 +115,6 @@ pub struct EgressEntry {
     pub duration_ms: u64,
 
     // ---- span hierarchy ----
-
     /// Unique identifier for the top-level session / orchestration run.
     pub trace_id: String,
     /// Unique identifier for this individual span (tool call).
@@ -293,7 +292,11 @@ mod tests {
         log.record(make_entry("shell", true));
         log.flush().unwrap();
 
-        assert_eq!(log.buffered_count(), 0, "buffer should be empty after flush");
+        assert_eq!(
+            log.buffered_count(),
+            0,
+            "buffer should be empty after flush"
+        );
 
         let file = std::fs::File::open(&path).unwrap();
         let lines: Vec<String> = std::io::BufReader::new(file)
@@ -303,7 +306,8 @@ mod tests {
 
         assert_eq!(lines.len(), 2, "two JSONL lines expected");
         for line in &lines {
-            let v: serde_json::Value = serde_json::from_str(line).expect("each line must be valid JSON");
+            let v: serde_json::Value =
+                serde_json::from_str(line).expect("each line must be valid JSON");
             assert!(v.get("tool").is_some());
             assert!(v.get("timestamp").is_some());
             assert!(v.get("duration_ms").is_some());
@@ -348,7 +352,10 @@ mod tests {
         let s = "a".repeat(300);
         let p = preview(&s, 200);
         // 200 'a's + ellipsis character
-        assert!(p.len() <= 204, "preview should not exceed 200 chars + ellipsis");
+        assert!(
+            p.len() <= 204,
+            "preview should not exceed 200 chars + ellipsis"
+        );
         assert!(p.ends_with('…'));
     }
 

@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use hone_server::{router, AppState};
+use hone_server::{AppState, router};
 use tower::ServiceExt;
 
 fn make_state() -> AppState {

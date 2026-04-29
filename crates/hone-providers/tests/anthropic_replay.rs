@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use futures::StreamExt;
 use hone_proto::{Message, ModelId, ProviderEvent};
 use hone_providers::{AnthropicProvider, CompletionRequest, ModelProvider};
@@ -48,7 +50,10 @@ async fn test_anthropic_basic_roundtrip() {
         })
         .collect();
 
-    assert_eq!(text, "Hello world", "expected concatenated tokens to be 'Hello world', got: {text:?}");
+    assert_eq!(
+        text, "Hello world",
+        "expected concatenated tokens to be 'Hello world', got: {text:?}"
+    );
 
     let has_done = events.iter().any(|e| matches!(e, ProviderEvent::Done));
     assert!(has_done, "expected a Done event in the stream");
@@ -85,12 +90,22 @@ async fn test_anthropic_event_ordering() {
     );
 
     // At least one Usage event must be present
-    let usage_count = events.iter().filter(|e| matches!(e, ProviderEvent::Usage(_))).count();
+    let usage_count = events
+        .iter()
+        .filter(|e| matches!(e, ProviderEvent::Usage(_)))
+        .count();
     assert!(usage_count >= 1, "expected at least one Usage event");
 
     // No events after Done
-    let done_pos = events.iter().position(|e| matches!(e, ProviderEvent::Done)).unwrap();
-    assert_eq!(done_pos, events.len() - 1, "Done must be the very last event");
+    let done_pos = events
+        .iter()
+        .position(|e| matches!(e, ProviderEvent::Done))
+        .unwrap();
+    assert_eq!(
+        done_pos,
+        events.len() - 1,
+        "Done must be the very last event"
+    );
 }
 
 // ---------------------------------------------------------------------------

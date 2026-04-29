@@ -23,14 +23,21 @@ impl SymbolExtractor {
         let python_language: Language = tree_sitter_python::LANGUAGE.into();
 
         let mut rust_parser = Parser::new();
-        rust_parser
-            .set_language(&rust_language)
-            .expect("failed to load Rust grammar");
+        // Safe: tree-sitter grammars are statically compiled; failure indicates build corruption.
+        #[allow(clippy::expect_used)]
+        {
+            rust_parser
+                .set_language(&rust_language)
+                .expect("failed to load Rust grammar");
+        }
 
         let mut python_parser = Parser::new();
-        python_parser
-            .set_language(&python_language)
-            .expect("failed to load Python grammar");
+        #[allow(clippy::expect_used)]
+        {
+            python_parser
+                .set_language(&python_language)
+                .expect("failed to load Python grammar");
+        }
 
         Self {
             rust_parser,
@@ -67,8 +74,9 @@ impl SymbolExtractor {
             (type_item name: (type_identifier) @type_alias)
         ";
 
-        let query = Query::new(&self.rust_language, query_source)
-            .expect("valid Rust query");
+        // Safe: query_source is a compile-time string literal with valid tree-sitter syntax.
+        #[allow(clippy::expect_used)]
+        let query = Query::new(&self.rust_language, query_source).expect("valid Rust query");
 
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, tree.root_node(), content.as_bytes());
@@ -123,8 +131,9 @@ impl SymbolExtractor {
             (decorated_definition (class_definition name: (identifier) @class))
         ";
 
-        let query = Query::new(&self.python_language, query_source)
-            .expect("valid Python query");
+        // Safe: query_source is a compile-time string literal with valid tree-sitter syntax.
+        #[allow(clippy::expect_used)]
+        let query = Query::new(&self.python_language, query_source).expect("valid Python query");
 
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, tree.root_node(), content.as_bytes());

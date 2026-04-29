@@ -8,11 +8,15 @@ use crate::tool::ToolCallRequest;
 #[non_exhaustive]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProviderEvent {
-    Token { text: String },
+    Token {
+        text: String,
+    },
     ToolCall(ToolCallRequest),
     Usage(TokenUsage),
     Done,
-    Error { message: String },
+    Error {
+        message: String,
+    },
     /// A tool call that the provider/CLI is executing on its own behalf
     /// (i.e. not dispatched through hone's ToolRegistry). The agent
     /// forwards these as `AgentEvent::ToolCallStart/End` for UI visibility
@@ -27,6 +31,18 @@ pub enum ProviderEvent {
         id: String,
         result: String,
         is_error: bool,
+    },
+    /// The provider hit its output token limit. Emitted just before `Done`.
+    ///
+    /// If truncation cut through a tool-call block, `lost_tool_calls` names
+    /// the calls whose arguments never finished streaming — the agent should
+    /// drop them and tell the model to retry with smaller pieces.
+    /// Port of ml-intern's `finish_reason=length` handling (see
+    /// `docs/ml-intern-vs-hone.md §3.5`).
+    Truncated {
+        /// Names of tool calls that started but never completed. Empty when
+        /// truncation happened in plain-text output.
+        lost_tool_calls: Vec<String>,
     },
 }
 
@@ -70,19 +86,11 @@ pub enum AgentEvent {
         cost_usd: f64,
     },
     /// An error occurred during the turn.
-    Error {
-        message: String,
-    },
+    Error { message: String },
     /// The agent is waiting for user approval.
-    ApprovalRequired {
-        action: String,
-        description: String,
-    },
+    ApprovalRequired { action: String, description: String },
     /// The lead agent produced a decomposition plan.
-    PlanCreated {
-        goal: String,
-        subtask_count: usize,
-    },
+    PlanCreated { goal: String, subtask_count: usize },
     /// A worker agent started executing a subtask.
     WorkerStarted {
         task_id: String,
@@ -109,9 +117,7 @@ pub enum AgentEvent {
     /// The TUI uses this to populate `StatusInfo::context_limit`.  A default
     /// of 128 000 is used until this event arrives, so no context bar is shown
     /// as empty — the event refines the display once the provider responds.
-    ModelInfo {
-        context_window: u32,
-    },
+    ModelInfo { context_window: u32 },
     /// Emitted in step mode just before a sequential tool call executes.
     /// The agent is paused and will not proceed until it receives a StepAction.
     ToolCallPaused {

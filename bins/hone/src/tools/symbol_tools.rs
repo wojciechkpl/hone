@@ -55,9 +55,11 @@ impl Tool for SymbolSearchTool {
     }
 
     async fn call(&self, input: ToolInput, _ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let query = input.get_str("query").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'query'".to_string(),
-        })?;
+        let query = input
+            .get_str("query")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'query'".to_string(),
+            })?;
 
         let limit = input.get_u64("limit").unwrap_or(20) as usize;
 
@@ -144,13 +146,17 @@ impl Tool for SymbolAtTool {
     }
 
     async fn call(&self, input: ToolInput, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let file_str = input.get_str("file").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'file'".to_string(),
-        })?;
+        let file_str = input
+            .get_str("file")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'file'".to_string(),
+            })?;
 
-        let line = input.get_u64("line").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'line'".to_string(),
-        })? as u32;
+        let line = input
+            .get_u64("line")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'line'".to_string(),
+            })? as u32;
 
         let col = input.get_u64("col").unwrap_or(1) as u32;
 

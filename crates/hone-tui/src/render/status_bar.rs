@@ -82,7 +82,11 @@ pub fn bar_spans(fraction: f64, width: usize, theme: &Theme) -> Vec<Span<'static
 
     let mut spans = Vec::with_capacity(width);
     for i in 0..width {
-        let ch = if i < filled_cells { filled_ch } else { empty_ch };
+        let ch = if i < filled_cells {
+            filled_ch
+        } else {
+            empty_ch
+        };
         spans.push(Span::styled(ch.to_string(), style));
     }
     spans
@@ -97,32 +101,50 @@ pub fn tool_icon(name: &str, no_color: bool) -> char {
     let n = name.to_ascii_lowercase();
     if no_color {
         // ASCII fallback
-        if n.contains("read") || n.contains("grep") || n.contains("search")
-            || n.contains("find") || n.contains("glob") || n.contains("symbol")
+        if n.contains("read")
+            || n.contains("grep")
+            || n.contains("search")
+            || n.contains("find")
+            || n.contains("glob")
+            || n.contains("symbol")
         {
             'R'
-        } else if n.contains("write") || n.contains("edit") || n.contains("create")
+        } else if n.contains("write")
+            || n.contains("edit")
+            || n.contains("create")
             || n.contains("multi_edit")
         {
             'W'
-        } else if n.contains("bash") || n.contains("shell") || n.contains("exec")
-            || n.contains("run") || n.contains("git")
+        } else if n.contains("bash")
+            || n.contains("shell")
+            || n.contains("exec")
+            || n.contains("run")
+            || n.contains("git")
         {
             'X'
         } else {
             '?'
         }
     } else {
-        if n.contains("read") || n.contains("grep") || n.contains("search")
-            || n.contains("find") || n.contains("glob") || n.contains("symbol")
+        if n.contains("read")
+            || n.contains("grep")
+            || n.contains("search")
+            || n.contains("find")
+            || n.contains("glob")
+            || n.contains("symbol")
         {
             '✦'
-        } else if n.contains("write") || n.contains("edit") || n.contains("create")
+        } else if n.contains("write")
+            || n.contains("edit")
+            || n.contains("create")
             || n.contains("multi_edit")
         {
             '✎'
-        } else if n.contains("bash") || n.contains("shell") || n.contains("exec")
-            || n.contains("run") || n.contains("git")
+        } else if n.contains("bash")
+            || n.contains("shell")
+            || n.contains("exec")
+            || n.contains("run")
+            || n.contains("git")
         {
             '❯'
         } else {
@@ -382,7 +404,11 @@ pub fn render_status_bar(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{animation::AnimationState, status::{ProviderStatus, StatusInfo}, theme::Theme};
+    use crate::{
+        animation::AnimationState,
+        status::{ProviderStatus, StatusInfo},
+        theme::Theme,
+    };
 
     fn text_of(line: &Line<'_>) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
@@ -396,7 +422,10 @@ mod tests {
         let spans = bar_spans(0.0, BAR_WIDTH, &theme);
         assert_eq!(spans.len(), BAR_WIDTH);
         let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(text.chars().all(|c| c == BAR_EMPTY), "expected all empty cells");
+        assert!(
+            text.chars().all(|c| c == BAR_EMPTY),
+            "expected all empty cells"
+        );
     }
 
     #[test]
@@ -404,7 +433,10 @@ mod tests {
         let theme = Theme::crimson();
         let spans = bar_spans(1.0, BAR_WIDTH, &theme);
         let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(text.chars().all(|c| c == BAR_FILLED), "expected all filled cells");
+        assert!(
+            text.chars().all(|c| c == BAR_FILLED),
+            "expected all filled cells"
+        );
     }
 
     #[test]
@@ -425,9 +457,18 @@ mod tests {
         assert!(theme.no_color);
         let spans = bar_spans(0.5, BAR_WIDTH, &theme);
         let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(text.contains(BAR_FILLED_ASCII), "must use '#' in no_color mode");
-        assert!(text.contains(BAR_EMPTY_ASCII), "must use '-' in no_color mode");
-        assert!(!text.contains(BAR_FILLED), "must not use '▓' in no_color mode");
+        assert!(
+            text.contains(BAR_FILLED_ASCII),
+            "must use '#' in no_color mode"
+        );
+        assert!(
+            text.contains(BAR_EMPTY_ASCII),
+            "must use '-' in no_color mode"
+        );
+        assert!(
+            !text.contains(BAR_FILLED),
+            "must not use '▓' in no_color mode"
+        );
     }
 
     #[test]
@@ -510,7 +551,10 @@ mod tests {
         // 80 cols → Minimal tier
         let line = render_status_bar(&status, &theme, &anim, 80, false);
         let text = text_of(&line);
-        assert!(!text.contains("my-session"), "session name hidden in minimal");
+        assert!(
+            !text.contains("my-session"),
+            "session name hidden in minimal"
+        );
         assert!(!text.contains("[W]"), "phase hidden in minimal");
     }
 
@@ -523,7 +567,10 @@ mod tests {
         let anim = AnimationState::new();
         let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
-        assert!(text.contains("my-session"), "session name shown at 120 cols");
+        assert!(
+            text.contains("my-session"),
+            "session name shown at 120 cols"
+        );
         assert!(text.contains("[W]"), "short phase shown at 120 cols");
     }
 
@@ -571,7 +618,10 @@ mod tests {
         let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
         assert!(text.contains('#'), "ASCII bar '#' must appear in no_color");
-        assert!(!text.contains('▓'), "unicode '▓' must not appear in no_color");
+        assert!(
+            !text.contains('▓'),
+            "unicode '▓' must not appear in no_color"
+        );
     }
 
     #[test]
@@ -665,7 +715,10 @@ mod tests {
         let anim = AnimationState::new();
         let line = render_status_bar(&status, &theme, &anim, 120, true);
         let text = text_of(&line);
-        assert!(text.contains("thinking"), "thinking indicator must appear when waiting with no active tool");
+        assert!(
+            text.contains("thinking"),
+            "thinking indicator must appear when waiting with no active tool"
+        );
     }
 
     #[test]
@@ -676,8 +729,14 @@ mod tests {
         let anim = AnimationState::new();
         let line = render_status_bar(&status, &theme, &anim, 120, true);
         let text = text_of(&line);
-        assert!(text.contains("write_file"), "tool name must appear when tool is active");
-        assert!(!text.contains("thinking"), "thinking indicator must not appear when tool is active");
+        assert!(
+            text.contains("write_file"),
+            "tool name must appear when tool is active"
+        );
+        assert!(
+            !text.contains("thinking"),
+            "thinking indicator must not appear when tool is active"
+        );
     }
 
     #[test]
@@ -687,7 +746,10 @@ mod tests {
         let anim = AnimationState::new();
         let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
-        assert!(!text.contains("thinking"), "thinking indicator must not appear when not waiting");
+        assert!(
+            !text.contains("thinking"),
+            "thinking indicator must not appear when not waiting"
+        );
     }
 
     #[test]
@@ -721,22 +783,40 @@ mod tests {
     /// a) At tick=0 in Idle state, hint contains one of the known idle hint strings.
     #[test]
     fn hint_at_tick_zero_is_idle_hint() {
-        let status = StatusInfo { hint_tick: 0, ..Default::default() };
+        let status = StatusInfo {
+            hint_tick: 0,
+            ..Default::default()
+        };
         let theme = Theme::crimson();
         let anim = AnimationState::new();
         let line = render_status_bar(&status, &theme, &anim, 120, false);
         let text = text_of(&line);
 
-        let known_idle: &[&str] = &["? /help", "Ctrl+K palette", "@ agent", "/ commands", "Ctrl+O sessions"];
+        let known_idle: &[&str] = &[
+            "? /help",
+            "Ctrl+K palette",
+            "@ agent",
+            "/ commands",
+            "Ctrl+O sessions",
+        ];
         let found = known_idle.iter().any(|h| text.contains(h));
-        assert!(found, "at tick=0 idle hint must be one of the known idle hints, got: {text}");
+        assert!(
+            found,
+            "at tick=0 idle hint must be one of the known idle hints, got: {text}"
+        );
     }
 
     /// b) At tick=40 (after one rotation), hint contains a different idle hint string.
     #[test]
     fn hint_at_tick_40_is_second_idle_hint() {
-        let status0 = StatusInfo { hint_tick: 0, ..Default::default() };
-        let status40 = StatusInfo { hint_tick: 40, ..Default::default() };
+        let status0 = StatusInfo {
+            hint_tick: 0,
+            ..Default::default()
+        };
+        let status40 = StatusInfo {
+            hint_tick: 40,
+            ..Default::default()
+        };
         let theme = Theme::crimson();
         let anim = AnimationState::new();
 
@@ -749,13 +829,19 @@ mod tests {
     /// c) In WaitingForResponse with no tool, hint contains "Esc" (cancel hint).
     #[test]
     fn hint_while_waiting_no_tool_contains_esc() {
-        let status = StatusInfo { hint_tick: 0, ..Default::default() };
+        let status = StatusInfo {
+            hint_tick: 0,
+            ..Default::default()
+        };
         let theme = Theme::crimson();
         let anim = AnimationState::new();
         let line = render_status_bar(&status, &theme, &anim, 120, true); // is_waiting=true
         let text = text_of(&line);
 
-        assert!(text.contains("Esc"), "waiting hint must contain 'Esc', got: {text}");
+        assert!(
+            text.contains("Esc"),
+            "waiting hint must contain 'Esc', got: {text}"
+        );
     }
 
     /// d) In WaitingForResponse with active_tool set, hint contains "Space" (expand hint).
@@ -771,7 +857,10 @@ mod tests {
         let line = render_status_bar(&status, &theme, &anim, 120, true); // is_waiting=true
         let text = text_of(&line);
 
-        assert!(text.contains("Space"), "tool hint must contain 'Space', got: {text}");
+        assert!(
+            text.contains("Space"),
+            "tool hint must contain 'Space', got: {text}"
+        );
     }
 
     /// hint_tick increments on each App::tick() call.
@@ -782,6 +871,10 @@ mod tests {
         app.skip_splash();
         let before = app.status.hint_tick;
         app.tick();
-        assert_eq!(app.status.hint_tick, before + 1, "hint_tick must increment each tick");
+        assert_eq!(
+            app.status.hint_tick,
+            before + 1,
+            "hint_tick must increment each tick"
+        );
     }
 }

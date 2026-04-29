@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use hone_core::{Agent, AgentConfig, GreenCommands, GreenContract, GreenLevel, TestStatus, TestVerificationLoop};
+use hone_core::{
+    Agent, AgentConfig, GreenCommands, GreenContract, GreenLevel, TestStatus, TestVerificationLoop,
+};
 use hone_proto::{ModelId, PricingEntry};
 use hone_providers::MockProvider;
 use hone_sandbox::NullSandbox;
@@ -113,7 +115,10 @@ async fn test_verification_loop_passes_immediately() {
     let (tx, _rx) = mpsc::channel(32);
 
     let loop_ = TestVerificationLoop::new(cmd, 3, tmp.path().to_owned());
-    let result = loop_.run(&mut agent, tx).await.expect("loop should succeed");
+    let result = loop_
+        .run(&mut agent, tx)
+        .await
+        .expect("loop should succeed");
 
     assert_eq!(result.iterations, 1);
     assert!(matches!(result.final_status, TestStatus::Passed));
@@ -131,7 +136,10 @@ async fn test_verification_loop_retries_on_failure() {
     let (tx, _rx) = mpsc::channel(32);
 
     let loop_ = TestVerificationLoop::new(cmd, 3, tmp.path().to_owned());
-    let result = loop_.run(&mut agent, tx).await.expect("loop should succeed");
+    let result = loop_
+        .run(&mut agent, tx)
+        .await
+        .expect("loop should succeed");
 
     assert_eq!(result.iterations, 2);
     assert!(matches!(result.final_status, TestStatus::Passed));
@@ -149,10 +157,16 @@ async fn test_verification_loop_gives_up_after_max() {
     let (tx, _rx) = mpsc::channel(32);
 
     let loop_ = TestVerificationLoop::new(cmd, 3, tmp.path().to_owned());
-    let result = loop_.run(&mut agent, tx).await.expect("loop should succeed");
+    let result = loop_
+        .run(&mut agent, tx)
+        .await
+        .expect("loop should succeed");
 
     assert_eq!(result.iterations, 3);
-    assert!(matches!(result.final_status, TestStatus::FailedAfterMax { .. }));
+    assert!(matches!(
+        result.final_status,
+        TestStatus::FailedAfterMax { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -161,9 +175,15 @@ async fn test_verification_loop_gives_up_after_max() {
 
 #[test]
 fn test_green_level_escalates_correctly() {
-    assert_eq!(GreenLevel::TargetedTests.escalate(), Some(GreenLevel::Package));
+    assert_eq!(
+        GreenLevel::TargetedTests.escalate(),
+        Some(GreenLevel::Package)
+    );
     assert_eq!(GreenLevel::Package.escalate(), Some(GreenLevel::Workspace));
-    assert_eq!(GreenLevel::Workspace.escalate(), Some(GreenLevel::MergeReady));
+    assert_eq!(
+        GreenLevel::Workspace.escalate(),
+        Some(GreenLevel::MergeReady)
+    );
     assert_eq!(GreenLevel::MergeReady.escalate(), None);
 }
 
@@ -175,15 +195,24 @@ fn test_green_commands_detect_rust_project() {
 
     let cmds = GreenCommands::detect(tmp.path());
 
-    assert!(cmds.targeted.is_none(), "targeted requires a test name — should be None");
+    assert!(
+        cmds.targeted.is_none(),
+        "targeted requires a test name — should be None"
+    );
     assert_eq!(cmds.package.as_deref(), Some("cargo test --lib"));
     assert_eq!(cmds.workspace.as_deref(), Some("cargo test --workspace"));
     assert!(
-        cmds.merge_ready.as_deref().unwrap().contains("cargo test --workspace"),
+        cmds.merge_ready
+            .as_deref()
+            .unwrap()
+            .contains("cargo test --workspace"),
         "merge_ready should include workspace tests"
     );
     assert!(
-        cmds.merge_ready.as_deref().unwrap().contains("cargo clippy"),
+        cmds.merge_ready
+            .as_deref()
+            .unwrap()
+            .contains("cargo clippy"),
         "merge_ready should include clippy"
     );
 }
@@ -199,7 +228,10 @@ fn test_green_commands_detect_node_project() {
     assert!(cmds.targeted.is_none());
     assert_eq!(cmds.package.as_deref(), Some("npm test"));
     assert!(
-        cmds.merge_ready.as_deref().unwrap().contains("npm run lint"),
+        cmds.merge_ready
+            .as_deref()
+            .unwrap()
+            .contains("npm run lint"),
         "merge_ready should include lint"
     );
 }
@@ -216,7 +248,10 @@ async fn test_green_contract_runs_package_by_default() {
 
     // Use the legacy constructor.
     let loop_ = TestVerificationLoop::new(cmd, 3, tmp.path().to_owned());
-    let result = loop_.run(&mut agent, tx).await.expect("loop should succeed");
+    let result = loop_
+        .run(&mut agent, tx)
+        .await
+        .expect("loop should succeed");
 
     assert_eq!(result.iterations, 1);
     assert!(matches!(result.final_status, TestStatus::Passed));
@@ -242,7 +277,10 @@ async fn test_green_contract_no_command_returns_no_test_command() {
     let (tx, _rx) = mpsc::channel(32);
 
     let loop_ = TestVerificationLoop::with_contract(contract, 3, tmp.path().to_owned());
-    let result = loop_.run(&mut agent, tx).await.expect("loop should succeed");
+    let result = loop_
+        .run(&mut agent, tx)
+        .await
+        .expect("loop should succeed");
 
     assert!(matches!(result.final_status, TestStatus::NoTestCommand));
 }

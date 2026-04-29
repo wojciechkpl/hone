@@ -48,7 +48,6 @@ pub struct ApiDoc;
 impl ApiDoc {
     /// Generate the OpenAPI 3.1 spec as a JSON string.
     pub fn json() -> String {
-        serde_json::to_string_pretty(&Self::openapi())
-            .unwrap_or_else(|_| "{}".to_string())
+        serde_json::to_string_pretty(&Self::openapi()).unwrap_or_else(|_| "{}".to_string())
     }
 }

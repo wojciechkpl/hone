@@ -9,6 +9,8 @@ site/
 logs/
 .claude/agent-memory/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
+.hone/reports/
 Formula/
 hello.txt
 hone+*.json

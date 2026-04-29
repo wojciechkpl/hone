@@ -1,9 +1,13 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::sync::Arc;
 
 use futures::StreamExt;
 use hone_proto::{ModelId, ProviderEvent};
 use hone_providers::fallback::{RateLimitedProvider, UnavailableProvider};
-use hone_providers::{CompletionRequest, FallbackChain, MockProvider, ModelProvider, ProviderError};
+use hone_providers::{
+    CompletionRequest, FallbackChain, MockProvider, ModelProvider, ProviderError,
+};
 
 fn request() -> CompletionRequest {
     CompletionRequest::new(ModelId::new("mock:mock-model"), vec![])
@@ -28,8 +32,9 @@ async fn test_fallback_uses_first_healthy() {
 
 #[tokio::test]
 async fn test_fallback_tries_next_on_rate_limit() {
-    let first: Arc<dyn ModelProvider> =
-        Arc::new(RateLimitedProvider { id: "rate-limited".into() });
+    let first: Arc<dyn ModelProvider> = Arc::new(RateLimitedProvider {
+        id: "rate-limited".into(),
+    });
     let second: Arc<dyn ModelProvider> =
         Arc::new(MockProvider::new(vec!["fallback-token".into()]).with_id("backup"));
 
@@ -38,17 +43,21 @@ async fn test_fallback_tries_next_on_rate_limit() {
 
     let events: Vec<_> = stream.collect().await;
     assert!(
-        events.contains(&ProviderEvent::Token { text: "fallback-token".into() }),
+        events.contains(&ProviderEvent::Token {
+            text: "fallback-token".into()
+        }),
         "expected fallback provider token, got {events:?}"
     );
 }
 
 #[tokio::test]
 async fn test_fallback_all_fail_returns_last_error() {
-    let first: Arc<dyn ModelProvider> =
-        Arc::new(UnavailableProvider { id: "offline-1".into() });
-    let second: Arc<dyn ModelProvider> =
-        Arc::new(UnavailableProvider { id: "offline-2".into() });
+    let first: Arc<dyn ModelProvider> = Arc::new(UnavailableProvider {
+        id: "offline-1".into(),
+    });
+    let second: Arc<dyn ModelProvider> = Arc::new(UnavailableProvider {
+        id: "offline-2".into(),
+    });
 
     let chain = FallbackChain::new(vec![first, second]);
     let result = chain.complete(request()).await;

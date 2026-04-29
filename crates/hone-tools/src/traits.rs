@@ -49,12 +49,18 @@ pub struct ToolOutput {
 impl ToolOutput {
     /// Create a new `ToolOutput` from a JSON value (cache_hit = false).
     pub fn new(value: Value) -> Self {
-        Self { value, cache_hit: false }
+        Self {
+            value,
+            cache_hit: false,
+        }
     }
 
     /// Create a `ToolOutput` that was served from the cache.
     pub fn from_cache(value: Value) -> Self {
-        Self { value, cache_hit: true }
+        Self {
+            value,
+            cache_hit: true,
+        }
     }
 
     /// Consume the wrapper and return the inner JSON value.

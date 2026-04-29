@@ -31,9 +31,11 @@ Hone supports 5 working providers + ACP. Here's how they compare:
 | **Anthropic API** | Yes | Yes | $$ | Production (most capable) |
 | **OpenAI API + compatible** | Yes | Yes | $ | Budget-conscious teams, custom endpoints |
 | **Ollama** | Yes | Yes | Free | Local/offline work with tool support |
-| **Claude CLI** | No | Yes | Subscription | Existing CLI users |
-| **Gemini CLI** | No | Yes | Free tier | No API key setup |
-| **ACP** | Yes | Yes | Subscription | Custom tool servers |
+| **Claude CLI (legacy stdin/stdout)** | No | Yes | Subscription | Existing CLI users without ACP |
+| **Gemini CLI (legacy stdin/stdout)** | No | Yes | Free tier | No API key setup, prose-only |
+| **ACP — `claude --acp`** | Yes | Yes | Subscription | Subscription Claude with full tool dispatch |
+| **ACP — `gemini --acp`** | Yes | Yes | Free tier | Free Gemini tier with full tool dispatch |
+| **ACP — custom binary** | Yes | Yes | — | Custom model servers / self-hosted agents |
 
 ## Provider Auto-Detection
 
@@ -168,7 +170,19 @@ gemini_path = "/usr/local/bin/gemini"
 
 ### ACP (Agent Client Protocol)
 
-Full tool support via persistent subprocess. Advanced integration for custom model servers.
+Full bidirectional tool dispatch via a persistent JSON-RPC 2.0 subprocess. Hone speaks ACP as the **client**: it announces tool schemas on `session/prompt`, dispatches incoming `tool_call` notifications through its registered tool registry, and feeds the result back via `session/toolResult` so the agent can finish the turn. Status updates land as `ProviderEvent::ObservedToolEnd` for observability.
+
+**Built-in ACP factories:**
+
+```bash
+# Subscription Claude — claude binary spoken via --acp
+hone --model claude-acp:claude-sonnet-4-5
+
+# Free-tier Gemini — gemini binary spoken via --acp
+hone --model gemini-acp:gemini-2.5-pro
+```
+
+**Custom ACP server:**
 
 ```bash
 hone --model acp:my-service --acp-endpoint /path/to/server/binary
@@ -187,9 +201,21 @@ ACP allows you to:
 - Define custom tools in your own language
 - Implement complex logic (not limited to JSON-RPC)
 - Maintain a persistent connection to your service
-- Full bidirectional tool dispatch
+- Full bidirectional tool dispatch — `session/prompt.tools[]` → `tool_call` → `session/toolResult` → `tool_call_update`
 
-For details, see [Tools and MCP](tools-and-mcp.md).
+**Event lifecycle (provider → consumer):**
+
+| ACP message | `ProviderEvent` |
+|---|---|
+| `session/update` with `agent_message_chunk` | `Token { text }` |
+| `session/update` with `tool_call` | `ToolCall { id, name, arguments }` (`arguments` derived from `rawInput`, defaulting to `{}` when absent) |
+| Caller supplies `ToolResult` via the per-request channel | Provider sends `session/toolResult` to the agent |
+| `session/update` with `tool_call_update` | `ObservedToolEnd { id, result, is_error }` (status preserved verbatim; `failed`/`error` flagged case-insensitive) |
+| `session/prompt` response with `stopReason: end_turn` | `Done` |
+
+Wire-level reference: [ACP Protocol Reference](../api/acp-protocol.md). Executable contract: `crates/hone-providers/tests/acp_full_lifecycle.rs`.
+
+For details on tool registration on the hone side, see [Tools and MCP](tools-and-mcp.md).
 
 ## Hot-Swapping Providers Mid-Session
 

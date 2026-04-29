@@ -14,9 +14,9 @@ pub use git::{
     GitStatusTool, GitUndoTool, UndoStack,
 };
 pub use lsp::{
-    AutoFixLoop, AutoFixResult, CodeAction, Diagnostic, DiagnosticSeverity, Language,
-    LspBridge, LspCodeActionTool, LspDiagnosticsTool, LspHoverTool, MockLspBridge,
-    StdioLspBridge, detect_language,
+    AutoFixLoop, AutoFixResult, CodeAction, Diagnostic, DiagnosticSeverity, Language, LspBridge,
+    LspCodeActionTool, LspDiagnosticsTool, LspHoverTool, MockLspBridge, StdioLspBridge,
+    detect_language,
 };
 pub use registry::{ToolRegistry, ToolRegistryBuilder};
 pub use screen::{ComputerControlTool, ScreenCaptureTool};

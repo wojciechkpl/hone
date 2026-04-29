@@ -44,9 +44,11 @@ impl Tool for WriteFileTool {
     }
 
     async fn call(&self, input: ToolInput, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let path_str = input.get_str("path").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'path'".to_string(),
-        })?;
+        let path_str = input
+            .get_str("path")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'path'".to_string(),
+            })?;
 
         let content = input
             .get_str("content")
@@ -65,9 +67,9 @@ impl Tool for WriteFileTool {
         tokio::fs::write(&path, bytes).await?;
 
         // Read back and verify the written content matches what was intended.
-        let verification = tokio::fs::read_to_string(&path).await.map_err(|e| {
-            ToolError::Other(format!("failed to verify write: {e}"))
-        })?;
+        let verification = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| ToolError::Other(format!("failed to verify write: {e}")))?;
         if verification != content {
             return Err(ToolError::Other(format!(
                 "write verification failed: content written to {} does not match expected",

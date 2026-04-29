@@ -69,11 +69,7 @@ impl SessionStore {
     }
 
     /// Save (insert or replace) a named session.
-    pub async fn save_session(
-        &self,
-        name: &str,
-        messages: &[Message],
-    ) -> Result<String> {
+    pub async fn save_session(&self, name: &str, messages: &[Message]) -> Result<String> {
         let id = uuid::Uuid::now_v7().to_string();
         let now = unix_now();
         let blob = serde_json::to_string(messages).context("failed to serialize messages")?;
@@ -147,33 +143,28 @@ impl SessionStore {
     /// Rename a session.  Returns an error when `old_name` does not exist or
     /// `new_name` is already taken.
     pub async fn rename_session(&self, old_name: &str, new_name: &str) -> Result<()> {
-        let rows_affected = sqlx::query(
-            "UPDATE cli_sessions SET name = ?, updated_at = ? WHERE name = ?",
-        )
-        .bind(new_name)
-        .bind(unix_now())
-        .bind(old_name)
-        .execute(&self.pool)
-        .await
-        .with_context(|| format!("failed to rename session '{old_name}' -> '{new_name}'"))?
-        .rows_affected();
+        let rows_affected =
+            sqlx::query("UPDATE cli_sessions SET name = ?, updated_at = ? WHERE name = ?")
+                .bind(new_name)
+                .bind(unix_now())
+                .bind(old_name)
+                .execute(&self.pool)
+                .await
+                .with_context(|| format!("failed to rename session '{old_name}' -> '{new_name}'"))?
+                .rows_affected();
 
-        anyhow::ensure!(
-            rows_affected > 0,
-            "session '{old_name}' not found"
-        );
+        anyhow::ensure!(rows_affected > 0, "session '{old_name}' not found");
         Ok(())
     }
 
     /// Delete a named session.  Returns an error when the session does not exist.
     pub async fn delete_session(&self, name: &str) -> Result<()> {
-        let rows_affected =
-            sqlx::query("DELETE FROM cli_sessions WHERE name = ?")
-                .bind(name)
-                .execute(&self.pool)
-                .await
-                .with_context(|| format!("failed to delete session '{name}'"))?
-                .rows_affected();
+        let rows_affected = sqlx::query("DELETE FROM cli_sessions WHERE name = ?")
+            .bind(name)
+            .execute(&self.pool)
+            .await
+            .with_context(|| format!("failed to delete session '{name}'"))?
+            .rows_affected();
 
         anyhow::ensure!(rows_affected > 0, "session '{name}' not found");
         Ok(())
@@ -285,7 +276,10 @@ mod tests {
     #[tokio::test]
     async fn list_sessions_returns_metadata() {
         let (store, _dir) = open_test_store().await;
-        store.save_session("alpha", &make_messages(2)).await.unwrap();
+        store
+            .save_session("alpha", &make_messages(2))
+            .await
+            .unwrap();
         store.save_session("beta", &make_messages(6)).await.unwrap();
 
         let list = store.list_sessions().await.unwrap();
@@ -315,7 +309,10 @@ mod tests {
     #[tokio::test]
     async fn rename_session() {
         let (store, _dir) = open_test_store().await;
-        store.save_session("old-name", &make_messages(2)).await.unwrap();
+        store
+            .save_session("old-name", &make_messages(2))
+            .await
+            .unwrap();
         store.rename_session("old-name", "new-name").await.unwrap();
 
         assert!(store.load_session("old-name").await.unwrap().is_none());
@@ -332,7 +329,10 @@ mod tests {
     #[tokio::test]
     async fn delete_session() {
         let (store, _dir) = open_test_store().await;
-        store.save_session("to-delete", &make_messages(2)).await.unwrap();
+        store
+            .save_session("to-delete", &make_messages(2))
+            .await
+            .unwrap();
         store.delete_session("to-delete").await.unwrap();
         assert!(store.load_session("to-delete").await.unwrap().is_none());
     }

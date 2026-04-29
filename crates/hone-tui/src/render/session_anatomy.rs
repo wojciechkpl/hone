@@ -51,7 +51,9 @@ impl<'a> Widget for SessionAnatomyOverlay<'a> {
 
         let theme = self.theme;
         let border_style = Style::default().fg(theme.surface_focus);
-        let bg_style = Style::default().bg(theme.surface_overlay).fg(theme.text_primary);
+        let bg_style = Style::default()
+            .bg(theme.surface_overlay)
+            .fg(theme.text_primary);
 
         // Fill background.
         for y in area.top()..area.bottom() {
@@ -66,7 +68,9 @@ impl<'a> Widget for SessionAnatomyOverlay<'a> {
             .border_style(border_style)
             .title(Span::styled(
                 " Session Anatomy ",
-                Style::default().fg(theme.accent_hot).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent_hot)
+                    .add_modifier(Modifier::BOLD),
             ));
 
         let inner = block.inner(area);
@@ -128,14 +132,15 @@ fn render_tab_bar(app: &App, theme: &Theme, buf: &mut Buffer, inner: Rect, y: u1
         .add_modifier(Modifier::BOLD);
     let inactive_style = Style::default().fg(theme.text_muted);
 
-    let tabs = [
-        (0usize, "[A Phase Timeline]"),
-        (1usize, "[B Memory Graph]"),
-    ];
+    let tabs = [(0usize, "[A Phase Timeline]"), (1usize, "[B Memory Graph]")];
 
     let mut x = inner.left() + 1;
     for (idx, label) in &tabs {
-        let style = if *idx == app.anatomy_tab { active_style } else { inactive_style };
+        let style = if *idx == app.anatomy_tab {
+            active_style
+        } else {
+            inactive_style
+        };
         for ch in label.chars() {
             if x >= inner.right() {
                 break;
@@ -422,7 +427,10 @@ mod tests {
         let mut result = String::new();
         for y in 0..30 {
             for x in 0..120 {
-                let cell = buf.cell((x, y)).map(|c| c.symbol().chars().next().unwrap_or(' ')).unwrap_or(' ');
+                let cell = buf
+                    .cell((x, y))
+                    .map(|c| c.symbol().chars().next().unwrap_or(' '))
+                    .unwrap_or(' ');
                 result.push(cell);
             }
             result.push('\n');

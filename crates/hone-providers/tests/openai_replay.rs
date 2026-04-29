@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use futures::StreamExt;
 use hone_proto::{Message, ModelId, ProviderEvent};
 use hone_providers::{CompletionRequest, ModelProvider, OpenAiProvider};
@@ -33,10 +35,7 @@ async fn test_openai_parses_cached_tokens() {
         .await;
 
     let provider = OpenAiProvider::with_base_url("test-key", server.uri());
-    let req = CompletionRequest::new(
-        ModelId::new("openai:gpt-4o"),
-        vec![Message::user("hi")],
-    );
+    let req = CompletionRequest::new(ModelId::new("openai:gpt-4o"), vec![Message::user("hi")]);
     let stream = provider.complete(req).await.unwrap();
     let events: Vec<ProviderEvent> = stream.collect().await;
 

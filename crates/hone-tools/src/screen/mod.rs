@@ -54,12 +54,13 @@ impl Tool for ScreenCaptureTool {
 
         capture_screenshot(region, &tmp_path).await?;
 
-        let png_bytes = tokio::fs::read(&tmp_path).await.map_err(|e| {
-            ToolError::ExecutionFailed {
-                tool: "screen_capture".into(),
-                message: format!("failed to read screenshot file: {e}"),
-            }
-        })?;
+        let png_bytes =
+            tokio::fs::read(&tmp_path)
+                .await
+                .map_err(|e| ToolError::ExecutionFailed {
+                    tool: "screen_capture".into(),
+                    message: format!("failed to read screenshot file: {e}"),
+                })?;
 
         // Decode just enough of the PNG header to get width/height (bytes 16..24).
         let (width, height) = parse_png_dimensions(&png_bytes).unwrap_or((0, 0));
@@ -141,9 +142,11 @@ impl Tool for ComputerControlTool {
     }
 
     async fn call(&self, input: ToolInput, _ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let action = input.get_str("action").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'action'".into(),
-        })?;
+        let action = input
+            .get_str("action")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'action'".into(),
+            })?;
 
         #[cfg(target_os = "macos")]
         {
@@ -325,9 +328,11 @@ async fn run_macos_action(action: &str, input: &ToolInput) -> Result<ToolOutput,
 fn build_macos_script(action: &str, input: &ToolInput) -> Result<String, ToolError> {
     match action {
         "type_text" => {
-            let text = input.get_str("text").ok_or_else(|| ToolError::InvalidInput {
-                reason: "type_text requires 'text' field".into(),
-            })?;
+            let text = input
+                .get_str("text")
+                .ok_or_else(|| ToolError::InvalidInput {
+                    reason: "type_text requires 'text' field".into(),
+                })?;
             // Escape backslashes and double-quotes for AppleScript.
             let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
             Ok(format!(
@@ -354,14 +359,14 @@ fn build_macos_script(action: &str, input: &ToolInput) -> Result<String, ToolErr
             })?;
             // AppleScript does not directly support mouse movement without additional
             // frameworks.  We use cliclick if available, otherwise return a clear error.
-            Ok(format!(
-                r#"do shell script "cliclick m:{x},{y}""#
-            ))
+            Ok(format!(r#"do shell script "cliclick m:{x},{y}""#))
         }
         "key" => {
-            let key_combo = input.get_str("key").ok_or_else(|| ToolError::InvalidInput {
-                reason: "key requires 'key' field".into(),
-            })?;
+            let key_combo = input
+                .get_str("key")
+                .ok_or_else(|| ToolError::InvalidInput {
+                    reason: "key requires 'key' field".into(),
+                })?;
             let applescript_key = translate_key_combo_macos(key_combo);
             Ok(applescript_key)
         }
@@ -433,9 +438,11 @@ async fn run_linux_action(action: &str, input: &ToolInput) -> Result<ToolOutput,
 
     match action {
         "type_text" => {
-            let text = input.get_str("text").ok_or_else(|| ToolError::InvalidInput {
-                reason: "type_text requires 'text' field".into(),
-            })?;
+            let text = input
+                .get_str("text")
+                .ok_or_else(|| ToolError::InvalidInput {
+                    reason: "type_text requires 'text' field".into(),
+                })?;
             cmd.arg("type").arg("--clearmodifiers").arg(text);
         }
         "click" => {
@@ -457,9 +464,11 @@ async fn run_linux_action(action: &str, input: &ToolInput) -> Result<ToolOutput,
             cmd.args(["mousemove", &x.to_string(), &y.to_string()]);
         }
         "key" => {
-            let key_combo = input.get_str("key").ok_or_else(|| ToolError::InvalidInput {
-                reason: "key requires 'key' field".into(),
-            })?;
+            let key_combo = input
+                .get_str("key")
+                .ok_or_else(|| ToolError::InvalidInput {
+                    reason: "key requires 'key' field".into(),
+                })?;
             // xdotool uses "ctrl+c" notation natively.
             cmd.arg("key").arg(key_combo);
         }
@@ -498,10 +507,7 @@ fn parse_region_coords(region: &str) -> Option<(u32, u32, u32, u32)> {
     if parts.len() != 4 {
         return None;
     }
-    let nums: Vec<u32> = parts
-        .iter()
-        .filter_map(|s| s.trim().parse().ok())
-        .collect();
+    let nums: Vec<u32> = parts.iter().filter_map(|s| s.trim().parse().ok()).collect();
     if nums.len() != 4 {
         return None;
     }
@@ -534,7 +540,10 @@ mod tests {
     #[test]
     fn parse_region_coords_valid() {
         assert_eq!(parse_region_coords("0,0,800,600"), Some((0, 0, 800, 600)));
-        assert_eq!(parse_region_coords("100,200,1280,720"), Some((100, 200, 1280, 720)));
+        assert_eq!(
+            parse_region_coords("100,200,1280,720"),
+            Some((100, 200, 1280, 720))
+        );
     }
 
     #[test]

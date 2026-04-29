@@ -107,14 +107,35 @@ pub type Result<T> = std::result::Result<T, String>;
     let mut ex = SymbolExtractor::new();
     let symbols = ex.extract(&rs_path(), code);
 
-    assert!(has(&symbols, "Config", SymbolKind::Struct), "missing Config struct");
+    assert!(
+        has(&symbols, "Config", SymbolKind::Struct),
+        "missing Config struct"
+    );
     assert!(has(&symbols, "Mode", SymbolKind::Enum), "missing Mode enum");
-    assert!(has(&symbols, "Configurable", SymbolKind::Trait), "missing Configurable trait");
-    assert!(has(&symbols, "Config", SymbolKind::Impl), "missing Config impl");
-    assert!(has(&symbols, "build", SymbolKind::Function), "missing build fn");
-    assert!(has(&symbols, "DEFAULT_PORT", SymbolKind::Constant), "missing DEFAULT_PORT const");
-    assert!(has(&symbols, "server", SymbolKind::Module), "missing server mod");
-    assert!(has(&symbols, "Result", SymbolKind::TypeAlias), "missing Result type alias");
+    assert!(
+        has(&symbols, "Configurable", SymbolKind::Trait),
+        "missing Configurable trait"
+    );
+    assert!(
+        has(&symbols, "Config", SymbolKind::Impl),
+        "missing Config impl"
+    );
+    assert!(
+        has(&symbols, "build", SymbolKind::Function),
+        "missing build fn"
+    );
+    assert!(
+        has(&symbols, "DEFAULT_PORT", SymbolKind::Constant),
+        "missing DEFAULT_PORT const"
+    );
+    assert!(
+        has(&symbols, "server", SymbolKind::Module),
+        "missing server mod"
+    );
+    assert!(
+        has(&symbols, "Result", SymbolKind::TypeAlias),
+        "missing Result type alias"
+    );
 }
 
 #[test]
@@ -169,7 +190,10 @@ def foo():
         .iter()
         .filter(|s| s.name == "foo" && s.kind == SymbolKind::Function)
         .count();
-    assert_eq!(count, 1, "decorated function 'foo' should appear exactly once");
+    assert_eq!(
+        count, 1,
+        "decorated function 'foo' should appear exactly once"
+    );
 }
 
 #[test]
@@ -190,7 +214,10 @@ class Point:
         .iter()
         .filter(|s| s.name == "Point" && s.kind == SymbolKind::Class)
         .count();
-    assert_eq!(count, 1, "decorated class 'Point' should appear exactly once");
+    assert_eq!(
+        count, 1,
+        "decorated class 'Point' should appear exactly once"
+    );
 }
 
 #[test]
@@ -235,5 +262,8 @@ fn test_extract_line_numbers_are_one_based() {
 fn test_extract_unknown_extension_returns_empty() {
     let mut ex = SymbolExtractor::new();
     let symbols = ex.extract(&PathBuf::from("main.cpp"), "void foo() {}");
-    assert!(symbols.is_empty(), "unknown extension should yield no symbols");
+    assert!(
+        symbols.is_empty(),
+        "unknown extension should yield no symbols"
+    );
 }

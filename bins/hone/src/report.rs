@@ -178,12 +178,18 @@ impl ReportData {
         let phase_transitions: Vec<(String, u64)> = ledgers
             .iter()
             .flat_map(|l| {
-                l.phase_transitions.iter().map(|(p, ms)| (p.label().to_string(), *ms))
+                l.phase_transitions
+                    .iter()
+                    .map(|(p, ms)| (p.label().to_string(), *ms))
             })
             .collect();
 
         // Error / memory counts.
-        let errors: usize = ledgers.iter().flat_map(|l| &l.tools_invoked).filter(|t| t.error.is_some()).count();
+        let errors: usize = ledgers
+            .iter()
+            .flat_map(|l| &l.tools_invoked)
+            .filter(|t| t.error.is_some())
+            .count();
         let memory_reads: usize = ledgers.iter().map(|l| l.memory_recalls.len()).sum();
 
         Self {
@@ -226,10 +232,18 @@ pub fn render_stdout(report: &ReportData, no_color: bool) -> String {
     };
 
     let bold = |s: &str| -> String {
-        if no_color { s.to_string() } else { format!("\x1b[1m{s}\x1b[0m") }
+        if no_color {
+            s.to_string()
+        } else {
+            format!("\x1b[1m{s}\x1b[0m")
+        }
     };
     let dim = |s: &str| -> String {
-        if no_color { s.to_string() } else { format!("\x1b[2m{s}\x1b[0m") }
+        if no_color {
+            s.to_string()
+        } else {
+            format!("\x1b[2m{s}\x1b[0m")
+        }
     };
 
     let mut lines: Vec<String> = Vec::new();
@@ -261,7 +275,10 @@ pub fn render_stdout(report: &ReportData, no_color: bool) -> String {
 
     let cache_pct = if report.tokens_in + report.cache_read_tokens > 0 {
         let total = report.tokens_in + report.cache_read_tokens;
-        format!("  cache hits: {:.0}%", 100.0 * report.cache_read_tokens as f64 / total as f64)
+        format!(
+            "  cache hits: {:.0}%",
+            100.0 * report.cache_read_tokens as f64 / total as f64
+        )
     } else {
         String::new()
     };
@@ -286,12 +303,26 @@ pub fn render_stdout(report: &ReportData, no_color: bool) -> String {
     for file in report.files.iter().take(8) {
         let ops = {
             let mut v = Vec::new();
-            if file.reads > 0 { v.push("r") }
-            if file.writes > 0 { v.push("w") }
-            if file.execs > 0 { v.push("x") }
+            if file.reads > 0 {
+                v.push("r")
+            }
+            if file.writes > 0 {
+                v.push("w")
+            }
+            if file.execs > 0 {
+                v.push("x")
+            }
             v.join(" ")
         };
-        let icon = if no_color { "  " } else if file.execs > 0 { "  ❯ " } else if file.writes > 0 { "  ✎ " } else { "  ✦ " };
+        let icon = if no_color {
+            "  "
+        } else if file.execs > 0 {
+            "  ❯ "
+        } else if file.writes > 0 {
+            "  ✎ "
+        } else {
+            "  ✦ "
+        };
         lines.push(format!("{}{}  {}", icon, file.path, ops));
     }
     if report.files.len() > 8 {
@@ -300,11 +331,19 @@ pub fn render_stdout(report: &ReportData, no_color: bool) -> String {
 
     lines.push(String::new());
     let total_tool_calls: usize = report.tools.iter().map(|t| t.count).sum();
-    let tool_summary: String = report.tools.iter().take(3)
+    let tool_summary: String = report
+        .tools
+        .iter()
+        .take(3)
         .map(|t| format!("{}: {}", t.name, t.count))
         .collect::<Vec<_>>()
         .join(", ");
-    lines.push(format!("  {:12} {} calls  ({})", bold("Tools"), total_tool_calls, tool_summary));
+    lines.push(format!(
+        "  {:12} {} calls  ({})",
+        bold("Tools"),
+        total_tool_calls,
+        tool_summary
+    ));
     lines.push(format!("  {:12} {}", bold("Retries"), report.retries));
     lines.push(format!("  {:12} {}", bold("Errors"), report.errors));
     lines.push(String::new());
@@ -346,13 +385,22 @@ pub fn render_markdown(report: &ReportData) -> String {
     // Summary table.
     md.push_str("## Summary\n\n");
     md.push_str("| Field | Value |\n|---|---|\n");
-    md.push_str(&format!("| Session / task ID | `{}` |\n", report.session_id));
+    md.push_str(&format!(
+        "| Session / task ID | `{}` |\n",
+        report.session_id
+    ));
     md.push_str(&format!("| Model | {} |\n", report.model));
-    md.push_str(&format!("| Duration | {} |\n", fmt_secs(report.elapsed_secs)));
+    md.push_str(&format!(
+        "| Duration | {} |\n",
+        fmt_secs(report.elapsed_secs)
+    ));
     md.push_str(&format!("| Turns | {} |\n", report.turn_count));
     md.push_str(&format!("| Total cost | ${:.6} |\n", report.total_cost_usd));
     md.push_str(&format!("| Tokens in | {} |\n", fmt_num(report.tokens_in)));
-    md.push_str(&format!("| Tokens out | {} |\n", fmt_num(report.tokens_out)));
+    md.push_str(&format!(
+        "| Tokens out | {} |\n",
+        fmt_num(report.tokens_out)
+    ));
     if report.tokens_in + report.cache_read_tokens > 0 {
         let total = report.tokens_in + report.cache_read_tokens;
         let pct = 100.0 * report.cache_read_tokens as f64 / total as f64;
@@ -370,9 +418,15 @@ pub fn render_markdown(report: &ReportData) -> String {
         md.push_str("| File | Operations |\n|---|---|\n");
         for file in &report.files {
             let mut ops = Vec::new();
-            if file.reads > 0 { ops.push("read") }
-            if file.writes > 0 { ops.push("write") }
-            if file.execs > 0 { ops.push("exec") }
+            if file.reads > 0 {
+                ops.push("read")
+            }
+            if file.writes > 0 {
+                ops.push("write")
+            }
+            if file.execs > 0 {
+                ops.push("exec")
+            }
             md.push_str(&format!("| {} | {} |\n", file.path, ops.join(", ")));
         }
     }
@@ -387,7 +441,10 @@ pub fn render_markdown(report: &ReportData) -> String {
         for t in &report.tools {
             md.push_str(&format!(
                 "| {} | {} | {}ms | {} |\n",
-                t.name, t.count, t.avg_latency_ms(), t.failures
+                t.name,
+                t.count,
+                t.avg_latency_ms(),
+                t.failures
             ));
         }
 
@@ -418,11 +475,23 @@ pub fn render_markdown(report: &ReportData) -> String {
     ));
     md.push_str(&format!(
         "| Skeleton tokens | {} |\n",
-        report.skeleton_tokens.map(|t| t.to_string()).unwrap_or_else(|| "—".to_string())
+        report
+            .skeleton_tokens
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "—".to_string())
     ));
-    md.push_str(&format!("| BM25 injected files | {} |\n", report.skeleton_files));
-    md.push_str(&format!("| Memory entries read | {} |\n", report.memory_reads));
-    md.push_str(&format!("| Memory entries written | {} |\n", report.memory_writes));
+    md.push_str(&format!(
+        "| BM25 injected files | {} |\n",
+        report.skeleton_files
+    ));
+    md.push_str(&format!(
+        "| Memory entries read | {} |\n",
+        report.memory_reads
+    ));
+    md.push_str(&format!(
+        "| Memory entries written | {} |\n",
+        report.memory_writes
+    ));
     md.push_str("\n---\n\n");
 
     // Phase transitions.
@@ -440,7 +509,10 @@ pub fn render_markdown(report: &ReportData) -> String {
     if report.errors == 0 && report.retries == 0 {
         md.push_str("None.\n");
     } else {
-        md.push_str(&format!("Errors: {}  Retries: {}\n", report.errors, report.retries));
+        md.push_str(&format!(
+            "Errors: {}  Retries: {}\n",
+            report.errors, report.retries
+        ));
     }
     md.push_str("\n---\n\n");
 
@@ -475,23 +547,27 @@ pub const DEFAULT_REPORT_RETENTION: usize = 100;
 /// The directory is created if it does not exist.
 ///
 /// Returns the path to the written markdown file.
-pub fn write_report(
-    dir: &Path,
-    report: &ReportData,
-    retention: usize,
-) -> Result<PathBuf> {
+pub fn write_report(dir: &Path, report: &ReportData, retention: usize) -> Result<PathBuf> {
     let reports_dir = dir.join(".hone").join("reports");
     std::fs::create_dir_all(&reports_dir)
         .with_context(|| format!("creating reports dir {}", reports_dir.display()))?;
 
     // Sanitize session_id for use as a filename.
-    let safe_id: String = report.session_id
+    let safe_id: String = report
+        .session_id
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
 
     // Build a filesystem-safe timestamp (replace ':' and spaces).
-    let safe_ts: String = report.timestamp
+    let safe_ts: String = report
+        .timestamp
         .chars()
         .map(|c| match c {
             ':' | ' ' => '-',
@@ -613,8 +689,18 @@ mod tests {
             turn_count: 12,
             elapsed_secs: 272,
             files: vec![
-                FileStat { path: "src/auth.rs".to_string(), reads: 2, writes: 1, execs: 0 },
-                FileStat { path: "src/session.rs".to_string(), reads: 1, writes: 0, execs: 0 },
+                FileStat {
+                    path: "src/auth.rs".to_string(),
+                    reads: 2,
+                    writes: 1,
+                    execs: 0,
+                },
+                FileStat {
+                    path: "src/session.rs".to_string(),
+                    reads: 1,
+                    writes: 0,
+                    execs: 0,
+                },
             ],
             tools: vec![
                 ToolStat {
@@ -665,7 +751,10 @@ mod tests {
         let report = make_report("test-session");
         let out = render_stdout(&report, true);
         // No ANSI escape sequences.
-        assert!(!out.contains('\x1b'), "no-color output must not contain ANSI codes");
+        assert!(
+            !out.contains('\x1b'),
+            "no-color output must not contain ANSI codes"
+        );
     }
 
     #[test]

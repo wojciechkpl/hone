@@ -35,9 +35,10 @@ pub fn render_code_block(code: &str, language: &str, theme: &Theme) -> Vec<Line<
     }
 
     // Footer.
-    lines.push(Line::from(vec![
-        Span::styled("\u{2514}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}", border_style),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        "\u{2514}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
+        border_style,
+    )]));
 
     lines
 }
@@ -54,7 +55,12 @@ mod tests {
         let lines = render_code_block(code, "rust", &theme);
         let all_text: Vec<String> = lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect();
         let has_1 = all_text.iter().any(|l| l.contains("1 |"));
         let has_2 = all_text.iter().any(|l| l.contains("2 |"));
@@ -71,11 +77,14 @@ mod tests {
         // Find a span that contains exactly "fn" with the keyword color.
         let keyword_color = theme.syntax_keyword;
         let found = lines.iter().any(|l| {
-            l.spans.iter().any(|s| {
-                s.content.as_ref() == "fn" && s.style.fg == Some(keyword_color)
-            })
+            l.spans
+                .iter()
+                .any(|s| s.content.as_ref() == "fn" && s.style.fg == Some(keyword_color))
         });
-        assert!(found, "keyword 'fn' must be styled with syntax_keyword color");
+        assert!(
+            found,
+            "keyword 'fn' must be styled with syntax_keyword color"
+        );
     }
 
     #[test]
@@ -85,9 +94,9 @@ mod tests {
         let code = "fn greet() {}";
         let lines = render_code_block(code, "text", &theme);
         let keyword_color = theme.syntax_keyword;
-        let found = lines.iter().any(|l| {
-            l.spans.iter().any(|s| s.style.fg == Some(keyword_color))
-        });
+        let found = lines
+            .iter()
+            .any(|l| l.spans.iter().any(|s| s.style.fg == Some(keyword_color)));
         assert!(!found, "non-rust code must not use syntax_keyword color");
     }
 }

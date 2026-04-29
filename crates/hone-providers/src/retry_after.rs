@@ -56,6 +56,7 @@ pub fn parse_retry_after(headers: &HeaderMap) -> u64 {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use reqwest::header::{HeaderMap, HeaderValue};
 

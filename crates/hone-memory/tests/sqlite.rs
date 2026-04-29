@@ -82,7 +82,10 @@ async fn test_sqlite_forget_by_tag() {
         .await
         .unwrap();
 
-    assert_eq!(removed, 2, "two memories tagged project:foo should be removed");
+    assert_eq!(
+        removed, 2,
+        "two memories tagged project:foo should be removed"
+    );
 
     // The remaining memory should be m3.
     let all = store
@@ -150,7 +153,10 @@ async fn test_sqlite_decay_removes_expired() {
         .await
         .unwrap();
 
-    assert!(results.is_empty(), "expired memory should have been deleted");
+    assert!(
+        results.is_empty(),
+        "expired memory should have been deleted"
+    );
 }
 
 #[tokio::test]

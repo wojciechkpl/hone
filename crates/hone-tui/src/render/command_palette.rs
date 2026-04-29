@@ -10,16 +10,46 @@ pub struct PaletteEntry {
 
 /// All commands exposed in the palette.
 pub const PALETTE_COMMANDS: &[PaletteEntry] = &[
-    PaletteEntry { name: "quit",      description: "Exit hone" },
-    PaletteEntry { name: "help",      description: "Show keyboard shortcuts" },
-    PaletteEntry { name: "clear",     description: "Clear conversation history" },
-    PaletteEntry { name: "review",    description: "Enter review mode" },
-    PaletteEntry { name: "configure", description: "Open configuration wizard" },
-    PaletteEntry { name: "tdd",       description: "Toggle step-through debugger" },
-    PaletteEntry { name: "model",     description: "Switch AI model" },
-    PaletteEntry { name: "cost",      description: "Show session cost" },
-    PaletteEntry { name: "theme",     description: "Switch color theme" },
-    PaletteEntry { name: "clarify",   description: "Force clarification step" },
+    PaletteEntry {
+        name: "quit",
+        description: "Exit hone",
+    },
+    PaletteEntry {
+        name: "help",
+        description: "Show keyboard shortcuts",
+    },
+    PaletteEntry {
+        name: "clear",
+        description: "Clear conversation history",
+    },
+    PaletteEntry {
+        name: "review",
+        description: "Enter review mode",
+    },
+    PaletteEntry {
+        name: "configure",
+        description: "Open configuration wizard",
+    },
+    PaletteEntry {
+        name: "tdd",
+        description: "Toggle step-through debugger",
+    },
+    PaletteEntry {
+        name: "model",
+        description: "Switch AI model",
+    },
+    PaletteEntry {
+        name: "cost",
+        description: "Show session cost",
+    },
+    PaletteEntry {
+        name: "theme",
+        description: "Switch color theme",
+    },
+    PaletteEntry {
+        name: "clarify",
+        description: "Force clarification step",
+    },
 ];
 
 /// Render the command palette overlay centered on `area`.
@@ -46,17 +76,23 @@ pub fn render_command_palette(app: &App, frame: &mut Frame, area: Rect) {
     let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 3;
     let popup = Rect::new(popup_x, popup_y, popup_width, popup_height);
 
-    let bg_style = Style::default().bg(theme.surface_overlay).fg(theme.text_primary);
-    let border_style = Style::default().bg(theme.surface_overlay).fg(theme.surface_border);
-    let accent_style = Style::default().bg(theme.surface_overlay).fg(theme.accent_hot);
-    let muted_style = Style::default().bg(theme.surface_overlay).fg(theme.text_muted);
-    let sel_style = Style::default()
-        .bg(theme.accent_mid)
-        .fg(theme.surface_base);
-    let sel_accent_style = Style::default()
-        .bg(theme.accent_mid)
-        .fg(theme.surface_base);
-    let red_style = Style::default().bg(theme.surface_overlay).fg(theme.role_error);
+    let bg_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.text_primary);
+    let border_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.surface_border);
+    let accent_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.accent_hot);
+    let muted_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.text_muted);
+    let sel_style = Style::default().bg(theme.accent_mid).fg(theme.surface_base);
+    let sel_accent_style = Style::default().bg(theme.accent_mid).fg(theme.surface_base);
+    let red_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.role_error);
 
     let buf = frame.buffer_mut();
 
@@ -73,18 +109,28 @@ pub fn render_command_palette(app: &App, frame: &mut Frame, area: Rect) {
     let bottom = popup.y + popup_height - 1;
 
     // --- Draw rounded border ----------------------------------------------
-    buf[(popup.x, popup.y)].set_char('╭').set_style(border_style);
+    buf[(popup.x, popup.y)]
+        .set_char('╭')
+        .set_style(border_style);
     buf[(right, popup.y)].set_char('╮').set_style(border_style);
     buf[(popup.x, bottom)].set_char('╰').set_style(border_style);
     buf[(right, bottom)].set_char('╯').set_style(border_style);
 
     for col in 1..popup_width - 1 {
-        buf[(popup.x + col, popup.y)].set_char('─').set_style(border_style);
-        buf[(popup.x + col, bottom)].set_char('─').set_style(border_style);
+        buf[(popup.x + col, popup.y)]
+            .set_char('─')
+            .set_style(border_style);
+        buf[(popup.x + col, bottom)]
+            .set_char('─')
+            .set_style(border_style);
     }
     for row in 1..popup_height - 1 {
-        buf[(popup.x, popup.y + row)].set_char('│').set_style(border_style);
-        buf[(right, popup.y + row)].set_char('│').set_style(border_style);
+        buf[(popup.x, popup.y + row)]
+            .set_char('│')
+            .set_style(border_style);
+        buf[(right, popup.y + row)]
+            .set_char('│')
+            .set_style(border_style);
     }
 
     // --- Title in top border ----------------------------------------------
@@ -104,7 +150,11 @@ pub fn render_command_palette(app: &App, frame: &mut Frame, area: Rect) {
         let row_y = popup.y + 1 + i as u16;
         let is_sel = i == selection;
         let row_bg = if is_sel { sel_style } else { bg_style };
-        let name_style = if is_sel { sel_accent_style } else { accent_style };
+        let name_style = if is_sel {
+            sel_accent_style
+        } else {
+            accent_style
+        };
         let desc_style = if is_sel { sel_style } else { muted_style };
 
         // Fill row background.
@@ -146,7 +196,9 @@ pub fn render_command_palette(app: &App, frame: &mut Frame, area: Rect) {
     buf[(popup.x, sep_y)].set_char('├').set_style(border_style);
     buf[(right, sep_y)].set_char('┤').set_style(border_style);
     for col in 1..popup_width - 1 {
-        buf[(popup.x + col, sep_y)].set_char('─').set_style(border_style);
+        buf[(popup.x + col, sep_y)]
+            .set_char('─')
+            .set_style(border_style);
     }
 
     // --- Query line -------------------------------------------------------
@@ -223,15 +275,25 @@ mod tests {
 
         // Case-insensitive: "HELP" should match "help".
         let names = filtered_names("HELP");
-        assert!(names.contains(&"help"), "query 'HELP' must match /help case-insensitively");
+        assert!(
+            names.contains(&"help"),
+            "query 'HELP' must match /help case-insensitively"
+        );
 
         // Description match: "Exit" matches /quit via description.
         let names = filtered_names("Exit");
-        assert!(names.contains(&"quit"), "query 'Exit' must match /quit via description");
+        assert!(
+            names.contains(&"quit"),
+            "query 'Exit' must match /quit via description"
+        );
 
         // Empty query returns all entries.
         let all = filtered_names("");
-        assert_eq!(all.len(), PALETTE_COMMANDS.len(), "empty query must return all commands");
+        assert_eq!(
+            all.len(),
+            PALETTE_COMMANDS.len(),
+            "empty query must return all commands"
+        );
 
         // Non-matching query returns empty.
         let none = filtered_names("zzz-no-match");
@@ -295,6 +357,9 @@ mod tests {
         app.handle_key_palette_pub(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
         assert!(!app.palette_open, "Esc must close the palette");
-        assert!(app.input.buffer.is_empty(), "Esc must not modify the input buffer");
+        assert!(
+            app.input.buffer.is_empty(),
+            "Esc must not modify the input buffer"
+        );
     }
 }

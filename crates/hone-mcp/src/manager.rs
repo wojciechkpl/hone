@@ -162,7 +162,10 @@ mod tests {
         unsafe {
             std::env::remove_var("_HONE_MCP_DEFINITELY_ABSENT");
         }
-        assert_eq!(resolve_env_var("prefix-${_HONE_MCP_DEFINITELY_ABSENT}-suffix"), "prefix--suffix");
+        assert_eq!(
+            resolve_env_var("prefix-${_HONE_MCP_DEFINITELY_ABSENT}-suffix"),
+            "prefix--suffix"
+        );
     }
 
     #[test]
@@ -172,10 +175,7 @@ mod tests {
             std::env::set_var("_HONE_MCP_A", "foo");
             std::env::set_var("_HONE_MCP_B", "bar");
         }
-        assert_eq!(
-            resolve_env_var("${_HONE_MCP_A}/${_HONE_MCP_B}"),
-            "foo/bar"
-        );
+        assert_eq!(resolve_env_var("${_HONE_MCP_A}/${_HONE_MCP_B}"), "foo/bar");
         // SAFETY: same as above.
         unsafe {
             std::env::remove_var("_HONE_MCP_A");

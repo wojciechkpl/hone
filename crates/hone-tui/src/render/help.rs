@@ -61,7 +61,10 @@ impl<'a> HelpOverlay<'a> {
         let sep_style = Style::default().fg(theme.text_muted);
 
         let mut lines = vec![
-            Line::from(Span::styled("  keybindings  ", Style::default().fg(theme.text_primary))),
+            Line::from(Span::styled(
+                "  keybindings  ",
+                Style::default().fg(theme.text_primary),
+            )),
             Line::default(),
         ];
 
@@ -97,7 +100,12 @@ impl<'a> Widget for HelpOverlay<'a> {
         let content_height = lines.len() as u16 + 2; // +2 for top/bottom border
         let content_width: u16 = lines
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.chars().count()).sum::<usize>() as u16)
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.chars().count())
+                    .sum::<usize>() as u16
+            })
             .max()
             .unwrap_or(40)
             + 4; // padding
@@ -118,7 +126,10 @@ impl<'a> Widget for HelpOverlay<'a> {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.surface_focus))
-            .title(Span::styled(" help ", Style::default().fg(theme.accent_hot)))
+            .title(Span::styled(
+                " help ",
+                Style::default().fg(theme.accent_hot),
+            ))
             .title_alignment(Alignment::Center);
 
         let inner = block.inner(overlay_area);
@@ -149,7 +160,11 @@ mod tests {
     use crate::theme::Theme;
 
     fn all_keys_text() -> String {
-        KEYBINDINGS.iter().map(|(k, _)| k.to_string()).collect::<Vec<_>>().join("\n")
+        KEYBINDINGS
+            .iter()
+            .map(|(k, _)| k.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
@@ -167,11 +182,17 @@ mod tests {
 
     #[test]
     fn help_keybindings_contain_ctrl_k() {
-        assert!(all_keys_text().contains("Ctrl+K"), "KEYBINDINGS must include Ctrl+K");
+        assert!(
+            all_keys_text().contains("Ctrl+K"),
+            "KEYBINDINGS must include Ctrl+K"
+        );
     }
 
     #[test]
     fn help_keybindings_contain_ctrl_a() {
-        assert!(all_keys_text().contains("Ctrl+A"), "KEYBINDINGS must include Ctrl+A");
+        assert!(
+            all_keys_text().contains("Ctrl+A"),
+            "KEYBINDINGS must include Ctrl+A"
+        );
     }
 }

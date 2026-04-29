@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use hone_index::{SemanticIndex, parser::SymbolExtractor};
 use std::path::Path;
 
@@ -8,9 +8,7 @@ fn bench_extract_rust_file(c: &mut Criterion) {
 
     c.bench_function("extract_rust_symbols", |b| {
         let mut extractor = SymbolExtractor::new();
-        b.iter(|| {
-            black_box(extractor.extract(black_box(path), black_box(content)))
-        });
+        b.iter(|| black_box(extractor.extract(black_box(path), black_box(content))));
     });
 }
 
@@ -20,9 +18,7 @@ fn bench_index_search(c: &mut Criterion) {
     index.index_file(Path::new("test.rs"), content);
 
     c.bench_function("search_index", |b| {
-        b.iter(|| {
-            black_box(index.search(black_box("Index")))
-        });
+        b.iter(|| black_box(index.search(black_box("Index"))));
     });
 }
 

@@ -52,9 +52,11 @@ impl Tool for ReadFileTool {
     }
 
     async fn call(&self, input: ToolInput, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let path_str = input.get_str("path").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'path'".to_string(),
-        })?;
+        let path_str = input
+            .get_str("path")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'path'".to_string(),
+            })?;
 
         let offset = input.get_u64("offset").unwrap_or(1).max(1) as usize;
         let limit = input.get_u64("limit").unwrap_or(500) as usize;

@@ -17,6 +17,7 @@ pub use read::ReadFileTool;
 pub use write::WriteFileTool;
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod proptests {
     use super::*;
     use proptest::prelude::*;
@@ -102,32 +103,18 @@ pub(crate) fn resolve_within_working_dir(
         loop {
             if let Some(parent) = ancestor.parent() {
                 if parent.exists() {
-                    tail_components.push(
-                        ancestor
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_os_string(),
-                    );
-                    let canon_parent = parent.canonicalize().map_err(|e| {
-                        ToolError::InvalidInput {
-                            reason: format!(
-                                "failed to resolve parent '{}': {e}",
-                                parent.display()
-                            ),
-                        }
-                    })?;
+                    tail_components.push(ancestor.file_name().unwrap_or_default().to_os_string());
+                    let canon_parent =
+                        parent.canonicalize().map_err(|e| ToolError::InvalidInput {
+                            reason: format!("failed to resolve parent '{}': {e}", parent.display()),
+                        })?;
                     let mut result = canon_parent;
                     for comp in tail_components.into_iter().rev() {
                         result.push(comp);
                     }
                     break result;
                 }
-                tail_components.push(
-                    ancestor
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_os_string(),
-                );
+                tail_components.push(ancestor.file_name().unwrap_or_default().to_os_string());
                 ancestor = parent;
             } else {
                 break joined.clone();
@@ -135,12 +122,14 @@ pub(crate) fn resolve_within_working_dir(
         }
     };
 
-    let canon_root = working_dir.canonicalize().map_err(|e| ToolError::InvalidInput {
-        reason: format!(
-            "failed to canonicalize working directory '{}': {e}",
-            working_dir.display()
-        ),
-    })?;
+    let canon_root = working_dir
+        .canonicalize()
+        .map_err(|e| ToolError::InvalidInput {
+            reason: format!(
+                "failed to canonicalize working directory '{}': {e}",
+                working_dir.display()
+            ),
+        })?;
 
     if !resolved.starts_with(&canon_root) {
         return Err(ToolError::InvalidInput {

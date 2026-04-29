@@ -177,12 +177,12 @@ impl CheckpointStore {
             .filename(path)
             .create_if_missing(true);
 
-        let pool = SqlitePool::connect_with(opts).await.map_err(|e| {
-            CheckpointError::Open {
+        let pool = SqlitePool::connect_with(opts)
+            .await
+            .map_err(|e| CheckpointError::Open {
                 path: path.to_path_buf(),
                 source: e,
-            }
-        })?;
+            })?;
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS orchestration_checkpoints (
@@ -217,11 +217,10 @@ impl CheckpointStore {
     ) -> Result<(), CheckpointError> {
         self.run_id = Some(run_id.to_owned());
 
-        let plan_json =
-            serde_json::to_string(plan).map_err(|e| CheckpointError::Corrupted {
-                context: "failed to serialise plan".to_owned(),
-                source: e,
-            })?;
+        let plan_json = serde_json::to_string(plan).map_err(|e| CheckpointError::Corrupted {
+            context: "failed to serialise plan".to_owned(),
+            source: e,
+        })?;
         let pending_ids: Vec<String> = plan.subtasks.iter().map(|t| t.id.clone()).collect();
         let pending_json =
             serde_json::to_string(&pending_ids).map_err(|e| CheckpointError::Corrupted {
@@ -302,20 +301,22 @@ impl CheckpointStore {
                 context: "failed to serialise plan".to_owned(),
                 source: e,
             })?;
-        let dtos: Vec<WorkerResultDto> =
-            checkpoint.completed_workers.iter().map(Into::into).collect();
+        let dtos: Vec<WorkerResultDto> = checkpoint
+            .completed_workers
+            .iter()
+            .map(Into::into)
+            .collect();
         let completed_json =
             serde_json::to_string(&dtos).map_err(|e| CheckpointError::Corrupted {
                 context: "failed to serialise completed workers".to_owned(),
                 source: e,
             })?;
-        let pending_json =
-            serde_json::to_string(&checkpoint.pending_task_ids).map_err(|e| {
-                CheckpointError::Corrupted {
-                    context: "failed to serialise pending ids".to_owned(),
-                    source: e,
-                }
-            })?;
+        let pending_json = serde_json::to_string(&checkpoint.pending_task_ids).map_err(|e| {
+            CheckpointError::Corrupted {
+                context: "failed to serialise pending ids".to_owned(),
+                source: e,
+            }
+        })?;
 
         sqlx::query(
             "INSERT OR REPLACE INTO orchestration_checkpoints
@@ -347,20 +348,19 @@ impl CheckpointStore {
         &self,
         run_id: &str,
     ) -> Result<Option<OrchestrationCheckpoint>, CheckpointError> {
-        let row: Option<(String, String, String, String, String, f64, i64, i64)> =
-            sqlx::query_as(
-                "SELECT goal, plan_json, completed_json, pending_ids_json, run_id,
+        let row: Option<(String, String, String, String, String, f64, i64, i64)> = sqlx::query_as(
+            "SELECT goal, plan_json, completed_json, pending_ids_json, run_id,
                         total_cost_usd, created_at, updated_at
                  FROM orchestration_checkpoints
                  WHERE run_id = ? AND finished = 0",
-            )
-            .bind(run_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| CheckpointError::Sql {
-                context: "failed to query checkpoint".to_owned(),
-                source: e,
-            })?;
+        )
+        .bind(run_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CheckpointError::Sql {
+            context: "failed to query checkpoint".to_owned(),
+            source: e,
+        })?;
 
         let Some((goal, plan_json, completed_json, pending_json, rid, cost, created, updated)) =
             row
@@ -617,7 +617,11 @@ mod tests {
             updated_at: 1,
         };
         store.save(&cp).await.expect("save");
-        let loaded = store.load("run-timeout").await.expect("load").expect("some");
+        let loaded = store
+            .load("run-timeout")
+            .await
+            .expect("load")
+            .expect("some");
         assert!(
             matches!(
                 &loaded.completed_workers[0].status,
@@ -655,7 +659,10 @@ mod tests {
     async fn cache_creation_tokens_round_trip() {
         let (mut store, _dir) = open_store().await;
         let plan = make_plan("goal");
-        store.bind_run("run-cache", "goal", &plan).await.expect("bind");
+        store
+            .bind_run("run-cache", "goal", &plan)
+            .await
+            .expect("bind");
 
         let worker = WorkerResult {
             task_id: "t1".to_owned(),
@@ -677,7 +684,10 @@ mod tests {
 
         let loaded = store.load("run-cache").await.expect("load").expect("some");
         let restored = &loaded.completed_workers[0];
-        assert_eq!(restored.usage.cache_creation, 5_000, "cache_creation must survive roundtrip");
+        assert_eq!(
+            restored.usage.cache_creation, 5_000,
+            "cache_creation must survive roundtrip"
+        );
         assert_eq!(restored.usage.cache_read, 2_000);
     }
 }

@@ -19,14 +19,21 @@ fn test_search_exact_match_first() {
 
     // The exact match must be first.
     assert_eq!(
-        results[0].symbol.name, "foo",
+        results[0].symbol.name,
+        "foo",
         "exact match 'foo' must be first, got {:?}",
         results.iter().map(|r| &r.symbol.name).collect::<Vec<_>>()
     );
 
     // Prefix match should outrank the substring match.
-    assert_eq!(results[1].symbol.name, "foobar", "prefix match should be second");
-    assert_eq!(results[2].symbol.name, "barfoo", "substring match should be last");
+    assert_eq!(
+        results[1].symbol.name, "foobar",
+        "prefix match should be second"
+    );
+    assert_eq!(
+        results[2].symbol.name, "barfoo",
+        "substring match should be last"
+    );
 }
 
 #[test]
@@ -37,12 +44,20 @@ fn test_search_case_insensitive() {
 
     // Search with all-lowercase query.
     let results = idx.search("mystruct");
-    assert_eq!(results.len(), 1, "case-insensitive search should find MyStruct");
+    assert_eq!(
+        results.len(),
+        1,
+        "case-insensitive search should find MyStruct"
+    );
     assert_eq!(results[0].symbol.name, "MyStruct");
 
     // Mixed-case query.
     let results = idx.search("MYSTRUCT");
-    assert_eq!(results.len(), 1, "upper-case query should also find MyStruct");
+    assert_eq!(
+        results.len(),
+        1,
+        "upper-case query should also find MyStruct"
+    );
 
     // Partial lowercase.
     let results = idx.search("my");

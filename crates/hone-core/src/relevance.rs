@@ -100,10 +100,32 @@ impl Bm25Scorer {
 /// for BM25 scoring on code. Keeps identifiers intact (snake_case stays
 /// as one token, which is desirable for matching function names).
 fn tokenize(text: &str) -> Vec<String> {
-    text.split(|c: char| c.is_whitespace() || matches!(c, '(' | ')' | '{' | '}' | '[' | ']' | ',' | ';' | ':' | '"' | '\'' | '<' | '>' | '=' | '+' | '/' | '\\' | '#'))
-        .filter(|s| !s.is_empty() && s.len() > 1)
-        .map(|s| s.to_lowercase())
-        .collect()
+    text.split(|c: char| {
+        c.is_whitespace()
+            || matches!(
+                c,
+                '(' | ')'
+                    | '{'
+                    | '}'
+                    | '['
+                    | ']'
+                    | ','
+                    | ';'
+                    | ':'
+                    | '"'
+                    | '\''
+                    | '<'
+                    | '>'
+                    | '='
+                    | '+'
+                    | '/'
+                    | '\\'
+                    | '#'
+            )
+    })
+    .filter(|s| !s.is_empty() && s.len() > 1)
+    .map(|s| s.to_lowercase())
+    .collect()
 }
 
 /// Interleave items so the highest-scored sit at the edges (first and last

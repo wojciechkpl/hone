@@ -2,16 +2,18 @@ use std::convert::Infallible;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::State;
-use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::IntoResponse;
 use axum::Json;
+use axum::extract::State;
+use axum::response::IntoResponse;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use futures::stream;
 use hone_core::{AgentConfig, AgentHandle, RetryConfig, SkeletonStrategy};
 use hone_proto::{AgentEvent, Message, ModelId, PricingEntry};
 use hone_providers::{AnthropicProvider, PricingTable};
 use hone_sandbox::NullSandbox;
-use hone_tools::{EditFileTool, GlobTool, GrepTool, ReadFileTool, ShellTool, ToolRegistry, WriteFileTool};
+use hone_tools::{
+    EditFileTool, GlobTool, GrepTool, ReadFileTool, ShellTool, ToolRegistry, WriteFileTool,
+};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
@@ -66,7 +68,10 @@ fn event_type(event: &AgentEvent) -> &'static str {
 fn make_sse_event(event: AgentEvent, id: u64) -> Event {
     let ev_type = event_type(&event);
     let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_owned());
-    Event::default().event(ev_type).data(data).id(id.to_string())
+    Event::default()
+        .event(ev_type)
+        .data(data)
+        .id(id.to_string())
 }
 
 /// `POST /run` — stateless agent execution endpoint with SSE streaming.
@@ -88,9 +93,7 @@ pub async fn run_handler(
             // tx dropped → rx drains the one error event then closes.
         }
         Some(key) => {
-            let model_id = ModelId::new(
-                req.model.as_deref().unwrap_or("claude-sonnet-4-6"),
-            );
+            let model_id = ModelId::new(req.model.as_deref().unwrap_or("claude-sonnet-4-6"));
             let working_dir = req
                 .working_dir
                 .as_deref()
@@ -117,10 +120,7 @@ pub async fn run_handler(
                 budget_limit: None,
                 pricing: {
                     let table = PricingTable::default_table();
-                    let prefixed = ModelId::new(format!(
-                        "anthropic:{}",
-                        model_id.as_str()
-                    ));
+                    let prefixed = ModelId::new(format!("anthropic:{}", model_id.as_str()));
                     table.get(&prefixed).cloned().unwrap_or(PricingEntry {
                         model: model_id.clone(),
                         input_per_million: 3.0,
@@ -181,17 +181,30 @@ mod tests {
 
     #[test]
     fn event_type_maps_all_variants() {
-        assert_eq!(event_type(&AgentEvent::Token { text: "hi".into() }), "token");
-        assert_eq!(event_type(&AgentEvent::Done { usage: Default::default(), cost_usd: 0.0 }), "done");
         assert_eq!(
-            event_type(&AgentEvent::Error { message: "oops".into() }),
+            event_type(&AgentEvent::Token { text: "hi".into() }),
+            "token"
+        );
+        assert_eq!(
+            event_type(&AgentEvent::Done {
+                usage: Default::default(),
+                cost_usd: 0.0
+            }),
+            "done"
+        );
+        assert_eq!(
+            event_type(&AgentEvent::Error {
+                message: "oops".into()
+            }),
             "error"
         );
     }
 
     #[test]
     fn make_sse_event_serialises_to_json() {
-        let ev = AgentEvent::Token { text: "hello".into() };
+        let ev = AgentEvent::Token {
+            text: "hello".into(),
+        };
         let sse = make_sse_event(ev, 1);
         // Event::data is not directly inspectable, but construction must not panic.
         let _ = sse;

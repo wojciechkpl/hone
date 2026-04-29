@@ -178,6 +178,14 @@ pub struct App {
     pub(crate) sessions_cursor: usize,
     /// Set when the user selects a session to switch to; causes the TUI to quit.
     pub pending_session_switch: Option<String>,
+
+    // --- Mouse text selection (Left-drag → clipboard) -----------------------
+    /// Active or completed mouse selection. `Some` during/after a drag until
+    /// the copy step consumes it.
+    pub(crate) selection: Option<crate::selection::Selection>,
+    /// Set on Left-Up when a non-empty selection is ready to be copied. The
+    /// main event loop reads the current frame buffer and drains this flag.
+    pub(crate) pending_copy: bool,
 }
 
 impl App {
@@ -247,6 +255,8 @@ impl App {
             sessions_list: Vec::new(),
             sessions_cursor: 0,
             pending_session_switch: None,
+            selection: None,
+            pending_copy: false,
         };
         // Restore draft from previous session if present.
         let draft_file = draft_path();
@@ -508,10 +518,7 @@ impl App {
         self.status.elapsed_secs = self.animation.elapsed_secs();
 
         // Sync turn-elapsed so the status bar can show "thinking… 5s".
-        self.status.turn_elapsed_secs = self
-            .turn_start
-            .map(|s| s.elapsed().as_secs())
-            .unwrap_or(0);
+        self.status.turn_elapsed_secs = self.turn_start.map(|s| s.elapsed().as_secs()).unwrap_or(0);
 
         // Advance hint rotation tick.
         self.status.hint_tick = self.status.hint_tick.wrapping_add(1);
@@ -539,7 +546,10 @@ impl App {
                         format!("[TDD] watching for changes, running: {command}")
                     }
                     TddEvent::RunningTests { changed_path } => {
-                        format!("[TDD] change detected: {} — running tests...", changed_path.display())
+                        format!(
+                            "[TDD] change detected: {} — running tests...",
+                            changed_path.display()
+                        )
                     }
                     TddEvent::Passed { output } => {
                         format!("[TDD] tests PASSED\n{output}")
@@ -771,8 +781,7 @@ impl App {
                         None | Some(0) => count - 1,
                         Some(i) => i - 1,
                     });
-                } else if !self.input.buffer.starts_with('/')
-                    && !self.input.buffer.starts_with('@')
+                } else if !self.input.buffer.starts_with('/') && !self.input.buffer.starts_with('@')
                 {
                     // No autocomplete and no sigil prefix — navigate history.
                     let live = self.input.buffer.clone();
@@ -822,8 +831,7 @@ impl App {
                             self.input.cursor_position = self.input.buffer.len();
                         }
                     }
-                } else if !self.input.buffer.starts_with('/')
-                    && !self.input.buffer.starts_with('@')
+                } else if !self.input.buffer.starts_with('/') && !self.input.buffer.starts_with('@')
                 {
                     // Not in history mode and no autocomplete — scroll conversation.
                     self.scroll_offset = self.scroll_offset.saturating_sub(1);
@@ -1000,7 +1008,8 @@ impl App {
             }
             KeyCode::Char('N') => {
                 if !self.search_matches.is_empty() {
-                    self.search_cursor = self.search_cursor
+                    self.search_cursor = self
+                        .search_cursor
                         .checked_sub(1)
                         .unwrap_or(self.search_matches.len() - 1);
                 }
@@ -1031,21 +1040,39 @@ impl App {
         }
     }
 
-    pub fn palette_query(&self) -> &str { &self.palette_query }
-    pub fn palette_selection(&self) -> usize { self.palette_selection }
-    pub fn search_query(&self) -> &str { &self.search_query }
-    pub fn search_matches(&self) -> &[usize] { &self.search_matches }
-    pub fn search_cursor(&self) -> usize { self.search_cursor }
-    pub fn recompute_search_matches_pub(&mut self) { self.recompute_search_matches(); }
-    pub fn handle_key_search_pub(&mut self, key: KeyEvent) { self.handle_key_search(key); }
-    pub fn handle_key_palette_pub(&mut self, key: KeyEvent) { self.handle_key_palette(key); }
+    pub fn palette_query(&self) -> &str {
+        &self.palette_query
+    }
+    pub fn palette_selection(&self) -> usize {
+        self.palette_selection
+    }
+    pub fn search_query(&self) -> &str {
+        &self.search_query
+    }
+    pub fn search_matches(&self) -> &[usize] {
+        &self.search_matches
+    }
+    pub fn search_cursor(&self) -> usize {
+        self.search_cursor
+    }
+    pub fn recompute_search_matches_pub(&mut self) {
+        self.recompute_search_matches();
+    }
+    pub fn handle_key_search_pub(&mut self, key: KeyEvent) {
+        self.handle_key_search(key);
+    }
+    pub fn handle_key_palette_pub(&mut self, key: KeyEvent) {
+        self.handle_key_palette(key);
+    }
 
     // -----------------------------------------------------------------------
     // Session Anatomy key handling
     // -----------------------------------------------------------------------
     pub fn handle_key_anatomy(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Esc => { self.anatomy_open = false; }
+            KeyCode::Esc => {
+                self.anatomy_open = false;
+            }
             KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.anatomy_open = false;
             }
@@ -1058,8 +1085,12 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => {
                 self.anatomy_scroll = self.anatomy_scroll.saturating_sub(1);
             }
-            KeyCode::Char('g') => { self.anatomy_scroll = 0; }
-            KeyCode::Char('G') => { self.anatomy_scroll = usize::MAX / 2; }
+            KeyCode::Char('g') => {
+                self.anatomy_scroll = 0;
+            }
+            KeyCode::Char('G') => {
+                self.anatomy_scroll = usize::MAX / 2;
+            }
             _ => {}
         }
     }
@@ -1069,7 +1100,9 @@ impl App {
     // -----------------------------------------------------------------------
     pub fn handle_key_mirror(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Esc => { self.mirror_open = false; }
+            KeyCode::Esc => {
+                self.mirror_open = false;
+            }
             KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.mirror_open = false;
             }
@@ -1079,8 +1112,12 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => {
                 self.mirror_scroll = self.mirror_scroll.saturating_sub(1);
             }
-            KeyCode::Char('g') => { self.mirror_scroll = 0; }
-            KeyCode::Char('G') => { self.mirror_scroll = usize::MAX / 2; }
+            KeyCode::Char('g') => {
+                self.mirror_scroll = 0;
+            }
+            KeyCode::Char('G') => {
+                self.mirror_scroll = usize::MAX / 2;
+            }
             _ => {}
         }
     }
@@ -1165,16 +1202,69 @@ impl App {
     }
 
     pub fn handle_mouse(&mut self, event: crossterm::event::MouseEvent) {
-        use crossterm::event::MouseEventKind;
+        use crossterm::event::{MouseButton, MouseEventKind};
         match event.kind {
             MouseEventKind::ScrollDown => {
+                // Scrolling mid-drag invalidates on-screen selection coords.
+                self.selection = None;
                 self.scroll_offset = self.scroll_offset.saturating_sub(3);
             }
             MouseEventKind::ScrollUp => {
+                self.selection = None;
                 self.scroll_offset = self.scroll_offset.saturating_add(3);
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.selection = Some(crate::selection::Selection::new(
+                    event.column,
+                    event.row,
+                    self.scroll_offset,
+                ));
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                if let Some(sel) = &mut self.selection {
+                    if sel.anchor_scroll == self.scroll_offset {
+                        sel.current = (event.column, event.row);
+                    } else {
+                        // Viewport moved; abandon selection.
+                        self.selection = None;
+                    }
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                if let Some(sel) = &self.selection {
+                    if !sel.is_empty() {
+                        self.pending_copy = true;
+                    } else {
+                        // Plain click with no drag — nothing to copy.
+                        self.selection = None;
+                    }
+                }
             }
             _ => {}
         }
+    }
+
+    /// Accessor used by the renderer to overlay the selection highlight.
+    pub fn selection(&self) -> Option<&crate::selection::Selection> {
+        self.selection.as_ref()
+    }
+
+    /// Drain the pending-copy flag. Returns the selection to be extracted and
+    /// cleared from state. The main loop then reads the current frame buffer,
+    /// extracts the text, and pushes it to the system clipboard.
+    pub fn take_pending_copy(&mut self) -> Option<crate::selection::Selection> {
+        if !self.pending_copy {
+            return None;
+        }
+        self.pending_copy = false;
+        self.selection.take()
+    }
+
+    /// Append a system-level message to the conversation transcript (used
+    /// for transient notices like clipboard errors).
+    pub fn push_system_message(&mut self, text: impl Into<String>) {
+        self.messages
+            .push(DisplayMessage::new(DisplayRole::System, text.into()));
     }
 
     // -----------------------------------------------------------------------
@@ -1199,7 +1289,8 @@ impl App {
                     // Already one message queued — only one slot is supported.
                     self.messages.push(DisplayMessage::new(
                         DisplayRole::System,
-                        "⚠ only one message can be queued at a time — previous follow-up kept".to_string(),
+                        "⚠ only one message can be queued at a time — previous follow-up kept"
+                            .to_string(),
                     ));
                     self.input.take_input();
                     return;
@@ -1247,7 +1338,8 @@ impl App {
                 prompt
             };
 
-            self.messages.push(DisplayMessage::new(DisplayRole::User, display_text));
+            self.messages
+                .push(DisplayMessage::new(DisplayRole::User, display_text));
             self.state = AppState::WaitingForResponse;
             self.turn_start = Some(Instant::now());
             return;
@@ -1255,7 +1347,8 @@ impl App {
 
         // Plain message — add it to the conversation and start waiting.
         self.history.push(&text);
-        self.messages.push(DisplayMessage::new(DisplayRole::User, text));
+        self.messages
+            .push(DisplayMessage::new(DisplayRole::User, text));
         self.state = AppState::WaitingForResponse;
         self.turn_start = Some(Instant::now());
     }
@@ -1280,10 +1373,8 @@ impl App {
         }
 
         // Echo the command so the user can see what ran.
-        self.messages.push(DisplayMessage::new(
-            DisplayRole::User,
-            format!("! {cmd}"),
-        ));
+        self.messages
+            .push(DisplayMessage::new(DisplayRole::User, format!("! {cmd}")));
 
         // Detect interactive commands synchronously — no async needed.
         if crate::shell_escape::is_interactive_command(cmd) {
@@ -1335,7 +1426,11 @@ impl App {
                     return;
                 }
                 self.pending_review = false;
-                let role = if success { DisplayRole::System } else { DisplayRole::Error };
+                let role = if success {
+                    DisplayRole::System
+                } else {
+                    DisplayRole::Error
+                };
                 self.messages.push(DisplayMessage::new(role, text));
                 self.state = AppState::Idle;
             }
@@ -1348,22 +1443,28 @@ impl App {
                 if new_dir.starts_with(&project_root) {
                     let msg = format!("cd: {}", new_dir.display());
                     self.working_dir = new_dir;
-                    self.messages.push(DisplayMessage::new(DisplayRole::System, msg));
+                    self.messages
+                        .push(DisplayMessage::new(DisplayRole::System, msg));
                 } else {
                     let msg = format!(
                         "cd: {} is outside the project root ({}). Denied for security.",
                         new_dir.display(),
                         project_root.display()
                     );
-                    self.messages.push(DisplayMessage::new(DisplayRole::Error, msg));
+                    self.messages
+                        .push(DisplayMessage::new(DisplayRole::Error, msg));
                 }
                 self.state = AppState::Idle;
             }
             ShellEscapeResult::CdError(e) => {
-                self.messages.push(DisplayMessage::new(DisplayRole::Error, e));
+                self.messages
+                    .push(DisplayMessage::new(DisplayRole::Error, e));
                 self.state = AppState::Idle;
             }
-            ShellEscapeResult::NeedsTerminalSuspend { command, working_dir } => {
+            ShellEscapeResult::NeedsTerminalSuspend {
+                command,
+                working_dir,
+            } => {
                 // This path should not be reached here (handled in initiate_shell_escape
                 // before async dispatch), but handle it defensively.
                 self.pending_interactive = Some((command, working_dir));
@@ -1504,7 +1605,8 @@ impl App {
                      no_color: {}",
                     t.no_color,
                 );
-                self.messages.push(DisplayMessage::new(DisplayRole::System, preview));
+                self.messages
+                    .push(DisplayMessage::new(DisplayRole::System, preview));
             }
             Command::SetVim(enable) => {
                 self.vim_enabled = enable;
@@ -1517,7 +1619,8 @@ impl App {
                 } else {
                     "vim mode disabled".to_string()
                 };
-                self.messages.push(DisplayMessage::new(DisplayRole::System, msg));
+                self.messages
+                    .push(DisplayMessage::new(DisplayRole::System, msg));
             }
             Command::Tdd(sub) => {
                 self.handle_tdd_command(sub);
@@ -1576,7 +1679,8 @@ impl App {
                     self.messages.push(DisplayMessage::new(
                         DisplayRole::Error,
                         "[TDD] could not auto-detect a test command. \
-                         Pass one explicitly: :tdd cargo test".to_string(),
+                         Pass one explicitly: :tdd cargo test"
+                            .to_string(),
                     ));
                     return;
                 };
@@ -1623,7 +1727,11 @@ impl App {
                  Phase:    {phase}\n\
                  \n\
                  Use /configure help for subcommand list.",
-                model = if self.status.model.is_empty() { "none" } else { &self.status.model },
+                model = if self.status.model.is_empty() {
+                    "none"
+                } else {
+                    &self.status.model
+                },
                 provider = provider_str,
                 vim = vim_str,
                 budget = budget_str,
@@ -1633,7 +1741,8 @@ impl App {
                 context = self.status.format_context(),
                 phase = self.status.phase_long(),
             );
-            self.messages.push(DisplayMessage::new(DisplayRole::System, info));
+            self.messages
+                .push(DisplayMessage::new(DisplayRole::System, info));
             return;
         }
 
@@ -1654,7 +1763,8 @@ impl App {
 /configure budget off            — clear session budget\n\
 /configure provider <name>       — note: requires session restart\n\
 /configure help                  — this message";
-                self.messages.push(DisplayMessage::new(DisplayRole::System, help));
+                self.messages
+                    .push(DisplayMessage::new(DisplayRole::System, help));
             }
             "model" => {
                 // Delegate to the existing Command::Model handler (reuses its
@@ -1720,9 +1830,7 @@ impl App {
             _ => {
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::Error,
-                    format!(
-                        "Unknown configure subcommand: {subcmd}. Try /configure help."
-                    ),
+                    format!("Unknown configure subcommand: {subcmd}. Try /configure help."),
                 ));
             }
         }
@@ -1754,13 +1862,15 @@ impl App {
         } else {
             // Prompt provided inline — synthesise clarifying questions now.
             use hone_core::ClarificationDetector;
-            let questions = ClarificationDetector::needs_clarification(&prompt)
-                .unwrap_or_else(|| {
+            let questions =
+                ClarificationDetector::needs_clarification(&prompt).unwrap_or_else(|| {
                     vec!["Could you provide more details about what you'd like me to do?".into()]
                 });
             let formatted = ClarificationDetector::format_questions(&questions);
-            self.messages.push(DisplayMessage::new(DisplayRole::User, prompt.clone()));
-            self.messages.push(DisplayMessage::new(DisplayRole::System, formatted));
+            self.messages
+                .push(DisplayMessage::new(DisplayRole::User, prompt.clone()));
+            self.messages
+                .push(DisplayMessage::new(DisplayRole::System, formatted));
             // Mark force_clarify so the event loop knows this turn has been
             // pre-processed; the user's answer will go straight to the agent.
             self.force_clarify = true;
@@ -1779,7 +1889,10 @@ impl App {
             return;
         }
         let hunk_display = session.format_current_for_display();
-        let header = format!("[Review mode] {} hunks to review. Keys: a=accept, r=reject, j=next, k=prev, A=accept all, R=reject all, q=finish", session.total_count());
+        let header = format!(
+            "[Review mode] {} hunks to review. Keys: a=accept, r=reject, j=next, k=prev, A=accept all, R=reject all, q=finish",
+            session.total_count()
+        );
         self.messages.push(DisplayMessage::new(
             DisplayRole::System,
             format!("{header}\n\n{hunk_display}"),
@@ -1846,10 +1959,8 @@ impl App {
                 ));
             } else {
                 let display = session.format_current_for_display();
-                self.messages.push(DisplayMessage::new(
-                    DisplayRole::System,
-                    display,
-                ));
+                self.messages
+                    .push(DisplayMessage::new(DisplayRole::System, display));
             }
         }
 
@@ -1915,15 +2026,25 @@ impl App {
                 }
 
                 // Store pending tool start for duration tracking on ToolCallEnd.
-                self.pending_tool_start.insert(id.clone(), (name.clone(), args.clone()));
+                self.pending_tool_start
+                    .insert(id.clone(), (name.clone(), args.clone()));
             }
 
-            AgentEvent::ToolCallEnd { id, result, is_error, duration_ms, cache_hit } => {
+            AgentEvent::ToolCallEnd {
+                id,
+                result,
+                is_error,
+                duration_ms,
+                cache_hit,
+            } => {
                 self.status.active_tool = None;
                 // Clear the in-progress animation on the matching tool call message.
-                if let Some(msg) = self.messages.iter_mut().rev().find(|m| {
-                    matches!(&m.role, DisplayRole::ToolCall { .. }) && m.is_active
-                }) {
+                if let Some(msg) = self
+                    .messages
+                    .iter_mut()
+                    .rev()
+                    .find(|m| matches!(&m.role, DisplayRole::ToolCall { .. }) && m.is_active)
+                {
                     msg.is_active = false;
                 }
                 let content = if is_error {
@@ -2003,28 +2124,45 @@ impl App {
                 ));
             }
 
-            AgentEvent::PlanCreated { goal, subtask_count } => {
+            AgentEvent::PlanCreated {
+                goal,
+                subtask_count,
+            } => {
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::System,
                     format!("Orchestrating: {goal} ({subtask_count} subtasks)"),
                 ));
             }
 
-            AgentEvent::WorkerStarted { task_id, agent, description } => {
+            AgentEvent::WorkerStarted {
+                task_id,
+                agent,
+                description,
+            } => {
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::System,
                     format!("[{task_id}] {agent}: {description}"),
                 ));
             }
 
-            AgentEvent::WorkerCompleted { task_id, agent, status, cost_usd } => {
+            AgentEvent::WorkerCompleted {
+                task_id,
+                agent,
+                status,
+                cost_usd,
+            } => {
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::System,
                     format!("[{task_id}] {agent}: {status} (${cost_usd:.4})"),
                 ));
             }
 
-            AgentEvent::BudgetProgress { spent_usd, budget_usd, workers_completed, workers_total } => {
+            AgentEvent::BudgetProgress {
+                spent_usd,
+                budget_usd,
+                workers_completed,
+                workers_total,
+            } => {
                 self.status.session_cost_usd = spent_usd;
                 if budget_usd.is_some() {
                     self.status.budget_usd = budget_usd;
@@ -2038,7 +2176,12 @@ impl App {
                 self.status.context_limit = context_window;
             }
 
-            AgentEvent::ContextInjected { strategy, tokens_used, bm25_hits, confidence: _ } => {
+            AgentEvent::ContextInjected {
+                strategy,
+                tokens_used,
+                bm25_hits,
+                confidence: _,
+            } => {
                 if self.current_turn.is_none() {
                     let turn_index = self.completed_turns.len();
                     self.current_turn = Some(TurnLedger::new(turn_index));
@@ -2141,16 +2284,22 @@ mod tests {
             context_window: 200_000,
         });
 
-        assert_eq!(app.status.context_limit, 200_000,
-            "context_limit should be updated by ModelInfo event");
+        assert_eq!(
+            app.status.context_limit, 200_000,
+            "context_limit should be updated by ModelInfo event"
+        );
     }
 
     /// A second ModelInfo event with a different value must also update.
     #[test]
     fn model_info_event_is_idempotent_with_same_value() {
         let mut app = App::new();
-        app.handle_agent_event(AgentEvent::ModelInfo { context_window: 200_000 });
-        app.handle_agent_event(AgentEvent::ModelInfo { context_window: 200_000 });
+        app.handle_agent_event(AgentEvent::ModelInfo {
+            context_window: 200_000,
+        });
+        app.handle_agent_event(AgentEvent::ModelInfo {
+            context_window: 200_000,
+        });
         assert_eq!(app.status.context_limit, 200_000);
     }
 
@@ -2188,8 +2337,14 @@ mod tests {
         app.handle_command(Command::Configure(String::new()));
 
         let msg = last_system_msg(&app);
-        assert!(msg.contains("Current Configuration"), "should contain header");
-        assert!(msg.contains("anthropic:claude-3-5-sonnet"), "should contain model");
+        assert!(
+            msg.contains("Current Configuration"),
+            "should contain header"
+        );
+        assert!(
+            msg.contains("anthropic:claude-3-5-sonnet"),
+            "should contain model"
+        );
         assert!(msg.contains("anthropic"), "should contain provider");
         assert!(msg.contains("on"), "should show vim on");
         assert!(msg.contains("$3.50"), "should show budget");
@@ -2200,7 +2355,9 @@ mod tests {
     #[test]
     fn configure_model_delegates_to_model_handler() {
         let mut app = App::new();
-        app.handle_command(Command::Configure("model anthropic:claude-opus-4".to_string()));
+        app.handle_command(Command::Configure(
+            "model anthropic:claude-opus-4".to_string(),
+        ));
 
         assert_eq!(
             app.pending_model_change.as_deref(),
@@ -2209,7 +2366,10 @@ mod tests {
         );
         assert_eq!(app.status.model, "anthropic:claude-opus-4");
         let msg = last_system_msg(&app);
-        assert!(msg.contains("Model changed to"), "should produce model-changed message");
+        assert!(
+            msg.contains("Model changed to"),
+            "should produce model-changed message"
+        );
     }
 
     /// `/configure model` with no id produces the usage error from Command::Model.
@@ -2247,7 +2407,10 @@ mod tests {
         app.status.budget_usd = Some(10.0);
         app.handle_command(Command::Configure("budget off".to_string()));
 
-        assert!(app.status.budget_usd.is_none(), "budget_usd should be cleared");
+        assert!(
+            app.status.budget_usd.is_none(),
+            "budget_usd should be cleared"
+        );
         let msg = last_system_msg(&app);
         assert!(msg.contains("cleared"), "should confirm budget cleared");
     }
@@ -2318,7 +2481,10 @@ mod tests {
         app.handle_command(Command::Configure("badsubcmd".to_string()));
 
         let msg = last_error_msg(&app);
-        assert!(msg.contains("badsubcmd"), "error should name the bad subcommand");
+        assert!(
+            msg.contains("badsubcmd"),
+            "error should name the bad subcommand"
+        );
         assert!(
             msg.to_lowercase().contains("try /configure help"),
             "error should suggest /configure help"
@@ -2367,7 +2533,10 @@ mod tests {
         app.show_splash = false;
         app.type_text("hello");
         app.handle_key(make_key(KeyCode::Enter, KeyModifiers::SHIFT));
-        assert!(app.input.buffer.contains('\n'), "buffer must contain newline after Shift+Enter");
+        assert!(
+            app.input.buffer.contains('\n'),
+            "buffer must contain newline after Shift+Enter"
+        );
         assert_eq!(app.messages.len(), 0, "Shift+Enter must not submit");
         assert!(matches!(app.state, AppState::Idle));
     }
@@ -2378,7 +2547,10 @@ mod tests {
         app.show_splash = false;
         app.type_text("hello world");
         app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(app.input.buffer.is_empty(), "buffer must be cleared after submit");
+        assert!(
+            app.input.buffer.is_empty(),
+            "buffer must be cleared after submit"
+        );
         assert_eq!(app.messages.len(), 1, "one user message must be created");
         assert_eq!(app.messages[0].content, "hello world");
     }
@@ -2397,7 +2569,11 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(app.messages.len(), 0, "empty submit must produce no messages");
+        assert_eq!(
+            app.messages.len(),
+            0,
+            "empty submit must produce no messages"
+        );
     }
 
     #[test]
@@ -2406,7 +2582,10 @@ mod tests {
         app.show_splash = false;
         app.type_text("some text");
         app.handle_key(make_key(KeyCode::Esc, KeyModifiers::NONE));
-        assert!(app.input.buffer.is_empty(), "Esc in Idle must clear the input buffer");
+        assert!(
+            app.input.buffer.is_empty(),
+            "Esc in Idle must clear the input buffer"
+        );
         assert_eq!(app.input.cursor_position, 0);
     }
 
@@ -2420,9 +2599,18 @@ mod tests {
         let first = app.queued_message.clone();
         app.type_text("second message");
         app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(app.queued_message, first, "first queued message must be preserved");
-        let warn = app.messages.iter().any(|m| m.content.contains("only one message"));
-        assert!(warn, "a warning must be shown when a second queue is attempted");
+        assert_eq!(
+            app.queued_message, first,
+            "first queued message must be preserved"
+        );
+        let warn = app
+            .messages
+            .iter()
+            .any(|m| m.content.contains("only one message"));
+        assert!(
+            warn,
+            "a warning must be shown when a second queue is attempted"
+        );
     }
 
     #[test]
@@ -2430,14 +2618,29 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         app.current_turn = Some(TurnLedger::new(0));
-        app.pending_tool_start.insert("id".into(), ("read_file".into(), serde_json::Value::Null));
-        let mut tool_msg = DisplayMessage::new(DisplayRole::ToolCall { name: "bash".into() }, String::new());
+        app.pending_tool_start
+            .insert("id".into(), ("read_file".into(), serde_json::Value::Null));
+        let mut tool_msg = DisplayMessage::new(
+            DisplayRole::ToolCall {
+                name: "bash".into(),
+            },
+            String::new(),
+        );
         tool_msg.is_active = true;
         app.messages.push(tool_msg);
         app.cancel_turn();
-        assert!(app.current_turn.is_none(), "cancel_turn must clear current_turn");
-        assert!(app.pending_tool_start.is_empty(), "cancel_turn must clear pending_tool_start");
-        assert!(!app.messages.iter().any(|m| m.is_active), "cancel_turn must clear is_active on all messages");
+        assert!(
+            app.current_turn.is_none(),
+            "cancel_turn must clear current_turn"
+        );
+        assert!(
+            app.pending_tool_start.is_empty(),
+            "cancel_turn must clear pending_tool_start"
+        );
+        assert!(
+            !app.messages.iter().any(|m| m.is_active),
+            "cancel_turn must clear is_active on all messages"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2461,14 +2664,20 @@ mod tests {
     #[test]
     fn assistant_message_is_not_collapsed_by_default() {
         let msg = DisplayMessage::new(DisplayRole::Assistant, "hello");
-        assert!(!msg.is_collapsed, "Assistant messages must not start collapsed");
+        assert!(
+            !msg.is_collapsed,
+            "Assistant messages must not start collapsed"
+        );
     }
 
     /// b) App has a focus_msg_index: Option<usize> field, defaults to None.
     #[test]
     fn app_focus_msg_index_defaults_to_none() {
         let app = App::new();
-        assert!(app.focus_msg_index.is_none(), "focus_msg_index must default to None");
+        assert!(
+            app.focus_msg_index.is_none(),
+            "focus_msg_index must default to None"
+        );
     }
 
     /// c) When FocusTarget::Conversation and j pressed, focus_msg_index increments.
@@ -2477,9 +2686,12 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         app.focus = FocusTarget::Conversation;
-        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg0"));
-        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg1"));
-        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg2"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::System, "msg0"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::System, "msg1"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::System, "msg2"));
 
         // First j: None → 0
         app.handle_key(make_key(KeyCode::Char('j'), KeyModifiers::NONE));
@@ -2496,8 +2708,10 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         app.focus = FocusTarget::Conversation;
-        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg0"));
-        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg1"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::System, "msg0"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::System, "msg1"));
 
         app.handle_key(make_key(KeyCode::Down, KeyModifiers::NONE));
         assert_eq!(app.focus_msg_index, Some(0));
@@ -2512,11 +2726,16 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         app.focus = FocusTarget::Conversation;
-        app.messages.push(DisplayMessage::new(DisplayRole::System, "only"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::System, "only"));
         app.focus_msg_index = Some(0);
 
         app.handle_key(make_key(KeyCode::Char('j'), KeyModifiers::NONE));
-        assert_eq!(app.focus_msg_index, Some(0), "j must not advance past the last message");
+        assert_eq!(
+            app.focus_msg_index,
+            Some(0),
+            "j must not advance past the last message"
+        );
     }
 
     /// d) When FocusTarget::Conversation and k pressed, focus_msg_index decrements (floor 0).
@@ -2525,8 +2744,10 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         app.focus = FocusTarget::Conversation;
-        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg0"));
-        app.messages.push(DisplayMessage::new(DisplayRole::System, "msg1"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::System, "msg0"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::System, "msg1"));
         app.focus_msg_index = Some(1);
 
         app.handle_key(make_key(KeyCode::Char('k'), KeyModifiers::NONE));
@@ -2539,7 +2760,8 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         app.focus = FocusTarget::Conversation;
-        app.messages.push(DisplayMessage::new(DisplayRole::System, "only"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::System, "only"));
         app.focus_msg_index = Some(0);
 
         app.handle_key(make_key(KeyCode::Char('k'), KeyModifiers::NONE));
@@ -2552,12 +2774,18 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         app.focus = FocusTarget::Conversation;
-        app.messages.push(DisplayMessage::new(DisplayRole::ToolResult, "result data\nline two\nline three"));
+        app.messages.push(DisplayMessage::new(
+            DisplayRole::ToolResult,
+            "result data\nline two\nline three",
+        ));
         app.focus_msg_index = Some(0);
         assert!(app.messages[0].is_collapsed, "message must start collapsed");
 
         app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(!app.messages[0].is_collapsed, "Enter must expand a collapsed ToolResult");
+        assert!(
+            !app.messages[0].is_collapsed,
+            "Enter must expand a collapsed ToolResult"
+        );
     }
 
     /// f) Enter on a focused expanded ToolResult message sets is_collapsed=true (toggle).
@@ -2572,7 +2800,10 @@ mod tests {
         app.focus_msg_index = Some(0);
 
         app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(app.messages[0].is_collapsed, "Enter must collapse an expanded ToolResult");
+        assert!(
+            app.messages[0].is_collapsed,
+            "Enter must collapse an expanded ToolResult"
+        );
     }
 
     /// Space also toggles collapse on a focused ToolResult.
@@ -2581,12 +2812,16 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         app.focus = FocusTarget::Conversation;
-        app.messages.push(DisplayMessage::new(DisplayRole::ToolResult, "result"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::ToolResult, "result"));
         app.focus_msg_index = Some(0);
         assert!(app.messages[0].is_collapsed);
 
         app.handle_key(make_key(KeyCode::Char(' '), KeyModifiers::NONE));
-        assert!(!app.messages[0].is_collapsed, "Space must expand a collapsed ToolResult");
+        assert!(
+            !app.messages[0].is_collapsed,
+            "Space must expand a collapsed ToolResult"
+        );
     }
 
     /// g) Non-ToolResult messages (User, Assistant) are not toggled by Enter.
@@ -2596,14 +2831,17 @@ mod tests {
         let mut app = App::new();
         app.show_splash = false;
         app.focus = FocusTarget::Conversation;
-        app.messages.push(DisplayMessage::new(DisplayRole::User, "hello"));
+        app.messages
+            .push(DisplayMessage::new(DisplayRole::User, "hello"));
         app.focus_msg_index = Some(0);
         assert!(!app.messages[0].is_collapsed);
 
         app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
         // Enter on a User message should NOT change is_collapsed (stays false).
-        assert!(!app.messages[0].is_collapsed,
-            "Enter on User message must not change is_collapsed");
+        assert!(
+            !app.messages[0].is_collapsed,
+            "Enter on User message must not change is_collapsed"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2612,9 +2850,21 @@ mod tests {
 
     fn make_session_list() -> Vec<crate::SessionSummary> {
         vec![
-            crate::SessionSummary { name: "alpha".to_string(), updated_at: 0, message_count: 3 },
-            crate::SessionSummary { name: "beta".to_string(), updated_at: 0, message_count: 7 },
-            crate::SessionSummary { name: "gamma".to_string(), updated_at: 0, message_count: 1 },
+            crate::SessionSummary {
+                name: "alpha".to_string(),
+                updated_at: 0,
+                message_count: 3,
+            },
+            crate::SessionSummary {
+                name: "beta".to_string(),
+                updated_at: 0,
+                message_count: 7,
+            },
+            crate::SessionSummary {
+                name: "gamma".to_string(),
+                updated_at: 0,
+                message_count: 1,
+            },
         ]
     }
 

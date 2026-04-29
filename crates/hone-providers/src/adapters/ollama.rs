@@ -3,8 +3,8 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use futures::{Stream, StreamExt, stream};
 use hone_proto::{
-    Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, Role, TokenUsage,
-    ToolCallRequest, ToolSchema,
+    Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, Role, TokenUsage, ToolCallRequest,
+    ToolSchema,
 };
 use reqwest::Client;
 use serde_json::{Value, json};
@@ -202,9 +202,7 @@ pub fn parse_ndjson_line(line: &str) -> Vec<ProviderEvent> {
 
             // Parse arguments: Ollama may return them as a string or object.
             let arguments = match &tc["function"]["arguments"] {
-                Value::String(s) => {
-                    serde_json::from_str(s).unwrap_or_else(|_| json!({"raw": s}))
-                }
+                Value::String(s) => serde_json::from_str(s).unwrap_or_else(|_| json!({"raw": s})),
                 Value::Object(_) => tc["function"]["arguments"].clone(),
                 other => json!({"raw": other.to_string()}),
             };
@@ -225,7 +223,9 @@ pub fn parse_ndjson_line(line: &str) -> Vec<ProviderEvent> {
     // Content token.
     if let Some(content) = message["content"].as_str() {
         if !content.is_empty() {
-            return vec![ProviderEvent::Token { text: content.to_owned() }];
+            return vec![ProviderEvent::Token {
+                text: content.to_owned(),
+            }];
         }
     }
 

@@ -77,9 +77,7 @@ impl Tool for GlobTool {
                 if path.is_file() {
                     // Match against the path relative to the search root if possible,
                     // falling back to the full path.
-                    let rel = path
-                        .strip_prefix(&search_root)
-                        .unwrap_or(path);
+                    let rel = path.strip_prefix(&search_root).unwrap_or(path);
 
                     if glob_matcher.is_match(rel) {
                         matches.push(path.to_string_lossy().into_owned());

@@ -49,10 +49,7 @@ pub fn render_debugger(app: &App, frame: &mut Frame, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
 
     // Tool name line.
-    let tool_name = app
-        .debugger_paused_name
-        .as_deref()
-        .unwrap_or("(unknown)");
+    let tool_name = app.debugger_paused_name.as_deref().unwrap_or("(unknown)");
 
     let name_style = if theme.no_color {
         Style::default().add_modifier(Modifier::BOLD)

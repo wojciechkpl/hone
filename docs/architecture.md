@@ -155,6 +155,12 @@ pub enum ProviderEvent {
     Token(String),
     ToolCall(ToolCallRequest),
     Usage(TokenUsage),
+    /// Stream ended prematurely because the provider hit its output-token
+    /// limit. `lost_tool_calls` lists tool names that were partially
+    /// emitted and dropped; the agent loop uses these to build a retry hint.
+    /// Anthropic emits this on `stop_reason == "max_tokens"`;
+    /// OpenAI on `finish_reason == "length"`.
+    Truncated { lost_tool_calls: Vec<String> },
     Done,
     Error(ProviderError),
 }
@@ -315,6 +321,35 @@ impl Agent {
     pub fn swap_provider(&mut self, provider: Arc<dyn ModelProvider>);
 }
 ```
+
+#### Per-iteration safety checks
+
+Before each provider request within `run_turn`, the agent runs three
+pre-LLM checks. Each latches a one-shot flag so it fires at most once
+per turn:
+
+1. **Context-budget guard** — `ContextManager::is_over_ratio(0.95, extra)`
+   where `extra` is the system prompt + memories token estimate. When
+   tripped, the agent latches `context_emergency = true`, strips tools
+   from the next `CompletionRequest`, and injects a synthetic user
+   message telling the model to wrap up now without tool calls. This
+   prevents the loop from running into a mid-tool-call truncation.
+2. **Doom-loop detector** — `doom_loop::check_for_doom_loop(messages)`
+   scans the last 30 messages for 3+ identical consecutive tool calls
+   or a repeating 2–5 step pattern (see `crates/hone-core/src/doom_loop.rs`).
+   Injects a corrective user message telling the model to stop repeating
+   the failing approach. Gated on `!context_emergency` so the two
+   signals never stack in the same iteration.
+3. **Output-truncation retry** — fires *after* the stream completes, not
+   before. If the provider emits `ProviderEvent::Truncated { lost_tool_calls }`
+   (triggered by Anthropic `stop_reason = "max_tokens"` or OpenAI
+   `finish_reason = "length"`), the agent commits the partial assistant
+   text (or a `"[response truncated at output token limit]"` placeholder
+   when nothing streamed) to preserve role alternation, then injects a
+   synthetic user message naming the dropped tool calls so the model
+   retries with smaller content.
+
+All three are tested end-to-end in `crates/hone-core/tests/agent_turn.rs`.
 
 ---
 

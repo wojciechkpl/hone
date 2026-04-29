@@ -1,4 +1,8 @@
-use hone_sandbox::{NullSandbox, Sandbox, SandboxBuilder, SandboxMode, SandboxPlatform, SandboxPolicyBuilder};
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
+use hone_sandbox::{
+    NullSandbox, Sandbox, SandboxBuilder, SandboxMode, SandboxPlatform, SandboxPolicyBuilder,
+};
 use std::process::Command;
 
 fn minimal_policy() -> hone_sandbox::SandboxPolicy {

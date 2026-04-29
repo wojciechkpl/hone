@@ -19,7 +19,10 @@ async fn test_code_mode_script_is_sandboxed() {
     );
 
     let result = runner.execute(&script, "sh").await;
-    assert!(result.is_ok(), "NullSandbox should allow execution: {result:?}");
+    assert!(
+        result.is_ok(),
+        "NullSandbox should allow execution: {result:?}"
+    );
 
     let output = result.unwrap();
     assert_eq!(output.exit_code, 0);

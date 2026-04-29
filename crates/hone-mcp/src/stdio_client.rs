@@ -212,7 +212,10 @@ impl StdioMcpClient {
                 source: e,
             })?;
 
+        // Safe: Command was configured with .stdin/.stdout(Stdio::piped) above.
+        #[allow(clippy::expect_used)]
         let stdin = child.stdin.take().expect("stdin piped");
+        #[allow(clippy::expect_used)]
         let stdout = child.stdout.take().expect("stdout piped");
 
         Ok(Self {
@@ -264,7 +267,10 @@ impl StdioMcpClient {
             source: e,
         })?;
 
+        // Safe: Command was configured with .stdin/.stdout(Stdio::piped) above.
+        #[allow(clippy::expect_used)]
         let stdin = child.stdin.take().expect("stdin piped");
+        #[allow(clippy::expect_used)]
         let stdout = child.stdout.take().expect("stdout piped");
 
         Ok(Self {

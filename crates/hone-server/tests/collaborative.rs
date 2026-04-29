@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use hone_server::{router, AppState, Participant, ParticipantRole};
+use hone_server::{AppState, Participant, ParticipantRole, router};
 use tower::ServiceExt;
 
 fn make_state() -> AppState {
@@ -8,9 +8,7 @@ fn make_state() -> AppState {
 }
 
 fn join_body(user_id: &str, name: &str) -> Body {
-    Body::from(
-        serde_json::json!({ "user_id": user_id, "name": name }).to_string(),
-    )
+    Body::from(serde_json::json!({ "user_id": user_id, "name": name }).to_string())
 }
 
 fn leave_body(user_id: &str) -> Body {

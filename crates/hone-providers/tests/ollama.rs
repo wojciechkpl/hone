@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use hone_proto::{Message, ModelId, ProviderEvent};
 use hone_providers::adapters::ollama::{build_request_body, health_url, parse_ndjson_line};
 use hone_providers::traits::CompletionRequest;
@@ -14,6 +16,8 @@ fn make_request(messages: Vec<Message>) -> CompletionRequest {
         temperature: None,
         max_tokens: None,
         stop: Vec::new(),
+        cancel: None,
+        tool_results: None,
     }
 }
 
@@ -62,6 +66,8 @@ fn test_ollama_build_request_body_includes_tools_when_provided() {
         temperature: None,
         max_tokens: None,
         stop: Vec::new(),
+        cancel: None,
+        tool_results: None,
     };
 
     let body = build_request_body(&request);
@@ -109,13 +115,16 @@ fn test_ollama_tool_call_arguments_serialized_as_object_not_string() {
 
 #[test]
 fn test_ollama_parse_token() {
-    let line = r#"{"model":"llama3.2","message":{"role":"assistant","content":"Hello"},"done":false}"#;
+    let line =
+        r#"{"model":"llama3.2","message":{"role":"assistant","content":"Hello"},"done":false}"#;
     let events = parse_ndjson_line(line);
 
     assert_eq!(events.len(), 1);
     assert_eq!(
         events[0],
-        ProviderEvent::Token { text: "Hello".to_owned() }
+        ProviderEvent::Token {
+            text: "Hello".to_owned()
+        }
     );
 }
 

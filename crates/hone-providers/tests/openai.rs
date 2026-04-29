@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::collections::HashMap;
 
 use hone_proto::{Message, ModelId, ProviderEvent, ToolSchema};
@@ -16,6 +18,8 @@ fn make_request(messages: Vec<Message>) -> CompletionRequest {
         temperature: None,
         max_tokens: None,
         stop: Vec::new(),
+        cancel: None,
+        tool_results: None,
     }
 }
 
@@ -42,6 +46,8 @@ fn test_openai_build_request_body() {
         temperature: None,
         max_tokens: None,
         stop: Vec::new(),
+        cancel: None,
+        tool_results: None,
     };
 
     let body = build_request_body(&request);
@@ -76,7 +82,10 @@ fn test_openai_system_message_as_role() {
     let body = build_request_body(&request);
 
     // There must be NO top-level "system" field
-    assert!(body["system"].is_null(), "OpenAI does not use a top-level system field");
+    assert!(
+        body["system"].is_null(),
+        "OpenAI does not use a top-level system field"
+    );
 
     let messages = body["messages"].as_array().unwrap();
     assert_eq!(messages.len(), 2);
@@ -96,7 +105,10 @@ fn test_openai_system_message_as_role() {
 fn test_openai_build_request_without_tools_omits_tools_field() {
     let request = make_request(vec![Message::user("hello")]);
     let body = build_request_body(&request);
-    assert!(body["tools"].is_null(), "tools field should be absent when empty");
+    assert!(
+        body["tools"].is_null(),
+        "tools field should be absent when empty"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +125,9 @@ fn test_openai_parse_text_delta() {
     assert_eq!(events.len(), 1);
     assert_eq!(
         events[0],
-        ProviderEvent::Token { text: "Hello".to_owned() }
+        ProviderEvent::Token {
+            text: "Hello".to_owned()
+        }
     );
 }
 
@@ -150,7 +164,8 @@ fn test_openai_parse_tool_call() {
     assert!(events.is_empty());
 
     // Final chunk: finish_reason "tool_calls" triggers emission
-    let chunk4 = r#"{"id":"chatcmpl-1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#;
+    let chunk4 =
+        r#"{"id":"chatcmpl-1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#;
     let events = parse_sse_chunk(chunk4, &mut tool_states);
 
     // Expect ToolCall + Done
@@ -179,6 +194,31 @@ fn test_openai_parse_done() {
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0], ProviderEvent::Done);
+}
+
+#[test]
+fn finish_reason_length_emits_truncated() {
+    let mut tool_states = HashMap::new();
+
+    // Start streaming a tool call but never complete it before max_tokens.
+    let chunk1 = r#"{"id":"chatcmpl-1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_x","type":"function","function":{"name":"grep","arguments":"{\"pattern\":"}}]},"finish_reason":null}]}"#;
+    let evts = parse_sse_chunk(chunk1, &mut tool_states);
+    assert!(evts.is_empty());
+
+    let chunk_last =
+        r#"{"id":"chatcmpl-1","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}"#;
+    let evts = parse_sse_chunk(chunk_last, &mut tool_states);
+
+    let lost = evts
+        .iter()
+        .find_map(|e| match e {
+            ProviderEvent::Truncated { lost_tool_calls } => Some(lost_tool_calls),
+            _ => None,
+        })
+        .expect("should emit Truncated on finish_reason=length");
+    assert_eq!(lost, &vec!["grep".to_string()]);
+    assert!(evts.contains(&ProviderEvent::Done));
+    assert!(tool_states.is_empty());
 }
 
 #[test]

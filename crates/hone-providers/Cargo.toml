@@ -20,11 +20,14 @@ tokio = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
+tokio-util = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+tokio-util = { workspace = true }
 wiremock = "0.6"
 
 [lints]

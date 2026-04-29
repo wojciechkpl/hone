@@ -57,15 +57,14 @@ pub fn render_tool_call(
         }
 
         if content.is_empty() {
-            lines.push(Line::from(vec![
-                Span::styled("\u{2502}", border_style),
-            ]));
+            lines.push(Line::from(vec![Span::styled("\u{2502}", border_style)]));
         }
     }
 
-    lines.push(Line::from(vec![
-        Span::styled("\u{2514}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}", border_style),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        "\u{2514}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
+        border_style,
+    )]));
 
     lines
 }

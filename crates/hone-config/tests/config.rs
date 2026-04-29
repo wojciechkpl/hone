@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use hone_config::{Config, ConfigError, HoneMd, SandboxMode};
 use std::path::PathBuf;
 
@@ -59,9 +61,15 @@ fn test_parse_provider_block() {
     "#;
 
     let cfg = Config::from_toml_str(toml).expect("provider toml should parse");
-    let provider = cfg.providers.get("anthropic").expect("anthropic provider should exist");
+    let provider = cfg
+        .providers
+        .get("anthropic")
+        .expect("anthropic provider should exist");
     assert_eq!(provider.api_key_env.as_deref(), Some("ANTHROPIC_API_KEY"));
-    assert_eq!(provider.base_url.as_deref(), Some("https://api.anthropic.com"));
+    assert_eq!(
+        provider.base_url.as_deref(),
+        Some("https://api.anthropic.com")
+    );
     assert_eq!(provider.model.as_deref(), Some("claude-opus-4-5"));
 }
 
@@ -78,7 +86,10 @@ fn test_parse_sandbox_config() {
     let cfg = Config::from_toml_str(toml).expect("sandbox toml should parse");
     assert!(matches!(cfg.sandbox.mode, SandboxMode::Supervised));
     assert_eq!(cfg.sandbox.allowed_commands, vec!["ls", "cat", "grep"]);
-    assert_eq!(cfg.sandbox.allowed_network_domains, vec!["api.anthropic.com"]);
+    assert_eq!(
+        cfg.sandbox.allowed_network_domains,
+        vec!["api.anthropic.com"]
+    );
     assert_eq!(
         cfg.sandbox.protected_paths,
         vec![PathBuf::from("/etc"), PathBuf::from("/usr")]
@@ -169,8 +180,7 @@ fn test_merge_project_over_global() {
         mode = "Supervised"
     "#;
 
-    let cfg = Config::load_from_str(global_toml, project_toml)
-        .expect("layered config should load");
+    let cfg = Config::load_from_str(global_toml, project_toml).expect("layered config should load");
 
     // project overrides default_model
     assert_eq!(
@@ -211,13 +221,28 @@ fn test_hone_md_extracts_sections() {
     let markdown = std::fs::read_to_string(&path).unwrap();
     let hone_md = HoneMd::parse(&markdown);
 
-    assert!(hone_md.sections.contains_key("TOOLS"), "should have TOOLS section");
-    assert!(hone_md.sections.contains_key("STYLE"), "should have STYLE section");
-    assert!(hone_md.sections.contains_key("CONSTRAINTS"), "should have CONSTRAINTS section");
-    assert!(hone_md.sections.contains_key("CONTEXT"), "should have CONTEXT section");
+    assert!(
+        hone_md.sections.contains_key("TOOLS"),
+        "should have TOOLS section"
+    );
+    assert!(
+        hone_md.sections.contains_key("STYLE"),
+        "should have STYLE section"
+    );
+    assert!(
+        hone_md.sections.contains_key("CONSTRAINTS"),
+        "should have CONSTRAINTS section"
+    );
+    assert!(
+        hone_md.sections.contains_key("CONTEXT"),
+        "should have CONTEXT section"
+    );
 
     let tools = &hone_md.sections["TOOLS"];
-    assert!(tools.contains("file_read"), "TOOLS section should contain 'file_read'");
+    assert!(
+        tools.contains("file_read"),
+        "TOOLS section should contain 'file_read'"
+    );
 
     let style = &hone_md.sections["STYLE"];
     assert!(style.contains("Rust"), "STYLE section should mention Rust");
@@ -226,7 +251,10 @@ fn test_hone_md_extracts_sections() {
 #[test]
 fn test_hone_md_empty() {
     let hone_md = HoneMd::parse("");
-    assert!(hone_md.sections.is_empty(), "empty markdown should produce no sections");
+    assert!(
+        hone_md.sections.is_empty(),
+        "empty markdown should produce no sections"
+    );
 }
 
 #[test]
@@ -259,7 +287,11 @@ Content under section B.
 
     let hone_md = HoneMd::parse(markdown);
     // Only h2 headings become section keys
-    assert_eq!(hone_md.sections.len(), 2, "only h2 headings should be section keys");
+    assert_eq!(
+        hone_md.sections.len(),
+        2,
+        "only h2 headings should be section keys"
+    );
     assert!(hone_md.sections.contains_key("SECTION_A"));
     assert!(hone_md.sections.contains_key("SECTION_B"));
 }
@@ -268,7 +300,10 @@ Content under section B.
 fn test_hone_md_section_content_excludes_heading() {
     let markdown = "## MY_SECTION\n\nThe content here.\n";
     let hone_md = HoneMd::parse(markdown);
-    let content = hone_md.sections.get("MY_SECTION").expect("section should exist");
+    let content = hone_md
+        .sections
+        .get("MY_SECTION")
+        .expect("section should exist");
     assert!(
         !content.contains("## MY_SECTION"),
         "section content should not include the heading itself"
@@ -290,8 +325,8 @@ fn test_load_from_paths() {
     std::fs::write(&global_path, b"[server]\nhost = \"0.0.0.0\"\nport = 9000\n").unwrap();
     std::fs::write(&project_path, b"[server]\nport = 4000\n").unwrap();
 
-    let cfg = Config::load(Some(&global_path), Some(&project_path))
-        .expect("should load from file paths");
+    let cfg =
+        Config::load(Some(&global_path), Some(&project_path)).expect("should load from file paths");
 
     // project overrides port, global sets host
     assert_eq!(cfg.server.port, 4000);
@@ -315,8 +350,8 @@ fn test_config_error_includes_file_path() {
     // Write intentionally malformed TOML so parsing fails.
     std::fs::write(&bad_path, b"[server\nthis is not valid toml{{{{").unwrap();
 
-    let err = Config::load(Some(&bad_path), None)
-        .expect_err("malformed TOML should produce an error");
+    let err =
+        Config::load(Some(&bad_path), None).expect_err("malformed TOML should produce an error");
 
     let err_msg = err.to_string();
     assert!(

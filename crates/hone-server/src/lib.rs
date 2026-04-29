@@ -18,6 +18,7 @@ pub mod tunnel;
 pub mod tunnel_routes;
 pub mod web;
 
+pub use bore_tunnel::BoreTunnelManager;
 pub use collaborative::{CollaborativeStore, Participant, ParticipantRole};
 pub use governance::{GovernanceStore, ModelUsage, TeamMember, TeamPolicy, TeamUsage};
 pub use openapi::ApiDoc;
@@ -26,5 +27,4 @@ pub use routes::router;
 pub use session_storage::SessionStorage;
 pub use sqlite_session::SqliteSessionStore;
 pub use state::AppState;
-pub use bore_tunnel::BoreTunnelManager;
 pub use tunnel::{MockTunnelManager, TunnelManager};

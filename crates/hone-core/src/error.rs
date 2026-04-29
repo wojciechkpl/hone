@@ -15,10 +15,7 @@ pub enum AgentError {
     ToolNotFound { name: String },
 
     #[error("budget exceeded: limit ${limit_usd:.4}, current ${current_usd:.4}")]
-    BudgetExceeded {
-        limit_usd: f64,
-        current_usd: f64,
-    },
+    BudgetExceeded { limit_usd: f64, current_usd: f64 },
 
     #[error("agent was cancelled")]
     Cancelled,

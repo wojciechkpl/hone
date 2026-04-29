@@ -40,9 +40,7 @@ impl Tool for EchoTool {
 }
 
 fn make_dispatcher() -> ToolDispatcher {
-    let registry = ToolRegistry::builder()
-        .register(Box::new(EchoTool))
-        .build();
+    let registry = ToolRegistry::builder().register(Box::new(EchoTool)).build();
     ToolDispatcher::new(registry, Arc::new(NullSandbox), PathBuf::from("/tmp"))
 }
 
@@ -56,7 +54,10 @@ async fn test_dispatch_to_registered_tool() {
         arguments: json!({ "text": "hello world" }),
     };
 
-    let result = dispatcher.dispatch(&call).await.expect("dispatch should succeed");
+    let result = dispatcher
+        .dispatch(&call)
+        .await
+        .expect("dispatch should succeed");
     assert_eq!(result.tool_call_id, "call-1");
     assert!(!result.is_error);
     assert_eq!(result.content, json!({ "text": "hello world" }));

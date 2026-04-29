@@ -152,9 +152,7 @@ impl ReviewerAgent {
                 (parsed, !blocking)
             }
             Err(parse_err) => {
-                tracing::warn!(
-                    "reviewer returned unparseable response (fail-closed): {parse_err}"
-                );
+                tracing::warn!("reviewer returned unparseable response (fail-closed): {parse_err}");
                 // Return a synthetic issue so the caller knows the review failed.
                 let synthetic = ReviewIssue {
                     severity: ReviewSeverity::Critical,
@@ -163,7 +161,9 @@ impl ReviewerAgent {
                         &raw[..200.min(raw.len())]
                     ),
                     file: None,
-                    suggestion: Some("Re-run the review or check the model's output format.".to_string()),
+                    suggestion: Some(
+                        "Re-run the review or check the model's output format.".to_string(),
+                    ),
                 };
                 (vec![synthetic], false)
             }

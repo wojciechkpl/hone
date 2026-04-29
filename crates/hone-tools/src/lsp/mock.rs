@@ -1,3 +1,6 @@
+//! Mock LSP bridge for tests - unwrap/expect are acceptable here.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -116,7 +119,12 @@ impl LspBridge for MockLspBridge {
         Ok(batch)
     }
 
-    async fn hover(&self, _file: &Path, _line: u32, _col: u32) -> Result<Option<String>, ToolError> {
+    async fn hover(
+        &self,
+        _file: &Path,
+        _line: u32,
+        _col: u32,
+    ) -> Result<Option<String>, ToolError> {
         let state = self.state.lock().unwrap();
         Ok(state.hover_text.clone())
     }

@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 /// Tests that the shell tool builds a non-vacuous sandbox policy.
 ///
 /// Fix 1: The shell tool used to build an empty `SandboxMode::Manual` policy
@@ -28,7 +30,10 @@ async fn test_shell_reads_working_dir_file() {
     let ctx = make_ctx(&dir);
     let input = ToolInput::new(json!({ "command": "cat hello.txt" }));
 
-    let output = tool.call(input, &ctx).await.expect("reading working dir should succeed");
+    let output = tool
+        .call(input, &ctx)
+        .await
+        .expect("reading working dir should succeed");
     assert_eq!(output.value["exit_code"], 0);
     assert_eq!(output.value["stdout"], "world");
 }
@@ -43,11 +48,17 @@ async fn test_shell_writes_working_dir_file() {
     // Use a shell script via -c to avoid the compound-operator block.
     let input = ToolInput::new(json!({ "command": "echo written > output.txt" }));
 
-    let output = tool.call(input, &ctx).await.expect("writing to working dir should succeed");
+    let output = tool
+        .call(input, &ctx)
+        .await
+        .expect("writing to working dir should succeed");
     assert_eq!(output.value["exit_code"], 0);
     // Verify the file was actually created.
     let content = std::fs::read_to_string(dir.path().join("output.txt")).unwrap();
-    assert!(content.contains("written"), "expected 'written' in output.txt, got: {content:?}");
+    assert!(
+        content.contains("written"),
+        "expected 'written' in output.txt, got: {content:?}"
+    );
 }
 
 /// On macOS with the real Seatbelt sandbox: writing to /etc/hosts must fail.
@@ -70,11 +81,17 @@ async fn test_shell_macos_write_to_etc_hosts_denied() {
     // Attempt to append to /etc/hosts — should be denied by Seatbelt.
     let input = ToolInput::new(json!({ "command": "echo 'bad' >> /etc/hosts" }));
 
-    let output = tool.call(input, &ctx).await.expect("call should return output (not panic)");
+    let output = tool
+        .call(input, &ctx)
+        .await
+        .expect("call should return output (not panic)");
     // The write should fail with a non-zero exit code because Seatbelt
     // blocks file-write* outside the allow-listed paths.
     let exit_code = output.value["exit_code"].as_i64().unwrap_or(0);
-    assert_ne!(exit_code, 0, "writing to /etc/hosts must be denied by sandbox");
+    assert_ne!(
+        exit_code, 0,
+        "writing to /etc/hosts must be denied by sandbox"
+    );
 }
 
 /// Platform-independent: the policy built for the shell tool must have
@@ -95,5 +112,8 @@ async fn test_shell_policy_allows_working_dir_write_via_null_sandbox() {
     // if working_dir was somehow invalid. Now it returns a proper error.
     let input = ToolInput::new(json!({ "command": "echo ok" }));
     let result = tool.call(input, &ctx).await;
-    assert!(result.is_ok(), "policy build with valid working_dir must succeed");
+    assert!(
+        result.is_ok(),
+        "policy build with valid working_dir must succeed"
+    );
 }

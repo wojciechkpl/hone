@@ -170,11 +170,10 @@ impl Sandbox for SeatbeltSandbox {
             "SeatbeltSandbox: applying profile via sandbox_init(3)"
         );
 
-        let c_profile = std::ffi::CString::new(profile).map_err(|_| {
-            SandboxError::PolicyNotMet {
+        let c_profile =
+            std::ffi::CString::new(profile).map_err(|_| SandboxError::PolicyNotMet {
                 reason: "seatbelt profile contains interior NUL byte".to_string(),
-            }
-        })?;
+            })?;
 
         // SAFETY: `sandbox_init` is a macOS system call that applies a sandbox
         // profile to the current process. We pass a valid CString pointer, the
@@ -218,8 +217,7 @@ impl Sandbox for SeatbeltSandbox {
 
         // Capture the original program and arguments from the existing command.
         let program = cmd.get_program().to_os_string();
-        let args: Vec<std::ffi::OsString> =
-            cmd.get_args().map(|a| a.to_os_string()).collect();
+        let args: Vec<std::ffi::OsString> = cmd.get_args().map(|a| a.to_os_string()).collect();
 
         // Rebuild the command as: sandbox-exec -p <profile> <original_program> <original_args>
         *cmd = Command::new("sandbox-exec");

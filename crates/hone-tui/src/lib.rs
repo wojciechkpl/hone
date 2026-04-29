@@ -8,6 +8,7 @@ pub mod layout;
 pub mod message;
 pub mod render;
 pub mod review_mode;
+pub mod selection;
 pub mod session_switcher;
 pub mod shell_escape;
 pub mod status;
@@ -23,6 +24,8 @@ pub use error::TuiError;
 pub use layout::{FocusTarget, LayoutMode};
 pub use review_mode::ReviewSession;
 pub use session_switcher::SessionSummary;
-pub use shell_escape::{ShellEscapeResult, execute_shell_escape, is_interactive_command, run_interactive_blocking};
+pub use shell_escape::{
+    ShellEscapeResult, execute_shell_escape, is_interactive_command, run_interactive_blocking,
+};
 pub use tdd_mode::{TddEvent, TddWatcher};
 pub use vim_mode::{VimAction, VimMode, VimOverlay};

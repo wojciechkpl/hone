@@ -71,9 +71,10 @@ impl TunnelManager for BoreTunnelManager {
             .map_err(|e| ServerError::Internal(format!("failed to spawn bore: {e}")))?;
 
         // Read stderr for the "listening at bore.pub:XXXXX" line.
-        let stderr = child.stderr.take().ok_or_else(|| {
-            ServerError::Internal("failed to capture bore stderr".to_string())
-        })?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| ServerError::Internal("failed to capture bore stderr".to_string()))?;
 
         let mut reader = BufReader::new(stderr).lines();
 
@@ -101,9 +102,7 @@ impl TunnelManager for BoreTunnelManager {
             .flatten();
 
         let port = remote_port.ok_or_else(|| {
-            ServerError::Internal(
-                "failed to parse bore tunnel port from stderr".to_string(),
-            )
+            ServerError::Internal("failed to parse bore tunnel port from stderr".to_string())
         })?;
 
         let info = TunnelInfo {

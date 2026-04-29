@@ -22,20 +22,25 @@ pub enum ServerError {
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            ServerError::SessionNotFound { id } => (
-                StatusCode::NOT_FOUND,
-                format!("Session not found: {id}"),
-            ),
+            ServerError::SessionNotFound { id } => {
+                (StatusCode::NOT_FOUND, format!("Session not found: {id}"))
+            }
             ServerError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_owned()),
             ServerError::Internal(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal error: {msg}"),
             ),
-            ServerError::AlreadyJoined { session_id, user_id } => (
+            ServerError::AlreadyJoined {
+                session_id,
+                user_id,
+            } => (
                 StatusCode::CONFLICT,
                 format!("User {user_id} has already joined session {session_id}"),
             ),
-            ServerError::NotParticipant { session_id, user_id } => (
+            ServerError::NotParticipant {
+                session_id,
+                user_id,
+            } => (
                 StatusCode::NOT_FOUND,
                 format!("User {user_id} is not a participant of session {session_id}"),
             ),

@@ -12,12 +12,12 @@ use crate::{
     layout::LayoutMode,
     render::{
         agent_rail::{AgentRailState, AgentRailWidget, split_with_rail},
+        command_palette::render_command_palette,
         conversation::ConversationWidget,
+        debugger::render_debugger,
         file_preview::FilePreviewWidget,
         header::render_header,
         help::HelpOverlay,
-        command_palette::render_command_palette,
-        debugger::render_debugger,
         history_search::render_history_search,
         input_widget::InputWidget,
         prompt_mirror::render_prompt_mirror,
@@ -98,6 +98,12 @@ pub fn render(app: &App, frame: &mut Frame) {
     if app.sessions_open {
         render_session_switcher(app, frame, area);
     }
+
+    // Mouse-drag text selection highlight — drawn last so it overlays every
+    // widget (selection is indicated by flipping cells to reverse-video).
+    if let Some(sel) = app.selection() {
+        crate::selection::apply_highlight(frame.buffer_mut(), sel);
+    }
 }
 
 fn render_too_small(frame: &mut Frame, area: Rect) {
@@ -119,8 +125,7 @@ fn render_header_bar(app: &App, frame: &mut Frame, area: Rect) {
         .unwrap_or_else(|_| "~".to_string());
 
     let line = render_header(app.theme(), &cwd, None);
-    let para = Paragraph::new(line)
-        .style(Style::default().bg(app.theme().surface_raised));
+    let para = Paragraph::new(line).style(Style::default().bg(app.theme().surface_raised));
     frame.render_widget(para, area);
 }
 
@@ -183,12 +188,7 @@ fn render_agent_rail(app: &App, frame: &mut Frame, area: Rect) {
 
 fn render_conversation(app: &App, frame: &mut Frame, area: Rect) {
     let scroll = app.scroll_offset();
-    let widget = ConversationWidget::new(
-        app.messages(),
-        app.theme(),
-        app.animation(),
-        scroll,
-    );
+    let widget = ConversationWidget::new(app.messages(), app.theme(), app.animation(), scroll);
 
     // If we have a scroll offset, prepend a scroll indicator line.
     if scroll > 0 {
@@ -231,12 +231,7 @@ fn render_tool_panel(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 fn render_input_area(app: &App, frame: &mut Frame, area: Rect) {
-    let widget = InputWidget::new(
-        app.input(),
-        app.theme(),
-        app.focus(),
-        app.state(),
-    );
+    let widget = InputWidget::new(app.input(), app.theme(), app.focus(), app.state());
     frame.render_widget(widget, area);
 
     // Position the terminal cursor inside the input box so the user can see
@@ -272,9 +267,14 @@ fn render_input_area(app: &App, frame: &mut Frame, area: Rect) {
 
 fn render_status_bar_area(app: &App, frame: &mut Frame, area: Rect) {
     let is_waiting = matches!(app.state(), crate::app::AppState::WaitingForResponse);
-    let line = render_status_bar(app.status(), app.theme(), app.animation(), area.width, is_waiting);
-    let para = Paragraph::new(line)
-        .style(Style::default().bg(app.theme().surface_base));
+    let line = render_status_bar(
+        app.status(),
+        app.theme(),
+        app.animation(),
+        area.width,
+        is_waiting,
+    );
+    let para = Paragraph::new(line).style(Style::default().bg(app.theme().surface_base));
     frame.render_widget(para, area);
 }
 
@@ -290,8 +290,7 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
     };
 
     // Hide when no completions or the single match is already exact.
-    if matches.is_empty()
-        || (matches.len() == 1 && format!("{sigil}{}", matches[0]) == *input_buf)
+    if matches.is_empty() || (matches.len() == 1 && format!("{sigil}{}", matches[0]) == *input_buf)
     {
         return;
     }
@@ -308,14 +307,20 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
     let popup_x = input_area.x + 1;
     let area = Rect::new(popup_x, popup_y, popup_width, popup_height);
 
-    let bg_style = Style::default().bg(theme.surface_overlay).fg(theme.text_primary);
-    let border_style = Style::default().bg(theme.surface_overlay).fg(theme.surface_border);
+    let bg_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.text_primary);
+    let border_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.surface_border);
     let buf = frame.buffer_mut();
 
     // Fill background.
     for row in 0..popup_height {
         for col in 0..popup_width {
-            buf[(area.x + col, area.y + row)].set_char(' ').set_style(bg_style);
+            buf[(area.x + col, area.y + row)]
+                .set_char(' ')
+                .set_style(bg_style);
         }
     }
 
@@ -327,12 +332,20 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
     buf[(area.x, bottom)].set_char('╰').set_style(border_style);
     buf[(right, bottom)].set_char('╯').set_style(border_style);
     for col in 1..popup_width - 1 {
-        buf[(area.x + col, area.y)].set_char('─').set_style(border_style);
-        buf[(area.x + col, bottom)].set_char('─').set_style(border_style);
+        buf[(area.x + col, area.y)]
+            .set_char('─')
+            .set_style(border_style);
+        buf[(area.x + col, bottom)]
+            .set_char('─')
+            .set_style(border_style);
     }
     for row in 1..popup_height - 1 {
-        buf[(area.x, area.y + row)].set_char('│').set_style(border_style);
-        buf[(right, area.y + row)].set_char('│').set_style(border_style);
+        buf[(area.x, area.y + row)]
+            .set_char('│')
+            .set_style(border_style);
+        buf[(right, area.y + row)]
+            .set_char('│')
+            .set_style(border_style);
     }
 
     // Write suggestion lines inside the border.
@@ -345,7 +358,9 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
         let row_style = if is_sel { sel_style } else { bg_style };
         // Fill the whole inner row with the row background first.
         for col in 0..inner_width as u16 {
-            buf[(area.x + 1 + col, row)].set_char(' ').set_style(row_style);
+            buf[(area.x + 1 + col, row)]
+                .set_char(' ')
+                .set_style(row_style);
         }
         let text = format!(" {sigil}{name}");
         let mut col = area.x + 1;
@@ -363,9 +378,9 @@ fn render_help_overlay(app: &App, frame: &mut Frame, area: Rect) {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{Terminal, backend::TestBackend};
-    use crate::app::App;
     use super::render;
+    use crate::app::App;
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn app_with_input(text: &str) -> App {
         let mut app = App::new();
@@ -377,7 +392,10 @@ mod tests {
     }
 
     fn cell_char(terminal: &Terminal<TestBackend>, x: u16, y: u16) -> char {
-        terminal.backend().buffer().cell((x, y))
+        terminal
+            .backend()
+            .buffer()
+            .cell((x, y))
             .map(|c| c.symbol().chars().next().unwrap_or(' '))
             .unwrap_or(' ')
     }
@@ -394,10 +412,16 @@ mod tests {
         // popup_x = input_area.x + 1 = 1.
         let popup_x: u16 = 1;
         let popup_y: u16 = 10;
-        assert_eq!(cell_char(&terminal, popup_x, popup_y), '╭',
-            "expected top-left corner of autocomplete popup at ({popup_x},{popup_y})");
-        assert_eq!(cell_char(&terminal, popup_x + 1, popup_y + 1), ' ',
-            "expected leading space of first suggestion row");
+        assert_eq!(
+            cell_char(&terminal, popup_x, popup_y),
+            '╭',
+            "expected top-left corner of autocomplete popup at ({popup_x},{popup_y})"
+        );
+        assert_eq!(
+            cell_char(&terminal, popup_x + 1, popup_y + 1),
+            ' ',
+            "expected leading space of first suggestion row"
+        );
     }
 
     #[test]
@@ -409,12 +433,18 @@ mod tests {
 
         let popup_x: u16 = 1;
         let popup_y: u16 = 10; // 12 agents → count=8 → popup_height=10 → y=20-10=10
-        assert_eq!(cell_char(&terminal, popup_x, popup_y), '╭',
-            "expected top-left corner of @-agent popup at ({popup_x},{popup_y})");
+        assert_eq!(
+            cell_char(&terminal, popup_x, popup_y),
+            '╭',
+            "expected top-left corner of @-agent popup at ({popup_x},{popup_y})"
+        );
     }
 
     fn cell_bg(terminal: &Terminal<TestBackend>, x: u16, y: u16) -> ratatui::style::Color {
-        terminal.backend().buffer().cell((x, y))
+        terminal
+            .backend()
+            .buffer()
+            .cell((x, y))
             .map(|c| c.style().bg.unwrap_or(ratatui::style::Color::Reset))
             .unwrap_or(ratatui::style::Color::Reset)
     }
@@ -427,7 +457,11 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| render(&app, f)).unwrap();
         // 1 match → popup_height=3, popup_y=20-3=17
-        assert_ne!(cell_char(&terminal, 1, 17), '╭', "popup must not render for exact match");
+        assert_ne!(
+            cell_char(&terminal, 1, 17),
+            '╭',
+            "popup must not render for exact match"
+        );
     }
 
     #[test]
@@ -438,7 +472,11 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| render(&app, f)).unwrap();
         // 1 match → popup_height=3, popup_y=20-3=17
-        assert_eq!(cell_char(&terminal, 1, 17), '╭', "popup must render for partial match");
+        assert_eq!(
+            cell_char(&terminal, 1, 17),
+            '╭',
+            "popup must render for partial match"
+        );
     }
 
     #[test]
@@ -461,8 +499,14 @@ mod tests {
 
         let theme = crate::theme::Theme::crimson();
         let selected_bg = cell_bg(&terminal, 2, 11); // x=popup_x+1=2, y=popup_y+1=11
-        assert_eq!(selected_bg, theme.accent_hot, "selected row must have accent_hot bg");
+        assert_eq!(
+            selected_bg, theme.accent_hot,
+            "selected row must have accent_hot bg"
+        );
         let unselected_bg = cell_bg(&terminal, 2, 12);
-        assert_ne!(unselected_bg, theme.accent_hot, "unselected row must not have accent_hot bg");
+        assert_ne!(
+            unselected_bg, theme.accent_hot,
+            "unselected row must not have accent_hot bg"
+        );
     }
 }

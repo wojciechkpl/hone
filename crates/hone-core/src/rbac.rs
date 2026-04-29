@@ -35,9 +35,12 @@ pub enum ToolAccess {
 
 impl RbacPolicy {
     pub fn check_tool(&self, role: &str, tool: &str) -> Result<(), RbacError> {
-        let r = self.roles.get(role).ok_or_else(|| RbacError::RoleNotFound {
-            role: role.to_owned(),
-        })?;
+        let r = self
+            .roles
+            .get(role)
+            .ok_or_else(|| RbacError::RoleNotFound {
+                role: role.to_owned(),
+            })?;
 
         match &r.allowed_tools {
             ToolAccess::All => Ok(()),
@@ -65,9 +68,12 @@ impl RbacPolicy {
     }
 
     pub fn check_model(&self, role: &str, model_id: &str) -> Result<(), RbacError> {
-        let r = self.roles.get(role).ok_or_else(|| RbacError::RoleNotFound {
-            role: role.to_owned(),
-        })?;
+        let r = self
+            .roles
+            .get(role)
+            .ok_or_else(|| RbacError::RoleNotFound {
+                role: role.to_owned(),
+            })?;
 
         if r.allowed_models.is_empty() {
             return Ok(());

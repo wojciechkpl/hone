@@ -121,12 +121,18 @@ impl ReviewSession {
 
     /// Number of accepted hunks.
     pub fn accepted_count(&self) -> usize {
-        self.hunks.iter().filter(|h| h.accepted == Some(true)).count()
+        self.hunks
+            .iter()
+            .filter(|h| h.accepted == Some(true))
+            .count()
     }
 
     /// Number of rejected hunks.
     pub fn rejected_count(&self) -> usize {
-        self.hunks.iter().filter(|h| h.accepted == Some(false)).count()
+        self.hunks
+            .iter()
+            .filter(|h| h.accepted == Some(false))
+            .count()
     }
 
     /// Whether all hunks have been reviewed.
@@ -204,7 +210,9 @@ impl ReviewSession {
             hunk.file,
             hunk.header.trim()
         ));
-        out.push_str("  a = accept | r = reject | A = accept all | R = reject all | q = finish\n\n");
+        out.push_str(
+            "  a = accept | r = reject | A = accept all | R = reject all | q = finish\n\n",
+        );
 
         for line in &hunk.lines {
             match line.kind {
@@ -427,8 +435,16 @@ diff --git a/src/main.rs b/src/main.rs
     fn test_diff_line_kinds() {
         let session = ReviewSession::from_diff(SAMPLE_DIFF);
         let hunk = &session.hunks[0];
-        let additions = hunk.lines.iter().filter(|l| l.kind == DiffLineKind::Addition).count();
-        let deletions = hunk.lines.iter().filter(|l| l.kind == DiffLineKind::Deletion).count();
+        let additions = hunk
+            .lines
+            .iter()
+            .filter(|l| l.kind == DiffLineKind::Addition)
+            .count();
+        let deletions = hunk
+            .lines
+            .iter()
+            .filter(|l| l.kind == DiffLineKind::Deletion)
+            .count();
         assert!(additions > 0, "should have additions");
         assert!(deletions > 0, "should have deletions");
     }

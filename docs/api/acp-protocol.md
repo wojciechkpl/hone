@@ -208,7 +208,21 @@ Send a user prompt to the agent for processing.
     "prompt": [
       {
         "type": "text",
-        "text": "List the files in the current directory"
+        "text": "Read /etc/hosts please"
+      }
+    ],
+    "tools": [
+      {
+        "name": "fs.read",
+        "description": "Read a file from the filesystem",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string"},
+            "depth": {"type": "integer"}
+          },
+          "required": ["path"]
+        }
       }
     ]
   }
@@ -221,6 +235,7 @@ Send a user prompt to the agent for processing.
 |-------|------|-------------|
 | `sessionId` | string | Session ID from `session/new` |
 | `prompt` | array | Array of content items |
+| `tools` | array \| absent | Tool schemas the client makes available for this turn. Empty / absent means no tools — the agent MUST NOT issue `tool_call` notifications in that case. |
 
 **Prompt Content Items:**
 
@@ -228,6 +243,14 @@ Send a user prompt to the agent for processing.
 |-------|------|-------------|
 | `type` | string | Content type: `text`, `image`, `file`, etc. |
 | `text` | string | Text content (for type `text`) |
+
+**Tool Schema Items:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Tool identifier; agents echo this back as the `title` of the corresponding `tool_call` notification. |
+| `description` | string | Human-readable purpose; surfaced to the model. |
+| `parameters` | object | JSON Schema describing the tool's arguments. Inlined as a JSON object — never double-encoded as a string. |
 
 **Response:**
 ```json
@@ -313,9 +336,13 @@ Agent initiated a tool call.
 {
   "sessionUpdate": "tool_call",
   "toolCallId": "call_abc123",
-  "title": "List Files",
+  "title": "fs.read",
   "kind": "filesystem",
-  "status": "pending"
+  "status": "in_progress",
+  "rawInput": {
+    "path": "/etc/hosts",
+    "depth": 2
+  }
 }
 ```
 
@@ -324,14 +351,17 @@ Agent initiated a tool call.
 | Field | Type | Description |
 |-------|------|-------------|
 | `sessionUpdate` | string | Always `"tool_call"` |
-| `toolCallId` | string | Unique tool call identifier |
-| `title` | string | Human-readable tool name |
+| `toolCallId` | string | Unique tool call identifier; correlates with the `session/toolResult` the client sends back and the eventual `tool_call_update` |
+| `title` | string | Tool name as advertised in `session/prompt.tools[].name` (used by the client to look up the dispatcher). |
 | `kind` | string | Tool category (e.g., `filesystem`, `database`, `network`) |
 | `status` | string | Call status: `pending`, `in_progress`, `completed` |
+| `rawInput` | object \| absent | Tool arguments as a JSON object. When omitted (legacy agents), clients MUST default to `{}`. Nested objects/arrays are preserved verbatim — never double-encoded as a JSON string. |
+
+After receiving a `tool_call`, the client is expected to dispatch the tool locally and reply with a `session/toolResult` request (see below) carrying the same `toolCallId`. The agent then resumes the prompt and emits a terminal `tool_call_update`.
 
 #### tool_call_update
 
-Tool call status changed (e.g., from pending to completed).
+Tool call status changed (e.g., from pending to completed). Typically sent **after** the agent has consumed the client's `session/toolResult` and decided whether the call succeeded.
 
 **Update Format:**
 ```json
@@ -348,7 +378,39 @@ Tool call status changed (e.g., from pending to completed).
 |-------|------|-------------|
 | `sessionUpdate` | string | Always `"tool_call_update"` |
 | `toolCallId` | string | Matches preceding `tool_call` ID |
-| `status` | string | New status: `in_progress`, `completed`, `failed` |
+| `status` | string | New status: `in_progress`, `completed`, `failed`, `error`. The wire value is preserved verbatim by clients; `failed` and `error` (case-insensitive) are classified as terminal failures. |
+
+---
+
+### session/toolResult (Request — Client → Agent)
+
+Sent by the client in response to a `tool_call` notification. The agent blocks the in-flight `session/prompt` on this request, so the client MUST reply for the prompt to resume.
+
+**Request:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 17,
+  "method": "session/toolResult",
+  "params": {
+    "sessionId": "sess_abc123def456",
+    "toolCallId": "call_abc123",
+    "content": {"text": "127.0.0.1 localhost"},
+    "isError": false
+  }
+}
+```
+
+**Parameters:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessionId` | string | The session that issued the `tool_call`. |
+| `toolCallId` | string | MUST match the `toolCallId` from the originating `tool_call` notification. |
+| `content` | any (JSON value) | Tool output. Strings, objects, arrays, or numbers all flow through verbatim — no double-encoding. |
+| `isError` | bool | `true` if the tool failed. Drives the agent's downstream `tool_call_update.status`. |
+
+**Response:** the agent acknowledges with a standard JSON-RPC result object; the response payload itself is unused by the client and may be discarded.
 
 ---
 
@@ -439,7 +501,18 @@ Client -> Server (Request):
   "method": "session/prompt",
   "params": {
     "sessionId": "sess_123",
-    "prompt": [{"type": "text", "text": "What's in this directory?"}]
+    "prompt": [{"type": "text", "text": "List the files in /tmp"}],
+    "tools": [
+      {
+        "name": "fs.list",
+        "description": "List filesystem entries",
+        "parameters": {
+          "type": "object",
+          "properties": {"path": {"type": "string"}},
+          "required": ["path"]
+        }
+      }
+    ]
   }
 }
 
@@ -450,14 +523,44 @@ Server -> Client (Notification):
   "params": {
     "sessionId": "sess_123",
     "update": {
-      "sessionUpdate": "tool_call",
-      "toolCallId": "call_1",
-      "title": "List Files",
-      "kind": "filesystem",
-      "status": "pending"
+      "sessionUpdate": "agent_message_chunk",
+      "content": {"type": "text", "text": "Let me check…"}
     }
   }
 }
+
+Server -> Client (Notification — bidirectional handoff):
+{
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+    "sessionId": "sess_123",
+    "update": {
+      "sessionUpdate": "tool_call",
+      "toolCallId": "call_1",
+      "title": "fs.list",
+      "kind": "filesystem",
+      "status": "in_progress",
+      "rawInput": {"path": "/tmp"}
+    }
+  }
+}
+
+Client -> Server (Request — fulfilling the tool call):
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "session/toolResult",
+  "params": {
+    "sessionId": "sess_123",
+    "toolCallId": "call_1",
+    "content": {"entries": ["file1.txt", "file2.txt"]},
+    "isError": false
+  }
+}
+
+Server -> Client (Response — toolResult ack, payload unused):
+{"jsonrpc": "2.0", "id": 4, "result": null}
 
 Server -> Client (Notification):
 {
@@ -481,20 +584,7 @@ Server -> Client (Notification):
     "sessionId": "sess_123",
     "update": {
       "sessionUpdate": "agent_message_chunk",
-      "content": {"type": "text", "text": "The directory contains:"}
-    }
-  }
-}
-
-Server -> Client (Notification):
-{
-  "jsonrpc": "2.0",
-  "method": "session/update",
-  "params": {
-    "sessionId": "sess_123",
-    "update": {
-      "sessionUpdate": "agent_message_chunk",
-      "content": {"type": "text", "text": " file1.txt"}
+      "content": {"type": "text", "text": "I found file1.txt and file2.txt."}
     }
   }
 }
@@ -516,4 +606,4 @@ Server -> Client (Response):
 3. **Notifications Don't Block:** Agents send notifications independently; clients should not wait for their receipt
 4. **Session Lifetime:** Sessions persist on the agent until explicitly closed or the agent terminates
 5. **Prompt Parameters:** The `prompt` array can contain multiple content items for multi-modal prompts
-6. **Tool Results:** Tool execution results are embedded in subsequent notifications or token stream
+6. **Tool Dispatch (bidirectional):** Tools advertised on `session/prompt.tools[]` enable the agent to issue `tool_call` notifications. The client MUST reply with a `session/toolResult` request bearing the same `toolCallId`; the agent then emits a terminal `tool_call_update` and resumes the prompt. Hone's `AcpProvider` surfaces this lifecycle to the dispatcher as `ProviderEvent::ToolCall` (with `arguments` parsed from `rawInput`, defaulting to `{}` when absent) → caller-supplied `ToolResult` → `ProviderEvent::ObservedToolEnd` (status verbatim; `failed`/`error` flagged as `is_error: true`, case-insensitive) → `ProviderEvent::Done`. See `crates/hone-providers/tests/acp_full_lifecycle.rs` for the executable contract.

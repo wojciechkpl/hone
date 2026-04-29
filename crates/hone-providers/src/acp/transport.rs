@@ -9,11 +9,33 @@ use crate::error::ProviderError;
 
 use super::types::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
 
+// ---------------------------------------------------------------------------
+// TransportEvent
+// ---------------------------------------------------------------------------
+
+/// A line received from the agent that is either a JSON-RPC response or a
+/// notification.  Returned by `AcpTransport::next_event()`.
+#[derive(Debug)]
+pub enum TransportEvent {
+    /// A JSON-RPC response (has an `id` field).
+    Response(JsonRpcResponse),
+    /// A JSON-RPC notification (no `id` field).
+    Notification(JsonRpcNotification),
+}
+
+// ---------------------------------------------------------------------------
+// AcpTransport
+// ---------------------------------------------------------------------------
+
 /// JSON-RPC 2.0 transport over the stdin/stdout of a persistent child process.
 ///
 /// `request()` blocks until the response with the matching `id` arrives.
 /// Any notifications received while waiting are buffered and returned by
 /// subsequent calls to `next_notification()`.
+///
+/// For bidirectional prompt loops, use `send_request()` + `next_event()`
+/// instead of `request()`.  These primitives allow interleaving writes and
+/// reads while a long-running `session/prompt` is in flight.
 pub struct AcpTransport {
     stdin: ChildStdin,
     reader: BufReader<ChildStdout>,
@@ -95,9 +117,10 @@ impl AcpTransport {
                     if let Some(error) = resp.error {
                         return Err(ProviderError::Stream {
                             provider: "acp".to_owned(),
-                            source: std::io::Error::other(
-                                format!("JSON-RPC error {}: {}", error.code, error.message),
-                            ),
+                            source: std::io::Error::other(format!(
+                                "JSON-RPC error {}: {}",
+                                error.code, error.message
+                            )),
                         });
                     }
                     return Ok(resp.result.unwrap_or(Value::Null));
@@ -111,6 +134,66 @@ impl AcpTransport {
                 self.notification_buf.push_back(notif);
             }
             // Unrecognised lines are silently ignored.
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Primitives for bidirectional prompt loops
+    // ------------------------------------------------------------------
+
+    /// Send a JSON-RPC request **without** waiting for the response.
+    ///
+    /// Returns the assigned request `id`.  The caller is responsible for
+    /// reading the response (via `next_event()`) when it is ready.
+    ///
+    /// Use this instead of `request()` when you need to interleave sending
+    /// `session/toolResult` requests while a `session/prompt` is still running.
+    pub async fn send_request(
+        &mut self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<u64, ProviderError> {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_owned(),
+            id,
+            method: method.to_owned(),
+            params,
+        };
+
+        self.write_line(&serde_json::to_string(&request)?).await?;
+        Ok(id)
+    }
+
+    /// Read the next line from the agent and classify it as either a
+    /// `TransportEvent::Response` or a `TransportEvent::Notification`.
+    ///
+    /// Empty / unrecognised lines are skipped.
+    ///
+    /// This is the low-level building block for the bidirectional prompt
+    /// loop.  The buffered-notification queue (`notification_buf`) is NOT
+    /// consulted here — the caller must drain it before starting the loop
+    /// or use `next_notification()` for the legacy path.
+    pub async fn next_event(&mut self) -> Result<TransportEvent, ProviderError> {
+        loop {
+            let line = self.read_line().await?;
+            if line.is_empty() {
+                continue;
+            }
+
+            // Try response first (has `id`).
+            if let Ok(resp) = serde_json::from_str::<JsonRpcResponse>(&line) {
+                return Ok(TransportEvent::Response(resp));
+            }
+
+            // Try notification (no `id`).
+            if let Ok(notif) = serde_json::from_str::<JsonRpcNotification>(&line) {
+                return Ok(TransportEvent::Notification(notif));
+            }
+
+            // Unrecognised line — skip silently.
         }
     }
 
@@ -155,7 +238,7 @@ impl AcpTransport {
     /// Return `true` if the child process is still running.
     pub fn is_alive(&mut self) -> bool {
         match self.child.try_wait() {
-            Ok(None) => true,   // still running
+            Ok(None) => true,     // still running
             Ok(Some(_)) => false, // exited
             Err(_) => false,
         }
@@ -190,6 +273,9 @@ impl AcpTransport {
                 provider: "acp".to_owned(),
                 source: e,
             })?;
-        Ok(line.trim_end_matches('\n').trim_end_matches('\r').to_owned())
+        Ok(line
+            .trim_end_matches('\n')
+            .trim_end_matches('\r')
+            .to_owned())
     }
 }

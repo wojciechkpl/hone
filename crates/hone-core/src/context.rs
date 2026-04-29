@@ -354,7 +354,10 @@ impl ContextManager {
     ///
     /// Messages in the protected recent window are never compressed.
     fn compress_old_tool_results(&mut self) {
-        let protected_from = self.messages.len().saturating_sub(self.config.recent_window);
+        let protected_from = self
+            .messages
+            .len()
+            .saturating_sub(self.config.recent_window);
         let summary_age = self.config.tool_compress_age;
         let oneliner_age = self.config.tool_oneliner_age();
 
@@ -402,7 +405,10 @@ impl ContextManager {
     /// Force-compress all exploration tool results outside the recent window.
     /// Called on phase transitions (exploration → editing/verification).
     fn force_compress_exploration_results(&mut self) {
-        let protected_from = self.messages.len().saturating_sub(self.config.recent_window);
+        let protected_from = self
+            .messages
+            .len()
+            .saturating_sub(self.config.recent_window);
 
         for i in 0..protected_from {
             if matches!(self.messages[i].role, Role::Tool) {
@@ -439,18 +445,23 @@ impl ContextManager {
         );
 
         // Remove any pre-existing summary marker first.
-        if let Some(existing) = (0..self.messages.len()).find(|i| is_summary_marker_at(&self.messages, *i)) {
+        if let Some(existing) =
+            (0..self.messages.len()).find(|i| is_summary_marker_at(&self.messages, *i))
+        {
             self.messages.remove(existing);
         }
 
         // Insert after the first stored system message (index 0) if one is
         // present; otherwise at the front.
-        let insert_at =
-            if self.messages.first().is_some_and(|m| matches!(m.role, Role::System)) {
-                1
-            } else {
-                0
-            };
+        let insert_at = if self
+            .messages
+            .first()
+            .is_some_and(|m| matches!(m.role, Role::System))
+        {
+            1
+        } else {
+            0
+        };
 
         self.messages.insert(
             insert_at,
@@ -482,9 +493,7 @@ impl ContextManager {
 
         // Short-circuit: no reordering if disabled or too few messages.
         let recent_window = self.config.recent_window;
-        if !self.config.reorder_middle_zone
-            || self.messages.len() <= recent_window + 2
-        {
+        if !self.config.reorder_middle_zone || self.messages.len() <= recent_window + 2 {
             result.extend_from_slice(&self.messages);
             return result;
         }
@@ -540,14 +549,14 @@ impl ContextManager {
         let mut scored: Vec<(f32, usize)> = middle_tool_indices
             .iter()
             .enumerate()
-            .map(|(corpus_idx, &msg_idx)| {
-                (scorer.score(&tool_texts[corpus_idx], &query), msg_idx)
-            })
+            .map(|(corpus_idx, &msg_idx)| (scorer.score(&tool_texts[corpus_idx], &query), msg_idx))
             .collect();
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        let reordered_tool_indices: Vec<usize> =
-            interleave_edges(scored).into_iter().map(|(_, idx)| idx).collect();
+        let reordered_tool_indices: Vec<usize> = interleave_edges(scored)
+            .into_iter()
+            .map(|(_, idx)| idx)
+            .collect();
 
         // Assemble: start + middle_other (chronological) interleaved with
         // reordered tools + recent.
@@ -602,6 +611,40 @@ impl ContextManager {
     pub fn messages(&self) -> Vec<Message> {
         self.messages.clone()
     }
+
+    /// Effective token budget the manager is trimming to.
+    pub fn max_context_tokens(&self) -> u32 {
+        self.max_context_tokens
+    }
+
+    /// Whether current context usage has passed `ratio × max_context_tokens`.
+    ///
+    /// `extra_tokens` accounts for tokens that will be part of the outgoing
+    /// request but are NOT stored in `self.messages` — typically the system
+    /// prompt (which is supplied at build time) plus any per-turn system
+    /// messages such as injected memories. Pass `0` if nothing else is
+    /// prepended.
+    ///
+    /// Used by the agent loop to trigger a graceful wrap-up when the budget is
+    /// nearly exhausted — at ~0.95 we disable further tool calls and ask the
+    /// model to summarise before the next response dies mid-stream to a
+    /// context-length error. Port of ml-intern's emergency-summary path
+    /// (see `docs/ml-intern-vs-hone.md §3.5`).
+    pub fn is_over_ratio(&self, ratio: f32, extra_tokens: u32) -> bool {
+        let limit = (self.max_context_tokens as f32 * ratio) as u32;
+        self.total_tokens().saturating_add(extra_tokens) > limit
+    }
+}
+
+/// Estimate the token count of a plain-text snippet (e.g., the system prompt)
+/// using the same BPE as [`ContextManager`]. Exposed so callers can budget
+/// out-of-band content consistently with stored messages.
+pub fn estimate_text_tokens(text: &str) -> u32 {
+    let tokens = match bpe() {
+        Some(enc) => enc.encode_ordinary(text).len() as u32,
+        None => (text.len() as u32 / 4).max(1),
+    };
+    tokens + 4 // per-message framing overhead, matching `estimate_message_tokens`
 }
 
 // ---------------------------------------------------------------------------
@@ -743,11 +786,16 @@ fn tool_oneliner(text: &str) -> String {
         let fail = text.matches("FAIL").count() + text.matches("FAILED").count();
         format!("test output ({pass} passed, {fail} failed)")
     } else if looks_like_code(&text[..500.min(len)]) {
-        let fns = text.lines().filter(|l| {
-            let t = l.trim();
-            t.starts_with("fn ") || t.starts_with("pub fn ") || t.starts_with("def ")
-                || t.starts_with("function ")
-        }).count();
+        let fns = text
+            .lines()
+            .filter(|l| {
+                let t = l.trim();
+                t.starts_with("fn ")
+                    || t.starts_with("pub fn ")
+                    || t.starts_with("def ")
+                    || t.starts_with("function ")
+            })
+            .count();
         format!("code ({fns} functions)")
     } else if looks_like_grep_result(&text[..500.min(len)]) {
         let matches = text.lines().filter(|l| l.contains(':')).count();
@@ -777,10 +825,13 @@ fn looks_like_grep_result(sample: &str) -> bool {
     if lines.is_empty() {
         return false;
     }
-    let colon_lines = lines.iter().filter(|l| {
-        let parts: Vec<&str> = l.splitn(3, ':').collect();
-        parts.len() >= 2 && parts[0].contains('.')
-    }).count();
+    let colon_lines = lines
+        .iter()
+        .filter(|l| {
+            let parts: Vec<&str> = l.splitn(3, ':').collect();
+            parts.len() >= 2 && parts[0].contains('.')
+        })
+        .count();
     colon_lines as f32 / lines.len() as f32 > 0.5
 }
 
@@ -1070,7 +1121,10 @@ mod tests {
             .collect();
         // Chronological: tool_indices should be strictly increasing.
         for w in tool_indices.windows(2) {
-            assert!(w[0] < w[1], "tools should be chronological when reorder is disabled");
+            assert!(
+                w[0] < w[1],
+                "tools should be chronological when reorder is disabled"
+            );
         }
     }
 
@@ -1106,7 +1160,9 @@ mod tests {
         // Tool 2: somewhat relevant
         ctx.add_message(Message {
             role: Role::Tool,
-            content: Content::Text("fn logout(session: &Session) { session.invalidate() }".to_string()),
+            content: Content::Text(
+                "fn logout(session: &Session) { session.invalidate() }".to_string(),
+            ),
             tool_calls: vec![],
             tool_call_id: Some("tc2".to_string()),
         });
@@ -1115,7 +1171,9 @@ mod tests {
         // Tool 3: irrelevant
         ctx.add_message(Message {
             role: Role::Tool,
-            content: Content::Text("README.md: # Project Setup\nInstall with cargo install".to_string()),
+            content: Content::Text(
+                "README.md: # Project Setup\nInstall with cargo install".to_string(),
+            ),
             tool_calls: vec![],
             tool_call_id: Some("tc3".to_string()),
         });
@@ -1173,7 +1231,11 @@ mod tests {
         ctx.notify_tool_call("write_file");
 
         // The tool result should have been compressed
-        let tool_msg = ctx.messages.iter().find(|m| matches!(m.role, Role::Tool)).unwrap();
+        let tool_msg = ctx
+            .messages
+            .iter()
+            .find(|m| matches!(m.role, Role::Tool))
+            .unwrap();
         let text = tool_msg.content.as_text();
         assert!(
             text.contains("summarized") || text.contains("[tool result"),
@@ -1242,7 +1304,11 @@ mod tests {
         ctx.add_message(Message::user("latest"));
 
         // The old tool result should be a one-liner now.
-        let tool_msg = ctx.messages.iter().find(|m| matches!(m.role, Role::Tool)).unwrap();
+        let tool_msg = ctx
+            .messages
+            .iter()
+            .find(|m| matches!(m.role, Role::Tool))
+            .unwrap();
         let text = tool_msg.content.as_text();
         assert!(
             text.starts_with("[tool result:"),
@@ -1266,12 +1332,47 @@ mod tests {
     }
 
     #[test]
+    fn is_over_ratio_threshold_math_is_correct() {
+        // Construct a manager at exactly 100 tokens budget and check the
+        // numeric cutoff without worrying about the tokenizer.
+        let ctx = ContextManager::new(100);
+        assert!(!ctx.is_over_ratio(0.95, 0));
+        assert_eq!(ctx.max_context_tokens(), 100);
+    }
+
+    #[test]
+    fn is_over_ratio_counts_extra_tokens() {
+        // Empty context → 0 stored tokens. With extra_tokens=96 and a 100
+        // token budget, 0+96 > 95 fires the 95% threshold.
+        let ctx = ContextManager::new(100);
+        assert!(!ctx.is_over_ratio(0.95, 95));
+        assert!(ctx.is_over_ratio(0.95, 96));
+    }
+
+    #[test]
+    fn is_over_ratio_saturates_on_overflow() {
+        // Guard: saturating_add must not panic even with u32::MAX extras.
+        let ctx = ContextManager::new(100);
+        assert!(ctx.is_over_ratio(0.95, u32::MAX));
+    }
+
+    #[test]
+    fn estimate_text_tokens_is_deterministic_and_positive() {
+        let a = estimate_text_tokens("hello world");
+        let b = estimate_text_tokens("hello world");
+        assert_eq!(a, b);
+        assert!(a >= 4, "per-message framing overhead should apply");
+    }
+
+    #[test]
     fn test_over_budget_triggers_drop_and_summary() {
         // Very small budget to force trimming.
         let mut ctx = ContextManager::new(200);
         ctx.add_message(Message::user("original request"));
         for i in 0..50 {
-            ctx.add_message(Message::assistant(format!("response {i} with extra padding words")));
+            ctx.add_message(Message::assistant(format!(
+                "response {i} with extra padding words"
+            )));
         }
 
         let msgs = ctx.build_messages("sys");
@@ -1280,12 +1381,15 @@ mod tests {
         let has_summary = msgs.iter().any(|m| {
             matches!(m.role, Role::System) && m.content.as_text().contains("session history")
         });
-        assert!(has_summary, "should have session history summary after trimming");
+        assert!(
+            has_summary,
+            "should have session history summary after trimming"
+        );
 
         // The original user message should be preserved.
-        let has_original = msgs.iter().any(|m| {
-            matches!(m.role, Role::User) && m.content.as_text() == "original request"
-        });
+        let has_original = msgs
+            .iter()
+            .any(|m| matches!(m.role, Role::User) && m.content.as_text() == "original request");
         assert!(has_original, "original user message should be preserved");
     }
 }

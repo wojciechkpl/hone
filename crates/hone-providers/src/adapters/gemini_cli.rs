@@ -6,7 +6,8 @@ use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth};
 use tokio::process::Command;
 
 use crate::adapters::cli_common::{
-    check_binary_available, estimate_tokens_heuristic, messages_to_prompt, spawn_cli_stream_with_stdin,
+    check_binary_available, estimate_tokens_heuristic, messages_to_prompt,
+    spawn_cli_stream_with_stdin,
 };
 use crate::error::ProviderError;
 use crate::traits::{CompletionRequest, ModelProvider};

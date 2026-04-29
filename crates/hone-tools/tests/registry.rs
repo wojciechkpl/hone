@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use async_trait::async_trait;
 use hone_tools::{GlobTool, ReadFileTool, ToolRegistry, WriteFileTool};
 

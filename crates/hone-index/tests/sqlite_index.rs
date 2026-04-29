@@ -65,10 +65,7 @@ async fn test_sqlite_invalidate() {
     idx.invalidate(&path).await.unwrap();
 
     let results = idx.search("alpha", 10).await.unwrap();
-    assert!(
-        results.is_empty(),
-        "no results expected after invalidation"
-    );
+    assert!(results.is_empty(), "no results expected after invalidation");
     assert_eq!(idx.symbol_count().await.unwrap(), 0);
     assert_eq!(idx.file_count().await.unwrap(), 0);
 }

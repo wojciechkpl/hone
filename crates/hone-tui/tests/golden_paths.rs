@@ -9,7 +9,6 @@
 /// 5. observed_tool_surfaces_in_ui        — ToolCallStart/End are rendered in the conversation pane
 ///
 /// All tests use `App::new()` directly + `TestBackend` for rendering. No real agent is launched.
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use hone_proto::{AgentEvent, TokenUsage};
 use hone_tui::{app::App, render::root};
@@ -193,7 +192,12 @@ fn scroll_direction_bottom_anchored() {
             text: format!("response {i}"),
         });
         app.handle_agent_event(AgentEvent::Done {
-            usage: TokenUsage { input: 5, output: 5, cache_read: 0, cache_creation: 0 },
+            usage: TokenUsage {
+                input: 5,
+                output: 5,
+                cache_read: 0,
+                cache_creation: 0,
+            },
             cost_usd: 0.001,
         });
     }

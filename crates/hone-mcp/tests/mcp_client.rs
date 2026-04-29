@@ -49,7 +49,10 @@ async fn test_mock_client_connect_returns_info() {
 #[tokio::test]
 async fn test_mock_client_list_tools() {
     let client = make_mock_client();
-    let tools = client.list_tools().await.expect("list_tools should succeed");
+    let tools = client
+        .list_tools()
+        .await
+        .expect("list_tools should succeed");
 
     assert_eq!(tools.len(), 2);
     assert!(tools.iter().any(|t| t.name == "search"));
@@ -199,7 +202,11 @@ async fn test_schema_cache_loads_once() {
         .await
         .expect("second load should return cached result");
 
-    assert_eq!(call_count.load(Ordering::SeqCst), 1, "loader must be called exactly once");
+    assert_eq!(
+        call_count.load(Ordering::SeqCst),
+        1,
+        "loader must be called exactly once"
+    );
     assert_eq!(result1.len(), 1);
     assert_eq!(result2.len(), 1);
     assert_eq!(result1[0].name, "tool-a");

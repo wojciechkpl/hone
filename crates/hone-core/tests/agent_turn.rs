@@ -6,7 +6,7 @@ use futures::{Stream, stream};
 use hone_core::{Agent, AgentConfig, AgentHandle};
 use hone_memory::{InMemoryStore, Memory, MemoryStore};
 use hone_proto::{
-    AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
+    AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, Role,
     TokenUsage, ToolCallRequest, ToolLayer,
 };
 use hone_providers::{CompletionRequest, MockProvider, ModelProvider, ProviderError};
@@ -46,9 +46,14 @@ impl Tool for EchoTool {
 /// On the *n*-th call to `complete()` it returns the *n*-th sequence of
 /// `ProviderEvent`s (always terminated with `Done`).  Once sequences are
 /// exhausted the last one is repeated.
+///
+/// Every incoming `CompletionRequest` is appended to `captured_requests` so
+/// tests can assert on what the agent actually sent (tool list, message
+/// alternation, system prompt, etc.).
 struct SequencedProvider {
     sequences: Vec<Vec<ProviderEvent>>,
     call_count: Mutex<usize>,
+    captured_requests: Arc<Mutex<Vec<CompletionRequest>>>,
 }
 
 impl SequencedProvider {
@@ -56,7 +61,13 @@ impl SequencedProvider {
         Self {
             sequences,
             call_count: Mutex::new(0),
+            captured_requests: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    /// Handle to inspect captured requests from outside the provider.
+    fn requests_handle(&self) -> Arc<Mutex<Vec<CompletionRequest>>> {
+        Arc::clone(&self.captured_requests)
     }
 }
 
@@ -82,8 +93,9 @@ impl ModelProvider for SequencedProvider {
 
     async fn complete(
         &self,
-        _request: CompletionRequest,
+        request: CompletionRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
+        self.captured_requests.lock().unwrap().push(request);
         let idx = {
             let mut count = self.call_count.lock().unwrap();
             let i = *count;
@@ -187,9 +199,7 @@ async fn test_tool_call_dispatched() {
     let provider = Arc::new(SequencedProvider::new(vec![seq1, seq2]));
 
     let mut config = base_config(provider);
-    config.tools = ToolRegistry::builder()
-        .register(Box::new(EchoTool))
-        .build();
+    config.tools = ToolRegistry::builder().register(Box::new(EchoTool)).build();
 
     let mut agent = Agent::new(config);
     let (tx, mut rx) = mpsc::channel(64);
@@ -210,12 +220,12 @@ async fn test_tool_call_dispatched() {
         events.push(e);
     }
 
-    let has_start = events.iter().any(|e| {
-        matches!(e, AgentEvent::ToolCallStart { name, .. } if name == "echo")
-    });
-    let has_end = events.iter().any(|e| {
-        matches!(e, AgentEvent::ToolCallEnd { id, .. } if id == "tc-1")
-    });
+    let has_start = events
+        .iter()
+        .any(|e| matches!(e, AgentEvent::ToolCallStart { name, .. } if name == "echo"));
+    let has_end = events
+        .iter()
+        .any(|e| matches!(e, AgentEvent::ToolCallEnd { id, .. } if id == "tc-1"));
 
     assert!(has_start, "expected ToolCallStart event");
     assert!(has_end, "expected ToolCallEnd event");
@@ -322,15 +332,21 @@ async fn test_agent_handle_concurrent_clones_serialize() {
     // three distinct prefixes are enough.
     let provider = Arc::new(SequencedProvider::new(vec![
         vec![
-            ProviderEvent::Token { text: "one".to_owned() },
+            ProviderEvent::Token {
+                text: "one".to_owned(),
+            },
             ProviderEvent::Done,
         ],
         vec![
-            ProviderEvent::Token { text: "two".to_owned() },
+            ProviderEvent::Token {
+                text: "two".to_owned(),
+            },
             ProviderEvent::Done,
         ],
         vec![
-            ProviderEvent::Token { text: "three".to_owned() },
+            ProviderEvent::Token {
+                text: "three".to_owned(),
+            },
             ProviderEvent::Done,
         ],
     ]));
@@ -506,12 +522,12 @@ async fn test_parallel_read_only_tools_complete_in_order() {
     }
 
     for id in ["tc-1", "tc-2", "tc-3"] {
-        let has_start = events.iter().any(|e| {
-            matches!(e, AgentEvent::ToolCallStart { id: eid, .. } if eid == id)
-        });
-        let has_end = events.iter().any(|e| {
-            matches!(e, AgentEvent::ToolCallEnd { id: eid, .. } if eid == id)
-        });
+        let has_start = events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::ToolCallStart { id: eid, .. } if eid == id));
+        let has_end = events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::ToolCallEnd { id: eid, .. } if eid == id));
         assert!(has_start, "missing ToolCallStart for {id}");
         assert!(has_end, "missing ToolCallEnd for {id}");
     }
@@ -581,9 +597,9 @@ async fn test_mixed_sequential_preserves_all_results() {
     }
 
     for id in ["tc-read-1", "tc-write", "tc-read-2"] {
-        let has_end = events.iter().any(|e| {
-            matches!(e, AgentEvent::ToolCallEnd { id: eid, .. } if eid == id)
-        });
+        let has_end = events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::ToolCallEnd { id: eid, .. } if eid == id));
         assert!(has_end, "missing ToolCallEnd for {id}");
     }
 }
@@ -669,7 +685,9 @@ async fn test_agent_retries_on_transient_provider_error() {
     let provider = Arc::new(TransientFailProvider::new(
         2,
         vec![
-            ProviderEvent::Token { text: "recovered".to_owned() },
+            ProviderEvent::Token {
+                text: "recovered".to_owned(),
+            },
             ProviderEvent::Done,
         ],
     ));
@@ -719,7 +737,10 @@ async fn test_agent_surfaces_error_after_max_retries() {
     let (tx, _rx) = mpsc::channel(32);
 
     let result = agent.run_turn("hello", tx).await;
-    assert!(result.is_err(), "expected error after max retries exhausted");
+    assert!(
+        result.is_err(),
+        "expected error after max retries exhausted"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -798,7 +819,9 @@ async fn test_tool_recovery_retries_once_on_transient() {
         ProviderEvent::Done,
     ];
     let seq2 = vec![
-        ProviderEvent::Token { text: "done after recovery".to_owned() },
+        ProviderEvent::Token {
+            text: "done after recovery".to_owned(),
+        },
         ProviderEvent::Done,
     ];
 
@@ -884,7 +907,9 @@ impl ModelProvider for SystemPromptCapture {
         self.captured.lock().unwrap().push(system_text);
 
         let events = vec![
-            ProviderEvent::Token { text: self.response_token.clone() },
+            ProviderEvent::Token {
+                text: self.response_token.clone(),
+            },
             ProviderEvent::Done,
         ];
         Ok(Box::pin(stream::iter(events)))
@@ -903,8 +928,7 @@ impl ModelProvider for SystemPromptCapture {
 /// across multiple turns. Stable prefixes are required for prompt cache reuse.
 #[tokio::test]
 async fn test_system_prompt_stable_across_turns() {
-    let (provider, captured) =
-        SystemPromptCapture::new("response");
+    let (provider, captured) = SystemPromptCapture::new("response");
     let provider = Arc::new(provider);
 
     let mut agent = Agent::new(base_config(provider));
@@ -963,8 +987,12 @@ async fn test_memories_injected_as_separate_message() {
 
     #[async_trait]
     impl ModelProvider for CapturingProvider {
-        fn id(&self) -> &str { "capturing" }
-        fn display_name(&self) -> &str { "Capturing" }
+        fn id(&self) -> &str {
+            "capturing"
+        }
+        fn display_name(&self) -> &str {
+            "Capturing"
+        }
         fn supported_models(&self) -> Vec<ModelInfo> {
             vec![ModelInfo {
                 id: ModelId::new("mock:test"),
@@ -980,15 +1008,23 @@ async fn test_memories_injected_as_separate_message() {
         ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
             *self.last_req.lock().unwrap() = Some(request);
             Ok(Box::pin(stream::iter(vec![
-                ProviderEvent::Token { text: "ok".to_owned() },
+                ProviderEvent::Token {
+                    text: "ok".to_owned(),
+                },
                 ProviderEvent::Done,
             ])))
         }
-        fn estimate_tokens(&self, _: &[Message]) -> u32 { 10 }
-        async fn health(&self) -> ProviderHealth { ProviderHealth::Healthy }
+        fn estimate_tokens(&self, _: &[Message]) -> u32 {
+            10
+        }
+        async fn health(&self) -> ProviderHealth {
+            ProviderHealth::Healthy
+        }
     }
 
-    let provider = Arc::new(CapturingProvider { last_req: last_req_clone });
+    let provider = Arc::new(CapturingProvider {
+        last_req: last_req_clone,
+    });
 
     let mut config = base_config(provider);
     config.memory_store = Some(Arc::new(TokioMutex::new(store)));
@@ -1002,7 +1038,11 @@ async fn test_memories_injected_as_separate_message() {
         .await
         .expect("turn should succeed");
 
-    let req = last_req.lock().unwrap().clone().expect("request was captured");
+    let req = last_req
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("request was captured");
 
     // The request must contain at least two system-role messages:
     // [0] base system prompt, [1] memory block.
@@ -1038,7 +1078,9 @@ async fn test_memories_injected_as_separate_message() {
 #[tokio::test]
 async fn test_metrics_record_tokens() {
     let events = vec![
-        ProviderEvent::Token { text: "hello".to_owned() },
+        ProviderEvent::Token {
+            text: "hello".to_owned(),
+        },
         ProviderEvent::Usage(TokenUsage {
             input: 42,
             output: 17,
@@ -1118,7 +1160,9 @@ async fn test_dynamic_read_only_tool_dispatched_in_parallel() {
         ProviderEvent::Done,
     ];
     let seq2 = vec![
-        ProviderEvent::Token { text: "done".to_owned() },
+        ProviderEvent::Token {
+            text: "done".to_owned(),
+        },
         ProviderEvent::Done,
     ];
 
@@ -1185,5 +1229,269 @@ async fn test_dynamic_read_only_tool_dispatched_in_parallel() {
     assert!(
         end_2.is_some(),
         "expected successful ToolCallEnd for dyn-2; events: {events:#?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ml-intern port: truncation / context emergency / doom loop integration
+//
+// These tests drive the full `Agent::run_turn` loop through a `SequencedProvider`
+// so we can verify that the three port features are wired correctly:
+//   1. ProviderEvent::Truncated → agent injects assistant + user messages and
+//      re-enters the loop with a valid role alternation.
+//   2. Context over 95% ratio → next request has tools stripped.
+//   3. Doom-loop detection → corrective user message is visible in the
+//      follow-up request.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn truncation_event_injects_assistant_and_user_messages_before_retry() {
+    // Sequence 1: stream some assistant text, then Truncated with a lost tool,
+    // then Done. Agent must not execute the dropped call and must re-enter the
+    // loop with a well-formed message history.
+    // Sequence 2: plain text reply + Done — this is what the model returns
+    // after seeing the retry hint.
+    let seq1 = vec![
+        ProviderEvent::Token {
+            text: "Reading file...".to_owned(),
+        },
+        ProviderEvent::Truncated {
+            lost_tool_calls: vec!["read_file".to_owned()],
+        },
+        ProviderEvent::Done,
+    ];
+    let seq2 = vec![
+        ProviderEvent::Token {
+            text: "Here is a smaller read.".to_owned(),
+        },
+        ProviderEvent::Done,
+    ];
+
+    let provider = Arc::new(SequencedProvider::new(vec![seq1, seq2]));
+    let requests = provider.requests_handle();
+
+    let mut config = base_config(provider.clone());
+    config.tools = ToolRegistry::builder().register(Box::new(EchoTool)).build();
+
+    let mut agent = Agent::new(config);
+    let (tx, _rx) = mpsc::channel(64);
+
+    let result = agent
+        .run_turn("read something", tx)
+        .await
+        .expect("turn should succeed despite truncation");
+
+    // The agent's `response` field accumulates streamed text across the
+    // whole turn, so the truncated pre-text and the retry text both appear.
+    // What matters here is that the retry content was streamed in.
+    assert!(
+        result.response.contains("Here is a smaller read."),
+        "final response must include retry output; got: {}",
+        result.response
+    );
+
+    // The agent must have made exactly 2 requests: the truncated one plus the
+    // retry after the hint was injected.
+    let captured = requests.lock().unwrap();
+    assert_eq!(
+        captured.len(),
+        2,
+        "agent must re-enter the loop after Truncated"
+    );
+
+    // Second request's messages must end with ... assistant → user →
+    // (server will append the new assistant turn).  Scan the tail of the
+    // outgoing message list.
+    let second_msgs = &captured[1].messages;
+    // Collect roles of the last three non-system messages.
+    let tail_roles: Vec<Role> = second_msgs
+        .iter()
+        .rev()
+        .filter(|m| !matches!(m.role, Role::System))
+        .take(3)
+        .map(|m| m.role)
+        .collect();
+    // Expected (reversed): [user_hint, assistant_truncated_text, original_user]
+    assert_eq!(
+        tail_roles,
+        vec![Role::User, Role::Assistant, Role::User],
+        "second request must not have two consecutive user turns before the LLM call; got {tail_roles:?}"
+    );
+
+    // The injected user message should mention the lost tool by name so the
+    // model knows what to retry.
+    let last_user = second_msgs
+        .iter()
+        .rev()
+        .find(|m| matches!(m.role, Role::User))
+        .unwrap();
+    let txt = last_user.content.as_text();
+    assert!(
+        txt.contains("OUTPUT TRUNCATED") && txt.contains("read_file"),
+        "user message must identify the lost tool name; got: {txt}"
+    );
+
+    // No tool call should have been dispatched — the half-streamed call was
+    // dropped.
+    assert_eq!(result.tool_calls_count, 0);
+}
+
+#[tokio::test]
+async fn truncation_with_empty_lost_list_still_injects_placeholder_assistant() {
+    // Plain-text truncation (no in-flight tool call): lost_tool_calls is empty
+    // but the agent still needs to keep alternation valid.
+    let seq1 = vec![
+        // No streamed text this time — assistant_text stays empty.
+        ProviderEvent::Truncated {
+            lost_tool_calls: vec![],
+        },
+        ProviderEvent::Done,
+    ];
+    let seq2 = vec![
+        ProviderEvent::Token {
+            text: "done".to_owned(),
+        },
+        ProviderEvent::Done,
+    ];
+
+    let provider = Arc::new(SequencedProvider::new(vec![seq1, seq2]));
+    let requests = provider.requests_handle();
+
+    let mut agent = Agent::new(base_config(provider));
+    let (tx, _rx) = mpsc::channel(64);
+    agent.run_turn("go", tx).await.expect("turn ok");
+
+    let captured = requests.lock().unwrap();
+    assert_eq!(captured.len(), 2);
+
+    // Tail of the second request: user_hint → assistant_placeholder → user_original.
+    let tail: Vec<Role> = captured[1]
+        .messages
+        .iter()
+        .rev()
+        .filter(|m| !matches!(m.role, Role::System))
+        .take(3)
+        .map(|m| m.role)
+        .collect();
+    assert_eq!(tail, vec![Role::User, Role::Assistant, Role::User]);
+
+    // The placeholder assistant message must be non-empty so Anthropic does
+    // not reject it as an empty text block.
+    let placeholder = captured[1]
+        .messages
+        .iter()
+        .rev()
+        .find(|m| matches!(m.role, Role::Assistant))
+        .unwrap();
+    assert!(
+        !placeholder.content.as_text().is_empty(),
+        "placeholder assistant message must be non-empty"
+    );
+}
+
+#[tokio::test]
+async fn context_emergency_strips_tools_on_follow_up_request() {
+    // Drive the context-emergency path by inflating the system prompt so the
+    // `extra_tokens` side of `is_over_ratio` alone trips the 95% ceiling.
+    // This also exercises the fix that makes `is_over_ratio` consider
+    // out-of-band tokens — without it the emergency would not fire.
+    //
+    // The `mock:test` model falls through to ContextConfig default, giving a
+    // 64_000 budget (128_000 advertised × 0.50).  95% of that is 60_800, so
+    // a ~70_000-token system prompt is comfortably over.
+    let seq1 = vec![
+        ProviderEvent::Token {
+            text: "Summary complete.".to_owned(),
+        },
+        ProviderEvent::Done,
+    ];
+    let provider = Arc::new(SequencedProvider::new(vec![seq1]));
+    let requests = provider.requests_handle();
+
+    let mut config = base_config(provider);
+    config.tools = ToolRegistry::builder().register(Box::new(EchoTool)).build();
+    // "word " ≈ 1 token after BPE, so 70k words ≈ 70k tokens.
+    config.system_prompt = "word ".repeat(70_000);
+
+    let mut agent = Agent::new(config);
+    let (tx, _rx) = mpsc::channel(64);
+    agent
+        .run_turn("please continue", tx)
+        .await
+        .expect("turn ok");
+
+    let captured = requests.lock().unwrap();
+    assert_eq!(captured.len(), 1);
+    let req = &captured[0];
+    // Tools MUST be stripped when context emergency fires.
+    assert!(
+        req.tools.is_empty(),
+        "tools must be empty under context emergency; got {} entries",
+        req.tools.len()
+    );
+
+    // The emergency user message must be present in the outgoing history.
+    let has_emergency = req.messages.iter().any(|m| {
+        matches!(m.role, Role::User) && m.content.as_text().contains("CONTEXT NEARLY FULL")
+    });
+    assert!(
+        has_emergency,
+        "emergency user message must be injected before the LLM call"
+    );
+}
+
+#[tokio::test]
+async fn doom_loop_detection_injects_corrective_user_message() {
+    // Three identical tool calls in a row should trip the detector.  The
+    // agent injects a corrective user message; we observe it in the outgoing
+    // request list.
+    let tool_call = || {
+        ProviderEvent::ToolCall(ToolCallRequest {
+            id: "tc-loop".to_owned(),
+            name: "echo".to_owned(),
+            arguments: json!({ "msg": "same" }),
+        })
+    };
+    let seq1 = vec![tool_call(), ProviderEvent::Done];
+    let seq2 = vec![tool_call(), ProviderEvent::Done];
+    let seq3 = vec![tool_call(), ProviderEvent::Done];
+    // After the doom-loop warning is injected, model finally responds with
+    // plain text and the turn terminates.
+    let seq4 = vec![
+        ProviderEvent::Token {
+            text: "OK stopping.".to_owned(),
+        },
+        ProviderEvent::Done,
+    ];
+
+    let provider = Arc::new(SequencedProvider::new(vec![seq1, seq2, seq3, seq4]));
+    let requests = provider.requests_handle();
+
+    let mut config = base_config(provider);
+    config.tools = ToolRegistry::builder().register(Box::new(EchoTool)).build();
+
+    let mut agent = Agent::new(config);
+    let (tx, _rx) = mpsc::channel(128);
+    let result = agent.run_turn("do the thing", tx).await.expect("turn ok");
+    assert_eq!(result.response, "OK stopping.");
+
+    // At least 4 requests: three tool dispatches + one final reply after the
+    // corrective message was injected.
+    let captured = requests.lock().unwrap();
+    assert!(
+        captured.len() >= 4,
+        "expected >= 4 requests, got {}",
+        captured.len()
+    );
+
+    // The last request must contain the doom-loop corrective message as a
+    // user message somewhere in its history.
+    let last_req = captured.last().unwrap();
+    let has_corrective = last_req.messages.iter().any(|m| {
+        matches!(m.role, Role::User) && m.content.as_text().contains("DOOM LOOP DETECTED")
+    });
+    assert!(
+        has_corrective,
+        "doom-loop corrective user message must appear in final request history"
     );
 }

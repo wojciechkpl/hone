@@ -29,9 +29,15 @@ pub fn render_history_search(app: &App, frame: &mut Frame, input_area: Rect) {
     let popup_x = input_area.x + 1;
     let area = Rect::new(popup_x, popup_y, popup_width, popup_height);
 
-    let bg_style = Style::default().bg(theme.surface_overlay).fg(theme.text_primary);
-    let border_style = Style::default().bg(theme.surface_overlay).fg(theme.surface_border);
-    let muted_style = Style::default().bg(theme.surface_overlay).fg(theme.text_muted);
+    let bg_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.text_primary);
+    let border_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.surface_border);
+    let muted_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.text_muted);
     let sel_style = Style::default().bg(theme.accent_hot).fg(theme.surface_base);
 
     let buf = frame.buffer_mut();
@@ -53,12 +59,20 @@ pub fn render_history_search(app: &App, frame: &mut Frame, input_area: Rect) {
     buf[(area.x, bottom)].set_char('╰').set_style(border_style);
     buf[(right, bottom)].set_char('╯').set_style(border_style);
     for col in 1..popup_width - 1 {
-        buf[(area.x + col, area.y)].set_char('─').set_style(border_style);
-        buf[(area.x + col, bottom)].set_char('─').set_style(border_style);
+        buf[(area.x + col, area.y)]
+            .set_char('─')
+            .set_style(border_style);
+        buf[(area.x + col, bottom)]
+            .set_char('─')
+            .set_style(border_style);
     }
     for row in 1..popup_height - 1 {
-        buf[(area.x, area.y + row)].set_char('│').set_style(border_style);
-        buf[(right, area.y + row)].set_char('│').set_style(border_style);
+        buf[(area.x, area.y + row)]
+            .set_char('│')
+            .set_style(border_style);
+        buf[(right, area.y + row)]
+            .set_char('│')
+            .set_style(border_style);
     }
 
     // Match rows (most recent first).
@@ -87,8 +101,12 @@ pub fn render_history_search(app: &App, frame: &mut Frame, input_area: Rect) {
     // Query bar (second-to-last row, just above bottom border).
     let query_y = bottom - 1;
     // Draw a thin separator above the query bar.
-    buf[(area.x, query_y - 1)].set_char('├').set_style(border_style);
-    buf[(right, query_y - 1)].set_char('┤').set_style(border_style);
+    buf[(area.x, query_y - 1)]
+        .set_char('├')
+        .set_style(border_style);
+    buf[(right, query_y - 1)]
+        .set_char('┤')
+        .set_style(border_style);
     for col in 1..popup_width - 1 {
         buf[(area.x + col, query_y - 1)]
             .set_char('─')

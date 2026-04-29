@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use futures::StreamExt;
 use hone_proto::{Message, ModelId, ProviderEvent, ProviderHealth, TokenUsage};
 use hone_providers::{CompletionRequest, MockProvider, ModelProvider};
@@ -22,8 +24,12 @@ async fn test_mock_provider_returns_tokens() {
     assert_eq!(
         events,
         vec![
-            ProviderEvent::Token { text: "Hello".into() },
-            ProviderEvent::Token { text: " world".into() },
+            ProviderEvent::Token {
+                text: "Hello".into()
+            },
+            ProviderEvent::Token {
+                text: " world".into()
+            },
             ProviderEvent::Done,
         ]
     );
@@ -54,7 +60,12 @@ async fn test_mock_provider_with_tool_call() {
 
 #[tokio::test]
 async fn test_mock_provider_usage_event() {
-    let usage = TokenUsage { input: 10, output: 20, cache_read: 0, cache_creation: 0 };
+    let usage = TokenUsage {
+        input: 10,
+        output: 20,
+        cache_read: 0,
+        cache_creation: 0,
+    };
     let provider = MockProvider::new(vec!["hi".into()]).with_usage(usage);
     let stream = provider.complete(simple_request()).await.unwrap();
 
@@ -80,9 +91,9 @@ async fn test_mock_provider_health_is_healthy() {
 #[tokio::test]
 async fn test_mock_provider_estimate_tokens() {
     let provider = MockProvider::new(vec![]);
-    let messages = vec![
-        Message::user("This is a test message with some words in it."),
-    ];
+    let messages = vec![Message::user(
+        "This is a test message with some words in it.",
+    )];
     let estimate = provider.estimate_tokens(&messages);
     // Rough lower bound: non-zero for non-trivial input.
     assert!(estimate > 0, "estimate should be positive, got {estimate}");

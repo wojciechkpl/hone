@@ -99,9 +99,10 @@ fn diagnostics_from_notification(params: &Value, file: &Path) -> Vec<Diagnostic>
                 .map(severity_from_lsp)
                 .unwrap_or(DiagnosticSeverity::Error);
             let message = d["message"].as_str().unwrap_or("").to_owned();
-            let code = d["code"].as_str().map(str::to_owned).or_else(|| {
-                d["code"].as_u64().map(|n| n.to_string())
-            });
+            let code = d["code"]
+                .as_str()
+                .map(str::to_owned)
+                .or_else(|| d["code"].as_u64().map(|n| n.to_string()));
             Diagnostic {
                 file: file.to_path_buf(),
                 line,
@@ -135,9 +136,7 @@ fn hover_content_to_string(result: &Value) -> Option<String> {
             if let Some(arr) = contents.as_array() {
                 let parts: Vec<&str> = arr
                     .iter()
-                    .filter_map(|item| {
-                        item.as_str().or_else(|| item["value"].as_str())
-                    })
+                    .filter_map(|item| item.as_str().or_else(|| item["value"].as_str()))
                     .collect();
                 if parts.is_empty() {
                     return None;
@@ -280,9 +279,8 @@ impl StdioLspBridgeInner {
         file: &Path,
         timeout: Duration,
     ) -> Result<Vec<Diagnostic>, ToolError> {
-        let content = std::fs::read_to_string(file).map_err(|e| {
-            ToolError::Other(format!("failed to read {}: {e}", file.display()))
-        })?;
+        let content = std::fs::read_to_string(file)
+            .map_err(|e| ToolError::Other(format!("failed to read {}: {e}", file.display())))?;
 
         let language_id = language_id_for_path(file);
         let uri = path_to_uri(file);
@@ -351,13 +349,15 @@ impl StdioLspBridge {
             ToolError::Other(format!("failed to spawn LSP server '{command}': {e}"))
         })?;
 
-        let stdin = child.stdin.take().ok_or_else(|| {
-            ToolError::Other("failed to capture LSP server stdin".into())
-        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| ToolError::Other("failed to capture LSP server stdin".into()))?;
 
-        let stdout = child.stdout.take().ok_or_else(|| {
-            ToolError::Other("failed to capture LSP server stdout".into())
-        })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ToolError::Other("failed to capture LSP server stdout".into()))?;
 
         let mut inner = StdioLspBridgeInner {
             _child: child,
@@ -452,9 +452,7 @@ impl LspBridge for StdioLspBridge {
 /// Convert a file path to a `file://` URI string.
 pub(crate) fn path_to_uri(path: &Path) -> String {
     // Canonicalize if possible; fall back to the path as-is.
-    let p = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let p = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     format!("file://{}", p.display())
 }
 
@@ -485,6 +483,7 @@ fn language_id_for_path(path: &Path) -> &'static str {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use serde_json::json;
@@ -508,7 +507,10 @@ mod tests {
         let msg = json!({"jsonrpc": "2.0", "id": 1, "method": "test"});
         let bytes = framed(&msg);
         let text = String::from_utf8_lossy(&bytes);
-        assert!(text.starts_with("Content-Length:"), "must start with header");
+        assert!(
+            text.starts_with("Content-Length:"),
+            "must start with header"
+        );
         assert!(text.contains("\r\n\r\n"), "must have blank-line separator");
         assert!(text.contains("\"method\":\"test\""), "must contain body");
     }
@@ -619,7 +621,10 @@ mod tests {
     #[test]
     fn test_hover_markup_content() {
         let result = json!({"contents": {"kind": "markdown", "value": "# fn foo"}});
-        assert_eq!(hover_content_to_string(&result).as_deref(), Some("# fn foo"));
+        assert_eq!(
+            hover_content_to_string(&result).as_deref(),
+            Some("# fn foo")
+        );
     }
 
     #[test]
@@ -689,10 +694,16 @@ mod tests {
     fn test_language_id_for_path() {
         assert_eq!(language_id_for_path(&PathBuf::from("main.rs")), "rust");
         assert_eq!(language_id_for_path(&PathBuf::from("app.py")), "python");
-        assert_eq!(language_id_for_path(&PathBuf::from("index.ts")), "typescript");
+        assert_eq!(
+            language_id_for_path(&PathBuf::from("index.ts")),
+            "typescript"
+        );
         assert_eq!(language_id_for_path(&PathBuf::from("lib.js")), "javascript");
         assert_eq!(language_id_for_path(&PathBuf::from("main.go")), "go");
-        assert_eq!(language_id_for_path(&PathBuf::from("unknown.xyz")), "plaintext");
+        assert_eq!(
+            language_id_for_path(&PathBuf::from("unknown.xyz")),
+            "plaintext"
+        );
     }
 
     // -----------------------------------------------------------------------

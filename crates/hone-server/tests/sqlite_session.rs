@@ -1,6 +1,6 @@
+use hone_proto::SessionId;
 use hone_server::SqliteSessionStore;
 use hone_server::session::SessionInfo;
-use hone_proto::SessionId;
 
 fn make_session() -> SessionInfo {
     SessionInfo {

@@ -111,7 +111,10 @@ mod tests {
         assert!(limiter.check("client-b").await);
         assert!(limiter.check("client-b").await);
         assert!(limiter.check("client-b").await);
-        assert!(!limiter.check("client-b").await, "4th request must be denied");
+        assert!(
+            !limiter.check("client-b").await,
+            "4th request must be denied"
+        );
     }
 
     #[tokio::test]

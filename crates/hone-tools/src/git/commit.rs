@@ -61,9 +61,9 @@ impl Tool for GitCommitTool {
             // Parent is HEAD if it exists; for the very first commit there is none.
             let parents: Vec<git2::Commit<'_>> = match repo.head() {
                 Ok(head_ref) => {
-                    let oid = head_ref.target().ok_or_else(|| {
-                        git2::Error::from_str("HEAD reference has no target OID")
-                    })?;
+                    let oid = head_ref
+                        .target()
+                        .ok_or_else(|| git2::Error::from_str("HEAD reference has no target OID"))?;
                     vec![repo.find_commit(oid)?]
                 }
                 Err(_) => vec![],
@@ -71,8 +71,7 @@ impl Tool for GitCommitTool {
 
             let parent_refs: Vec<&git2::Commit<'_>> = parents.iter().collect();
 
-            let oid =
-                repo.commit(Some("HEAD"), &sig, &sig, &message, &tree, &parent_refs)?;
+            let oid = repo.commit(Some("HEAD"), &sig, &sig, &message, &tree, &parent_refs)?;
 
             Ok::<_, git2::Error>(oid.to_string())
         })

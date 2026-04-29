@@ -140,7 +140,10 @@ pub fn run_wizard() -> Result<()> {
     println!();
 
     let model = loop {
-        print!("Enter number [1-{}] (or type a custom model name): ", provider.models.len());
+        print!(
+            "Enter number [1-{}] (or type a custom model name): ",
+            provider.models.len()
+        );
         io::stdout().flush()?;
         let choice = read_line(&mut input)?;
         let choice = choice.trim();
@@ -149,7 +152,10 @@ pub fn run_wizard() -> Result<()> {
             if n >= 1 && n <= provider.models.len() {
                 break provider.models[n - 1].to_owned();
             }
-            eprintln!("  Enter a number between 1 and {} or a model name.", provider.models.len());
+            eprintln!(
+                "  Enter a number between 1 and {} or a model name.",
+                provider.models.len()
+            );
         } else if !choice.is_empty() {
             break choice.to_owned();
         } else {
@@ -313,7 +319,12 @@ impl WizardConfig {
             }
         }
 
-        Some(WizardConfig { provider_name, api_key, model, base_url })
+        Some(WizardConfig {
+            provider_name,
+            api_key,
+            model,
+            base_url,
+        })
     }
 }
 
@@ -330,7 +341,9 @@ fn unquote(s: &str) -> Option<String> {
 
 fn read_line(input: &mut impl BufRead) -> Result<String> {
     let mut buf = String::new();
-    input.read_line(&mut buf).context("failed to read from stdin")?;
+    input
+        .read_line(&mut buf)
+        .context("failed to read from stdin")?;
     Ok(buf)
 }
 

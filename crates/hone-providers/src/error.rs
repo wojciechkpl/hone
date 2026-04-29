@@ -41,10 +41,7 @@ pub enum ProviderError {
     },
 
     #[error("Stream error from provider '{provider}': {source}")]
-    Stream {
-        provider: String,
-        source: io::Error,
-    },
+    Stream { provider: String, source: io::Error },
 
     #[error("Rate limited by provider '{provider}', retry after {retry_after_secs}s")]
     RateLimit {
@@ -69,19 +66,28 @@ mod tests {
     #[test]
     fn extracts_anthropic_error_message() {
         let body = r#"{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens must not exceed 8096"}}"#;
-        assert_eq!(extract_api_error_message(body), "max_tokens must not exceed 8096");
+        assert_eq!(
+            extract_api_error_message(body),
+            "max_tokens must not exceed 8096"
+        );
     }
 
     #[test]
     fn extracts_openai_error_message() {
         let body = r#"{"error":{"message":"You exceeded your current quota","type":"insufficient_quota","code":"insufficient_quota"}}"#;
-        assert_eq!(extract_api_error_message(body), "You exceeded your current quota");
+        assert_eq!(
+            extract_api_error_message(body),
+            "You exceeded your current quota"
+        );
     }
 
     #[test]
     fn extracts_ollama_flat_error() {
         let body = r#"{"error":"model 'llama99' not found, try ollama pull llama99"}"#;
-        assert_eq!(extract_api_error_message(body), "model 'llama99' not found, try ollama pull llama99");
+        assert_eq!(
+            extract_api_error_message(body),
+            "model 'llama99' not found, try ollama pull llama99"
+        );
     }
 
     #[test]

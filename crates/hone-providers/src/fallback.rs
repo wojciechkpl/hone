@@ -16,7 +16,10 @@ pub struct FallbackChain {
 
 impl FallbackChain {
     pub fn new(providers: Vec<Arc<dyn ModelProvider>>) -> Self {
-        assert!(!providers.is_empty(), "FallbackChain requires at least one provider");
+        assert!(
+            !providers.is_empty(),
+            "FallbackChain requires at least one provider"
+        );
         Self { providers }
     }
 }
@@ -57,7 +60,10 @@ impl ModelProvider for FallbackChain {
 
             match provider.complete(request.clone()).await {
                 Ok(stream) => return Ok(stream),
-                Err(ProviderError::RateLimit { provider: prov, retry_after_secs }) => {
+                Err(ProviderError::RateLimit {
+                    provider: prov,
+                    retry_after_secs,
+                }) => {
                     last_err = Some(ProviderError::RateLimit {
                         provider: prov,
                         retry_after_secs,
@@ -68,6 +74,8 @@ impl ModelProvider for FallbackChain {
             }
         }
 
+        // Safe: constructor (line 19) asserts !providers.is_empty(), so loop executes at least once.
+        #[allow(clippy::expect_used)]
         Err(last_err.expect("providers vec is non-empty"))
     }
 
@@ -81,7 +89,9 @@ impl ModelProvider for FallbackChain {
     async fn health(&self) -> ProviderHealth {
         // Healthy if any member is healthy.
         for provider in &self.providers {
-            if provider.health().await == ProviderHealth::Healthy { return ProviderHealth::Healthy }
+            if provider.health().await == ProviderHealth::Healthy {
+                return ProviderHealth::Healthy;
+            }
         }
         ProviderHealth::Degraded {
             reason: "all members unhealthy".to_owned(),

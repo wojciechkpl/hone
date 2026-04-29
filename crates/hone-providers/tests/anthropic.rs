@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::collections::HashMap;
 
 use hone_proto::{Message, ModelId, PricingEntry, ProviderEvent, ToolSchema};
@@ -16,6 +18,8 @@ fn make_request(messages: Vec<Message>) -> CompletionRequest {
         temperature: None,
         max_tokens: None,
         stop: Vec::new(),
+        cancel: None,
+        tool_results: None,
     }
 }
 
@@ -38,6 +42,8 @@ fn test_build_request_body() {
         temperature: None,
         max_tokens: None,
         stop: Vec::new(),
+        cancel: None,
+        tool_results: None,
     };
 
     let body = build_request_body(&request);
@@ -100,7 +106,10 @@ fn test_extract_system_message() {
 fn test_request_without_tools_omits_tools_field() {
     let request = make_request(vec![Message::user("hello")]);
     let body = build_request_body(&request);
-    assert!(body["tools"].is_null(), "tools field should be absent when empty");
+    assert!(
+        body["tools"].is_null(),
+        "tools field should be absent when empty"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -117,13 +126,16 @@ fn test_parse_text_delta_event() {
     assert_eq!(events.len(), 1);
     assert_eq!(
         events[0],
-        ProviderEvent::Token { text: "Hello, world!".to_owned() }
+        ProviderEvent::Token {
+            text: "Hello, world!".to_owned()
+        }
     );
 }
 
 #[test]
 fn test_parse_empty_text_delta_produces_no_event() {
-    let data = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}"#;
+    let data =
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}"#;
     let mut tool_states = HashMap::new();
 
     let events = parse_sse_data(data, &mut tool_states);
@@ -146,8 +158,14 @@ fn test_parse_tool_use_events() {
     }"#;
 
     let events = parse_sse_data(start, &mut tool_states);
-    assert!(events.is_empty(), "no event should be emitted on block_start");
-    assert!(tool_states.contains_key(&0), "tool state should be tracked at index 0");
+    assert!(
+        events.is_empty(),
+        "no event should be emitted on block_start"
+    );
+    assert!(
+        tool_states.contains_key(&0),
+        "tool state should be tracked at index 0"
+    );
 
     // 2. input_json_delta — first chunk
     let delta1 = r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":"}}"#;
@@ -254,6 +272,53 @@ fn test_parse_message_start_usage() {
 }
 
 // ---------------------------------------------------------------------------
+// SSE parsing — truncation on max_tokens
+// ---------------------------------------------------------------------------
+
+#[test]
+fn message_delta_with_max_tokens_emits_truncated() {
+    let data = r#"{"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":4096}}"#;
+    let mut tool_states = HashMap::new();
+
+    let events = parse_sse_data(data, &mut tool_states);
+
+    // First event is the normal usage emission; then Truncated with no lost
+    // tool calls because none were in-flight.
+    assert!(matches!(events[0], ProviderEvent::Usage(_)));
+    match events.last().expect("truncated event") {
+        ProviderEvent::Truncated { lost_tool_calls } => {
+            assert!(lost_tool_calls.is_empty());
+        }
+        other => panic!("expected Truncated, got {other:?}"),
+    }
+}
+
+#[test]
+fn truncation_during_tool_call_reports_lost_tool_name() {
+    let mut tool_states = HashMap::new();
+
+    // Start a tool call block but never send the content_block_stop.
+    let start = r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_01","name":"read_file"}}"#;
+    let evts = parse_sse_data(start, &mut tool_states);
+    assert!(evts.is_empty());
+
+    // Now the stream ends because the model hit max_tokens.
+    let stop = r#"{"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":4096}}"#;
+    let evts = parse_sse_data(stop, &mut tool_states);
+
+    let lost = evts
+        .iter()
+        .find_map(|e| match e {
+            ProviderEvent::Truncated { lost_tool_calls } => Some(lost_tool_calls),
+            _ => None,
+        })
+        .expect("should emit Truncated");
+    assert_eq!(lost, &vec!["read_file".to_string()]);
+    // tool_states must be cleared so we don't try to parse truncated JSON.
+    assert!(tool_states.is_empty());
+}
+
+// ---------------------------------------------------------------------------
 // SSE chunk extraction
 // ---------------------------------------------------------------------------
 
@@ -300,7 +365,10 @@ fn test_request_has_cache_control_on_system() {
 
     // System must be an array so that cache_control can be attached.
     let system = body.get("system").expect("system field must be present");
-    assert!(system.is_array(), "system must be an array for cache_control support");
+    assert!(
+        system.is_array(),
+        "system must be an array for cache_control support"
+    );
 
     let arr = system.as_array().unwrap();
     assert!(!arr.is_empty());
@@ -337,10 +405,16 @@ fn test_request_has_cache_control_on_tools_when_present() {
         temperature: None,
         max_tokens: None,
         stop: Vec::new(),
+        cancel: None,
+        tool_results: None,
     };
 
     let body = build_request_body(&request);
-    let tools = body.get("tools").expect("tools field must be present").as_array().unwrap();
+    let tools = body
+        .get("tools")
+        .expect("tools field must be present")
+        .as_array()
+        .unwrap();
     assert_eq!(tools.len(), 2);
 
     // First tool must NOT have cache_control (only the last one gets the breakpoint).
@@ -373,7 +447,10 @@ fn test_request_without_tools_still_valid() {
     );
 
     // messages must be present.
-    assert!(body.get("messages").is_some(), "messages must always be present");
+    assert!(
+        body.get("messages").is_some(),
+        "messages must always be present"
+    );
 }
 
 #[test]
@@ -389,6 +466,8 @@ fn test_single_tool_gets_cache_control() {
         temperature: None,
         max_tokens: None,
         stop: Vec::new(),
+        cancel: None,
+        tool_results: None,
     };
 
     let body = build_request_body(&request);
@@ -434,6 +513,8 @@ fn test_three_cache_breakpoints_on_multi_turn_conversation() {
         temperature: None,
         max_tokens: None,
         stop: Vec::new(),
+        cancel: None,
+        tool_results: None,
     };
 
     let body = build_request_body(&request);
@@ -456,7 +537,9 @@ fn test_three_cache_breakpoints_on_multi_turn_conversation() {
     // Converted messages (system is stripped): user, assistant, user, assistant, user
     // Indices:                                    0        1        2       3      4
     // The second-to-last user message is at index 2 ("second question").
-    let messages = body["messages"].as_array().expect("messages must be present");
+    let messages = body["messages"]
+        .as_array()
+        .expect("messages must be present");
     assert_eq!(messages.len(), 5, "should have 5 non-system messages");
 
     // The final message (index 4) must NOT have cache_control.
@@ -477,10 +560,7 @@ fn test_three_cache_breakpoints_on_multi_turn_conversation() {
     assert_eq!(second_to_last_user["role"].as_str(), Some("user"));
     let content = &second_to_last_user["content"];
     let has_cc = match content {
-        serde_json::Value::Array(arr) => arr
-            .last()
-            .and_then(|b| b.get("cache_control"))
-            .is_some(),
+        serde_json::Value::Array(arr) => arr.last().and_then(|b| b.get("cache_control")).is_some(),
         _ => false,
     };
     assert!(
@@ -501,10 +581,7 @@ fn test_three_cache_breakpoints_on_multi_turn_conversation() {
 /// (fewer than 2 means there's no prefix to cache).
 #[test]
 fn test_no_prefix_cache_breakpoint_when_single_user_message() {
-    let request = make_request(vec![
-        Message::system("sys"),
-        Message::user("only question"),
-    ]);
+    let request = make_request(vec![Message::system("sys"), Message::user("only question")]);
 
     let body = build_request_body(&request);
     let messages = body["messages"].as_array().unwrap();
@@ -517,7 +594,10 @@ fn test_no_prefix_cache_breakpoint_when_single_user_message() {
         serde_json::Value::String(_) => false,
         _ => false,
     };
-    assert!(!has_cc, "single user message must not get a prefix cache breakpoint");
+    assert!(
+        !has_cc,
+        "single user message must not get a prefix cache breakpoint"
+    );
 }
 
 /// In agentic turns ending `... -> tool_result -> assistant -> user(question)`,
@@ -551,7 +631,12 @@ fn test_prefix_breakpoint_skips_tool_result_pseudo_user() {
         })
         .collect();
 
-    assert_eq!(cached.len(), 1, "expected exactly 1 cached message, found {}", cached.len());
+    assert_eq!(
+        cached.len(),
+        1,
+        "expected exactly 1 cached message, found {}",
+        cached.len()
+    );
     let (_, msg) = cached[0];
     assert_eq!(msg["role"].as_str(), Some("user"));
     let first_block_type = msg["content"][0]["type"].as_str();

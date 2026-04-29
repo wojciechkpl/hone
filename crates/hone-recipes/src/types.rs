@@ -72,8 +72,7 @@ mod tests {
     #[test]
     fn missing_variable_left_unchanged() {
         // Only feature_name provided; test_command placeholder stays.
-        let recipe = minimal_recipe()
-            .with_variables(&vars(&[("feature_name", "auth")]));
+        let recipe = minimal_recipe().with_variables(&vars(&[("feature_name", "auth")]));
         assert_eq!(recipe.steps[0].prompt, "Implement auth using TDD.");
         assert_eq!(recipe.test_cmd.as_deref(), Some("{{test_command}}"));
     }

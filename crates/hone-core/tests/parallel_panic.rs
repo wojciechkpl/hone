@@ -93,7 +93,9 @@ struct ParallelPanicProvider {
 
 impl ParallelPanicProvider {
     fn new() -> Self {
-        Self { call_count: Mutex::new(0) }
+        Self {
+            call_count: Mutex::new(0),
+        }
     }
 }
 
@@ -150,7 +152,9 @@ impl ModelProvider for ParallelPanicProvider {
         } else {
             // Follow-up: just finish.
             vec![
-                ProviderEvent::Token { text: "done".to_owned() },
+                ProviderEvent::Token {
+                    text: "done".to_owned(),
+                },
                 ProviderEvent::Done,
             ]
         };
@@ -254,6 +258,12 @@ async fn test_panic_in_parallel_tool_does_not_drop_results() {
             if id == "tc-grep-b" && !*is_error
         )
     });
-    assert!(grep_a_end.is_some(), "expected successful ToolCallEnd for tc-grep-a");
-    assert!(grep_b_end.is_some(), "expected successful ToolCallEnd for tc-grep-b");
+    assert!(
+        grep_a_end.is_some(),
+        "expected successful ToolCallEnd for tc-grep-a"
+    );
+    assert!(
+        grep_b_end.is_some(),
+        "expected successful ToolCallEnd for tc-grep-b"
+    );
 }

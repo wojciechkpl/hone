@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 //! Integration tests for ACP provider against a real ACP binary.
 //!
 //! These tests are #[ignore]d so they don't run in default `cargo test`.
@@ -71,12 +73,16 @@ async fn test_acp_real_basic_completion() {
         )],
     );
 
-    let stream: Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> =
-        provider.complete(request).await.expect("provider.complete failed");
+    let stream: Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> = provider
+        .complete(request)
+        .await
+        .expect("provider.complete failed");
 
     let events: Vec<ProviderEvent> = stream.collect().await;
 
-    let has_token = events.iter().any(|e| matches!(e, ProviderEvent::Token { .. }));
+    let has_token = events
+        .iter()
+        .any(|e| matches!(e, ProviderEvent::Token { .. }));
     let has_done = events.iter().any(|e| matches!(e, ProviderEvent::Done));
 
     assert!(
@@ -114,8 +120,10 @@ async fn test_acp_real_done_is_last_event() {
         vec![Message::user("Say anything brief.")],
     );
 
-    let stream: Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> =
-        provider.complete(request).await.expect("provider.complete failed");
+    let stream: Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> = provider
+        .complete(request)
+        .await
+        .expect("provider.complete failed");
 
     let events: Vec<ProviderEvent> = stream.collect().await;
 

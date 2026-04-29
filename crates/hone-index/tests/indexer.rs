@@ -72,7 +72,10 @@ pub fn format_output() {}
 
     let names: Vec<&str> = results.iter().map(|r| r.symbol.name.as_str()).collect();
     assert!(names.contains(&"compute_total"), "missing compute_total");
-    assert!(names.contains(&"compute_average"), "missing compute_average");
+    assert!(
+        names.contains(&"compute_average"),
+        "missing compute_average"
+    );
 }
 
 #[test]

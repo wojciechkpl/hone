@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use hone_proto::{ModelId, PricingEntry};
 use hone_providers::PricingTable;
 

@@ -12,6 +12,12 @@
 # - Live /model switch with context-limit update
 # - Accessibility flags (HONE_ASCII_ONLY, HONE_REDUCED_MOTION, NO_COLOR)
 # - Session reports and hone reports CLI
+#
+# Not directly demoable (fire only on failure modes) but present in the
+# agent loop and visible in session-report timelines when triggered:
+# - Doom-loop detector — corrective prompt on 3+ identical tool calls
+# - Context-budget graceful abort — strips tools at 95 % of context
+# - Output-truncation retry — handles stop_reason=max_tokens / length
 
 Output demo.gif
 Output demo.mp4
@@ -74,10 +80,12 @@ Sleep 500ms
 Enter
 Sleep 12s
 
-# Show the help overlay
-F1
+# Show the help overlay (slash command)
+Type "/help"
+Sleep 500ms
+Enter
 Sleep 3s
-F1
+Escape
 Sleep 500ms
 
 # Slash commands

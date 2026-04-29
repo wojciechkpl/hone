@@ -34,9 +34,7 @@ async fn start_server() -> String {
     let app = router(state);
 
     tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("server error");
+        axum::serve(listener, app).await.expect("server error");
     });
 
     base_url

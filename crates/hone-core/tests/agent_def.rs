@@ -95,7 +95,10 @@ fn test_agent_registry_register_and_get() {
 #[test]
 fn test_agent_registry_find_by_description() {
     let mut registry = AgentRegistry::new();
-    registry.register(make_def("code-reviewer", "Expert code reviewer for quality and security"));
+    registry.register(make_def(
+        "code-reviewer",
+        "Expert code reviewer for quality and security",
+    ));
     registry.register(make_def("debugger", "Systematic debugging specialist"));
 
     let found = registry.find_by_description("code review");
@@ -144,9 +147,18 @@ fn test_load_builtins_has_agents() {
     );
 
     // Spot-check a few known built-ins
-    assert!(registry.get("code-reviewer").is_some(), "code-reviewer should be a built-in");
-    assert!(registry.get("debugger").is_some(), "debugger should be a built-in");
-    assert!(registry.get("security-auditor").is_some(), "security-auditor should be a built-in");
+    assert!(
+        registry.get("code-reviewer").is_some(),
+        "code-reviewer should be a built-in"
+    );
+    assert!(
+        registry.get("debugger").is_some(),
+        "debugger should be a built-in"
+    );
+    assert!(
+        registry.get("security-auditor").is_some(),
+        "security-auditor should be a built-in"
+    );
 }
 
 // ---------------------------------------------------------------------------

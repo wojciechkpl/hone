@@ -40,9 +40,7 @@ pub fn render_diff_block(diff: &str, file_path: &str, theme: &Theme) -> Vec<Line
         } else if src_line.starts_with('+') {
             Line::from(Span::styled(
                 src_line.to_string(),
-                Style::default()
-                    .fg(theme.diff_add_fg)
-                    .bg(theme.diff_add_bg),
+                Style::default().fg(theme.diff_add_fg).bg(theme.diff_add_bg),
             ))
         } else if src_line.starts_with('-') {
             Line::from(Span::styled(
@@ -69,9 +67,10 @@ pub fn render_diff_block(diff: &str, file_path: &str, theme: &Theme) -> Vec<Line
     }
 
     // Footer.
-    lines.push(Line::from(vec![
-        Span::styled("\u{2514}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}", border_style),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        "\u{2514}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
+        border_style,
+    )]));
 
     lines
 }

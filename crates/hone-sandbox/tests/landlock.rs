@@ -80,7 +80,9 @@ fn test_restrict_child_blocks_unauthorized_read() {
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::null());
 
-    sandbox.restrict_child(&mut cmd, &policy).expect("restrict_child");
+    sandbox
+        .restrict_child(&mut cmd, &policy)
+        .expect("restrict_child");
 
     let status = cmd.status().expect("spawn child");
     assert!(
@@ -112,7 +114,9 @@ fn test_restrict_child_allows_authorized_read() {
     cmd.arg(test_file);
     cmd.stdout(std::process::Stdio::null());
 
-    sandbox.restrict_child(&mut cmd, &policy).expect("restrict_child");
+    sandbox
+        .restrict_child(&mut cmd, &policy)
+        .expect("restrict_child");
 
     let status = cmd.status().expect("spawn child");
 
@@ -148,7 +152,9 @@ fn test_restrict_child_allows_authorized_write() {
     let mut cmd = Command::new("sh");
     cmd.args(["-c", &format!("echo ok > {test_file}")]);
 
-    sandbox.restrict_child(&mut cmd, &policy).expect("restrict_child");
+    sandbox
+        .restrict_child(&mut cmd, &policy)
+        .expect("restrict_child");
 
     let status = cmd.status().expect("spawn child");
 

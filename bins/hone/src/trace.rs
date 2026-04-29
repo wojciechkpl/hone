@@ -123,7 +123,11 @@ fn group_by_trace(entries: Vec<EgressEntry>) -> Vec<TraceSummary> {
         .into_iter()
         .map(|tid| {
             let (first_ts, entries) = map.remove(&tid).unwrap();
-            TraceSummary { trace_id: tid, first_ts, entries }
+            TraceSummary {
+                trace_id: tid,
+                first_ts,
+                entries,
+            }
         })
         .collect()
 }
@@ -281,7 +285,11 @@ fn print_trace_tree(trace: &TraceSummary) {
         let turn_ms: u64 = calls.iter().map(|e| e.duration_ms).sum();
         let is_last_turn = turn_idx + 1 == n_turns;
 
-        let turn_connector = if is_last_turn { "└──" } else { "├──" };
+        let turn_connector = if is_last_turn {
+            "└──"
+        } else {
+            "├──"
+        };
         let turn_child_prefix = if is_last_turn { "    " } else { "│   " };
 
         println!(
@@ -294,7 +302,11 @@ fn print_trace_tree(trace: &TraceSummary) {
         let n_calls = calls.len();
         for (call_idx, entry) in calls.iter().enumerate() {
             let is_last_call = call_idx + 1 == n_calls;
-            let call_connector = if is_last_call { "└──" } else { "├──" };
+            let call_connector = if is_last_call {
+                "└──"
+            } else {
+                "├──"
+            };
             let icon = tool_icon(&entry.tool);
             println!(
                 "{}{} {} {} ({})",
@@ -453,11 +465,7 @@ mod tests {
         let path = tmp.path().join("audit.jsonl");
         let good = make_entry("shell", "t1", None);
         let good_line = serde_json::to_string(&good).unwrap();
-        std::fs::write(
-            &path,
-            format!("{good_line}\nnot valid json\n{good_line}\n"),
-        )
-        .unwrap();
+        std::fs::write(&path, format!("{good_line}\nnot valid json\n{good_line}\n")).unwrap();
         let entries = load_entries(&path).unwrap();
         assert_eq!(entries.len(), 2);
     }

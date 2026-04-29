@@ -201,11 +201,7 @@ impl TestVerificationLoop {
     ///
     /// This constructor is backwards-compatible: internally it builds a
     /// [`GreenContract`] with `required_level = Package`.
-    pub fn new(
-        test_cmd: impl Into<String>,
-        max_iterations: u32,
-        working_dir: PathBuf,
-    ) -> Self {
+    pub fn new(test_cmd: impl Into<String>, max_iterations: u32, working_dir: PathBuf) -> Self {
         let cmd = test_cmd.into();
         Self {
             contract: GreenContract::from_package_cmd(&cmd),

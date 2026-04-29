@@ -96,7 +96,11 @@ impl StatusInfo {
                 format!("{n}")
             }
         }
-        format!("{} / {}", fmt_k(self.context_tokens), fmt_k(self.context_limit))
+        format!(
+            "{} / {}",
+            fmt_k(self.context_tokens),
+            fmt_k(self.context_limit)
+        )
     }
 }
 
@@ -223,15 +227,27 @@ mod tests {
     #[test]
     fn test_format_tokens() {
         assert_eq!(
-            StatusInfo { token_count: 500, ..Default::default() }.format_tokens(),
+            StatusInfo {
+                token_count: 500,
+                ..Default::default()
+            }
+            .format_tokens(),
             "500"
         );
         assert_eq!(
-            StatusInfo { token_count: 12400, ..Default::default() }.format_tokens(),
+            StatusInfo {
+                token_count: 12400,
+                ..Default::default()
+            }
+            .format_tokens(),
             "12.4k"
         );
         assert_eq!(
-            StatusInfo { token_count: 2_500_000, ..Default::default() }.format_tokens(),
+            StatusInfo {
+                token_count: 2_500_000,
+                ..Default::default()
+            }
+            .format_tokens(),
             "2.5M"
         );
     }
@@ -239,11 +255,19 @@ mod tests {
     #[test]
     fn test_format_cost() {
         assert_eq!(
-            StatusInfo { session_cost_usd: 0.0234, ..Default::default() }.format_cost(),
+            StatusInfo {
+                session_cost_usd: 0.0234,
+                ..Default::default()
+            }
+            .format_cost(),
             "$0.0234"
         );
         assert_eq!(
-            StatusInfo { session_cost_usd: 5.67, ..Default::default() }.format_cost(),
+            StatusInfo {
+                session_cost_usd: 5.67,
+                ..Default::default()
+            }
+            .format_cost(),
             "$5.67"
         );
     }
@@ -260,7 +284,10 @@ mod tests {
 
     #[test]
     fn test_context_fraction_zero_limit() {
-        let s = StatusInfo { context_limit: 0, ..Default::default() };
+        let s = StatusInfo {
+            context_limit: 0,
+            ..Default::default()
+        };
         assert_eq!(s.context_fraction(), 0.0);
     }
 

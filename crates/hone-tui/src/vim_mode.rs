@@ -102,7 +102,10 @@ impl VimOverlay {
     /// Create a new overlay starting in Insert mode (for `--vim` flag when the
     /// user might want to type immediately).
     pub fn new_insert() -> Self {
-        Self { mode: VimMode::Insert, pending: PendingKey::None }
+        Self {
+            mode: VimMode::Insert,
+            pending: PendingKey::None,
+        }
     }
 
     /// Process a key event through the overlay.

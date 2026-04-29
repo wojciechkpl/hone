@@ -58,7 +58,10 @@ pub fn messages_to_prompt(messages: &[Message]) -> String {
         // Append tool calls for assistant messages so the CLI sees the full turn.
         for tc in &msg.tool_calls {
             let args = serde_json::to_string(&tc.arguments).unwrap_or_default();
-            text.push_str(&format!("\n[tool_use id={} name={} input={}]", tc.id, tc.name, args));
+            text.push_str(&format!(
+                "\n[tool_use id={} name={} input={}]",
+                tc.id, tc.name, args
+            ));
         }
         // For tool result messages, include the call ID for traceability.
         if let Some(ref id) = msg.tool_call_id {
@@ -85,11 +88,18 @@ pub fn estimate_tokens_heuristic(messages: &[Message]) -> u32 {
 /// Each non-empty line of stdout becomes a `Token` event. When the process
 /// exits with a non-zero status an `Error` event is emitted before the final
 /// `Done`.
-pub fn spawn_cli_stream_with_stdin(mut cmd: Command, prompt: String) -> Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> {
+pub fn spawn_cli_stream_with_stdin(
+    mut cmd: Command,
+    prompt: String,
+) -> Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> {
     let (tx, rx) = mpsc::channel::<ProviderEvent>(64);
 
     tokio::spawn(async move {
-        let child_result = cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
+        let child_result = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn();
 
         let mut child = match child_result {
             Ok(c) => c,
@@ -143,9 +153,9 @@ pub fn spawn_cli_stream_with_stdin(mut cmd: Command, prompt: String) -> Pin<Box<
                             .send(ProviderEvent::Token { text: trimmed })
                             .await
                             .is_err()
-                        {
-                            return;
-                        }
+                    {
+                        return;
+                    }
                 }
                 Ok(None) => break,
                 Err(e) => {
@@ -228,10 +238,10 @@ pub fn spawn_cli_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderE
                             .send(ProviderEvent::Token { text: trimmed })
                             .await
                             .is_err()
-                        {
-                            // Receiver dropped — stop reading.
-                            return;
-                        }
+                    {
+                        // Receiver dropped — stop reading.
+                        return;
+                    }
                 }
                 Ok(None) => break, // EOF
                 Err(e) => {

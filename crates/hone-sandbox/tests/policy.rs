@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use hone_sandbox::{SandboxError, SandboxMode, SandboxPolicyBuilder};
 use std::path::PathBuf;
 
@@ -93,7 +95,11 @@ fn test_policy_builder_network_and_domains() {
         .expect("should build");
 
     assert!(policy.allow_network);
-    assert!(policy.allowed_domains.contains(&"api.example.com".to_string()));
+    assert!(
+        policy
+            .allowed_domains
+            .contains(&"api.example.com".to_string())
+    );
 }
 
 #[test]

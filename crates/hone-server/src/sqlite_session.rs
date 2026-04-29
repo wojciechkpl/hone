@@ -61,16 +61,15 @@ impl SqliteSessionStore {
                 .await
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-        row
-            .map(|(id, created_at)| {
-                Uuid::parse_str(&id)
-                    .map(|u| SessionInfo {
-                        id: hone_proto::SessionId::from_uuid(u),
-                        created_at: created_at as u64,
-                    })
-                    .map_err(|e| ServerError::Internal(format!("corrupt session id: {e}")))
-            })
-            .transpose()
+        row.map(|(id, created_at)| {
+            Uuid::parse_str(&id)
+                .map(|u| SessionInfo {
+                    id: hone_proto::SessionId::from_uuid(u),
+                    created_at: created_at as u64,
+                })
+                .map_err(|e| ServerError::Internal(format!("corrupt session id: {e}")))
+        })
+        .transpose()
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool, ServerError> {

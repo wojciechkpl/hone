@@ -1,6 +1,10 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 #[cfg(target_os = "macos")]
 mod macos_tests {
-    use hone_sandbox::{Sandbox, SandboxMode, SandboxPolicyBuilder, SeatbeltProfile, SeatbeltSandbox};
+    use hone_sandbox::{
+        Sandbox, SandboxMode, SandboxPolicyBuilder, SeatbeltProfile, SeatbeltSandbox,
+    };
     use std::path::PathBuf;
 
     #[test]
@@ -156,7 +160,9 @@ mod macos_tests {
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::null());
 
-        sandbox.restrict_child(&mut cmd, &policy).expect("restrict_child");
+        sandbox
+            .restrict_child(&mut cmd, &policy)
+            .expect("restrict_child");
 
         let status = cmd.status().expect("spawn child");
         let content = std::fs::read_to_string(test_file).ok();
@@ -167,10 +173,7 @@ mod macos_tests {
             "write to allowed /tmp should succeed (status: {})",
             status,
         );
-        assert_eq!(
-            content.as_deref().map(str::trim),
-            Some("seatbelt_ok"),
-        );
+        assert_eq!(content.as_deref().map(str::trim), Some("seatbelt_ok"),);
     }
 
     /// Test that network access is blocked when policy disables it.
@@ -191,7 +194,9 @@ mod macos_tests {
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::null());
 
-        sandbox.restrict_child(&mut cmd, &policy).expect("restrict_child");
+        sandbox
+            .restrict_child(&mut cmd, &policy)
+            .expect("restrict_child");
 
         let status = cmd.status().expect("spawn child");
 

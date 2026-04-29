@@ -50,7 +50,11 @@ pub struct AgentRailWidget<'a> {
 
 impl<'a> AgentRailWidget<'a> {
     pub fn new(ledger: Option<&'a TurnLedger>, theme: &'a Theme, is_active_turn: bool) -> Self {
-        Self { ledger, theme, is_active_turn }
+        Self {
+            ledger,
+            theme,
+            is_active_turn,
+        }
     }
 
     /// Build the full list of lines to display, then render the visible slice.
@@ -65,22 +69,19 @@ impl<'a> AgentRailWidget<'a> {
         // ----------------------------------------------------------------
         // FILES section
         // ----------------------------------------------------------------
-        let files_header = if nc {
-            "[FILES]"
-        } else {
-            "[FILES]"
-        };
-        lines.push(header_line(
-            format!("{files_header}{state_label}"),
-            theme,
-        ));
+        let files_header = if nc { "[FILES]" } else { "[FILES]" };
+        lines.push(header_line(format!("{files_header}{state_label}"), theme));
 
         if let Some(ledger) = self.ledger {
             if ledger.files_touched.is_empty() {
                 lines.push(dim_line("  —", theme));
             } else {
                 for ft in &ledger.files_touched {
-                    let badge = if nc { ft.op.badge_ascii() } else { ft.op.badge() };
+                    let badge = if nc {
+                        ft.op.badge_ascii()
+                    } else {
+                        ft.op.badge()
+                    };
                     // Truncate path from the left so the filename is always visible.
                     let display_path = truncate_path_left(&ft.path, RAIL_WIDTH as usize - 5);
                     let (badge_color, path_color) = match ft.op {
@@ -166,7 +167,10 @@ impl<'a> AgentRailWidget<'a> {
                         let plain_part = &label[..plain_len];
                         let tokens_part = label[plain_len..].to_string();
                         lines.push(Line::from(vec![
-                            Span::styled(plain_part.to_string(), Style::default().fg(theme.text_secondary)),
+                            Span::styled(
+                                plain_part.to_string(),
+                                Style::default().fg(theme.text_secondary),
+                            ),
                             Span::styled(tokens_part, Style::default().fg(tok_color)),
                         ]));
                     }
@@ -187,16 +191,24 @@ impl<'a> AgentRailWidget<'a> {
                     if nc {
                         lines.push(Line::from(format!("  {key_display}")));
                         lines.push(dim_line(
-                            format!("    {}", truncate_str(&recall.snippet, RAIL_WIDTH as usize - 4)),
+                            format!(
+                                "    {}",
+                                truncate_str(&recall.snippet, RAIL_WIDTH as usize - 4)
+                            ),
                             theme,
                         ));
                     } else {
                         lines.push(Line::from(vec![Span::styled(
                             format!("  {key_display}"),
-                            Style::default().fg(theme.accent_mid).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(theme.accent_mid)
+                                .add_modifier(Modifier::BOLD),
                         )]));
                         lines.push(dim_line(
-                            format!("    {}", truncate_str(&recall.snippet, RAIL_WIDTH as usize - 4)),
+                            format!(
+                                "    {}",
+                                truncate_str(&recall.snippet, RAIL_WIDTH as usize - 4)
+                            ),
                             theme,
                         ));
                     }
@@ -394,7 +406,10 @@ mod tests {
     fn truncate_path_left_long_path_shows_filename() {
         let path = "some/very/long/nested/path/to/auth.rs";
         let result = truncate_path_left(path, 10);
-        assert!(result.contains("auth.rs"), "filename should be visible: {result}");
+        assert!(
+            result.contains("auth.rs"),
+            "filename should be visible: {result}"
+        );
         assert!(result.len() <= 10 || result == "auth.rs");
     }
 
@@ -433,9 +448,11 @@ mod tests {
         let mut state = AgentRailState::default();
         let backend = TestBackend::new(RAIL_WIDTH, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|f| {
-            f.render_stateful_widget(widget, f.area(), &mut state);
-        }).unwrap();
+        terminal
+            .draw(|f| {
+                f.render_stateful_widget(widget, f.area(), &mut state);
+            })
+            .unwrap();
     }
 
     #[test]
@@ -451,9 +468,11 @@ mod tests {
         let mut state = AgentRailState::default();
         let backend = TestBackend::new(RAIL_WIDTH, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|f| {
-            f.render_stateful_widget(widget, f.area(), &mut state);
-        }).unwrap();
+        terminal
+            .draw(|f| {
+                f.render_stateful_widget(widget, f.area(), &mut state);
+            })
+            .unwrap();
         // Just check it didn't panic and rendered something.
         let buf = terminal.backend().buffer().clone();
         // The rail block border should be on the left edge.
@@ -472,9 +491,11 @@ mod tests {
         let mut state = AgentRailState::default();
         let backend = TestBackend::new(RAIL_WIDTH, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|f| {
-            f.render_stateful_widget(widget, f.area(), &mut state);
-        }).unwrap();
+        terminal
+            .draw(|f| {
+                f.render_stateful_widget(widget, f.area(), &mut state);
+            })
+            .unwrap();
     }
 
     #[test]

@@ -33,11 +33,8 @@ async fn test_bore_start_fails_gracefully() {
 
     // Wrap in a generous outer timeout so the test suite never hangs even if
     // something changes inside the implementation.
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        manager.start(&config),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(std::time::Duration::from_secs(15), manager.start(&config)).await;
 
     match result {
         // Timed out at the outer boundary — acceptable (bore may be slow to fail).

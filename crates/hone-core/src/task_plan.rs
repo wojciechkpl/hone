@@ -78,12 +78,7 @@ impl OrchestratorResult {
             };
             lines.push(format!(
                 "  [{}] {}/{}: ${:.4} ({} in, {} out)",
-                status,
-                w.task_id,
-                w.agent,
-                w.cost_usd,
-                w.usage.input,
-                w.usage.output,
+                status, w.task_id, w.agent, w.cost_usd, w.usage.input, w.usage.output,
             ));
         }
         lines.push(format!("  Total: ${:.4}", self.total_cost_usd));

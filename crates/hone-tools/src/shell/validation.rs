@@ -149,8 +149,18 @@ impl CommandIntent {
         // Mutation commands — catch-all for filesystem writes
         if matches!(
             first_token,
-            "mkdir" | "touch" | "cp" | "mv" | "ln" | "chmod" | "chown" | "tar" | "unzip"
-                | "zip" | "gzip" | "gunzip"
+            "mkdir"
+                | "touch"
+                | "cp"
+                | "mv"
+                | "ln"
+                | "chmod"
+                | "chown"
+                | "tar"
+                | "unzip"
+                | "zip"
+                | "gzip"
+                | "gunzip"
         ) {
             return Self::Mutation;
         }
@@ -218,9 +228,9 @@ fn contains_compound_operator(command: &str) -> bool {
             let after_pipe = &command[i + 1..].trim_start();
             let pipe_target = after_pipe.split_whitespace().next().unwrap_or("");
             let safe_pipe_targets = [
-                "head", "tail", "grep", "wc", "sort", "uniq", "less", "more",
-                "cat", "cut", "awk", "sed", "tr", "tee", "column", "fmt",
-                "nl", "rev", "tac", "fold", "expand", "unexpand",
+                "head", "tail", "grep", "wc", "sort", "uniq", "less", "more", "cat", "cut", "awk",
+                "sed", "tr", "tee", "column", "fmt", "nl", "rev", "tac", "fold", "expand",
+                "unexpand",
             ];
             if !safe_pipe_targets.contains(&pipe_target) {
                 return true;
@@ -268,9 +278,7 @@ fn is_destructive(command: &str) -> bool {
     ];
 
     let lower = command.to_lowercase();
-    patterns
-        .iter()
-        .any(|p| lower.contains(&p.to_lowercase()))
+    patterns.iter().any(|p| lower.contains(&p.to_lowercase()))
 }
 
 /// A validator runs against a classified command and either allows it,
@@ -298,14 +306,12 @@ pub fn validate_command(command: &str) -> ValidationResult {
     match intent {
         CommandIntent::ReadOnly => ValidationResult::Allow,
         CommandIntent::Mutation | CommandIntent::Unknown => ValidationResult::Allow,
-        CommandIntent::Destructive => ValidationResult::RequireApproval(format!(
-            "destructive command detected: {}",
-            command
-        )),
-        CommandIntent::Network => ValidationResult::RequireApproval(format!(
-            "network command detected: {}",
-            command
-        )),
+        CommandIntent::Destructive => {
+            ValidationResult::RequireApproval(format!("destructive command detected: {}", command))
+        }
+        CommandIntent::Network => {
+            ValidationResult::RequireApproval(format!("network command detected: {}", command))
+        }
         CommandIntent::PrivilegeEscalation => ValidationResult::Block(
             "privilege escalation commands (sudo/su/doas) are not permitted".to_string(),
         ),
@@ -389,7 +395,10 @@ mod tests {
 
     #[test]
     fn test_classify_mutation() {
-        assert_eq!(CommandIntent::classify("mkdir foo"), CommandIntent::Mutation);
+        assert_eq!(
+            CommandIntent::classify("mkdir foo"),
+            CommandIntent::Mutation
+        );
         assert_eq!(CommandIntent::classify("cp a b"), CommandIntent::Mutation);
         assert_eq!(CommandIntent::classify("touch x"), CommandIntent::Mutation);
     }
@@ -424,10 +433,7 @@ mod tests {
             CommandIntent::classify("git push origin main"),
             CommandIntent::Network
         );
-        assert_eq!(
-            CommandIntent::classify("ssh host"),
-            CommandIntent::Network
-        );
+        assert_eq!(CommandIntent::classify("ssh host"), CommandIntent::Network);
     }
 
     #[test]

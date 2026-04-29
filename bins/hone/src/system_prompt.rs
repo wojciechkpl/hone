@@ -99,7 +99,13 @@ mod tests {
 
     #[test]
     fn base_prompt_mentions_key_tools() {
-        for tool in &["read_file", "edit_file", "write_file", "shell", "git_commit"] {
+        for tool in &[
+            "read_file",
+            "edit_file",
+            "write_file",
+            "shell",
+            "git_commit",
+        ] {
             assert!(
                 BASE_SYSTEM_PROMPT.contains(tool),
                 "system prompt should mention tool '{tool}'"

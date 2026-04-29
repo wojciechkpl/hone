@@ -26,8 +26,7 @@ pub struct RefineResult {
 const APPROVED_SENTINEL: &str = "APPROVED";
 
 /// Prompt appended after the initial generation to request a self-critique.
-const CRITIQUE_PROMPT: &str =
-    "Review your previous response critically. List any bugs, edge cases you missed, or improvements. \
+const CRITIQUE_PROMPT: &str = "Review your previous response critically. List any bugs, edge cases you missed, or improvements. \
      If the code is correct, respond with APPROVED.";
 
 /// Prompt appended after a critique to request a refined version.

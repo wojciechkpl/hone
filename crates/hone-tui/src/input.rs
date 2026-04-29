@@ -24,8 +24,7 @@ impl InputState {
             return;
         }
         // Step back one char boundary.
-        let new_pos = self
-            .buffer[..self.cursor_position]
+        let new_pos = self.buffer[..self.cursor_position]
             .char_indices()
             .next_back()
             .map(|(i, _)| i)

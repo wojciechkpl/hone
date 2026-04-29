@@ -5,8 +5,8 @@
 //! (arXiv 2406.11638) which reports 5-8% accuracy improvements via candidate
 //! selection.
 
-use tokio::task::JoinSet;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
 use crate::agent::{Agent, AgentConfig};
 use crate::error::AgentError;
@@ -129,8 +129,7 @@ impl AgentEnsemble {
         // ----------------------------------------------------------------
         // 3. Build the ranker prompt.
         // ----------------------------------------------------------------
-        let mut ranker_prompt =
-            format!("Original task:\n{prompt}\n\nCandidate responses:\n\n");
+        let mut ranker_prompt = format!("Original task:\n{prompt}\n\nCandidate responses:\n\n");
         for (idx, cand) in candidates.iter().enumerate() {
             ranker_prompt.push_str(&format!(
                 "=== Candidate {} ===\n{}\n\n",
@@ -180,8 +179,8 @@ impl AgentEnsemble {
             .unwrap_or(0); // fallback to first candidate
 
         let winner = candidates[winner_index].clone();
-        let total_cost = candidates.iter().map(|c| c.cost_usd).sum::<f64>()
-            + ranker_result.cost_usd;
+        let total_cost =
+            candidates.iter().map(|c| c.cost_usd).sum::<f64>() + ranker_result.cost_usd;
 
         Ok(EnsembleResult {
             winner,

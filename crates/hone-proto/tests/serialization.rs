@@ -259,14 +259,8 @@ fn tool_result_error_flag() {
 fn tool_layer_serialization() {
     let native = ToolLayer::Native;
     let mcp = ToolLayer::Mcp;
-    assert_eq!(
-        serde_json::to_string(&native).unwrap(),
-        "\"Native\""
-    );
-    assert_eq!(
-        serde_json::to_string(&mcp).unwrap(),
-        "\"Mcp\""
-    );
+    assert_eq!(serde_json::to_string(&native).unwrap(), "\"Native\"");
+    assert_eq!(serde_json::to_string(&mcp).unwrap(), "\"Mcp\"");
 }
 
 #[test]
@@ -290,9 +284,7 @@ fn provider_event_done_roundtrip() {
 #[test]
 fn agent_event_variants_roundtrip() {
     let events = vec![
-        AgentEvent::Token {
-            text: "hi".into(),
-        },
+        AgentEvent::Token { text: "hi".into() },
         AgentEvent::ToolCallStart {
             id: "tc_1".into(),
             name: "read_file".into(),

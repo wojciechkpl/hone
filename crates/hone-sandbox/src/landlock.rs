@@ -61,9 +61,7 @@ pub struct LandlockSandbox;
 ///
 /// Extracted into a free function so it can be called from both `apply()` and
 /// the `pre_exec` closure in `restrict_child()`.
-fn build_ruleset(
-    policy: &SandboxPolicy,
-) -> Result<landlock::RulesetCreated, SandboxError> {
+fn build_ruleset(policy: &SandboxPolicy) -> Result<landlock::RulesetCreated, SandboxError> {
     // Create a ruleset that handles all filesystem access types for TARGET_ABI.
     // Using best-effort compatibility: the crate will intersect the requested
     // access rights with what the running kernel actually supports.
@@ -85,11 +83,12 @@ fn build_ruleset(
         })?;
         // from_read() covers Execute | ReadFile | ReadDir.
         let rule = PathBeneath::new(fd, AccessFs::from_read(TARGET_ABI));
-        ruleset_created = ruleset_created
-            .add_rule(rule)
-            .map_err(|e| SandboxError::PolicyNotMet {
-                reason: format!("landlock add read rule for {}: {e}", path.display()),
-            })?;
+        ruleset_created =
+            ruleset_created
+                .add_rule(rule)
+                .map_err(|e| SandboxError::PolicyNotMet {
+                    reason: format!("landlock add read rule for {}: {e}", path.display()),
+                })?;
     }
 
     // Add read-write rules (write implies read).
@@ -99,11 +98,12 @@ fn build_ruleset(
         })?;
         // from_all() covers every access right: read, write, exec, create, etc.
         let rule = PathBeneath::new(fd, AccessFs::from_all(TARGET_ABI));
-        ruleset_created = ruleset_created
-            .add_rule(rule)
-            .map_err(|e| SandboxError::PolicyNotMet {
-                reason: format!("landlock add write rule for {}: {e}", path.display()),
-            })?;
+        ruleset_created =
+            ruleset_created
+                .add_rule(rule)
+                .map_err(|e| SandboxError::PolicyNotMet {
+                    reason: format!("landlock add write rule for {}: {e}", path.display()),
+                })?;
     }
 
     // Add exec-only rules.
@@ -112,11 +112,12 @@ fn build_ruleset(
             reason: format!("landlock open path {}: {e}", path.display()),
         })?;
         let rule = PathBeneath::new(fd, AccessFs::Execute.into());
-        ruleset_created = ruleset_created
-            .add_rule(rule)
-            .map_err(|e| SandboxError::PolicyNotMet {
-                reason: format!("landlock add exec rule for {}: {e}", path.display()),
-            })?;
+        ruleset_created =
+            ruleset_created
+                .add_rule(rule)
+                .map_err(|e| SandboxError::PolicyNotMet {
+                    reason: format!("landlock add exec rule for {}: {e}", path.display()),
+                })?;
     }
 
     Ok(ruleset_created)

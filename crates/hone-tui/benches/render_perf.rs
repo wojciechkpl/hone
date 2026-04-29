@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use hone_tui::{App, render::root};
 use ratatui::{Terminal, backend::TestBackend};
 
@@ -10,7 +10,9 @@ fn bench_render_empty(c: &mut Criterion) {
 
     c.bench_function("render_empty_tui", |b| {
         b.iter(|| {
-            terminal.draw(|frame| root::render(black_box(&app), frame)).unwrap();
+            terminal
+                .draw(|frame| root::render(black_box(&app), frame))
+                .unwrap();
         });
     });
 }
@@ -36,7 +38,9 @@ fn bench_render_with_messages(c: &mut Criterion) {
 
     c.bench_function("render_50_messages", |b| {
         b.iter(|| {
-            terminal.draw(|frame| root::render(black_box(&app), frame)).unwrap();
+            terminal
+                .draw(|frame| root::render(black_box(&app), frame))
+                .unwrap();
         });
     });
 }

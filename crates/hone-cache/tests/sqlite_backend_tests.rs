@@ -1,8 +1,8 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use hone_cache::{
-    CacheBackend, CacheEntry, CacheKey, InvalidationTag, SqliteBackend,
-};
+use hone_cache::{CacheBackend, CacheEntry, CacheKey, InvalidationTag, SqliteBackend};
 
 fn now_secs() -> i64 {
     SystemTime::now()
@@ -37,7 +37,11 @@ async fn test_put_then_get_returns_entry() {
     let entry = make_entry(b"file contents");
     backend.put(&key, entry).await.unwrap();
 
-    let fetched = backend.get(&key).await.unwrap().expect("entry should exist");
+    let fetched = backend
+        .get(&key)
+        .await
+        .unwrap()
+        .expect("entry should exist");
     assert_eq!(&*fetched.bytes, b"file contents");
 }
 

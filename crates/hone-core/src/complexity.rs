@@ -108,8 +108,8 @@ fn has_simple_keyword(s: &str) -> bool {
 /// that tokens like `"parser.rs,"` are correctly recognised as `.rs` files.
 fn count_file_references(s: &str) -> usize {
     let known_extensions = [
-        ".rs", ".toml", ".json", ".yaml", ".yml", ".ts", ".js", ".py",
-        ".go", ".cpp", ".c", ".h", ".md", ".txt", ".html", ".css",
+        ".rs", ".toml", ".json", ".yaml", ".yml", ".ts", ".js", ".py", ".go", ".cpp", ".c", ".h",
+        ".md", ".txt", ".html", ".css",
     ];
 
     s.split_whitespace()

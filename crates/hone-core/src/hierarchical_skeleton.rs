@@ -23,7 +23,6 @@ use std::time::Instant;
 use hone_index::{SqliteIndex, SymbolExtractor, SymbolKind};
 use ignore::WalkBuilder;
 
-
 // ---------------------------------------------------------------------------
 // Token counting (re-use the one already defined in context_injector)
 // ---------------------------------------------------------------------------
@@ -183,9 +182,7 @@ pub fn level0_directory_tree(root: &Path, max_dirs: usize) -> String {
 
     let mut lines: Vec<String> = Vec::with_capacity(dirs.len() + 1);
     let total: usize = dirs.iter().map(|(_, c)| c).sum();
-    lines.push(format!(
-        "Repository root ({total} source files):"
-    ));
+    lines.push(format!("Repository root ({total} source files):"));
 
     for (rel, count) in &dirs {
         let depth = rel.components().count();
@@ -251,10 +248,7 @@ pub fn level1_file_list(root: &Path, max_files: usize) -> String {
             let mut sorted = file_list.clone();
             sorted.sort();
             for file in &sorted {
-                let name = file
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("?");
+                let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("?");
                 let fn_count = count_functions_cheap(file);
                 let label = if fn_count > 0 {
                     format!("  {name} ({fn_count} fns)")
@@ -296,9 +290,7 @@ fn count_functions_cheap(path: &Path) -> usize {
             .lines()
             .filter(|l| {
                 let t = l.trim();
-                t.starts_with("function ")
-                    || t.contains("=> {")
-                    || t.starts_with("async function ")
+                t.starts_with("function ") || t.contains("=> {") || t.starts_with("async function ")
             })
             .count(),
         "go" => content
@@ -411,9 +403,7 @@ pub fn level3_call_graph(
 /// Parse only the specified files with safety guards:
 /// - Skips files > 100 KB.
 /// - Skips files that take > 100 ms to parse (logs a warning).
-pub(crate) fn parse_selected_files(
-    files: &[PathBuf],
-) -> HashMap<PathBuf, Vec<hone_index::Symbol>> {
+pub(crate) fn parse_selected_files(files: &[PathBuf]) -> HashMap<PathBuf, Vec<hone_index::Symbol>> {
     let mut result = HashMap::new();
     let mut extractor = SymbolExtractor::new();
 
@@ -890,7 +880,10 @@ mod tests {
             .generate(dir.path(), "login session", None, &mut mtime2)
             .await;
         let generous_tokens = count_tokens(&generous_out);
-        assert!(generous_tokens <= 2_000, "generous: {generous_tokens} > 2000");
+        assert!(
+            generous_tokens <= 2_000,
+            "generous: {generous_tokens} > 2000"
+        );
 
         // Generous output should be at least as long as tight output.
         assert!(

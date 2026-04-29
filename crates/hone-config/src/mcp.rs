@@ -127,10 +127,7 @@ mod tests {
 
     #[test]
     fn missing_file_is_silently_skipped() {
-        let cfg = McpConfig::load(
-            Some(Path::new("/no/such/file.json")),
-            None,
-        );
+        let cfg = McpConfig::load(Some(Path::new("/no/such/file.json")), None);
         assert!(cfg.mcp_servers.is_empty());
     }
 

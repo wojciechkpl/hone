@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 //! Integration tests against real APIs.
 //!
 //! These tests are marked `#[ignore]` so they do not run in the default
@@ -16,7 +18,9 @@
 
 use futures::StreamExt;
 use hone_proto::{Message, ModelId, ProviderEvent, ToolSchema};
-use hone_providers::{AnthropicProvider, CompletionRequest, ModelProvider, OllamaProvider, OpenAiProvider};
+use hone_providers::{
+    AnthropicProvider, CompletionRequest, ModelProvider, OllamaProvider, OpenAiProvider,
+};
 
 // ---------------------------------------------------------------------------
 // Shared helper — works for any provider
@@ -25,13 +29,20 @@ use hone_providers::{AnthropicProvider, CompletionRequest, ModelProvider, Ollama
 async fn run_basic_test<P: ModelProvider>(provider: P, model_id: &str) {
     let request = CompletionRequest::new(
         ModelId::new(model_id),
-        vec![Message::user("Respond with the single word OK and nothing else.")],
+        vec![Message::user(
+            "Respond with the single word OK and nothing else.",
+        )],
     );
 
-    let stream = provider.complete(request).await.expect("provider call failed");
+    let stream = provider
+        .complete(request)
+        .await
+        .expect("provider call failed");
     let events: Vec<ProviderEvent> = stream.collect().await;
 
-    let has_token = events.iter().any(|e| matches!(e, ProviderEvent::Token { .. }));
+    let has_token = events
+        .iter()
+        .any(|e| matches!(e, ProviderEvent::Token { .. }));
     let has_done = events.iter().any(|e| matches!(e, ProviderEvent::Done));
 
     assert!(has_token, "expected at least one Token event");
@@ -183,11 +194,19 @@ async fn test_anthropic_live_with_tool_call() {
         }),
     }];
 
-    let stream = provider.complete(request).await.expect("provider call failed");
+    let stream = provider
+        .complete(request)
+        .await
+        .expect("provider call failed");
     let events: Vec<ProviderEvent> = stream.collect().await;
 
-    let has_tool_call = events.iter().any(|e| matches!(e, ProviderEvent::ToolCall(_)));
-    assert!(has_tool_call, "expected at least one ToolCall event; got {events:?}");
+    let has_tool_call = events
+        .iter()
+        .any(|e| matches!(e, ProviderEvent::ToolCall(_)));
+    assert!(
+        has_tool_call,
+        "expected at least one ToolCall event; got {events:?}"
+    );
 }
 
 /// Same tool-call test for OpenAI.
@@ -217,9 +236,17 @@ async fn test_openai_live_with_tool_call() {
         }),
     }];
 
-    let stream = provider.complete(request).await.expect("provider call failed");
+    let stream = provider
+        .complete(request)
+        .await
+        .expect("provider call failed");
     let events: Vec<ProviderEvent> = stream.collect().await;
 
-    let has_tool_call = events.iter().any(|e| matches!(e, ProviderEvent::ToolCall(_)));
-    assert!(has_tool_call, "expected at least one ToolCall event; got {events:?}");
+    let has_tool_call = events
+        .iter()
+        .any(|e| matches!(e, ProviderEvent::ToolCall(_)));
+    assert!(
+        has_tool_call,
+        "expected at least one ToolCall event; got {events:?}"
+    );
 }

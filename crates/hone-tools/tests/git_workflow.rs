@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::path::Path;
 use std::sync::Arc;
 
@@ -191,10 +193,7 @@ async fn test_checkout_switches_branch() {
     // Switch back to the default branch using GitCheckoutTool.
     let checkout_tool = GitCheckoutTool;
     let output = checkout_tool
-        .call(
-            ToolInput::new(json!({ "branch": default_branch })),
-            &ctx,
-        )
+        .call(ToolInput::new(json!({ "branch": default_branch })), &ctx)
         .await
         .expect("checkout should succeed");
 
@@ -207,10 +206,7 @@ async fn test_checkout_switches_branch() {
 
     // Now use GitCheckoutTool to switch back to other-branch.
     let output2 = checkout_tool
-        .call(
-            ToolInput::new(json!({ "branch": "other-branch" })),
-            &ctx,
-        )
+        .call(ToolInput::new(json!({ "branch": "other-branch" })), &ctx)
         .await
         .expect("checkout other-branch");
 

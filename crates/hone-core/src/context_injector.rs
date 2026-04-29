@@ -210,7 +210,10 @@ impl SkeletonCache {
             }
             let path = entry.path();
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if !matches!(ext, "rs" | "py" | "ts" | "js" | "go" | "java" | "c" | "cpp" | "h") {
+            if !matches!(
+                ext,
+                "rs" | "py" | "ts" | "js" | "go" | "java" | "c" | "cpp" | "h"
+            ) {
                 continue;
             }
             file_count += 1;
@@ -292,7 +295,9 @@ impl ContextInjector {
         index: Option<&SqliteIndex>,
     ) -> InjectionResult {
         // --- Tier 1: repo skeleton (cached, refreshed on file changes) -------
-        let skeleton = self.get_or_refresh_skeleton(working_dir, query, index).await;
+        let skeleton = self
+            .get_or_refresh_skeleton(working_dir, query, index)
+            .await;
         let mut block = format!("## Repository Structure\n{skeleton}");
 
         // --- Tier 2: confidence-gated snippet injection ----------------------
@@ -308,12 +313,9 @@ impl ContextInjector {
             "\n\n(retrieval confidence: {} — {})",
             confidence.label(),
             match confidence {
-                RetrievalConfidence::High =>
-                    "the relevant code is likely in the files above",
-                RetrievalConfidence::Medium =>
-                    "explore further; several files may be relevant",
-                RetrievalConfidence::Low =>
-                    "no clear signal; use your judgment to explore",
+                RetrievalConfidence::High => "the relevant code is likely in the files above",
+                RetrievalConfidence::Medium => "explore further; several files may be relevant",
+                RetrievalConfidence::Low => "no clear signal; use your judgment to explore",
             }
         ));
 
@@ -446,8 +448,9 @@ impl ContextInjector {
 
         if needs_refresh {
             tracing::debug!("skeleton cache miss — regenerating");
-            let (skeleton, newest_mtime, file_count) =
-                self.skeleton_from_strategy_with_mtime(root, query, index).await;
+            let (skeleton, newest_mtime, file_count) = self
+                .skeleton_from_strategy_with_mtime(root, query, index)
+                .await;
             self.skeleton_cache = Some(SkeletonCache {
                 skeleton: skeleton.clone(),
                 newest_mtime,
@@ -475,9 +478,7 @@ impl ContextInjector {
             SkeletonStrategy::DependencyGraph => {
                 self.skeleton_dependency_graph_inner(root, &mut newest_mtime)
             }
-            SkeletonStrategy::CallGraph => {
-                self.skeleton_call_graph_inner(root, &mut newest_mtime)
-            }
+            SkeletonStrategy::CallGraph => self.skeleton_call_graph_inner(root, &mut newest_mtime),
             SkeletonStrategy::Hybrid => {
                 self.skeleton_hybrid_inner(root, query, index, &mut newest_mtime)
                     .await
@@ -489,11 +490,21 @@ impl ContextInjector {
         };
         // Count source files for new-file detection in cache.
         let walker = WalkBuilder::new(root)
-            .hidden(true).ignore(true).git_ignore(true).build();
+            .hidden(true)
+            .ignore(true)
+            .git_ignore(true)
+            .build();
         for entry in walker.into_iter().flatten() {
             if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                let ext = entry.path().extension().and_then(|e| e.to_str()).unwrap_or("");
-                if matches!(ext, "rs" | "py" | "ts" | "js" | "go" | "java" | "c" | "cpp" | "h") {
+                let ext = entry
+                    .path()
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("");
+                if matches!(
+                    ext,
+                    "rs" | "py" | "ts" | "js" | "go" | "java" | "c" | "cpp" | "h"
+                ) {
                     file_count += 1;
                 }
             }
@@ -524,9 +535,9 @@ impl ContextInjector {
         let mut file_count = 0usize;
 
         let walker = WalkBuilder::new(root)
-            .hidden(true)        // skip hidden files/dirs
-            .ignore(true)        // respect .ignore files
-            .git_ignore(true)    // respect .gitignore
+            .hidden(true) // skip hidden files/dirs
+            .ignore(true) // respect .ignore files
+            .git_ignore(true) // respect .gitignore
             .git_global(true)
             .git_exclude(true)
             .build();
@@ -811,12 +822,7 @@ impl ContextInjector {
     ///
     /// When no `index` is available (or the query is empty), falls back to
     /// the dependency graph skeleton.
-    pub fn skeleton_hybrid<'a>(
-        &self,
-        root: &Path,
-        _query: &str,
-        top_files: &[&'a Path],
-    ) -> String {
+    pub fn skeleton_hybrid<'a>(&self, root: &Path, _query: &str, top_files: &[&'a Path]) -> String {
         let mut mtime = 0u64;
         self.skeleton_hybrid_with_top_files(root, top_files, &mut mtime)
     }
@@ -1036,11 +1042,7 @@ impl ContextInjector {
     ///
     /// Uses `git log --since=N.days --name-only --format=""` and counts how
     /// many commits touched each file.  Files not present on disk are excluded.
-    pub async fn git_blame_recent(
-        &self,
-        dir: &Path,
-        days: u32,
-    ) -> Vec<(PathBuf, u32)> {
+    pub async fn git_blame_recent(&self, dir: &Path, days: u32) -> Vec<(PathBuf, u32)> {
         let since = format!("{days}.days");
         let output = Command::new("git")
             .args(["log", "--since", &since, "--name-only", "--format="])
@@ -1090,10 +1092,7 @@ impl ContextInjector {
             .find(|w| w.chars().all(|c| c.is_ascii_alphabetic()) && w.len() > 3)?
             .to_lowercase();
 
-        let walker = WalkBuilder::new(dir)
-            .hidden(false)
-            .git_ignore(true)
-            .build();
+        let walker = WalkBuilder::new(dir).hidden(false).git_ignore(true).build();
 
         let mut source_files: Vec<PathBuf> = Vec::new();
 
@@ -1538,8 +1537,7 @@ pub struct Pool {}
     #[tokio::test]
     async fn test_git_blame_recent() {
         // Use the hone repo itself (which is a git repo) so we get real output.
-        let dir = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."));
+        let dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
         let injector = ContextInjector::with_defaults();
         let recent = injector.git_blame_recent(&dir, 365).await;
@@ -1605,7 +1603,10 @@ pub struct Pool {}
         assert!(deps.contains(&"auth".to_string()), "missing auth: {deps:?}");
         assert!(deps.contains(&"db".to_string()), "missing db: {deps:?}");
         // std is not a crate:: import, so it should not appear.
-        assert!(!deps.contains(&"std".to_string()), "std should not appear: {deps:?}");
+        assert!(
+            !deps.contains(&"std".to_string()),
+            "std should not appear: {deps:?}"
+        );
     }
 
     #[test]
@@ -1620,8 +1621,14 @@ pub struct Pool {}
     fn test_parse_rust_imports_super() {
         let content = "use super::utils;\nuse self::helpers;\n";
         let deps = parse_rust_imports(content);
-        assert!(deps.contains(&"utils".to_string()), "missing utils: {deps:?}");
-        assert!(deps.contains(&"helpers".to_string()), "missing helpers: {deps:?}");
+        assert!(
+            deps.contains(&"utils".to_string()),
+            "missing utils: {deps:?}"
+        );
+        assert!(
+            deps.contains(&"helpers".to_string()),
+            "missing helpers: {deps:?}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1633,17 +1640,27 @@ pub struct Pool {}
         let content = "import os\nimport requests\nimport myapp.utils\n";
         let deps = parse_python_imports(content);
         assert!(deps.contains(&"os".to_string()), "missing os: {deps:?}");
-        assert!(deps.contains(&"requests".to_string()), "missing requests: {deps:?}");
-        assert!(deps.contains(&"myapp".to_string()), "missing myapp: {deps:?}");
+        assert!(
+            deps.contains(&"requests".to_string()),
+            "missing requests: {deps:?}"
+        );
+        assert!(
+            deps.contains(&"myapp".to_string()),
+            "missing myapp: {deps:?}"
+        );
     }
 
     #[test]
     fn test_parse_python_imports_from() {
-        let content = "from auth import login, logout\nfrom .db import connect\nfrom ..utils import helper\n";
+        let content =
+            "from auth import login, logout\nfrom .db import connect\nfrom ..utils import helper\n";
         let deps = parse_python_imports(content);
         assert!(deps.contains(&"auth".to_string()), "missing auth: {deps:?}");
         assert!(deps.contains(&"db".to_string()), "missing db: {deps:?}");
-        assert!(deps.contains(&"utils".to_string()), "missing utils: {deps:?}");
+        assert!(
+            deps.contains(&"utils".to_string()),
+            "missing utils: {deps:?}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1659,7 +1676,10 @@ import { connect } from './db.ts';
 "#;
         let deps = parse_js_imports(content);
         assert!(deps.contains(&"auth".to_string()), "missing auth: {deps:?}");
-        assert!(deps.contains(&"index".to_string()), "missing index: {deps:?}");
+        assert!(
+            deps.contains(&"index".to_string()),
+            "missing index: {deps:?}"
+        );
         assert!(deps.contains(&"db".to_string()), "missing db: {deps:?}");
     }
 
@@ -1671,7 +1691,10 @@ const db = require('../db/connection');
 "#;
         let deps = parse_js_imports(content);
         assert!(deps.contains(&"auth".to_string()), "missing auth: {deps:?}");
-        assert!(deps.contains(&"connection".to_string()), "missing connection: {deps:?}");
+        assert!(
+            deps.contains(&"connection".to_string()),
+            "missing connection: {deps:?}"
+        );
     }
 
     #[test]
@@ -1679,7 +1702,10 @@ const db = require('../db/connection');
         // External packages (no ./ or ../) should not appear.
         let content = r#"import React from 'react'; import { useState } from 'react';"#;
         let deps = parse_js_imports(content);
-        assert!(deps.is_empty(), "external imports should be skipped: {deps:?}");
+        assert!(
+            deps.is_empty(),
+            "external imports should be skipped: {deps:?}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1739,10 +1765,19 @@ import (
         let body = "fn login() { let pool = connect(); hash_password(pw); }";
         let calls = extract_calls(body, &known);
 
-        assert!(calls.contains(&"connect".to_string()), "missing connect: {calls:?}");
-        assert!(calls.contains(&"hash_password".to_string()), "missing hash_password: {calls:?}");
+        assert!(
+            calls.contains(&"connect".to_string()),
+            "missing connect: {calls:?}"
+        );
+        assert!(
+            calls.contains(&"hash_password".to_string()),
+            "missing hash_password: {calls:?}"
+        );
         // verify( does not appear in body → should not be listed.
-        assert!(!calls.contains(&"verify".to_string()), "verify should not appear: {calls:?}");
+        assert!(
+            !calls.contains(&"verify".to_string()),
+            "verify should not appear: {calls:?}"
+        );
     }
 
     #[test]
@@ -1783,7 +1818,10 @@ import (
         // main.rs should list its dependencies.
         assert!(skeleton.contains("main.rs"), "missing main.rs:\n{skeleton}");
         // At least one file should have a dependency arrow.
-        assert!(skeleton.contains("→ ["), "expected dependency arrows:\n{skeleton}");
+        assert!(
+            skeleton.contains("→ ["),
+            "expected dependency arrows:\n{skeleton}"
+        );
         // auth.rs should show login and logout.
         assert!(skeleton.contains("login"), "missing login:\n{skeleton}");
     }
@@ -1809,11 +1847,20 @@ pub fn login() -> bool { connect() }
         let skeleton = injector.skeleton_call_graph(dir.path());
 
         // Should have a file header.
-        assert!(skeleton.contains("auth.rs:"), "missing file header:\n{skeleton}");
+        assert!(
+            skeleton.contains("auth.rs:"),
+            "missing file header:\n{skeleton}"
+        );
         // Should list functions with indentation.
-        assert!(skeleton.contains("  fn "), "expected indented fn lines:\n{skeleton}");
+        assert!(
+            skeleton.contains("  fn "),
+            "expected indented fn lines:\n{skeleton}"
+        );
         // login calls connect, so connect should appear in its calls list.
-        assert!(skeleton.contains("connect"), "missing connect call:\n{skeleton}");
+        assert!(
+            skeleton.contains("connect"),
+            "missing connect call:\n{skeleton}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1842,13 +1889,25 @@ pub fn login() -> bool { connect() }
         let skeleton = injector.skeleton_hybrid(dir.path(), "login auth", &top);
 
         // Should have repository header.
-        assert!(skeleton.contains("## Repository"), "missing header:\n{skeleton}");
+        assert!(
+            skeleton.contains("## Repository"),
+            "missing header:\n{skeleton}"
+        );
         // Should have key files section for auth.rs.
-        assert!(skeleton.contains("### Key files"), "missing key files section:\n{skeleton}");
+        assert!(
+            skeleton.contains("### Key files"),
+            "missing key files section:\n{skeleton}"
+        );
         // auth.rs should have call-level detail (fn entries).
-        assert!(skeleton.contains("fn login"), "missing fn login:\n{skeleton}");
+        assert!(
+            skeleton.contains("fn login"),
+            "missing fn login:\n{skeleton}"
+        );
         // Other files section for db.rs.
-        assert!(skeleton.contains("### Other files"), "missing other files:\n{skeleton}");
+        assert!(
+            skeleton.contains("### Other files"),
+            "missing other files:\n{skeleton}"
+        );
         assert!(skeleton.contains("db.rs"), "missing db.rs:\n{skeleton}");
     }
 
@@ -1858,8 +1917,14 @@ pub fn login() -> bool { connect() }
 
     #[test]
     fn test_skeleton_strategy_from_str() {
-        assert_eq!(SkeletonStrategy::from_str("flat"), Some(SkeletonStrategy::Flat));
-        assert_eq!(SkeletonStrategy::from_str("Flat"), Some(SkeletonStrategy::Flat));
+        assert_eq!(
+            SkeletonStrategy::from_str("flat"),
+            Some(SkeletonStrategy::Flat)
+        );
+        assert_eq!(
+            SkeletonStrategy::from_str("Flat"),
+            Some(SkeletonStrategy::Flat)
+        );
         assert_eq!(
             SkeletonStrategy::from_str("dependency-graph"),
             Some(SkeletonStrategy::DependencyGraph)

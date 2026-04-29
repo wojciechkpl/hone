@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::os::unix::fs::PermissionsExt;
 
 use futures::StreamExt;
@@ -93,7 +95,10 @@ fn test_estimate_tokens_heuristic() {
     let content = "a".repeat(400);
     let messages = vec![Message::user(content)];
     let estimate = estimate_tokens_heuristic(&messages);
-    assert_eq!(estimate, 100, "expected 100 tokens for 400 chars, got {estimate}");
+    assert_eq!(
+        estimate, 100,
+        "expected 100 tokens for 400 chars, got {estimate}"
+    );
 }
 
 // ---------------------------------------------------------------------------

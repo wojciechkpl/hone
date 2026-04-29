@@ -174,7 +174,10 @@ pub struct ToolCallState {
 /// Tool calls are emitted as `ProviderEvent::ToolCall` when `finish_reason` is
 /// `"tool_calls"`. `finish_reason: "stop"` emits `ProviderEvent::Done`.
 /// Usage in the final chunk emits `ProviderEvent::Usage`.
-pub fn parse_sse_chunk(data: &str, tool_states: &mut HashMap<usize, ToolCallState>) -> Vec<ProviderEvent> {
+pub fn parse_sse_chunk(
+    data: &str,
+    tool_states: &mut HashMap<usize, ToolCallState>,
+) -> Vec<ProviderEvent> {
     if data == "[DONE]" {
         return vec![ProviderEvent::Done];
     }
@@ -218,7 +221,9 @@ pub fn parse_sse_chunk(data: &str, tool_states: &mut HashMap<usize, ToolCallStat
         // Text content token
         if let Some(text) = delta["content"].as_str() {
             if !text.is_empty() {
-                events.push(ProviderEvent::Token { text: text.to_owned() });
+                events.push(ProviderEvent::Token {
+                    text: text.to_owned(),
+                });
             }
         }
 
@@ -263,6 +268,17 @@ pub fn parse_sse_chunk(data: &str, tool_states: &mut HashMap<usize, ToolCallStat
                 events.push(ProviderEvent::Done);
             }
             Some("stop") => {
+                events.push(ProviderEvent::Done);
+            }
+            Some("length") => {
+                // Hit max_tokens mid-stream — any in-flight tool call has
+                // truncated arguments that won't parse. Report the names so
+                // the agent can drop them and ask the model to retry smaller.
+                let lost: Vec<String> = tool_states.values().map(|s| s.name.clone()).collect();
+                events.push(ProviderEvent::Truncated {
+                    lost_tool_calls: lost,
+                });
+                tool_states.clear();
                 events.push(ProviderEvent::Done);
             }
             _ => {}
@@ -350,7 +366,8 @@ impl ModelProvider for OpenAiProvider {
             }
 
             let body = if status_code == 401 {
-                "invalid or expired API key — check your OPENAI_API_KEY environment variable".to_owned()
+                "invalid or expired API key — check your OPENAI_API_KEY environment variable"
+                    .to_owned()
             } else {
                 extract_api_error_message(&body_text)
             };
@@ -364,7 +381,11 @@ impl ModelProvider for OpenAiProvider {
         let byte_stream = response.bytes_stream();
 
         let event_stream = stream::unfold(
-            (byte_stream, String::new(), HashMap::<usize, ToolCallState>::new()),
+            (
+                byte_stream,
+                String::new(),
+                HashMap::<usize, ToolCallState>::new(),
+            ),
             |(mut byte_stream, mut buffer, mut tool_states)| async move {
                 loop {
                     let mut emitted = Vec::new();

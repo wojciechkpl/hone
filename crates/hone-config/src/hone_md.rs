@@ -99,7 +99,10 @@ impl HoneMd {
 
         for event in parser {
             match event {
-                Event::Start(Tag::Heading { level: HeadingLevel::H2, .. }) => {
+                Event::Start(Tag::Heading {
+                    level: HeadingLevel::H2,
+                    ..
+                }) => {
                     // Flush the previous section if any.
                     if let Some(key) = current_section.take() {
                         sections.insert(key, current_content.trim().to_owned());

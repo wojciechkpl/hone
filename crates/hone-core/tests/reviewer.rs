@@ -108,7 +108,9 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
 
 fn single_response_events(text: &str) -> Vec<ProviderEvent> {
     vec![
-        ProviderEvent::Token { text: text.to_owned() },
+        ProviderEvent::Token {
+            text: text.to_owned(),
+        },
         ProviderEvent::Done,
     ]
 }
@@ -126,9 +128,9 @@ async fn test_reviewer_parses_issues() {
         {"severity": "minor", "description": "unused variable", "file": "lib.rs", "suggestion": "remove or use the variable"}
     ]"#;
 
-    let provider = Arc::new(SequencedProvider::new(vec![
-        single_response_events(json_response),
-    ]));
+    let provider = Arc::new(SequencedProvider::new(vec![single_response_events(
+        json_response,
+    )]));
 
     let mut reviewer = ReviewerAgent::new(base_config(provider));
     let (tx, _rx) = mpsc::channel(32);
@@ -148,9 +150,7 @@ async fn test_reviewer_parses_issues() {
 /// An empty JSON array means no issues; the code should be approved.
 #[tokio::test]
 async fn test_reviewer_approves_clean_code() {
-    let provider = Arc::new(SequencedProvider::new(vec![
-        single_response_events("[]"),
-    ]));
+    let provider = Arc::new(SequencedProvider::new(vec![single_response_events("[]")]));
 
     let mut reviewer = ReviewerAgent::new(base_config(provider));
     let (tx, _rx) = mpsc::channel(32);
@@ -168,9 +168,9 @@ async fn test_reviewer_approves_clean_code() {
 /// fail-closed: `approved = false` with a synthetic Critical issue.
 #[tokio::test]
 async fn test_reviewer_handles_invalid_json() {
-    let provider = Arc::new(SequencedProvider::new(vec![
-        single_response_events("I cannot review this code right now, sorry."),
-    ]));
+    let provider = Arc::new(SequencedProvider::new(vec![single_response_events(
+        "I cannot review this code right now, sorry.",
+    )]));
 
     let mut reviewer = ReviewerAgent::new(base_config(provider));
     let (tx, _rx) = mpsc::channel(32);
@@ -183,5 +183,8 @@ async fn test_reviewer_handles_invalid_json() {
     // Fail-closed: unparseable output must block the pipeline with a synthetic issue.
     assert!(!result.approved);
     assert_eq!(result.issues.len(), 1);
-    assert_eq!(result.issues[0].severity, hone_core::reviewer::ReviewSeverity::Critical);
+    assert_eq!(
+        result.issues[0].severity,
+        hone_core::reviewer::ReviewSeverity::Critical
+    );
 }

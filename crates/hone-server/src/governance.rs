@@ -85,10 +85,13 @@ impl GovernanceStore {
         let mut usage = self.usage.write().await;
         usage.total_tokens += tokens;
         usage.total_cost_usd += cost;
-        let entry = usage.by_model.entry(model.to_owned()).or_insert(ModelUsage {
-            tokens: 0,
-            cost_usd: 0.0,
-        });
+        let entry = usage
+            .by_model
+            .entry(model.to_owned())
+            .or_insert(ModelUsage {
+                tokens: 0,
+                cost_usd: 0.0,
+            });
         entry.tokens += tokens;
         entry.cost_usd += cost;
     }

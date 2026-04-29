@@ -62,11 +62,7 @@ impl McpClient for MockMcpClient {
             });
         }
 
-        let response = self
-            .responses
-            .get(name)
-            .cloned()
-            .unwrap_or(Value::Null);
+        let response = self.responses.get(name).cloned().unwrap_or(Value::Null);
 
         Ok(response)
     }

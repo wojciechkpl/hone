@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 /// Integration tests for the StdioLspBridge Content-Length framing and
 /// error-path behaviour.  These tests do NOT require a real language server.
 use hone_tools::lsp::{Language, StdioLspBridge};
@@ -90,10 +92,7 @@ async fn test_framing_length_is_accurate() {
 #[tokio::test]
 async fn test_lsp_spawn_nonexistent_binary_errors() {
     let result = StdioLspBridge::spawn("__nonexistent_lsp_xyz_999__", &[]).await;
-    assert!(
-        result.is_err(),
-        "spawning a missing binary must return Err"
-    );
+    assert!(result.is_err(), "spawning a missing binary must return Err");
     let msg = result.err().unwrap().to_string();
     assert!(
         msg.contains("__nonexistent_lsp_xyz_999__"),

@@ -6,12 +6,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Widget},
 };
 
-use crate::{
-    app::AppState,
-    input::InputState,
-    layout::FocusTarget,
-    theme::Theme,
-};
+use crate::{app::AppState, input::InputState, layout::FocusTarget, theme::Theme};
 
 /// Widget that renders the user-input area with a rounded border.
 pub struct InputWidget<'a> {
@@ -28,7 +23,12 @@ impl<'a> InputWidget<'a> {
         focus: &'a FocusTarget,
         state: &'a AppState,
     ) -> Self {
-        Self { input, theme, focus, state }
+        Self {
+            input,
+            theme,
+            focus,
+            state,
+        }
     }
 }
 

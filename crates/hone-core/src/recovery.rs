@@ -58,9 +58,14 @@ impl FailureScenario {
         }
 
         // Rate limits
-        if lower.contains("rate limit") || lower.contains("429") || lower.contains("too many requests") {
+        if lower.contains("rate limit")
+            || lower.contains("429")
+            || lower.contains("too many requests")
+        {
             let retry_after = extract_retry_after(error);
-            return Self::RateLimit { retry_after_secs: retry_after };
+            return Self::RateLimit {
+                retry_after_secs: retry_after,
+            };
         }
 
         // Merge conflicts
@@ -79,14 +84,22 @@ impl FailureScenario {
         }
 
         // Permission denied
-        if lower.contains("permission denied") || lower.contains("eacces") || lower.contains("sandbox denied") {
+        if lower.contains("permission denied")
+            || lower.contains("eacces")
+            || lower.contains("sandbox denied")
+        {
             let path = extract_path_from_error(error).unwrap_or_default();
             return Self::PermissionDenied { path };
         }
 
         // Test failures
-        if lower.contains("test failed") || lower.contains("tests failed") || lower.contains("failures:") {
-            return Self::TestsFailed { output: error.to_string() };
+        if lower.contains("test failed")
+            || lower.contains("tests failed")
+            || lower.contains("failures:")
+        {
+            return Self::TestsFailed {
+                output: error.to_string(),
+            };
         }
 
         Self::Unknown
@@ -142,8 +155,14 @@ mod tests {
 
     #[test]
     fn test_classify_network() {
-        assert_eq!(FailureScenario::classify("connection refused"), FailureScenario::TransientNetwork);
-        assert_eq!(FailureScenario::classify("request timed out"), FailureScenario::TransientNetwork);
+        assert_eq!(
+            FailureScenario::classify("connection refused"),
+            FailureScenario::TransientNetwork
+        );
+        assert_eq!(
+            FailureScenario::classify("request timed out"),
+            FailureScenario::TransientNetwork
+        );
     }
 
     #[test]
@@ -157,7 +176,9 @@ mod tests {
     #[test]
     fn test_classify_rate_limit_with_retry_after() {
         match FailureScenario::classify("rate limit exceeded, retry after 30 seconds") {
-            FailureScenario::RateLimit { retry_after_secs: Some(30) } => {}
+            FailureScenario::RateLimit {
+                retry_after_secs: Some(30),
+            } => {}
             other => panic!("expected RateLimit with retry_after, got {other:?}"),
         }
     }
@@ -188,7 +209,10 @@ mod tests {
 
     #[test]
     fn test_classify_unknown() {
-        assert_eq!(FailureScenario::classify("something weird happened"), FailureScenario::Unknown);
+        assert_eq!(
+            FailureScenario::classify("something weird happened"),
+            FailureScenario::Unknown
+        );
     }
 
     #[test]

@@ -49,9 +49,11 @@ impl Tool for LspDiagnosticsTool {
     }
 
     async fn call(&self, input: ToolInput, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let file_str = input.get_str("file").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'file'".to_string(),
-        })?;
+        let file_str = input
+            .get_str("file")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'file'".to_string(),
+            })?;
         let file = ctx.working_dir.join(file_str);
         let diagnostics = self.bridge.diagnostics(&file).await?;
         let value = serde_json::to_value(&diagnostics).map_err(|e| ToolError::ExecutionFailed {
@@ -119,15 +121,21 @@ impl Tool for LspHoverTool {
     }
 
     async fn call(&self, input: ToolInput, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let file_str = input.get_str("file").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'file'".to_string(),
-        })?;
-        let line = input.get_u64("line").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'line'".to_string(),
-        })? as u32;
-        let col = input.get_u64("col").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'col'".to_string(),
-        })? as u32;
+        let file_str = input
+            .get_str("file")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'file'".to_string(),
+            })?;
+        let line = input
+            .get_u64("line")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'line'".to_string(),
+            })? as u32;
+        let col = input
+            .get_u64("col")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'col'".to_string(),
+            })? as u32;
 
         let file = ctx.working_dir.join(file_str);
         let hover = self.bridge.hover(&file, line, col).await?;
@@ -192,15 +200,21 @@ impl Tool for LspCodeActionTool {
     }
 
     async fn call(&self, input: ToolInput, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let file_str = input.get_str("file").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'file'".to_string(),
-        })?;
-        let line = input.get_u64("line").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'line'".to_string(),
-        })? as u32;
-        let col = input.get_u64("col").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'col'".to_string(),
-        })? as u32;
+        let file_str = input
+            .get_str("file")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'file'".to_string(),
+            })?;
+        let line = input
+            .get_u64("line")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'line'".to_string(),
+            })? as u32;
+        let col = input
+            .get_u64("col")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'col'".to_string(),
+            })? as u32;
 
         let file = ctx.working_dir.join(file_str);
         let actions = self.bridge.code_actions(&file, line, col).await?;

@@ -106,7 +106,7 @@ impl Tool for ShellTool {
         // the most restrictive mode available — use it so the builder rejects
         // a misconfigured policy at build time.
         let mut builder = SandboxPolicyBuilder::new(SandboxMode::Autonomous)
-            .allow_write(ctx.working_dir.clone())   // implies read
+            .allow_write(ctx.working_dir.clone()) // implies read
             .allow_write(std::path::PathBuf::from("/tmp"))
             .allow_read(std::path::PathBuf::from("/bin"))
             .allow_read(std::path::PathBuf::from("/usr/bin"))
@@ -142,8 +142,7 @@ impl Tool for ShellTool {
         // We must read program/args before converting because Into<tokio::Command>
         // is not available — tokio::process::Command has its own constructor.
         let program = std_cmd.get_program().to_os_string();
-        let args: Vec<std::ffi::OsString> =
-            std_cmd.get_args().map(|a| a.to_os_string()).collect();
+        let args: Vec<std::ffi::OsString> = std_cmd.get_args().map(|a| a.to_os_string()).collect();
 
         let mut cmd = Command::new(program);
         for arg in &args {

@@ -37,9 +37,7 @@ impl ClarificationDetector {
         // Heuristic 1: Very short requests without a known simple command are
         // almost always under-specified.
         if trimmed.len() < 20 {
-            questions.push(
-                "Could you provide more details about what you'd like me to do?".into(),
-            );
+            questions.push("Could you provide more details about what you'd like me to do?".into());
         }
 
         // Heuristic 2: Ambiguous action verbs with no concrete object.
@@ -50,9 +48,7 @@ impl ClarificationDetector {
 
         // Heuristic 3: Code-change request with no file or function target.
         if is_code_change_request(trimmed) && !mentions_specific_target(trimmed) {
-            questions.push(
-                "Which file(s) or function(s) should I focus on?".into(),
-            );
+            questions.push("Which file(s) or function(s) should I focus on?".into());
         }
 
         // Heuristic 4: Multiple concerns in a single request — scope is unclear.
@@ -68,14 +64,16 @@ impl ClarificationDetector {
         // output clean when multiple heuristics fire on the same request.
         questions.dedup();
 
-        if questions.is_empty() { None } else { Some(questions) }
+        if questions.is_empty() {
+            None
+        } else {
+            Some(questions)
+        }
     }
 
     /// Format a list of clarifying questions into a message ready for display.
     pub fn format_questions(questions: &[String]) -> String {
-        let mut out = String::from(
-            "Before proceeding, I have a few clarifying questions:\n",
-        );
+        let mut out = String::from("Before proceeding, I have a few clarifying questions:\n");
         for (i, q) in questions.iter().enumerate() {
             out.push_str(&format!("{}. {}\n", i + 1, q));
         }
@@ -100,8 +98,16 @@ fn is_simple_command(input: &str) -> bool {
 
     // Well-known greetings and meta-queries.
     const SIMPLE: &[&str] = &[
-        "hello", "hi", "hey", "help", "quit", "exit", "bye",
-        "what can you do", "what are you", "who are you",
+        "hello",
+        "hi",
+        "hey",
+        "help",
+        "quit",
+        "exit",
+        "bye",
+        "what can you do",
+        "what are you",
+        "who are you",
     ];
     SIMPLE.iter().any(|s| lower == *s || lower.starts_with(s))
 }
@@ -112,16 +118,31 @@ fn contains_ambiguous_terms(input: &str) -> bool {
     let lower = input.to_lowercase();
 
     // "fix it", "update it", "make it better" — pronoun with no antecedent.
-    let pronoun_patterns = ["fix it", "update it", "change it", "improve it",
-                             "make it", "do it", "do that", "make that"];
+    let pronoun_patterns = [
+        "fix it",
+        "update it",
+        "change it",
+        "improve it",
+        "make it",
+        "do it",
+        "do that",
+        "make that",
+    ];
     if pronoun_patterns.iter().any(|p| lower.contains(p)) {
         return true;
     }
 
     // Lone vague verbs with very few words following (< 3 tokens after the verb).
     const VAGUE_VERBS: &[&str] = &[
-        "fix", "update", "change", "improve", "make better",
-        "clean up", "cleanup", "optimise", "optimize",
+        "fix",
+        "update",
+        "change",
+        "improve",
+        "make better",
+        "clean up",
+        "cleanup",
+        "optimise",
+        "optimize",
     ];
 
     for verb in VAGUE_VERBS {
@@ -143,13 +164,27 @@ fn contains_ambiguous_terms(input: &str) -> bool {
 fn is_code_change_request(input: &str) -> bool {
     let lower = input.to_lowercase();
     const CHANGE_VERBS: &[&str] = &[
-        "fix", "add", "remove", "delete", "refactor", "implement",
-        "update", "rewrite", "edit", "create", "write", "change",
-        "rename", "move", "extract",
+        "fix",
+        "add",
+        "remove",
+        "delete",
+        "refactor",
+        "implement",
+        "update",
+        "rewrite",
+        "edit",
+        "create",
+        "write",
+        "change",
+        "rename",
+        "move",
+        "extract",
     ];
     CHANGE_VERBS.iter().any(|v| {
         // Match as a whole word so "fixed" or "prefix" don't trigger.
-        lower.split_whitespace().any(|w| w == *v || w.trim_matches(|c: char| !c.is_alphanumeric()) == *v)
+        lower
+            .split_whitespace()
+            .any(|w| w == *v || w.trim_matches(|c: char| !c.is_alphanumeric()) == *v)
     })
 }
 
@@ -166,10 +201,30 @@ fn mentions_specific_target(input: &str) -> bool {
                 .map(|(_, ext)| {
                     matches!(
                         ext.to_lowercase().as_str(),
-                        "rs" | "py" | "js" | "ts" | "go" | "toml" | "yaml"
-                            | "yml" | "json" | "md" | "html" | "css" | "sh"
-                            | "c" | "cpp" | "h" | "java" | "kt" | "rb" | "ex"
-                            | "exs" | "lua" | "zig" | "swift" | "cs"
+                        "rs" | "py"
+                            | "js"
+                            | "ts"
+                            | "go"
+                            | "toml"
+                            | "yaml"
+                            | "yml"
+                            | "json"
+                            | "md"
+                            | "html"
+                            | "css"
+                            | "sh"
+                            | "c"
+                            | "cpp"
+                            | "h"
+                            | "java"
+                            | "kt"
+                            | "rb"
+                            | "ex"
+                            | "exs"
+                            | "lua"
+                            | "zig"
+                            | "swift"
+                            | "cs"
                     )
                 })
                 .unwrap_or(false)
@@ -204,8 +259,12 @@ fn mentions_multiple_concerns(input: &str) -> bool {
 
     // Explicit multi-part connectors.
     const MULTI_MARKERS: &[&str] = &[
-        "and also", "plus also", "additionally", "on top of that",
-        "as well as", "in addition",
+        "and also",
+        "plus also",
+        "additionally",
+        "on top of that",
+        "as well as",
+        "in addition",
     ];
     if MULTI_MARKERS.iter().any(|m| lower.contains(m)) {
         return true;
@@ -232,8 +291,18 @@ fn mentions_multiple_concerns(input: &str) -> bool {
 fn extract_action(input: &str) -> &'static str {
     let lower = input.to_lowercase();
     const VERBS: &[&str] = &[
-        "fix", "update", "change", "improve", "refactor", "implement",
-        "add", "remove", "rewrite", "create", "write", "edit",
+        "fix",
+        "update",
+        "change",
+        "improve",
+        "refactor",
+        "implement",
+        "add",
+        "remove",
+        "rewrite",
+        "create",
+        "write",
+        "edit",
     ];
     for verb in VERBS {
         if lower.split_whitespace().any(|w| w == *verb) {

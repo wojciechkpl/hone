@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::path::Path;
 use std::sync::Arc;
 
@@ -129,7 +131,9 @@ async fn test_git_commit_creates_commit() {
     let input = ToolInput::new(json!({ "message": "add staged.txt" }));
     let output = tool.call(input, &ctx).await.expect("call should succeed");
 
-    let sha = output.value["sha"].as_str().expect("sha should be a string");
+    let sha = output.value["sha"]
+        .as_str()
+        .expect("sha should be a string");
     assert!(!sha.is_empty(), "sha should not be empty");
     // A git SHA is 40 hex chars.
     assert_eq!(sha.len(), 40, "SHA should be 40 characters, got: {sha}");
@@ -152,8 +156,13 @@ async fn test_git_diff_shows_changes() {
     let input = ToolInput::new(json!({ "staged": false }));
     let output = tool.call(input, &ctx).await.expect("call should succeed");
 
-    let diff = output.value["diff"].as_str().expect("diff should be a string");
-    assert!(!diff.is_empty(), "diff should not be empty for modified file");
+    let diff = output.value["diff"]
+        .as_str()
+        .expect("diff should be a string");
+    assert!(
+        !diff.is_empty(),
+        "diff should not be empty for modified file"
+    );
     assert!(
         diff.contains("changed content") || diff.contains("README"),
         "diff should mention the changed content or file: {diff}"

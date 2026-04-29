@@ -187,8 +187,7 @@ impl Theme {
     /// - `HONE_REDUCED_MOTION=1` → set `reduced_motion = true`
     /// - `HONE_ASCII_ONLY=1` → set `ascii_only = true`
     pub fn detect() -> Self {
-        let no_color = std::env::var("NO_COLOR").is_ok()
-            || std::env::var("HONE_NO_COLOR").is_ok();
+        let no_color = std::env::var("NO_COLOR").is_ok() || std::env::var("HONE_NO_COLOR").is_ok();
 
         let mut theme = if no_color {
             Self::minimal()
@@ -229,16 +228,22 @@ impl Theme {
     /// Silently does nothing if the file doesn't exist, can't be read, or
     /// contains unparseable lines — only valid hex color overrides are applied.
     pub fn apply_toml_overrides(&mut self, path: &std::path::Path) {
-        let Ok(content) = std::fs::read_to_string(path) else { return };
+        let Ok(content) = std::fs::read_to_string(path) else {
+            return;
+        };
         for line in content.lines() {
             let line = line.trim();
             if line.starts_with('#') || line.is_empty() {
                 continue;
             }
-            let Some((key, val)) = line.split_once('=') else { continue };
+            let Some((key, val)) = line.split_once('=') else {
+                continue;
+            };
             let key = key.trim();
             let val = val.trim().trim_matches('"');
-            let Some(color) = parse_hex_color(val) else { continue };
+            let Some(color) = parse_hex_color(val) else {
+                continue;
+            };
             match key {
                 "accent" | "accent_hot" => self.accent_hot = color,
                 "accent_mid" => self.accent_mid = color,

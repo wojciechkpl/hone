@@ -34,10 +34,7 @@ async fn test_budget_cap_blocks_new_turn() {
         cache_read: 0,
         cache_creation: 0,
     };
-    let provider = Arc::new(
-        MockProvider::new(vec!["hello".to_owned()])
-            .with_usage(usage),
-    );
+    let provider = Arc::new(MockProvider::new(vec!["hello".to_owned()]).with_usage(usage));
 
     let config = AgentConfig {
         provider,

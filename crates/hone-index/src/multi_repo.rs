@@ -55,10 +55,13 @@ impl MultiRepoIndex {
                 .repos
                 .iter()
                 .flat_map(|(name, index)| {
-                    index.search(query).into_iter().map(move |result| MultiRepoResult {
-                        repo: name.clone(),
-                        result,
-                    })
+                    index
+                        .search(query)
+                        .into_iter()
+                        .map(move |result| MultiRepoResult {
+                            repo: name.clone(),
+                            result,
+                        })
                 })
                 .collect(),
         };

@@ -50,9 +50,7 @@ impl SqliteStore {
     /// Open or create a SQLite database at the given path.
     pub async fn open(path: &Path) -> Result<Self, MemoryError> {
         let url = format!("sqlite:{}?mode=rwc", path.display());
-        let pool = sqlx::SqlitePool::connect(&url)
-            .await
-            .map_err(to_io_err)?;
+        let pool = sqlx::SqlitePool::connect(&url).await.map_err(to_io_err)?;
         sqlx::query(CREATE_TABLE_SQL)
             .execute(&pool)
             .await
@@ -149,7 +147,7 @@ impl MemoryStore for SqliteStore {
             MemoryFilter::Tag(tag) => {
                 // Tags are stored as a JSON array, e.g. ["project:foo","bar"].
                 // Match the quoted tag string anywhere inside that array.
-                let pattern = format!("%\"{}\"%" , tag);
+                let pattern = format!("%\"{}\"%", tag);
                 sqlx::query("DELETE FROM memories WHERE tags LIKE ?1")
                     .bind(&pattern)
                     .execute(&self.pool)
@@ -190,28 +188,25 @@ impl MemoryStore for SqliteStore {
 
         // Remove memories whose decay_at has been reached.
         let now = now as i64;
-        let rows_affected = sqlx::query(
-            "DELETE FROM memories WHERE decay_at IS NOT NULL AND decay_at <= ?1",
-        )
-        .bind(now)
-        .execute(&self.pool)
-        .await
-        .map_err(to_io_err)?
-        .rows_affected();
+        let rows_affected =
+            sqlx::query("DELETE FROM memories WHERE decay_at IS NOT NULL AND decay_at <= ?1")
+                .bind(now)
+                .execute(&self.pool)
+                .await
+                .map_err(to_io_err)?
+                .rows_affected();
 
         Ok(rows_affected as u32)
     }
 
     async fn export(&self, path: &Path) -> Result<(), MemoryError> {
-        let rows = sqlx::query(
-            "SELECT id, content, tags, weight, created_at, decay_at FROM memories",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(to_io_err)?;
+        let rows =
+            sqlx::query("SELECT id, content, tags, weight, created_at, decay_at FROM memories")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(to_io_err)?;
 
-        let memories: Result<Vec<Memory>, MemoryError> =
-            rows.iter().map(row_to_memory).collect();
+        let memories: Result<Vec<Memory>, MemoryError> = rows.iter().map(row_to_memory).collect();
         let memories = memories?;
 
         let json = serde_json::to_string_pretty(&memories)?;
@@ -275,21 +270,28 @@ mod tests {
 
         // First instance: record a memory.
         {
-            let mut store = SqliteStore::open(&db_path).await
+            let mut store = SqliteStore::open(&db_path)
+                .await
                 .expect("open first instance");
-            store.record(make_memory("id-1", "persistent content")).await
+            store
+                .record(make_memory("id-1", "persistent content"))
+                .await
                 .expect("record");
             // store is dropped here, closing the pool.
         }
 
         // Second instance: open the same path and recall.
         {
-            let store = SqliteStore::open(&db_path).await
+            let store = SqliteStore::open(&db_path)
+                .await
                 .expect("open second instance");
-            let results = store.recall(&MemoryQuery {
-                text: "persistent".to_owned(),
-                limit: 10,
-            }).await.expect("recall");
+            let results = store
+                .recall(&MemoryQuery {
+                    text: "persistent".to_owned(),
+                    limit: 10,
+                })
+                .await
+                .expect("recall");
 
             assert_eq!(results.len(), 1, "expected 1 memory after re-opening DB");
             assert_eq!(results[0].id, "id-1");
@@ -301,13 +303,22 @@ mod tests {
     #[tokio::test]
     async fn empty_query_returns_all() {
         let mut store = SqliteStore::in_memory().await.expect("in_memory");
-        store.record(make_memory("a", "alpha")).await.expect("record a");
-        store.record(make_memory("b", "beta")).await.expect("record b");
+        store
+            .record(make_memory("a", "alpha"))
+            .await
+            .expect("record a");
+        store
+            .record(make_memory("b", "beta"))
+            .await
+            .expect("record b");
 
-        let results = store.recall(&MemoryQuery {
-            text: String::new(),
-            limit: 100,
-        }).await.expect("recall");
+        let results = store
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: 100,
+            })
+            .await
+            .expect("recall");
 
         assert_eq!(results.len(), 2, "expected 2 memories from empty query");
     }

@@ -19,8 +19,9 @@ use tokio::process::Command;
 
 /// The set of command names that require full terminal control and therefore
 /// cannot be captured — the TUI must suspend itself first.
-const INTERACTIVE_CMDS: &[&str] =
-    &["nvim", "vim", "vi", "nano", "less", "man", "top", "htop", "fzf", "bat"];
+const INTERACTIVE_CMDS: &[&str] = &[
+    "nvim", "vim", "vi", "nano", "less", "man", "top", "htop", "fzf", "bat",
+];
 
 /// Return `true` when the first whitespace-delimited token of `cmd` is an
 /// interactive command that needs a raw terminal.
@@ -89,15 +90,10 @@ pub async fn execute_shell_escape(cmd: &str, working_dir: &Path) -> ShellEscapeR
             Ok(canonical) if canonical.is_dir() => {
                 ShellEscapeResult::DirectoryChanged { new_dir: canonical }
             }
-            Ok(_) => ShellEscapeResult::CdError(format!(
-                "cd: not a directory: {}",
-                target.display()
-            )),
-            Err(e) => ShellEscapeResult::CdError(format!(
-                "cd: {}: {}",
-                target.display(),
-                e
-            )),
+            Ok(_) => {
+                ShellEscapeResult::CdError(format!("cd: not a directory: {}", target.display()))
+            }
+            Err(e) => ShellEscapeResult::CdError(format!("cd: {}: {}", target.display(), e)),
         };
     }
 
@@ -187,10 +183,7 @@ mod tests {
     #[test]
     fn interactive_detection_known_editors() {
         for name in ["nvim", "vim", "vi", "nano", "less", "man", "top", "htop"] {
-            assert!(
-                is_interactive_command(name),
-                "{name} should be interactive"
-            );
+            assert!(is_interactive_command(name), "{name} should be interactive");
             // With arguments.
             assert!(
                 is_interactive_command(&format!("{name} some/file")),
@@ -231,8 +224,7 @@ mod tests {
 
     #[tokio::test]
     async fn cd_to_nonexistent_returns_error() {
-        let result =
-            execute_shell_escape("cd /this/path/does/not/exist/42", Path::new("/")).await;
+        let result = execute_shell_escape("cd /this/path/does/not/exist/42", Path::new("/")).await;
         assert!(matches!(result, ShellEscapeResult::CdError(_)));
     }
 

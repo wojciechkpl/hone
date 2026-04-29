@@ -79,7 +79,8 @@ impl IndexWatcher {
         // The notify watcher sends raw events through a std::sync::mpsc channel
         // (notify's API is sync).  We bridge that to a tokio::sync::mpsc so the
         // async task can await on it.
-        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<notify::Result<Event>>();
+        let (event_tx, mut event_rx) =
+            tokio::sync::mpsc::unbounded_channel::<notify::Result<Event>>();
 
         let mut raw_watcher = RecommendedWatcher::new(
             move |res| {
@@ -102,7 +103,10 @@ impl IndexWatcher {
         //   - `original_root` for reconstructing the path as the *caller* would
         //     have stored it in the index, so DB lookups succeed.
         let original_root = self.root.clone();
-        let canonical_root = self.root.canonicalize().unwrap_or_else(|_| self.root.clone());
+        let canonical_root = self
+            .root
+            .canonicalize()
+            .unwrap_or_else(|_| self.root.clone());
 
         tokio::spawn(async move {
             // Keep the watcher alive for the duration of the task.

@@ -15,38 +15,39 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use crossterm::{
-    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, EventStream, KeyCode},
+    event::{
+        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, EventStream, KeyCode,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use futures::StreamExt;
 use hone_cache::{SqliteBackend, ToolResultCache};
 use hone_config::{Config, HoneMd, McpConfig};
-use hone_mcp::McpManager;
 use hone_core::{
     AdaptiveClassifier, AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry,
     ClarificationDetector, ComplexityClassifier, ComplexityTier, Orchestrator, OutcomeRecord,
     PlanStore, SelfRefineLoop, SkeletonStrategy, TestVerificationLoop,
 };
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
+use hone_mcp::McpManager;
+use hone_memory::{MemoryStore, SqliteStore};
 use hone_proto::{AgentEvent, ModelId, PricingEntry};
 use hone_providers::{
-    ClaudeCliProvider, GeminiCliProvider, ModelProvider,
-    adapters::anthropic::AnthropicProvider,
-    adapters::ollama::OllamaProvider,
-    adapters::openai::OpenAiProvider,
+    ClaudeCliProvider, GeminiCliProvider, ModelProvider, adapters::anthropic::AnthropicProvider,
+    adapters::ollama::OllamaProvider, adapters::openai::OpenAiProvider,
 };
 use hone_recipes::Recipe;
 use hone_sandbox::SandboxBuilder;
-use hone_memory::{MemoryStore, SqliteStore};
 use hone_tools::{
-    ComputerControlTool, EditFileTool, GlobTool, GrepTool, GitCommitTool, GitDiffTool,
-    GitStatusTool, Language, LspBridge, LspCodeActionTool, LspDiagnosticsTool, LspHoverTool,
+    ComputerControlTool, EditFileTool, GitCommitTool, GitDiffTool, GitStatusTool, GlobTool,
+    GrepTool, Language, LspBridge, LspCodeActionTool, LspDiagnosticsTool, LspHoverTool,
     MockLspBridge, MultiEditTool, ReadFileTool, ScreenCaptureTool, ShellTool, StdioLspBridge,
     ToolRegistry, WriteFileTool,
 };
-use hone_tui::{App, AppState};
 use hone_tui::render::root;
+use hone_tui::{App, AppState};
 use hone_tui::{execute_shell_escape, run_interactive_blocking};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::{Mutex, mpsc};
@@ -102,7 +103,11 @@ enum HoneCmd {
 }
 
 #[derive(Parser)]
-#[command(name = "hone", version, about = "The universal terminal AI coding agent")]
+#[command(
+    name = "hone",
+    version,
+    about = "The universal terminal AI coding agent"
+)]
 struct Cli {
     /// Run a single prompt and exit (one-shot mode)
     prompt: Option<String>,
@@ -194,33 +199,15 @@ struct Cli {
 
 fn load_builtin_recipe(name: &str) -> Option<&'static str> {
     match name {
-        "tdd-feature" => Some(include_str!(
-            "../recipes/tdd-feature.yaml"
-        )),
-        "bug-fix" => Some(include_str!(
-            "../recipes/bug-fix.yaml"
-        )),
-        "code-review" => Some(include_str!(
-            "../recipes/code-review.yaml"
-        )),
-        "refactor" => Some(include_str!(
-            "../recipes/refactor.yaml"
-        )),
-        "security-audit" => Some(include_str!(
-            "../recipes/security-audit.yaml"
-        )),
-        "performance" => Some(include_str!(
-            "../recipes/performance-optimization.yaml"
-        )),
-        "migration" => Some(include_str!(
-            "../recipes/migration.yaml"
-        )),
-        "documentation" => Some(include_str!(
-            "../recipes/documentation.yaml"
-        )),
-        "onboarding" => Some(include_str!(
-            "../recipes/onboarding.yaml"
-        )),
+        "tdd-feature" => Some(include_str!("../recipes/tdd-feature.yaml")),
+        "bug-fix" => Some(include_str!("../recipes/bug-fix.yaml")),
+        "code-review" => Some(include_str!("../recipes/code-review.yaml")),
+        "refactor" => Some(include_str!("../recipes/refactor.yaml")),
+        "security-audit" => Some(include_str!("../recipes/security-audit.yaml")),
+        "performance" => Some(include_str!("../recipes/performance-optimization.yaml")),
+        "migration" => Some(include_str!("../recipes/migration.yaml")),
+        "documentation" => Some(include_str!("../recipes/documentation.yaml")),
+        "onboarding" => Some(include_str!("../recipes/onboarding.yaml")),
         _ => None,
     }
 }
@@ -231,10 +218,7 @@ fn list_builtin_recipes() {
         "  {:<20} Implement a feature using Test-Driven Development",
         "tdd-feature"
     );
-    println!(
-        "  {:<20} Fix a bug with regression test",
-        "bug-fix"
-    );
+    println!("  {:<20} Fix a bug with regression test", "bug-fix");
     println!(
         "  {:<20} Comprehensive code review (correctness, security, performance)",
         "code-review"
@@ -279,7 +263,11 @@ async fn run_recipe(
 
     let recipe = Recipe::from_yaml(yaml)?.with_variables(vars);
 
-    println!("Running recipe: {} ({} steps)", recipe.name, recipe.steps.len());
+    println!(
+        "Running recipe: {} ({} steps)",
+        recipe.name,
+        recipe.steps.len()
+    );
     if let Some(desc) = &recipe.description {
         println!("  {desc}");
     }
@@ -420,17 +408,33 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
         .or_else(|| wizard_cfg.anthropic_api_key.clone())
     {
         if api_key.trim().is_empty() {
-            eprintln!("{} ANTHROPIC_API_KEY is set but empty. Skipping Anthropic provider.", warn_style("Warning:"));
+            eprintln!(
+                "{} ANTHROPIC_API_KEY is set but empty. Skipping Anthropic provider.",
+                warn_style("Warning:")
+            );
         } else if !api_key.starts_with("sk-ant-") {
-            eprintln!("{} ANTHROPIC_API_KEY doesn't start with 'sk-ant-'. Is this correct?", warn_style("Warning:"));
-            tracing::info!(provider = "anthropic", api = "http", tools = true, "provider detected (non-standard key format)");
+            eprintln!(
+                "{} ANTHROPIC_API_KEY doesn't start with 'sk-ant-'. Is this correct?",
+                warn_style("Warning:")
+            );
+            tracing::info!(
+                provider = "anthropic",
+                api = "http",
+                tools = true,
+                "provider detected (non-standard key format)"
+            );
             return DetectedProvider {
                 provider: Arc::new(AnthropicProvider::new(api_key)),
                 model_id: ModelId::new("anthropic:claude-sonnet-4-5"),
                 supports_tools: true,
             };
         } else {
-            tracing::info!(provider = "anthropic", api = "http", tools = true, "provider detected");
+            tracing::info!(
+                provider = "anthropic",
+                api = "http",
+                tools = true,
+                "provider detected"
+            );
             return DetectedProvider {
                 provider: Arc::new(AnthropicProvider::new(api_key)),
                 model_id: ModelId::new("anthropic:claude-sonnet-4-5"),
@@ -458,7 +462,12 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
             );
             OpenAiProvider::with_base_url(api_key, base_url)
         } else {
-            tracing::info!(provider = "openai", api = "http", tools = true, "provider detected");
+            tracing::info!(
+                provider = "openai",
+                api = "http",
+                tools = true,
+                "provider detected"
+            );
             OpenAiProvider::new(api_key)
         };
         let model_name = std::env::var("HONE_OPENAI_MODEL")
@@ -474,7 +483,12 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
 
     // Fall back to CLI pass-through providers (no tool calling).
     if binary_on_path("claude").await {
-        tracing::info!(provider = "claude-cli", api = "cli", tools = false, "provider detected");
+        tracing::info!(
+            provider = "claude-cli",
+            api = "cli",
+            tools = false,
+            "provider detected"
+        );
         eprintln!(
             "{} Using Claude CLI (no tool calling). \
              For full agent capabilities, set ANTHROPIC_API_KEY instead.",
@@ -488,7 +502,12 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
     }
 
     if binary_on_path("gemini").await {
-        tracing::info!(provider = "gemini-cli", api = "cli", tools = false, "provider detected");
+        tracing::info!(
+            provider = "gemini-cli",
+            api = "cli",
+            tools = false,
+            "provider detected"
+        );
         eprintln!(
             "{} Using Gemini CLI (no tool calling). \
              For full agent capabilities, set OPENAI_API_KEY or ANTHROPIC_API_KEY instead.",
@@ -533,7 +552,12 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
             eprintln!("Then re-run hone.\n");
             // Fall through to the "no provider" error below.
         } else {
-            tracing::info!(provider = "ollama", api = "http", tools = true, "provider detected (tool calling enabled since Ollama v0.3.0)");
+            tracing::info!(
+                provider = "ollama",
+                api = "http",
+                tools = true,
+                "provider detected (tool calling enabled since Ollama v0.3.0)"
+            );
             return DetectedProvider {
                 provider: Arc::new(OllamaProvider::new("http://localhost:11434")),
                 model_id: ModelId::new(&format!("ollama:{OLLAMA_DEFAULT_MODEL}")),
@@ -543,17 +567,37 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
     }
 
     tracing::warn!("no AI provider found");
-    eprintln!("\n{} Hone checked the following (in order):\n", warn_style("No AI provider detected."));
-    eprintln!("  1. {}    — ANTHROPIC_API_KEY not set", bold_style("Anthropic API"));
+    eprintln!(
+        "\n{} Hone checked the following (in order):\n",
+        warn_style("No AI provider detected.")
+    );
+    eprintln!(
+        "  1. {}    — ANTHROPIC_API_KEY not set",
+        bold_style("Anthropic API")
+    );
     eprintln!("                         export ANTHROPIC_API_KEY=sk-ant-...");
-    eprintln!("  2. {}        — OPENAI_API_KEY not set", bold_style("OpenAI API"));
+    eprintln!(
+        "  2. {}        — OPENAI_API_KEY not set",
+        bold_style("OpenAI API")
+    );
     eprintln!("                         export OPENAI_API_KEY=sk-...");
-    eprintln!("                         Tip: set HONE_OPENAI_BASE_URL for DeepSeek/Qwen/Kimi/OpenRouter");
-    eprintln!("  3. {}        — 'claude' not found on PATH", bold_style("Claude CLI"));
+    eprintln!(
+        "                         Tip: set HONE_OPENAI_BASE_URL for DeepSeek/Qwen/Kimi/OpenRouter"
+    );
+    eprintln!(
+        "  3. {}        — 'claude' not found on PATH",
+        bold_style("Claude CLI")
+    );
     eprintln!("                         Install: https://claude.ai/download");
-    eprintln!("  4. {}        — 'gemini' not found on PATH", bold_style("Gemini CLI"));
+    eprintln!(
+        "  4. {}        — 'gemini' not found on PATH",
+        bold_style("Gemini CLI")
+    );
     eprintln!("                         Install: https://github.com/google-gemini/gemini-cli");
-    eprintln!("  5. {}            — localhost:11434 not responding", bold_style("Ollama"));
+    eprintln!(
+        "  5. {}            — localhost:11434 not responding",
+        bold_style("Ollama")
+    );
     eprintln!("                         Install: https://ollama.com  then: ollama serve");
     eprintln!();
     eprintln!("Set one of the above and re-run hone.\n");
@@ -660,7 +704,9 @@ fn build_tool_registry(
 
     if let Some(idx) = index {
         builder = builder
-            .register(wrap(Box::new(tools::SymbolSearchTool::new(Arc::clone(&idx)))))
+            .register(wrap(Box::new(tools::SymbolSearchTool::new(Arc::clone(
+                &idx,
+            )))))
             .register(wrap(Box::new(tools::SymbolAtTool::new(idx))));
     }
 
@@ -800,7 +846,6 @@ fn build_agent_config(
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Test-command detection
 // ---------------------------------------------------------------------------
@@ -905,9 +950,8 @@ fn spawn_agent_turn(
         let (inner_tx, mut inner_rx) = mpsc::channel::<AgentEvent>(256);
 
         let agent_clone = agent.clone();
-        let turn_task = tokio::spawn(async move {
-            agent_clone.run_turn(&user_text, inner_tx).await
-        });
+        let turn_task =
+            tokio::spawn(async move { agent_clone.run_turn(&user_text, inner_tx).await });
 
         let mut tools_used: Vec<String> = Vec::new();
 
@@ -915,10 +959,7 @@ fn spawn_agent_turn(
             if let AgentEvent::ToolCallStart { ref name, .. } = event {
                 tools_used.push(name.clone());
             }
-            let is_terminal = matches!(
-                event,
-                AgentEvent::Done { .. } | AgentEvent::Error { .. }
-            );
+            let is_terminal = matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. });
             let _ = tx.send(event).await;
             if is_terminal {
                 break;
@@ -963,10 +1004,7 @@ fn spawn_medium_turn(
             if let AgentEvent::ToolCallStart { ref name, .. } = event {
                 tools_used.push(name.clone());
             }
-            let is_terminal = matches!(
-                event,
-                AgentEvent::Done { .. } | AgentEvent::Error { .. }
-            );
+            let is_terminal = matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. });
             if matches!(event, AgentEvent::Error { .. }) {
                 had_error = true;
             }
@@ -1014,8 +1052,8 @@ fn spawn_orchestrated_turn(
         registry.load_builtins();
 
         let plan_store = PlanStore::default_for(&lead_config.working_dir);
-        let mut orchestrator = Orchestrator::new(lead_config, registry, 4)
-            .with_plan_store(plan_store);
+        let mut orchestrator =
+            Orchestrator::new(lead_config, registry, 4).with_plan_store(plan_store);
 
         match orchestrator.run(&user_text, tx.clone()).await {
             Ok(result) => {
@@ -1025,9 +1063,7 @@ fn spawn_orchestrated_turn(
                     result.total_cost_usd,
                     result.workers.len()
                 );
-                let _ = tx
-                    .send(AgentEvent::Token { text: summary })
-                    .await;
+                let _ = tx.send(AgentEvent::Token { text: summary }).await;
             }
             Err(e) => {
                 let _ = tx
@@ -1044,16 +1080,12 @@ fn spawn_orchestrated_turn(
 // Orchestrate mode (blocking, for the --orchestrate one-shot path)
 // ---------------------------------------------------------------------------
 
-async fn run_orchestrate(
-    lead_config: AgentConfig,
-    prompt: &str,
-) -> Result<()> {
+async fn run_orchestrate(lead_config: AgentConfig, prompt: &str) -> Result<()> {
     let mut registry = AgentRegistry::new();
     registry.load_builtins();
 
     let plan_store = PlanStore::default_for(&lead_config.working_dir);
-    let mut orchestrator = Orchestrator::new(lead_config, registry, 4)
-        .with_plan_store(plan_store);
+    let mut orchestrator = Orchestrator::new(lead_config, registry, 4).with_plan_store(plan_store);
 
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 
@@ -1065,13 +1097,25 @@ async fn run_orchestrate(
                     use io::Write;
                     let _ = io::stdout().flush();
                 }
-                AgentEvent::PlanCreated { goal, subtask_count } => {
+                AgentEvent::PlanCreated {
+                    goal,
+                    subtask_count,
+                } => {
                     println!("\n[orchestrator] plan: {goal} ({subtask_count} subtasks)");
                 }
-                AgentEvent::WorkerStarted { task_id, agent, description } => {
+                AgentEvent::WorkerStarted {
+                    task_id,
+                    agent,
+                    description,
+                } => {
                     println!("[{task_id}] starting {agent}: {description}");
                 }
-                AgentEvent::WorkerCompleted { task_id, agent, status, cost_usd } => {
+                AgentEvent::WorkerCompleted {
+                    task_id,
+                    agent,
+                    status,
+                    cost_usd,
+                } => {
                     println!("[{task_id}] {agent}: {status} (${cost_usd:.4})");
                 }
                 AgentEvent::Done { .. } => {}
@@ -1110,11 +1154,7 @@ async fn run_orchestrate(
 
 /// Run a prompt through N parallel candidates with varied temperatures, then
 /// let a ranker agent pick the best response (MASAI Ranker pattern).
-async fn run_ensemble(
-    base_config: &AgentConfig,
-    prompt: &str,
-    n: u32,
-) -> Result<()> {
+async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result<()> {
     // Temperature ladder: diverse but bounded.  We only use as many slots as
     // requested, so `--ensemble 2` picks the first two entries.
     const TEMPS: [f32; 5] = [0.0, 0.3, 0.5, 0.7, 0.9];
@@ -1228,7 +1268,9 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
                 AgentEvent::ToolCallStart { name, .. } => {
                     current_tool = Some(name);
                 }
-                AgentEvent::ToolCallEnd { result, is_error, .. } => {
+                AgentEvent::ToolCallEnd {
+                    result, is_error, ..
+                } => {
                     let tool_name = current_tool.take().unwrap_or_else(|| "unknown".to_string());
                     tool_calls.push(serde_json::json!({
                         "name": tool_name,
@@ -1351,10 +1393,17 @@ async fn cmd_session_list() -> Result<()> {
         return Ok(());
     }
 
-    let name_width = sessions.iter().map(|s| s.name.len()).max().unwrap_or(4).max(4);
+    let name_width = sessions
+        .iter()
+        .map(|s| s.name.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
     println!(
         "{:<name_width$}  {:<20}  {:>5}",
-        "NAME", "UPDATED", "MSGS",
+        "NAME",
+        "UPDATED",
+        "MSGS",
         name_width = name_width
     );
     println!("{}", "-".repeat(name_width + 2 + 20 + 2 + 5));
@@ -1424,13 +1473,21 @@ struct PersistenceHandles {
 async fn init_persistence(ephemeral: bool) -> PersistenceHandles {
     if ephemeral {
         tracing::info!("ephemeral mode: skipping persistence init");
-        return PersistenceHandles { memory: None, index: None, _watcher: None };
+        return PersistenceHandles {
+            memory: None,
+            index: None,
+            _watcher: None,
+        };
     }
 
     let dir = data_dir();
     if let Err(e) = std::fs::create_dir_all(&dir) {
         tracing::warn!("failed to create data dir {}: {e}", dir.display());
-        return PersistenceHandles { memory: None, index: None, _watcher: None };
+        return PersistenceHandles {
+            memory: None,
+            index: None,
+            _watcher: None,
+        };
     }
 
     // Memory store
@@ -1493,7 +1550,11 @@ async fn init_persistence(ephemeral: bool) -> PersistenceHandles {
         }
     };
 
-    PersistenceHandles { memory, index: index_arc, _watcher: watcher_handle }
+    PersistenceHandles {
+        memory,
+        index: index_arc,
+        _watcher: watcher_handle,
+    }
 }
 
 /// Walk `root` for `.rs` files and index them via `SqliteIndex::index_file`.
@@ -1698,7 +1759,10 @@ async fn main() -> Result<()> {
     }
     let system_prompt = system_prompt::build_system_prompt(&hone_md_sections);
 
-    tracing::debug!(system_prompt_len = system_prompt.len(), "system prompt ready");
+    tracing::debug!(
+        system_prompt_len = system_prompt.len(),
+        "system prompt ready"
+    );
 
     // When --model explicitly specifies a provider, skip auto-detection and
     // create the provider directly. This avoids issues where Claude CLI is
@@ -1712,7 +1776,10 @@ async fn main() -> Result<()> {
                 supports_tools: true,
             }
         } else if m.starts_with("anthropic:") {
-            if let Some(key) = std::env::var("ANTHROPIC_API_KEY").ok().or(wizard_cfg.anthropic_api_key.clone()) {
+            if let Some(key) = std::env::var("ANTHROPIC_API_KEY")
+                .ok()
+                .or(wizard_cfg.anthropic_api_key.clone())
+            {
                 DetectedProvider {
                     provider: Arc::new(AnthropicProvider::new(key)),
                     model_id: ModelId::new(m),
@@ -1722,8 +1789,14 @@ async fn main() -> Result<()> {
                 detect_provider(&wizard_cfg).await
             }
         } else if m.starts_with("openai:") {
-            if let Some(key) = std::env::var("OPENAI_API_KEY").ok().or(wizard_cfg.openai_api_key.clone()) {
-                let provider = if let Some(url) = std::env::var("HONE_OPENAI_BASE_URL").ok().or(wizard_cfg.openai_base_url.clone()) {
+            if let Some(key) = std::env::var("OPENAI_API_KEY")
+                .ok()
+                .or(wizard_cfg.openai_api_key.clone())
+            {
+                let provider = if let Some(url) = std::env::var("HONE_OPENAI_BASE_URL")
+                    .ok()
+                    .or(wizard_cfg.openai_base_url.clone())
+                {
                     OpenAiProvider::with_base_url(key, url)
                 } else {
                     OpenAiProvider::new(key)
@@ -1754,7 +1827,13 @@ async fn main() -> Result<()> {
     // Validate --model and override provider when the prefix doesn't match
     // the auto-detected provider (e.g., --model ollama:... when Claude CLI was detected).
     let model_id: ModelId = if let Some(ref m) = cli.model {
-        let known_prefixes = ["anthropic:", "openai:", "ollama:", "claude-cli:", "gemini-cli:"];
+        let known_prefixes = [
+            "anthropic:",
+            "openai:",
+            "ollama:",
+            "claude-cli:",
+            "gemini-cli:",
+        ];
         if !known_prefixes.iter().any(|p| m.starts_with(p)) {
             eprintln!("{} invalid model ID '{m}'", error_style("Error:"));
             eprintln!();
@@ -1775,9 +1854,15 @@ async fn main() -> Result<()> {
             detected.provider = Arc::new(OllamaProvider::new("http://localhost:11434"));
             detected.supports_tools = true;
         } else if m.starts_with("openai:") && detected.provider.id() != "openai" {
-            if let Some(key) = std::env::var("OPENAI_API_KEY").ok().or(wizard_cfg.openai_api_key.clone()) {
+            if let Some(key) = std::env::var("OPENAI_API_KEY")
+                .ok()
+                .or(wizard_cfg.openai_api_key.clone())
+            {
                 tracing::info!("--model overrides provider to OpenAI");
-                let provider = if let Some(url) = std::env::var("HONE_OPENAI_BASE_URL").ok().or(wizard_cfg.openai_base_url.clone()) {
+                let provider = if let Some(url) = std::env::var("HONE_OPENAI_BASE_URL")
+                    .ok()
+                    .or(wizard_cfg.openai_base_url.clone())
+                {
                     OpenAiProvider::with_base_url(key, url)
                 } else {
                     OpenAiProvider::new(key)
@@ -1797,10 +1882,7 @@ async fn main() -> Result<()> {
     // that cannot invoke tools.
     if !detected.supports_tools {
         let provider_name = detected.model_id.to_string();
-        let provider_name = provider_name
-            .split(':')
-            .next()
-            .unwrap_or(&provider_name);
+        let provider_name = provider_name.split(':').next().unwrap_or(&provider_name);
 
         if cli.orchestrate {
             eprintln!(
@@ -1834,7 +1916,11 @@ async fn main() -> Result<()> {
         let project = PathBuf::from(".hone/mcp.json");
         McpConfig::load(
             global.as_deref(),
-            if project.exists() { Some(project.as_path()) } else { None },
+            if project.exists() {
+                Some(project.as_path())
+            } else {
+                None
+            },
         )
     };
     let mcp_manager = McpManager::from_config(&mcp_config).await;
@@ -1865,10 +1951,15 @@ async fn main() -> Result<()> {
     // Session resume: load history into the freshly spawned agent.
     let is_resume = matches!(
         cli.command,
-        Some(HoneCmd::Session { cmd: SessionCmd::Resume { .. } })
+        Some(HoneCmd::Session {
+            cmd: SessionCmd::Resume { .. }
+        })
     );
     if is_resume {
-        if let Some(HoneCmd::Session { cmd: SessionCmd::Resume { ref name } }) = cli.command {
+        if let Some(HoneCmd::Session {
+            cmd: SessionCmd::Resume { ref name },
+        }) = cli.command
+        {
             if let Some(store) = open_session_store().await {
                 match store.load_session(name).await {
                     Ok(Some(messages)) => {
@@ -1895,7 +1986,10 @@ async fn main() -> Result<()> {
         None
     } else {
         cli.session.clone().or_else(|| {
-            if let Some(HoneCmd::Session { cmd: SessionCmd::Resume { ref name } }) = cli.command {
+            if let Some(HoneCmd::Session {
+                cmd: SessionCmd::Resume { ref name },
+            }) = cli.command
+            {
                 Some(name.clone())
             } else {
                 None
@@ -1906,15 +2000,8 @@ async fn main() -> Result<()> {
     // Run the selected mode and capture the result so we can shut down MCP
     // servers before returning regardless of which path was taken.
     let no_clarify = cli.no_clarify;
-    let run_result = run_selected_mode(
-        cli,
-        agent,
-        base_config,
-        model_id,
-        session_name,
-        no_clarify,
-    )
-    .await;
+    let run_result =
+        run_selected_mode(cli, agent, base_config, model_id, session_name, no_clarify).await;
 
     // Graceful MCP server shutdown — always runs, even on error.
     mcp_manager.shutdown().await;
@@ -1960,7 +2047,10 @@ async fn run_selected_mode(
     // --ensemble N: run N parallel candidates and pick the best.
     if let Some(n) = cli.ensemble {
         if n < 2 || n > 10 {
-            eprintln!("{} --ensemble value must be between 2 and 10 (got {n})", error_style("Error:"));
+            eprintln!(
+                "{} --ensemble value must be between 2 and 10 (got {n})",
+                error_style("Error:")
+            );
             eprintln!("  2 is the minimum useful value (needs at least 2 candidates to compare)");
             eprintln!("  10 is the maximum (higher values risk runaway API costs)");
             std::process::exit(1);
@@ -2025,14 +2115,22 @@ async fn run_selected_mode(
     // TUI mode.
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableBracketedPaste,
+        EnableMouseCapture
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     // Build the step-mode channel if --step was passed.
     let (step_tx, step_rx_arc) = if cli.step {
         let (tx, rx) = tokio::sync::mpsc::channel::<hone_proto::StepAction>(1);
-        (Some(tx), Some(std::sync::Arc::new(tokio::sync::Mutex::new(rx))))
+        (
+            Some(tx),
+            Some(std::sync::Arc::new(tokio::sync::Mutex::new(rx))),
+        )
     } else {
         (None, None)
     };
@@ -2042,11 +2140,24 @@ async fn run_selected_mode(
         base_config.step_rx = Some(rx);
     }
 
-    let result = run_tui(&mut terminal, agent.clone(), model_id, base_config, cli.vim, step_tx).await;
+    let result = run_tui(
+        &mut terminal,
+        agent.clone(),
+        model_id,
+        base_config,
+        cli.vim,
+        step_tx,
+    )
+    .await;
 
     // Always restore terminal even on error.
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), DisableBracketedPaste, DisableMouseCapture, LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        DisableBracketedPaste,
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    )?;
     terminal.show_cursor()?;
 
     if result.is_ok() {
@@ -2103,7 +2214,11 @@ fn model_context_limit(model: &str) -> u32 {
     } else if name.contains("qwen") {
         if name.contains("2.5") { 32_768 } else { 8_192 }
     } else if name.contains("llama") {
-        if name.contains("3.2") || name.contains("3.1") { 128_000 } else { 8_192 }
+        if name.contains("3.2") || name.contains("3.1") {
+            128_000
+        } else {
+            8_192
+        }
     } else {
         128_000 // reasonable default
     }
@@ -2134,7 +2249,9 @@ fn record_outcome_for_event(
                     task_summary: turn_prompt.to_string(),
                 };
                 let a = Arc::clone(adaptive_ref);
-                tokio::spawn(async move { a.record_outcome(record).await; });
+                tokio::spawn(async move {
+                    a.record_outcome(record).await;
+                });
             }
         }
         AgentEvent::Error { .. } => {
@@ -2148,7 +2265,9 @@ fn record_outcome_for_event(
                     task_summary: turn_prompt.to_string(),
                 };
                 let a = Arc::clone(adaptive_ref);
-                tokio::spawn(async move { a.record_outcome(record).await; });
+                tokio::spawn(async move {
+                    a.record_outcome(record).await;
+                });
             }
         }
         _ => {}
@@ -2223,6 +2342,19 @@ async fn run_tui(
         }
 
         terminal.draw(|frame| root::render(&app, frame))?;
+
+        // Mouse text-selection → clipboard: drain the pending flag, extract
+        // the selected text from the just-rendered buffer, and push it to the
+        // system clipboard. On failure, surface a system message.
+        if let Some(sel) = app.take_pending_copy() {
+            let buf = terminal.current_buffer_mut();
+            let text = hone_tui::selection::extract_text(buf, &sel);
+            if !text.is_empty() {
+                if let Err(err) = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
+                    app.push_system_message(format!("clipboard error: {err}"));
+                }
+            }
+        }
 
         tokio::select! {
             // Async crossterm events
@@ -2469,13 +2601,23 @@ async fn run_tui(
 
         // Drain any remaining agent events that arrived during the select branch.
         while let Ok(event) = agent_rx.try_recv() {
-            record_outcome_for_event(&event, &adaptive, &mut current_tier, base_config.model.as_str(), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
+            record_outcome_for_event(
+                &event,
+                &adaptive,
+                &mut current_tier,
+                base_config.model.as_str(),
+                base_config.pricing.input_per_million,
+                base_config.pricing.output_per_million,
+                &current_turn_prompt,
+            );
             app.handle_agent_event(event);
         }
         // Mirror the post-select restore logic for the drain path: if the drain
         // loop caused a transition to Idle or Error, clear the abort handle and
         // restore any queued follow-up message.
-        if matches!(app.state(), AppState::Idle | AppState::Error(_)) && current_task_abort.is_some() {
+        if matches!(app.state(), AppState::Idle | AppState::Error(_))
+            && current_task_abort.is_some()
+        {
             current_task_abort = None;
             app.restore_queued_message_if_idle();
         }
@@ -2525,9 +2667,7 @@ fn write_session_report(
         return; // Nothing to report.
     }
 
-    let session_id = session_name
-        .unwrap_or("session")
-        .to_string();
+    let session_id = session_name.unwrap_or("session").to_string();
 
     let status = app.status();
     let now = chrono_like_timestamp();
@@ -2636,7 +2776,9 @@ mod tests {
     /// Simulate the validation logic extracted from `main` to make it unit-testable.
     fn validate_ensemble(n: u32) -> Result<(), String> {
         if n < 2 || n > 10 {
-            Err(format!("--ensemble value must be between 2 and 10 (got {n})"))
+            Err(format!(
+                "--ensemble value must be between 2 and 10 (got {n})"
+            ))
         } else {
             Ok(())
         }
@@ -2675,7 +2817,13 @@ mod tests {
     // ---- model ID validation ------------------------------------------------
 
     fn is_valid_model_id(m: &str) -> bool {
-        let known_prefixes = ["anthropic:", "openai:", "ollama:", "claude-cli:", "gemini-cli:"];
+        let known_prefixes = [
+            "anthropic:",
+            "openai:",
+            "ollama:",
+            "claude-cli:",
+            "gemini-cli:",
+        ];
         known_prefixes.iter().any(|p| m.starts_with(p))
     }
 

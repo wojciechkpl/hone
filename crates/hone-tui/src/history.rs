@@ -142,7 +142,10 @@ fn history_path() -> PathBuf {
     let base = std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/tmp"));
-    base.join(".local").join("state").join("hone").join("history")
+    base.join(".local")
+        .join("state")
+        .join("hone")
+        .join("history")
 }
 
 fn load_entries(path: &PathBuf) -> Vec<String> {

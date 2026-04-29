@@ -107,7 +107,9 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
 
 fn token_seq(text: &str) -> Vec<ProviderEvent> {
     vec![
-        ProviderEvent::Token { text: text.to_owned() },
+        ProviderEvent::Token {
+            text: text.to_owned(),
+        },
         ProviderEvent::Done,
     ]
 }

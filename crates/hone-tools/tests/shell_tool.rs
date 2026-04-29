@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::sync::Arc;
 
 use hone_sandbox::NullSandbox;
@@ -43,7 +45,9 @@ async fn test_shell_exit_code() {
     let input = ToolInput::new(json!({ "command": "false" }));
 
     let output = tool.call(input, &ctx).await.expect("call should succeed");
-    let exit_code = output.value["exit_code"].as_i64().expect("exit_code should be integer");
+    let exit_code = output.value["exit_code"]
+        .as_i64()
+        .expect("exit_code should be integer");
     assert_ne!(exit_code, 0, "exit code of `false` should be non-zero");
 }
 

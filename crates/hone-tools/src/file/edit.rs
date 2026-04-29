@@ -49,9 +49,11 @@ impl Tool for EditFileTool {
     }
 
     async fn call(&self, input: ToolInput, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let path_str = input.get_str("path").ok_or_else(|| ToolError::InvalidInput {
-            reason: "missing required field 'path'".to_string(),
-        })?;
+        let path_str = input
+            .get_str("path")
+            .ok_or_else(|| ToolError::InvalidInput {
+                reason: "missing required field 'path'".to_string(),
+            })?;
 
         let old_str = input
             .get_str("old_str")
@@ -106,9 +108,9 @@ impl Tool for EditFileTool {
         tokio::fs::write(&path, updated.as_bytes()).await?;
 
         // Read back and verify the written content matches what was intended.
-        let verification = tokio::fs::read_to_string(&path).await.map_err(|e| {
-            ToolError::Other(format!("failed to verify write: {e}"))
-        })?;
+        let verification = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| ToolError::Other(format!("failed to verify write: {e}")))?;
         if verification != updated {
             return Err(ToolError::Other(format!(
                 "write verification failed: content written to {} does not match expected",
@@ -117,7 +119,9 @@ impl Tool for EditFileTool {
         }
 
         let path_out = path.to_string_lossy().into_owned();
-        Ok(ToolOutput::new(json!({ "path": path_out, "applied": true })))
+        Ok(ToolOutput::new(
+            json!({ "path": path_out, "applied": true }),
+        ))
     }
 
     fn layer(&self) -> ToolLayer {

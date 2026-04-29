@@ -1,9 +1,9 @@
-mod error;
 pub mod encrypted;
+mod error;
 mod in_memory;
+pub mod sqlite_store;
 mod store;
 mod types;
-pub mod sqlite_store;
 
 pub use encrypted::EncryptedStore;
 pub use error::MemoryError;

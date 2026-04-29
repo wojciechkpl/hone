@@ -53,11 +53,8 @@ pub trait Sandbox: Send + Sync + 'static {
     /// For Seatbelt this prepends `sandbox-exec -p <profile>`.
     /// For Landlock this sets up file-descriptor inheritance.
     /// For the Null backend this is a no-op that always succeeds.
-    fn restrict_child(
-        &self,
-        cmd: &mut Command,
-        policy: &SandboxPolicy,
-    ) -> Result<(), SandboxError>;
+    fn restrict_child(&self, cmd: &mut Command, policy: &SandboxPolicy)
+    -> Result<(), SandboxError>;
 
     /// The underlying platform for introspection and diagnostics.
     fn platform(&self) -> SandboxPlatform;

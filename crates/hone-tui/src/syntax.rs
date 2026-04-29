@@ -26,14 +26,14 @@ pub fn lex_line(line: &str, language: &str, theme: &Theme) -> Vec<Span<'static>>
 const RUST_KEYWORDS: &[&str] = &[
     "fn", "let", "pub", "use", "struct", "enum", "impl", "trait", "async", "await", "if", "else",
     "match", "return", "mut", "self", "super", "crate", "mod", "where", "for", "while", "loop",
-    "break", "continue", "type", "const", "static", "ref", "move", "unsafe", "extern", "dyn",
-    "as", "in", "true", "false",
+    "break", "continue", "type", "const", "static", "ref", "move", "unsafe", "extern", "dyn", "as",
+    "in", "true", "false",
 ];
 
 const PYTHON_KEYWORDS: &[&str] = &[
-    "def", "class", "if", "else", "elif", "for", "while", "return", "import", "from", "as",
-    "with", "try", "except", "raise", "pass", "break", "continue", "lambda", "yield", "async",
-    "await", "True", "False", "None", "self", "not", "and", "or", "in", "is",
+    "def", "class", "if", "else", "elif", "for", "while", "return", "import", "from", "as", "with",
+    "try", "except", "raise", "pass", "break", "continue", "lambda", "yield", "async", "await",
+    "True", "False", "None", "self", "not", "and", "or", "in", "is",
 ];
 
 fn make_span(text: String, kind: TokenKind, theme: &Theme) -> Span<'static> {
@@ -62,7 +62,11 @@ fn at_word_boundary(chars: &[char], pos: usize) -> bool {
 
 fn flush_plain(plain_buf: &mut String, spans: &mut Vec<Span<'static>>, theme: &Theme) {
     if !plain_buf.is_empty() {
-        spans.push(make_span(std::mem::take(plain_buf), TokenKind::Plain, theme));
+        spans.push(make_span(
+            std::mem::take(plain_buf),
+            TokenKind::Plain,
+            theme,
+        ));
     }
 }
 
@@ -184,10 +188,7 @@ mod tests {
         let t = theme();
         let spans = lex_line("// hello", "rust", &t);
         assert_eq!(spans.len(), 1);
-        assert_eq!(
-            spans[0].style,
-            Style::default().fg(t.syntax_comment)
-        );
+        assert_eq!(spans[0].style, Style::default().fg(t.syntax_comment));
     }
 
     #[test]
@@ -196,10 +197,7 @@ mod tests {
         let spans = lex_line("fn main()", "rust", &t);
         // First span should be "fn" with keyword color.
         assert_eq!(spans[0].content, "fn");
-        assert_eq!(
-            spans[0].style,
-            Style::default().fg(t.syntax_keyword)
-        );
+        assert_eq!(spans[0].style, Style::default().fg(t.syntax_keyword));
     }
 
     #[test]
@@ -211,10 +209,7 @@ mod tests {
             .iter()
             .find(|sp| sp.content.contains("hello"))
             .expect("no string span found");
-        assert_eq!(
-            string_span.style,
-            Style::default().fg(t.syntax_string)
-        );
+        assert_eq!(string_span.style, Style::default().fg(t.syntax_string));
     }
 
     #[test]
@@ -222,10 +217,7 @@ mod tests {
         let t = theme();
         let spans = lex_line("# comment", "python", &t);
         assert_eq!(spans.len(), 1);
-        assert_eq!(
-            spans[0].style,
-            Style::default().fg(t.syntax_comment)
-        );
+        assert_eq!(spans[0].style, Style::default().fg(t.syntax_comment));
     }
 
     #[test]
@@ -233,10 +225,7 @@ mod tests {
         let t = theme();
         let spans = lex_line("def foo():", "python", &t);
         assert_eq!(spans[0].content, "def");
-        assert_eq!(
-            spans[0].style,
-            Style::default().fg(t.syntax_keyword)
-        );
+        assert_eq!(spans[0].style, Style::default().fg(t.syntax_keyword));
     }
 
     #[test]

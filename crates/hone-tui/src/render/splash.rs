@@ -12,13 +12,7 @@ use crate::{animation::AnimationState, theme::Theme};
 ///
 /// Each row is represented as `(prefix_spaces, arrows, equals_count)` so the
 /// renderer can colour `>` and `=` independently without storing raw strings.
-const MARK_ROWS: &[&str] = &[
-    "  >=>",
-    " >==>",
-    ">===>",
-    " >==>",
-    "  >=>",
-];
+const MARK_ROWS: &[&str] = &["  >=>", " >==>", ">===>", " >==>", "  >=>"];
 
 /// Startup splash widget: centered ASCII mark + tagline.
 pub struct SplashWidget<'a> {
@@ -54,12 +48,9 @@ impl<'a> SplashWidget<'a> {
         }
 
         lines.push(Line::default());
+        lines.push(Line::from(Span::styled("H O N E", title_style)).alignment(Alignment::Center));
         lines.push(
-            Line::from(Span::styled("H O N E", title_style)).alignment(Alignment::Center),
-        );
-        lines.push(
-            Line::from(Span::styled("sharpen your code", sub_style))
-                .alignment(Alignment::Center),
+            Line::from(Span::styled("sharpen your code", sub_style)).alignment(Alignment::Center),
         );
         lines.push(Line::default());
 

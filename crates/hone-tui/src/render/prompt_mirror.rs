@@ -10,10 +10,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 
-use crate::{
-    app::App,
-    message::DisplayRole,
-};
+use crate::{app::App, message::DisplayRole};
 
 // ---------------------------------------------------------------------------
 // Segment type
@@ -161,13 +158,19 @@ pub fn render_prompt_mirror(app: &App, frame: &mut Frame, area: Rect) {
     let pending_style = if nc {
         Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
     } else {
-        Style::default().fg(theme.accent_hot).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(theme.accent_hot)
+            .add_modifier(Modifier::BOLD)
     };
 
     let mut lines: Vec<Line<'static>> = Vec::with_capacity(segments.len());
     for seg in &segments {
         let is_pending = seg.label == "[Pending Input]";
-        let lbl_style = if is_pending { pending_style } else { label_style };
+        let lbl_style = if is_pending {
+            pending_style
+        } else {
+            label_style
+        };
         let line = Line::from(vec![
             Span::raw("  "),
             Span::styled(seg.label.clone(), lbl_style),
@@ -275,6 +278,9 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
         app.handle_key_mirror(key);
 
-        assert_eq!(app.mirror_scroll, 0, "mirror_scroll should be reset to 0 after 'g'");
+        assert_eq!(
+            app.mirror_scroll, 0,
+            "mirror_scroll should be reset to 0 after 'g'"
+        );
     }
 }

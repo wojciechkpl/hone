@@ -98,12 +98,11 @@ impl Tool for MultiEditTool {
 
         let mut parsed: Vec<Edit> = Vec::with_capacity(edits.len());
         for (i, edit) in edits.iter().enumerate() {
-            let path = edit
-                .get("path")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ToolError::InvalidInput {
+            let path = edit.get("path").and_then(|v| v.as_str()).ok_or_else(|| {
+                ToolError::InvalidInput {
                     reason: format!("edit[{i}] missing 'path'"),
-                })?;
+                }
+            })?;
             let old_str = edit
                 .get("old_str")
                 .and_then(|v| v.as_str())
@@ -144,9 +143,9 @@ impl Tool for MultiEditTool {
 
         for path_str in &file_order {
             let path = resolve_within_working_dir(&ctx.working_dir, path_str)?;
-            let original = tokio::fs::read_to_string(&path).await.map_err(|e| {
-                ToolError::Other(format!("failed to read {}: {e}", path.display()))
-            })?;
+            let original = tokio::fs::read_to_string(&path)
+                .await
+                .map_err(|e| ToolError::Other(format!("failed to read {}: {e}", path.display())))?;
 
             let indices = &by_file[path_str];
             let mut current = original;

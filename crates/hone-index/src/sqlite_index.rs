@@ -68,12 +68,10 @@ impl SqliteIndex {
         .await
         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_symbols_file ON index_symbols(file_path)",
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_symbols_file ON index_symbols(file_path)")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_symbols_name ON index_symbols(name COLLATE NOCASE)",
@@ -162,11 +160,7 @@ impl SqliteIndex {
     /// Search symbols by name (case-insensitive substring match).
     ///
     /// Results are scored: exact match > prefix match > substring match.
-    pub async fn search(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<SearchResult>, IndexError> {
+    pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, IndexError> {
         let pattern = format!("%{}%", query);
 
         let rows = sqlx::query(

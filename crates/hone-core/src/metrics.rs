@@ -37,17 +37,20 @@ impl ContextMetrics {
 
     pub fn record_turn_tokens(&self, input: u32, output: u32) {
         self.input_tokens.fetch_add(input as u64, Ordering::Relaxed);
-        self.output_tokens.fetch_add(output as u64, Ordering::Relaxed);
+        self.output_tokens
+            .fetch_add(output as u64, Ordering::Relaxed);
     }
 
     pub fn record_cache(&self, hits: u32, writes: u32) {
         self.cache_hits.fetch_add(hits as u64, Ordering::Relaxed);
-        self.cache_writes.fetch_add(writes as u64, Ordering::Relaxed);
+        self.cache_writes
+            .fetch_add(writes as u64, Ordering::Relaxed);
     }
 
     pub fn record_trim(&self, messages_dropped: u32) {
         self.trim_events.fetch_add(1, Ordering::Relaxed);
-        self.messages_dropped.fetch_add(messages_dropped as u64, Ordering::Relaxed);
+        self.messages_dropped
+            .fetch_add(messages_dropped as u64, Ordering::Relaxed);
     }
 
     pub fn record_compression(&self) {

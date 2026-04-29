@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use hone_server::{router, ApiDoc, AppState};
+use hone_server::{ApiDoc, AppState, router};
 use tower::ServiceExt;
 
 fn make_state() -> AppState {
@@ -107,5 +107,6 @@ async fn test_openapi_generation_does_not_panic() {
     let json = ApiDoc::json();
     assert!(!json.is_empty());
     // Must be valid JSON.
-    let _: serde_json::Value = serde_json::from_str(&json).expect("ApiDoc::json must be valid JSON");
+    let _: serde_json::Value =
+        serde_json::from_str(&json).expect("ApiDoc::json must be valid JSON");
 }

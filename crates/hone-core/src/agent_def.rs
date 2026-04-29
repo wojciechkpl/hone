@@ -42,8 +42,8 @@ impl AgentDef {
         let yaml = &after_open[..close];
         let body = &after_open[close + "\n---\n".len()..];
 
-        let mut def: AgentDef = serde_yaml::from_str(yaml)
-            .map_err(|e| AgentDefError::Frontmatter(e.to_string()))?;
+        let mut def: AgentDef =
+            serde_yaml::from_str(yaml).map_err(|e| AgentDefError::Frontmatter(e.to_string()))?;
 
         def.system_prompt = body.to_string();
         Ok(def)

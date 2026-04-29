@@ -91,7 +91,12 @@ pub fn render_session_switcher(app: &App, frame: &mut Frame, area: Rect) {
         // Scroll to keep cursor visible.
         let offset = scroll_offset(cursor, available_rows);
 
-        for (list_idx, session) in sessions.iter().enumerate().skip(offset).take(available_rows) {
+        for (list_idx, session) in sessions
+            .iter()
+            .enumerate()
+            .skip(offset)
+            .take(available_rows)
+        {
             let is_selected = list_idx == cursor;
 
             let relative_time = format_relative_time(session.updated_at);

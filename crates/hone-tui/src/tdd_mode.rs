@@ -58,18 +58,17 @@ impl TddWatcher {
     /// Start watching `root` for changes and running `command` on each change.
     ///
     /// Events are sent to `event_tx`.
-    pub fn start(
-        root: PathBuf,
-        command: String,
-        event_tx: mpsc::Sender<TddEvent>,
-    ) -> Self {
+    pub fn start(root: PathBuf, command: String, event_tx: mpsc::Sender<TddEvent>) -> Self {
         let (stop_tx, stop_rx) = watch::channel(false);
         let cmd = command.clone();
         let _ = event_tx.try_send(TddEvent::Started { command });
 
         let task = tokio::spawn(watch_loop(root, cmd, event_tx, stop_rx));
 
-        TddWatcher { stop_tx, _task: task }
+        TddWatcher {
+            stop_tx,
+            _task: task,
+        }
     }
 
     /// Signal the background task to shut down.
@@ -197,7 +196,10 @@ fn is_source_file(path: &Path) -> bool {
         }
     }
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    matches!(ext, "rs" | "py" | "ts" | "js" | "go" | "java" | "c" | "cpp" | "h")
+    matches!(
+        ext,
+        "rs" | "py" | "ts" | "js" | "go" | "java" | "c" | "cpp" | "h"
+    )
 }
 
 struct CmdOutput {
@@ -262,7 +264,9 @@ mod tests {
 
     #[test]
     fn source_file_detection_skips_target() {
-        assert!(!is_source_file(Path::new("/project/target/debug/build/main.rs")));
+        assert!(!is_source_file(Path::new(
+            "/project/target/debug/build/main.rs"
+        )));
     }
 
     #[test]
@@ -272,7 +276,9 @@ mod tests {
 
     #[test]
     fn source_file_detection_skips_node_modules() {
-        assert!(!is_source_file(Path::new("/project/node_modules/react/index.js")));
+        assert!(!is_source_file(Path::new(
+            "/project/node_modules/react/index.js"
+        )));
     }
 
     #[test]

@@ -6,8 +6,10 @@ use futures::Stream;
 use hone_core::{
     AgentConfig, AgentRegistry, Orchestrator, SubTask, TaskPlan, WorkerResult, WorkerStatus,
 };
-use hone_proto::{Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, TokenUsage};
-use hone_providers::{CompletionRequest, ModelProvider, MockProvider, ProviderError};
+use hone_proto::{
+    Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, TokenUsage,
+};
+use hone_providers::{CompletionRequest, MockProvider, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
 use tokio::sync::mpsc;
@@ -88,7 +90,8 @@ fn test_task_plan_serialization() {
     };
 
     let json = serde_json::to_string(&plan).expect("serialization should succeed");
-    let deserialized: TaskPlan = serde_json::from_str(&json).expect("deserialization should succeed");
+    let deserialized: TaskPlan =
+        serde_json::from_str(&json).expect("deserialization should succeed");
 
     assert_eq!(deserialized.goal, plan.goal);
     assert_eq!(deserialized.subtasks.len(), 2);
@@ -169,7 +172,12 @@ fn test_worker_result_types() {
         agent: "rust-expert".to_owned(),
         status: WorkerStatus::Completed,
         response: "Done!".to_owned(),
-        usage: TokenUsage { input: 10, output: 20, cache_read: 0, cache_creation: 0 },
+        usage: TokenUsage {
+            input: 10,
+            output: 20,
+            cache_read: 0,
+            cache_creation: 0,
+        },
         cost_usd: 0.001,
     };
 
@@ -233,11 +241,20 @@ async fn test_dependency_ordering_logic() {
     assert_eq!(results.len(), 2);
 
     // Find positions of A and B in the results vector.
-    let pos_a = results.iter().position(|r| r.task_id == "A").expect("A should be present");
-    let pos_b = results.iter().position(|r| r.task_id == "B").expect("B should be present");
+    let pos_a = results
+        .iter()
+        .position(|r| r.task_id == "A")
+        .expect("A should be present");
+    let pos_b = results
+        .iter()
+        .position(|r| r.task_id == "B")
+        .expect("B should be present");
 
     // A must have been completed before B started, so A's result index < B's.
-    assert!(pos_a < pos_b, "A (pos {pos_a}) should appear before B (pos {pos_b}) in results");
+    assert!(
+        pos_a < pos_b,
+        "A (pos {pos_a}) should appear before B (pos {pos_b}) in results"
+    );
 }
 
 #[tokio::test]
@@ -322,14 +339,19 @@ fn test_subtask_backwards_compat() {
         "depends_on": ["0"]
     }"#;
 
-    let task: SubTask =
-        serde_json::from_str(old_json).expect("old-format JSON should deserialize");
+    let task: SubTask = serde_json::from_str(old_json).expect("old-format JSON should deserialize");
 
     assert_eq!(task.id, "1");
     assert_eq!(task.agent, "debugger");
     assert_eq!(task.depends_on, vec!["0"]);
-    assert!(task.acceptance_tests.is_empty(), "acceptance_tests should default to empty");
-    assert!(task.budget_usd.is_none(), "budget_usd should default to None");
+    assert!(
+        task.acceptance_tests.is_empty(),
+        "acceptance_tests should default to empty"
+    );
+    assert!(
+        task.budget_usd.is_none(),
+        "budget_usd should default to None"
+    );
     assert!(task.scope.is_empty(), "scope should default to empty");
 }
 
@@ -460,7 +482,11 @@ async fn test_panicked_worker_has_correct_task_id() {
     let (tx, _rx) = mpsc::channel(256);
     let results = orchestrator.execute_plan(plan, None, tx).await;
 
-    assert_eq!(results.len(), 3, "all three panicked tasks should produce a result");
+    assert_eq!(
+        results.len(),
+        3,
+        "all three panicked tasks should produce a result"
+    );
 
     // Every result must have a task_id that matches one of the planted tasks,
     // NOT "unknown" (the old buggy value).
@@ -481,5 +507,8 @@ async fn test_panicked_worker_has_correct_task_id() {
     // All three distinct task_ids must be present.
     let mut result_ids: Vec<&str> = results.iter().map(|r| r.task_id.as_str()).collect();
     result_ids.sort_unstable();
-    assert_eq!(result_ids, vec!["task-panic-A", "task-panic-B", "task-panic-C"]);
+    assert_eq!(
+        result_ids,
+        vec!["task-panic-A", "task-panic-B", "task-panic-C"]
+    );
 }

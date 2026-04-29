@@ -73,11 +73,7 @@ impl CollaborativeStore {
         Ok(participant)
     }
 
-    pub async fn leave(
-        &self,
-        session_id: &str,
-        user_id: &str,
-    ) -> Result<(), ServerError> {
+    pub async fn leave(&self, session_id: &str, user_id: &str) -> Result<(), ServerError> {
         let mut map = self.participants.write().await;
         let list = map.entry(session_id.to_owned()).or_default();
 

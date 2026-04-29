@@ -21,6 +21,7 @@ ratatui = { workspace = true }
 crossterm = { workspace = true }
 tracing = { workspace = true }
 notify = { workspace = true }
+arboard = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

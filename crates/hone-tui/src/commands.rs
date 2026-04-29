@@ -50,8 +50,22 @@ pub enum TddSubcommand {
 
 /// All known command names for autocomplete.
 pub const COMMAND_NAMES: &[&str] = &[
-    "model", "undo", "redo", "cost", "quit", "q", "help", "split", "panel", "theme",
-    "theme-preview", "set", "tdd", "review", "clarify", "configure",
+    "model",
+    "undo",
+    "redo",
+    "cost",
+    "quit",
+    "q",
+    "help",
+    "split",
+    "panel",
+    "theme",
+    "theme-preview",
+    "set",
+    "tdd",
+    "review",
+    "clarify",
+    "configure",
 ];
 
 /// Agent persona names available for `@agent-name` inline dispatch.
@@ -170,7 +184,10 @@ mod tests {
     #[test]
     fn parse_configure_model() {
         let cmd = Command::parse("/configure model anthropic:claude-3-5-sonnet").unwrap();
-        assert_eq!(cmd, Command::Configure("model anthropic:claude-3-5-sonnet".to_string()));
+        assert_eq!(
+            cmd,
+            Command::Configure("model anthropic:claude-3-5-sonnet".to_string())
+        );
     }
 
     #[test]

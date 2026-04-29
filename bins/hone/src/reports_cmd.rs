@@ -120,7 +120,11 @@ pub fn cmd_list_to_writer(
         return Ok(());
     }
 
-    let truncated = if limit == 0 { paths.len() } else { paths.len().min(limit) };
+    let truncated = if limit == 0 {
+        paths.len()
+    } else {
+        paths.len().min(limit)
+    };
     let display_paths = &paths[..truncated];
 
     let id_width = display_paths
@@ -134,23 +138,28 @@ pub fn cmd_list_to_writer(
     writeln!(w, "{}", "-".repeat(id_width + 10))?;
 
     for path in display_paths {
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("—");
-        let size = std::fs::metadata(path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("—");
+        let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         let size_str = if size >= 1024 {
             format!("{:.1}k", size as f64 / 1024.0)
         } else {
             format!("{size}B")
         };
-        writeln!(w, "{:<id_width$}  {:>8}", stem, size_str, id_width = id_width)?;
+        writeln!(
+            w,
+            "{:<id_width$}  {:>8}",
+            stem,
+            size_str,
+            id_width = id_width
+        )?;
     }
 
     if paths.len() > truncated {
-        writeln!(w, "… {} more (use --limit 0 to see all)", paths.len() - truncated)?;
+        writeln!(
+            w,
+            "… {} more (use --limit 0 to see all)",
+            paths.len() - truncated
+        )?;
     }
 
     Ok(())
@@ -162,10 +171,13 @@ pub fn cmd_list_to_writer(
 
 pub fn cmd_show(reports_dir: &Path, id_prefix: &str) -> Result<()> {
     let path = resolve_one(reports_dir, id_prefix)?;
-    let content = std::fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let content =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     // Print with a simple pager-friendly header.
-    println!("--- {} ---", path.file_name().unwrap_or_default().to_string_lossy());
+    println!(
+        "--- {} ---",
+        path.file_name().unwrap_or_default().to_string_lossy()
+    );
     println!("{content}");
     Ok(())
 }
@@ -225,7 +237,9 @@ fn line_diff_to_string(a: &[&str], b: &[&str]) -> String {
                         .map(|j| !matches!(ops[j], DiffOp::Same(_)))
                         .unwrap_or(false)
                 });
-                let near_next = ops[i + 1..].iter().take(context)
+                let near_next = ops[i + 1..]
+                    .iter()
+                    .take(context)
                     .any(|op| !matches!(op, DiffOp::Same(_)));
                 if near_prev || near_next {
                     out.push(' ');
@@ -357,7 +371,11 @@ mod tests {
     #[test]
     fn cmd_show_by_prefix_succeeds() {
         let (tmp, dir) = setup_reports_dir();
-        write_report_file(&dir, "2026-04-13T143207-myreport", "# My Report\nSome content.");
+        write_report_file(
+            &dir,
+            "2026-04-13T143207-myreport",
+            "# My Report\nSome content.",
+        );
         cmd_show(&dir, "myreport").unwrap();
         drop(tmp);
     }
@@ -421,12 +439,22 @@ mod tests {
         let files = list_report_files(&dir).unwrap();
         let names: Vec<String> = files
             .iter()
-            .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()))
+            .filter_map(|p| {
+                p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+            })
             .collect();
 
         // Newest first = 2026-04-14 > 2026-04-13 > 2026-04-12.
-        assert!(names[0].contains("bbb"), "newest should be first: {names:?}");
-        assert!(names[names.len() - 1].contains("ccc"), "oldest should be last: {names:?}");
+        assert!(
+            names[0].contains("bbb"),
+            "newest should be first: {names:?}"
+        );
+        assert!(
+            names[names.len() - 1].contains("ccc"),
+            "oldest should be last: {names:?}"
+        );
         drop(tmp);
     }
 
@@ -456,7 +484,10 @@ mod tests {
             .lines()
             .filter(|l| l.starts_with("2026-"))
             .count();
-        assert_eq!(report_lines_20, 20, "limit=20 should show exactly 20 report rows");
+        assert_eq!(
+            report_lines_20, 20,
+            "limit=20 should show exactly 20 report rows"
+        );
 
         // With limit=0 (keep-all) all 120 rows must appear.
         buf.clear();
@@ -466,7 +497,10 @@ mod tests {
             .lines()
             .filter(|l| l.starts_with("2026-"))
             .count();
-        assert_eq!(report_lines_all, 120, "limit=0 should show all 120 report rows");
+        assert_eq!(
+            report_lines_all, 120,
+            "limit=0 should show all 120 report rows"
+        );
 
         drop(tmp);
     }
@@ -509,13 +543,15 @@ mod tests {
 
         // Lines removed from A appear with '-' prefix.
         assert!(
-            diff.lines().any(|l| l.starts_with('-') && l.contains("only in A")),
+            diff.lines()
+                .any(|l| l.starts_with('-') && l.contains("only in A")),
             "diff must contain '-only in A' line; got:\n{diff}"
         );
 
         // Lines added in B appear with '+' prefix.
         assert!(
-            diff.lines().any(|l| l.starts_with('+') && l.contains("only in B")),
+            diff.lines()
+                .any(|l| l.starts_with('+') && l.contains("only in B")),
             "diff must contain '+only in B' line; got:\n{diff}"
         );
     }
@@ -557,11 +593,13 @@ mod tests {
         let diff = line_diff_to_string(&lines_a, &lines_b);
 
         assert!(
-            diff.lines().any(|l| l.starts_with('-') && l.contains("unique-in-before")),
+            diff.lines()
+                .any(|l| l.starts_with('-') && l.contains("unique-in-before")),
             "expected '-' line with 'unique-in-before'; diff:\n{diff}"
         );
         assert!(
-            diff.lines().any(|l| l.starts_with('+') && l.contains("unique-in-after")),
+            diff.lines()
+                .any(|l| l.starts_with('+') && l.contains("unique-in-after")),
             "expected '+' line with 'unique-in-after'; diff:\n{diff}"
         );
 

@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::sync::Arc;
 
 use hone_proto::ModelId;
@@ -42,7 +44,10 @@ fn test_swap_provider() {
     let replacement = Arc::new(MockProvider::new(vec!["swapped".into()]).with_id("new-provider"));
     registry.swap("old-provider", replacement);
 
-    assert!(registry.get("old-provider").is_none(), "old provider should be gone");
+    assert!(
+        registry.get("old-provider").is_none(),
+        "old provider should be gone"
+    );
     let found = registry.get("new-provider");
     assert!(found.is_some());
     assert_eq!(found.unwrap().id(), "new-provider");

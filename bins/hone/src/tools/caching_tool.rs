@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use hone_cache::{CacheKey, CacheError, InvalidationTag, ToolResultCache};
+use hone_cache::{CacheError, CacheKey, InvalidationTag, ToolResultCache};
 use hone_proto::ToolLayer;
 use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput};
 use serde_json::Value;
@@ -71,11 +71,7 @@ impl CachingToolWrapper {
     /// The policy is computed *before* calling the tool so that we can store
     /// it alongside the entry.  For `read_file` we hash the file on the way
     /// in; for git tools we capture the current HEAD SHA.
-    fn invalidation_for(
-        tool_name: &str,
-        input: &ToolInput,
-        ctx: &ToolContext,
-    ) -> InvalidationTag {
+    fn invalidation_for(tool_name: &str, input: &ToolInput, ctx: &ToolContext) -> InvalidationTag {
         match tool_name {
             // File reads: invalidate when the file content changes.
             "read_file" => {
@@ -118,11 +114,7 @@ impl CachingToolWrapper {
         }
     }
 
-    fn build_key(
-        tool_name: &str,
-        input: &ToolInput,
-        invalidator: InvalidationTag,
-    ) -> CacheKey {
+    fn build_key(tool_name: &str, input: &ToolInput, invalidator: InvalidationTag) -> CacheKey {
         let canonical = canonicalize_input(&input.0);
         CacheKey::from_bytes(
             format!("tool:{tool_name}"),
@@ -133,12 +125,7 @@ impl CachingToolWrapper {
 
     /// Shadow-sample: run the tool and compare output against the cached bytes.
     /// Logs a warning on divergence; does not replace the cached entry in v1.
-    async fn maybe_shadow(
-        &self,
-        cached_bytes: &[u8],
-        input: ToolInput,
-        ctx: &ToolContext,
-    ) {
+    async fn maybe_shadow(&self, cached_bytes: &[u8], input: ToolInput, ctx: &ToolContext) {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
@@ -304,8 +291,8 @@ impl Tool for CachingToolWrapper {
 mod tests {
     use super::*;
     use hone_cache::{CacheBackend, InMemoryBackend, ToolResultCache};
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     fn make_ctx() -> ToolContext {
         ToolContext {
@@ -319,13 +306,21 @@ mod tests {
         struct WriteTool;
         #[async_trait]
         impl Tool for WriteTool {
-            fn name(&self) -> &str { "write_file" }
-            fn description(&self) -> &str { "test" }
-            fn schema(&self) -> Value { serde_json::json!({}) }
+            fn name(&self) -> &str {
+                "write_file"
+            }
+            fn description(&self) -> &str {
+                "test"
+            }
+            fn schema(&self) -> Value {
+                serde_json::json!({})
+            }
             async fn call(&self, _i: ToolInput, _c: &ToolContext) -> Result<ToolOutput, ToolError> {
                 Ok(ToolOutput::new(serde_json::json!({"ok": true})))
             }
-            fn layer(&self) -> ToolLayer { ToolLayer::Native }
+            fn layer(&self) -> ToolLayer {
+                ToolLayer::Native
+            }
         }
 
         let backend = Arc::new(InMemoryBackend::new());
@@ -333,10 +328,16 @@ mod tests {
         let wrapper = CachingToolWrapper::new(Arc::new(WriteTool), cache).with_shadow_rate(0.0);
         let ctx = make_ctx();
 
-        let _ = wrapper.call(ToolInput::new(serde_json::json!({})), &ctx).await.unwrap();
+        let _ = wrapper
+            .call(ToolInput::new(serde_json::json!({})), &ctx)
+            .await
+            .unwrap();
 
         let stats = backend.stats().await;
-        assert_eq!(stats.misses, 0, "write_file should bypass the cache entirely");
+        assert_eq!(
+            stats.misses, 0,
+            "write_file should bypass the cache entirely"
+        );
     }
 
     #[tokio::test]
@@ -372,14 +373,26 @@ mod tests {
 
     #[async_trait]
     impl Tool for NeverExpiresTool {
-        fn name(&self) -> &str { "glob" } // "glob" → Ttl(now + 300), but we override below
-        fn description(&self) -> &str { "test" }
-        fn schema(&self) -> Value { serde_json::json!({}) }
-        async fn call(&self, _input: ToolInput, _ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        fn name(&self) -> &str {
+            "glob"
+        } // "glob" → Ttl(now + 300), but we override below
+        fn description(&self) -> &str {
+            "test"
+        }
+        fn schema(&self) -> Value {
+            serde_json::json!({})
+        }
+        async fn call(
+            &self,
+            _input: ToolInput,
+            _ctx: &ToolContext,
+        ) -> Result<ToolOutput, ToolError> {
             self.calls.fetch_add(1, Ordering::Relaxed);
             Ok(ToolOutput::new(serde_json::json!({"files": ["a.rs"]})))
         }
-        fn layer(&self) -> ToolLayer { ToolLayer::Native }
+        fn layer(&self) -> ToolLayer {
+            ToolLayer::Native
+        }
     }
 
     /// Verify that `cache_hit` is `false` on the first call (cache miss) and
@@ -390,7 +403,9 @@ mod tests {
     #[tokio::test]
     async fn cache_hit_flag_reflects_actual_cache_state() {
         let calls = Arc::new(AtomicU32::new(0));
-        let inner = Arc::new(NeverExpiresTool { calls: Arc::clone(&calls) });
+        let inner = Arc::new(NeverExpiresTool {
+            calls: Arc::clone(&calls),
+        });
         let backend = Arc::new(InMemoryBackend::new());
         let cache = Arc::new(ToolResultCache::new(backend.clone()));
         let wrapper = CachingToolWrapper::new(inner, cache).with_shadow_rate(0.0);
@@ -407,7 +422,11 @@ mod tests {
             !out1.cache_hit,
             "first call should be a cache miss (cache_hit = false)"
         );
-        assert_eq!(calls.load(Ordering::Relaxed), 1, "inner tool should have executed once");
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "inner tool should have executed once"
+        );
 
         // Second call: cache hit — inner tool must NOT execute again, cache_hit must be true.
         let out2 = wrapper

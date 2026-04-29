@@ -104,9 +104,11 @@ fn test_rbac_model_restriction() {
     );
     let policy = policy_with_roles(vec![role]);
 
-    assert!(policy
-        .check_model("restricted", "anthropic:claude-sonnet-4-5")
-        .is_ok());
+    assert!(
+        policy
+            .check_model("restricted", "anthropic:claude-sonnet-4-5")
+            .is_ok()
+    );
 
     let err = policy
         .check_model("restricted", "anthropic:claude-opus-4-5")
@@ -119,12 +121,12 @@ fn test_rbac_empty_models_allows_all() {
     let role = make_role("open", ToolAccess::All, vec![]);
     let policy = policy_with_roles(vec![role]);
 
-    assert!(policy
-        .check_model("open", "anthropic:claude-sonnet-4-5")
-        .is_ok());
-    assert!(policy
-        .check_model("open", "openai:gpt-4o")
-        .is_ok());
+    assert!(
+        policy
+            .check_model("open", "anthropic:claude-sonnet-4-5")
+            .is_ok()
+    );
+    assert!(policy.check_model("open", "openai:gpt-4o").is_ok());
 }
 
 #[test]

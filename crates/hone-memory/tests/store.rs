@@ -59,7 +59,12 @@ async fn test_forget_by_tag_removes_matching() {
 
     let keep = make_memory("keep", "unrelated memory", vec!["project:bar"], 1.0);
     let remove1 = make_memory("rm1", "first foo memory", vec!["project:foo"], 1.0);
-    let remove2 = make_memory("rm2", "second foo memory", vec!["project:foo", "extra"], 1.0);
+    let remove2 = make_memory(
+        "rm2",
+        "second foo memory",
+        vec!["project:foo", "extra"],
+        1.0,
+    );
 
     store.record(keep.clone()).await.unwrap();
     store.record(remove1).await.unwrap();

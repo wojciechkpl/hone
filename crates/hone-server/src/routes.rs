@@ -12,8 +12,8 @@ use crate::collaborative_routes::collaborative_router;
 use crate::error::ServerError;
 use crate::execution::run_handler;
 use crate::governance_routes::governance_router;
-use crate::session::SessionInfo;
 use crate::rate_limit::rate_limit_middleware;
+use crate::session::SessionInfo;
 use crate::state::AppState;
 use crate::tunnel_routes::tunnel_router;
 use crate::web::serve_ui;
@@ -36,7 +36,10 @@ pub fn router(state: AppState) -> Router {
             state.rate_limiter.clone(),
             rate_limit_middleware,
         ))
-        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
         .with_state(state)
 }
 

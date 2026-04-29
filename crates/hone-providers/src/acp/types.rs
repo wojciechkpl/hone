@@ -82,11 +82,32 @@ pub struct SessionNewResult {
     pub session_id: String,
 }
 
+/// Wire-level representation of a single tool schema sent to the ACP agent.
+///
+/// Field-name convention matches MCP's `Tool` shape (the basis for ACP's tool
+/// schema): `name`, `description`, and `inputSchema` (a JSON Schema object).
+/// Hone's internal `hone_proto::ToolSchema` calls this field `parameters`
+/// (OpenAI convention); the rename is applied at the wire boundary so real
+/// ACP agents like `claude --acp` and `codex` see the field they expect.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpToolSchema {
+    pub name: String,
+    pub description: String,
+    /// JSON Schema for the tool's input parameters, serialized inline (not
+    /// double-encoded as a string).  Wire name is `inputSchema` per MCP spec.
+    #[serde(rename = "inputSchema")]
+    pub parameters: serde_json::Value,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptParams {
     #[serde(rename = "sessionId")]
     pub session_id: String,
     pub prompt: Vec<PromptContent>,
+    /// Tool schemas available for this prompt.  Omitted from the wire entirely
+    /// when empty so that `empty_tools_omits_schema_announcement` stays green.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<AcpToolSchema>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +160,12 @@ pub enum UpdatePayload {
         title: String,
         kind: String,
         status: String,
+        /// Raw arguments as supplied by the agent — an arbitrary JSON value.
+        /// Wire field name `rawInput` per ACP convention; absent on legacy
+        /// agents.  `None` is surfaced as an empty JSON object by the
+        /// provider for backwards compatibility.
+        #[serde(rename = "rawInput", default, skip_serializing_if = "Option::is_none")]
+        raw_input: Option<serde_json::Value>,
     },
 
     #[serde(rename = "tool_call_update")]
@@ -154,4 +181,20 @@ pub struct MessageContent {
     #[serde(rename = "type")]
     pub content_type: String,
     pub text: String,
+}
+
+/// Wire parameters for the `session/toolResult` JSON-RPC request.
+///
+/// The `content` field is an inline JSON value (not a double-encoded string)
+/// to match the ACP wire spec and to satisfy the `tool_result_content_is_inline_json_not_string`
+/// contract test.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolResultParams {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "toolCallId")]
+    pub tool_call_id: String,
+    pub content: serde_json::Value,
+    #[serde(rename = "isError")]
+    pub is_error: bool,
 }

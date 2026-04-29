@@ -35,7 +35,10 @@ pub struct AutoFixLoop {
 
 impl AutoFixLoop {
     pub fn new(bridge: Box<dyn LspBridge>, max_retries: u32) -> Self {
-        Self { bridge, max_retries }
+        Self {
+            bridge,
+            max_retries,
+        }
     }
 
     /// Run the auto-fix loop for `file`, returning a summary of what happened.

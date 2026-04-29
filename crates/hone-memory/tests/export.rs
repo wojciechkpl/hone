@@ -33,7 +33,11 @@ async fn test_export_produces_valid_json() {
         limit: 100,
     };
     let mut results = imported.recall(&query).await.unwrap();
-    assert_eq!(results.len(), 2, "both memories should survive the round-trip");
+    assert_eq!(
+        results.len(),
+        2,
+        "both memories should survive the round-trip"
+    );
 
     results.sort_by(|a, b| a.id.cmp(&b.id));
     let mut expected = vec![m1, m2];
