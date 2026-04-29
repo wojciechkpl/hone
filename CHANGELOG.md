@@ -10,18 +10,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - **`honed` now fails-closed when no auth token is configured on a non-loopback bind.** If `HONE_AUTH_TOKEN` is unset or empty AND the bind host is non-loopback (i.e. anything outside `127.0.0.0/8` or `::1`) AND `HONE_ALLOW_UNAUTH=1` is not set, the daemon prints a clear message to stderr and exits with code 2. Previously, a missing token silently produced an unauthenticated public endpoint. **Migration:** existing operators must either set `HONE_AUTH_TOKEN=<secret>`, bind to loopback via `HONE_BIND=127.0.0.1`, or opt in explicitly with `HONE_ALLOW_UNAUTH=1`. New env vars: `HONE_BIND` (default `0.0.0.0`) and `HONE_ALLOW_UNAUTH` (default unset). Empty/whitespace-only `HONE_AUTH_TOKEN` is now treated as unset (previously it would be accepted by the middleware and matched by any `Authorization: Bearer ` header). `bins/honed/src/main.rs`.
 
-## Agent-loop robustness (ml-intern ports)
-
-### Added
-
-- **Doom-loop detector.** The agent loop now scans the last 30 messages before each LLM call and injects a synthetic user message if it sees 3+ identical consecutive tool calls or a repeating 2–5 step pattern. The corrective prompt tells the model to stop repeating the failing approach and try a fundamentally different strategy. The check is gated to fire at most once per turn (`doom_loop_warned`) and suppressed while a context emergency is active, so the two signals never stack. `crates/hone-core/src/doom_loop.rs`, call site in `crates/hone-core/src/agent.rs::run_turn`.
-- **Graceful context-budget abort.** `ContextManager::is_over_ratio(ratio, extra_tokens)` now accounts for the system prompt and injected memories as out-of-band tokens. When the total crosses 95 % of the model's context limit before a provider request, the loop latches a `context_emergency` flag, strips tools from the outgoing `CompletionRequest`, and injects a "finalize now, no more tool calls" user message so the model produces a best-effort summary instead of being truncated mid-tool-call. `crates/hone-core/src/context.rs` (`is_over_ratio`, `estimate_text_tokens`), `crates/hone-core/src/agent.rs`.
-- **Output-truncation retry hint.** New `ProviderEvent::Truncated { lost_tool_calls: Vec<String> }` variant. The Anthropic adapter emits it on `message_delta.delta.stop_reason == "max_tokens"`; the OpenAI adapter emits it on `finish_reason == "length"`. Both adapters clear partial tool-call state before emission so no malformed `tool_use` block leaks into the next turn. The agent loop commits the streamed assistant text (or a `"[response truncated at output token limit]"` placeholder when no text streamed) and appends a synthetic user hint naming the dropped tool calls, satisfying Anthropic's strict role-alternation contract. `crates/hone-proto/src/provider_event.rs`, `crates/hone-providers/src/adapters/{anthropic,openai}.rs`, `crates/hone-core/src/agent.rs`.
-
-### Documentation
-
-- **`docs/ml-intern-vs-hone.md` refreshed.** Section 5 "Top 3 porting candidates, ranked" now carries **IMPLEMENTED** status markers with the exact file/call-site references for each port. Section 7 "Bottom line" lists the files touched. Concept-map Mermaid diagram flips the three ported edges from "plan to port" to "LANDED".
-
 ## TUI & Web UI Enhancements
 
 ### Added
