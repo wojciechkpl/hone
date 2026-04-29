@@ -235,6 +235,22 @@ fn evaluate_auth_gate(
     bind_host: &str,
     allow_unauth_raw: Option<&str>,
 ) -> Result<AuthGateOk, AuthGateBlock> {
+    // TODO(security): two UX edges remain undecided.
+    //
+    //   1. `HONE_ALLOW_UNAUTH` whitespace-trimming consistency.  We trim
+    //      `HONE_AUTH_TOKEN` before comparison but require `HONE_ALLOW_UNAUTH`
+    //      to equal "1" exactly.  A user setting `HONE_ALLOW_UNAUTH=" 1"` in
+    //      a YAML config will see the gate refuse with a message about the
+    //      auth token, never realising the ALLOW_UNAUTH value was the actual
+    //      cause.  Either trim it (consistent with the token) or document
+    //      strict-equality in --help.  Currently neither.
+    //
+    //   2. `bind_host == "localhost"` is case-sensitive.  `HONE_BIND=Localhost`
+    //      falls through to `IpAddr::from_str` (fails) and is treated as
+    //      non-loopback.  Fail-closed and inconsistent with how
+    //      `to_socket_addrs()` actually resolves it later.  Either lowercase
+    //      before comparison or document the strict-case requirement.
+
     // Normalise the token: trim whitespace, treat empty as absent.  An empty
     // `expected` token in the auth middleware would compare equal to a
     // request bearing `Authorization: Bearer ` and bypass auth entirely.
@@ -376,5 +392,54 @@ mod auth_gate_tests {
     fn token_is_trimmed_before_storing() {
         let r = evaluate_auth_gate(Some("  secret  "), "0.0.0.0", None).expect("should allow");
         assert_eq!(r.normalized_token.as_deref(), Some("secret"));
+    }
+
+    // -- Error-message and combined-case assertions (regression guards) --
+
+    #[test]
+    fn block_message_includes_bind_host_and_three_remediation_paths() {
+        // The block message is a user-facing artifact: it must echo the
+        // offending bind host AND name all three escape hatches so the
+        // operator can self-serve a fix without reading the source.  A
+        // refactor that drops `{bind_host}` from the format string or omits
+        // any of the three env-var names should be caught by this test.
+        let err = evaluate_auth_gate(None, "10.0.5.42", None)
+            .expect_err("non-loopback + no-token must block");
+        assert!(
+            err.message.contains("10.0.5.42"),
+            "message must echo the offending bind host, got: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("HONE_AUTH_TOKEN"),
+            "message must mention HONE_AUTH_TOKEN remediation, got: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("HONE_BIND"),
+            "message must mention HONE_BIND remediation, got: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("HONE_ALLOW_UNAUTH"),
+            "message must mention HONE_ALLOW_UNAUTH remediation, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn token_plus_loopback_does_not_warn() {
+        // When a real token is configured AND the bind is loopback, the
+        // warning flag must stay off — the loopback exemption only applies
+        // when the token is absent.  A future refactor that moves the
+        // loopback check above the token short-circuit would silently flip
+        // warn_unauth to true on a properly-authenticated loopback bind;
+        // this test guards that path.
+        let r = evaluate_auth_gate(Some("secret"), "127.0.0.1", None).expect("should allow");
+        assert_eq!(r.normalized_token.as_deref(), Some("secret"));
+        assert!(
+            !r.warn_unauth,
+            "warn flag must be off when a real token is set, even on loopback"
+        );
     }
 }
