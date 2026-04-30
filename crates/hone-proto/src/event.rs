@@ -149,4 +149,48 @@ pub enum StepAction {
     Proceed,
     /// Skip the tool call; the agent receives an empty/stub result.
     Skip,
+    /// Execute the tool call AND add it to the session-wide allowlist so that
+    /// future calls to the same tool are auto-approved without pausing.
+    ///
+    /// The payload is the tool name to allowlist.
+    ApproveAlways(String),
+    /// Deny the tool call entirely.  The agent must NOT invoke the tool;
+    /// instead it injects a `Message::tool_result` with `is_error: true`
+    /// whose content is the deny reason so the model can react.
+    ///
+    /// The payload is a human-readable deny reason forwarded to the model.
+    Deny(String),
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+mod step_action_tests {
+    use super::StepAction;
+
+    fn round_trip(action: &StepAction) -> StepAction {
+        let json = serde_json::to_value(action).expect("serialise");
+        serde_json::from_value(json).expect("deserialise")
+    }
+
+    #[test]
+    fn step_action_proceed_round_trips() {
+        assert_eq!(round_trip(&StepAction::Proceed), StepAction::Proceed);
+    }
+
+    #[test]
+    fn step_action_skip_round_trips() {
+        assert_eq!(round_trip(&StepAction::Skip), StepAction::Skip);
+    }
+
+    #[test]
+    fn step_action_approve_always_round_trips() {
+        let action = StepAction::ApproveAlways("shell.run".to_owned());
+        assert_eq!(round_trip(&action), action);
+    }
+
+    #[test]
+    fn step_action_deny_round_trips() {
+        let action = StepAction::Deny("user denied this action".to_owned());
+        assert_eq!(round_trip(&action), action);
+    }
 }

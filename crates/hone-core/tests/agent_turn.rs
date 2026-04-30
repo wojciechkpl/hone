@@ -7,7 +7,7 @@ use hone_core::{Agent, AgentConfig, AgentHandle};
 use hone_memory::{InMemoryStore, Memory, MemoryStore};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, Role,
-    TokenUsage, ToolCallRequest, ToolLayer,
+    ToolApprovalPolicy, TokenUsage, ToolCallRequest, ToolLayer,
 };
 use hone_providers::{CompletionRequest, MockProvider, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
@@ -139,7 +139,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
-        step_mode: false,
+        approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
     }
 }
@@ -1196,7 +1196,7 @@ async fn test_dynamic_read_only_tool_dispatched_in_parallel() {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
-        step_mode: false,
+        approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
     };
 

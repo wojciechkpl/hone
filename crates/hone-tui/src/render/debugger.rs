@@ -174,4 +174,106 @@ mod tests {
         let action = rx.try_recv().expect("should have sent a StepAction");
         assert_eq!(action, StepAction::Proceed);
     }
+
+    // -----------------------------------------------------------------------
+    // Red-phase tests: new keys not yet handled by the production code.
+    //
+    // These tests will FAIL until the green-phase implementer adds 'y', 'a',
+    // 'd', and 'n' handling to `App::handle_key_debugger`.
+    // -----------------------------------------------------------------------
+
+    /// 'y' must send `StepAction::Proceed` and close the debugger.
+    ///
+    /// Red phase: 'y' currently falls through the `_ => {}` arm and sends
+    /// nothing.  The `try_recv()` will return `Err(Empty)`, causing the test
+    /// to panic with "should have sent a StepAction".
+    #[tokio::test]
+    async fn debugger_y_sends_proceed() {
+        let mut app = App::new();
+        app.debugger_open = true;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<StepAction>(4);
+        app.set_step_tx(tx);
+
+        app.handle_key_debugger(make_key(KeyCode::Char('y')));
+
+        assert!(!app.debugger_open, "debugger should be closed after 'y'");
+        let action = rx.try_recv().expect("should have sent a StepAction");
+        assert_eq!(action, StepAction::Proceed);
+    }
+
+    /// 'a' must send `StepAction::ApproveAlways(<paused_tool_name>)` and close
+    /// the debugger.
+    ///
+    /// The test pre-loads `app.debugger_paused_name` so the handler knows which
+    /// tool name to embed in the `ApproveAlways` payload.
+    ///
+    /// Red phase: 'a' falls through to `_ => {}`.  No action is sent.
+    #[tokio::test]
+    async fn debugger_a_sends_approve_always() {
+        let mut app = App::new();
+        app.debugger_open = true;
+        // Pre-load the paused tool name — the handler reads this to build the payload.
+        app.debugger_paused_name = Some("shell.run".to_owned());
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<StepAction>(4);
+        app.set_step_tx(tx);
+
+        app.handle_key_debugger(make_key(KeyCode::Char('a')));
+
+        assert!(!app.debugger_open, "debugger should be closed after 'a'");
+        let action = rx.try_recv().expect("should have sent a StepAction");
+        assert_eq!(
+            action,
+            StepAction::ApproveAlways("shell.run".to_owned()),
+            "'a' should send ApproveAlways with the paused tool name"
+        );
+    }
+
+    /// 'd' must send `StepAction::Deny(reason)` and close the debugger.
+    /// The deny reason must be non-empty (any user-facing string is acceptable).
+    ///
+    /// Red phase: 'd' falls through to `_ => {}`.  No action is sent.
+    #[tokio::test]
+    async fn debugger_d_sends_deny() {
+        let mut app = App::new();
+        app.debugger_open = true;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<StepAction>(4);
+        app.set_step_tx(tx);
+
+        app.handle_key_debugger(make_key(KeyCode::Char('d')));
+
+        assert!(!app.debugger_open, "debugger should be closed after 'd'");
+        let action = rx.try_recv().expect("should have sent a StepAction");
+        match action {
+            StepAction::Deny(reason) => {
+                assert!(!reason.is_empty(), "'d' deny reason must not be empty")
+            }
+            other => panic!("expected StepAction::Deny, got {other:?}"),
+        }
+    }
+
+    /// 'n' must also send `StepAction::Deny(reason)` and close the debugger.
+    ///
+    /// Red phase: 'n' falls through to `_ => {}`.  No action is sent.
+    #[tokio::test]
+    async fn debugger_n_sends_deny() {
+        let mut app = App::new();
+        app.debugger_open = true;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<StepAction>(4);
+        app.set_step_tx(tx);
+
+        app.handle_key_debugger(make_key(KeyCode::Char('n')));
+
+        assert!(!app.debugger_open, "debugger should be closed after 'n'");
+        let action = rx.try_recv().expect("should have sent a StepAction");
+        match action {
+            StepAction::Deny(reason) => {
+                assert!(!reason.is_empty(), "'n' deny reason must not be empty")
+            }
+            other => panic!("expected StepAction::Deny, got {other:?}"),
+        }
+    }
 }

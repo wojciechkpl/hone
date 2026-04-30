@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use hone_core::{AgentConfig, AgentEnsemble};
-use hone_proto::{ModelId, PricingEntry};
+use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::MockProvider;
 use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
@@ -35,7 +35,7 @@ fn make_config(tokens: Vec<String>) -> AgentConfig {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
-        step_mode: false,
+        approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
     }
 }
@@ -178,7 +178,7 @@ async fn test_ensemble_handles_candidate_failure() {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
-        step_mode: false,
+        approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
     };
 

@@ -14,7 +14,7 @@ use futures::{Stream, stream};
 use hone_core::{Agent, AgentConfig};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
-    ToolCallRequest, ToolLayer,
+    ToolApprovalPolicy, ToolCallRequest, ToolLayer,
 };
 use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
@@ -205,7 +205,7 @@ fn make_config() -> AgentConfig {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
-        step_mode: false,
+        approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
     }
 }

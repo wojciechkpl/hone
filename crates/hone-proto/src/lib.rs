@@ -5,6 +5,7 @@ mod event;
 mod message;
 mod model;
 mod session;
+pub mod step_action;
 mod tool;
 
 pub use content::{Content, ContentPart};
@@ -14,4 +15,5 @@ pub use event::{AgentEvent, ProviderEvent, StepAction};
 pub use message::{Message, Role};
 pub use model::{ModelId, ModelInfo, ProviderHealth, TokenUsage};
 pub use session::{SessionId, TurnId};
+pub use step_action::ToolApprovalPolicy;
 pub use tool::{ToolCallRequest, ToolLayer, ToolResult, ToolSchema};

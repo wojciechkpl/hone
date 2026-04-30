@@ -11,7 +11,7 @@ use crate::checkpoint::CheckpointStore;
 use crate::error::AgentError;
 use crate::plan_store::PlanStore;
 use crate::task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
-use hone_proto::{AgentEvent, TokenUsage};
+use hone_proto::{AgentEvent, ToolApprovalPolicy, TokenUsage};
 
 /// Default per-worker timeout: 5 minutes.
 const DEFAULT_WORKER_TIMEOUT_SECS: u64 = 300;
@@ -551,7 +551,7 @@ impl Orchestrator {
             inject_context: false,
             skeleton_strategy: Default::default(),
             egress_log: None,
-            step_mode: false,
+            approval_policy: ToolApprovalPolicy::Auto,
             step_rx: None,
         }
     }
@@ -603,7 +603,7 @@ impl Orchestrator {
             inject_context: false,
             skeleton_strategy: Default::default(),
             egress_log: None,
-            step_mode: false,
+            approval_policy: ToolApprovalPolicy::Auto,
             step_rx: None,
         }
     }

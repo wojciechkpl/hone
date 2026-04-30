@@ -8,7 +8,7 @@ use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures::stream;
 use hone_core::{AgentConfig, AgentHandle, RetryConfig, SkeletonStrategy};
-use hone_proto::{AgentEvent, Message, ModelId, PricingEntry};
+use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::{AnthropicProvider, PricingTable};
 use hone_sandbox::NullSandbox;
 use hone_tools::{
@@ -136,7 +136,7 @@ pub async fn run_handler(
                 inject_context: false,
                 skeleton_strategy: SkeletonStrategy::default(),
                 egress_log: None,
-                step_mode: false,
+                approval_policy: ToolApprovalPolicy::Auto,
                 step_rx: None,
             };
 

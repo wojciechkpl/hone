@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use futures::{Stream, stream};
 use hone_core::{Agent, AgentConfig, SelfRefineLoop};
-use hone_proto::{Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth};
+use hone_proto::{Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, ToolApprovalPolicy};
 use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
@@ -100,7 +100,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
-        step_mode: false,
+        approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
     }
 }

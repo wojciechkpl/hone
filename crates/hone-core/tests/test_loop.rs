@@ -4,7 +4,7 @@ use std::sync::Arc;
 use hone_core::{
     Agent, AgentConfig, GreenCommands, GreenContract, GreenLevel, TestStatus, TestVerificationLoop,
 };
-use hone_proto::{ModelId, PricingEntry};
+use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::MockProvider;
 use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
@@ -38,7 +38,7 @@ fn base_config(provider: Arc<dyn hone_providers::ModelProvider>) -> AgentConfig 
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
-        step_mode: false,
+        approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
     }
 }

@@ -1139,9 +1139,22 @@ impl App {
     // -----------------------------------------------------------------------
     pub fn handle_key_debugger(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Char(' ') | KeyCode::Enter => {
+            KeyCode::Char(' ') | KeyCode::Enter | KeyCode::Char('y') => {
                 if let Some(tx) = &self.step_tx {
                     let _ = tx.try_send(hone_proto::StepAction::Proceed);
+                }
+                self.debugger_open = false;
+            }
+            KeyCode::Char('a') => {
+                let tool_name = self.debugger_paused_name.clone().unwrap_or_default();
+                if let Some(tx) = &self.step_tx {
+                    let _ = tx.try_send(hone_proto::StepAction::ApproveAlways(tool_name));
+                }
+                self.debugger_open = false;
+            }
+            KeyCode::Char('d') | KeyCode::Char('n') => {
+                if let Some(tx) = &self.step_tx {
+                    let _ = tx.try_send(hone_proto::StepAction::Deny("denied by user".to_string()));
                 }
                 self.debugger_open = false;
             }

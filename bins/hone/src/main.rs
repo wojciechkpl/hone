@@ -33,7 +33,7 @@ use hone_core::{
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_mcp::McpManager;
 use hone_memory::{MemoryStore, SqliteStore};
-use hone_proto::{AgentEvent, ModelId, PricingEntry};
+use hone_proto::{AgentEvent, ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, ModelProvider, adapters::anthropic::AnthropicProvider,
     adapters::ollama::OllamaProvider, adapters::openai::OpenAiProvider,
@@ -841,7 +841,7 @@ fn build_agent_config(
         inject_context,
         skeleton_strategy,
         egress_log,
-        step_mode: false,
+        approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
     }
 }
@@ -2136,7 +2136,7 @@ async fn run_selected_mode(
     };
     let mut base_config = base_config;
     if let Some(rx) = step_rx_arc {
-        base_config.step_mode = true;
+        base_config.approval_policy = ToolApprovalPolicy::AlwaysAsk;
         base_config.step_rx = Some(rx);
     }
 

@@ -8,7 +8,7 @@ use hone_index::SqliteIndex;
 use hone_memory::{Memory, MemoryQuery, MemoryStore};
 use hone_proto::{
     AgentEvent, Message, ModelId, PricingEntry, ProviderEvent, StepAction, TokenUsage,
-    ToolCallRequest,
+    ToolApprovalPolicy, ToolCallRequest,
 };
 use hone_providers::{CompletionRequest, ContextWindowTable, ModelProvider, ProviderError};
 use hone_sandbox::Sandbox;
@@ -69,10 +69,11 @@ pub struct AgentConfig {
     /// Enabled via `HONE_AUDIT_LOG=1` or `--audit`.  The log is flushed
     /// to disk at the end of each turn.
     pub egress_log: Option<std::sync::Arc<tokio::sync::Mutex<EgressLog>>>,
-    /// When true, pause before each sequential tool call and wait for a
-    /// `StepAction` from the TUI before executing.
-    pub step_mode: bool,
-    /// Channel to receive `StepAction` from the TUI when `step_mode` is on.
+    /// Policy controlling whether the agent pauses for user approval before
+    /// executing tool calls.  Defaults to `AskRisky` (pause for write/shell,
+    /// auto-approve read-only).
+    pub approval_policy: ToolApprovalPolicy,
+    /// Channel to receive `StepAction` from the TUI when approval is required.
     /// Wrapped in `Arc<Mutex>` so `AgentConfig` can remain `Clone`.
     pub step_rx:
         Option<std::sync::Arc<tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StepAction>>>>,
@@ -859,10 +860,16 @@ impl Agent {
                         })
                         .await;
 
-                    // Step mode: pause before executing and wait for the TUI's
-                    // StepAction.  The agent is blocked here until the user
-                    // presses Space/Enter (Proceed) or 's' (Skip).
-                    if self.config.step_mode {
+                    // Policy-aware approval gate: pause before executing when the
+                    // policy requires it, then dispatch based on the user's choice.
+                    let is_ro = self
+                        .config
+                        .tools
+                        .get(&call.name)
+                        .map(|t| t.is_read_only())
+                        .unwrap_or(false);
+
+                    if self.config.approval_policy.requires_approval(&call.name, is_ro) {
                         let _ = events
                             .send(AgentEvent::ToolCallPaused {
                                 id: call.id.clone(),
@@ -870,10 +877,10 @@ impl Agent {
                                 args: call.arguments.clone(),
                             })
                             .await;
+
                         if let Some(rx) = &self.config.step_rx {
                             match rx.lock().await.recv().await {
                                 Some(StepAction::Skip) => {
-                                    // Inject a stub tool result and skip actual execution.
                                     let stub = serde_json::json!({"skipped": true});
                                     let _ = events
                                         .send(AgentEvent::ToolCallEnd {
@@ -887,6 +894,28 @@ impl Agent {
                                     self.context.add_message(Message::tool_result(
                                         call.id.clone(),
                                         "(skipped by debugger)".to_string(),
+                                    ));
+                                    i += 1;
+                                    continue;
+                                }
+                                Some(StepAction::ApproveAlways(tool_name)) => {
+                                    self.config.approval_policy.approve_always(&tool_name);
+                                    // Fall through to dispatch.
+                                }
+                                Some(StepAction::Deny(reason)) => {
+                                    let err_val = serde_json::json!({"error": "denied by user", "reason": reason});
+                                    let _ = events
+                                        .send(AgentEvent::ToolCallEnd {
+                                            id: call.id.clone(),
+                                            result: err_val,
+                                            is_error: true,
+                                            duration_ms: 0,
+                                            cache_hit: false,
+                                        })
+                                        .await;
+                                    self.context.add_message(Message::tool_result(
+                                        call.id.clone(),
+                                        format!("(denied by user): {reason}"),
                                     ));
                                     i += 1;
                                     continue;

@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 
 use crate::agent::{Agent, AgentConfig};
 use crate::error::AgentError;
-use hone_proto::{AgentEvent, TokenUsage};
+use hone_proto::{AgentEvent, ToolApprovalPolicy, TokenUsage};
 
 /// Independent code reviewer that catches bugs before tests run.
 ///
@@ -86,7 +86,7 @@ impl ReviewerAgent {
             inject_context: false,
             skeleton_strategy: Default::default(),
             egress_log: None,
-            step_mode: false,
+            approval_policy: ToolApprovalPolicy::Auto,
             step_rx: None,
         };
 
@@ -121,7 +121,7 @@ impl ReviewerAgent {
             inject_context: false,
             skeleton_strategy: Default::default(),
             egress_log: None,
-            step_mode: false,
+            approval_policy: ToolApprovalPolicy::Auto,
             step_rx: None,
         });
 

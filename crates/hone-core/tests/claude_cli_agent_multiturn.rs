@@ -13,7 +13,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
 use hone_core::{Agent, AgentConfig, RetryConfig};
-use hone_proto::{AgentEvent, ModelId, PricingEntry};
+use hone_proto::{AgentEvent, ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::{ClaudeCliProvider, ModelProvider};
 use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
@@ -97,7 +97,7 @@ fn base_config_with_cli(binary: &str) -> AgentConfig {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
-        step_mode: false,
+        approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
     }
 }

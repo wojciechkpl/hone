@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use hone_core::{Agent, AgentConfig, AgentError};
-use hone_proto::{ModelId, PricingEntry, TokenUsage};
+use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy, TokenUsage};
 use hone_providers::MockProvider;
 use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
@@ -53,7 +53,7 @@ async fn test_budget_cap_blocks_new_turn() {
         inject_context: false,
         skeleton_strategy: Default::default(),
         egress_log: None,
-        step_mode: false,
+        approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
     };
 
