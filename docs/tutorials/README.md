@@ -21,6 +21,14 @@ Start here if you're new to Hone:
 
 - **[Recipes](recipes.md)** — YAML recipe system, recipe format with annotations, conditional steps, TDD hook (test_cmd), running recipes interactively or in batch mode, recipe output and export, writing and sharing recipes
 
+- **[ACP: Bidirectional Tool Dispatch](acp.md)** — Configure ACP providers (`claude --acp`, `gemini --acp`), the full lifecycle (initialize → schema announce → tool_call → toolResult → continuation → done), running the integration suite, schema authoring tips, cancellation semantics, troubleshooting
+
+- **[TUI Keybindings and Themes](tui-keybindings-and-themes.md)** — Layout overview, every keybinding, the command palette, autocomplete with descriptions, switching themes (`crimson`, `neon`, `chalk`, `minimal`), `~/.config/hone/theme.toml` overrides, accessibility flags (`HONE_NO_COLOR`, `HONE_REDUCED_MOTION`, `HONE_ASCII_ONLY`), vim-style bindings, mouse selection
+
+- **[TDD with Hone](tdd-with-hone.md)** — `/tdd` watcher (auto-detected test commands, status badges, fix-on-failure flow), `tdd-feature` recipe (full Red-Green-Refactor automation), `bug-fix` recipe (regression-first), separating test author from implementer via `@`-agents, fast inner loops (single-crate, `cargo nextest`), CI integration
+
+- **[Debugging and Troubleshooting](debugging.md)** — `--doctor` first checks, provider issues (API keys, rate limits, model not found, hot-swap), tool dispatch (no calls, timeouts, ACP-specific failures), TUI issues (size, theme, mouse), sessions and state (memory, daemon crash), sandbox failures, recipes/TDD pitfalls, logging and observability, bug reports
+
 ### For Operators
 
 - **[Server and Remote](server-and-remote.md)** — Starting the daemon (`honed`), REST API overview (sessions, turns, SSE events), real-time streaming with Server-Sent Events, tunnel support (Cloudflare, Ngrok), authentication (bearer tokens), collaborative sessions, health checks, running multiple daemons, systemd integration
@@ -134,15 +142,19 @@ All tutorials live in this directory (`docs/tutorials/`):
 ```
 docs/
 ├── tutorials/
-│   ├── README.md                    # This file (overview & learning paths)
-│   ├── getting-started.md           # Installation & first session
-│   ├── providers.md                 # Model providers & hot-swapping
-│   ├── tools-and-mcp.md             # Tool system & integrations
-│   ├── recipes.md                   # YAML recipes & automation
-│   ├── server-and-remote.md         # Daemon & HTTP API
-│   └── security.md                  # Sandboxing & audit logging
-├── architecture.md                  # System design (read after tutorials)
-├── implementation-plan.md           # Build phases (for contributors)
+│   ├── README.md                          # This file (overview & learning paths)
+│   ├── getting-started.md                 # Installation & first session
+│   ├── providers.md                       # Model providers & hot-swapping
+│   ├── acp.md                             # ACP bidirectional tool dispatch
+│   ├── tools-and-mcp.md                   # Tool system & integrations
+│   ├── recipes.md                         # YAML recipes & automation
+│   ├── tdd-with-hone.md                   # /tdd watcher + tdd-feature recipe
+│   ├── tui-keybindings-and-themes.md      # TUI bindings, themes, accessibility
+│   ├── debugging.md                       # Symptom-driven troubleshooting
+│   ├── server-and-remote.md               # Daemon & HTTP API
+│   └── security.md                        # Sandboxing & audit logging
+├── architecture.md                        # System design (read after tutorials)
+├── implementation-plan.md                 # Build phases (for contributors)
 └── ...
 ```
 
