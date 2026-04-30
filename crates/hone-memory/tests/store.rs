@@ -8,6 +8,7 @@ fn make_memory(id: &str, content: &str, tags: Vec<&str>, weight: f64) -> Memory 
         weight,
         created_at: 1_000_000,
         decay_at: None,
+        ..Default::default()
     }
 }
 

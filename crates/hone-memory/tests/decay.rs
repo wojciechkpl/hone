@@ -8,6 +8,7 @@ fn make_memory(id: &str, content: &str, weight: f64, decay_at: Option<u64>) -> M
         weight,
         created_at: 1_000_000,
         decay_at,
+        ..Default::default()
     }
 }
 

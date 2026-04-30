@@ -289,6 +289,8 @@ async fn load_or_init_salt(store: &mut impl MemoryStore) -> Result<Vec<u8>, Memo
             weight: 0.0,
             created_at: 0,
             decay_at: None,
+            kind: crate::types::MemoryKind::Conversation,
+            description: None,
         })
         .await?;
 
@@ -333,6 +335,8 @@ mod tests {
             weight: 1.0,
             created_at: 1000,
             decay_at: None,
+            kind: crate::types::MemoryKind::Conversation,
+            description: None,
         };
 
         store.record(memory.clone()).await.unwrap();
@@ -365,6 +369,8 @@ mod tests {
                 weight: 1.0,
                 created_at: 1000,
                 decay_at: None,
+                kind: crate::types::MemoryKind::Conversation,
+                description: None,
             })
             .await
             .unwrap();
@@ -407,6 +413,8 @@ mod tests {
                 weight: 1.0,
                 created_at: 1000,
                 decay_at: None,
+                kind: crate::types::MemoryKind::Conversation,
+                description: None,
             })
             .await
             .unwrap();
@@ -472,6 +480,8 @@ mod tests {
                 weight: 1.0,
                 created_at: 0,
                 decay_at: None,
+                kind: crate::types::MemoryKind::Conversation,
+                description: None,
             })
             .await
             .unwrap();
@@ -483,6 +493,8 @@ mod tests {
                 weight: 1.0,
                 created_at: 0,
                 decay_at: None,
+                kind: crate::types::MemoryKind::Conversation,
+                description: None,
             })
             .await
             .unwrap();
@@ -539,6 +551,8 @@ mod tests {
                 weight: 1.0,
                 created_at: 1,
                 decay_at: None,
+                kind: crate::types::MemoryKind::Conversation,
+                description: None,
             })
             .await
             .unwrap();
@@ -577,6 +591,8 @@ mod tests {
                 weight: 1.0,
                 created_at: 1,
                 decay_at: None,
+                kind: crate::types::MemoryKind::Conversation,
+                description: None,
             })
             .await
             .unwrap();

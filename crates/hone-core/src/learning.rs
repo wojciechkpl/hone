@@ -118,6 +118,8 @@ impl AdaptiveClassifier {
             weight: 1.0,
             created_at: now,
             decay_at: Some(now + 30 * 86_400), // decay after 30 days
+            kind: hone_memory::MemoryKind::Outcome,
+            description: None,
         };
 
         let mut store = self.store.lock().await;

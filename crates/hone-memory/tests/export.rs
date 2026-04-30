@@ -8,6 +8,7 @@ fn make_memory(id: &str, content: &str) -> Memory {
         weight: 1.0,
         created_at: 42_000,
         decay_at: None,
+        ..Default::default()
     }
 }
 

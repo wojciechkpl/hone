@@ -285,6 +285,8 @@ impl Agent {
             weight: 1.0,
             created_at: now.as_secs(),
             decay_at: None,
+            kind: hone_memory::MemoryKind::Conversation,
+            description: None,
         };
 
         let _ = store.lock().await.record(memory).await;

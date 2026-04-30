@@ -26,6 +26,7 @@ base64 = "0.22"
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+sqlx = { workspace = true }
 
 [lints]
 workspace = true

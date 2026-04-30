@@ -971,6 +971,7 @@ async fn test_memories_injected_as_separate_message() {
             weight: 1.0,
             created_at: 0,
             decay_at: None,
+            ..Default::default()
         })
         .await
         .unwrap();

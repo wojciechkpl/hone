@@ -5,7 +5,7 @@ use sqlx::Row;
 
 use crate::error::MemoryError;
 use crate::store::MemoryStore;
-use crate::types::{Memory, MemoryFilter, MemoryQuery};
+use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
 
 pub struct SqliteStore {
     pool: sqlx::SqlitePool,
@@ -13,17 +13,46 @@ pub struct SqliteStore {
 
 const CREATE_TABLE_SQL: &str = "
     CREATE TABLE IF NOT EXISTS memories (
-        id         TEXT    PRIMARY KEY,
-        content    TEXT    NOT NULL,
-        tags       TEXT    NOT NULL DEFAULT '[]',
-        weight     REAL    NOT NULL DEFAULT 1.0,
-        created_at INTEGER NOT NULL,
-        decay_at   INTEGER
+        id          TEXT    PRIMARY KEY,
+        content     TEXT    NOT NULL,
+        tags        TEXT    NOT NULL DEFAULT '[]',
+        weight      REAL    NOT NULL DEFAULT 1.0,
+        created_at  INTEGER NOT NULL,
+        decay_at    INTEGER,
+        kind        TEXT    NOT NULL DEFAULT 'conversation',
+        description TEXT
     )
 ";
 
+// Index serves forget(MemoryFilter::Kind(_)) today and will serve typed recall
+// once R7 lands — do not remove as dead weight even if recall ignores it now.
+const CREATE_KIND_INDEX_SQL: &str =
+    "CREATE INDEX IF NOT EXISTS memories_kind_idx ON memories(kind)";
+
 fn to_io_err(e: impl std::fmt::Display) -> MemoryError {
     MemoryError::Io(std::io::Error::other(e.to_string()))
+}
+
+fn kind_from_str(s: &str) -> MemoryKind {
+    match s {
+        "user" => MemoryKind::User,
+        "feedback" => MemoryKind::Feedback,
+        "project" => MemoryKind::Project,
+        "reference" => MemoryKind::Reference,
+        "outcome" => MemoryKind::Outcome,
+        _ => MemoryKind::Conversation,
+    }
+}
+
+fn kind_to_str(kind: MemoryKind) -> &'static str {
+    match kind {
+        MemoryKind::Conversation => "conversation",
+        MemoryKind::User => "user",
+        MemoryKind::Feedback => "feedback",
+        MemoryKind::Project => "project",
+        MemoryKind::Reference => "reference",
+        MemoryKind::Outcome => "outcome",
+    }
 }
 
 fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
@@ -33,6 +62,14 @@ fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
     let weight: f64 = row.try_get("weight").map_err(to_io_err)?;
     let created_at: i64 = row.try_get("created_at").map_err(to_io_err)?;
     let decay_at: Option<i64> = row.try_get("decay_at").map_err(to_io_err)?;
+    let kind_str: String = row.try_get("kind").map_err(to_io_err)?;
+    let kind = kind_from_str(&kind_str);
+    // description is nullable; .ok().flatten() converts both SQL NULL and
+    // decode errors to None — intentional, the field is non-critical.
+    let description: Option<String> = row
+        .try_get::<Option<String>, _>("description")
+        .ok()
+        .flatten();
 
     let tags: Vec<String> = serde_json::from_str(&tags_json)?;
 
@@ -43,7 +80,58 @@ fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
         weight,
         created_at: created_at as u64,
         decay_at: decay_at.map(|t| t as u64),
+        kind,
+        description,
     })
+}
+
+/// Probe `PRAGMA table_info(memories)` and return the set of column names
+/// present in the table.
+async fn existing_columns(pool: &sqlx::SqlitePool) -> Result<Vec<String>, MemoryError> {
+    let rows = sqlx::query("PRAGMA table_info(memories)")
+        .fetch_all(pool)
+        .await
+        .map_err(to_io_err)?;
+
+    let names = rows
+        .iter()
+        .filter_map(|r| r.try_get::<String, _>("name").ok())
+        .collect();
+
+    Ok(names)
+}
+
+/// Run idempotent `ALTER TABLE` migrations for any columns that are missing.
+async fn migrate_schema(pool: &sqlx::SqlitePool) -> Result<(), MemoryError> {
+    let cols = existing_columns(pool).await?;
+
+    // Two processes opening the same DB simultaneously can both observe the
+    // column missing and race to ALTER; the second hit is a no-op, not an error.
+    if !cols.iter().any(|c| c == "kind") {
+        match sqlx::query(
+            "ALTER TABLE memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'conversation'",
+        )
+        .execute(pool)
+        .await
+        {
+            Ok(_) => {}
+            Err(e) if e.to_string().contains("duplicate column name") => {}
+            Err(e) => return Err(to_io_err(e)),
+        }
+    }
+
+    if !cols.iter().any(|c| c == "description") {
+        match sqlx::query("ALTER TABLE memories ADD COLUMN description TEXT")
+            .execute(pool)
+            .await
+        {
+            Ok(_) => {}
+            Err(e) if e.to_string().contains("duplicate column name") => {}
+            Err(e) => return Err(to_io_err(e)),
+        }
+    }
+
+    Ok(())
 }
 
 impl SqliteStore {
@@ -52,6 +140,11 @@ impl SqliteStore {
         let url = format!("sqlite:{}?mode=rwc", path.display());
         let pool = sqlx::SqlitePool::connect(&url).await.map_err(to_io_err)?;
         sqlx::query(CREATE_TABLE_SQL)
+            .execute(&pool)
+            .await
+            .map_err(to_io_err)?;
+        migrate_schema(&pool).await?;
+        sqlx::query(CREATE_KIND_INDEX_SQL)
             .execute(&pool)
             .await
             .map_err(to_io_err)?;
@@ -67,6 +160,13 @@ impl SqliteStore {
             .execute(&pool)
             .await
             .map_err(to_io_err)?;
+        // For a brand-new in-memory DB, CREATE_TABLE_SQL already includes the
+        // new columns — but migrate_schema is called anyway for consistency.
+        migrate_schema(&pool).await?;
+        sqlx::query(CREATE_KIND_INDEX_SQL)
+            .execute(&pool)
+            .await
+            .map_err(to_io_err)?;
         Ok(Self { pool })
     }
 }
@@ -77,10 +177,12 @@ impl MemoryStore for SqliteStore {
         let tags_json = serde_json::to_string(&memory.tags)?;
         let created_at = memory.created_at as i64;
         let decay_at = memory.decay_at.map(|t| t as i64);
+        let kind_str = kind_to_str(memory.kind);
 
         sqlx::query(
-            "INSERT OR REPLACE INTO memories (id, content, tags, weight, created_at, decay_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO memories
+             (id, content, tags, weight, created_at, decay_at, kind, description)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         )
         .bind(&memory.id)
         .bind(&memory.content)
@@ -88,6 +190,8 @@ impl MemoryStore for SqliteStore {
         .bind(memory.weight)
         .bind(created_at)
         .bind(decay_at)
+        .bind(kind_str)
+        .bind(&memory.description)
         .execute(&self.pool)
         .await
         .map_err(to_io_err)?;
@@ -102,14 +206,18 @@ impl MemoryStore for SqliteStore {
         // ASCII but scoring with overlap count requires application-side logic that
         // mirrors InMemoryStore's behaviour.
         let rows = if query_lower.is_empty() {
-            sqlx::query("SELECT id, content, tags, weight, created_at, decay_at FROM memories")
-                .fetch_all(&self.pool)
-                .await
-                .map_err(to_io_err)?
+            sqlx::query(
+                "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+                 FROM memories",
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_io_err)?
         } else {
             let pattern = format!("%{}%", query_lower);
             sqlx::query(
-                "SELECT id, content, tags, weight, created_at, decay_at FROM memories
+                "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+                 FROM memories
                  WHERE lower(content) LIKE ?1",
             )
             .bind(&pattern)
@@ -173,6 +281,15 @@ impl MemoryStore for SqliteStore {
                     .map_err(to_io_err)?
                     .rows_affected()
             }
+            MemoryFilter::Kind(kind) => {
+                let kind_str = kind_to_str(*kind);
+                sqlx::query("DELETE FROM memories WHERE kind = ?1")
+                    .bind(kind_str)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(to_io_err)?
+                    .rows_affected()
+            }
         };
 
         Ok(rows_affected as u32)
@@ -200,11 +317,13 @@ impl MemoryStore for SqliteStore {
     }
 
     async fn export(&self, path: &Path) -> Result<(), MemoryError> {
-        let rows =
-            sqlx::query("SELECT id, content, tags, weight, created_at, decay_at FROM memories")
-                .fetch_all(&self.pool)
-                .await
-                .map_err(to_io_err)?;
+        let rows = sqlx::query(
+            "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+             FROM memories",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_io_err)?;
 
         let memories: Result<Vec<Memory>, MemoryError> = rows.iter().map(row_to_memory).collect();
         let memories = memories?;
@@ -223,10 +342,12 @@ impl MemoryStore for SqliteStore {
             let tags_json = serde_json::to_string(&memory.tags)?;
             let created_at = memory.created_at as i64;
             let decay_at = memory.decay_at.map(|t| t as i64);
+            let kind_str = kind_to_str(memory.kind);
 
             sqlx::query(
-                "INSERT OR REPLACE INTO memories (id, content, tags, weight, created_at, decay_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT OR REPLACE INTO memories
+                 (id, content, tags, weight, created_at, decay_at, kind, description)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )
             .bind(&memory.id)
             .bind(&memory.content)
@@ -234,6 +355,8 @@ impl MemoryStore for SqliteStore {
             .bind(memory.weight)
             .bind(created_at)
             .bind(decay_at)
+            .bind(kind_str)
+            .bind(&memory.description)
             .execute(&store.pool)
             .await
             .map_err(to_io_err)?;
@@ -246,7 +369,6 @@ impl MemoryStore for SqliteStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::MemoryStore as _;
     use tempfile::TempDir;
 
     fn make_memory(id: &str, content: &str) -> Memory {
@@ -257,6 +379,8 @@ mod tests {
             weight: 1.0,
             created_at: 1_000_000,
             decay_at: None,
+            kind: MemoryKind::Conversation,
+            description: None,
         }
     }
 

@@ -91,6 +91,9 @@ impl MemoryStore for InMemoryStore {
             MemoryFilter::After(ts) => {
                 self.memories.retain(|_, m| m.created_at <= *ts);
             }
+            MemoryFilter::Kind(kind) => {
+                self.memories.retain(|_, m| m.kind != *kind);
+            }
         }
         let removed = before.saturating_sub(self.memories.len()) as u32;
         Ok(removed)
