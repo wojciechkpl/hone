@@ -24,6 +24,13 @@ const CREATE_TABLE_SQL: &str = "
     )
 ";
 
+const CREATE_META_TABLE_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS memory_meta (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )
+";
+
 // Index serves forget(MemoryFilter::Kind(_)) today and will serve typed recall
 // once R7 lands — do not remove as dead weight even if recall ignores it now.
 const CREATE_KIND_INDEX_SQL: &str =
@@ -136,7 +143,20 @@ async fn migrate_schema(pool: &sqlx::SqlitePool) -> Result<(), MemoryError> {
 
 impl SqliteStore {
     /// Open or create a SQLite database at the given path.
+    ///
+    /// Decay runs at most once per 24 hours. To force-decay in tests use
+    /// [`SqliteStore::open_with_decay_interval`] with `interval_secs = 0`.
     pub async fn open(path: &Path) -> Result<Self, MemoryError> {
+        Self::open_with_decay_interval(path, 86_400).await
+    }
+
+    /// Like [`SqliteStore::open`] but lets the caller control the minimum
+    /// number of seconds between automatic decay passes.  Pass `0` to always
+    /// decay (useful in tests).
+    pub async fn open_with_decay_interval(
+        path: &Path,
+        interval_secs: u64,
+    ) -> Result<Self, MemoryError> {
         let url = format!("sqlite:{}?mode=rwc", path.display());
         let pool = sqlx::SqlitePool::connect(&url).await.map_err(to_io_err)?;
         sqlx::query(CREATE_TABLE_SQL)
@@ -148,7 +168,40 @@ impl SqliteStore {
             .execute(&pool)
             .await
             .map_err(to_io_err)?;
-        Ok(Self { pool })
+        sqlx::query(CREATE_META_TABLE_SQL)
+            .execute(&pool)
+            .await
+            .map_err(to_io_err)?;
+
+        let mut store = Self { pool };
+
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let last_decay: u64 = sqlx::query_scalar::<_, String>(
+            "SELECT value FROM memory_meta WHERE key = 'last_decay_at'",
+        )
+        .fetch_optional(&store.pool)
+        .await
+        .map_err(to_io_err)?
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+        if now_secs.saturating_sub(last_decay) >= interval_secs {
+            store.decay(0.95, now_secs).await?;
+            sqlx::query(
+                "INSERT INTO memory_meta (key, value) VALUES ('last_decay_at', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            )
+            .bind(now_secs.to_string())
+            .execute(&store.pool)
+            .await
+            .map_err(to_io_err)?;
+        }
+
+        Ok(store)
     }
 
     /// Open an in-memory SQLite database (for testing).

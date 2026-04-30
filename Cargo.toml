@@ -60,7 +60,7 @@ anyhow = "1"
 
 # IDs and time
 uuid = { version = "1", features = ["v7", "serde"] }
-time = { version = "0.3", features = ["serde"] }
+time = { version = "0.3", features = ["serde", "parsing", "formatting"] }
 
 # Observability
 tracing = "0.1"

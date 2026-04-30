@@ -1,4 +1,5 @@
 mod configure;
+mod memory_cmd;
 mod report;
 mod reports_cmd;
 mod session;
@@ -99,6 +100,11 @@ enum HoneCmd {
     Reports {
         #[command(subcommand)]
         cmd: reports_cmd::ReportsCmd,
+    },
+    /// Inspect and prune the persistent memory store.
+    Memory {
+        #[command(subcommand)]
+        cmd: memory_cmd::MemoryCmd,
     },
 }
 
@@ -1687,7 +1693,32 @@ async fn main() -> Result<()> {
                 }
                 return Ok(());
             }
+            HoneCmd::Memory { .. } => {
+                // Handled below, outside the `Some(ref cmd)` borrow scope,
+                // so we can take ownership of the MemoryCmd variant.
+            }
         }
+    }
+
+    // Handle `hone memory` after releasing the `Some(ref cmd)` borrow so we
+    // can move the MemoryCmd value into `memory_cmd::run`.
+    if let Some(HoneCmd::Memory { cmd: memory_sub }) = cli.command {
+        let memory_path = data_dir().join("memory.db");
+        if let Err(e) = std::fs::create_dir_all(data_dir()) {
+            eprintln!("warning: could not create data dir: {e}");
+        }
+        let store: Arc<Mutex<dyn MemoryStore>> =
+            match SqliteStore::open(&memory_path).await {
+                Ok(s) => Arc::new(Mutex::new(s)),
+                Err(e) => {
+                    return Err(anyhow::anyhow!(
+                        "failed to open memory store at {}: {e}",
+                        memory_path.display()
+                    ));
+                }
+            };
+        memory_cmd::run(memory_sub, store, &mut std::io::stdout()).await?;
+        return Ok(());
     }
 
     let (config, hone_md) = load_project_config().await;
