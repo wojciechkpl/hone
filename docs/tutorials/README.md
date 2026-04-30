@@ -29,6 +29,8 @@ Start here if you're new to Hone:
 
 - **[Debugging and Troubleshooting](debugging.md)** — `--doctor` first checks, provider issues (API keys, rate limits, model not found, hot-swap), tool dispatch (no calls, timeouts, ACP-specific failures), TUI issues (size, theme, mouse), sessions and state (memory, daemon crash), sandbox failures, recipes/TDD pitfalls, logging and observability, bug reports
 
+- **[Memory and Pass-Through Caching](memory.md)** — the five layers (persistent store, HONE.md, context injection, Anthropic prompt-cache pass-through, local LRU), inspecting recalls in the TUI (`Ctrl+M`), `--ephemeral` mode, deleting memories, optional `EncryptedStore` (AES-256-GCM + Argon2id), Anthropic `cache_control` markers, debugging surprising recalls. Pairs with [`../architecture/memory.md`](../architecture/memory.md) for the design reference.
+
 ### For Operators
 
 - **[Server and Remote](server-and-remote.md)** — Starting the daemon (`honed`), REST API overview (sessions, turns, SSE events), real-time streaming with Server-Sent Events, tunnel support (Cloudflare, Ngrok), authentication (bearer tokens), collaborative sessions, health checks, running multiple daemons, systemd integration
@@ -151,6 +153,7 @@ docs/
 │   ├── tdd-with-hone.md                   # /tdd watcher + tdd-feature recipe
 │   ├── tui-keybindings-and-themes.md      # TUI bindings, themes, accessibility
 │   ├── debugging.md                       # Symptom-driven troubleshooting
+│   ├── memory.md                          # Memory layers & pass-through caching
 │   ├── server-and-remote.md               # Daemon & HTTP API
 │   └── security.md                        # Sandboxing & audit logging
 ├── architecture.md                        # System design (read after tutorials)
