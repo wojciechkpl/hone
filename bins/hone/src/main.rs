@@ -1,5 +1,6 @@
 mod configure;
 mod memory_cmd;
+mod memory_init;
 mod report;
 mod reports_cmd;
 mod session;
@@ -141,6 +142,11 @@ struct Cli {
     /// Ephemeral session (no memory persistence)
     #[arg(long)]
     ephemeral: bool,
+
+    /// Encrypt the memory store at rest using AES-256-GCM.
+    /// Requires the HONE_MEMORY_PASSPHRASE environment variable to be set.
+    #[arg(long)]
+    encrypted_memory: bool,
 
     /// Enable vim-style keybindings in the TUI (i/a=insert, Esc=normal, j/k=scroll)
     #[arg(long)]
@@ -1476,7 +1482,7 @@ struct PersistenceHandles {
 /// Returns `PersistenceHandles` with whatever stores opened successfully.
 /// Any errors are printed to stderr (as non-fatal warnings) so that a
 /// persistence failure never prevents the binary from starting.
-async fn init_persistence(ephemeral: bool) -> PersistenceHandles {
+async fn init_persistence(ephemeral: bool, memory_passphrase: Option<String>) -> PersistenceHandles {
     if ephemeral {
         tracing::info!("ephemeral mode: skipping persistence init");
         return PersistenceHandles {
@@ -1501,7 +1507,26 @@ async fn init_persistence(ephemeral: bool) -> PersistenceHandles {
     let memory: Option<Arc<Mutex<dyn MemoryStore>>> = match SqliteStore::open(&memory_path).await {
         Ok(store) => {
             tracing::info!(path = %memory_path.display(), "memory store initialised");
-            Some(Arc::new(Mutex::new(store)))
+            let passphrase_ref = memory_passphrase.as_deref();
+            match memory_init::build_memory_store(store, passphrase_ref).await {
+                Ok(wrapped) => Some(wrapped),
+                Err(e) => {
+                    tracing::warn!("failed to initialise memory store: {e}");
+                    if passphrase_ref.is_some() {
+                        eprintln!(
+                            "error: failed to open encrypted memory store: {e}\n\
+                             Check that HONE_MEMORY_PASSPHRASE is correct."
+                        );
+                        std::process::exit(1);
+                    } else {
+                        eprintln!(
+                            "Failed to initialise memory store: {e}\n\
+                             Hone will run without memory persistence."
+                        );
+                        None
+                    }
+                }
+            }
         }
         Err(e) => {
             tracing::warn!("failed to open memory store: {e}");
@@ -1737,7 +1762,26 @@ async fn main() -> Result<()> {
         || std::env::var("HONE_DISABLE_PERSISTENT_STORES")
             .map(|v| v == "1")
             .unwrap_or(false);
-    let persistence = init_persistence(skip_persistence).await;
+
+    // Resolve the memory passphrase: only read the env var when
+    // `--encrypted-memory` is explicitly set; otherwise ignore it entirely.
+    let memory_passphrase: Option<String> = if cli.encrypted_memory {
+        match std::env::var("HONE_MEMORY_PASSPHRASE") {
+            Ok(pp) if !pp.is_empty() => Some(pp),
+            _ => {
+                eprintln!(
+                    "error: --encrypted-memory requires the HONE_MEMORY_PASSPHRASE \
+                     environment variable to be set to a non-empty value.\n\
+                     Example: export HONE_MEMORY_PASSPHRASE=\"your-strong-passphrase\""
+                );
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
+
+    let persistence = init_persistence(skip_persistence, memory_passphrase).await;
     let memory_store = persistence.memory.clone();
     let index = persistence.index.clone();
 
