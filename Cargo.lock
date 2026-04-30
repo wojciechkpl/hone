@@ -1414,6 +1414,7 @@ dependencies = [
  "hone-tools",
  "hone-tui",
  "ratatui",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

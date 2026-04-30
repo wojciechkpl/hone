@@ -215,16 +215,9 @@ fn days_to_ymd(days: u32) -> (u32, u32, u32) {
 
 // ── Generate default session name ─────────────────────────────────────────────
 
-/// Generate a default session name like `"session-2026-04-09-1430"` from the
-/// current wall-clock time.
+/// Generate a default session name in funky format, e.g. `"groovy-otter-1430-7f"`.
 pub fn default_session_name() -> String {
-    let ts = unix_now() as u64;
-    let days = ts / 86400;
-    let time_of_day = ts % 86400;
-    let h = time_of_day / 3600;
-    let m = (time_of_day % 3600) / 60;
-    let (y, mo, d) = days_to_ymd(days as u32);
-    format!("session-{y}-{mo:02}-{d:02}-{h:02}{m:02}")
+    hone_core::agent_name::name_for_agent_type(None)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -345,12 +338,29 @@ mod tests {
     }
 
     #[test]
-    fn default_session_name_format() {
+    fn default_session_name_funky_format() {
         let name = default_session_name();
-        // Must look like "session-YYYY-MM-DD-HHMM"
-        assert!(name.starts_with("session-"), "got: {name}");
-        let parts: Vec<&str> = name.splitn(2, '-').collect();
-        assert_eq!(parts[0], "session");
+        let re = regex::Regex::new(r"^[a-z]+-[a-z]+-\d{4}-[0-9a-f]{2}$").unwrap();
+        assert!(
+            re.is_match(&name),
+            "default_session_name() returned {name:?}; expected funky format ^[a-z]+-[a-z]+-\\d{{4}}-[0-9a-f]{{2}}$"
+        );
+    }
+
+    // ── Test 11 ───────────────────────────────────────────────────────────────
+    // Likely fails TODAY: current format truncates to minute resolution, so two
+    // consecutive calls in the same minute return the same string.
+    // Passes AFTER green phase adds the nanosecond-seeded XX suffix.
+    #[test]
+    fn default_session_name_changes_per_call() {
+        let first = default_session_name();
+        std::hint::black_box(&first);
+        let second = default_session_name();
+        assert_ne!(
+            first, second,
+            "consecutive calls to default_session_name() must return different values; \
+             the XX collision suffix should disambiguate them"
+        );
     }
 
     #[test]

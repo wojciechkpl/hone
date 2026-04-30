@@ -1,5 +1,6 @@
 mod agent;
 pub mod agent_def;
+pub mod agent_name;
 pub mod agent_registry;
 pub mod audit;
 pub mod checkpoint;
