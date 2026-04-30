@@ -281,25 +281,40 @@ fn render_status_bar_area(app: &App, frame: &mut Frame, area: Rect) {
 fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
     let input_buf = &app.input().buffer;
 
-    let (matches, sigil): (Vec<&'static str>, char) = if input_buf.starts_with('/') {
-        (Command::completions(&input_buf[1..]), '/')
-    } else if input_buf.starts_with('@') {
-        (Command::agent_completions(&input_buf[1..]), '@')
-    } else {
+    // For slash-commands, fetch (name, description) pairs; for @-agents, names only.
+    let is_slash = input_buf.starts_with('/');
+    let is_at = input_buf.starts_with('@');
+
+    if !is_slash && !is_at {
         return;
+    }
+
+    let sigil = if is_slash { '/' } else { '@' };
+    let prefix = &input_buf[1..];
+
+    // Build (name, description) pairs.
+    let pairs: Vec<(&'static str, &'static str)> = if is_slash {
+        Command::completions_with_descriptions(prefix)
+    } else {
+        Command::agent_completions(prefix)
+            .into_iter()
+            .map(|n| (n, ""))
+            .collect()
     };
 
     // Hide when no completions or the single match is already exact.
-    if matches.is_empty() || (matches.len() == 1 && format!("{sigil}{}", matches[0]) == *input_buf)
+    if pairs.is_empty()
+        || (pairs.len() == 1 && format!("{sigil}{}", pairs[0].0) == *input_buf)
     {
         return;
     }
 
     let theme = app.theme();
-    let count = matches.len().min(8) as u16;
+    let count = pairs.len().min(8) as u16;
     // Popup height: one row per suggestion + top/bottom border.
     let popup_height = count + 2;
-    let popup_width = 34u16.min(input_area.width.saturating_sub(2));
+    // Widen the popup to show descriptions (up to 50 cells, capped by terminal).
+    let popup_width = 50u16.min(input_area.width.saturating_sub(2));
     if popup_width < 6 || input_area.y < popup_height {
         return; // not enough space
     }
@@ -351,8 +366,14 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
     // Write suggestion lines inside the border.
     let selected = app.completion_index();
     let sel_style = Style::default().bg(theme.accent_hot).fg(theme.surface_base);
+    let desc_style = Style::default()
+        .bg(theme.surface_overlay)
+        .fg(theme.text_secondary);
     let inner_width = (popup_width.saturating_sub(2)) as usize;
-    for (i, name) in matches.iter().take(count as usize).enumerate() {
+    // Fixed width for the name column (e.g. " /configure " = 12 chars).
+    let name_col_width: usize = 14;
+
+    for (i, (name, desc)) in pairs.iter().take(count as usize).enumerate() {
         let row = area.y + 1 + i as u16;
         let is_sel = selected == Some(i);
         let row_style = if is_sel { sel_style } else { bg_style };
@@ -362,11 +383,27 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
                 .set_char(' ')
                 .set_style(row_style);
         }
-        let text = format!(" {sigil}{name}");
+        // Write " /name".
+        let name_text = format!(" {sigil}{name}");
         let mut col = area.x + 1;
-        for ch in text.chars().take(inner_width) {
+        for ch in name_text.chars().take(inner_width) {
             buf[(col, row)].set_char(ch).set_style(row_style);
             col += 1;
+        }
+        // Pad to fixed name column width.
+        let pad_end = area.x + 1 + name_col_width as u16;
+        while col < pad_end && col < right {
+            buf[(col, row)].set_char(' ').set_style(row_style);
+            col += 1;
+        }
+        // Write description with secondary text color (or selected style).
+        if !desc.is_empty() {
+            let desc_budget = right.saturating_sub(col) as usize;
+            let effective_desc_style = if is_sel { sel_style } else { desc_style };
+            for ch in desc.chars().take(desc_budget) {
+                buf[(col, row)].set_char(ch).set_style(effective_desc_style);
+                col += 1;
+            }
         }
     }
 }
@@ -507,6 +544,61 @@ mod tests {
         assert_ne!(
             unselected_bg, theme.accent_hot,
             "unselected row must not have accent_hot bg"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // TUI bug tests (red phase)
+    // -----------------------------------------------------------------------
+
+    /// Autocomplete dropdown rows must include a human-readable description
+    /// alongside the command name.
+    ///
+    /// Bug: `render_autocomplete` only renders the command name (e.g.
+    /// " /quit").  The user cannot see what the command does from the
+    /// dropdown alone.
+    ///
+    /// Contract: When `/q` is typed (matches "quit" and "q", two non-exact
+    /// matches), the rendered popup must contain the description text "Exit"
+    /// (the description for /quit from `PALETTE_COMMANDS`).
+    ///
+    /// The green phase must:
+    ///   (a) Add `Command::completions_with_descriptions(prefix: &str) ->
+    ///       Vec<(&'static str, &'static str)>` to commands.rs that returns
+    ///       (name, description) pairs sourced from `PALETTE_COMMANDS`.
+    ///   (b) Update `render_autocomplete` in root.rs to use this function
+    ///       and render both name and description per row.
+    #[test]
+    fn autocomplete_dropdown_shows_command_description() {
+        // "/q" → matches "quit" and "q" (2 matches, not exact) → popup shown.
+        // popup_height = 2 + 2 = 4, popup_y = 20 - 4 = 16.
+        // Row 0 (the first match, "quit") is at y = 17, inner x range 2..36.
+        let app = app_with_input("/q");
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(&app, f)).unwrap();
+
+        // Extract all rendered text from the first suggestion row.
+        let row_y: u16 = 17;
+        let buf = terminal.backend().buffer();
+        let mut row_text = String::new();
+        for x in 2u16..36 {
+            let ch = buf
+                .cell((x, row_y))
+                .map(|c| c.symbol().chars().next().unwrap_or(' '))
+                .unwrap_or(' ');
+            row_text.push(ch);
+        }
+
+        // The row must contain the description for /quit: "Exit hone".
+        // Currently the autocomplete only renders " /quit" — this assertion
+        // will fail until render_autocomplete is updated.
+        assert!(
+            row_text.contains("Exit"),
+            "autocomplete row for /quit must contain its description ('Exit hone'); \
+             got: {row_text:?} — update render_autocomplete to call \
+             Command::completions_with_descriptions and render the description text \
+             alongside the command name"
         );
     }
 }

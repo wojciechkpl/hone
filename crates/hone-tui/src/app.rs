@@ -186,6 +186,13 @@ pub struct App {
     /// Set on Left-Up when a non-empty selection is ready to be copied. The
     /// main event loop reads the current frame buffer and drains this flag.
     pub(crate) pending_copy: bool,
+
+    /// Path to the user's `theme.toml` override file.
+    ///
+    /// Defaults to `~/.config/hone/theme.toml`.  Set by `App::new()` and
+    /// used by `apply_theme_overrides()` to re-apply per-field color
+    /// overrides after a `ThemeSwitch` command.
+    pub(crate) theme_toml_path: std::path::PathBuf,
 }
 
 impl App {
@@ -257,6 +264,11 @@ impl App {
             pending_session_switch: None,
             selection: None,
             pending_copy: false,
+            theme_toml_path: std::env::var("HOME")
+                .map(|h| {
+                    std::path::PathBuf::from(h).join(".config/hone/theme.toml")
+                })
+                .unwrap_or_default(),
         };
         // Restore draft from previous session if present.
         let draft_file = draft_path();
@@ -1572,7 +1584,7 @@ impl App {
                 };
             }
             Command::ThemeSwitch(name) => {
-                self.theme = match name.as_str() {
+                let base_theme = match name.as_str() {
                     "crimson" => Theme::crimson(),
                     "neon" => Theme::neon(),
                     "chalk" | "light" => Theme::chalk(),
@@ -1585,6 +1597,17 @@ impl App {
                         return;
                     }
                 };
+                // Capture any Color::Rgb overrides from the current theme
+                // before replacing it (they may not be in the TOML file yet,
+                // e.g. applied directly at startup).
+                let old_theme = self.theme.clone();
+                self.theme = base_theme;
+                // Re-apply user TOML overrides from the stored path.
+                self.apply_theme_overrides();
+                // Carry forward Rgb overrides from the previous theme that
+                // were applied outside of the TOML file (e.g. via a direct
+                // apply_toml_overrides call with a temporary path).
+                carry_rgb_overrides(&old_theme, &mut self.theme);
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::System,
                     format!("Theme switched to: {name}"),
@@ -1640,6 +1663,19 @@ impl App {
                     .push(DisplayMessage::new(DisplayRole::Error, msg));
             }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Theme override helpers
+    // -----------------------------------------------------------------------
+
+    /// Re-apply the user's `theme.toml` overrides onto the current theme.
+    ///
+    /// Reads from `self.theme_toml_path`.  Silently no-ops when the file does
+    /// not exist or cannot be parsed — see `Theme::apply_toml_overrides`.
+    fn apply_theme_overrides(&mut self) {
+        let path = self.theme_toml_path.clone();
+        self.theme.apply_toml_overrides(&path);
     }
 
     // -----------------------------------------------------------------------
@@ -2266,6 +2302,64 @@ fn detect_test_cmd_for_dir(dir: &std::path::Path) -> Option<String> {
         return Some("go test ./...".to_string());
     }
     None
+}
+
+/// Copy any `Color::Rgb` fields from `src` into `dst`.
+///
+/// Built-in themes use only `Color::Indexed`, `Color::White`, and
+/// `Color::Reset`.  The only way a field can hold a `Color::Rgb` value is
+/// if the user applied a TOML override (which parses hex colors into Rgb).
+/// This function preserves those per-field user overrides when the base theme
+/// is switched via `ThemeSwitch`, regardless of whether the overrides came
+/// from a file or were applied directly.
+fn carry_rgb_overrides(src: &Theme, dst: &mut Theme) {
+    use ratatui::style::Color;
+
+    macro_rules! carry {
+        ($field:ident) => {
+            // Only propagate a stale Rgb from the pre-switch snapshot if the
+            // fresh TOML re-read did not itself produce an Rgb value.  When
+            // apply_theme_overrides() already set the field to Rgb (because
+            // the user's theme.toml was updated), that fresh value wins.
+            if matches!(src.$field, Color::Rgb(..)) && !matches!(dst.$field, Color::Rgb(..)) {
+                dst.$field = src.$field;
+            }
+        };
+    }
+
+    carry!(surface_base);
+    carry!(surface_raised);
+    carry!(surface_overlay);
+    carry!(surface_border);
+    carry!(surface_focus);
+    carry!(text_primary);
+    carry!(text_secondary);
+    carry!(text_muted);
+    carry!(text_on_accent);
+    carry!(role_user);
+    carry!(role_assistant);
+    carry!(role_system);
+    carry!(role_tool);
+    carry!(role_tool_result);
+    carry!(role_error);
+    carry!(accent_hot);
+    carry!(accent_mid);
+    carry!(accent_deep);
+    carry!(syntax_keyword);
+    carry!(syntax_string);
+    carry!(syntax_number);
+    carry!(syntax_comment);
+    carry!(syntax_type);
+    carry!(syntax_function);
+    carry!(diff_add_bg);
+    carry!(diff_add_fg);
+    carry!(diff_remove_bg);
+    carry!(diff_remove_fg);
+    carry!(diff_hunk_bg);
+    carry!(diff_hunk_fg);
+    carry!(budget_low);
+    carry!(budget_mid);
+    carry!(budget_high);
 }
 
 #[cfg(test)]
@@ -2932,5 +3026,137 @@ mod tests {
         app.sessions_cursor = 2;
         app.handle_key_sessions(make_key(KeyCode::Char('j'), KeyModifiers::NONE));
         assert_eq!(app.sessions_cursor, 2, "cursor must not exceed list length");
+    }
+
+    // -----------------------------------------------------------------------
+    // TUI bug tests (red phase)
+    // -----------------------------------------------------------------------
+
+    /// `Command::ThemeSwitch` must preserve any user-applied theme.toml
+    /// overrides after switching to a new named theme.
+    ///
+    /// This test is the strengthened version of the original red-phase test.
+    /// It sets `app.theme_toml_path` so that the TOML re-read path inside the
+    /// ThemeSwitch handler is exercised directly, not just the
+    /// `carry_rgb_overrides` snapshot-and-forward safety net.
+    ///
+    /// The stricter post-condition (`assert_eq!` on the sentinel value) proves
+    /// the re-read path actually rehydrated the override from disk.
+    #[test]
+    fn theme_switch_preserves_toml_overrides() {
+        use std::io::Write;
+        use ratatui::style::Color;
+
+        // Write a minimal theme.toml that overrides text_primary to a
+        // sentinel color that is distinct from every built-in theme default.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let toml_path = dir.path().join("theme.toml");
+        {
+            let mut f = std::fs::File::create(&toml_path).expect("create theme.toml");
+            writeln!(f, "text_primary = \"#abcdef\"").expect("write");
+        }
+
+        let mut app = App::new();
+        app.show_splash = false;
+
+        // Point the app at the tempdir TOML so ThemeSwitch reads it on switch.
+        app.theme_toml_path = toml_path.clone();
+
+        // Simulate what main.rs would do at startup: apply the TOML overrides
+        // onto the initial theme.
+        app.theme.apply_toml_overrides(&toml_path);
+
+        // Verify the sentinel is active before the switch.
+        let sentinel = Color::Rgb(0xab, 0xcd, 0xef);
+        assert_eq!(
+            app.theme.text_primary,
+            sentinel,
+            "pre-condition: sentinel override must be active before theme switch"
+        );
+
+        // Switch to a different named theme.
+        app.handle_command(Command::ThemeSwitch("chalk".to_owned()));
+
+        // Weak guard: the override must not revert to the bare chalk default.
+        assert_ne!(
+            app.theme.text_primary,
+            Theme::chalk().text_primary,
+            "ThemeSwitch must not silently discard theme.toml overrides; \
+             text_primary reverted to the chalk default (Indexed(234)) instead of \
+             keeping the user override (#abcdef)."
+        );
+
+        // Strict guard: the re-read path must have rehydrated the exact sentinel.
+        // This assertion fails if the test passes only via carry_rgb_overrides
+        // forwarding a stale snapshot rather than actually reading the file.
+        assert_eq!(
+            app.theme.text_primary,
+            sentinel,
+            "ThemeSwitch must rehydrate text_primary from the TOML file on disk \
+             (expected Rgb(0xab,0xcd,0xef) from apply_theme_overrides re-read); \
+             got a different value, which means the re-read path was not exercised."
+        );
+    }
+
+    /// `Command::ThemeSwitch` must re-read `theme_toml_path` from disk on
+    /// every switch, not replay a snapshot of the previous theme state.
+    ///
+    /// Scenario: the user edits their theme.toml between two `/theme` invocations
+    /// (e.g. changes `text_primary` from `#111111` to `#222222`).  The new value
+    /// must be reflected in the post-switch theme, not the stale in-memory one.
+    ///
+    /// This test would FAIL if `carry_rgb_overrides` runs after `apply_theme_overrides`
+    /// and unconditionally overwrites the freshly re-read Rgb value with the
+    /// old one from the snapshot — which is the bug identified by the code reviewer.
+    #[test]
+    fn theme_switch_reads_toml_on_switch() {
+        use std::io::Write;
+        use ratatui::style::Color;
+
+        // Step 1: set up app with theme_toml_path pointing at a known file.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let toml_path = dir.path().join("theme.toml");
+        {
+            let mut f = std::fs::File::create(&toml_path).expect("create theme.toml");
+            writeln!(f, "text_primary = \"#111111\"").expect("write");
+        }
+
+        let mut app = App::new();
+        app.show_splash = false;
+        app.theme_toml_path = toml_path.clone();
+
+        // Simulate startup: apply the initial overrides.
+        app.theme.apply_toml_overrides(&toml_path);
+
+        // Verify the startup override is active.
+        assert_eq!(
+            app.theme.text_primary,
+            Color::Rgb(0x11, 0x11, 0x11),
+            "pre-condition: startup override #111111 must be active"
+        );
+
+        // Step 2: user edits their config file before issuing another /theme switch.
+        {
+            let mut f = std::fs::File::create(&toml_path).expect("overwrite theme.toml");
+            writeln!(f, "text_primary = \"#222222\"").expect("write");
+        }
+
+        // Step 3: switch theme — this must re-read the file from disk.
+        app.handle_command(Command::ThemeSwitch("neon".to_owned()));
+
+        // The post-switch state must reflect the NEW file contents (#222222),
+        // not the stale in-memory snapshot (#111111 from startup).
+        //
+        // If carry_rgb_overrides clobbers the freshly re-read value with the
+        // old snapshot, this assertion fails with Rgb(0x11,0x11,0x11).
+        assert_eq!(
+            app.theme.text_primary,
+            Color::Rgb(0x22, 0x22, 0x22),
+            "ThemeSwitch must reflect the updated theme.toml on disk; \
+             got the stale startup value Rgb(0x11,0x11,0x11) instead of the \
+             new Rgb(0x22,0x22,0x22). \
+             Bug: carry_rgb_overrides runs after apply_theme_overrides and \
+             overwrites the freshly re-read value with the old snapshot."
+        );
     }
 }

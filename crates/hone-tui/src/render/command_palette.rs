@@ -155,7 +155,21 @@ pub fn render_command_palette(app: &App, frame: &mut Frame, area: Rect) {
         } else {
             accent_style
         };
-        let desc_style = if is_sel { sel_style } else { muted_style };
+        let desc_secondary_style = Style::default()
+            .bg(theme.surface_overlay)
+            .fg(theme.text_secondary);
+        // For selected rows, use text_primary as the description fg so that
+        // the foreground index distance from surface_overlay is >= 6.
+        // (surface_base, which sel_style uses, is Indexed(233) — only 2 shades
+        //  from surface_overlay Indexed(235).)
+        let sel_desc_style = Style::default()
+            .bg(theme.accent_mid)
+            .fg(theme.text_primary);
+        let desc_style = if is_sel {
+            sel_desc_style
+        } else {
+            desc_secondary_style
+        };
 
         // Fill row background.
         for c in 0..inner_width as u16 {
@@ -360,6 +374,99 @@ mod tests {
         assert!(
             app.input.buffer.is_empty(),
             "Esc must not modify the input buffer"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // TUI bug tests (red phase)
+    // -----------------------------------------------------------------------
+
+    /// The description text rendered in a command palette row must use a
+    /// foreground color that provides sufficient contrast against the row
+    /// background (`theme.surface_overlay`).
+    ///
+    /// Bug: `desc_style` uses `theme.text_muted` (Indexed(238)) on
+    /// `theme.surface_overlay` (Indexed(235)) — only 3 shades apart in the
+    /// ANSI-256 ramp.  The fix must change `desc_style` to use
+    /// `theme.text_secondary` (Indexed(244)) or any color whose index distance
+    /// from `surface_overlay` is at least 6.
+    ///
+    /// Contract: for each cell that contains a character from the description
+    /// of the /quit row, the foreground color must differ from
+    /// `surface_overlay` by an ANSI-256 index distance >= 6.
+    #[test]
+    fn palette_description_fg_has_sufficient_contrast_against_row_bg() {
+        use ratatui::{Terminal, backend::TestBackend};
+        use crate::render::root::render;
+        use ratatui::style::Color;
+
+        let mut app = App::new();
+        app.show_splash = false;
+        app.palette_open = true;
+        // Empty query shows all entries; /quit is the first one.
+        app.palette_query = String::new();
+        app.palette_selection = 0;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("TestBackend");
+        terminal.draw(|f| render(&app, f)).expect("draw");
+
+        let theme = crate::theme::Theme::crimson();
+
+        // Extract surface_overlay index so we can measure contrast distance.
+        let overlay_index = match theme.surface_overlay {
+            Color::Indexed(i) => i,
+            _ => panic!("expected surface_overlay to be Color::Indexed"),
+        };
+
+        // The /quit row description "Exit hone" starts after the name column
+        // padding.  The palette popup is centered on an 80-wide terminal.
+        // popup_width = 70.min(80*60/100).min(76).max(30) = 48
+        // popup_x = (80 - 48) / 2 = 16
+        // popup_y = (24 - popup_height) / 3; popup_height = min(10+4,16)=14
+        // popup_y = (24-14)/3 = 3
+        // Row 0 of commands is at y = popup_y + 1 = 4.
+        // Name column starts at popup_x+1=17, name_col_width=14.
+        // Description starts at popup_x + 1 + 14 = 31.
+        let desc_start_x: u16 = 31;
+        let row_y: u16 = 4;
+
+        // Find at least one non-space cell in the description column region
+        // and verify its foreground color index distance from surface_overlay.
+        let buf = terminal.backend().buffer();
+        let mut found_desc_cell = false;
+        for x in desc_start_x..80 {
+            let cell = buf.cell((x, row_y)).expect("cell exists");
+            let ch = cell.symbol().chars().next().unwrap_or(' ');
+            if ch == ' ' {
+                continue;
+            }
+            // We found a character — this should be from "Exit hone".
+            found_desc_cell = true;
+            let fg = cell.style().fg.unwrap_or(Color::Reset);
+            let desc_fg_index = match fg {
+                Color::Indexed(i) => i,
+                other => panic!(
+                    "description cell fg must be Color::Indexed, got {:?}",
+                    other
+                ),
+            };
+            // The contrast distance must be >= 6 in the ANSI-256 ramp.
+            let distance = (desc_fg_index as i16 - overlay_index as i16).unsigned_abs();
+            assert!(
+                distance >= 6,
+                "description fg Indexed({desc_fg_index}) is only {distance} shades from \
+                 surface_overlay Indexed({overlay_index}) — insufficient contrast; \
+                 use theme.text_secondary (Indexed(244)) or a color >= 6 indices away"
+            );
+            // Only check the first description character to keep the test focused.
+            break;
+        }
+
+        assert!(
+            found_desc_cell,
+            "could not find any non-space character in the description column at y={row_y}, \
+             x={desc_start_x}..80 — is the palette rendering the description at all?"
         );
     }
 }

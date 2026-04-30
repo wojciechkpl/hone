@@ -104,10 +104,26 @@ impl Theme {
         }
     }
 
-    /// High-contrast dark theme.
+    /// High-contrast dark theme with vivid electric-blue/cyan accents.
+    ///
+    /// Differs from `crimson` in at least 6 high-visibility fields so the
+    /// `/theme neon` switch is perceptibly distinct.
     pub fn neon() -> Self {
         let mut t = Self::crimson();
-        t.accent_hot = Color::Indexed(197);
+        // Surfaces — shift toward cooler blue-tinted dark indices.
+        t.surface_base = Color::Indexed(17);    // dark navy (crimson: 233)
+        t.surface_raised = Color::Indexed(18);  // navy (crimson: 234)
+        t.surface_overlay = Color::Indexed(19); // blue-dark (crimson: 235)
+        t.surface_focus = Color::Indexed(51);   // electric cyan (crimson: 204)
+        // Text — brighter, higher-contrast whites.
+        t.text_primary = Color::Indexed(255);   // near-white (crimson: 252)
+        t.text_secondary = Color::Indexed(250); // light grey (crimson: 244)
+        // Accents — electric cyan/magenta palette.
+        t.accent_hot = Color::Indexed(51);      // electric cyan (crimson: 204)
+        t.accent_mid = Color::Indexed(201);     // vivid magenta (crimson: 197)
+        t.accent_deep = Color::Indexed(57);     // electric violet (crimson: 88)
+        // Roles — keep user blue, swap assistant to cyan.
+        t.role_assistant = Color::Indexed(51);  // electric cyan (crimson: 204)
         t.surface_border = Color::Indexed(240);
         t
     }
@@ -520,6 +536,65 @@ mod tests {
         assert_eq!(parse_hex_color("#ff6b6"), None, "too short");
         assert_eq!(parse_hex_color("#ff6b6b00"), None, "too long");
         assert_eq!(parse_hex_color("#zzzzzz"), None, "invalid hex digits");
-        assert_eq!(parse_hex_color(""), None, "empty string");
+        assert_eq!(parse_hex_color("", ), None, "empty string");
+    }
+
+    // -----------------------------------------------------------------------
+    // TUI bug tests (red phase)
+    // -----------------------------------------------------------------------
+
+    /// `Theme::neon()` must differ from `Theme::crimson()` in at least 6
+    /// high-visibility surface or text fields so that a user typing `/theme neon`
+    /// sees a perceptible change.
+    ///
+    /// Bug: `Theme::neon()` currently overrides only 2 fields (`accent_hot`
+    /// and `surface_border`), making the switch imperceptible.
+    ///
+    /// Contract: count fields that differ between `crimson` and `neon`;
+    /// the count must be >= 6.  The green phase must expand `Theme::neon()` to
+    /// provide a genuinely distinct visual identity across surfaces, text, and
+    /// accent colors.
+    #[test]
+    fn neon_theme_differs_from_crimson_in_at_least_six_high_visibility_fields() {
+        let crimson = Theme::crimson();
+        let neon = Theme::neon();
+
+        // Check the fields that matter most to the user: surfaces, text, and
+        // accent colors.  We deliberately do not check diff/syntax/budget/flags
+        // because those are secondary and may legitimately be shared.
+        let diffs: &[(&str, Color, Color)] = &[
+            ("surface_base",    crimson.surface_base,    neon.surface_base),
+            ("surface_raised",  crimson.surface_raised,  neon.surface_raised),
+            ("surface_overlay", crimson.surface_overlay, neon.surface_overlay),
+            ("surface_focus",   crimson.surface_focus,   neon.surface_focus),
+            ("text_primary",    crimson.text_primary,    neon.text_primary),
+            ("text_secondary",  crimson.text_secondary,  neon.text_secondary),
+            ("text_muted",      crimson.text_muted,      neon.text_muted),
+            ("accent_hot",      crimson.accent_hot,      neon.accent_hot),
+            ("accent_mid",      crimson.accent_mid,      neon.accent_mid),
+            ("accent_deep",     crimson.accent_deep,     neon.accent_deep),
+            ("role_user",       crimson.role_user,       neon.role_user),
+            ("role_assistant",  crimson.role_assistant,  neon.role_assistant),
+        ];
+
+        let differing: Vec<&str> = diffs
+            .iter()
+            .filter(|(_, lhs, rhs)| lhs != rhs)
+            .map(|(name, _, _)| *name)
+            .collect();
+
+        assert!(
+            differing.len() >= 6,
+            "Theme::neon() differs from Theme::crimson() in only {} high-visibility \
+             field(s): {:?}. \
+             A named non-default theme must be visually distinct enough that the user \
+             sees a clear change after `/theme neon`. \
+             Expand Theme::neon() to override at least 6 of: \
+             surface_base, surface_raised, surface_overlay, surface_focus, \
+             text_primary, text_secondary, text_muted, accent_hot, accent_mid, \
+             accent_deep, role_user, role_assistant.",
+            differing.len(),
+            differing,
+        );
     }
 }

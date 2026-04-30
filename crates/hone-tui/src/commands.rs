@@ -133,6 +133,46 @@ impl Command {
             .collect()
     }
 
+    /// Return (name, description) pairs for commands matching a prefix.
+    ///
+    /// Descriptions are sourced from `PALETTE_COMMANDS` where available; commands
+    /// that exist only in `COMMAND_NAMES` (e.g. `set`, `theme-preview`) fall back
+    /// to a short inline description.
+    pub fn completions_with_descriptions(prefix: &str) -> Vec<(&'static str, &'static str)> {
+        use crate::render::command_palette::PALETTE_COMMANDS;
+
+        // Supplemental descriptions for commands not in PALETTE_COMMANDS.
+        const EXTRA: &[(&str, &str)] = &[
+            ("q", "Exit hone"),
+            ("set", "Set option (e.g. vim/novim)"),
+            ("theme-preview", "Preview all theme colors"),
+            ("panel", "Toggle tool output panel"),
+            ("split", "Toggle split-pane layout"),
+            ("undo", "Undo last action"),
+            ("redo", "Redo last action"),
+        ];
+
+        COMMAND_NAMES
+            .iter()
+            .filter(|name| name.starts_with(prefix))
+            .map(|name| {
+                // Look up in PALETTE_COMMANDS first.
+                let desc = PALETTE_COMMANDS
+                    .iter()
+                    .find(|e| e.name == *name)
+                    .map(|e| e.description)
+                    .or_else(|| {
+                        EXTRA
+                            .iter()
+                            .find(|(n, _)| *n == *name)
+                            .map(|(_, d)| *d)
+                    })
+                    .unwrap_or("");
+                (*name, desc)
+            })
+            .collect()
+    }
+
     /// Return agent names matching a prefix (for `@`-autocomplete).
     pub fn agent_completions(prefix: &str) -> Vec<&'static str> {
         AGENT_NAMES
@@ -322,5 +362,29 @@ mod tests {
     #[test]
     fn rust_expert_in_agent_names() {
         assert!(AGENT_NAMES.contains(&"rust-expert"));
+    }
+
+    // --- completions_with_descriptions coverage ----------------------------
+
+    /// Every entry in `COMMAND_NAMES` must have a non-empty description in
+    /// either `PALETTE_COMMANDS` or the `EXTRA` fallback table inside
+    /// `completions_with_descriptions`.  This guards against silent dead-ends
+    /// when a new command is added to `COMMAND_NAMES` but its description is
+    /// forgotten.
+    #[test]
+    fn every_command_has_a_description() {
+        let entries = Command::completions_with_descriptions("");
+        for (name, desc) in &entries {
+            assert!(
+                !desc.is_empty(),
+                "command {name} has empty description — add it to PALETTE_COMMANDS \
+                 or the EXTRA table in completions_with_descriptions"
+            );
+        }
+        assert_eq!(
+            entries.len(),
+            COMMAND_NAMES.len(),
+            "completions_with_descriptions must return one entry per COMMAND_NAMES"
+        );
     }
 }
