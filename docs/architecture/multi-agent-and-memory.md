@@ -15,7 +15,7 @@ Dual architecture: synchronous `Agent` for single-turn execution with built-in c
 - **Read-only tools** (`read_file`, `glob`, `grep`, `git_status`, `git_diff`, `lsp_*`, `symbol_*`) are batched and dispatched in parallel via `dispatch_parallel()` (`agent.rs:916-960`), with results returned in original request order.
 - **Side-effecting writes** trigger sequential dispatch with safety guards: must-read-before-edit (`agent.rs:576-626`) auto-injects `read_file` if a file hasn't been read in the current turn; edit-streak limit (`agent.rs:629-651`) injects a hint after 3 consecutive edits without shell or read.
 
-After turn completion, the Q&A pair is recorded to persistent memory via `record_memory()` (`agent.rs:254-275`).
+After turn completion, `classify_turn(user_input, assistant_reply)` heuristically decides whether the turn produced a memory-worthy fact (correction, validation, external link, project state, or role declaration). If it returns `Some(candidate)`, the candidate is forwarded to `record_memory(candidate)` (`agent.rs:278+`). Noisy turns — plain Q&A with no trigger — return `None` and nothing is written.
 
 ### Actor Model: AgentHandle
 
@@ -126,7 +126,9 @@ sequenceDiagram
     Agent->>ContextMgr: trim_to_budget() if needed
     
     Agent-->>User: TurnResult
-    Agent->>MemoryStore: record_memory(Q&A pair) [fire-and-forget]
+    Agent->>Agent: classify_turn(user_input, reply)
+    Note over Agent: Returns Some(candidate) only for corrections,<br/>validations, external links, project state, role declarations.<br/>Noisy Q&A turns return None — nothing is written.
+    Agent->>MemoryStore: record_memory(candidate) [fire-and-forget, only if Some]
 ```
 
 ## Memory Management

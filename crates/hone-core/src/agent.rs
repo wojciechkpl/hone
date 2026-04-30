@@ -23,6 +23,8 @@ use crate::cost::CostAccumulator;
 use crate::egress_log::{EgressEntry, EgressLog, SpanKind, TraceContext, now_rfc3339, preview};
 use crate::error::AgentError;
 use crate::injection_detector::InjectionDetector;
+use crate::memory_format::format_memory_body;
+use crate::memory_worthy::{MemoryCandidate, classify_turn};
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
@@ -265,31 +267,64 @@ impl Agent {
         }
     }
 
-    /// Record the Q&A pair as a new memory entry (fire-and-forget; errors are
+    /// Record a classified memory candidate (fire-and-forget; errors are
     /// silently ignored so a store failure never breaks the agent loop).
-    async fn record_memory(&self, user_input: &str, response_text: &str) {
+    ///
+    /// The flow is:
+    /// 1. Format the body via `format_memory_body`.
+    /// 2. Check the store for a near-duplicate via `find_similar(body, 0.8)`.
+    /// 3. If a near-duplicate exists, upsert (overwrite with refreshed timestamps).
+    /// 4. Otherwise, insert a fresh record.
+    ///
+    /// Concurrency note: the `find_similar` → `record` flow is not atomic.
+    /// Within a single `Agent`, the `Mutex<dyn MemoryStore>` in `AgentConfig`
+    /// serializes calls, so no race occurs. Across multiple `Agent` instances
+    /// sharing the same backing file (currently not supported), two callers
+    /// could both read "not found" and insert duplicate rows. PR4/R12 will
+    /// address this with explicit transactions when schema versioning lands.
+    pub async fn record_memory(&self, candidate: MemoryCandidate) {
         let Some(store) = &self.config.memory_store else {
             return;
         };
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .as_secs();
 
-        let id = uuid::Uuid::now_v7().to_string();
+        let body = format_memory_body(candidate.kind, candidate.body);
 
-        let memory = Memory {
-            id,
-            content: format!("Q: {user_input}\nA: {response_text}"),
-            tags: vec![],
-            weight: 1.0,
-            created_at: now.as_secs(),
-            decay_at: None,
-            kind: hone_memory::MemoryKind::Conversation,
-            description: None,
-        };
+        let mut locked = store.lock().await;
 
-        let _ = store.lock().await.record(memory).await;
+        // R6: check for a near-duplicate and upsert instead of inserting twice.
+        let existing = locked.find_similar(&body, 0.8).await.ok().flatten();
+
+        if let Some(existing) = existing {
+            let updated = Memory {
+                id: existing.id,
+                content: body,
+                weight: 1.0,
+                created_at: now,
+                description: candidate.description.or(existing.description),
+                kind: candidate.kind,
+                tags: existing.tags,
+                decay_at: existing.decay_at,
+            };
+            let _ = locked.record(updated).await;
+        } else {
+            let id = uuid::Uuid::now_v7().to_string();
+            let memory = Memory {
+                id,
+                content: body,
+                tags: vec![],
+                weight: 1.0,
+                created_at: now,
+                decay_at: None,
+                kind: candidate.kind,
+                description: candidate.description,
+            };
+            let _ = locked.record(memory).await;
+        }
     }
 
     /// Run a single conversation turn: stream tokens, dispatch any tool calls,
@@ -1093,8 +1128,11 @@ impl Agent {
             self.metrics.record_cache(turn_usage.cache_read, 0);
         }
 
-        // Persist Q&A pair to memory (fire-and-forget).
-        self.record_memory(user_input, &response_text).await;
+        // Persist memory (fire-and-forget). The classifier gates writes:
+        // noisy turns return None and write nothing.
+        if let Some(candidate) = classify_turn(user_input, &response_text) {
+            self.record_memory(candidate).await;
+        }
 
         // Flush egress audit log to disk (errors are logged but not fatal).
         if let Some(log) = &self.config.egress_log {
