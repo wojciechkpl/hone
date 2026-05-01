@@ -125,6 +125,29 @@ pub struct ToolInvocation {
 }
 
 // ---------------------------------------------------------------------------
+// Worker invocation
+// ---------------------------------------------------------------------------
+
+/// Status of a dispatched sub-agent worker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WorkerStatus {
+    Running,
+    Succeeded,
+    Failed,
+    TimedOut,
+}
+
+/// A worker (sub-agent) dispatched during this turn.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkerInvocation {
+    pub task_id: String,
+    pub agent: String,
+    pub description: String,
+    pub status: WorkerStatus,
+    pub cost_usd: Option<f64>,
+}
+
+// ---------------------------------------------------------------------------
 // Phase
 // ---------------------------------------------------------------------------
 
@@ -197,6 +220,8 @@ pub struct TurnLedger {
     pub skeleton_injections: Vec<SkeletonEntry>,
     pub memory_recalls: Vec<MemoryRecall>,
     pub tools_invoked: Vec<ToolInvocation>,
+    /// Workers (sub-agents) dispatched during this turn.
+    pub worker_invocations: Vec<WorkerInvocation>,
     /// Phase transitions: (phase, elapsed_ms_since_turn_start).
     pub phase_transitions: Vec<(Phase, u64)>,
     /// Millisecond timestamp at turn start (for relative offsets).
@@ -213,6 +238,7 @@ impl TurnLedger {
             skeleton_injections: Vec::new(),
             memory_recalls: Vec::new(),
             tools_invoked: Vec::new(),
+            worker_invocations: Vec::new(),
             phase_transitions: Vec::new(),
             turn_start: Instant::now(),
         }
@@ -298,6 +324,63 @@ impl TurnLedger {
     pub fn record_phase_transition(&mut self, phase: Phase) {
         let elapsed = self.turn_start.elapsed().as_millis() as u64;
         self.phase_transitions.push((phase, elapsed));
+    }
+
+    /// Record a worker (sub-agent) dispatch.  The entry starts in `Running`
+    /// state with no cost.
+    pub fn record_worker_started(
+        &mut self,
+        task_id: impl Into<String>,
+        agent: impl Into<String>,
+        description: impl Into<String>,
+    ) {
+        self.worker_invocations.push(WorkerInvocation {
+            task_id: task_id.into(),
+            agent: agent.into(),
+            description: description.into(),
+            status: WorkerStatus::Running,
+            cost_usd: None,
+        });
+    }
+
+    /// Update an existing worker entry with its final status and cost.
+    ///
+    /// If no matching `task_id` is found (out-of-order delivery), a synthetic
+    /// entry is appended with empty `agent`/`description` fields.
+    pub fn record_worker_completed(&mut self, task_id: &str, status: &str, cost_usd: f64) {
+        let mapped_status = Self::map_worker_status(status);
+        if let Some(entry) = self
+            .worker_invocations
+            .iter_mut()
+            .find(|w| w.task_id == task_id)
+        {
+            entry.status = mapped_status;
+            entry.cost_usd = Some(cost_usd);
+        } else {
+            // Out-of-order: synthesise a new entry.
+            self.worker_invocations.push(WorkerInvocation {
+                task_id: task_id.to_string(),
+                agent: String::new(),
+                description: String::new(),
+                status: mapped_status,
+                cost_usd: Some(cost_usd),
+            });
+        }
+    }
+
+    fn map_worker_status(status: &str) -> WorkerStatus {
+        match status {
+            "completed" => WorkerStatus::Succeeded,
+            "timed_out" => WorkerStatus::TimedOut,
+            s if s.starts_with("failed:") => WorkerStatus::Failed,
+            other => {
+                tracing::debug!(
+                    status = other,
+                    "unknown worker completion status; mapping to Failed",
+                );
+                WorkerStatus::Failed
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -613,6 +696,117 @@ mod tests {
 
         let args3 = serde_json::json!({ "command": "cargo test" });
         assert_eq!(extract_path(&args3), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Worker invocation tests (RED — WorkerStatus / WorkerInvocation / worker
+    // recording methods do not exist yet; these tests must fail to compile
+    // until the implementation lands).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn record_worker_started_pushes_running_invocation() {
+        let mut l = make_ledger();
+        l.record_worker_started("task-1", "rust-expert", "implement foo");
+
+        assert_eq!(l.worker_invocations.len(), 1);
+        let w = &l.worker_invocations[0];
+        assert_eq!(w.task_id, "task-1");
+        assert_eq!(w.agent, "rust-expert");
+        assert_eq!(w.description, "implement foo");
+        assert_eq!(w.status, WorkerStatus::Running);
+        assert!(w.cost_usd.is_none());
+    }
+
+    #[test]
+    fn record_worker_completed_updates_existing_running_invocation() {
+        let mut l = make_ledger();
+        l.record_worker_started("task-1", "rust-expert", "implement foo");
+        l.record_worker_completed("task-1", "completed", 0.012);
+
+        // vec stays at length 1 — the existing entry is updated in-place.
+        assert_eq!(l.worker_invocations.len(), 1);
+        let w = &l.worker_invocations[0];
+        assert_eq!(w.status, WorkerStatus::Succeeded);
+        assert_eq!(w.cost_usd, Some(0.012));
+    }
+
+    #[test]
+    fn record_worker_completed_failed_status_maps_to_failed() {
+        let mut l = make_ledger();
+        l.record_worker_started("task-1", "python-expert", "write tests");
+        l.record_worker_completed("task-1", "failed: timeout exceeded", 0.0);
+
+        assert_eq!(l.worker_invocations[0].status, WorkerStatus::Failed);
+    }
+
+    #[test]
+    fn record_worker_completed_timeout_maps_to_timed_out() {
+        let mut l = make_ledger();
+        l.record_worker_started("task-1", "debugger", "trace panic");
+        l.record_worker_completed("task-1", "timed_out", 0.0);
+
+        assert_eq!(l.worker_invocations[0].status, WorkerStatus::TimedOut);
+    }
+
+    #[test]
+    fn record_worker_completed_unknown_status_maps_to_failed() {
+        // Any unrecognised string that is not "completed" / "timed_out" /
+        // "failed:…" must fall back to Failed rather than being silently
+        // dropped — defensive default for future protocol strings.
+        let mut l = make_ledger();
+        l.record_worker_started("task-1", "ai-researcher", "survey papers");
+        l.record_worker_completed("task-1", "weird-string-from-the-future", 0.0);
+
+        assert_eq!(l.worker_invocations[0].status, WorkerStatus::Failed);
+    }
+
+    #[test]
+    fn record_worker_completed_without_started_creates_entry() {
+        // Race condition: WorkerCompleted may arrive before WorkerStarted in
+        // out-of-order delivery scenarios.  The method must synthesise a new
+        // entry rather than silently discarding the event.
+        let mut l = make_ledger();
+        l.record_worker_completed("task-orphan", "completed", 0.5);
+
+        assert_eq!(l.worker_invocations.len(), 1);
+        let w = &l.worker_invocations[0];
+        assert_eq!(w.task_id, "task-orphan");
+        // agent and description are unknown at completion time — empty strings.
+        assert_eq!(w.agent, "");
+        assert_eq!(w.description, "");
+        assert_eq!(w.status, WorkerStatus::Succeeded);
+        assert_eq!(w.cost_usd, Some(0.5));
+    }
+
+    #[test]
+    fn worker_invocations_serde_roundtrip() {
+        let mut l = make_ledger();
+        l.record_worker_started("t1", "rust-expert", "build thing");
+        l.record_worker_started("t2", "python-expert", "analyse data");
+        l.record_worker_completed("t2", "completed", 0.007);
+        // t1 remains Running; t2 becomes Succeeded.
+
+        let json = serde_json::to_string(&l).expect("serialize");
+        let restored: TurnLedger = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.worker_invocations.len(), 2);
+
+        let running = restored
+            .worker_invocations
+            .iter()
+            .find(|w| w.task_id == "t1")
+            .expect("t1 missing after roundtrip");
+        assert_eq!(running.status, WorkerStatus::Running);
+        assert!(running.cost_usd.is_none());
+
+        let succeeded = restored
+            .worker_invocations
+            .iter()
+            .find(|w| w.task_id == "t2")
+            .expect("t2 missing after roundtrip");
+        assert_eq!(succeeded.status, WorkerStatus::Succeeded);
+        assert_eq!(succeeded.cost_usd, Some(0.007));
     }
 
     #[test]

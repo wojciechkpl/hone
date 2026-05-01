@@ -2001,6 +2001,11 @@ impl App {
         self.review_session.is_some()
     }
 
+    /// Return a reference to the in-progress turn ledger, if one exists.
+    pub fn current_turn(&self) -> Option<&TurnLedger> {
+        self.current_turn.as_ref()
+    }
+
     // -----------------------------------------------------------------------
     // Agent event handling
     // -----------------------------------------------------------------------
@@ -2172,6 +2177,13 @@ impl App {
                     DisplayRole::System,
                     format!("[{task_id}] {agent}: {description}"),
                 ));
+                if self.current_turn.is_none() {
+                    let turn_index = self.completed_turns.len();
+                    self.current_turn = Some(TurnLedger::new(turn_index));
+                }
+                if let Some(ledger) = &mut self.current_turn {
+                    ledger.record_worker_started(&task_id, &agent, &description);
+                }
             }
 
             AgentEvent::WorkerCompleted {
@@ -2184,6 +2196,13 @@ impl App {
                     DisplayRole::System,
                     format!("[{task_id}] {agent}: {status} (${cost_usd:.4})"),
                 ));
+                if self.current_turn.is_none() {
+                    let turn_index = self.completed_turns.len();
+                    self.current_turn = Some(TurnLedger::new(turn_index));
+                }
+                if let Some(ledger) = &mut self.current_turn {
+                    ledger.record_worker_completed(&task_id, &status, cost_usd);
+                }
             }
 
             AgentEvent::BudgetProgress {

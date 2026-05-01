@@ -18,7 +18,7 @@ use ratatui::{
 
 use crate::{
     theme::Theme,
-    turn_ledger::{FileOp, TurnLedger},
+    turn_ledger::{FileOp, TurnLedger, WorkerStatus},
 };
 
 /// Minimum terminal width before the rail is suppressed.
@@ -127,6 +127,43 @@ impl<'a> AgentRailWidget<'a> {
             }
 
             // ----------------------------------------------------------------
+            // AGENTS section
+            // ----------------------------------------------------------------
+            lines.push(Line::from(""));
+            lines.push(header_line("[AGENTS]".to_string(), theme));
+
+            if ledger.worker_invocations.is_empty() {
+                lines.push(dim_line("  —", theme));
+            } else {
+                for w in &ledger.worker_invocations {
+                    let glyph = if nc {
+                        match w.status {
+                            WorkerStatus::Running => "…",
+                            WorkerStatus::Succeeded => "ok",
+                            WorkerStatus::Failed => "X",
+                            WorkerStatus::TimedOut => "!",
+                        }
+                    } else {
+                        // `⏱` (U+23F1 STOPWATCH) avoided: emoji-presentation
+                        // terminals render it as 2 cells, overflowing the rail.
+                        match w.status {
+                            WorkerStatus::Running => "…",
+                            WorkerStatus::Succeeded => "✓",
+                            WorkerStatus::Failed => "✗",
+                            WorkerStatus::TimedOut => "T",
+                        }
+                    };
+                    // Budget: glyph + space + agent name, left-truncated to RAIL_WIDTH - 2 borders
+                    let inner_width = RAIL_WIDTH as usize - 2; // account for block borders
+                    let glyph_len = glyph.chars().count();
+                    let agent_max = inner_width.saturating_sub(glyph_len + 1);
+                    let agent_display = truncate_path_left(&w.agent, agent_max);
+                    let line_text = format!("{glyph} {agent_display}");
+                    lines.push(Line::from(Span::raw(line_text)));
+                }
+            }
+
+            // ----------------------------------------------------------------
             // CONTEXT section
             // ----------------------------------------------------------------
             lines.push(Line::from(""));
@@ -216,6 +253,9 @@ impl<'a> AgentRailWidget<'a> {
             }
         } else {
             lines.push(dim_line("  Waiting…", theme));
+            lines.push(Line::from(""));
+            lines.push(header_line("[AGENTS]".to_string(), theme));
+            lines.push(dim_line("  —", theme));
             lines.push(Line::from(""));
             lines.push(header_line("[CONTEXT]".to_string(), theme));
             lines.push(dim_line("  —", theme));
@@ -496,6 +536,168 @@ mod tests {
                 f.render_stateful_widget(widget, f.area(), &mut state);
             })
             .unwrap();
+    }
+
+    // -----------------------------------------------------------------------
+    // [AGENTS] section render tests (RED — the section does not exist yet;
+    // tests will fail to compile / fail assertions until the implementation
+    // lands).
+    // -----------------------------------------------------------------------
+
+    /// Helper: render the rail with the given ledger into a no-color
+    /// TestBackend and return all rendered rows as a Vec<String>.
+    fn render_rail_no_color(ledger: &TurnLedger, height: u16) -> Vec<String> {
+        let theme = make_no_color_theme();
+        let widget = AgentRailWidget::new(Some(ledger), &theme, false);
+        let mut state = AgentRailState::default();
+        let backend = TestBackend::new(RAIL_WIDTH, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                f.render_stateful_widget(widget, f.area(), &mut state);
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        (0..height)
+            .map(|row| {
+                (0..RAIL_WIDTH)
+                    .map(|col| {
+                        buf.cell((col, row))
+                            .map(|c| c.symbol().chars().next().unwrap_or(' '))
+                            .unwrap_or(' ')
+                    })
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn agents_section_header_appears_when_rail_visible() {
+        use crate::turn_ledger::WorkerStatus;
+
+        let mut ledger = TurnLedger::new(0);
+        // One running worker is enough to trigger the section.
+        ledger.record_worker_started("t1", "rust-expert", "implement feature");
+
+        let rows = render_rail_no_color(&ledger, 30);
+
+        // Find the row indices for each section header.
+        let files_row = rows
+            .iter()
+            .position(|r| r.contains("[FILES]"))
+            .expect("[FILES] header not found");
+        let agents_row = rows
+            .iter()
+            .position(|r| r.contains("[AGENTS]"))
+            .expect("[AGENTS] header not found — section not rendered");
+        let context_row = rows
+            .iter()
+            .position(|r| r.contains("[CONTEXT]"))
+            .expect("[CONTEXT] header not found");
+
+        // Order constraint: FILES < AGENTS < CONTEXT.
+        assert!(
+            files_row < agents_row,
+            "[AGENTS] must appear after [FILES]: files={files_row} agents={agents_row}"
+        );
+        assert!(
+            agents_row < context_row,
+            "[AGENTS] must appear before [CONTEXT]: agents={agents_row} context={context_row}"
+        );
+    }
+
+    #[test]
+    fn agents_section_renders_running_succeeded_failed_and_timed_out() {
+        use crate::turn_ledger::WorkerStatus;
+
+        let mut ledger = TurnLedger::new(0);
+        // Running
+        ledger.record_worker_started("t1", "rust-expert", "task a");
+        // Succeeded
+        ledger.record_worker_started("t2", "python-expert", "task b");
+        ledger.record_worker_completed("t2", "completed", 0.01);
+        // Failed
+        ledger.record_worker_started("t3", "debugger", "task c");
+        ledger.record_worker_completed("t3", "failed: crash", 0.0);
+        // TimedOut
+        ledger.record_worker_started("t4", "ai-researcher", "task d");
+        ledger.record_worker_completed("t4", "timed_out", 0.0);
+
+        let rows = render_rail_no_color(&ledger, 40);
+        let combined = rows.join("\n");
+
+        // Agent names must appear (possibly truncated by truncate_path_left).
+        // "rust-expert" is 11 chars; rail inner width = RAIL_WIDTH - 2 borders = 16.
+        // The full name fits, so it must appear verbatim.
+        assert!(
+            combined.contains("rust-expert"),
+            "rust-expert not found in:\n{combined}"
+        );
+        assert!(
+            combined.contains("python-expert"),
+            "python-expert not found in:\n{combined}"
+        );
+        assert!(
+            combined.contains("debugger"),
+            "debugger not found in:\n{combined}"
+        );
+        assert!(
+            combined.contains("ai-researcher"),
+            "ai-researcher not found in:\n{combined}"
+        );
+
+        // ASCII status glyphs pinned here — the implementer must use these exact
+        // strings in no-color mode:
+        //   Running   → "…"
+        //   Succeeded → "ok"
+        //   Failed    → "X"
+        //   TimedOut  → "!"
+        assert!(
+            combined.contains("ok"),
+            "Succeeded glyph 'ok' not found in:\n{combined}"
+        );
+        assert!(
+            combined.contains('X'),
+            "Failed glyph 'X' not found in:\n{combined}"
+        );
+        assert!(
+            combined.contains('!'),
+            "TimedOut glyph '!' not found in:\n{combined}"
+        );
+        // Running glyph '…' — the ellipsis char U+2026.
+        assert!(
+            combined.contains('…'),
+            "Running glyph '…' not found in:\n{combined}"
+        );
+    }
+
+    #[test]
+    fn agents_section_shows_em_dash_when_empty() {
+        // When no workers have been recorded, the [AGENTS] section must show
+        // the standard placeholder "  —" (matching the convention used by
+        // FILES / CONTEXT / MEMORY for empty sections).
+        let ledger = TurnLedger::new(0); // no workers
+
+        let rows = render_rail_no_color(&ledger, 30);
+        let combined = rows.join("\n");
+
+        // Section must still render.
+        assert!(
+            combined.contains("[AGENTS]"),
+            "[AGENTS] header missing for empty ledger:\n{combined}"
+        );
+
+        // Find the [AGENTS] header row then look for the em-dash on a nearby row.
+        let agents_row = rows
+            .iter()
+            .position(|r| r.contains("[AGENTS]"))
+            .unwrap();
+        // The placeholder should be within the next 2 rows after the header.
+        let nearby = rows[agents_row..].iter().take(3).any(|r| r.contains('—'));
+        assert!(
+            nearby,
+            "em-dash placeholder '—' not found near [AGENTS] header:\n{combined}"
+        );
     }
 
     #[test]
