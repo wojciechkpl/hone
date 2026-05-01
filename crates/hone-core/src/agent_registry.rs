@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::agent_def::{AgentDef, AgentDefError};
 
@@ -78,10 +78,55 @@ impl AgentRegistry {
         }
         Ok(())
     }
+
+    /// Build a registry with three overlays applied in increasing precedence:
+    ///   1. compiled-in built-in agents
+    ///   2. user-level agents from `~/.config/hone/agents/*.md`
+    ///   3. project-level agents from `<project_root>/.hone/agents/*.md`
+    ///      where project_root is the nearest ancestor of `working_dir`
+    ///      containing `.git` / `Cargo.toml` / `package.json` /
+    ///      `pyproject.toml` / `go.mod` / `pom.xml`.
+    ///
+    /// Same-name agents at a higher overlay replace lower ones.
+    /// Missing directories are silently skipped.  Malformed files emit a
+    /// `tracing::warn!` but do not abort loading of other files.
+    pub fn load_hierarchical(working_dir: &Path) -> Self {
+        let mut registry = Self::new();
+
+        // Layer 1: built-ins.
+        registry.load_builtins();
+
+        // Layer 2: user-level agents from ~/.config/hone/agents/.
+        if let Some(user_agents_dir) = user_agents_dir() {
+            for def in AgentDef::load_dir_lenient(&user_agents_dir) {
+                registry.register(def);
+            }
+        }
+
+        // Layer 3: project-level agents from <project_root>/.hone/agents/.
+        if let Some(project_root) = hone_config::find_project_root(working_dir) {
+            let project_agents_dir = project_root.join(".hone/agents");
+            for def in AgentDef::load_dir_lenient(&project_agents_dir) {
+                registry.register(def);
+            }
+        }
+
+        registry
+    }
 }
 
 impl Default for AgentRegistry {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Return `~/.config/hone/agents/` as a `PathBuf`, or `None` when `HOME` is
+/// unset.  The directory may not exist; callers must handle that case.
+fn user_agents_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config/hone/agents"))
 }

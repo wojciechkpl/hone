@@ -168,7 +168,10 @@ fn user_hone_md_path() -> Option<PathBuf> {
 /// Walk up from `start` until a directory containing a known project marker
 /// is found.  Returns `None` when the filesystem root is reached without a
 /// match.
-fn find_project_root(start: &Path) -> Option<PathBuf> {
+///
+/// Recognised markers: `.git`, `Cargo.toml`, `package.json`,
+/// `pyproject.toml`, `go.mod`, `pom.xml`.
+pub fn find_project_root(start: &Path) -> Option<PathBuf> {
     let markers = [
         ".git",
         "Cargo.toml",

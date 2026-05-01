@@ -1072,8 +1072,7 @@ fn spawn_orchestrated_turn(
     agent: AgentHandle,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut registry = AgentRegistry::new();
-        registry.load_builtins();
+        let registry = AgentRegistry::load_hierarchical(&lead_config.working_dir);
 
         let plan_store = PlanStore::default_for(&lead_config.working_dir);
         let mut orchestrator =
@@ -1124,8 +1123,7 @@ fn spawn_orchestrated_turn(
 // ---------------------------------------------------------------------------
 
 async fn run_orchestrate(lead_config: AgentConfig, prompt: &str) -> Result<()> {
-    let mut registry = AgentRegistry::new();
-    registry.load_builtins();
+    let registry = AgentRegistry::load_hierarchical(&lead_config.working_dir);
 
     let plan_store = PlanStore::default_for(&lead_config.working_dir);
     let mut orchestrator = Orchestrator::new(lead_config, registry, 4).with_plan_store(plan_store);
@@ -2561,8 +2559,7 @@ async fn run_tui(
 
                                 if let Some(ref agent_name) = maybe_inline_agent {
                                     // Look up the agent definition and swap the prompt.
-                                    let mut registry = AgentRegistry::new();
-                                    registry.load_builtins();
+                                    let registry = AgentRegistry::load_hierarchical(app.working_dir());
                                     if let Some(def) = registry.get(agent_name) {
                                         let persona_prompt = def.system_prompt.clone();
                                         agent.set_system_prompt(persona_prompt).await;

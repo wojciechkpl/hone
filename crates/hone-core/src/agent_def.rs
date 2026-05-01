@@ -72,6 +72,54 @@ impl AgentDef {
 
         Ok(defs)
     }
+
+    /// Load all `.md` agent definitions from a directory, tolerantly.
+    ///
+    /// * If `dir` does not exist the function returns an empty `Vec` silently.
+    /// * Other I/O errors on the directory itself (e.g. permission denied)
+    ///   emit a `tracing::warn!` and return an empty `Vec` so the caller
+    ///   can surface a misconfiguration without aborting the whole load.
+    /// * Non-`.md` files are silently skipped.
+    /// * Files that fail to read or parse emit a `tracing::warn!` and are
+    ///   skipped; loading continues for remaining files.
+    pub fn load_dir_lenient(dir: &Path) -> Vec<Self> {
+        let read_dir = match std::fs::read_dir(dir) {
+            Ok(rd) => rd,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+            Err(e) => {
+                tracing::warn!(
+                    dir = %dir.display(),
+                    "failed to open agents directory: {e}",
+                );
+                return Vec::new();
+            }
+        };
+
+        let mut entries: Vec<_> = read_dir.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+
+        let mut defs = Vec::new();
+        for entry in entries {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!(path = %path.display(), "failed to read agent file: {e}");
+                    continue;
+                }
+            };
+            match Self::from_markdown(&content) {
+                Ok(def) => defs.push(def),
+                Err(e) => {
+                    tracing::warn!(path = %path.display(), "failed to parse agent file: {e}");
+                }
+            }
+        }
+        defs
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
