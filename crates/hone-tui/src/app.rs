@@ -95,6 +95,11 @@ pub struct App {
     /// persona.  Cleared after one turn.
     pub(crate) inline_agent: Option<String>,
 
+    /// Display name of the agent for the in-flight turn — copied into the
+    /// `TurnLedger` when one is created.  Drives the synthetic AGENTS rail
+    /// entry for Simple / Medium turns that don't dispatch real workers.
+    pub(crate) pending_active_agent: Option<String>,
+
     // --- Agent rail / TurnLedger --------------------------------------------
     /// Whether the agent rail sidebar is currently visible.
     pub(crate) agent_rail_visible: bool,
@@ -221,6 +226,7 @@ impl App {
             review_session: None,
             pending_review: false,
             inline_agent: None,
+            pending_active_agent: None,
             agent_rail_visible: false,
             current_turn: None,
             completed_turns: Vec::new(),
@@ -259,9 +265,7 @@ impl App {
             selection: None,
             pending_copy: false,
             theme_toml_path: std::env::var("HOME")
-                .map(|h| {
-                    std::path::PathBuf::from(h).join(".config/hone/theme.toml")
-                })
+                .map(|h| std::path::PathBuf::from(h).join(".config/hone/theme.toml"))
                 .unwrap_or_default(),
         };
         // Restore draft from previous session if present.
@@ -329,6 +333,7 @@ impl App {
         // Clear stale per-turn tracking so the next turn starts fresh.
         self.pending_tool_start.clear();
         self.current_turn = None;
+        self.pending_active_agent = None;
         self.turn_start = None;
         self.messages.push(DisplayMessage::new(
             DisplayRole::System,
@@ -1350,6 +1355,7 @@ impl App {
                 prompt
             };
 
+            self.pending_active_agent = self.inline_agent.clone();
             self.messages
                 .push(DisplayMessage::new(DisplayRole::User, display_text));
             self.state = AppState::WaitingForResponse;
@@ -1359,6 +1365,10 @@ impl App {
 
         // Plain message — add it to the conversation and start waiting.
         self.history.push(&text);
+        self.pending_active_agent = self
+            .inline_agent
+            .clone()
+            .or_else(|| Some("default".to_string()));
         self.messages
             .push(DisplayMessage::new(DisplayRole::User, text));
         self.state = AppState::WaitingForResponse;
@@ -2041,7 +2051,11 @@ impl App {
                 // Ensure we have an active ledger for this turn.
                 if self.current_turn.is_none() {
                     let turn_index = self.completed_turns.len();
-                    self.current_turn = Some(TurnLedger::new(turn_index));
+                    let mut ledger = TurnLedger::new(turn_index);
+                    if let Some(name) = self.pending_active_agent.clone() {
+                        ledger.set_active_agent(name);
+                    }
+                    self.current_turn = Some(ledger);
                 }
 
                 // Record phase and file touch in the ledger.
@@ -2121,6 +2135,7 @@ impl App {
                 if let Some(ledger) = self.current_turn.take() {
                     self.completed_turns.push(ledger);
                 }
+                self.pending_active_agent = None;
 
                 // Mark the last streaming message as complete.
                 if let Some(last) = self.messages.last_mut() {
@@ -2144,11 +2159,28 @@ impl App {
             }
 
             AgentEvent::Error { message } => {
+                // Ensure a ledger exists so the rail can render the failed
+                // synthetic entry even when Error is the very first event
+                // (e.g. auth failure before any tool call ran).
+                if self.current_turn.is_none() && self.pending_active_agent.is_some() {
+                    let turn_index = self.completed_turns.len();
+                    let mut ledger = TurnLedger::new(turn_index);
+                    if let Some(name) = self.pending_active_agent.clone() {
+                        ledger.set_active_agent(name);
+                    }
+                    self.current_turn = Some(ledger);
+                }
+                if let Some(ledger) = &mut self.current_turn {
+                    if ledger.worker_invocations.is_empty() && ledger.active_agent.is_some() {
+                        ledger.active_agent_failed = true;
+                    }
+                }
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::Error, message.clone()));
                 self.status.provider_status = ProviderStatus::Error(message.clone());
                 self.status.active_tool = None;
                 self.state = AppState::Error(message);
+                self.pending_active_agent = None;
             }
 
             AgentEvent::ApprovalRequired { description, .. } => {
@@ -2179,7 +2211,11 @@ impl App {
                 ));
                 if self.current_turn.is_none() {
                     let turn_index = self.completed_turns.len();
-                    self.current_turn = Some(TurnLedger::new(turn_index));
+                    let mut ledger = TurnLedger::new(turn_index);
+                    if let Some(name) = self.pending_active_agent.clone() {
+                        ledger.set_active_agent(name);
+                    }
+                    self.current_turn = Some(ledger);
                 }
                 if let Some(ledger) = &mut self.current_turn {
                     ledger.record_worker_started(&task_id, &agent, &description);
@@ -2198,7 +2234,11 @@ impl App {
                 ));
                 if self.current_turn.is_none() {
                     let turn_index = self.completed_turns.len();
-                    self.current_turn = Some(TurnLedger::new(turn_index));
+                    let mut ledger = TurnLedger::new(turn_index);
+                    if let Some(name) = self.pending_active_agent.clone() {
+                        ledger.set_active_agent(name);
+                    }
+                    self.current_turn = Some(ledger);
                 }
                 if let Some(ledger) = &mut self.current_turn {
                     ledger.record_worker_completed(&task_id, &status, cost_usd);
@@ -2232,7 +2272,11 @@ impl App {
             } => {
                 if self.current_turn.is_none() {
                     let turn_index = self.completed_turns.len();
-                    self.current_turn = Some(TurnLedger::new(turn_index));
+                    let mut ledger = TurnLedger::new(turn_index);
+                    if let Some(name) = self.pending_active_agent.clone() {
+                        ledger.set_active_agent(name);
+                    }
+                    self.current_turn = Some(ledger);
                 }
                 if let Some(ledger) = &mut self.current_turn {
                     if bm25_hits.is_empty() {
@@ -2249,7 +2293,11 @@ impl App {
             AgentEvent::MemoryRecalled { entries } => {
                 if self.current_turn.is_none() {
                     let turn_index = self.completed_turns.len();
-                    self.current_turn = Some(TurnLedger::new(turn_index));
+                    let mut ledger = TurnLedger::new(turn_index);
+                    if let Some(name) = self.pending_active_agent.clone() {
+                        ledger.set_active_agent(name);
+                    }
+                    self.current_turn = Some(ledger);
                 }
                 if let Some(ledger) = &mut self.current_turn {
                     for (key, snippet) in entries {
@@ -2720,6 +2768,86 @@ mod tests {
     }
 
     #[test]
+    fn submit_default_message_records_active_agent_in_ledger() {
+        // Submitting a plain message must populate `pending_active_agent` so
+        // that the lazily-created TurnLedger picks it up and the AGENTS rail
+        // can render a synthetic entry for the default agent.
+        let mut app = App::new();
+        app.show_splash = false;
+        app.type_text("hello world");
+        app.handle_key(make_key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(
+            app.pending_active_agent.as_deref(),
+            Some("default"),
+            "plain submit must set pending_active_agent to the default name"
+        );
+
+        // Simulate a ToolCallStart: the lazy-create path must copy the name.
+        app.handle_agent_event(AgentEvent::ToolCallStart {
+            id: "t1".into(),
+            name: "read".into(),
+            args: serde_json::Value::Null,
+        });
+        let ledger = app.current_turn.as_ref().expect("ledger created");
+        assert_eq!(
+            ledger.active_agent.as_deref(),
+            Some("default"),
+            "ledger must inherit pending_active_agent on lazy create"
+        );
+    }
+
+    #[test]
+    fn early_error_creates_ledger_with_failed_active_agent() {
+        // Reviewer Blocker: when Error is the very first event (no tool call
+        // ever fired), the lazy-create paths above never run. The Error arm
+        // itself must lazily create the ledger so the rail still shows a
+        // failed synthetic entry instead of the "—" fallback.
+        let mut app = App::new();
+        app.show_splash = false;
+        app.pending_active_agent = Some("debugger".to_string());
+        // Simulate a state where no other event has fired.
+        assert!(app.current_turn.is_none(), "precondition: no ledger yet");
+
+        app.handle_agent_event(AgentEvent::Error {
+            message: "auth failed".into(),
+        });
+
+        let ledger = app
+            .current_turn
+            .as_ref()
+            .expect("Error must lazily create the ledger");
+        assert_eq!(ledger.active_agent.as_deref(), Some("debugger"));
+        assert!(
+            ledger.active_agent_failed,
+            "active_agent_failed must be set when Error fires with no real workers"
+        );
+    }
+
+    #[test]
+    fn error_after_real_workers_does_not_set_active_agent_failed() {
+        // When real workers have already populated the ledger, the synthetic
+        // entry is suppressed by the renderer anyway — the failure flag must
+        // not be set so the rail keeps showing real worker statuses.
+        let mut app = App::new();
+        app.show_splash = false;
+        app.pending_active_agent = Some("default".to_string());
+        let mut ledger = TurnLedger::new(0);
+        ledger.set_active_agent("default");
+        ledger.record_worker_started("w1", "rust-expert", "do thing");
+        app.current_turn = Some(ledger);
+
+        app.handle_agent_event(AgentEvent::Error {
+            message: "boom".into(),
+        });
+
+        let ledger = app.current_turn.as_ref().expect("ledger preserved");
+        assert!(
+            !ledger.active_agent_failed,
+            "active_agent_failed must NOT be set when real workers exist"
+        );
+    }
+
+    #[test]
     fn cancel_turn_clears_stale_state() {
         let mut app = App::new();
         app.show_splash = false;
@@ -3056,8 +3184,8 @@ mod tests {
     /// the re-read path actually rehydrated the override from disk.
     #[test]
     fn theme_switch_preserves_toml_overrides() {
-        use std::io::Write;
         use ratatui::style::Color;
+        use std::io::Write;
 
         // Write a minimal theme.toml that overrides text_primary to a
         // sentinel color that is distinct from every built-in theme default.
@@ -3081,8 +3209,7 @@ mod tests {
         // Verify the sentinel is active before the switch.
         let sentinel = Color::Rgb(0xab, 0xcd, 0xef);
         assert_eq!(
-            app.theme.text_primary,
-            sentinel,
+            app.theme.text_primary, sentinel,
             "pre-condition: sentinel override must be active before theme switch"
         );
 
@@ -3102,8 +3229,7 @@ mod tests {
         // This assertion fails if the test passes only via carry_rgb_overrides
         // forwarding a stale snapshot rather than actually reading the file.
         assert_eq!(
-            app.theme.text_primary,
-            sentinel,
+            app.theme.text_primary, sentinel,
             "ThemeSwitch must rehydrate text_primary from the TOML file on disk \
              (expected Rgb(0xab,0xcd,0xef) from apply_theme_overrides re-read); \
              got a different value, which means the re-read path was not exercised."
@@ -3122,8 +3248,8 @@ mod tests {
     /// old one from the snapshot — which is the bug identified by the code reviewer.
     #[test]
     fn theme_switch_reads_toml_on_switch() {
-        use std::io::Write;
         use ratatui::style::Color;
+        use std::io::Write;
 
         // Step 1: set up app with theme_toml_path pointing at a known file.
         let dir = tempfile::tempdir().expect("tempdir");

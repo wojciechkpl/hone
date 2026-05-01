@@ -133,7 +133,33 @@ impl<'a> AgentRailWidget<'a> {
             lines.push(header_line("[AGENTS]".to_string(), theme));
 
             if ledger.worker_invocations.is_empty() {
-                lines.push(dim_line("  —", theme));
+                // No real workers — show synthetic active-agent entry or em-dash.
+                if let Some(agent_name) = &ledger.active_agent {
+                    // Derive a synthetic status from turn liveness / failure flag.
+                    let glyph = if nc {
+                        if self.is_active_turn {
+                            "…"
+                        } else if ledger.active_agent_failed {
+                            "X"
+                        } else {
+                            "ok"
+                        }
+                    } else if self.is_active_turn {
+                        "…"
+                    } else if ledger.active_agent_failed {
+                        "✗"
+                    } else {
+                        "✓"
+                    };
+                    let inner_width = RAIL_WIDTH as usize - 2;
+                    let glyph_len = glyph.chars().count();
+                    let agent_max = inner_width.saturating_sub(glyph_len + 1);
+                    let agent_display = truncate_path_left(agent_name, agent_max);
+                    let line_text = format!("{glyph} {agent_display}");
+                    lines.push(Line::from(Span::raw(line_text)));
+                } else {
+                    lines.push(dim_line("  —", theme));
+                }
             } else {
                 for w in &ledger.worker_invocations {
                     let glyph = if nc {
@@ -688,15 +714,240 @@ mod tests {
         );
 
         // Find the [AGENTS] header row then look for the em-dash on a nearby row.
-        let agents_row = rows
-            .iter()
-            .position(|r| r.contains("[AGENTS]"))
-            .unwrap();
+        let agents_row = rows.iter().position(|r| r.contains("[AGENTS]")).unwrap();
         // The placeholder should be within the next 2 rows after the header.
         let nearby = rows[agents_row..].iter().take(3).any(|r| r.contains('—'));
         assert!(
             nearby,
             "em-dash placeholder '—' not found near [AGENTS] header:\n{combined}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Synthetic active-agent entry tests (RED — TurnLedger::active_agent and
+    // the fallback render path do not exist yet).
+    // -----------------------------------------------------------------------
+
+    /// Variant of render_rail_no_color that lets the caller control
+    /// `is_active_turn`.  The existing helper hardcodes false, which is fine
+    /// for completed-turn tests but not for live-turn assertions.
+    fn render_rail_active(ledger: &TurnLedger, is_active_turn: bool, height: u16) -> Vec<String> {
+        let theme = make_no_color_theme();
+        let widget = AgentRailWidget::new(Some(ledger), &theme, is_active_turn);
+        let mut state = AgentRailState::default();
+        let backend = TestBackend::new(RAIL_WIDTH, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                f.render_stateful_widget(widget, f.area(), &mut state);
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        (0..height)
+            .map(|row| {
+                (0..RAIL_WIDTH)
+                    .map(|col| {
+                        buf.cell((col, row))
+                            .map(|c| c.symbol().chars().next().unwrap_or(' '))
+                            .unwrap_or(' ')
+                    })
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    /// Helper variant with color enabled (Theme::crimson).
+    fn render_rail_color_active(
+        ledger: &TurnLedger,
+        is_active_turn: bool,
+        height: u16,
+    ) -> Vec<String> {
+        let theme = make_theme(); // no_color = false
+        let widget = AgentRailWidget::new(Some(ledger), &theme, is_active_turn);
+        let mut state = AgentRailState::default();
+        let backend = TestBackend::new(RAIL_WIDTH, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                f.render_stateful_widget(widget, f.area(), &mut state);
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        (0..height)
+            .map(|row| {
+                (0..RAIL_WIDTH)
+                    .map(|col| {
+                        buf.cell((col, row))
+                            .map(|c| c.symbol().chars().next().unwrap_or(' '))
+                            .unwrap_or(' ')
+                    })
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    /// Active turn + no workers + active_agent set → synthetic live entry with
+    /// "…" glyph and agent name must appear in AGENTS section (no-color mode).
+    #[test]
+    fn active_agent_live_no_workers_shows_ellipsis_and_name_nc() {
+        let mut ledger = TurnLedger::new(0);
+        // No worker_invocations recorded.
+        ledger.set_active_agent("rust-expert");
+
+        let rows = render_rail_active(&ledger, true, 30);
+        let combined = rows.join("\n");
+
+        // The AGENTS header must still appear.
+        assert!(
+            combined.contains("[AGENTS]"),
+            "[AGENTS] header not found:\n{combined}"
+        );
+        // Synthetic entry must show the live glyph "…" and the agent name.
+        assert!(
+            combined.contains('…'),
+            "live glyph '…' not found for synthetic active-agent entry:\n{combined}"
+        );
+        assert!(
+            combined.contains("rust-expert"),
+            "agent name 'rust-expert' not found for synthetic active-agent entry:\n{combined}"
+        );
+        // The em-dash fallback must NOT appear when we have a synthetic entry.
+        let agents_row = rows.iter().position(|r| r.contains("[AGENTS]")).unwrap();
+        // Within the 2 rows after the header there must be no "  —" line.
+        let nearby_em_dash = rows[agents_row + 1..]
+            .iter()
+            .take(2)
+            .any(|r| r.contains('—'));
+        assert!(
+            !nearby_em_dash,
+            "em-dash placeholder must not appear when synthetic entry is rendered:\n{combined}"
+        );
+    }
+
+    /// Completed turn + no workers + active_agent set → synthetic completed
+    /// entry with "✓" glyph (unicode mode) must appear (color mode).
+    #[test]
+    fn active_agent_completed_no_workers_shows_checkmark_color() {
+        let mut ledger = TurnLedger::new(0);
+        ledger.set_active_agent("debugger");
+
+        // is_active_turn = false → turn is sealed/completed.
+        let rows = render_rail_color_active(&ledger, false, 30);
+        let combined = rows.join("\n");
+
+        assert!(
+            combined.contains("[AGENTS]"),
+            "[AGENTS] header not found:\n{combined}"
+        );
+        // Unicode completed glyph.
+        assert!(
+            combined.contains('✓'),
+            "completed glyph '✓' not found in color mode for completed synthetic entry:\n{combined}"
+        );
+        assert!(
+            combined.contains("debugger"),
+            "agent name 'debugger' not found:\n{combined}"
+        );
+    }
+
+    /// Completed turn + no workers + active_agent set → "ok" glyph in
+    /// no-color mode.
+    #[test]
+    fn active_agent_completed_no_workers_shows_ok_nc() {
+        let mut ledger = TurnLedger::new(0);
+        ledger.set_active_agent("debugger");
+
+        let rows = render_rail_active(&ledger, false, 30);
+        let combined = rows.join("\n");
+
+        assert!(
+            combined.contains("ok"),
+            "completed glyph 'ok' not found in no-color mode:\n{combined}"
+        );
+        assert!(
+            combined.contains("debugger"),
+            "agent name 'debugger' not found:\n{combined}"
+        );
+    }
+
+    /// Non-empty worker_invocations + active_agent set → real workers take
+    /// precedence; synthetic entry must NOT be rendered.
+    #[test]
+    fn real_workers_suppress_synthetic_active_agent_entry() {
+        let mut ledger = TurnLedger::new(0);
+        // Real worker present.
+        ledger.record_worker_started("w1", "python-expert", "run tests");
+        // active_agent is also set — it must be ignored.
+        ledger.set_active_agent("ignored-agent");
+
+        let rows = render_rail_active(&ledger, true, 30);
+        let combined = rows.join("\n");
+
+        // The real worker must appear.
+        assert!(
+            combined.contains("python-expert"),
+            "real worker 'python-expert' not found:\n{combined}"
+        );
+        // The synthetic agent name must NOT appear.
+        assert!(
+            !combined.contains("ignored-agent"),
+            "synthetic 'ignored-agent' must be suppressed when real workers exist:\n{combined}"
+        );
+    }
+
+    /// active_agent = None + empty worker_invocations → falls back to "—"
+    /// placeholder (existing behaviour is preserved).
+    #[test]
+    fn no_active_agent_no_workers_shows_em_dash_fallback() {
+        let ledger = TurnLedger::new(0); // active_agent = None, no workers
+
+        let rows = render_rail_active(&ledger, false, 30);
+        let combined = rows.join("\n");
+
+        let agents_row = rows
+            .iter()
+            .position(|r| r.contains("[AGENTS]"))
+            .expect("[AGENTS] header must still render");
+
+        let nearby_em_dash = rows[agents_row + 1..]
+            .iter()
+            .take(2)
+            .any(|r| r.contains('—'));
+        assert!(
+            nearby_em_dash,
+            "em-dash placeholder '—' must appear when active_agent=None and no workers:\n{combined}"
+        );
+    }
+
+    /// Failed-state test: active_agent set + active_agent_failed = true +
+    /// no real workers → synthetic entry shows "✗" (color) / "X" (nc).
+    #[test]
+    fn active_agent_failed_shows_error_glyph() {
+        let mut ledger = TurnLedger::new(0);
+        ledger.set_active_agent("rust-expert");
+        // Signal failure via the dedicated flag the implementer must add.
+        ledger.active_agent_failed = true;
+
+        // No-color check.
+        let rows_nc = render_rail_active(&ledger, false, 30);
+        let combined_nc = rows_nc.join("\n");
+        assert!(
+            combined_nc.contains('X'),
+            "failed glyph 'X' not found in no-color mode:\n{combined_nc}"
+        );
+
+        // Color check.
+        let rows_color = render_rail_color_active(&ledger, false, 30);
+        let combined_color = rows_color.join("\n");
+        assert!(
+            combined_color.contains('✗'),
+            "failed glyph '✗' not found in color mode:\n{combined_color}"
+        );
+
+        // In both cases the agent name must still appear.
+        assert!(
+            combined_nc.contains("rust-expert"),
+            "agent name missing from failed no-color render:\n{combined_nc}"
         );
     }
 

@@ -224,6 +224,13 @@ pub struct TurnLedger {
     pub worker_invocations: Vec<WorkerInvocation>,
     /// Phase transitions: (phase, elapsed_ms_since_turn_start).
     pub phase_transitions: Vec<(Phase, u64)>,
+    /// The primary agent handling this turn (synthetic rail entry when no workers).
+    #[serde(default)]
+    pub active_agent: Option<String>,
+    /// Set to true when the active agent terminates with an error and no real
+    /// workers were dispatched, so the rail shows a failure glyph.
+    #[serde(default)]
+    pub active_agent_failed: bool,
     /// Millisecond timestamp at turn start (for relative offsets).
     #[serde(skip, default = "instant_now")]
     turn_start: Instant,
@@ -240,8 +247,18 @@ impl TurnLedger {
             tools_invoked: Vec::new(),
             worker_invocations: Vec::new(),
             phase_transitions: Vec::new(),
+            active_agent: None,
+            active_agent_failed: false,
             turn_start: Instant::now(),
         }
+    }
+
+    /// Set the name of the primary agent handling this turn.
+    ///
+    /// This is shown in the Agent Rail as a synthetic entry when no real
+    /// workers have been dispatched yet.
+    pub fn set_active_agent(&mut self, name: impl Into<String>) {
+        self.active_agent = Some(name.into());
     }
 
     // ------------------------------------------------------------------
@@ -807,6 +824,89 @@ mod tests {
             .expect("t2 missing after roundtrip");
         assert_eq!(succeeded.status, WorkerStatus::Succeeded);
         assert_eq!(succeeded.cost_usd, Some(0.007));
+    }
+
+    // -----------------------------------------------------------------------
+    // active_agent field tests (RED — TurnLedger::active_agent and
+    // set_active_agent do not exist yet; these tests must fail to compile
+    // until the implementation lands).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn new_ledger_has_no_active_agent() {
+        // Given / When
+        let l = TurnLedger::new(0);
+
+        // Then: field must default to None.
+        assert!(
+            l.active_agent.is_none(),
+            "TurnLedger::new must initialise active_agent to None"
+        );
+    }
+
+    #[test]
+    fn set_active_agent_stores_value() {
+        // Given
+        let mut l = TurnLedger::new(0);
+
+        // When
+        l.set_active_agent("debugger");
+
+        // Then
+        assert_eq!(
+            l.active_agent.as_deref(),
+            Some("debugger"),
+            "set_active_agent must store the agent name"
+        );
+    }
+
+    #[test]
+    fn set_active_agent_can_be_cleared() {
+        // Given
+        let mut l = TurnLedger::new(0);
+        l.set_active_agent("rust-expert");
+
+        // When: clearing the active agent (passing None via a method or
+        // assigning None directly — the implementer decides the API).
+        // We test via the field directly so either a method or pub field works.
+        l.active_agent = None;
+
+        // Then
+        assert!(l.active_agent.is_none());
+    }
+
+    #[test]
+    fn active_agent_serde_roundtrip_some() {
+        // Given
+        let mut l = TurnLedger::new(3);
+        l.set_active_agent("python-expert");
+
+        // When
+        let json = serde_json::to_string(&l).expect("serialize");
+        let restored: TurnLedger = serde_json::from_str(&json).expect("deserialize");
+
+        // Then
+        assert_eq!(
+            restored.active_agent.as_deref(),
+            Some("python-expert"),
+            "active_agent Some(...) must survive serde round-trip"
+        );
+    }
+
+    #[test]
+    fn active_agent_serde_roundtrip_none() {
+        // Given
+        let l = TurnLedger::new(5); // active_agent == None
+
+        // When
+        let json = serde_json::to_string(&l).expect("serialize");
+        let restored: TurnLedger = serde_json::from_str(&json).expect("deserialize");
+
+        // Then
+        assert!(
+            restored.active_agent.is_none(),
+            "active_agent None must survive serde round-trip"
+        );
     }
 
     #[test]
