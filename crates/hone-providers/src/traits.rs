@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::Stream;
-use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, ToolResult, ToolSchema};
+use hone_proto::{
+    Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, ToolResult, ToolSchema,
+};
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -66,7 +68,10 @@ impl ToolResultSender {
     ///
     /// Returns `Err(ToolResultSendError)` when the receiver has been dropped.
     pub async fn send(&self, r: ToolResult) -> Result<(), ToolResultSendError> {
-        self.inner.send(r).await.map_err(|e| ToolResultSendError(e.0))
+        self.inner
+            .send(r)
+            .await
+            .map_err(|e| ToolResultSendError(e.0))
     }
 }
 

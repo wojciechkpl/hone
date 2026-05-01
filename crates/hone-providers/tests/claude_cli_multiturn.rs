@@ -574,9 +574,7 @@ async fn respawns_after_process_dies_between_turns() {
     // Turn 2: the stub child for turn 1 has already exited.
     // The provider must detect the death and re-spawn before servicing this turn.
     // We call complete() directly so we can assert on both Ok and Err outcomes.
-    let turn2_result = provider
-        .complete(make_request(&provider, "turn two"))
-        .await;
+    let turn2_result = provider.complete(make_request(&provider, "turn two")).await;
 
     let turn2_events: Vec<ProviderEvent> = match turn2_result {
         Ok(stream) => stream.collect::<Vec<_>>().await,
@@ -665,9 +663,7 @@ async fn respawn_recovers_from_repeated_deaths() {
     for (i, user_text) in turn_texts.iter().enumerate() {
         let turn_num = i + 1;
 
-        let result = provider
-            .complete(make_request(&provider, user_text))
-            .await;
+        let result = provider.complete(make_request(&provider, user_text)).await;
 
         let events: Vec<ProviderEvent> = match result {
             Ok(stream) => stream.collect::<Vec<_>>().await,
@@ -806,9 +802,9 @@ async fn surfaces_stderr_in_returned_err_body() {
             "complete() must return Err when every spawn attempt dies before \
              producing a successful turn"
         ),
-        Err(other) => panic!(
-            "expected ProviderError::Http when all spawn attempts fail; got: {other:?}"
-        ),
+        Err(other) => {
+            panic!("expected ProviderError::Http when all spawn attempts fail; got: {other:?}")
+        }
     };
 
     assert!(
@@ -881,9 +877,7 @@ async fn surfaces_most_recent_stderr_after_respawn() {
 
     let body = match result {
         Err(hone_providers::ProviderError::Http { body, .. }) => body,
-        Ok(_) => panic!(
-            "complete() must return Err when every spawn dies before producing a turn"
-        ),
+        Ok(_) => panic!("complete() must return Err when every spawn dies before producing a turn"),
         Err(other) => panic!("expected ProviderError::Http; got: {other:?}"),
     };
 
@@ -895,8 +889,8 @@ async fn surfaces_most_recent_stderr_after_respawn() {
          'stub-marker-B-SECOND'; got body: {body:?}"
     );
 
-    let spawn_count_str = std::fs::read_to_string(log_dir.join("spawn_count"))
-        .expect("spawn_count file must exist");
+    let spawn_count_str =
+        std::fs::read_to_string(log_dir.join("spawn_count")).expect("spawn_count file must exist");
     let spawn_count: u32 = spawn_count_str.trim().parse().expect("number");
     assert_eq!(
         spawn_count, 2,
@@ -1013,10 +1007,9 @@ async fn system_prompt_from_messages_appears_in_spawn_argv() {
     ];
     let request = make_request_with_history(&provider, messages);
 
-    let events =
-        tokio::time::timeout(std::time::Duration::from_secs(5), drain(&provider, request))
-            .await
-            .expect("complete() must resolve within 5 s");
+    let events = tokio::time::timeout(std::time::Duration::from_secs(5), drain(&provider, request))
+        .await
+        .expect("complete() must resolve within 5 s");
 
     // The turn must have succeeded (Done event present).
     assert!(
@@ -1031,13 +1024,10 @@ async fn system_prompt_from_messages_appears_in_spawn_argv() {
     let args: Vec<&str> = argv_args.lines().collect();
 
     // Find `--system-prompt` in the arg list.
-    let sys_prompt_pos = args
-        .iter()
-        .position(|a| *a == "--system-prompt")
-        .expect(
-            "spawn argv must contain '--system-prompt' when a System message is present; \
-             got args: {args:?}"
-        );
+    let sys_prompt_pos = args.iter().position(|a| *a == "--system-prompt").expect(
+        "spawn argv must contain '--system-prompt' when a System message is present; \
+             got args: {args:?}",
+    );
 
     // The token immediately after `--system-prompt` must be the system text.
     let sys_prompt_value = args
@@ -1046,8 +1036,7 @@ async fn system_prompt_from_messages_appears_in_spawn_argv() {
         .expect("'--system-prompt' must be followed by a value arg");
 
     assert_eq!(
-        sys_prompt_value,
-        "you are a helpful assistant",
+        sys_prompt_value, "you are a helpful assistant",
         "system-prompt value must equal the System message text; got: {sys_prompt_value:?}"
     );
 }
@@ -1099,12 +1088,9 @@ async fn absent_system_prompt_means_no_system_prompt_flag() {
     // No System message — only User.
     let request = make_request(&provider, "hello with no system prompt");
 
-    tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        drain(&provider, request),
-    )
-    .await
-    .expect("complete() must resolve within 5 s");
+    tokio::time::timeout(std::time::Duration::from_secs(5), drain(&provider, request))
+        .await
+        .expect("complete() must resolve within 5 s");
 
     let argv_args = std::fs::read_to_string(log_dir.join("argv_args"))
         .expect("argv_args must be written by the stub after complete()");
@@ -1154,24 +1140,19 @@ async fn multiple_system_messages_are_concatenated_with_blank_line() {
     ];
     let request = make_request_with_history(&provider, messages);
 
-    tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        drain(&provider, request),
-    )
-    .await
-    .expect("complete() must resolve within 5 s");
+    tokio::time::timeout(std::time::Duration::from_secs(5), drain(&provider, request))
+        .await
+        .expect("complete() must resolve within 5 s");
 
     // Read the dedicated value file written by the stub: this preserves
     // embedded newlines that an argv_args.lines() parse would strip.
-    let sys_prompt_value = std::fs::read_to_string(log_dir.join("system_prompt_value"))
-        .expect(
-            "system_prompt_value must be written by the stub when '--system-prompt' \
+    let sys_prompt_value = std::fs::read_to_string(log_dir.join("system_prompt_value")).expect(
+        "system_prompt_value must be written by the stub when '--system-prompt' \
              is present in argv",
-        );
+    );
 
     assert_eq!(
-        sys_prompt_value,
-        "first rule\n\nsecond rule",
+        sys_prompt_value, "first rule\n\nsecond rule",
         "multiple System messages must be joined with '\\n\\n' (blank-line separator), \
          no trailing newline; got: {sys_prompt_value:?}"
     );
@@ -1204,17 +1185,11 @@ async fn system_prompt_captured_only_on_first_spawn() {
     // First turn: System("rule A") + User("turn one").
     let req1 = make_request_with_history(
         &provider,
-        vec![
-            Message::system("rule A"),
-            Message::user("turn one"),
-        ],
+        vec![Message::system("rule A"), Message::user("turn one")],
     );
-    tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        drain(&provider, req1),
-    )
-    .await
-    .expect("turn 1 must complete within 5 s");
+    tokio::time::timeout(std::time::Duration::from_secs(5), drain(&provider, req1))
+        .await
+        .expect("turn 1 must complete within 5 s");
 
     // Second turn: System("rule B") + history + User("turn two").
     let req2 = make_request_with_history(
@@ -1226,17 +1201,17 @@ async fn system_prompt_captured_only_on_first_spawn() {
             Message::user("turn two"),
         ],
     );
-    tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        drain(&provider, req2),
-    )
-    .await
-    .expect("turn 2 must complete within 5 s");
+    tokio::time::timeout(std::time::Duration::from_secs(5), drain(&provider, req2))
+        .await
+        .expect("turn 2 must complete within 5 s");
 
     // Read spawn counter.
     let spawn_count_str = std::fs::read_to_string(log_dir.join("spawn_count"))
         .expect("spawn_count must exist after two complete() calls");
-    let spawn_count: u32 = spawn_count_str.trim().parse().expect("spawn_count must be a number");
+    let spawn_count: u32 = spawn_count_str
+        .trim()
+        .parse()
+        .expect("spawn_count must be a number");
 
     assert_eq!(
         spawn_count, 1,
@@ -1251,9 +1226,7 @@ async fn system_prompt_captured_only_on_first_spawn() {
     let sys_prompt_pos = args
         .iter()
         .position(|a| *a == "--system-prompt")
-        .expect(
-            "spawn argv must contain '--system-prompt'; got args: {args:?}"
-        );
+        .expect("spawn argv must contain '--system-prompt'; got args: {args:?}");
 
     let sys_prompt_value = args
         .get(sys_prompt_pos + 1)
@@ -1261,8 +1234,7 @@ async fn system_prompt_captured_only_on_first_spawn() {
         .expect("'--system-prompt' must be followed by a value arg");
 
     assert_eq!(
-        sys_prompt_value,
-        "rule A",
+        sys_prompt_value, "rule A",
         "the single spawn must use the FIRST call's system prompt 'rule A', \
          not the second call's 'rule B'; got: {sys_prompt_value:?}"
     );
@@ -1324,17 +1296,13 @@ async fn mcp_config_path_appears_in_spawn_argv() {
     let log_dir = dir.path().to_owned();
     let script = write_argv_logging_claude(&log_dir);
 
-    let provider = ClaudeCliProvider::with_binary(&script)
-        .with_mcp_config("test/fake/mcp.json");
+    let provider = ClaudeCliProvider::with_binary(&script).with_mcp_config("test/fake/mcp.json");
 
     let request = make_request(&provider, "probe mcp config");
 
-    let events = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        drain(&provider, request),
-    )
-    .await
-    .expect("complete() must resolve within 5 s");
+    let events = tokio::time::timeout(std::time::Duration::from_secs(5), drain(&provider, request))
+        .await
+        .expect("complete() must resolve within 5 s");
 
     // The turn must have succeeded.
     assert!(
@@ -1349,13 +1317,10 @@ async fn mcp_config_path_appears_in_spawn_argv() {
     let args: Vec<&str> = argv_args.lines().collect();
 
     // Find `--mcp-config` in the arg list.
-    let mcp_config_pos = args
-        .iter()
-        .position(|a| *a == "--mcp-config")
-        .expect(
-            "spawn argv must contain '--mcp-config' when provider is \
-             constructed with with_mcp_config(); got args: {args:?}"
-        );
+    let mcp_config_pos = args.iter().position(|a| *a == "--mcp-config").expect(
+        "spawn argv must contain '--mcp-config' when provider is \
+             constructed with with_mcp_config(); got args: {args:?}",
+    );
 
     // The token immediately after `--mcp-config` must be the path value.
     let mcp_config_value = args
@@ -1364,8 +1329,7 @@ async fn mcp_config_path_appears_in_spawn_argv() {
         .expect("'--mcp-config' must be followed by a value arg");
 
     assert_eq!(
-        mcp_config_value,
-        "test/fake/mcp.json",
+        mcp_config_value, "test/fake/mcp.json",
         "mcp-config value must equal the path supplied to with_mcp_config(); \
          got: {mcp_config_value:?}"
     );
@@ -1416,12 +1380,9 @@ async fn absent_mcp_config_means_no_flag() {
     // Make a request with no MCP config set.
     let request = make_request(&provider, "probe no mcp");
 
-    tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        drain(&provider, request),
-    )
-    .await
-    .expect("complete() must resolve within 5 s");
+    tokio::time::timeout(std::time::Duration::from_secs(5), drain(&provider, request))
+        .await
+        .expect("complete() must resolve within 5 s");
 
     let argv_args = std::fs::read_to_string(log_dir.join("argv_args"))
         .expect("argv_args must be written by the stub after complete()");
@@ -1508,8 +1469,7 @@ async fn mcp_config_persists_across_respawn() {
     let script = write_argv_logging_oneshot_claude(&log_dir);
 
     // Provider with MCP config — process will die after each turn (oneshot stub).
-    let provider = ClaudeCliProvider::with_binary(&script)
-        .with_mcp_config("test/fake/mcp.json");
+    let provider = ClaudeCliProvider::with_binary(&script).with_mcp_config("test/fake/mcp.json");
 
     // Turn 1: child responds once, then exits.
     let turn1_events = tokio::time::timeout(
@@ -1525,9 +1485,7 @@ async fn mcp_config_persists_across_respawn() {
     );
 
     // Turn 2: first child is dead; provider must re-spawn.
-    let turn2_result = provider
-        .complete(make_request(&provider, "turn two"))
-        .await;
+    let turn2_result = provider.complete(make_request(&provider, "turn two")).await;
 
     let turn2_events: Vec<ProviderEvent> = match turn2_result {
         Ok(stream) => stream.collect::<Vec<_>>().await,
@@ -1547,7 +1505,10 @@ async fn mcp_config_persists_across_respawn() {
     // Both spawns must have run.
     let spawn_count_str = std::fs::read_to_string(log_dir.join("spawn_count"))
         .expect("spawn_count must exist after two turns");
-    let spawn_count: u32 = spawn_count_str.trim().parse().expect("spawn_count must be a number");
+    let spawn_count: u32 = spawn_count_str
+        .trim()
+        .parse()
+        .expect("spawn_count must be a number");
     assert_eq!(
         spawn_count, 2,
         "two spawns must have occurred (one per one-shot turn); got spawn_count={spawn_count}"
@@ -1638,12 +1599,9 @@ async fn strict_mcp_config_flag_appears_in_spawn_argv() {
 
     let request = make_request(&provider, "probe strict mcp");
 
-    let events = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        drain(&provider, request),
-    )
-    .await
-    .expect("complete() must resolve within 5 s");
+    let events = tokio::time::timeout(std::time::Duration::from_secs(5), drain(&provider, request))
+        .await
+        .expect("complete() must resolve within 5 s");
 
     // The turn must have succeeded (Done event present).
     assert!(
@@ -1695,17 +1653,13 @@ async fn absent_strict_mcp_config_means_no_flag() {
     let script = write_argv_logging_claude(&log_dir);
 
     // Constructed with with_mcp_config but WITHOUT with_strict_mcp_config.
-    let provider = ClaudeCliProvider::with_binary(&script)
-        .with_mcp_config("test/fake/mcp.json");
+    let provider = ClaudeCliProvider::with_binary(&script).with_mcp_config("test/fake/mcp.json");
 
     let request = make_request(&provider, "probe no strict mcp");
 
-    tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        drain(&provider, request),
-    )
-    .await
-    .expect("complete() must resolve within 5 s");
+    tokio::time::timeout(std::time::Duration::from_secs(5), drain(&provider, request))
+        .await
+        .expect("complete() must resolve within 5 s");
 
     let argv_args = std::fs::read_to_string(log_dir.join("argv_args"))
         .expect("argv_args must be written by the stub after complete()");
@@ -1897,13 +1851,12 @@ async fn events_yield_lazily_not_all_at_once() {
     // Step 2: the first poll must yield a Token quickly.
     // The stub emits the token before its busy-wait, so this must arrive in
     // well under 500 ms on any reasonably loaded machine.
-    let first_event = tokio::time::timeout(
-        std::time::Duration::from_millis(500),
-        stream.next(),
-    )
-    .await
-    .expect("first Token must be yielded within 500 ms — if this times out the stream is not lazy")
-    .expect("stream must yield at least one event");
+    let first_event = tokio::time::timeout(std::time::Duration::from_millis(500), stream.next())
+        .await
+        .expect(
+            "first Token must be yielded within 500 ms — if this times out the stream is not lazy",
+        )
+        .expect("stream must yield at least one event");
 
     assert!(
         matches!(first_event, ProviderEvent::Token { .. }),
@@ -1914,8 +1867,7 @@ async fn events_yield_lazily_not_all_at_once() {
     // line has NOT been emitted yet (wait_finished must not exist).
     // Give the shell a moment to write wait_started so we know it started the
     // wait (not that it skipped it entirely).
-    let wait_started_deadline =
-        std::time::Instant::now() + std::time::Duration::from_millis(200);
+    let wait_started_deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
     while !log_dir.join("wait_started").exists()
         && std::time::Instant::now() < wait_started_deadline
     {
@@ -2007,17 +1959,16 @@ async fn dropping_unpoll_stream_releases_mutex_for_next_call() {
     // Step 3 + 4: second complete() must NOT deadlock.
     // If the mutex guard leaked into stream1 and was not released on drop,
     // this call will block until the 5 s timeout fires.
-    let second_events = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        async {
-            let stream2 = provider
-                .complete(make_request(&provider, "second turn"))
-                .await
-                .expect("second complete() must return Ok(stream) — if this deadlocks, \
-                         the stream is not releasing the mutex guard on drop");
-            stream2.collect::<Vec<ProviderEvent>>().await
-        },
-    )
+    let second_events = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let stream2 = provider
+            .complete(make_request(&provider, "second turn"))
+            .await
+            .expect(
+                "second complete() must return Ok(stream) — if this deadlocks, \
+                         the stream is not releasing the mutex guard on drop",
+            );
+        stream2.collect::<Vec<ProviderEvent>>().await
+    })
     .await
     .expect(
         "second complete() + drain must finish within 5 s; \
@@ -2081,13 +2032,10 @@ async fn dropping_stream_mid_turn_tombstones_process() {
     .expect("first complete() must return Ok(stream)");
 
     // Step 2: poll exactly one event.
-    let first_event = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        stream1.next(),
-    )
-    .await
-    .expect("first event must be yielded within 5 s")
-    .expect("stream must yield at least one event before Done");
+    let first_event = tokio::time::timeout(std::time::Duration::from_secs(5), stream1.next())
+        .await
+        .expect("first event must be yielded within 5 s")
+        .expect("stream must yield at least one event before Done");
 
     // The event should be a Token (the fake claude emits an assistant line first).
     assert!(
@@ -2105,20 +2053,17 @@ async fn dropping_stream_mid_turn_tombstones_process() {
     // Step 4: second complete() → drain.  This must re-spawn because the first
     // process was tombstoned.  Use a separate timeout so a deadlock (if the
     // drop did not release the guard) times out clearly.
-    let second_events = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        async {
-            let stream2 = provider
-                .complete(make_request(&provider, "second turn"))
-                .await
-                .expect("second complete() must return Ok(stream)");
-            stream2.collect::<Vec<ProviderEvent>>().await
-        },
-    )
+    let second_events = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let stream2 = provider
+            .complete(make_request(&provider, "second turn"))
+            .await
+            .expect("second complete() must return Ok(stream)");
+        stream2.collect::<Vec<ProviderEvent>>().await
+    })
     .await
     .expect(
         "second complete() + drain must finish within 5 s; \
-         if this times out, the mid-turn drop did not release the mutex guard"
+         if this times out, the mid-turn drop did not release the mutex guard",
     );
 
     assert!(
@@ -2135,8 +2080,7 @@ async fn dropping_stream_mid_turn_tombstones_process() {
         .expect("spawn_count must be a number");
 
     assert_eq!(
-        spawn_count,
-        2,
+        spawn_count, 2,
         "dropping a stream mid-turn must tombstone the process so the next \
          complete() re-spawns; expected spawn_count == 2, got {spawn_count}.  \
          If spawn_count == 1, the drop did not tombstone (the process was reused \
@@ -2432,13 +2376,10 @@ async fn cancel_mid_stream_tombstones_process_for_next_call() {
     .expect("first complete() must return Ok(stream)");
 
     // Poll one event (the eager first token).
-    let first_event = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        stream1.next(),
-    )
-    .await
-    .expect("first event must be yielded within 5 s")
-    .expect("stream must yield at least one event");
+    let first_event = tokio::time::timeout(std::time::Duration::from_secs(5), stream1.next())
+        .await
+        .expect("first event must be yielded within 5 s")
+        .expect("stream must yield at least one event");
 
     assert!(
         matches!(first_event, ProviderEvent::Token { .. }),
@@ -2485,16 +2426,13 @@ async fn cancel_mid_stream_tombstones_process_for_next_call() {
     let second_request = make_request(&provider, "second turn — no cancellation");
     // Deliberately leave cancel: None (the default from CompletionRequest::new).
 
-    let second_events = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        async {
-            let stream2 = provider
-                .complete(second_request)
-                .await
-                .expect("second complete() must return Ok(stream) after re-spawn");
-            stream2.collect::<Vec<ProviderEvent>>().await
-        },
-    )
+    let second_events = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let stream2 = provider
+            .complete(second_request)
+            .await
+            .expect("second complete() must return Ok(stream) after re-spawn");
+        stream2.collect::<Vec<ProviderEvent>>().await
+    })
     .await
     .expect(
         "second complete() + drain must finish within 5 s; \

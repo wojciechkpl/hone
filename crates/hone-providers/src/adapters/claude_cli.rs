@@ -740,8 +740,11 @@ impl ModelProvider for ClaudeCliProvider {
                                         continue 'first_line;
                                     }
                                     // Parse and buffer events from this first line.
-                                    let done =
-                                        parse_line(&trimmed, &mut pre_buffered_events, &mut last_text);
+                                    let done = parse_line(
+                                        &trimmed,
+                                        &mut pre_buffered_events,
+                                        &mut last_text,
+                                    );
                                     if done {
                                         // The entire turn fit in one line (unusual but
                                         // valid).  Mark done so we skip the lazy task.
@@ -908,9 +911,8 @@ impl ModelProvider for ClaudeCliProvider {
                     ReadOutcome::Cancelled => {
                         // Token was cancelled: snapshot stderr, emit Error + Done,
                         // tombstone the process, and return.
-                        let stderr_snap = guard
-                            .as_ref()
-                            .and_then(|p| snapshot_stderr(&p.stderr_buf));
+                        let stderr_snap =
+                            guard.as_ref().and_then(|p| snapshot_stderr(&p.stderr_buf));
                         let stderr_suffix = match stderr_snap.as_deref() {
                             Some(s) if !s.is_empty() => format!("; stderr: {s}"),
                             _ => String::new(),
@@ -960,9 +962,8 @@ impl ModelProvider for ClaudeCliProvider {
                         for _ in 0..8 {
                             tokio::task::yield_now().await;
                         }
-                        let stderr_snap = guard
-                            .as_ref()
-                            .and_then(|p| snapshot_stderr(&p.stderr_buf));
+                        let stderr_snap =
+                            guard.as_ref().and_then(|p| snapshot_stderr(&p.stderr_buf));
                         let msg = build_process_died_msg(
                             "claude process exited unexpectedly (mid-stream)",
                             stderr_snap.as_deref(),
@@ -982,9 +983,8 @@ impl ModelProvider for ClaudeCliProvider {
                     }
 
                     ReadOutcome::Line(Err(e)) => {
-                        let stderr_snap = guard
-                            .as_ref()
-                            .and_then(|p| snapshot_stderr(&p.stderr_buf));
+                        let stderr_snap =
+                            guard.as_ref().and_then(|p| snapshot_stderr(&p.stderr_buf));
                         let msg = build_process_died_msg(
                             &format!("claude stdout read error mid-stream: {e}"),
                             stderr_snap.as_deref(),
@@ -1004,7 +1004,10 @@ impl ModelProvider for ClaudeCliProvider {
         });
 
         let event_stream =
-            stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|ev| (ev, rx)) });
+            stream::unfold(
+                rx,
+                |mut rx| async move { rx.recv().await.map(|ev| (ev, rx)) },
+            );
 
         Ok(Box::pin(event_stream))
     }

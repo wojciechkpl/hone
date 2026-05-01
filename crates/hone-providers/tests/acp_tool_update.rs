@@ -61,9 +61,8 @@ mod tests {
     async fn drive(tool_config: MockToolCallConfig) -> Vec<ProviderEvent> {
         let tmp = tempdir().expect("tempdir");
         let log_path = tmp.path().join("requests.log");
-        let (_dir, script_path) =
-            create_mock_acp_agent_with_tool_call(&tool_config, &log_path)
-                .expect("create mock script");
+        let (_dir, script_path) = create_mock_acp_agent_with_tool_call(&tool_config, &log_path)
+            .expect("create mock script");
         let provider = make_provider(script_path.to_str().unwrap());
 
         let (rx_stream, tx) = ToolResultStream::new();
@@ -104,11 +103,11 @@ mod tests {
         let events = drive(cfg).await;
 
         let observed_end = events.iter().find_map(|e| match e {
-            ProviderEvent::ObservedToolEnd { id, result, is_error }
-                if id == "t_upd_1" =>
-            {
-                Some((result.clone(), *is_error))
-            }
+            ProviderEvent::ObservedToolEnd {
+                id,
+                result,
+                is_error,
+            } if id == "t_upd_1" => Some((result.clone(), *is_error)),
             _ => None,
         });
 
@@ -147,11 +146,11 @@ mod tests {
         let events = drive(cfg).await;
 
         let observed_end = events.iter().find_map(|e| match e {
-            ProviderEvent::ObservedToolEnd { id, result, is_error }
-                if id == "t_upd_2" =>
-            {
-                Some((result.clone(), *is_error))
-            }
+            ProviderEvent::ObservedToolEnd {
+                id,
+                result,
+                is_error,
+            } if id == "t_upd_2" => Some((result.clone(), *is_error)),
             _ => None,
         });
 

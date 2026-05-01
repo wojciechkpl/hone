@@ -308,13 +308,12 @@ impl ModelProvider for AcpProvider {
                             // the agent's response will be consumed (and discarded)
                             // in the next iteration of this loop as a Response with
                             // a non-matching id.
-                            let tool_result_params =
-                                serde_json::to_value(ToolResultParams {
-                                    session_id: session_id.clone(),
-                                    tool_call_id: tool_result.tool_call_id,
-                                    content: tool_result.content,
-                                    is_error: tool_result.is_error,
-                                })?;
+                            let tool_result_params = serde_json::to_value(ToolResultParams {
+                                session_id: session_id.clone(),
+                                tool_call_id: tool_result.tool_call_id,
+                                content: tool_result.content,
+                                is_error: tool_result.is_error,
+                            })?;
                             state
                                 .transport
                                 .send_request("session/toolResult", Some(tool_result_params))

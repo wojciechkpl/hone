@@ -25,4 +25,6 @@ pub use mock::MockProvider;
 pub use pricing::PricingTable;
 pub use registry::ProviderRegistry;
 pub use router::{ModelRouter, RoutingRule};
-pub use traits::{CompletionRequest, ModelProvider, ToolResultSendError, ToolResultSender, ToolResultStream};
+pub use traits::{
+    CompletionRequest, ModelProvider, ToolResultSendError, ToolResultSender, ToolResultStream,
+};

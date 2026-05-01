@@ -23,11 +23,11 @@ mod tests {
 
     use futures::StreamExt;
     use hone_proto::{ModelId, ModelInfo, ProviderEvent, ToolResult};
+    use hone_providers::acp::MockAgentConfig;
+    use hone_providers::acp::create_mock_agent_script;
     use hone_providers::acp::{
         AcpProvider, MockToolCallConfig, create_mock_acp_agent_with_tool_call,
     };
-    use hone_providers::acp::MockAgentConfig;
-    use hone_providers::acp::create_mock_agent_script;
     // These two imports will be unresolved until the green phase adds them.
     use hone_providers::traits::{CompletionRequest, ModelProvider, ToolResultStream};
     use serde_json::json;
@@ -283,7 +283,9 @@ mod tests {
 
         // Must contain at least one Token and must end with Done.
         assert!(
-            events.iter().any(|e| matches!(e, ProviderEvent::Token { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, ProviderEvent::Token { .. })),
             "expected Token events, got {events:?}"
         );
         assert_eq!(

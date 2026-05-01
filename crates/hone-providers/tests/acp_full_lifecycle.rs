@@ -23,9 +23,7 @@ mod tests {
     use std::time::Duration;
 
     use futures::StreamExt;
-    use hone_proto::{
-        Message, ModelId, ModelInfo, ProviderEvent, ToolResult, ToolSchema,
-    };
+    use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ToolResult, ToolSchema};
     use hone_providers::acp::{
         AcpProvider, MockToolCallConfig, create_mock_acp_agent_with_tool_call,
     };
@@ -90,7 +88,9 @@ mod tests {
         };
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(50)).await;
-            tx.send(result_for_dispatch).await.expect("send tool result");
+            tx.send(result_for_dispatch)
+                .await
+                .expect("send tool result");
         });
 
         let mut request = CompletionRequest::new(
@@ -137,9 +137,11 @@ mod tests {
         let observed_end = events
             .iter()
             .find_map(|e| match e {
-                ProviderEvent::ObservedToolEnd { id, result, is_error } if id == "t_full_1" => {
-                    Some((result.clone(), *is_error))
-                }
+                ProviderEvent::ObservedToolEnd {
+                    id,
+                    result,
+                    is_error,
+                } if id == "t_full_1" => Some((result.clone(), *is_error)),
                 _ => None,
             })
             .unwrap_or_else(|| {

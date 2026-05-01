@@ -14,10 +14,10 @@
 #[cfg(unix)]
 mod tests {
     use futures::StreamExt;
+    use hone_proto::ToolSchema;
     use hone_proto::{ModelId, ModelInfo, ProviderEvent};
     use hone_providers::acp::{AcpProvider, MockAgentConfig, create_mock_agent_script_with_log};
     use hone_providers::{CompletionRequest, ModelProvider};
-    use hone_proto::ToolSchema;
     use serde_json::json;
     use tempfile::tempdir;
 

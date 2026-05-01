@@ -226,8 +226,8 @@ pub fn create_mock_acp_agent_with_tool_call(
     // `printf '"x":%s' "\"foo\""` outputs `"x":foo` (invalid JSON), whereas
     // inlining the literal `\"foo\"` into the format string preserves the
     // quotes and yields `"x":"foo"`.
-    let pre_chunk_json =
-        serde_json::to_string(&config.pre_tool_chunk).unwrap_or_else(|_| "\"thinking...\"".to_owned());
+    let pre_chunk_json = serde_json::to_string(&config.pre_tool_chunk)
+        .unwrap_or_else(|_| "\"thinking...\"".to_owned());
     let post_chunk_json =
         serde_json::to_string(&config.post_tool_chunk).unwrap_or_else(|_| "\"done\"".to_owned());
     let tool_call_id_json =
@@ -241,8 +241,7 @@ pub fn create_mock_acp_agent_with_tool_call(
     // explicitly send a null.
     let raw_input_splice = match &config.raw_input {
         Some(value) => {
-            let encoded = serde_json::to_string(value)
-                .unwrap_or_else(|_| "{}".to_owned());
+            let encoded = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_owned());
             format!(",\"rawInput\":{encoded}")
         }
         None => String::new(),
@@ -255,8 +254,8 @@ pub fn create_mock_acp_agent_with_tool_call(
     // literal quoted token.
     let tool_call_update_line = match &config.tool_call_update_status {
         Some(status) => {
-            let status_json = serde_json::to_string(status)
-                .unwrap_or_else(|_| "\"completed\"".to_owned());
+            let status_json =
+                serde_json::to_string(status).unwrap_or_else(|_| "\"completed\"".to_owned());
             format!(
                 "             # (d.5) tool_call_update notification — terminal status\n\
                  \x20            printf '{{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{{\"sessionId\":\"%s\",\"update\":{{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":{tool_call_id_json},\"status\":{status_json}}}}}}}\\n' \"$SESSION_ID\"\n"
