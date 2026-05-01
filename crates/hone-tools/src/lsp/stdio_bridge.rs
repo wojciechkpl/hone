@@ -211,10 +211,19 @@ impl StdioLspBridgeInner {
         id
     }
 
+    /// Per-request deadline: how long to wait for a matching response before
+    /// giving up.  30 seconds is generous for any well-behaved LSP server while
+    /// still bounding a hung or crashed server to a survivable delay.
+    const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
     /// Send `method` as a JSON-RPC request and wait for the matching response,
     /// buffering any `textDocument/publishDiagnostics` notifications along the way.
     ///
     /// Returns the `result` field of the response, or `Null` if absent.
+    ///
+    /// The loop is bounded by `REQUEST_TIMEOUT`; if the server never sends a
+    /// matching response within that window the call returns `Err` rather than
+    /// hanging the caller indefinitely.
     async fn request(&mut self, method: &str, params: Value) -> Result<Value, ToolError> {
         let id = self.alloc_id();
         let message = json!({
@@ -225,8 +234,27 @@ impl StdioLspBridgeInner {
         });
         send_message(&mut self.stdin, &message).await?;
 
+        let deadline = tokio::time::Instant::now() + Self::REQUEST_TIMEOUT;
         loop {
-            let msg = read_message(&mut self.reader).await?;
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(ToolError::Other(format!(
+                    "LSP request '{method}' timed out after {} s: \
+                     no matching response received",
+                    Self::REQUEST_TIMEOUT.as_secs()
+                )));
+            }
+            let msg = match tokio::time::timeout(remaining, read_message(&mut self.reader)).await {
+                Ok(Ok(msg)) => msg,
+                Ok(Err(e)) => return Err(e),
+                Err(_elapsed) => {
+                    return Err(ToolError::Other(format!(
+                        "LSP request '{method}' timed out after {} s: \
+                         no matching response received",
+                        Self::REQUEST_TIMEOUT.as_secs()
+                    )));
+                }
+            };
             // If the message has a numeric `id` matching ours it's the response.
             if msg.get("id") == Some(&json!(id)) {
                 if let Some(err) = msg.get("error") {
@@ -237,7 +265,7 @@ impl StdioLspBridgeInner {
                 }
                 return Ok(msg["result"].clone());
             }
-            // Otherwise buffer notifications we care about.
+            // Otherwise buffer notifications we care about and loop.
             self.handle_notification(&msg);
         }
     }
@@ -305,7 +333,8 @@ impl StdioLspBridgeInner {
         file: &Path,
         timeout: Duration,
     ) -> Result<Vec<Diagnostic>, ToolError> {
-        let content = std::fs::read_to_string(file)
+        let content = tokio::fs::read_to_string(file)
+            .await
             .map_err(|e| ToolError::Other(format!("failed to read {}: {e}", file.display())))?;
 
         let language_id = language_id_for_path(file);
