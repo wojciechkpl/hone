@@ -73,13 +73,18 @@ let memory_query = MemoryQuery { text: user_input.to_string(), limit: 5 };
 let memories = store.lock().await.recall(&memory_query).await?;
 ```
 
-The recall scoring is intentionally simple — case-insensitive substring match in SQL (`lower(content) LIKE ?1`), then ordered by recency. Up to 5 entries are appended to the system prompt as:
+Recall ordering uses BM25 (k1=1.5, b=0.75) over `description + "\n" + content`, multiplied by the per-memory weight + decay. The SQLite backend caps the BM25 universe at the 5 000 most-recent rows on non-empty queries; the empty-query path used by `render_index` skips both BM25 and the cap. The agent does not see scored snippets directly — it sees a `## Memory index` listing IDs + descriptions grouped by kind in the system prompt and fetches bodies on demand via the `memory_read` tool:
 
 ```
-## Relevant context from memory:
-- Q: how do I run the test suite? A: cargo test --workspace
-- Q: which crate handles routing? A: hone-core::dispatcher
-- ...
+## Memory index
+
+The following memories are available. To read a body, call the `memory_read` tool with the id in brackets.
+
+### User
+- [01HXX...] prefers terse, no trailing summaries (kind=user, w=1)
+
+### Feedback
+- [01HXY...] tests must hit a real database, not mocks (kind=feedback, w=1)
 ```
 
 ```mermaid

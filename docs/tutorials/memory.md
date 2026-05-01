@@ -18,7 +18,9 @@ The rest of this guide walks each layer from a user's standpoint.
 
 ## Layer 1: persistent memory store
 
-By default, every turn is recorded. The next turn's user input is matched against past content and the top 5 hits are prepended to the system prompt.
+Every memory has a `kind` (`Conversation`, `User`, `Feedback`, `Project`, `Reference`, `Outcome`) and an optional `description` (one-line summary). The system prompt carries a `## Memory index` section listing IDs + descriptions grouped by kind; the agent fetches bodies on demand via the `memory_read` tool. Recall ordering uses BM25 over content + description.
+
+Not every turn produces a memory. A classifier in the agent loop only records turns that match specific patterns — corrections (`stop doing`, `don't do`), validated decisions, project deadlines, external links — and dedupes against the recent 5 000-memory slice via trigram-Jaccard similarity at threshold 0.8. Conversational chatter is dropped on the floor.
 
 ### Where the file lives
 
@@ -63,44 +65,36 @@ rm ~/.hone/memory.db
 
 Hone re-creates it on the next startup. Sessions, audit logs, and the index are kept (they live in different files).
 
-### Selective deletion
-
-`MemoryStore::forget(filter)` exists in the `hone-memory` crate but isn't surfaced as a CLI command. Until it is, the workaround is direct SQL:
+### Inspecting and deleting via the CLI
 
 ```bash
-sqlite3 ~/.hone/memory.db
-sqlite> SELECT id, substr(content, 1, 60) FROM memories ORDER BY created_at DESC LIMIT 20;
-sqlite> DELETE FROM memories WHERE id = '019...';
+hone memory ls                          # list recent memories with kind, weight, description
+hone memory ls --kind feedback          # filter by kind
+hone memory ls --limit 50               # default 20
+hone memory show <id>                   # full body, tags, timestamps
+hone memory forget --tag outcome        # bulk delete by tag
+hone memory forget --kind conversation  # bulk delete by kind
+hone memory forget --before 2026-01-01T00:00:00Z   # bulk delete by RFC3339 cutoff
 ```
 
-Tags are stored as a JSON array in the `tags` column — bulk-delete by tag with:
+`hone memory forget` requires exactly one filter and prints the affected count. SQL fallbacks are still available if you need surgical edits the CLI doesn't cover, but restart hone after editing — an open `SqliteStore` won't see your changes.
 
-```sql
-DELETE FROM memories WHERE tags LIKE '%"outcome"%';
+### Encryption (`--encrypted-memory`)
+
+Wraps the on-disk store with AES-256-GCM + Argon2id (per-store random salt sentinel). Opt in at startup:
+
+```bash
+export HONE_MEMORY_PASSPHRASE='your-passphrase'
+hone --encrypted-memory
 ```
 
-Restart hone after editing the database; an open `SqliteStore` won't see your changes.
-
-### Encryption (opt-in, programmatic)
-
-`EncryptedStore<S>` wraps any `MemoryStore` with AES-256-GCM content encryption (Argon2id KDF, per-store random salt). It exists in `crates/hone-memory/src/encrypted.rs` and is fully tested, but it isn't yet exposed as a CLI flag.
-
-To use it today you embed hone-memory in your own binary:
-
-```rust
-use hone_memory::{SqliteStore, EncryptedStore};
-
-let inner = SqliteStore::open("~/.hone/memory.db").await?;
-let store = EncryptedStore::new(inner, &passphrase).await?;
-```
+If `--encrypted-memory` is set without a non-empty `HONE_MEMORY_PASSPHRASE`, the binary exits non-zero with a clear message. If the passphrase is wrong (sentinel decrypt fails), the binary exits non-zero rather than silently falling back to a plaintext or empty store — a typo can't quietly mask your memory.
 
 Properties:
 
-- Wrong passphrase fails at first recall with a recognisable error (no silent corruption).
-- Salt is persisted as a sentinel record (`__encrypted_store_salt__`); two stores with the same passphrase but different salts produce different ciphertexts.
-- Search is unavoidably client-side (you can't index ciphertext); recall decrypts every record and filters in memory. Acceptable up to ~10K records.
-
-If you want this surfaced as `--memory-passphrase` / `HONE_MEMORY_PASSPHRASE`, file an issue.
+- Per-store random salt persisted as a sentinel record; two stores with the same passphrase but different salts produce different ciphertexts.
+- Search is unavoidably client-side (you can't index ciphertext); recall decrypts every record and BM25-scores in memory. Bounded by the 5 000-memory recall cap.
+- Rotating the passphrase requires re-encrypting the store (decrypt with old, write to a fresh DB with new). There is no in-place rotation tool yet.
 
 ## Layer 2: HONE.md conventions
 
@@ -205,13 +199,16 @@ sequenceDiagram
   participant L1 as Memory store
   participant L4 as Anthropic API
   U->>H: "fix the login bug"
-  H->>L1: recall(text="fix the login bug", limit=5)
-  L1-->>H: 3 prior Q&A pairs
-  H->>H: build system prompt = HONE.md + memories + skeleton
+  Note over H,L1: at session start
+  H->>L1: render_index(budget=default)
+  L1-->>H: markdown index (IDs + descriptions, grouped by kind)
+  H->>H: system prompt = HONE.md + ## Memory index + skeleton
   H->>L4: messages with cache_control on prefix
-  L4-->>H: stream tokens (90% cache hit)
+  L4-->>H: stream tokens; agent calls memory_read(<id>) for relevant entries
+  L1-->>H: full body of fetched memory
   H-->>U: response
-  H->>L1: record(Q="fix the login bug", A=...)
+  Note over H,L1: classifier decides if turn is memory-worthy
+  H->>L1: record(kind=Feedback|Project|..., body, dedup at 0.8)
 ```
 
 Every layer is independent and can be turned off in isolation:
@@ -228,13 +225,13 @@ Every layer is independent and can be turned off in isolation:
 
 ### "Hone keeps recalling something irrelevant — why?"
 
-Layer 1 uses naive substring matching (`lower(content) LIKE ?`). If your prompt contains the token "test" and a past Q&A contained "test", it matches. The fix is to either:
+Recall is BM25 (lexical, not semantic). A query containing the token "test" will favour memories that *also* contain "test", weighted by IDF and document length. If a memory is dominating recall, options:
 
-- Delete the offending memory (see "Selective deletion" above).
+- Delete it: `hone memory forget --tag <t>` or `hone memory forget --before <iso>` (see "Inspecting and deleting via the CLI").
 - Rephrase your prompt.
-- Run with `--ephemeral` for the session if the noise is overwhelming.
+- Run with `--ephemeral` if the noise is overwhelming.
 
-There's no semantic recall yet — it's on the roadmap (would use the same `hone-index` embedding store as Layer 3 retrieval).
+The agent additionally sees the `## Memory index` and reads bodies on demand via `memory_read`, so even a high BM25 hit only enters the prompt body when the model decides to fetch it. Semantic (embedding) recall is still on the roadmap.
 
 ### "Why is my first turn slow?"
 
@@ -264,19 +261,20 @@ sqlite3 ~/.hone/memory.db ".dump" > memory-export.sql
 sqlite3 ~/.hone/memory.db < memory-export.sql
 ```
 
-`MemoryStore::export` / `import` exist programmatically but aren't yet wired to the CLI.
+`MemoryStore::export` / `import` exist programmatically but aren't yet wired to the CLI. Encrypted stores need decrypted-export-then-encrypted-reimport (no direct ciphertext copy across passphrases).
 
 ### "How big can the memory store get?"
 
-SQLite handles millions of rows fine. The bottleneck is recall — the `LIKE` scan is O(n). At ~50K records you'll start to feel it. Run `decay()` periodically (or simply `DELETE FROM memories WHERE created_at < strftime('%s', 'now', '-90 days');`).
+SQLite handles millions of rows fine. Recall is bounded — `SqliteStore::recall` caps the BM25 universe at the 5 000 most-recent memories on non-empty queries. The empty-query path used by `render_index` does a full table scan, so at corpus sizes north of ~50 K you'll start to feel session-start latency. Decay runs automatically every 24 hours on first open of the day (`decay(0.95, now)`); run `hone memory forget --before <iso>` for hard cleanup.
 
 ## Debugging recalls
 
 When a recall surprises you:
 
-1. `Ctrl+M` — open the prompt mirror; see the exact memories block sent to the model.
-2. `RUST_LOG=hone_core::agent=debug hone` — every recall logs the query and the matched ids.
-3. `sqlite3 ~/.hone/memory.db "select id, content from memories where lower(content) like '%KEYWORD%' order by created_at desc limit 10;"` — reproduce the recall query directly.
+1. `Ctrl+M` — open the prompt mirror; see the exact `## Memory index` block sent to the model and any `memory_read` results materialised into the conversation.
+2. `RUST_LOG=hone_core::agent=debug hone` — every memory write and `memory_read` call is logged.
+3. `hone memory ls --limit 50` — the same view the agent gets, minus bodies. `hone memory show <id>` for any single body.
+4. `sqlite3 ~/.hone/memory.db "select id, kind, weight, substr(content, 1, 60) from memories order by created_at desc limit 20;"` — raw store inspection. The schema is versioned via the `schema_version` table.
 
 ## Related
 

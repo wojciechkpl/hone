@@ -180,11 +180,12 @@ memories {
 }
 ```
 
-**Recall flow** (`crates/hone-memory/src/sqlite_store.rs:100-145`):
-1. Fetch candidates via `LIKE` substring match
-2. Score by term overlap × `Memory::weight` (`sqlite_store.rs:123-134`)
-3. Apply decay (if `decay_at ≤ now`, drop)
-4. Return top-k
+**Recall flow** (`crates/hone-memory/src/sqlite_store.rs::recall`):
+1. Empty query → bypass BM25, return live memories sorted by weight (used by `render_index` for the system-prompt index, no row cap).
+2. Non-empty query → fetch the 5 000 most-recent rows (`MAX_RECALL_CORPUS`), build a `Bm25Index` over `description + "\n" + content`, score each row.
+3. Multiply BM25 score by `Memory::weight` × decay multiplier.
+4. Drop decayed rows (`decay_at ≤ now`).
+5. Return top-`limit`.
 
 ### Key Types
 
@@ -192,9 +193,13 @@ memories {
 |------|----------|---------|
 | `ContextManager` | `context.rs` (~48 KB) | Message buffer, trimming, compression, dedup |
 | `ContextConfig` | `context.rs:21-97` | Budget ratios, compress ages, phase config |
-| `Memory` | `crates/hone-memory/src/types.rs:4-11` | Persistent record: id, content, tags, weight, decay_at |
-| `MemoryStore` trait | `crates/hone-memory/src/store.rs:9-25` | record, recall, forget, decay, export, import |
-| `SqliteStore` | `crates/hone-memory/src/sqlite_store.rs:10-73` | Async SQLite backend |
+| `Memory` | `crates/hone-memory/src/types.rs` | Persistent record: id, content, description, kind, tags, weight, created_at, decay_at |
+| `MemoryKind` | `crates/hone-memory/src/types.rs` | enum: Conversation, User, Feedback, Project, Reference, Outcome (serde lowercase) |
+| `MemoryStore` trait | `crates/hone-memory/src/store.rs` | record, recall, forget, decay, find_similar, export, import |
+| `SqliteStore` | `crates/hone-memory/src/sqlite_store.rs` | Async SQLite backend with versioned `schema_version` migrations and 24h auto-decay |
+| `EncryptedStore<S>` | `crates/hone-memory/src/encrypted.rs` | AES-256-GCM + Argon2id wrapper; CLI-opt-in via `--encrypted-memory` |
+| `Bm25Index` | `crates/hone-memory/src/bm25.rs` | k1=1.5, b=0.75; tokenises on `is_alphanumeric`; used by `recall` |
+| `memory_index` | `crates/hone-core/src/memory_index.rs` | `render_index` (system-prompt section) + `read_memory(id)` (tool backing) |
 
 ### Invariants (with test citations)
 
@@ -207,16 +212,18 @@ memories {
 7. Duplicate tool results replaced with pointer — `context_manager.rs::test_duplicate_tool_results_replaced_with_pointer` (line 293)
 8. Small tool results excluded from dedup — `context_manager.rs::test_small_tool_results_not_deduped` (line 337)
 9. Trim marker inserted where messages dropped — `context_manager.rs::test_context_inserts_trim_marker` (line 109)
-10. Memory decay via `decay_at` (`sqlite_store.rs:18, 147+`)
-11. Relevance = term overlap × `Memory::weight` (`sqlite_store.rs:123-134`)
-12. Memory recording is fire-and-forget — errors silenced (`agent.rs:274`)
+10. Memory decay via `decay_at` + auto-decay every 24h on open (`sqlite_store.rs::open_with_decay_interval`, gated by `memory_meta.last_decay_at`)
+11. Relevance = `Bm25Index::score(content+description)` × `Memory::weight` × decay multiplier (`sqlite_store.rs::recall`, `bm25.rs`)
+12. Memory recording is gated by `classify_turn` (`hone-core::memory_worthy`) and deduped via `find_similar(threshold=0.8)` before insert (`hone-core::agent::record_memory`)
 
 ### Known Limitations
 
 - No learned compaction strategy — age/size heuristics only
-- `SqliteStore::recall()` uses `LIKE` + term-overlap; no embedding-based or BM25 retrieval
+- `SqliteStore::recall()` uses BM25 (lexical); no embedding-based / semantic retrieval
+- BM25 universe capped at 5 000 most-recent rows on non-empty queries; older memories are not searchable until manually pruned
 - Token estimation via tiktoken; no online counting, so budget may drift
 - No in-process caching layer for recalled memories
+- Encrypted-store passphrase rotation requires a manual decrypt-export → re-encrypt-import cycle
 
 ### Orchestrator Decompose-Execute-Merge Flow
 
@@ -264,11 +271,11 @@ graph TB
     end
     
     subgraph CrossSession["Cross-Session (SQLiteStore)"]
-        RecordQ["record_memory()<br/>(fire-and-forget)"]
-        MemDB["SQLite memories<br/>table"]
-        Recall["recall()<br/>(LIKE + term-overlap)"]
-        Decay["decay_at<br/>filter"]
-        TopK["Rank by<br/>weight×overlap"]
+        RecordQ["record_memory()<br/>(classifier-gated +<br/>find_similar dedup)"]
+        MemDB["SQLite memories<br/>table (versioned schema)"]
+        Recall["recall()<br/>(BM25 over content+desc)"]
+        Decay["decay_at filter +<br/>24h auto-decay"]
+        TopK["Rank by<br/>BM25 × weight × decay"]
     end
     
     Input --> AddMsg
