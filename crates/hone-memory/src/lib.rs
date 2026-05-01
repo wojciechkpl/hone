@@ -1,3 +1,4 @@
+pub mod bm25;
 pub mod encrypted;
 mod error;
 mod in_memory;

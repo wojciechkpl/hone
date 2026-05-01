@@ -3,6 +3,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
+use crate::bm25::{Bm25Index, Bm25Params};
 use crate::error::MemoryError;
 use crate::store::MemoryStore;
 use crate::types::{Memory, MemoryFilter, MemoryQuery};
@@ -25,25 +26,6 @@ impl Default for InMemoryStore {
     }
 }
 
-/// Score a memory against a query text.
-///
-/// Returns a non-negative float. The score is the number of (overlapping)
-/// case-insensitive occurrences of the query string inside the memory content.
-/// An empty query matches everything with a score of 1.
-fn relevance_score(memory: &Memory, query_lower: &str) -> f64 {
-    if query_lower.is_empty() {
-        return 1.0;
-    }
-    let content_lower = memory.content.to_lowercase();
-    let mut count = 0usize;
-    let mut start = 0;
-    while let Some(pos) = content_lower[start..].find(query_lower) {
-        count += 1;
-        start += pos + 1;
-    }
-    count as f64
-}
-
 #[async_trait]
 impl MemoryStore for InMemoryStore {
     async fn record(&mut self, memory: Memory) -> Result<(), MemoryError> {
@@ -52,15 +34,44 @@ impl MemoryStore for InMemoryStore {
     }
 
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
-        let query_lower = query.text.to_lowercase();
+        // Collect memories into a stable-ordered Vec so that BM25 doc indices
+        // correspond to positions in this slice.  Sort by id to make doc-index
+        // assignment deterministic across runs (HashMap iteration order is not).
+        let mut all: Vec<&Memory> = self.memories.values().collect();
+        all.sort_by(|a, b| a.id.cmp(&b.id));
 
-        let mut scored: Vec<(f64, &Memory)> = self
-            .memories
-            .values()
-            .filter_map(|m| {
-                let score = relevance_score(m, &query_lower);
-                if score > 0.0 {
-                    Some((score * m.weight, m))
+        // Empty-query short-circuit: return all memories unfiltered.
+        if query.text.is_empty() {
+            let mut scored: Vec<(f64, &Memory)> =
+                all.iter().map(|m| (m.weight, *m)).collect();
+            scored.sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+            let results = scored
+                .into_iter()
+                .take(query.limit)
+                .map(|(_, m)| m.clone())
+                .collect();
+            return Ok(results);
+        }
+
+        // Build a BM25 index over the searchable text of every memory.
+        // Searchable text = description (if present) + "\n" + content.
+        let texts: Vec<String> = all
+            .iter()
+            .map(|m| {
+                let desc = m.description.as_deref().unwrap_or_default();
+                format!("{desc}\n{}", m.content)
+            })
+            .collect();
+        let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+        let index = Bm25Index::build(&refs, Bm25Params::default());
+
+        let mut scored: Vec<(f64, &Memory)> = all
+            .iter()
+            .enumerate()
+            .filter_map(|(i, m)| {
+                let bm25 = index.score(i, &query.text);
+                if bm25 > 0.0 {
+                    Some((bm25 * m.weight, *m))
                 } else {
                     None
                 }

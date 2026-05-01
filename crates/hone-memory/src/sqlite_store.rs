@@ -3,6 +3,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use sqlx::Row;
 
+use crate::bm25::{Bm25Index, Bm25Params};
 use crate::error::MemoryError;
 use crate::store::MemoryStore;
 use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
@@ -15,6 +16,13 @@ pub struct SqliteStore {
 /// new migration is added to `run_migrations`.
 // crate-external for tests; not stable API
 pub const CURRENT_SCHEMA_VERSION: i32 = 2;
+
+/// Maximum number of memories fetched for BM25 scoring.
+///
+/// BM25 needs the full corpus for IDF; we cap at the most-recent N memories to
+/// bound recall cost. Memories older than the Nth most-recent are not
+/// searchable.
+const MAX_RECALL_CORPUS: usize = 5000;
 
 const CREATE_TABLE_SQL: &str = "
     CREATE TABLE IF NOT EXISTS memories (
@@ -385,39 +393,58 @@ impl MemoryStore for SqliteStore {
     }
 
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
-        let query_lower = query.text.to_lowercase();
+        // Fetch memories from the database — BM25 scoring happens in Rust.
+        // We cap at MAX_RECALL_CORPUS most-recent rows to bound memory and CPU
+        // usage; see the const-level doc comment for the IDF tradeoff.
+        let rows = sqlx::query(
+            "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+             FROM memories
+             ORDER BY created_at DESC
+             LIMIT ?",
+        )
+        .bind(MAX_RECALL_CORPUS as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_io_err)?;
 
-        // Fetch all rows and score in Rust — SQLite LIKE is case-insensitive for
-        // ASCII but scoring with overlap count requires application-side logic that
-        // mirrors InMemoryStore's behaviour.
-        let rows = if query_lower.is_empty() {
-            sqlx::query(
-                "SELECT id, content, tags, weight, created_at, decay_at, kind, description
-                 FROM memories",
-            )
-            .fetch_all(&self.pool)
-            .await
-            .map_err(to_io_err)?
-        } else {
-            let pattern = format!("%{}%", query_lower);
-            sqlx::query(
-                "SELECT id, content, tags, weight, created_at, decay_at, kind, description
-                 FROM memories
-                 WHERE lower(content) LIKE ?1",
-            )
-            .bind(&pattern)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(to_io_err)?
-        };
-
-        let mut scored: Vec<(f64, Memory)> = rows
+        let memories: Vec<Memory> = rows
             .iter()
-            .filter_map(|row| {
-                let memory = row_to_memory(row).ok()?;
-                let score = relevance_score(&memory, &query_lower);
-                if score > 0.0 {
-                    Some((score * memory.weight, memory))
+            .filter_map(|row| match row_to_memory(row) {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    tracing::warn!(error = ?e, "skipping memory row that failed to deserialize");
+                    None
+                }
+            })
+            .collect();
+
+        // Empty-query short-circuit: return all memories ordered by weight.
+        if query.text.is_empty() {
+            let mut all: Vec<Memory> = memories;
+            all.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal));
+            let results = all.into_iter().take(query.limit).collect();
+            return Ok(results);
+        }
+
+        // Build a BM25 index over the searchable text of every memory.
+        // Searchable text = description (if present) + "\n" + content.
+        let texts: Vec<String> = memories
+            .iter()
+            .map(|m| {
+                let desc = m.description.as_deref().unwrap_or_default();
+                format!("{desc}\n{}", m.content)
+            })
+            .collect();
+        let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+        let index = Bm25Index::build(&refs, Bm25Params::default());
+
+        let mut scored: Vec<(f64, Memory)> = memories
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, memory)| {
+                let bm25 = index.score(i, &query.text);
+                if bm25 > 0.0 {
+                    Some((bm25 * memory.weight, memory))
                 } else {
                     None
                 }
@@ -633,18 +660,3 @@ mod tests {
     }
 }
 
-/// Count overlapping case-insensitive occurrences of `query_lower` in the
-/// memory content.  Mirrors the scoring used by `InMemoryStore`.
-fn relevance_score(memory: &Memory, query_lower: &str) -> f64 {
-    if query_lower.is_empty() {
-        return 1.0;
-    }
-    let content_lower = memory.content.to_lowercase();
-    let mut count = 0usize;
-    let mut start = 0;
-    while let Some(pos) = content_lower[start..].find(query_lower) {
-        count += 1;
-        start += pos + 1;
-    }
-    count as f64
-}
