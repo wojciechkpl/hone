@@ -95,11 +95,6 @@ pub struct App {
     /// persona.  Cleared after one turn.
     pub(crate) inline_agent: Option<String>,
 
-    // --- Clarify mode ---------------------------------------------------------
-    /// When `true`, the next user prompt will be pre-processed through the
-    /// clarification detector regardless of heuristics (forced by `/clarify`).
-    pub(crate) force_clarify: bool,
-
     // --- Agent rail / TurnLedger --------------------------------------------
     /// Whether the agent rail sidebar is currently visible.
     pub(crate) agent_rail_visible: bool,
@@ -226,7 +221,6 @@ impl App {
             review_session: None,
             pending_review: false,
             inline_agent: None,
-            force_clarify: false,
             agent_rail_visible: false,
             current_turn: None,
             completed_turns: Vec::new(),
@@ -508,13 +502,6 @@ impl App {
     /// system prompt for this turn.
     pub fn take_inline_agent(&mut self) -> Option<String> {
         self.inline_agent.take()
-    }
-
-    /// Whether the next turn was explicitly forced into clarification mode.
-    pub fn take_force_clarify(&mut self) -> bool {
-        let v = self.force_clarify;
-        self.force_clarify = false;
-        v
     }
 
     /// Set splash_start to a specific instant (for testing auto-dismiss).
@@ -1901,15 +1888,11 @@ impl App {
 
     fn handle_clarify_command(&mut self, prompt: String) {
         if prompt.is_empty() {
-            // No inline prompt — set the flag so the next regular message
-            // is forced through clarification regardless of heuristics.
-            self.force_clarify = true;
             self.messages.push(DisplayMessage::new(
                 DisplayRole::System,
-                "[Clarify mode] Your next message will trigger a clarification step.".to_string(),
+                "Usage: /clarify <prompt> — synthesises clarifying questions for an ambiguous prompt.".to_string(),
             ));
         } else {
-            // Prompt provided inline — synthesise clarifying questions now.
             use hone_core::ClarificationDetector;
             let questions =
                 ClarificationDetector::needs_clarification(&prompt).unwrap_or_else(|| {
@@ -1920,9 +1903,6 @@ impl App {
                 .push(DisplayMessage::new(DisplayRole::User, prompt.clone()));
             self.messages
                 .push(DisplayMessage::new(DisplayRole::System, formatted));
-            // Mark force_clarify so the event loop knows this turn has been
-            // pre-processed; the user's answer will go straight to the agent.
-            self.force_clarify = true;
         }
     }
 

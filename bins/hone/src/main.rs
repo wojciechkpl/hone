@@ -35,7 +35,7 @@ use hone_core::{
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_mcp::McpManager;
 use hone_memory::{MemoryStore, SqliteStore};
-use hone_proto::{AgentEvent, ModelId, PricingEntry, ToolApprovalPolicy};
+use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, ModelProvider, adapters::anthropic::AnthropicProvider,
     adapters::ollama::OllamaProvider, adapters::openai::OpenAiProvider,
@@ -796,7 +796,13 @@ fn build_agent_config(
 ) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
-        build_tool_registry(lsp, index.clone(), memory_store.clone(), tool_cache, mcp_tools)
+        build_tool_registry(
+            lsp,
+            index.clone(),
+            memory_store.clone(),
+            tool_cache,
+            mcp_tools,
+        )
     } else {
         ToolRegistry::new()
     };
@@ -1063,6 +1069,7 @@ fn spawn_orchestrated_turn(
     lead_config: AgentConfig,
     user_text: String,
     tx: mpsc::Sender<AgentEvent>,
+    agent: AgentHandle,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut registry = AgentRegistry::new();
@@ -1074,6 +1081,25 @@ fn spawn_orchestrated_turn(
 
         match orchestrator.run(&user_text, tx.clone()).await {
             Ok(result) => {
+                if result.merged_response.is_empty()
+                    || result.merged_response.starts_with("Merge failed:")
+                {
+                    tracing::warn!(
+                        "skipping orchestrated history writeback: merged_response is empty or merge-failure"
+                    );
+                } else {
+                    // Note: load_history queues an actor command via mpsc::Sender; if the spawning
+                    // task is aborted before the actor processes the command, the write-back may
+                    // be lost. This is acceptable today because abort during orchestration is rare
+                    // and the bounded channel (capacity 256) almost always has room. Upgrading
+                    // load_history to use a oneshot ack would close the race fully.
+                    agent
+                        .load_history(vec![
+                            Message::user(user_text.as_str()),
+                            Message::assistant(result.merged_response.as_str()),
+                        ])
+                        .await;
+                }
                 let summary = format!(
                     "\n\n--- Orchestration complete ---\n{}\n\nTotal cost: ${:.6} | workers: {}",
                     result.merged_response,
@@ -1487,7 +1513,10 @@ struct PersistenceHandles {
 /// Returns `PersistenceHandles` with whatever stores opened successfully.
 /// Any errors are printed to stderr (as non-fatal warnings) so that a
 /// persistence failure never prevents the binary from starting.
-async fn init_persistence(ephemeral: bool, memory_passphrase: Option<String>) -> PersistenceHandles {
+async fn init_persistence(
+    ephemeral: bool,
+    memory_passphrase: Option<String>,
+) -> PersistenceHandles {
     if ephemeral {
         tracing::info!("ephemeral mode: skipping persistence init");
         return PersistenceHandles {
@@ -1737,16 +1766,15 @@ async fn main() -> Result<()> {
         if let Err(e) = std::fs::create_dir_all(data_dir()) {
             eprintln!("warning: could not create data dir: {e}");
         }
-        let store: Arc<Mutex<dyn MemoryStore>> =
-            match SqliteStore::open(&memory_path).await {
-                Ok(s) => Arc::new(Mutex::new(s)),
-                Err(e) => {
-                    return Err(anyhow::anyhow!(
-                        "failed to open memory store at {}: {e}",
-                        memory_path.display()
-                    ));
-                }
-            };
+        let store: Arc<Mutex<dyn MemoryStore>> = match SqliteStore::open(&memory_path).await {
+            Ok(s) => Arc::new(Mutex::new(s)),
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "failed to open memory store at {}: {e}",
+                    memory_path.display()
+                ));
+            }
+        };
         memory_cmd::run(memory_sub, store, &mut std::io::stdout()).await?;
         return Ok(());
     }
@@ -2618,7 +2646,9 @@ async fn run_tui(
                                         if restore_prompt {
                                             tokio::spawn(async move {
                                                 let (tx2, rx2) = mpsc::channel(256);
-                                                spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2);
+                                                // agent_clone.clone() passes ownership into spawn_orchestrated_turn;
+                                                // the original agent_clone is retained for set_system_prompt below.
+                                                spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2, agent_clone.clone());
                                                 let mut rx2 = rx2;
                                                 while let Some(ev) = rx2.recv().await {
                                                     let _ = agent_tx_clone.send(ev).await;
@@ -2626,7 +2656,7 @@ async fn run_tui(
                                                 agent_clone.set_system_prompt(original_prompt).await;
                                             })
                                         } else {
-                                            spawn_orchestrated_turn(base_config.clone(), effective_text, agent_tx.clone())
+                                            spawn_orchestrated_turn(base_config.clone(), effective_text, agent_tx.clone(), agent.clone())
                                         }
                                     }
                                 };
@@ -2951,5 +2981,105 @@ mod tests {
     #[test]
     fn model_id_rejects_unknown_prefix() {
         assert!(!is_valid_model_id("mistral:mistral-7b"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Regression: orchestrated turn must write conversation back to AgentHandle
+    //
+    // Bug: `spawn_orchestrated_turn` builds a disposable `Orchestrator` and
+    // streams tokens to `tx`, but never calls `agent.load_history(...)`.  A
+    // second Simple turn therefore receives an empty context and replies "I
+    // don't have a request to act on."
+    //
+    // This test proves the bug by asserting the invariant that SHOULD hold
+    // after the fix: after `spawn_orchestrated_turn` completes, the persistent
+    // `AgentHandle`'s message log must contain a user message with the original
+    // prompt text AND a non-empty assistant message with the orchestrator's
+    // merged response.  The assertion currently fails because the writeback
+    // does not exist yet.
+    // -------------------------------------------------------------------------
+    #[tokio::test]
+    async fn orchestrated_turn_must_write_back_context_to_agent_handle() {
+        use hone_core::RetryConfig;
+        use hone_proto::Role;
+        use hone_providers::MockProvider;
+        use hone_sandbox::NullSandbox;
+
+        // The orchestrator makes at least two LLM calls: one to decompose the
+        // request into a TaskPlan (expects JSON), one to merge worker results.
+        // MockProvider repeats the same token sequence on every call, so we
+        // use a minimal but valid JSON plan that it can parse for decompose
+        // and that also serves as a harmless merge response.
+        let plan_json = r#"{"goal":"do X please","subtasks":[{"id":"1","description":"do X please","agent":"debugger","context":"","depends_on":[]}]}"#;
+        let provider = Arc::new(MockProvider::new(vec![plan_json.to_owned()]));
+
+        let config = AgentConfig {
+            provider: Arc::clone(&provider) as Arc<dyn hone_providers::ModelProvider>,
+            tools: ToolRegistry::new(),
+            sandbox: Arc::new(NullSandbox),
+            system_prompt: "You are a lead orchestrator.".to_owned(),
+            model: ModelId::new("mock:test"),
+            max_tokens: None,
+            temperature: None,
+            budget_limit: None,
+            pricing: PricingEntry {
+                model: ModelId::new("mock:test"),
+                input_per_million: 0.0,
+                output_per_million: 0.0,
+                cache_read_per_million: None,
+                cache_creation_per_million: None,
+            },
+            working_dir: std::path::PathBuf::from("."),
+            memory_store: None,
+            retry_config: RetryConfig::default(),
+            index: None,
+            inject_context: false,
+            skeleton_strategy: Default::default(),
+            egress_log: None,
+            approval_policy: ToolApprovalPolicy::Auto,
+            step_rx: None,
+        };
+
+        // Spawn the persistent agent that should accumulate context.
+        let agent = AgentHandle::spawn(config.clone());
+
+        // Run an orchestrated turn — today this creates a disposable
+        // Orchestrator and never writes results back to `agent`.
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
+        let _handle = spawn_orchestrated_turn(config, "do X please".to_string(), tx, agent.clone());
+
+        // Drain events until the sender is dropped (Orchestrator finished).
+        while rx.recv().await.is_some() {}
+
+        // Give the actor a scheduling tick to process any in-flight commands.
+        tokio::task::yield_now().await;
+
+        // After the orchestrated turn finishes, the persistent agent MUST hold
+        // both the user prompt and the merged assistant response in its context.
+        let messages = agent.get_messages().await;
+
+        let has_user_msg = messages
+            .iter()
+            .any(|m| m.role == Role::User && m.content.as_text().contains("do X please"));
+
+        let has_assistant_msg = messages
+            .iter()
+            .any(|m| m.role == Role::Assistant && !m.content.as_text().is_empty());
+
+        // These assertions fail today because spawn_orchestrated_turn never
+        // calls agent.load_history(...).  They will pass once the fix is
+        // applied.
+        assert!(
+            has_user_msg,
+            "persistent agent context is missing the user message; \
+             spawn_orchestrated_turn does not write back to AgentHandle. \
+             messages in context: {messages:?}"
+        );
+        assert!(
+            has_assistant_msg,
+            "persistent agent context is missing the assistant response; \
+             spawn_orchestrated_turn does not write back to AgentHandle. \
+             messages in context: {messages:?}"
+        );
     }
 }
