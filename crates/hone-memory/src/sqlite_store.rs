@@ -11,6 +11,11 @@ pub struct SqliteStore {
     pool: sqlx::SqlitePool,
 }
 
+/// The highest schema version this binary understands.  Bump this whenever a
+/// new migration is added to `run_migrations`.
+// crate-external for tests; not stable API
+pub const CURRENT_SCHEMA_VERSION: i32 = 2;
+
 const CREATE_TABLE_SQL: &str = "
     CREATE TABLE IF NOT EXISTS memories (
         id          TEXT    PRIMARY KEY,
@@ -92,53 +97,180 @@ fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
     })
 }
 
-/// Probe `PRAGMA table_info(memories)` and return the set of column names
-/// present in the table.
-async fn existing_columns(pool: &sqlx::SqlitePool) -> Result<Vec<String>, MemoryError> {
-    let rows = sqlx::query("PRAGMA table_info(memories)")
-        .fetch_all(pool)
+
+/// Return the current schema version stored in the `schema_version` table.
+///
+/// Returns `0` when the table exists but is empty, and propagates a
+/// `MemoryError` if the query fails (e.g. the table does not yet exist).
+// crate-external for tests; not stable API
+pub async fn current_schema_version(pool: &sqlx::SqlitePool) -> Result<i32, MemoryError> {
+    let version: Option<i32> =
+        sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .map_err(to_io_err)?;
+    Ok(version.unwrap_or(0))
+}
+
+/// Check whether `column` already exists in `table`.
+///
+/// Issues `PRAGMA table_info(table)` and scans the result rows.  Used before
+/// each `ALTER TABLE … ADD COLUMN` so we never attempt to add a column that is
+/// already present — eliminating both the need to swallow SQLite error messages
+/// and any risk of silently absorbing unrelated errors.
+async fn column_exists(
+    conn: &mut sqlx::SqliteConnection,
+    table: &str,
+    column: &str,
+) -> Result<bool, MemoryError> {
+    let pragma = format!("PRAGMA table_info({table})");
+    let rows = sqlx::query(&pragma)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(to_io_err)?;
+    for row in &rows {
+        let name: String = row.try_get("name").map_err(to_io_err)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Run all pending schema migrations and return the final schema version.
+///
+/// # Migration strategy
+///
+/// 1. Acquire a single connection from the pool and issue `BEGIN IMMEDIATE`.
+///    This write-locks the database immediately: any concurrent opener that also
+///    calls `BEGIN IMMEDIATE` will block until we `COMMIT`, after which it will
+///    re-read `MAX(version)` and find the schema already up-to-date.  This
+///    closes the race window that existed when `CREATE TABLE IF NOT EXISTS` and
+///    `MAX(version)` were separate round-trips outside any transaction.
+/// 2. Create `schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`
+///    if absent.
+/// 3. Read the current `MAX(version)` (0 when the table is empty).
+/// 4. For each version from 1 to `CURRENT_SCHEMA_VERSION`, run the corresponding
+///    DDL only if the column does not already exist (`PRAGMA table_info`), then
+///    stamp the version row with `INSERT OR IGNORE`.
+/// 5. `COMMIT`.
+///
+/// ## Legacy R1 / fresh-db handling
+///
+/// Both a fresh db (columns already present via `CREATE_TABLE_SQL`) and a
+/// legacy R1 db (created by old code that ran `ALTER TABLE` without versioning)
+/// present `current == 0` with `kind` + `description` already in the table.
+/// `column_exists` detects this and skips the `ALTER TABLE` call, making the
+/// migration fully idempotent without touching any SQLite error messages.
+///
+/// ## applied_at format
+///
+/// RFC 3339 TEXT (e.g. `"2024-01-02T03:04:05Z"`) is used here rather than
+/// Unix-second integers (as stored in `memory_meta.last_decay_at`) because
+/// `schema_version` is a small administrative table that humans may inspect
+/// directly in an SQLite viewer.
+pub async fn run_migrations(pool: &sqlx::SqlitePool) -> Result<i32, MemoryError> {
+    // Acquire a dedicated connection for the entire migration.  All DDL runs on
+    // this single connection so SQLite's per-connection locking is consistent.
+    let mut conn = pool.acquire().await.map_err(to_io_err)?;
+
+    // BEGIN IMMEDIATE write-locks the database right away.  A concurrent opener
+    // attempting its own BEGIN IMMEDIATE will block here until we COMMIT, then
+    // re-read MAX(version) and find the schema already current.
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut *conn)
         .await
         .map_err(to_io_err)?;
 
-    let names = rows
-        .iter()
-        .filter_map(|r| r.try_get::<String, _>("name").ok())
-        .collect();
-
-    Ok(names)
+    // Run the migration body; if anything fails, roll back before propagating.
+    match run_migrations_inner(&mut conn).await {
+        Ok(version) => {
+            sqlx::query("COMMIT")
+                .execute(&mut *conn)
+                .await
+                .map_err(to_io_err)?;
+            Ok(version)
+        }
+        Err(e) => {
+            // Best-effort rollback; ignore secondary errors.
+            let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+            Err(e)
+        }
+    }
 }
 
-/// Run idempotent `ALTER TABLE` migrations for any columns that are missing.
-async fn migrate_schema(pool: &sqlx::SqlitePool) -> Result<(), MemoryError> {
-    let cols = existing_columns(pool).await?;
+/// Inner migration logic that runs inside the `BEGIN IMMEDIATE` transaction.
+async fn run_migrations_inner(conn: &mut sqlx::SqliteConnection) -> Result<i32, MemoryError> {
+    // Step 1: ensure the version tracking table exists.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS schema_version (
+            version    INTEGER PRIMARY KEY,
+            applied_at TEXT    NOT NULL
+        )",
+    )
+    .execute(&mut *conn)
+    .await
+    .map_err(to_io_err)?;
 
-    // Two processes opening the same DB simultaneously can both observe the
-    // column missing and race to ALTER; the second hit is a no-op, not an error.
-    if !cols.iter().any(|c| c == "kind") {
-        match sqlx::query(
-            "ALTER TABLE memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'conversation'",
-        )
-        .execute(pool)
-        .await
-        {
-            Ok(_) => {}
-            Err(e) if e.to_string().contains("duplicate column name") => {}
-            Err(e) => return Err(to_io_err(e)),
-        }
-    }
-
-    if !cols.iter().any(|c| c == "description") {
-        match sqlx::query("ALTER TABLE memories ADD COLUMN description TEXT")
-            .execute(pool)
+    // Step 2: find out where we are.
+    let current: Option<i32> =
+        sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM schema_version")
+            .fetch_one(&mut *conn)
             .await
-        {
-            Ok(_) => {}
-            Err(e) if e.to_string().contains("duplicate column name") => {}
-            Err(e) => return Err(to_io_err(e)),
-        }
+            .map_err(to_io_err)?;
+    let current = current.unwrap_or(0);
+
+    if current >= CURRENT_SCHEMA_VERSION {
+        return Ok(current);
     }
 
-    Ok(())
+    let now_str = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .map_err(to_io_err)?;
+
+    // Step 3: apply each missing version in order.
+    for v in (current + 1)..=CURRENT_SCHEMA_VERSION {
+        match v {
+            1 => {
+                // v1: add `kind` column.  Skip if already present (fresh db or
+                // legacy R1 db that already ran the ALTER outside of versioning).
+                if !column_exists(&mut *conn, "memories", "kind").await? {
+                    sqlx::query(
+                        "ALTER TABLE memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'conversation'",
+                    )
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(to_io_err)?;
+                }
+            }
+            2 => {
+                // v2: add `description` column.  Same presence-check pattern.
+                if !column_exists(&mut *conn, "memories", "description").await? {
+                    sqlx::query("ALTER TABLE memories ADD COLUMN description TEXT")
+                        .execute(&mut *conn)
+                        .await
+                        .map_err(to_io_err)?;
+                }
+            }
+            _ => {
+                // Future migrations go here.
+            }
+        }
+
+        // Stamp the version row.  INSERT OR IGNORE ensures that if two openers
+        // somehow reach this point concurrently (impossible under IMMEDIATE, but
+        // defensive), only the first writer wins.
+        sqlx::query(
+            "INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (?1, ?2)",
+        )
+        .bind(v)
+        .bind(&now_str)
+        .execute(&mut *conn)
+        .await
+        .map_err(to_io_err)?;
+    }
+
+    Ok(CURRENT_SCHEMA_VERSION)
 }
 
 impl SqliteStore {
@@ -163,7 +295,7 @@ impl SqliteStore {
             .execute(&pool)
             .await
             .map_err(to_io_err)?;
-        migrate_schema(&pool).await?;
+        run_migrations(&pool).await?;
         sqlx::query(CREATE_KIND_INDEX_SQL)
             .execute(&pool)
             .await
@@ -214,8 +346,8 @@ impl SqliteStore {
             .await
             .map_err(to_io_err)?;
         // For a brand-new in-memory DB, CREATE_TABLE_SQL already includes the
-        // new columns — but migrate_schema is called anyway for consistency.
-        migrate_schema(&pool).await?;
+        // new columns — run_migrations stamps the schema_version rows.
+        run_migrations(&pool).await?;
         sqlx::query(CREATE_KIND_INDEX_SQL)
             .execute(&pool)
             .await
