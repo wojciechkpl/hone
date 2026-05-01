@@ -55,7 +55,8 @@ pub fn router(state: AppState) -> Router {
     // un-authed even though they share the final stack with the protected
     // routes.  Rate limiting is applied to the merged result so that BOTH
     // public and protected endpoints share the same throttle bucket.
-    protected.merge(public)
+    protected
+        .merge(public)
         // Rate limiting runs before auth so that brute-force attempts are also throttled.
         // The generous default (100 req/min) means existing tests are never affected.
         .layer(middleware::from_fn_with_state(
@@ -97,11 +98,7 @@ async fn auth_middleware(
 /// expected token — a server-side configuration value, not the secret
 /// material itself) and otherwise compares all bytes in constant time.
 fn tokens_match(presented: &str, expected: &str) -> bool {
-    presented
-        .as_bytes()
-        .ct_eq(expected.as_bytes())
-        .unwrap_u8()
-        == 1
+    presented.as_bytes().ct_eq(expected.as_bytes()).unwrap_u8() == 1
 }
 
 #[utoipa::path(
