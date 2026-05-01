@@ -42,7 +42,17 @@ A multi-PR rewrite of how memories are written, indexed, and recalled. The full 
 
 ### Changed
 
+- **Filesystem agent extensibility wired.** `AgentRegistry::load_hierarchical(working_dir)` is now the canonical entry point for the three call sites in `bins/hone/src/main.rs`. Overlays apply in increasing precedence: compiled-in built-ins → `~/.config/hone/agents/*.md` (user) → `<project_root>/.hone/agents/*.md` (project, walks up for `.git`/`Cargo.toml`/`package.json`/`pyproject.toml`/`go.mod`/`pom.xml`). Same-name agents at higher overlays replace lower ones. Missing dirs silently no-op via `ErrorKind::NotFound`; other I/O errors emit `tracing::warn!` so misconfiguration is visible. Per-file parse errors warn-and-continue. Reuses `find_project_root` (now `pub` in `hone-config`). Previously `load_from_dir` was implemented but never invoked — only built-ins loaded. `crates/hone-core/src/agent_registry.rs`, `crates/hone-config/src/hone_md.rs`, `bins/hone/src/main.rs`.
+
+- **Agent rail `[AGENTS]` section.** The TUI rail now surfaces live worker status during orchestrated turns, slotted between `[FILES]` and `[CONTEXT]`. Each row shows a status glyph + agent name truncated to fit the 18-cell rail. Glyphs: `…` Running / `✓` Succeeded / `✗` Failed / `T` TimedOut (no-color theme uses `…`/`ok`/`X`/`!`). `T` is used in place of the `⏱` stopwatch glyph to avoid East-Asian-width terminals rendering it as 2 cells. `crates/hone-tui/src/turn_ledger.rs`, `crates/hone-tui/src/render/agent_rail.rs`, `crates/hone-tui/src/app.rs`.
+
+- **Friendly memory recall keys.** `MemoryRecalled` event entries now show the memory's `description` (when present) or a synthetic `<kind>-HHMM-XX` fallback (FNV-1a hashed 1-byte suffix) instead of raw UUIDv7 ids. Renders as e.g. `feedback-1438-3a` in the rail and conversation log. `crates/hone-core/src/memory_key.rs`, `crates/hone-core/src/agent.rs`.
+
 ### Fixed
+
+- **Orchestrated-turn writeback.** Orchestrated turns now persist the merged response into the `AgentHandle` history. Previously, the orchestrator's `merged_response` was returned to the user but never written back to the agent's context, causing follow-up prompts to fail with "I don't have a request to act on" because the model couldn't see what it had just produced. Empty/Merge-failed responses are skipped explicitly with a `tracing::warn!`. `bins/hone/src/main.rs`.
+
+- **`memory ls --kind=K --limit=N` could return < N items.** The kind filter ran as a Rust-side `retain` AFTER `recall` had already capped the result at `limit`, so a store dominated by other kinds could starve the filtered view even when N matching memories existed. Pushed `kind: Option<MemoryKind>` into `MemoryQuery` so both `InMemoryStore` and `SqliteStore` (and the `EncryptedStore` wrapper, which forwards to its inner store) apply the filter pre-limit. New `MemoryStore::recall_by_id` replaces the prior O(n) full-scan in `memory show`; `SqliteStore` uses indexed PK lookup, `InMemoryStore` uses `HashMap::get`. Prefix matching for short ids is preserved as a fallback when exact lookup misses. `crates/hone-memory/src/{types,store,in_memory,sqlite_store,encrypted}.rs`, `bins/hone/src/memory_cmd.rs`.
 
 ### Documentation
 

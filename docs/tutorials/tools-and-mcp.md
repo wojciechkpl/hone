@@ -490,29 +490,40 @@ hone --agent my-custom-agent
 
 ### Agent Registry
 
-The `AgentRegistry` loads agents at startup:
+The `AgentRegistry` loads agents at startup. The recommended entry point is
+`load_hierarchical`, which applies three overlays in increasing precedence:
+
+1. compiled-in built-ins
+2. `~/.config/hone/agents/*.md` (user)
+3. `<project_root>/.hone/agents/*.md` (project — walks up from `working_dir`
+   looking for `.git` / `Cargo.toml` / `package.json` / `pyproject.toml` /
+   `go.mod` / `pom.xml`)
+
+Same-name agents at higher overlays replace lower ones; missing directories
+silently no-op; per-file parse errors emit `tracing::warn!` and skip the
+offending file without aborting the load.
 
 ```rust
 use hone_core::agent_registry::AgentRegistry;
 
-let mut registry = AgentRegistry::new();
+// Load built-ins + user overlay + project overlay in one call.
+let registry = AgentRegistry::load_hierarchical(working_dir);
 
-// Load built-in agents
-registry.load_builtins();
-
-// Load custom agents from a directory
-registry.load_from_dir(Path::new(".hone/agents"))?;
-
-// Find an agent by name
+// Find an agent by name.
 if let Some(agent) = registry.get("code-reviewer") {
     println!("Agent: {}", agent.description);
 }
 
-// Find by description (case-insensitive)
+// Find by description (case-insensitive).
 if let Some(agent) = registry.find_by_description("test") {
     println!("Found: {}", agent.name);  // might be "tdd-workflow"
 }
 ```
+
+For lower-level control the underlying primitives are still available:
+`AgentRegistry::new()`, `load_builtins()`, `load_from_dir(&Path)` (strict —
+errors on missing dir or first malformed file), and the lenient
+`AgentDef::load_dir_lenient(&Path) -> Vec<AgentDef>`.
 
 ## Layer 3: Skills (HONE.md)
 
