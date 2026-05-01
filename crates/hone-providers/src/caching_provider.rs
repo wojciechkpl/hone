@@ -16,7 +16,6 @@
 //! RARE in production. This is primarily a safety/observability layer.
 
 use std::collections::{HashMap, VecDeque};
-use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -73,9 +72,10 @@ impl CacheStats {
 }
 
 /// Simple LRU cache implementation.
-/// Keys are u64 hashes. Values are Vec<ProviderEvent>.
+/// Keys are u64 hashes. Values are Arc<Vec<ProviderEvent>> so callers share
+/// the allocation without deep-cloning.
 struct LruCache {
-    entries: HashMap<u64, Vec<ProviderEvent>>,
+    entries: HashMap<u64, Arc<Vec<ProviderEvent>>>,
     order: VecDeque<u64>,
     capacity: usize,
     hits: u64,
@@ -93,8 +93,8 @@ impl LruCache {
         }
     }
 
-    fn get(&mut self, key: u64) -> Option<Vec<ProviderEvent>> {
-        if let Some(events) = self.entries.get(&key).cloned() {
+    fn get(&mut self, key: u64) -> Option<Arc<Vec<ProviderEvent>>> {
+        if let Some(events) = self.entries.get(&key).map(Arc::clone) {
             self.hits += 1;
             // Move key to the back of the LRU queue
             if let Some(pos) = self.order.iter().position(|k| *k == key) {
@@ -115,7 +115,7 @@ impl LruCache {
     // which means borrowing `self.entries` again while an Entry handle is
     // alive.  A `contains_key` lookup is the cleanest split here.
     #[allow(clippy::map_entry)]
-    fn put(&mut self, key: u64, events: Vec<ProviderEvent>) {
+    fn put(&mut self, key: u64, events: Arc<Vec<ProviderEvent>>) {
         // Existing key: overwrite the value AND refresh LRU position.
         //
         // The previous implementation only refreshed position and silently
@@ -149,32 +149,38 @@ impl LruCache {
 
 /// Hash a `CompletionRequest` for cache lookup.
 ///
+/// Uses `blake3` for a deterministic, version-stable hash that will not
+/// change across Rust releases (unlike the stdlib default hasher).
+///
 /// Includes: model ID, messages (role + text), tools (name only), temperature, max_tokens.
 /// Excludes: stop sequences (rarely change behavior in practice); `cancel`
 /// (a `CancellationToken` is not `Hash` and is not semantically a cache key —
 /// two requests with identical content but different cancel handles must hit
 /// the same cache entry).
 fn hash_request(req: &CompletionRequest) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = blake3::Hasher::new();
 
-    req.model.as_str().hash(&mut hasher);
+    hasher.update(req.model.as_str().as_bytes());
 
     for msg in &req.messages {
-        format!("{:?}", msg.role).hash(&mut hasher);
-        msg.content.as_text().hash(&mut hasher);
+        hasher.update(format!("{:?}", msg.role).as_bytes());
+        hasher.update(msg.content.as_text().as_bytes());
     }
 
     for tool in &req.tools {
-        tool.name.hash(&mut hasher);
+        hasher.update(tool.name.as_bytes());
     }
 
-    req.temperature
-        .map(|t| t.to_bits())
-        .unwrap_or(0)
-        .hash(&mut hasher);
-    req.max_tokens.unwrap_or(0).hash(&mut hasher);
+    let temp_bits = req.temperature.map(|t| t.to_bits()).unwrap_or(0);
+    hasher.update(&temp_bits.to_le_bytes());
 
-    hasher.finish()
+    let max_tokens = req.max_tokens.unwrap_or(0) as u64;
+    hasher.update(&max_tokens.to_le_bytes());
+
+    let hash_bytes = hasher.finalize();
+    // blake3 output is always 32 bytes; take the first 8 as a stable u64 key.
+    let b = hash_bytes.as_bytes();
+    u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
 }
 
 #[async_trait]
@@ -202,23 +208,32 @@ impl ModelProvider for CachingProvider {
             let mut cache = self.cache.lock().await;
             if let Some(cached) = cache.get(key) {
                 tracing::debug!(request_hash = key, "cache hit");
-                return Ok(Box::pin(stream::iter(cached)));
+                // The Vec lives in the LRU once; here we element-clone it out
+                // of the shared Arc to feed `stream::iter`. ProviderEvent is
+                // Clone but not Copy, so each event is duplicated. Acceptable
+                // because cache hits are rare and the Vec itself is not.
+                let events: Vec<ProviderEvent> = (*cached).clone();
+                return Ok(Box::pin(stream::iter(events)));
             }
         }
 
         tracing::debug!(request_hash = key, "cache miss, forwarding to inner");
 
-        // Miss: forward to inner, collect all events
+        // Miss: forward to inner, collect all events, wrap in Arc for shared ownership.
         let inner_stream = self.inner.complete(request).await?;
-        let collected: Vec<ProviderEvent> = inner_stream.collect().await;
+        let collected: Arc<Vec<ProviderEvent>> = Arc::new(inner_stream.collect().await);
 
         // Store the full sequence
         {
             let mut cache = self.cache.lock().await;
-            cache.put(key, collected.clone());
+            cache.put(key, Arc::clone(&collected));
         }
 
-        Ok(Box::pin(stream::iter(collected)))
+        // The Vec is now owned by the LRU; element-clone it out of the
+        // shared Arc to feed `stream::iter`. See cache-hit branch above
+        // for why the per-event clone is acceptable.
+        let events: Vec<ProviderEvent> = (*collected).clone();
+        Ok(Box::pin(stream::iter(events)))
     }
 
     fn estimate_tokens(&self, messages: &[Message]) -> u32 {
@@ -358,15 +373,15 @@ mod tests {
         let mut cache = LruCache::new(10);
         let key = 42u64;
 
-        let v1 = vec![ProviderEvent::Token {
+        let v1 = Arc::new(vec![ProviderEvent::Token {
             text: "first".into(),
-        }];
-        let v2 = vec![ProviderEvent::Token {
+        }]);
+        let v2 = Arc::new(vec![ProviderEvent::Token {
             text: "second".into(),
-        }];
+        }]);
 
-        cache.put(key, v1);
-        cache.put(key, v2.clone());
+        cache.put(key, Arc::clone(&v1));
+        cache.put(key, Arc::clone(&v2));
 
         let got = cache.get(key).expect("entry must be cached");
         assert_eq!(
@@ -384,21 +399,15 @@ mod tests {
 
         cache.put(
             key,
-            vec![ProviderEvent::Token {
-                text: "a".into(),
-            }],
+            Arc::new(vec![ProviderEvent::Token { text: "a".into() }]),
         );
         cache.put(
             key,
-            vec![ProviderEvent::Token {
-                text: "b".into(),
-            }],
+            Arc::new(vec![ProviderEvent::Token { text: "b".into() }]),
         );
         cache.put(
             key,
-            vec![ProviderEvent::Token {
-                text: "c".into(),
-            }],
+            Arc::new(vec![ProviderEvent::Token { text: "c".into() }]),
         );
 
         assert_eq!(
@@ -420,33 +429,29 @@ mod tests {
         let mut cache = LruCache::new(2);
         cache.put(
             1,
-            vec![ProviderEvent::Token {
-                text: "one".into(),
-            }],
+            Arc::new(vec![ProviderEvent::Token { text: "one".into() }]),
         );
         cache.put(
             2,
-            vec![ProviderEvent::Token {
-                text: "two".into(),
-            }],
+            Arc::new(vec![ProviderEvent::Token { text: "two".into() }]),
         );
 
         // Re-put key 1 with an updated value — should move it to back AND
         // overwrite the value.
         cache.put(
             1,
-            vec![ProviderEvent::Token {
+            Arc::new(vec![ProviderEvent::Token {
                 text: "one-v2".into(),
-            }],
+            }]),
         );
 
         // Insert a third key — this evicts the oldest, which should now be
         // key 2 (because key 1 was just refreshed).
         cache.put(
             3,
-            vec![ProviderEvent::Token {
+            Arc::new(vec![ProviderEvent::Token {
                 text: "three".into(),
-            }],
+            }]),
         );
 
         assert!(
@@ -457,12 +462,15 @@ mod tests {
             !cache.entries.contains_key(&2),
             "key 2 must be evicted as the oldest"
         );
-        assert!(cache.entries.contains_key(&3), "newest key 3 must be present");
+        assert!(
+            cache.entries.contains_key(&3),
+            "newest key 3 must be present"
+        );
 
         // And key 1's value reflects the most recent put.
         let v1 = cache.get(1).expect("key 1 cached");
         assert_eq!(
-            v1,
+            *v1,
             vec![ProviderEvent::Token {
                 text: "one-v2".into(),
             }],

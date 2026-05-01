@@ -1549,6 +1549,7 @@ name = "hone-providers"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "blake3",
  "futures",
  "hone-proto",
  "mockall",
