@@ -303,9 +303,7 @@ fn render_autocomplete(app: &App, frame: &mut Frame, input_area: Rect) {
     };
 
     // Hide when no completions or the single match is already exact.
-    if pairs.is_empty()
-        || (pairs.len() == 1 && format!("{sigil}{}", pairs[0].0) == *input_buf)
-    {
+    if pairs.is_empty() || (pairs.len() == 1 && format!("{sigil}{}", pairs[0].0) == *input_buf) {
         return;
     }
 

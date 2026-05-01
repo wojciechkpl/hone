@@ -161,12 +161,7 @@ impl Command {
                     .iter()
                     .find(|e| e.name == *name)
                     .map(|e| e.description)
-                    .or_else(|| {
-                        EXTRA
-                            .iter()
-                            .find(|(n, _)| *n == *name)
-                            .map(|(_, d)| *d)
-                    })
+                    .or_else(|| EXTRA.iter().find(|(n, _)| *n == *name).map(|(_, d)| *d))
                     .unwrap_or("");
                 (*name, desc)
             })

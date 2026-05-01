@@ -162,9 +162,7 @@ pub fn render_command_palette(app: &App, frame: &mut Frame, area: Rect) {
         // the foreground index distance from surface_overlay is >= 6.
         // (surface_base, which sel_style uses, is Indexed(233) — only 2 shades
         //  from surface_overlay Indexed(235).)
-        let sel_desc_style = Style::default()
-            .bg(theme.accent_mid)
-            .fg(theme.text_primary);
+        let sel_desc_style = Style::default().bg(theme.accent_mid).fg(theme.text_primary);
         let desc_style = if is_sel {
             sel_desc_style
         } else {
@@ -396,9 +394,9 @@ mod tests {
     /// `surface_overlay` by an ANSI-256 index distance >= 6.
     #[test]
     fn palette_description_fg_has_sufficient_contrast_against_row_bg() {
-        use ratatui::{Terminal, backend::TestBackend};
         use crate::render::root::render;
         use ratatui::style::Color;
+        use ratatui::{Terminal, backend::TestBackend};
 
         let mut app = App::new();
         app.show_splash = false;
