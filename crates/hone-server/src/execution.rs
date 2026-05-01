@@ -1,9 +1,10 @@
 use std::convert::Infallible;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::State;
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures::stream;
@@ -74,6 +75,57 @@ fn make_sse_event(event: AgentEvent, id: u64) -> Event {
         .id(id.to_string())
 }
 
+/// Validate that a client-supplied `working_dir` lives under
+/// `workspace_root`.
+///
+/// Canonicalises both sides before comparing to defeat `..` traversal and
+/// symlink-based escapes.  When the client supplies `None`, we fall back to
+/// the workspace root itself — there is nothing to validate, but we still
+/// return a path that lives under the root.
+///
+/// Returns `Err((status, message))` for any path that resolves outside
+/// `workspace_root` (or whose canonicalisation fails — both cases must be
+/// rejected as untrusted input).  See AUDIT-CRITICAL-1 in
+/// `tests/run_working_dir.rs`.
+fn resolve_working_dir(
+    requested: Option<&str>,
+    workspace_root: &Path,
+) -> Result<PathBuf, (StatusCode, String)> {
+    let root = workspace_root.canonicalize().map_err(|e| {
+        // If the configured root itself does not exist or cannot be
+        // canonicalised, every request must be rejected — there is no safe
+        // default we can pick on the operator's behalf.
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("workspace root cannot be canonicalised: {e}"),
+        )
+    })?;
+
+    let requested_path = match requested {
+        Some(s) if !s.is_empty() => PathBuf::from(s),
+        _ => return Ok(root),
+    };
+
+    // Canonicalise the requested path.  If it does not exist on the
+    // filesystem, treat it as a rejection: the agent cannot operate in a
+    // directory we cannot resolve, and a non-existent path is also an
+    // attractive vector for race conditions.
+    let canonical = requested_path.canonicalize().map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            "working_dir does not exist or cannot be resolved".to_string(),
+        )
+    })?;
+
+    if !canonical.starts_with(&root) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "working_dir escapes the configured workspace root".to_string(),
+        ));
+    }
+    Ok(canonical)
+}
+
 /// `POST /run` — stateless agent execution endpoint with SSE streaming.
 ///
 /// Creates a fresh agent for every request.  The client sends the full
@@ -81,7 +133,14 @@ fn make_sse_event(event: AgentEvent, id: u64) -> Event {
 pub async fn run_handler(
     State(state): State<AppState>,
     Json(req): Json<RunRequest>,
-) -> impl IntoResponse {
+) -> Result<axum::response::Response, (StatusCode, String)> {
+    // ---- Step 1: validate working_dir against workspace_root --------------
+    //
+    // This MUST run before any agent setup so a malicious request can never
+    // observe an SSE stream rooted at an attacker-controlled path.  See
+    // AUDIT-CRITICAL-1.
+    let working_dir = resolve_working_dir(req.working_dir.as_deref(), &state.workspace_root)?;
+
     let api_key = state.provider_key.clone();
     let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
@@ -94,11 +153,6 @@ pub async fn run_handler(
         }
         Some(key) => {
             let model_id = ModelId::new(req.model.as_deref().unwrap_or("claude-sonnet-4-6"));
-            let working_dir = req
-                .working_dir
-                .as_deref()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
 
             let tools = ToolRegistry::builder()
                 .register(Box::new(ReadFileTool))
@@ -172,7 +226,9 @@ pub async fn run_handler(
         })
     });
 
-    Sse::new(sse_stream).keep_alive(KeepAlive::default())
+    Ok(Sse::new(sse_stream)
+        .keep_alive(KeepAlive::default())
+        .into_response())
 }
 
 #[cfg(test)]

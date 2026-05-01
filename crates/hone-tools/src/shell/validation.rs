@@ -227,12 +227,24 @@ fn contains_compound_operator(command: &str) -> bool {
             // Check what follows the pipe — if it's a safe read-only command, allow it.
             let after_pipe = &command[i + 1..].trim_start();
             let pipe_target = after_pipe.split_whitespace().next().unwrap_or("");
+            // NOTE: `tee` is intentionally NOT on this list — it writes its
+            // stdin to a file and so a pipe like `cat /etc/foo | tee /tmp/x`
+            // is a write, not a read. `awk` and `sed` ARE here, but the
+            // remainder-after-the-pipe is then re-checked below for the
+            // output-redirect / in-place flag forms that turn them into
+            // writers (see HIGH-2 in the audit).
             let safe_pipe_targets = [
                 "head", "tail", "grep", "wc", "sort", "uniq", "less", "more", "cat", "cut", "awk",
-                "sed", "tr", "tee", "column", "fmt", "nl", "rev", "tac", "fold", "expand",
-                "unexpand",
+                "sed", "tr", "column", "fmt", "nl", "rev", "tac", "fold", "expand", "unexpand",
             ];
             if !safe_pipe_targets.contains(&pipe_target) {
+                return true;
+            }
+            // Flag-aware sub-check: even when the first token is on the
+            // safe-pipe allowlist, certain flags or program-bodies turn
+            // these tools into writers.  Treat any such case as a compound
+            // operator (escalates classification away from ReadOnly).
+            if pipe_target_writes(pipe_target, after_pipe) {
                 return true;
             }
             // Safe pipe — skip past it and continue checking
@@ -248,6 +260,75 @@ fn contains_compound_operator(command: &str) -> bool {
         i += 1;
     }
     false
+}
+
+/// Check whether a tool that appears on the safe-pipe allowlist is being
+/// invoked in a *writing* mode by the rest of the command line.
+///
+/// Returns `true` when the invocation should be treated as a write rather
+/// than a read.  Specifically:
+///
+/// * `sed -i` / `sed --in-place` — edits files in place.
+/// * `awk` whose program body contains an output redirect (`> "file"`) or a
+///   `printf …  > file` form — writes arbitrary content to the named file.
+///
+/// `tail` is deliberately not handled here because `tail` itself is read-only
+/// (its `-f` form just streams more reads); ditto for `head`, `grep`, etc.
+///
+/// `tail_after_pipe` is the substring of the original command that follows
+/// the pipe character, with leading whitespace trimmed.  The first
+/// whitespace-delimited token of that substring is `pipe_target`.
+fn pipe_target_writes(pipe_target: &str, tail_after_pipe: &str) -> bool {
+    match pipe_target {
+        "sed" => {
+            // Look for `-i` or `--in-place` *as a token* (not as a substring
+            // of e.g. `--input`).  We re-tokenise the tail on whitespace and
+            // check each token; this is intentionally simple and over-
+            // approximates rather than under-approximating.
+            for tok in tail_after_pipe.split_whitespace().skip(1) {
+                if tok == "-i" || tok == "--in-place" || tok.starts_with("-i") {
+                    // `-i` (BSD sed requires the suffix as the next arg, but
+                    // `-i ''` and `-iSUFFIX` are both writes).
+                    return true;
+                }
+                if tok.starts_with("--in-place") {
+                    // `--in-place` and `--in-place=SUFFIX`.
+                    return true;
+                }
+            }
+            false
+        }
+        "awk" => {
+            // The awk program is typically a single-quoted argument like
+            // `'{print > "/tmp/x"}'`.  Look for either `>` or `>>` followed
+            // by a file path inside the program body.  We skim the entire
+            // tail (after the `awk` token) for `>` because awk's program is
+            // an opaque blob and any occurrence of an output redirect inside
+            // it is a write.
+            //
+            // We also flag `printf … > file` and the rare `print | "cmd"`
+            // case (which spawns a subshell — also unsafe).
+            let body = tail_after_pipe.trim_start_matches("awk").trim_start();
+            // `>` outside of comparison contexts (`>=`, `>`) — for safety
+            // we treat any standalone `>` after `print` or `printf` as a
+            // redirect.  A simple substring match is sufficient as a
+            // conservative over-approximation: the alternative (running awk
+            // for real to inspect) is not viable here.
+            if body.contains("print") && (body.contains(" > ") || body.contains(" >> ")) {
+                return true;
+            }
+            // `print > "file"` without surrounding spaces.
+            if body.contains("print >") || body.contains("printf >") {
+                return true;
+            }
+            // `print | "cmd"` — pipes to subshell.
+            if body.contains("print |") || body.contains("printf |") {
+                return true;
+            }
+            false
+        }
+        _ => false,
+    }
 }
 
 /// Check whether a command line contains destructive patterns.

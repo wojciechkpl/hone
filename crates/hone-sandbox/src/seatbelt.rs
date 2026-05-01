@@ -50,21 +50,29 @@ impl SeatbeltProfile {
         lines.push("(deny default)".to_string());
 
         // Allow reading from each declared path (and its subtree).
+        // Emit BOTH the original path and its canonicalised form so that
+        // accesses through symlink prefixes (e.g. `/tmp/foo` → `/private/tmp/foo`
+        // on macOS) are matched.  Seatbelt evaluates rules against the
+        // resolved path, but path traversal also reads the symlink itself.
         for path in &policy.allow_read {
-            let real = canonicalize_or_original(path);
-            lines.push(format!(
-                r#"(allow file-read* (subpath "{}"))"#,
-                escape_path(&real)
-            ));
+            for variant in path_variants(path) {
+                lines.push(format!(
+                    r#"(allow file-read* (subpath "{}"))"#,
+                    escape_path(&variant)
+                ));
+            }
         }
 
         // Allow writing to each declared path (and its subtree).
-        // Write implies read in Seatbelt — include both operations.
+        // Write implies read in Seatbelt — include both operations.  Same
+        // dual-emission strategy as `allow_read` to handle symlinked roots
+        // like `/tmp` → `/private/tmp`.
         for path in &policy.allow_write {
-            let real = canonicalize_or_original(path);
-            let escaped = escape_path(&real);
-            lines.push(format!(r#"(allow file-read* (subpath "{escaped}"))"#));
-            lines.push(format!(r#"(allow file-write* (subpath "{escaped}"))"#));
+            for variant in path_variants(path) {
+                let escaped = escape_path(&variant);
+                lines.push(format!(r#"(allow file-read* (subpath "{escaped}"))"#));
+                lines.push(format!(r#"(allow file-write* (subpath "{escaped}"))"#));
+            }
         }
 
         // Allow executing specific binaries.
@@ -92,12 +100,76 @@ impl SeatbeltProfile {
         lines.push("(allow process-fork)".to_string());
         lines.push("(allow process-exec*)".to_string());
 
-        // Allow global file reads. macOS child processes need to read the
-        // dyld shared cache, system frameworks, /dev/urandom, and many other
-        // system paths. Enumerating them all is fragile and breaks across
-        // macOS versions. The security value of Seatbelt comes from
-        // restricting writes, network, and process operations — not reads.
-        lines.push("(allow file-read*)".to_string());
+        // Enumerate the minimum set of read paths required for a sandboxed
+        // child to dyld-link and reach libc's CSPRNG.  Replaces the previous
+        // unqualified `(allow file-read*)` rule which voided read isolation
+        // on macOS — see AUDIT-HIGH-1 / `tests/seatbelt_read_isolation.rs`.
+        //
+        // The audit's minimum recommendation:
+        //   * `/usr/lib`              — dyld shared cache and libSystem.
+        //   * `/System/Library/dyld`  — dyld closures and the dyld binary.
+        //   * `/private/var/db/dyld`  — dyld cache backing files (post-Big Sur).
+        //   * `/dev/urandom`          — CSPRNG seeding for libc / TLS.
+        //   * `/dev/null`             — redirected stdio in many wrappers.
+        //
+        // We additionally enumerate several paths that are required to
+        // execute *any* standard child binary (e.g. `/bin/sh`) on modern
+        // macOS — without these, dyld SIGABRTs the child before it ever
+        // reaches `main()`:
+        //   * `/bin`, `/usr/bin`      — shells and the standard utility set;
+        //                               needed both for `process-exec` and
+        //                               for `dyld` to slurp the executable.
+        //   * `/System/Library`       — system frameworks (CoreFoundation,
+        //                               Security, etc.); strictly broader
+        //                               than `/System/Library/dyld` because
+        //                               libSystem dlopens these frameworks.
+        //   * `/System/Volumes/Preboot`,
+        //     `/System/Cryptexes`     — post-Ventura cryptex-mounted dyld
+        //                               cache locations; without these dyld
+        //                               aborts with `unable to map cache`.
+        //   * `/private/etc`          — `/etc` symlink target; many libs
+        //                               (libsystem_pwd, openssl) read
+        //                               `/etc/{passwd,resolv.conf,…}`.
+        //   * `/private/var/select/sh` — bash/sh "default shell" selector
+        //                               read by sh on startup.
+        //
+        // Plus two literal paths:
+        //   * `/`                     — sh and many libc helpers stat the
+        //                               root directory during init; without
+        //                               this, child processes emit
+        //                               `getcwd: cannot access parent
+        //                               directories` and partial init.
+        //   * `/dev/urandom`, `/dev/null` — see above.
+        //
+        // Per-path `allow_read` entries from the policy are emitted earlier
+        // in this function; this list is the *system-required* baseline that
+        // every sandboxed child needs regardless of caller-supplied paths.
+        // Reads of `~/.ssh`, `.env`, `/etc/master.passwd`, `/Users/*`, etc.
+        // are NOT covered here and remain blocked by `(deny default)`.
+        const SYSTEM_READ_SUBPATHS: &[&str] = &[
+            "/usr/lib",
+            "/System/Library/dyld",
+            "/private/var/db/dyld",
+            "/bin",
+            "/usr/bin",
+            "/System/Library",
+            "/System/Volumes/Preboot",
+            "/System/Cryptexes",
+            "/private/etc",
+        ];
+        const SYSTEM_READ_LITERALS: &[&str] = &[
+            "/",
+            "/dev/urandom",
+            "/dev/null",
+            "/private/var/select/sh",
+        ];
+
+        for path in SYSTEM_READ_SUBPATHS {
+            lines.push(format!(r#"(allow file-read* (subpath "{path}"))"#));
+        }
+        for path in SYSTEM_READ_LITERALS {
+            lines.push(format!(r#"(allow file-read* (literal "{path}"))"#));
+        }
 
         lines.join("\n")
     }
@@ -108,6 +180,23 @@ impl SeatbeltProfile {
 /// does not exist yet).
 fn canonicalize_or_original(path: &Path) -> std::path::PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Return the path forms that should appear in the Seatbelt profile for a
+/// caller-supplied `path`.  Always returns the canonicalised form; if it
+/// differs from the original (typically because of macOS's `/tmp →
+/// /private/tmp` symlink), also returns the original so that accesses
+/// expressed in the un-resolved form are matched too.
+fn path_variants(path: &Path) -> Vec<std::path::PathBuf> {
+    let real = canonicalize_or_original(path);
+    if real == path {
+        vec![real]
+    } else {
+        // Order matters only for human readability of the rendered profile;
+        // Seatbelt rules are evaluated last-match-wins so duplicates are
+        // harmless.
+        vec![real, path.to_path_buf()]
+    }
 }
 
 /// Escape a path for embedding inside a Seatbelt profile string literal.

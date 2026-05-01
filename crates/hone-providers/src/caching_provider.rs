@@ -108,9 +108,24 @@ impl LruCache {
         }
     }
 
+    // `clippy::map_entry` would prefer `Entry::or_insert_with` here, but the
+    // Entry API doesn't compose with the `order: VecDeque` we maintain
+    // alongside `entries`: the existing-key branch needs to mutate the deque
+    // (refresh position) and the new-key branch needs to evict-then-insert,
+    // which means borrowing `self.entries` again while an Entry handle is
+    // alive.  A `contains_key` lookup is the cleanest split here.
+    #[allow(clippy::map_entry)]
     fn put(&mut self, key: u64, events: Vec<ProviderEvent>) {
+        // Existing key: overwrite the value AND refresh LRU position.
+        //
+        // The previous implementation only refreshed position and silently
+        // dropped `events`.  Today `CachingProvider::complete` never calls
+        // `put` for an already-cached key (it short-circuits on hit), so the
+        // bug is latent — but a future refactor that adds cache warming, a
+        // refresh policy, or concurrent put-on-miss would silently serve the
+        // stale value forever.  Fix it at the source.
         if self.entries.contains_key(&key) {
-            // Refresh position only
+            self.entries.insert(key, events);
             if let Some(pos) = self.order.iter().position(|k| *k == key) {
                 self.order.remove(pos);
             }
@@ -325,6 +340,133 @@ mod tests {
         let req1 = CompletionRequest::new(ModelId::new("mock:a"), vec![Message::user("hello")]);
         let req2 = CompletionRequest::new(ModelId::new("mock:b"), vec![Message::user("hello")]);
         assert_ne!(hash_request(&req1), hash_request(&req2));
+    }
+
+    // -----------------------------------------------------------------------
+    // LruCache::put correctness — regression test for a latent bug.
+    //
+    // The previous implementation, on the existing-key branch, refreshed the
+    // LRU position and returned without overwriting the value.  This is not
+    // reachable through `CachingProvider::complete` today (cache hits short-
+    // circuit before put is called) but the function-internal contract was
+    // wrong and any future cache-warming/refresh path would silently serve
+    // stale events.  These tests pin the corrected behaviour.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_lru_put_overwrites_existing_value() {
+        let mut cache = LruCache::new(10);
+        let key = 42u64;
+
+        let v1 = vec![ProviderEvent::Token {
+            text: "first".into(),
+        }];
+        let v2 = vec![ProviderEvent::Token {
+            text: "second".into(),
+        }];
+
+        cache.put(key, v1);
+        cache.put(key, v2.clone());
+
+        let got = cache.get(key).expect("entry must be cached");
+        assert_eq!(
+            got, v2,
+            "put on an existing key must overwrite the value, not silently drop the new payload"
+        );
+    }
+
+    #[test]
+    fn test_lru_put_existing_key_does_not_double_count_entries() {
+        // Re-putting the same key must not grow the entries table — the
+        // value-overwrite path must update in place, not insert-then-leak.
+        let mut cache = LruCache::new(10);
+        let key = 7u64;
+
+        cache.put(
+            key,
+            vec![ProviderEvent::Token {
+                text: "a".into(),
+            }],
+        );
+        cache.put(
+            key,
+            vec![ProviderEvent::Token {
+                text: "b".into(),
+            }],
+        );
+        cache.put(
+            key,
+            vec![ProviderEvent::Token {
+                text: "c".into(),
+            }],
+        );
+
+        assert_eq!(
+            cache.entries.len(),
+            1,
+            "three puts on the same key must produce exactly one entry"
+        );
+        assert_eq!(
+            cache.order.len(),
+            1,
+            "order deque must also contain exactly one position for the key"
+        );
+    }
+
+    #[test]
+    fn test_lru_put_existing_key_refreshes_position() {
+        // Putting an existing key must move it to the back of the LRU queue,
+        // protecting it from eviction even when newer keys arrive.
+        let mut cache = LruCache::new(2);
+        cache.put(
+            1,
+            vec![ProviderEvent::Token {
+                text: "one".into(),
+            }],
+        );
+        cache.put(
+            2,
+            vec![ProviderEvent::Token {
+                text: "two".into(),
+            }],
+        );
+
+        // Re-put key 1 with an updated value — should move it to back AND
+        // overwrite the value.
+        cache.put(
+            1,
+            vec![ProviderEvent::Token {
+                text: "one-v2".into(),
+            }],
+        );
+
+        // Insert a third key — this evicts the oldest, which should now be
+        // key 2 (because key 1 was just refreshed).
+        cache.put(
+            3,
+            vec![ProviderEvent::Token {
+                text: "three".into(),
+            }],
+        );
+
+        assert!(
+            cache.entries.contains_key(&1),
+            "refreshed key 1 must survive eviction"
+        );
+        assert!(
+            !cache.entries.contains_key(&2),
+            "key 2 must be evicted as the oldest"
+        );
+        assert!(cache.entries.contains_key(&3), "newest key 3 must be present");
+
+        // And key 1's value reflects the most recent put.
+        let v1 = cache.get(1).expect("key 1 cached");
+        assert_eq!(
+            v1,
+            vec![ProviderEvent::Token {
+                text: "one-v2".into(),
+            }],
+        );
     }
 
     #[tokio::test]

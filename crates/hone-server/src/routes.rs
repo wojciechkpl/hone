@@ -7,6 +7,7 @@ use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde_json::json;
+use subtle::ConstantTimeEq;
 
 use crate::collaborative_routes::collaborative_router;
 use crate::error::ServerError;
@@ -19,26 +20,47 @@ use crate::tunnel_routes::tunnel_router;
 use crate::web::serve_ui;
 
 pub fn router(state: AppState) -> Router {
-    Router::new()
+    // Public sub-router: endpoints that MUST be reachable without an
+    // Authorization header so that liveness probes from load balancers /
+    // Kubernetes / ECS can poll them.  These are also the diagnostics that
+    // belong in deployment dashboards (open API spec) — see AUDIT-MAJOR-7.
+    //
+    // Built without the `auth_middleware` layer.  Rate limiting still
+    // applies (it is layered on the merged router below), so a malicious
+    // caller cannot brute-force these endpoints into a DoS vector.
+    let public = Router::new()
+        .route("/health", get(health))
+        .route("/openapi.json", get(openapi_json));
+
+    // Protected sub-router: everything that mutates server state or reveals
+    // session/governance data.  Behind `auth_middleware` when an
+    // `auth_token` is configured on `AppState`.
+    let protected = Router::new()
         .route("/", get(serve_ui))
         .route("/run", post(run_handler))
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/gc", delete(gc_sessions))
-        .route("/health", get(health))
-        .route("/openapi.json", get(openapi_json))
         .merge(tunnel_router())
         .merge(governance_router())
         .merge(collaborative_router())
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
+
+    // Merge the public router onto the auth-layered one.  Axum's `.merge()`
+    // composes routes from both routers; layers attached to a router only
+    // apply to its OWN routes, so `/health` and `/openapi.json` remain
+    // un-authed even though they share the final stack with the protected
+    // routes.  Rate limiting is applied to the merged result so that BOTH
+    // public and protected endpoints share the same throttle bucket.
+    protected.merge(public)
         // Rate limiting runs before auth so that brute-force attempts are also throttled.
         // The generous default (100 req/min) means existing tests are never affected.
         .layer(middleware::from_fn_with_state(
             state.rate_limiter.clone(),
             rate_limit_middleware,
-        ))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth_middleware,
         ))
         .with_state(state)
 }
@@ -58,12 +80,28 @@ async fn auth_middleware(
             .map(str::to_owned);
 
         match token {
-            Some(t) if &t == expected => next.run(request).await,
+            Some(t) if tokens_match(&t, expected) => next.run(request).await,
             _ => ServerError::Unauthorized.into_response(),
         }
     } else {
         next.run(request).await
     }
+}
+
+/// Constant-time bearer-token comparison.
+///
+/// Replaces the naive `&t == expected`, which short-circuits at the first
+/// mismatching byte and leaks per-byte progress through response timing.
+/// `subtle::ConstantTimeEq::ct_eq` over `[u8]` returns `Choice::from(0)`
+/// immediately for length mismatches (this leaks only the length of the
+/// expected token — a server-side configuration value, not the secret
+/// material itself) and otherwise compares all bytes in constant time.
+fn tokens_match(presented: &str, expected: &str) -> bool {
+    presented
+        .as_bytes()
+        .ct_eq(expected.as_bytes())
+        .unwrap_u8()
+        == 1
 }
 
 #[utoipa::path(
@@ -163,7 +201,13 @@ pub(crate) async fn gc_sessions(
         .and_then(|s| s.parse().ok())
         .unwrap_or(30);
 
-    let cutoff = now_unix().saturating_sub(days * 86_400);
+    // `days.saturating_mul(86_400)` so that `days = u64::MAX` (or any other
+    // adversarial value supplied via the query string) cannot panic in
+    // debug builds nor silently wrap in release.  The follow-on
+    // `saturating_sub` then clamps the cutoff to 0 — which the SQLite store
+    // interprets as "delete nothing" (no row's `created_at` is older than
+    // the epoch).  See AUDIT-MEDIUM-12 / `tests/sessions_gc_overflow.rs`.
+    let cutoff = now_unix().saturating_sub(days.saturating_mul(86_400));
     let removed = state.sessions.gc(cutoff).await?;
     Ok(Json(GcResult { removed }))
 }
@@ -172,4 +216,61 @@ async fn openapi_json() -> Json<serde_json::Value> {
     use utoipa::OpenApi as _;
     let spec = crate::openapi::ApiDoc::openapi();
     Json(serde_json::to_value(spec).unwrap_or_default())
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tokens_match_tests {
+    use super::tokens_match;
+
+    #[test]
+    fn exact_match_returns_true() {
+        assert!(tokens_match("secret-token-abc", "secret-token-abc"));
+    }
+
+    #[test]
+    fn mismatched_returns_false() {
+        assert!(!tokens_match("secret-token-abc", "secret-token-xyz"));
+    }
+
+    #[test]
+    fn presented_shorter_than_expected_returns_false() {
+        // Length mismatch must NOT be treated as a prefix match (the naive
+        // `==` would also reject this, but verifying the contract here guards
+        // against future changes that pad/truncate before comparison).
+        assert!(!tokens_match("secret", "secret-token"));
+    }
+
+    #[test]
+    fn presented_longer_than_expected_returns_false() {
+        assert!(!tokens_match("secret-token-extra", "secret-token"));
+    }
+
+    #[test]
+    fn empty_presented_with_nonempty_expected_returns_false() {
+        // The `evaluate_auth_gate` in `honed/main.rs` already filters empty
+        // tokens out at startup so `expected` is never empty here, but a
+        // defensive test pins the contract anyway.
+        assert!(!tokens_match("", "real-secret"));
+    }
+
+    #[test]
+    fn equal_length_with_first_byte_diff_returns_false() {
+        // The whole point of switching to ct_eq: byte-position of the first
+        // diff must not change observable behaviour.  We can't measure timing
+        // in a unit test reliably, but we CAN pin that the two cases below
+        // both return false (i.e. early-byte and late-byte diffs are not
+        // distinguished by the boolean result).
+        assert!(!tokens_match("Xsecret-token-abc", "Asecret-token-abc"));
+        assert!(!tokens_match("secret-token-abX", "secret-token-abA"));
+    }
+
+    #[test]
+    fn unicode_tokens_compared_byte_wise() {
+        // ct_eq operates on bytes, so multi-byte UTF-8 sequences are compared
+        // verbatim.  Two tokens that differ in a single multi-byte char must
+        // still return false.
+        assert!(tokens_match("café-token", "café-token"));
+        assert!(!tokens_match("café-token", "cafe-token"));
+    }
 }

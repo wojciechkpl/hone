@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,6 +14,15 @@ use crate::tunnel::{MockTunnelManager, TunnelManager};
 const DEFAULT_RATE_LIMIT: u32 = 100;
 const DEFAULT_RATE_WINDOW: Duration = Duration::from_secs(60);
 
+/// Resolve the default workspace root used when the operator does not supply
+/// one explicitly.  Falls back to `/` only if `current_dir()` fails — the
+/// same fallback used by the agent code path.
+fn default_workspace_root() -> PathBuf {
+    std::env::current_dir()
+        .and_then(|p| p.canonicalize().or(Ok(p)))
+        .unwrap_or_else(|_| PathBuf::from("/"))
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub sessions: Arc<SessionStorage>,
@@ -24,6 +34,12 @@ pub struct AppState {
     pub rate_limiter: RateLimiter,
     /// Anthropic API key from `ANTHROPIC_API_KEY` env var. Drives `POST /run`.
     pub provider_key: Option<String>,
+    /// Allowed root for `POST /run`'s `working_dir` field.  Any client-supplied
+    /// `working_dir` is canonicalized and required to live under this prefix;
+    /// requests outside it are rejected with `400 BAD REQUEST` before any
+    /// agent is spawned.  Defaults to the server process's `current_dir()`
+    /// (canonicalized).  See AUDIT-CRITICAL-1 / `tests/run_working_dir.rs`.
+    pub workspace_root: PathBuf,
 }
 
 impl AppState {
@@ -36,6 +52,7 @@ impl AppState {
             collaborative: Arc::new(CollaborativeStore::new()),
             rate_limiter: RateLimiter::new(DEFAULT_RATE_LIMIT, DEFAULT_RATE_WINDOW),
             provider_key: std::env::var("ANTHROPIC_API_KEY").ok(),
+            workspace_root: default_workspace_root(),
         }
     }
 
@@ -48,6 +65,7 @@ impl AppState {
             collaborative: Arc::new(CollaborativeStore::new()),
             rate_limiter: RateLimiter::new(DEFAULT_RATE_LIMIT, DEFAULT_RATE_WINDOW),
             provider_key: std::env::var("ANTHROPIC_API_KEY").ok(),
+            workspace_root: default_workspace_root(),
         }
     }
 
@@ -63,6 +81,7 @@ impl AppState {
             collaborative: Arc::new(CollaborativeStore::new()),
             rate_limiter: RateLimiter::new(DEFAULT_RATE_LIMIT, DEFAULT_RATE_WINDOW),
             provider_key: std::env::var("ANTHROPIC_API_KEY").ok(),
+            workspace_root: default_workspace_root(),
         }
     }
 
@@ -81,6 +100,14 @@ impl AppState {
     /// Override the provider key (useful for tests).
     pub fn with_provider_key(mut self, key: Option<String>) -> Self {
         self.provider_key = key;
+        self
+    }
+
+    /// Override the allowed workspace root for `POST /run`.  Useful when an
+    /// operator wants to scope sessions to a project directory rather than
+    /// the server's cwd.
+    pub fn with_workspace_root(mut self, root: PathBuf) -> Self {
+        self.workspace_root = root;
         self
     }
 }

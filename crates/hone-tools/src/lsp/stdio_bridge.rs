@@ -18,6 +18,15 @@ use super::bridge::{CodeAction, Diagnostic, DiagnosticSeverity, LspBridge};
 // JSON-RPC framing helpers (Content-Length over stdio)
 // ---------------------------------------------------------------------------
 
+/// Maximum body size accepted from an LSP server in a single message.
+///
+/// 64 MiB is several orders of magnitude above any plausible LSP payload —
+/// even workspace-wide diagnostics for a large project rarely exceed 1 MiB —
+/// while bounding the worst-case allocation to a survivable size.  Without
+/// this cap a buggy or hostile server can send `Content-Length: 9999999999`
+/// and force the host to allocate that much before the I/O fails.
+const MAX_LSP_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+
 /// Write a single LSP message with Content-Length framing to `stdin`.
 pub(crate) async fn send_message(stdin: &mut ChildStdin, msg: &Value) -> Result<(), ToolError> {
     let serialized = serde_json::to_string(msg)
@@ -26,6 +35,27 @@ pub(crate) async fn send_message(stdin: &mut ChildStdin, msg: &Value) -> Result<
     stdin.write_all(header.as_bytes()).await?;
     stdin.write_all(serialized.as_bytes()).await?;
     stdin.flush().await?;
+    Ok(())
+}
+
+/// Validate a parsed `Content-Length` value against the framing invariants.
+///
+/// - Zero-length messages are rejected (LSP requires every message body to be
+///   non-empty JSON-RPC).
+/// - Lengths above `MAX_LSP_MESSAGE_BYTES` are rejected before the allocation
+///   to bound the worst-case memory consumed by a buggy or hostile server.
+fn validate_content_length(n: usize) -> Result<(), ToolError> {
+    if n == 0 {
+        return Err(ToolError::Other(
+            "LSP message missing Content-Length header".into(),
+        ));
+    }
+    if n > MAX_LSP_MESSAGE_BYTES {
+        return Err(ToolError::Other(format!(
+            "LSP Content-Length {n} exceeds maximum {MAX_LSP_MESSAGE_BYTES} \
+             bytes; refusing to allocate"
+        )));
+    }
     Ok(())
 }
 
@@ -58,11 +88,7 @@ pub(crate) async fn read_message(reader: &mut BufReader<ChildStdout>) -> Result<
         // Other headers (Content-Type etc.) are intentionally ignored.
     }
 
-    if content_length == 0 {
-        return Err(ToolError::Other(
-            "LSP message missing Content-Length header".into(),
-        ));
-    }
+    validate_content_length(content_length)?;
 
     let mut buf = vec![0u8; content_length];
     reader.read_exact(&mut buf).await?;
@@ -538,6 +564,56 @@ mod tests {
         let parsed: Value = serde_json::from_slice(body).unwrap();
         assert_eq!(parsed["id"], 42);
         assert_eq!(parsed["result"]["ok"], true);
+    }
+
+    // -----------------------------------------------------------------------
+    // Content-Length cap (DoS guard)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_content_length_accepts_typical_size() {
+        // 100 KiB is well within the cap and well above zero.
+        assert!(validate_content_length(100 * 1024).is_ok());
+    }
+
+    #[test]
+    fn test_validate_content_length_accepts_exact_cap() {
+        // Boundary: the cap itself must be accepted (`<=`, not `<`).
+        assert!(validate_content_length(MAX_LSP_MESSAGE_BYTES).is_ok());
+    }
+
+    #[test]
+    fn test_validate_content_length_rejects_zero() {
+        let err = validate_content_length(0).unwrap_err();
+        assert!(
+            err.to_string().to_lowercase().contains("missing"),
+            "zero-length must be reported as missing header, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_validate_content_length_rejects_oversized() {
+        // One byte over the cap must be refused before allocation.
+        let err = validate_content_length(MAX_LSP_MESSAGE_BYTES + 1).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("exceeds maximum"),
+            "oversized must mention 'exceeds maximum', got: {msg}"
+        );
+        // Regression guard: the error must surface the offending size so an
+        // operator can correlate the rejection with the upstream server log.
+        assert!(
+            msg.contains(&(MAX_LSP_MESSAGE_BYTES + 1).to_string()),
+            "error must echo the offending length, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_content_length_rejects_pathological_size() {
+        // The original DoS scenario: a hostile server sending a multi-GB header.
+        // Pre-cap, this would attempt the alloc; post-cap, it errors out cheaply.
+        let huge = 10 * 1024 * 1024 * 1024; // 10 GiB
+        assert!(validate_content_length(huge).is_err());
     }
 
     // -----------------------------------------------------------------------

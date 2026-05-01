@@ -102,6 +102,8 @@ argon2 = "0.5"
 # Security
 rustix = "0.38"
 cfg-if = "1"
+# Constant-time byte equality (used for bearer-token comparison to defeat timing oracles).
+subtle = "2"
 # Linux Landlock LSM sandbox (kernel 5.13+)
 landlock = "0.4"
 
