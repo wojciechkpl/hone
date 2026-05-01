@@ -101,6 +101,7 @@ async fn noisy_turn_does_not_write_memory() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .unwrap();
@@ -142,6 +143,7 @@ async fn correction_turn_writes_feedback_memory() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .unwrap();
@@ -197,6 +199,7 @@ async fn dup_correction_upserts_not_inserts() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .unwrap();

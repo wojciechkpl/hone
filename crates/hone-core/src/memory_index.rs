@@ -128,6 +128,7 @@ pub async fn render_index(
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: usize::MAX,
+                kind: None,
             })
             .await?
     };
@@ -248,6 +249,7 @@ pub async fn read_memory(
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: usize::MAX,
+                kind: None,
             })
             .await?
     };

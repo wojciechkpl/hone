@@ -249,6 +249,7 @@ impl Agent {
         let memory_query = MemoryQuery {
             text: query.to_string(),
             limit: 5,
+            kind: None,
         };
 
         match store.lock().await.recall(&memory_query).await {

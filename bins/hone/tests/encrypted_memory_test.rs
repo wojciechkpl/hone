@@ -110,6 +110,7 @@ async fn build_memory_store_without_passphrase_returns_plain_sqlite() {
             .recall(&MemoryQuery {
                 text: "hello-plaintext".to_string(),
                 limit: 10,
+                kind: None,
             })
             .await
             .expect("recall");
@@ -147,10 +148,9 @@ async fn build_memory_store_with_passphrase_wraps_encrypted() {
         let sqlite = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("open sqlite");
-        let store: Arc<Mutex<dyn MemoryStore>> =
-            build_memory_store(sqlite, Some("hunter2"))
-                .await
-                .expect("build_memory_store Some");
+        let store: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite, Some("hunter2"))
+            .await
+            .expect("build_memory_store Some");
 
         store
             .lock()
@@ -176,6 +176,7 @@ async fn build_memory_store_with_passphrase_wraps_encrypted() {
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: 100,
+                kind: None,
             })
             .await
             .expect("recall from plain store on encrypted db");
@@ -209,10 +210,9 @@ async fn build_memory_store_roundtrips_with_same_passphrase() {
         let sqlite = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("open sqlite");
-        let store: Arc<Mutex<dyn MemoryStore>> =
-            build_memory_store(sqlite, Some("hunter2"))
-                .await
-                .expect("build encrypted store (first open)");
+        let store: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite, Some("hunter2"))
+            .await
+            .expect("build encrypted store (first open)");
 
         store
             .lock()
@@ -227,10 +227,9 @@ async fn build_memory_store_roundtrips_with_same_passphrase() {
         let sqlite2 = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("reopen sqlite");
-        let store2: Arc<Mutex<dyn MemoryStore>> =
-            build_memory_store(sqlite2, Some("hunter2"))
-                .await
-                .expect("build encrypted store (second open)");
+        let store2: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite2, Some("hunter2"))
+            .await
+            .expect("build encrypted store (second open)");
 
         let results = store2
             .lock()
@@ -238,6 +237,7 @@ async fn build_memory_store_roundtrips_with_same_passphrase() {
             .recall(&MemoryQuery {
                 text: "secret-payload-xyz".to_string(),
                 limit: 10,
+                kind: None,
             })
             .await
             .expect("recall after reopen with same passphrase");
@@ -277,10 +277,9 @@ async fn build_memory_store_fails_with_wrong_passphrase() {
         let sqlite = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("open sqlite");
-        let store: Arc<Mutex<dyn MemoryStore>> =
-            build_memory_store(sqlite, Some("hunter2"))
-                .await
-                .expect("build encrypted store");
+        let store: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite, Some("hunter2"))
+            .await
+            .expect("build encrypted store");
 
         store
             .lock()
@@ -294,10 +293,9 @@ async fn build_memory_store_fails_with_wrong_passphrase() {
     let sqlite2 = SqliteStore::open_with_decay_interval(&db_path, 0)
         .await
         .expect("reopen sqlite");
-    let store2: Arc<Mutex<dyn MemoryStore>> =
-        build_memory_store(sqlite2, Some("wrong-passphrase"))
-            .await
-            .expect("build with wrong passphrase must succeed (salt sentinel is present)");
+    let store2: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite2, Some("wrong-passphrase"))
+        .await
+        .expect("build with wrong passphrase must succeed (salt sentinel is present)");
 
     // Recall must fail because the ciphertext cannot be decrypted with the wrong key.
     let result = store2
@@ -306,6 +304,7 @@ async fn build_memory_store_fails_with_wrong_passphrase() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 10,
+            kind: None,
         })
         .await;
 
@@ -336,12 +335,10 @@ async fn build_memory_store_with_empty_passphrase_string_still_works() {
         .expect("open sqlite");
 
     // This must not return Err — empty string is a valid (if weak) passphrase.
-    let store: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite, Some(""))
-        .await
-        .expect(
-            "build_memory_store with Some(\"\") must succeed; \
+    let store: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite, Some("")).await.expect(
+        "build_memory_store with Some(\"\") must succeed; \
              no extra validation should reject an empty passphrase",
-        );
+    );
 
     // Insert and recall to prove the store is usable, not just constructed.
     store
@@ -357,6 +354,7 @@ async fn build_memory_store_with_empty_passphrase_string_still_works() {
         .recall(&MemoryQuery {
             text: "content with empty passphrase".to_string(),
             limit: 5,
+            kind: None,
         })
         .await
         .expect("recall through empty-passphrase encrypted store");

@@ -77,9 +77,9 @@ fn parse_rfc3339_to_epoch_secs(s: &str) -> Result<u64> {
 }
 
 fn epoch_to_rfc3339(secs: u64) -> String {
-    let dt = OffsetDateTime::from_unix_timestamp(secs as i64)
-        .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-    dt.format(&Rfc3339).unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+    let dt = OffsetDateTime::from_unix_timestamp(secs as i64).unwrap_or(OffsetDateTime::UNIX_EPOCH);
+    dt.format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -108,29 +108,21 @@ pub async fn run(
     match cmd {
         MemoryCmd::Ls { limit, kind } => {
             let effective_limit = limit.unwrap_or(50);
+            let target_kind = kind.as_deref().map(kind_from_str).transpose()?;
             let locked = store.lock().await;
-            let mut memories = locked
+            let memories = locked
                 .recall(&MemoryQuery {
                     text: String::new(),
                     limit: effective_limit,
+                    kind: target_kind,
                 })
                 .await?;
-
-            // TODO(R10): push --kind filter into MemoryQuery so limit applies after filtering.
-            // Optional kind filter (applied in Rust after recall).
-            if let Some(kind_str) = kind {
-                let target = kind_from_str(&kind_str)?;
-                memories.retain(|m| m.kind == target);
-            }
 
             for m in &memories {
                 let kind_label = kind_label(m.kind);
                 let timestamp = epoch_to_rfc3339(m.created_at);
                 let id_prefix = if m.id.len() > 8 { &m.id[..8] } else { &m.id };
-                let description_text = m
-                    .description
-                    .as_deref()
-                    .unwrap_or(&m.content);
+                let description_text = m.description.as_deref().unwrap_or(&m.content);
                 let snippet = truncate(description_text, 60);
                 writeln!(out, "{id_prefix}  {kind_label}  {timestamp}  {snippet}")?;
             }
@@ -140,19 +132,23 @@ pub async fn run(
 
         MemoryCmd::Show { id } => {
             let locked = store.lock().await;
-            // TODO(R10): add MemoryStore::recall_by_id for O(log n) lookup instead of full scan.
-            // Recall all (empty query returns all), then find by id.
-            let all = locked
-                .recall(&MemoryQuery {
-                    text: String::new(),
-                    limit: usize::MAX,
-                })
-                .await?;
-
-            let memory = all
-                .into_iter()
-                .find(|m| m.id == id || m.id.starts_with(&id))
-                .ok_or_else(|| anyhow!("memory not found: {id}"))?;
+            // Try exact match via recall_by_id (O(log n)).  If that misses,
+            // fall back to a bounded prefix scan — handles 8-char prefixes
+            // shown in `memory ls` as well as any future non-uuid id format.
+            let memory = if let Some(m) = locked.recall_by_id(&id).await? {
+                m
+            } else {
+                let all = locked
+                    .recall(&MemoryQuery {
+                        text: String::new(),
+                        limit: 1000,
+                        kind: None,
+                    })
+                    .await?;
+                all.into_iter()
+                    .find(|m| m.id.starts_with(&id as &str))
+                    .ok_or_else(|| anyhow!("memory not found: {id}"))?
+            };
 
             let timestamp = epoch_to_rfc3339(memory.created_at);
             let tags = if memory.tags.is_empty() {
@@ -182,9 +178,7 @@ pub async fn run(
                 .filter(|&&b| b)
                 .count();
             if filter_count != 1 {
-                return Err(anyhow!(
-                    "specify exactly one of --tag, --kind, --before"
-                ));
+                return Err(anyhow!("specify exactly one of --tag, --kind, --before"));
             }
 
             let filter = if let Some(tag_val) = tag {

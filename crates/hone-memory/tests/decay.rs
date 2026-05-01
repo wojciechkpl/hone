@@ -25,6 +25,7 @@ async fn test_decay_reduces_weight() {
     let query = MemoryQuery {
         text: "important".to_string(),
         limit: 10,
+        kind: None,
     };
     let results = store.recall(&query).await.unwrap();
     assert_eq!(results.len(), 1);
@@ -52,6 +53,7 @@ async fn test_decay_removes_expired_memories() {
     let query = MemoryQuery {
         text: String::new(),
         limit: 100,
+        kind: None,
     };
     let remaining = store.recall(&query).await.unwrap();
     assert_eq!(remaining.len(), 1);

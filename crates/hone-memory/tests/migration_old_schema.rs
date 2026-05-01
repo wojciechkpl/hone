@@ -63,6 +63,7 @@ async fn test_old_schema_migrates_to_default_kind_and_description() {
         .recall(&MemoryQuery {
             text: "old conversation".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .expect("recall after migration");

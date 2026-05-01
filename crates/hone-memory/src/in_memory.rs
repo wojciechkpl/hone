@@ -40,7 +40,12 @@ impl MemoryStore for InMemoryStore {
         let mut all: Vec<&Memory> = self.memories.values().collect();
         all.sort_by(|a, b| a.id.cmp(&b.id));
 
-        // Empty-query short-circuit: return all memories unfiltered.
+        // Apply kind filter BEFORE limit (and before BM25 scoring).
+        if let Some(kind) = query.kind {
+            all.retain(|m| m.kind == kind);
+        }
+
+        // Empty-query short-circuit: return all memories unfiltered (by kind already applied).
         if query.text.is_empty() {
             let mut scored: Vec<(f64, &Memory)> =
                 all.iter().map(|m| (m.weight, *m)).collect();
@@ -53,7 +58,7 @@ impl MemoryStore for InMemoryStore {
             return Ok(results);
         }
 
-        // Build a BM25 index over the searchable text of every memory.
+        // Build a BM25 index over the searchable text of every (kind-filtered) memory.
         // Searchable text = description (if present) + "\n" + content.
         let texts: Vec<String> = all
             .iter()
@@ -88,6 +93,10 @@ impl MemoryStore for InMemoryStore {
             .collect();
 
         Ok(results)
+    }
+
+    async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
+        Ok(self.memories.get(id).cloned())
     }
 
     async fn forget(&mut self, filter: &MemoryFilter) -> Result<u32, MemoryError> {

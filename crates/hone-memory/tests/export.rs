@@ -32,6 +32,7 @@ async fn test_export_produces_valid_json() {
     let query = MemoryQuery {
         text: String::new(),
         limit: 100,
+        kind: None,
     };
     let mut results = imported.recall(&query).await.unwrap();
     assert_eq!(

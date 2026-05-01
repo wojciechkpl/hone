@@ -67,6 +67,10 @@ pub trait MemoryStore: Send + Sync {
     /// scoring.
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError>;
 
+    /// O(log n) (or better) exact lookup by `id`. Returns `None` when no
+    /// memory has that id. Implementations MUST NOT do a full table scan.
+    async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError>;
+
     async fn forget(&mut self, filter: &MemoryFilter) -> Result<u32, MemoryError>;
 
     /// Multiply all weights by `factor`. Remove memories whose `decay_at` is
@@ -99,6 +103,7 @@ pub trait MemoryStore: Send + Sync {
             .recall(&MemoryQuery {
                 text: String::new(), // fetch all (up to limit)
                 limit: 32,
+                kind: None,
             })
             .await?;
 

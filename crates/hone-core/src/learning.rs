@@ -138,6 +138,7 @@ impl AdaptiveClassifier {
             .recall(&MemoryQuery {
                 text: "outcome:".to_string(),
                 limit: 100,
+                kind: None,
             })
             .await
             .ok()?;

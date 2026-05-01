@@ -84,6 +84,7 @@ async fn test_memory_kind_user_roundtrip_in_memory() {
         .recall(&MemoryQuery {
             text: "verbose".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -110,6 +111,7 @@ async fn test_memory_kind_user_roundtrip_sqlite() {
         .recall(&MemoryQuery {
             text: "verbose".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -139,6 +141,7 @@ async fn test_description_roundtrip_in_memory() {
         .recall(&MemoryQuery {
             text: "async".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -165,6 +168,7 @@ async fn test_description_roundtrip_sqlite() {
         .recall(&MemoryQuery {
             text: "async".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -190,6 +194,7 @@ async fn test_description_none_roundtrip_sqlite() {
         .recall(&MemoryQuery {
             text: "no description".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -234,6 +239,7 @@ async fn test_filter_kind_recall_in_memory() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .unwrap();
@@ -275,6 +281,7 @@ async fn test_filter_kind_forget_sqlite() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .unwrap();
@@ -302,6 +309,7 @@ async fn test_encrypted_store_kind_description_roundtrip() {
         .recall(&MemoryQuery {
             text: "dark theme".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();

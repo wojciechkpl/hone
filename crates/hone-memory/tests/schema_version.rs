@@ -198,6 +198,7 @@ async fn pre_r1_legacy_db_migrates_cleanly() {
         .recall(&MemoryQuery {
             text: "old chat".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .expect("recall after migration");

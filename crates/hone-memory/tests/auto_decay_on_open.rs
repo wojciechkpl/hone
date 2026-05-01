@@ -63,6 +63,7 @@ async fn open_empty_db_succeeds() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .expect("recall on empty store must not error");
@@ -105,6 +106,7 @@ async fn open_decays_existing_weights() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .expect("recall after second open");
@@ -154,6 +156,7 @@ async fn open_chains_decay_across_opens() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .expect("recall after third open");
@@ -199,6 +202,7 @@ async fn open_removes_memories_past_decay_at() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .expect("recall after second open");
@@ -244,6 +248,7 @@ async fn open_keeps_memories_with_future_decay_at() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .expect("recall after second open");
@@ -305,6 +310,7 @@ async fn open_does_not_decay_within_24h() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .expect("recall after third open");

@@ -399,32 +399,61 @@ impl MemoryStore for SqliteStore {
         // IDF tradeoff.  For empty-query enumeration (e.g. render_index) the cap
         // has no purpose — BM25 is skipped entirely — so we honour query.limit
         // directly.
+        //
+        // When query.kind is Some(k), we add a WHERE kind = ? clause so the kind
+        // filter is applied in the database BEFORE the LIMIT (pre-limit filter).
         let effective_limit = if query.text.is_empty() {
             query.limit
         } else {
             query.limit.min(MAX_RECALL_CORPUS)
         };
-        let rows = sqlx::query(
-            "SELECT id, content, tags, weight, created_at, decay_at, kind, description
-             FROM memories
-             ORDER BY created_at DESC
-             LIMIT ?",
-        )
-        .bind(effective_limit.min(i64::MAX as usize) as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(to_io_err)?;
 
-        let memories: Vec<Memory> = rows
-            .iter()
-            .filter_map(|row| match row_to_memory(row) {
-                Ok(m) => Some(m),
-                Err(e) => {
-                    tracing::warn!(error = ?e, "skipping memory row that failed to deserialize");
-                    None
-                }
-            })
-            .collect();
+        let memories: Vec<Memory> = if let Some(kind) = query.kind {
+            let kind_str = kind_to_str(kind);
+            let rows = sqlx::query(
+                "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+                 FROM memories
+                 WHERE kind = ?1
+                 ORDER BY created_at DESC
+                 LIMIT ?2",
+            )
+            .bind(kind_str)
+            .bind(effective_limit.min(i64::MAX as usize) as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_io_err)?;
+
+            rows.iter()
+                .filter_map(|row| match row_to_memory(row) {
+                    Ok(m) => Some(m),
+                    Err(e) => {
+                        tracing::warn!(error = ?e, "skipping memory row that failed to deserialize");
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            let rows = sqlx::query(
+                "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+                 FROM memories
+                 ORDER BY created_at DESC
+                 LIMIT ?",
+            )
+            .bind(effective_limit.min(i64::MAX as usize) as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_io_err)?;
+
+            rows.iter()
+                .filter_map(|row| match row_to_memory(row) {
+                    Ok(m) => Some(m),
+                    Err(e) => {
+                        tracing::warn!(error = ?e, "skipping memory row that failed to deserialize");
+                        None
+                    }
+                })
+                .collect()
+        };
 
         // Empty-query short-circuit: return all memories ordered by weight.
         if query.text.is_empty() {
@@ -468,6 +497,21 @@ impl MemoryStore for SqliteStore {
             .collect();
 
         Ok(results)
+    }
+
+    async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
+        let row = sqlx::query(
+            "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+             FROM memories
+             WHERE id = ?1
+             LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+
+        row.as_ref().map(row_to_memory).transpose()
     }
 
     async fn forget(&mut self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
@@ -633,6 +677,7 @@ mod tests {
                 .recall(&MemoryQuery {
                     text: "persistent".to_owned(),
                     limit: 10,
+                    kind: None,
                 })
                 .await
                 .expect("recall");
@@ -660,6 +705,7 @@ mod tests {
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: 100,
+                kind: None,
             })
             .await
             .expect("recall");

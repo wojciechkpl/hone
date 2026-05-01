@@ -67,12 +67,7 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-fn make_memory(
-    id: &str,
-    content: &str,
-    kind: MemoryKind,
-    description: Option<&str>,
-) -> Memory {
+fn make_memory(id: &str, content: &str, kind: MemoryKind, description: Option<&str>) -> Memory {
     Memory {
         id: id.to_string(),
         content: content.to_string(),
@@ -117,7 +112,12 @@ async fn memory_read_returns_body_for_known_id() {
     {
         let mut guard = store.lock().await;
         guard
-            .record(make_memory("mem-001", "the full body text", MemoryKind::Feedback, None))
+            .record(make_memory(
+                "mem-001",
+                "the full body text",
+                MemoryKind::Feedback,
+                None,
+            ))
             .await
             .expect("record");
     }
@@ -153,7 +153,10 @@ async fn memory_read_returns_found_false_for_unknown_id() {
     let ctx = make_ctx();
     let input = ToolInput::new(json!({ "id": "nonexistent" }));
 
-    let output = tool.call(input, &ctx).await.expect("unknown id must not error");
+    let output = tool
+        .call(input, &ctx)
+        .await
+        .expect("unknown id must not error");
     let v = output.into_value();
 
     assert_eq!(
@@ -311,7 +314,12 @@ async fn memory_read_nulls_description_when_absent() {
     {
         let mut guard = store.lock().await;
         guard
-            .record(make_memory("mem-nodesc", "body text", MemoryKind::Project, None))
+            .record(make_memory(
+                "mem-nodesc",
+                "body text",
+                MemoryKind::Project,
+                None,
+            ))
             .await
             .expect("record");
     }

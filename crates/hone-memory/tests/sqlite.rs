@@ -23,6 +23,7 @@ async fn test_sqlite_record_and_recall() {
         .recall(&MemoryQuery {
             text: "ownership".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -52,6 +53,7 @@ async fn test_sqlite_persist_across_reopen() {
             .recall(&MemoryQuery {
                 text: "persisted".to_string(),
                 limit: 10,
+                kind: None,
             })
             .await
             .unwrap();
@@ -93,6 +95,7 @@ async fn test_sqlite_forget_by_tag() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -116,6 +119,7 @@ async fn test_sqlite_decay_reduces_weight() {
         .recall(&MemoryQuery {
             text: "decay target".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -151,6 +155,7 @@ async fn test_sqlite_decay_removes_expired() {
         .recall(&MemoryQuery {
             text: "ephemeral".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -184,6 +189,7 @@ async fn test_sqlite_export_import_roundtrip() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();

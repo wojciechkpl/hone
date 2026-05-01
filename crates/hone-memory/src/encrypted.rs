@@ -160,13 +160,19 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
         self.inner.record(encrypted).await
     }
 
+    async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
+        let result = self.inner.recall_by_id(id).await?;
+        result.map(|m| self.decrypt_memory(m)).transpose()
+    }
+
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
         // Note: encrypted content cannot be searched server-side. We fetch all
         // and filter in-memory after decryption. For typical memory stores
         // (< 10K entries) this is acceptable.
         let all_query = MemoryQuery {
-            text: String::new(), // fetch all
+            text: String::new(), // fetch all matching kind
             limit: 10_000,
+            kind: query.kind, // push kind filter into the inner store
         };
         let encrypted_memories = self.inner.recall(&all_query).await?;
 
@@ -205,6 +211,7 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: 100_000,
+                kind: None,
             })
             .await?;
 
@@ -248,6 +255,7 @@ async fn load_or_init_salt(store: &mut impl MemoryStore) -> Result<Vec<u8>, Memo
     let sentinel_query = MemoryQuery {
         text: String::new(),
         limit: 10_000,
+        kind: None,
     };
     let all = store.recall(&sentinel_query).await?;
 
@@ -346,6 +354,7 @@ mod tests {
             .recall(&MemoryQuery {
                 text: "sensitive".to_string(),
                 limit: 10,
+                kind: None,
             })
             .await
             .unwrap();
@@ -381,6 +390,7 @@ mod tests {
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: 10,
+                kind: None,
             })
             .await
             .unwrap();
@@ -430,6 +440,7 @@ mod tests {
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: 10,
+                kind: None,
             })
             .await;
 
@@ -505,6 +516,7 @@ mod tests {
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: 10,
+                kind: None,
             })
             .await
             .unwrap()
@@ -518,6 +530,7 @@ mod tests {
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: 10,
+                kind: None,
             })
             .await
             .unwrap()
@@ -569,6 +582,7 @@ mod tests {
             .recall(&MemoryQuery {
                 text: "super secret".to_string(),
                 limit: 5,
+                kind: None,
             })
             .await
             .expect("recall after reopen");

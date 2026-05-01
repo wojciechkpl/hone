@@ -213,6 +213,7 @@ async fn recall_empty_query_returns_all_records() {
             .recall(&MemoryQuery {
                 text: "".into(),
                 limit: LIMIT,
+                kind: None,
             })
             .await
             .expect("InMemoryStore::recall should not error with empty text");
@@ -241,6 +242,7 @@ async fn recall_empty_query_returns_all_records() {
             .recall(&MemoryQuery {
                 text: "".into(),
                 limit: LIMIT,
+                kind: None,
             })
             .await
             .expect("EncryptedStore::recall should not error with empty text");

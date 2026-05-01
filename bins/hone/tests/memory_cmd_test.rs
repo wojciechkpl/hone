@@ -94,9 +94,23 @@ fn capture(cmd: MemoryCmd, store: Arc<Mutex<dyn MemoryStore>>) -> anyhow::Result
 #[test]
 fn ls_prints_one_row_per_memory() {
     let memories = vec![
-        make_memory("a1", "alpha content", MemoryKind::Conversation, None, vec![], 1_000),
-        make_memory("b2", "beta content",  MemoryKind::User,         None, vec![], 2_000),
-        make_memory("c3", "gamma content", MemoryKind::Feedback,     None, vec![], 3_000),
+        make_memory(
+            "a1",
+            "alpha content",
+            MemoryKind::Conversation,
+            None,
+            vec![],
+            1_000,
+        ),
+        make_memory("b2", "beta content", MemoryKind::User, None, vec![], 2_000),
+        make_memory(
+            "c3",
+            "gamma content",
+            MemoryKind::Feedback,
+            None,
+            vec![],
+            3_000,
+        ),
     ];
     let store = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -104,8 +118,14 @@ fn ls_prints_one_row_per_memory() {
         .unwrap()
         .block_on(store_with_memories(memories));
 
-    let output = capture(MemoryCmd::Ls { limit: None, kind: None }, store)
-        .expect("ls should succeed");
+    let output = capture(
+        MemoryCmd::Ls {
+            limit: None,
+            kind: None,
+        },
+        store,
+    )
+    .expect("ls should succeed");
 
     let rows: Vec<&str> = output.lines().filter(|l| !l.trim().is_empty()).collect();
     assert_eq!(
@@ -122,10 +142,31 @@ fn ls_prints_one_row_per_memory() {
 #[test]
 fn ls_respects_limit() {
     let memories = vec![
-        make_memory("a1", "alpha content", MemoryKind::Conversation, None, vec![], 1_000),
-        make_memory("b2", "beta content",  MemoryKind::User,         None, vec![], 2_000),
-        make_memory("c3", "gamma content", MemoryKind::Feedback,     None, vec![], 3_000),
-        make_memory("d4", "delta content", MemoryKind::Project,      None, vec![], 4_000),
+        make_memory(
+            "a1",
+            "alpha content",
+            MemoryKind::Conversation,
+            None,
+            vec![],
+            1_000,
+        ),
+        make_memory("b2", "beta content", MemoryKind::User, None, vec![], 2_000),
+        make_memory(
+            "c3",
+            "gamma content",
+            MemoryKind::Feedback,
+            None,
+            vec![],
+            3_000,
+        ),
+        make_memory(
+            "d4",
+            "delta content",
+            MemoryKind::Project,
+            None,
+            vec![],
+            4_000,
+        ),
     ];
     let store = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -133,8 +174,14 @@ fn ls_respects_limit() {
         .unwrap()
         .block_on(store_with_memories(memories));
 
-    let output = capture(MemoryCmd::Ls { limit: Some(2), kind: None }, store)
-        .expect("ls with limit should succeed");
+    let output = capture(
+        MemoryCmd::Ls {
+            limit: Some(2),
+            kind: None,
+        },
+        store,
+    )
+    .expect("ls with limit should succeed");
 
     let rows: Vec<&str> = output.lines().filter(|l| !l.trim().is_empty()).collect();
     assert_eq!(
@@ -151,9 +198,30 @@ fn ls_respects_limit() {
 #[test]
 fn ls_filters_by_kind() {
     let memories = vec![
-        make_memory("c1", "conversation one", MemoryKind::Conversation, None, vec![], 1_000),
-        make_memory("c2", "conversation two", MemoryKind::Conversation, None, vec![], 2_000),
-        make_memory("f1", "feedback entry",   MemoryKind::Feedback,     None, vec![], 3_000),
+        make_memory(
+            "c1",
+            "conversation one",
+            MemoryKind::Conversation,
+            None,
+            vec![],
+            1_000,
+        ),
+        make_memory(
+            "c2",
+            "conversation two",
+            MemoryKind::Conversation,
+            None,
+            vec![],
+            2_000,
+        ),
+        make_memory(
+            "f1",
+            "feedback entry",
+            MemoryKind::Feedback,
+            None,
+            vec![],
+            3_000,
+        ),
     ];
     let store = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -162,7 +230,10 @@ fn ls_filters_by_kind() {
         .block_on(store_with_memories(memories));
 
     let output = capture(
-        MemoryCmd::Ls { limit: None, kind: Some("feedback".to_string()) },
+        MemoryCmd::Ls {
+            limit: None,
+            kind: Some("feedback".to_string()),
+        },
         store,
     )
     .expect("ls with kind filter should succeed");
@@ -201,8 +272,14 @@ fn ls_truncates_long_descriptions_to_60_chars() {
         .unwrap()
         .block_on(store_with_memories(memories));
 
-    let output = capture(MemoryCmd::Ls { limit: None, kind: None }, store)
-        .expect("ls should succeed for truncation test");
+    let output = capture(
+        MemoryCmd::Ls {
+            limit: None,
+            kind: None,
+        },
+        store,
+    )
+    .expect("ls should succeed for truncation test");
 
     // The 120-char long_desc must NOT appear verbatim in any single row.
     assert!(
@@ -238,8 +315,13 @@ fn show_prints_full_body_for_existing_id() {
         .unwrap()
         .block_on(store_with_memories(memories));
 
-    let output = capture(MemoryCmd::Show { id: "mem-123".to_string() }, store)
-        .expect("show should succeed for existing id");
+    let output = capture(
+        MemoryCmd::Show {
+            id: "mem-123".to_string(),
+        },
+        store,
+    )
+    .expect("show should succeed for existing id");
 
     assert!(
         output.contains("mem-123"),
@@ -272,7 +354,12 @@ fn show_errors_on_missing_id() {
         .unwrap()
         .block_on(store_with_memories(vec![]));
 
-    let result = capture(MemoryCmd::Show { id: "nope".to_string() }, store);
+    let result = capture(
+        MemoryCmd::Show {
+            id: "nope".to_string(),
+        },
+        store,
+    );
 
     assert!(
         result.is_err(),
@@ -292,9 +379,30 @@ fn show_errors_on_missing_id() {
 #[test]
 fn forget_by_tag_returns_removed_count() {
     let memories = vec![
-        make_memory("t1", "tagged one",   MemoryKind::Conversation, None, vec!["foo".to_string()], 1_000),
-        make_memory("t2", "tagged two",   MemoryKind::Conversation, None, vec!["foo".to_string()], 2_000),
-        make_memory("t3", "not tagged",   MemoryKind::Conversation, None, vec!["bar".to_string()], 3_000),
+        make_memory(
+            "t1",
+            "tagged one",
+            MemoryKind::Conversation,
+            None,
+            vec!["foo".to_string()],
+            1_000,
+        ),
+        make_memory(
+            "t2",
+            "tagged two",
+            MemoryKind::Conversation,
+            None,
+            vec!["foo".to_string()],
+            2_000,
+        ),
+        make_memory(
+            "t3",
+            "not tagged",
+            MemoryKind::Conversation,
+            None,
+            vec!["bar".to_string()],
+            3_000,
+        ),
     ];
     let store = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -303,7 +411,11 @@ fn forget_by_tag_returns_removed_count() {
         .block_on(store_with_memories(memories));
 
     let output = capture(
-        MemoryCmd::Forget { tag: Some("foo".to_string()), kind: None, before: None },
+        MemoryCmd::Forget {
+            tag: Some("foo".to_string()),
+            kind: None,
+            before: None,
+        },
         store.clone(),
     )
     .expect("forget by tag should succeed");
@@ -322,7 +434,11 @@ fn forget_by_tag_returns_removed_count() {
             store
                 .lock()
                 .await
-                .recall(&MemoryQuery { text: String::new(), limit: 100 })
+                .recall(&MemoryQuery {
+                    text: String::new(),
+                    limit: 100,
+                    kind: None,
+                })
                 .await
                 .expect("recall after forget")
         });
@@ -340,9 +456,30 @@ fn forget_by_tag_returns_removed_count() {
 #[test]
 fn forget_by_kind_returns_removed_count() {
     let memories = vec![
-        make_memory("p1", "project one",    MemoryKind::Project,      None, vec![], 1_000),
-        make_memory("p2", "project two",    MemoryKind::Project,      None, vec![], 2_000),
-        make_memory("c1", "conversation",   MemoryKind::Conversation, None, vec![], 3_000),
+        make_memory(
+            "p1",
+            "project one",
+            MemoryKind::Project,
+            None,
+            vec![],
+            1_000,
+        ),
+        make_memory(
+            "p2",
+            "project two",
+            MemoryKind::Project,
+            None,
+            vec![],
+            2_000,
+        ),
+        make_memory(
+            "c1",
+            "conversation",
+            MemoryKind::Conversation,
+            None,
+            vec![],
+            3_000,
+        ),
     ];
     let store = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -351,7 +488,11 @@ fn forget_by_kind_returns_removed_count() {
         .block_on(store_with_memories(memories));
 
     let output = capture(
-        MemoryCmd::Forget { tag: None, kind: Some("project".to_string()), before: None },
+        MemoryCmd::Forget {
+            tag: None,
+            kind: Some("project".to_string()),
+            before: None,
+        },
         store.clone(),
     )
     .expect("forget by kind should succeed");
@@ -369,7 +510,11 @@ fn forget_by_kind_returns_removed_count() {
             store
                 .lock()
                 .await
-                .recall(&MemoryQuery { text: String::new(), limit: 100 })
+                .recall(&MemoryQuery {
+                    text: String::new(),
+                    limit: 100,
+                    kind: None,
+                })
                 .await
                 .expect("recall after forget by kind")
         });
@@ -400,9 +545,30 @@ fn forget_by_kind_returns_removed_count() {
 #[test]
 fn forget_by_before_removes_old_records() {
     let memories = vec![
-        make_memory("old1", "old memory one", MemoryKind::Conversation, None, vec![], 1_000),
-        make_memory("old2", "old memory two", MemoryKind::Conversation, None, vec![], 2_000),
-        make_memory("new1", "new memory",     MemoryKind::Conversation, None, vec![], 9_999),
+        make_memory(
+            "old1",
+            "old memory one",
+            MemoryKind::Conversation,
+            None,
+            vec![],
+            1_000,
+        ),
+        make_memory(
+            "old2",
+            "old memory two",
+            MemoryKind::Conversation,
+            None,
+            vec![],
+            2_000,
+        ),
+        make_memory(
+            "new1",
+            "new memory",
+            MemoryKind::Conversation,
+            None,
+            vec![],
+            9_999,
+        ),
     ];
     let store = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -433,7 +599,11 @@ fn forget_by_before_removes_old_records() {
             store
                 .lock()
                 .await
-                .recall(&MemoryQuery { text: String::new(), limit: 100 })
+                .recall(&MemoryQuery {
+                    text: String::new(),
+                    limit: 100,
+                    kind: None,
+                })
                 .await
                 .expect("recall after forget by before")
         });
@@ -442,7 +612,10 @@ fn forget_by_before_removes_old_records() {
         1,
         "after forgetting the 2 old memories, 1 should remain"
     );
-    assert_eq!(remaining[0].id, "new1", "the surviving memory must be 'new1'");
+    assert_eq!(
+        remaining[0].id, "new1",
+        "the surviving memory must be 'new1'"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -458,7 +631,11 @@ fn forget_errors_on_no_filter() {
         .block_on(store_with_memories(vec![]));
 
     let result = capture(
-        MemoryCmd::Forget { tag: None, kind: None, before: None },
+        MemoryCmd::Forget {
+            tag: None,
+            kind: None,
+            before: None,
+        },
         store,
     );
 

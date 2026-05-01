@@ -22,6 +22,7 @@ async fn test_record_and_recall_basic() {
     let query = MemoryQuery {
         text: "quick".to_string(),
         limit: 10,
+        kind: None,
     };
     let results = store.recall(&query).await.unwrap();
 
@@ -45,6 +46,7 @@ async fn test_recall_respects_relevance_ordering() {
     let query = MemoryQuery {
         text: "rust".to_string(),
         limit: 10,
+        kind: None,
     };
     let results = store.recall(&query).await.unwrap();
 
@@ -81,6 +83,7 @@ async fn test_forget_by_tag_removes_matching() {
     let query = MemoryQuery {
         text: String::new(),
         limit: 100,
+        kind: None,
     };
     let remaining = store.recall(&query).await.unwrap();
     assert_eq!(remaining.len(), 1);

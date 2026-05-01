@@ -54,6 +54,7 @@ async fn sqlite_recall_orders_by_bm25_not_substring_count() {
         .recall(&MemoryQuery {
             text: "quuxbaz".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -97,6 +98,7 @@ async fn recall_score_still_combines_with_weight_and_decay() {
         .recall(&MemoryQuery {
             text: "rust".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();
@@ -137,6 +139,7 @@ async fn recall_empty_query_still_returns_all_memories() {
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
+            kind: None,
         })
         .await
         .unwrap();
@@ -172,6 +175,7 @@ async fn in_memory_recall_orders_by_bm25_too() {
         .recall(&MemoryQuery {
             text: "quuxbaz".to_string(),
             limit: 10,
+            kind: None,
         })
         .await
         .unwrap();

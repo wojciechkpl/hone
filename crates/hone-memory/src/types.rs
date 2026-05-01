@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MemoryKind {
     /// Free-form Q&A (today's default — the noisy ones).
@@ -47,10 +47,18 @@ impl Default for Memory {
     }
 }
 
-#[derive(Debug, Clone)]
+/// A recall query.
+///
+/// Note: `MemoryQuery::default()` produces `{ text: "", limit: 0, kind: None }`
+/// and stores honour `limit: 0` literally (returning zero results).  Always
+/// set a non-zero `limit` explicitly when constructing via spread.
+#[derive(Debug, Clone, Default)]
 pub struct MemoryQuery {
     pub text: String,
     pub limit: usize,
+    /// When `Some(k)`, the store filters to memories of that kind BEFORE
+    /// applying `limit`. When `None`, no kind filter is applied.
+    pub kind: Option<MemoryKind>,
 }
 
 #[derive(Debug, Clone)]
