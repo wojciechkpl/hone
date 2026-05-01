@@ -255,7 +255,12 @@ impl Agent {
             Ok(memories) if !memories.is_empty() => {
                 let entries: Vec<(String, String)> = memories
                     .iter()
-                    .map(|m| (m.id.clone(), m.content.chars().take(80).collect()))
+                    .map(|m| {
+                        (
+                            crate::memory_key::friendly_memory_key(m),
+                            m.content.chars().take(80).collect(),
+                        )
+                    })
                     .collect();
                 let mut prompt = String::from("\n\n## Relevant context from memory:\n");
                 for mem in &memories {
