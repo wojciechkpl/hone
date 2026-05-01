@@ -394,15 +394,23 @@ impl MemoryStore for SqliteStore {
 
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
         // Fetch memories from the database — BM25 scoring happens in Rust.
-        // We cap at MAX_RECALL_CORPUS most-recent rows to bound memory and CPU
-        // usage; see the const-level doc comment for the IDF tradeoff.
+        // For non-empty queries we cap at MAX_RECALL_CORPUS most-recent rows to
+        // bound memory and CPU usage; see the const-level doc comment for the
+        // IDF tradeoff.  For empty-query enumeration (e.g. render_index) the cap
+        // has no purpose — BM25 is skipped entirely — so we honour query.limit
+        // directly.
+        let effective_limit = if query.text.is_empty() {
+            query.limit
+        } else {
+            query.limit.min(MAX_RECALL_CORPUS)
+        };
         let rows = sqlx::query(
             "SELECT id, content, tags, weight, created_at, decay_at, kind, description
              FROM memories
              ORDER BY created_at DESC
              LIMIT ?",
         )
-        .bind(MAX_RECALL_CORPUS as i64)
+        .bind(effective_limit.min(i64::MAX as usize) as i64)
         .fetch_all(&self.pool)
         .await
         .map_err(to_io_err)?;

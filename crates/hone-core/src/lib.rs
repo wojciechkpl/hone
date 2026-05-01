@@ -1,5 +1,6 @@
 mod agent;
 pub mod agent_def;
+pub mod memory_index;
 pub mod memory_format;
 pub mod memory_worthy;
 pub mod agent_name;
