@@ -81,8 +81,18 @@ quoting it back to the user as a current recommendation:
 ";
 
 /// Build the final system prompt by combining the base prompt with
-/// optional HONE.md sections.
-pub fn build_system_prompt(hone_md_sections: &[(String, String)]) -> String {
+/// optional HONE.md sections and an optional memory index.
+///
+/// - `memory_index: None` — no `## Memory index` section is emitted (no store
+///   configured).
+/// - `memory_index: Some("")` — the section is emitted with `(no memories)` as
+///   the body (store exists but is empty).
+/// - `memory_index: Some(rendered)` — the section is emitted with `rendered` as
+///   the body.
+pub fn build_system_prompt(
+    hone_md_sections: &[(String, String)],
+    memory_index: Option<&str>,
+) -> String {
     let mut prompt = String::from(BASE_SYSTEM_PROMPT);
 
     if !hone_md_sections.is_empty() {
@@ -90,6 +100,23 @@ pub fn build_system_prompt(hone_md_sections: &[(String, String)]) -> String {
         for (heading, content) in hone_md_sections {
             prompt.push_str(&format!("\n### {heading}\n{content}\n"));
         }
+    }
+
+    if let Some(index) = memory_index {
+        let body = if index.is_empty() {
+            "(no memories)"
+        } else {
+            index
+        };
+        prompt.push_str(
+            "\n## Memory index\n\
+             \n\
+             The following memories are available. To read a body, call the \
+             `memory_read` tool with the id in brackets.\n\
+             \n",
+        );
+        prompt.push_str(body);
+        prompt.push('\n');
     }
 
     prompt
@@ -152,7 +179,7 @@ mod tests {
             ("STYLE".to_string(), "4 spaces, no tabs".to_string()),
             ("TESTING".to_string(), "cargo test --workspace".to_string()),
         ];
-        let prompt = build_system_prompt(&sections);
+        let prompt = build_system_prompt(&sections, None);
         assert!(prompt.contains("Project-specific guidance"));
         assert!(prompt.contains("STYLE"));
         assert!(prompt.contains("4 spaces, no tabs"));
@@ -162,14 +189,14 @@ mod tests {
 
     #[test]
     fn build_without_hone_md_omits_section_header() {
-        let prompt = build_system_prompt(&[]);
+        let prompt = build_system_prompt(&[], None);
         assert!(!prompt.contains("Project-specific guidance"));
     }
 
     #[test]
     fn build_with_sections_starts_with_base_prompt() {
         let sections = vec![("FOO".to_string(), "bar".to_string())];
-        let prompt = build_system_prompt(&sections);
+        let prompt = build_system_prompt(&sections, None);
         assert!(prompt.starts_with(BASE_SYSTEM_PROMPT));
     }
 }

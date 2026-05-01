@@ -30,7 +30,7 @@ fn test_prompt_contains_what_not_to_remember_section() {
     );
 
     // Also verify it survives through build_system_prompt().
-    let built = build_system_prompt(&[]);
+    let built = build_system_prompt(&[], None);
     assert!(
         built.contains("What NOT to remember"),
         "build_system_prompt() output must also contain 'What NOT to remember'"
@@ -49,7 +49,7 @@ fn test_prompt_contains_verify_before_recommending_section() {
          section (R3). Add the section to bins/hone/src/system_prompt.rs."
     );
 
-    let built = build_system_prompt(&[]);
+    let built = build_system_prompt(&[], None);
     assert!(
         built.contains("Verify before recommending from memory"),
         "build_system_prompt() output must also contain 'Verify before recommending from memory'"
@@ -97,7 +97,7 @@ fn test_prompt_with_new_sections_still_within_token_budget() {
     // The plan says the length increase must be <= ~600 chars.
     // This test asserts the overall budget stays under 20 000 bytes.
     // It will pass today (prompt is short) and must also pass after Phase 2.
-    let built = build_system_prompt(&[]);
+    let built = build_system_prompt(&[], None);
     assert!(
         built.len() < 20_000,
         "system prompt is too large ({} bytes); trim it",

@@ -671,6 +671,7 @@ async fn detect_lsp_bridge() -> Arc<dyn LspBridge> {
 fn build_tool_registry(
     lsp: Arc<dyn LspBridge>,
     index: Option<Arc<SqliteIndex>>,
+    memory: Option<Arc<Mutex<dyn MemoryStore>>>,
     cache: Option<Arc<ToolResultCache>>,
     mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
 ) -> ToolRegistry {
@@ -720,6 +721,10 @@ fn build_tool_registry(
                 &idx,
             )))))
             .register(wrap(Box::new(tools::SymbolAtTool::new(idx))));
+    }
+
+    if let Some(store) = memory {
+        builder = builder.register(Box::new(tools::MemoryReadTool::new(store)));
     }
 
     builder.build()
@@ -791,7 +796,7 @@ fn build_agent_config(
 ) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
-        build_tool_registry(lsp, index.clone(), tool_cache, mcp_tools)
+        build_tool_registry(lsp, index.clone(), memory_store.clone(), tool_cache, mcp_tools)
     } else {
         ToolRegistry::new()
     };
@@ -1832,7 +1837,28 @@ async fn main() -> Result<()> {
             "HONE.md loaded and injected into system prompt"
         );
     }
-    let system_prompt = system_prompt::build_system_prompt(&hone_md_sections);
+    // One-shot full-corpus scan at session start. Bounded by the recall-time
+    // 5000-row cap on non-empty queries, but uncapped here. Tens of ms at
+    // most for typical corpora; consider caching if startup latency becomes
+    // a concern.
+    let memory_index_str = if let Some(store) = memory_store.as_ref() {
+        match hone_core::memory_index::render_index(
+            store,
+            hone_core::memory_index::IndexBudget::default(),
+        )
+        .await
+        {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to render memory index for system prompt");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let system_prompt =
+        system_prompt::build_system_prompt(&hone_md_sections, memory_index_str.as_deref());
 
     tracing::debug!(
         system_prompt_len = system_prompt.len(),
