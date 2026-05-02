@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt, stream};
@@ -16,11 +17,15 @@ use crate::retry_after::parse_retry_after;
 use crate::traits::{CompletionRequest, ModelProvider};
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com";
+const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
+const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct OpenAiProvider {
     api_key: String,
     base_url: String,
     client: Client,
+    timeout: Duration,
+    connect_timeout: Duration,
 }
 
 impl OpenAiProvider {
@@ -28,7 +33,13 @@ impl OpenAiProvider {
         Self {
             api_key: api_key.into(),
             base_url: DEFAULT_BASE_URL.to_owned(),
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(HTTP_TIMEOUT)
+                .connect_timeout(HTTP_CONNECT_TIMEOUT)
+                .build()
+                .expect("reqwest builder cannot fail with valid timeout values"),
+            timeout: HTTP_TIMEOUT,
+            connect_timeout: HTTP_CONNECT_TIMEOUT,
         }
     }
 
@@ -36,8 +47,22 @@ impl OpenAiProvider {
         Self {
             api_key: api_key.into(),
             base_url: base_url.into(),
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(HTTP_TIMEOUT)
+                .connect_timeout(HTTP_CONNECT_TIMEOUT)
+                .build()
+                .expect("reqwest builder cannot fail with valid timeout values"),
+            timeout: HTTP_TIMEOUT,
+            connect_timeout: HTTP_CONNECT_TIMEOUT,
         }
+    }
+
+    pub fn http_client_timeout(&self) -> Option<Duration> {
+        Some(self.timeout)
+    }
+
+    pub fn http_client_connect_timeout(&self) -> Option<Duration> {
+        Some(self.connect_timeout)
     }
 }
 

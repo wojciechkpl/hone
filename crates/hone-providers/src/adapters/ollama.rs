@@ -1,4 +1,5 @@
 use std::pin::Pin;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt, stream};
@@ -14,17 +15,36 @@ use crate::error::{ProviderError, extract_api_error_message};
 use crate::retry_after::parse_retry_after;
 use crate::traits::{CompletionRequest, ModelProvider};
 
+const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
+const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub struct OllamaProvider {
     base_url: String,
     client: Client,
+    timeout: Duration,
+    connect_timeout: Duration,
 }
 
 impl OllamaProvider {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into(),
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(HTTP_TIMEOUT)
+                .connect_timeout(HTTP_CONNECT_TIMEOUT)
+                .build()
+                .expect("reqwest builder cannot fail with valid timeout values"),
+            timeout: HTTP_TIMEOUT,
+            connect_timeout: HTTP_CONNECT_TIMEOUT,
         }
+    }
+
+    pub fn http_client_timeout(&self) -> Option<Duration> {
+        Some(self.timeout)
+    }
+
+    pub fn http_client_connect_timeout(&self) -> Option<Duration> {
+        Some(self.connect_timeout)
     }
 }
 
