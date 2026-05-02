@@ -14,7 +14,7 @@ use hone_providers::{CompletionRequest, ContextWindowTable, ModelProvider, Provi
 use hone_sandbox::Sandbox;
 use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput, ToolRegistry};
 use serde_json::Value;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
 use crate::context::{ContextManager, estimate_text_tokens};
@@ -49,7 +49,11 @@ pub struct AgentConfig {
     /// Optional persistent memory store. When set, relevant memories are
     /// injected into the system prompt each turn, and the Q&A pair is recorded
     /// after the turn completes.
-    pub memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
+    ///
+    /// The inner implementation is responsible for its own concurrency control
+    /// (e.g. `SqlitePool` for `SqliteStore`, `RwLock` for `InMemoryStore`).
+    /// No outer `Mutex` is needed; concrete stores are self-synchronized.
+    pub memory_store: Option<Arc<dyn MemoryStore>>,
     /// Retry policy applied to transient provider errors (network timeouts,
     /// 429s, 502/503s) before surfacing the error to the model.
     /// Default: 3 attempts with exponential backoff starting at 500 ms.
@@ -252,7 +256,7 @@ impl Agent {
             kind: None,
         };
 
-        match store.lock().await.recall(&memory_query).await {
+        match store.recall(&memory_query).await {
             Ok(memories) if !memories.is_empty() => {
                 let entries: Vec<(String, String)> = memories
                     .iter()
@@ -283,11 +287,10 @@ impl Agent {
     /// 4. Otherwise, insert a fresh record.
     ///
     /// Concurrency note: the `find_similar` → `record` flow is not atomic.
-    /// Within a single `Agent`, the `Mutex<dyn MemoryStore>` in `AgentConfig`
-    /// serializes calls, so no race occurs. Across multiple `Agent` instances
-    /// sharing the same backing file (currently not supported), two callers
-    /// could both read "not found" and insert duplicate rows. PR4/R12 will
-    /// address this with explicit transactions when schema versioning lands.
+    /// Two concurrent callers could both see "not found" and insert separate
+    /// rows for near-duplicate content.  This is acceptable for the current
+    /// use case (single-agent sessions).  PR4/R12 will address races across
+    /// multiple agents sharing the same backing file via explicit transactions.
     pub async fn record_memory(&self, candidate: MemoryCandidate) {
         let Some(store) = &self.config.memory_store else {
             return;
@@ -300,10 +303,8 @@ impl Agent {
 
         let body = format_memory_body(candidate.kind, candidate.body);
 
-        let mut locked = store.lock().await;
-
         // R6: check for a near-duplicate and upsert instead of inserting twice.
-        let existing = locked.find_similar(&body, 0.8).await.ok().flatten();
+        let existing = store.find_similar(&body, 0.8).await.ok().flatten();
 
         if let Some(existing) = existing {
             let updated = Memory {
@@ -316,7 +317,7 @@ impl Agent {
                 tags: existing.tags,
                 decay_at: existing.decay_at,
             };
-            let _ = locked.record(updated).await;
+            let _ = store.record(updated).await;
         } else {
             let id = uuid::Uuid::now_v7().to_string();
             let memory = Memory {
@@ -329,7 +330,7 @@ impl Agent {
                 kind: candidate.kind,
                 description: candidate.description,
             };
-            let _ = locked.record(memory).await;
+            let _ = store.record(memory).await;
         }
     }
 

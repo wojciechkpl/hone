@@ -6,8 +6,6 @@
 
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
-
 use crate::complexity::ComplexityTier;
 use hone_memory::{Memory, MemoryQuery, MemoryStore};
 
@@ -87,11 +85,11 @@ impl OutcomeRecord {
 /// Records outcomes and provides adaptive complexity routing based on
 /// historical performance.
 pub struct AdaptiveClassifier {
-    store: Arc<Mutex<dyn MemoryStore>>,
+    store: Arc<dyn MemoryStore>,
 }
 
 impl AdaptiveClassifier {
-    pub fn new(store: Arc<Mutex<dyn MemoryStore>>) -> Self {
+    pub fn new(store: Arc<dyn MemoryStore>) -> Self {
         Self { store }
     }
 
@@ -122,8 +120,7 @@ impl AdaptiveClassifier {
             description: None,
         };
 
-        let mut store = self.store.lock().await;
-        if let Err(e) = store.record(memory).await {
+        if let Err(e) = self.store.record(memory).await {
             tracing::warn!("failed to record outcome: {e}");
         }
     }
@@ -133,8 +130,7 @@ impl AdaptiveClassifier {
     ///
     /// Returns `None` if there's insufficient history (< 5 outcomes).
     pub async fn suggest_tier(&self, task_summary: &str) -> Option<ComplexityTier> {
-        let store = self.store.lock().await;
-        let results = store
+        let results = self.store
             .recall(&MemoryQuery {
                 text: "outcome:".to_string(),
                 limit: 100,
@@ -235,7 +231,7 @@ mod tests {
 
     fn make_classifier() -> AdaptiveClassifier {
         let store = InMemoryStore::new();
-        AdaptiveClassifier::new(Arc::new(Mutex::new(store)))
+        AdaptiveClassifier::new(Arc::new(store))
     }
 
     fn outcome(tier: ComplexityTier, success: bool) -> OutcomeRecord {

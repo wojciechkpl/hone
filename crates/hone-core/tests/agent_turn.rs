@@ -13,7 +13,7 @@ use hone_providers::{CompletionRequest, MockProvider, ModelProvider, ProviderErr
 use hone_sandbox::NullSandbox;
 use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput, ToolRegistry};
 use serde_json::json;
-use tokio::sync::{Mutex as TokioMutex, mpsc};
+use tokio::sync::mpsc;
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -1028,7 +1028,7 @@ async fn test_memories_injected_as_separate_message() {
     });
 
     let mut config = base_config(provider);
-    config.memory_store = Some(Arc::new(TokioMutex::new(store)));
+    config.memory_store = Some(Arc::new(store));
 
     let mut agent = Agent::new(config);
     let (tx, _rx) = mpsc::channel(32);

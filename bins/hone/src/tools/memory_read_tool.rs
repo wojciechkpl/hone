@@ -11,14 +11,13 @@ use hone_memory::MemoryStore;
 use hone_proto::ToolLayer;
 use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput};
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
 pub struct MemoryReadTool {
-    store: Arc<Mutex<dyn MemoryStore>>,
+    store: Arc<dyn MemoryStore>,
 }
 
 impl MemoryReadTool {
-    pub fn new(store: Arc<Mutex<dyn MemoryStore>>) -> Self {
+    pub fn new(store: Arc<dyn MemoryStore>) -> Self {
         Self { store }
     }
 }
@@ -57,7 +56,7 @@ impl Tool for MemoryReadTool {
             });
         }
 
-        match hone_core::memory_index::read_memory(&self.store, id).await {
+        match hone_core::memory_index::read_memory(self.store.as_ref(), id).await {
             Ok(Some(mem)) => {
                 let kind_str = serde_json::to_value(mem.kind)
                     .ok()

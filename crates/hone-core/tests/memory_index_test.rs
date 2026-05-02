@@ -20,7 +20,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use hone_core::memory_index::{IndexBudget, read_memory, render_index};
 use hone_memory::{Memory, MemoryFilter, MemoryKind, MemoryQuery, MemoryStore, SqliteStore};
 use tempfile::NamedTempFile;
-use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,13 +53,13 @@ fn make_memory(
 }
 
 /// Open a file-backed SqliteStore (interval=0 to skip 24h gating) and wrap in
-/// `Arc<Mutex<dyn MemoryStore>>`.  The caller is responsible for keeping the
+/// `Arc<dyn MemoryStore>`.  The caller is responsible for keeping the
 /// `NamedTempFile` alive for the duration of the test.
-async fn open_store(tmp: &NamedTempFile) -> Arc<Mutex<dyn MemoryStore>> {
+async fn open_store(tmp: &NamedTempFile) -> Arc<dyn MemoryStore> {
     let store = SqliteStore::open_with_decay_interval(tmp.path(), 0)
         .await
         .expect("open SqliteStore");
-    Arc::new(Mutex::new(store)) as Arc<Mutex<dyn MemoryStore>>
+    Arc::new(store) as Arc<dyn MemoryStore>
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +72,7 @@ async fn render_empty_store_returns_empty_string() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    let result = render_index(&store, IndexBudget::default())
+    let result = render_index(store.as_ref(), IndexBudget::default())
         .await
         .expect("render_index must not error on empty store");
 
@@ -90,29 +89,26 @@ async fn render_groups_by_kind_with_headers() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut s = store.lock().await;
-        s.record(make_memory("u1", "user content", MemoryKind::User, 1.0, None, None))
-            .await
-            .expect("record User");
-        s.record(make_memory("f1", "feedback content", MemoryKind::Feedback, 1.0, None, None))
-            .await
-            .expect("record Feedback");
-        s.record(make_memory("p1", "project content", MemoryKind::Project, 1.0, None, None))
-            .await
-            .expect("record Project");
-        s.record(make_memory("r1", "reference content", MemoryKind::Reference, 1.0, None, None))
-            .await
-            .expect("record Reference");
-        s.record(make_memory("o1", "outcome content", MemoryKind::Outcome, 1.0, None, None))
-            .await
-            .expect("record Outcome");
-        s.record(make_memory("c1", "conversation content", MemoryKind::Conversation, 1.0, None, None))
-            .await
-            .expect("record Conversation");
-    }
+    store.record(make_memory("u1", "user content", MemoryKind::User, 1.0, None, None))
+        .await
+        .expect("record User");
+    store.record(make_memory("f1", "feedback content", MemoryKind::Feedback, 1.0, None, None))
+        .await
+        .expect("record Feedback");
+    store.record(make_memory("p1", "project content", MemoryKind::Project, 1.0, None, None))
+        .await
+        .expect("record Project");
+    store.record(make_memory("r1", "reference content", MemoryKind::Reference, 1.0, None, None))
+        .await
+        .expect("record Reference");
+    store.record(make_memory("o1", "outcome content", MemoryKind::Outcome, 1.0, None, None))
+        .await
+        .expect("record Outcome");
+    store.record(make_memory("c1", "conversation content", MemoryKind::Conversation, 1.0, None, None))
+        .await
+        .expect("record Conversation");
 
-    let result = render_index(&store, IndexBudget::default())
+    let result = render_index(store.as_ref(), IndexBudget::default())
         .await
         .expect("render_index");
 
@@ -145,17 +141,14 @@ async fn render_skips_kinds_with_no_memories() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut s = store.lock().await;
-        s.record(make_memory("u1", "user content", MemoryKind::User, 1.0, None, None))
-            .await
-            .expect("record User");
-        s.record(make_memory("f1", "feedback content", MemoryKind::Feedback, 1.0, None, None))
-            .await
-            .expect("record Feedback");
-    }
+    store.record(make_memory("u1", "user content", MemoryKind::User, 1.0, None, None))
+        .await
+        .expect("record User");
+    store.record(make_memory("f1", "feedback content", MemoryKind::Feedback, 1.0, None, None))
+        .await
+        .expect("record Feedback");
 
-    let result = render_index(&store, IndexBudget::default())
+    let result = render_index(store.as_ref(), IndexBudget::default())
         .await
         .expect("render_index");
 
@@ -189,34 +182,31 @@ async fn render_uses_description_when_present_and_content_otherwise() {
 
     let long_content = "x".repeat(200); // definitely > 80 chars
 
-    {
-        let mut s = store.lock().await;
-        // First memory: has a description.
-        s.record(make_memory(
-            "d1",
-            &long_content,
-            MemoryKind::User,
-            1.0,
-            Some("the why"),
-            None,
-        ))
-        .await
-        .expect("record d1");
+    // First memory: has a description.
+    store.record(make_memory(
+        "d1",
+        &long_content,
+        MemoryKind::User,
+        1.0,
+        Some("the why"),
+        None,
+    ))
+    .await
+    .expect("record d1");
 
-        // Second memory: no description, short content.
-        s.record(make_memory(
-            "d2",
-            "fallback short",
-            MemoryKind::User,
-            1.0,
-            None,
-            None,
-        ))
-        .await
-        .expect("record d2");
-    }
+    // Second memory: no description, short content.
+    store.record(make_memory(
+        "d2",
+        "fallback short",
+        MemoryKind::User,
+        1.0,
+        None,
+        None,
+    ))
+    .await
+    .expect("record d2");
 
-    let result = render_index(&store, IndexBudget::default())
+    let result = render_index(store.as_ref(), IndexBudget::default())
         .await
         .expect("render_index");
 
@@ -241,21 +231,18 @@ async fn render_orders_by_weight_then_recency_within_kind() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut s = store.lock().await;
-        // Insert in order 1.0 → 3.0 → 2.0.
-        s.record(make_memory("w1", "weight one", MemoryKind::Feedback, 1.0, None, None))
-            .await
-            .expect("record w1");
-        s.record(make_memory("w3", "weight three", MemoryKind::Feedback, 3.0, None, None))
-            .await
-            .expect("record w3");
-        s.record(make_memory("w2", "weight two", MemoryKind::Feedback, 2.0, None, None))
-            .await
-            .expect("record w2");
-    }
+    // Insert in order 1.0 → 3.0 → 2.0.
+    store.record(make_memory("w1", "weight one", MemoryKind::Feedback, 1.0, None, None))
+        .await
+        .expect("record w1");
+    store.record(make_memory("w3", "weight three", MemoryKind::Feedback, 3.0, None, None))
+        .await
+        .expect("record w3");
+    store.record(make_memory("w2", "weight two", MemoryKind::Feedback, 2.0, None, None))
+        .await
+        .expect("record w2");
 
-    let result = render_index(&store, IndexBudget::default())
+    let result = render_index(store.as_ref(), IndexBudget::default())
         .await
         .expect("render_index");
 
@@ -280,22 +267,19 @@ async fn render_truncates_at_max_entries() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut s = store.lock().await;
-        for i in 0..60 {
-            let id = format!("entry-{i:03}");
-            let content = format!("memory entry number {i}");
-            s.record(make_memory(&id, &content, MemoryKind::User, 1.0, None, None))
-                .await
-                .expect("record");
-        }
+    for i in 0..60 {
+        let id = format!("entry-{i:03}");
+        let content = format!("memory entry number {i}");
+        store.record(make_memory(&id, &content, MemoryKind::User, 1.0, None, None))
+            .await
+            .expect("record");
     }
 
     let budget = IndexBudget {
         max_entries: 10,
         max_chars: 100_000,
     };
-    let result = render_index(&store, budget)
+    let result = render_index(store.as_ref(), budget)
         .await
         .expect("render_index");
 
@@ -322,28 +306,25 @@ async fn render_truncates_at_max_chars() {
 
     let long_desc = "a".repeat(200);
 
-    {
-        let mut s = store.lock().await;
-        for i in 0..50 {
-            let id = format!("long-{i:03}");
-            s.record(make_memory(
-                &id,
-                "body",
-                MemoryKind::User,
-                1.0,
-                Some(&long_desc),
-                None,
-            ))
-            .await
-            .expect("record");
-        }
+    for i in 0..50 {
+        let id = format!("long-{i:03}");
+        store.record(make_memory(
+            &id,
+            "body",
+            MemoryKind::User,
+            1.0,
+            Some(&long_desc),
+            None,
+        ))
+        .await
+        .expect("record");
     }
 
     let budget = IndexBudget {
         max_entries: 100,
         max_chars: 1000,
     };
-    let result = render_index(&store, budget)
+    let result = render_index(store.as_ref(), budget)
         .await
         .expect("render_index");
 
@@ -373,21 +354,18 @@ async fn render_truncation_message_does_not_appear_when_all_fit() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut s = store.lock().await;
-        for i in 0..5 {
-            let id = format!("fit-{i}");
-            s.record(make_memory(&id, "short content", MemoryKind::User, 1.0, None, None))
-                .await
-                .expect("record");
-        }
+    for i in 0..5 {
+        let id = format!("fit-{i}");
+        store.record(make_memory(&id, "short content", MemoryKind::User, 1.0, None, None))
+            .await
+            .expect("record");
     }
 
     let budget = IndexBudget {
         max_entries: 100,
         max_chars: 100_000,
     };
-    let result = render_index(&store, budget)
+    let result = render_index(store.as_ref(), budget)
         .await
         .expect("render_index");
 
@@ -405,16 +383,13 @@ async fn render_includes_id_for_each_entry() {
 
     let ids = ["alpha-id", "beta-id", "gamma-id"];
 
-    {
-        let mut s = store.lock().await;
-        for id in &ids {
-            s.record(make_memory(id, "some content", MemoryKind::User, 1.0, None, None))
-                .await
-                .expect("record");
-        }
+    for id in &ids {
+        store.record(make_memory(id, "some content", MemoryKind::User, 1.0, None, None))
+            .await
+            .expect("record");
     }
 
-    let result = render_index(&store, IndexBudget::default())
+    let result = render_index(store.as_ref(), IndexBudget::default())
         .await
         .expect("render_index");
 
@@ -460,10 +435,10 @@ async fn render_skips_decayed_memories() {
         .await
         .expect("decay");
 
-    // Now wrap in Arc<Mutex<dyn MemoryStore>> for the render call.
-    let store: Arc<Mutex<dyn MemoryStore>> = Arc::new(Mutex::new(bare));
+    // Now wrap in Arc<dyn MemoryStore> for the render call.
+    let store: Arc<dyn MemoryStore> = Arc::new(bare);
 
-    let result = render_index(&store, IndexBudget::default())
+    let result = render_index(store.as_ref(), IndexBudget::default())
         .await
         .expect("render_index");
 
@@ -484,21 +459,18 @@ async fn read_existing_id_returns_full_body() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut s = store.lock().await;
-        s.record(make_memory(
-            "read-me",
-            "full body content",
-            MemoryKind::User,
-            1.0,
-            None,
-            None,
-        ))
-        .await
-        .expect("record");
-    }
+    store.record(make_memory(
+        "read-me",
+        "full body content",
+        MemoryKind::User,
+        1.0,
+        None,
+        None,
+    ))
+    .await
+    .expect("record");
 
-    let result = read_memory(&store, "read-me")
+    let result = read_memory(store.as_ref(),"read-me")
         .await
         .expect("read_memory must not error");
 
@@ -517,7 +489,7 @@ async fn read_unknown_id_returns_none() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    let result = read_memory(&store, "nonexistent_id")
+    let result = read_memory(store.as_ref(),"nonexistent_id")
         .await
         .expect("read_memory must not error on unknown id");
 
@@ -536,29 +508,23 @@ async fn read_after_forget_returns_none() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut s = store.lock().await;
-        let mut m = make_memory("forget-me", "to be forgotten", MemoryKind::User, 1.0, None, None);
-        m.tags = vec!["sentinel-forget-tag".to_string()];
-        s.record(m).await.expect("record");
-    }
+    let mut m = make_memory("forget-me", "to be forgotten", MemoryKind::User, 1.0, None, None);
+    m.tags = vec!["sentinel-forget-tag".to_string()];
+    store.record(m).await.expect("record");
 
     // Verify it exists first.
-    let before = read_memory(&store, "forget-me")
+    let before = read_memory(store.as_ref(),"forget-me")
         .await
         .expect("read_memory before forget");
     assert!(before.is_some(), "memory must exist before forget");
 
     // Forget by the sentinel tag.
-    {
-        let mut s = store.lock().await;
-        s.forget(&MemoryFilter::Tag("sentinel-forget-tag".to_string()))
-            .await
-            .expect("forget");
-    }
+    store.forget(&MemoryFilter::Tag("sentinel-forget-tag".to_string()))
+        .await
+        .expect("forget");
 
     // Now read_memory must return None.
-    let after = read_memory(&store, "forget-me")
+    let after = read_memory(store.as_ref(),"forget-me")
         .await
         .expect("read_memory after forget");
     assert!(
@@ -600,9 +566,9 @@ async fn read_decayed_memory_returns_none() {
         .expect("decay");
 
     // Wrap and call read_memory.
-    let store: Arc<Mutex<dyn MemoryStore>> = Arc::new(Mutex::new(bare));
+    let store: Arc<dyn MemoryStore> = Arc::new(bare);
 
-    let result = read_memory(&store, "will-decay")
+    let result = read_memory(store.as_ref(),"will-decay")
         .await
         .expect("read_memory must not error");
 

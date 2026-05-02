@@ -23,7 +23,6 @@ use std::sync::Arc;
 
 use hone_memory::{InMemoryStore, Memory, MemoryKind, MemoryStore};
 use memory_cmd::{MemoryCmd, run};
-use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
 // Helpers (same pattern as memory_cmd_test.rs)
@@ -42,15 +41,15 @@ fn make_memory(id: &str, content: &str, kind: MemoryKind, created_at: u64) -> Me
     }
 }
 
-async fn store_with_memories(memories: Vec<Memory>) -> Arc<Mutex<dyn MemoryStore>> {
+async fn store_with_memories(memories: Vec<Memory>) -> Arc<dyn MemoryStore> {
     let mut inner = InMemoryStore::new();
     for m in memories {
         inner.record(m).await.expect("record");
     }
-    Arc::new(Mutex::new(inner)) as Arc<Mutex<dyn MemoryStore>>
+    Arc::new(inner) as Arc<dyn MemoryStore>
 }
 
-fn capture(cmd: MemoryCmd, store: Arc<Mutex<dyn MemoryStore>>) -> anyhow::Result<String> {
+fn capture(cmd: MemoryCmd, store: Arc<dyn MemoryStore>) -> anyhow::Result<String> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

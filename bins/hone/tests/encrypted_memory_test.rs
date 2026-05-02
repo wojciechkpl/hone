@@ -43,7 +43,6 @@ use std::sync::Arc;
 
 use hone_memory::{Memory, MemoryKind, MemoryQuery, MemoryStore, SqliteStore};
 use memory_init::build_memory_store;
-use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
 // Shared helper — construct a bare Memory record for insertion.
@@ -83,13 +82,11 @@ async fn build_memory_store_without_passphrase_returns_plain_sqlite() {
         let sqlite = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("open sqlite");
-        let store: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite, None)
+        let store: Arc<dyn MemoryStore> = build_memory_store(sqlite, None)
             .await
             .expect("build_memory_store None");
 
         store
-            .lock()
-            .await
             .record(make_memory("plain-id", "hello-plaintext"))
             .await
             .expect("record");
@@ -100,13 +97,11 @@ async fn build_memory_store_without_passphrase_returns_plain_sqlite() {
         let sqlite2 = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("reopen sqlite");
-        let store2: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite2, None)
+        let store2: Arc<dyn MemoryStore> = build_memory_store(sqlite2, None)
             .await
             .expect("build_memory_store None (second)");
 
         let results = store2
-            .lock()
-            .await
             .recall(&MemoryQuery {
                 text: "hello-plaintext".to_string(),
                 limit: 10,
@@ -148,13 +143,11 @@ async fn build_memory_store_with_passphrase_wraps_encrypted() {
         let sqlite = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("open sqlite");
-        let store: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite, Some("hunter2"))
+        let store: Arc<dyn MemoryStore> = build_memory_store(sqlite, Some("hunter2"))
             .await
             .expect("build_memory_store Some");
 
         store
-            .lock()
-            .await
             .record(make_memory("enc-id", "secret-payload-xyz"))
             .await
             .expect("record through encrypted store");
@@ -165,14 +158,12 @@ async fn build_memory_store_with_passphrase_wraps_encrypted() {
         let sqlite2 = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("reopen sqlite plain");
-        let store2: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite2, None)
+        let store2: Arc<dyn MemoryStore> = build_memory_store(sqlite2, None)
             .await
             .expect("build_memory_store None on encrypted db");
 
         // Fetch everything so we catch any partially-matching row.
         let results = store2
-            .lock()
-            .await
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: 100,
@@ -210,13 +201,11 @@ async fn build_memory_store_roundtrips_with_same_passphrase() {
         let sqlite = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("open sqlite");
-        let store: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite, Some("hunter2"))
+        let store: Arc<dyn MemoryStore> = build_memory_store(sqlite, Some("hunter2"))
             .await
             .expect("build encrypted store (first open)");
 
         store
-            .lock()
-            .await
             .record(make_memory("rt-id", "secret-payload-xyz"))
             .await
             .expect("record");
@@ -227,13 +216,11 @@ async fn build_memory_store_roundtrips_with_same_passphrase() {
         let sqlite2 = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("reopen sqlite");
-        let store2: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite2, Some("hunter2"))
+        let store2: Arc<dyn MemoryStore> = build_memory_store(sqlite2, Some("hunter2"))
             .await
             .expect("build encrypted store (second open)");
 
         let results = store2
-            .lock()
-            .await
             .recall(&MemoryQuery {
                 text: "secret-payload-xyz".to_string(),
                 limit: 10,
@@ -277,13 +264,11 @@ async fn build_memory_store_fails_with_wrong_passphrase() {
         let sqlite = SqliteStore::open_with_decay_interval(&db_path, 0)
             .await
             .expect("open sqlite");
-        let store: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite, Some("hunter2"))
+        let store: Arc<dyn MemoryStore> = build_memory_store(sqlite, Some("hunter2"))
             .await
             .expect("build encrypted store");
 
         store
-            .lock()
-            .await
             .record(make_memory("wp-id", "sensitive content"))
             .await
             .expect("record");
@@ -293,14 +278,12 @@ async fn build_memory_store_fails_with_wrong_passphrase() {
     let sqlite2 = SqliteStore::open_with_decay_interval(&db_path, 0)
         .await
         .expect("reopen sqlite");
-    let store2: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite2, Some("wrong-passphrase"))
+    let store2: Arc<dyn MemoryStore> = build_memory_store(sqlite2, Some("wrong-passphrase"))
         .await
         .expect("build with wrong passphrase must succeed (salt sentinel is present)");
 
     // Recall must fail because the ciphertext cannot be decrypted with the wrong key.
     let result = store2
-        .lock()
-        .await
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 10,
@@ -335,22 +318,18 @@ async fn build_memory_store_with_empty_passphrase_string_still_works() {
         .expect("open sqlite");
 
     // This must not return Err — empty string is a valid (if weak) passphrase.
-    let store: Arc<Mutex<dyn MemoryStore>> = build_memory_store(sqlite, Some("")).await.expect(
+    let store: Arc<dyn MemoryStore> = build_memory_store(sqlite, Some("")).await.expect(
         "build_memory_store with Some(\"\") must succeed; \
              no extra validation should reject an empty passphrase",
     );
 
     // Insert and recall to prove the store is usable, not just constructed.
     store
-        .lock()
-        .await
         .record(make_memory("ep-id", "content with empty passphrase"))
         .await
         .expect("record through empty-passphrase encrypted store");
 
     let results = store
-        .lock()
-        .await
         .recall(&MemoryQuery {
             text: "content with empty passphrase".to_string(),
             limit: 5,

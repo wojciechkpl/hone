@@ -313,7 +313,7 @@ impl SqliteStore {
             .await
             .map_err(to_io_err)?;
 
-        let mut store = Self { pool };
+        let store = Self { pool };
 
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -366,7 +366,7 @@ impl SqliteStore {
 
 #[async_trait]
 impl MemoryStore for SqliteStore {
-    async fn record(&mut self, memory: Memory) -> Result<(), MemoryError> {
+    async fn record(&self, memory: Memory) -> Result<(), MemoryError> {
         let tags_json = serde_json::to_string(&memory.tags)?;
         let created_at = memory.created_at as i64;
         let decay_at = memory.decay_at.map(|t| t as i64);
@@ -514,7 +514,7 @@ impl MemoryStore for SqliteStore {
         row.as_ref().map(row_to_memory).transpose()
     }
 
-    async fn forget(&mut self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
+    async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
         let rows_affected = match filter {
             MemoryFilter::Tag(tag) => {
                 // Tags are stored as a JSON array, e.g. ["project:foo","bar"].
@@ -559,7 +559,7 @@ impl MemoryStore for SqliteStore {
         Ok(rows_affected as u32)
     }
 
-    async fn decay(&mut self, factor: f64, now: u64) -> Result<u32, MemoryError> {
+    async fn decay(&self, factor: f64, now: u64) -> Result<u32, MemoryError> {
         // Multiply all weights by factor.
         sqlx::query("UPDATE memories SET weight = weight * ?1")
             .bind(factor)
@@ -658,7 +658,7 @@ mod tests {
 
         // First instance: record a memory.
         {
-            let mut store = SqliteStore::open(&db_path)
+            let store = SqliteStore::open(&db_path)
                 .await
                 .expect("open first instance");
             store
@@ -691,7 +691,7 @@ mod tests {
     /// An empty query should return all stored memories (up to limit).
     #[tokio::test]
     async fn empty_query_returns_all() {
-        let mut store = SqliteStore::in_memory().await.expect("in_memory");
+        let store = SqliteStore::in_memory().await.expect("in_memory");
         store
             .record(make_memory("a", "alpha"))
             .await

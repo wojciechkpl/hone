@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use hone_memory::{EncryptedStore, MemoryStore, SqliteStore};
-use tokio::sync::Mutex;
 
 /// Build a [`MemoryStore`] trait object, optionally wrapped with encryption.
 ///
@@ -23,12 +22,12 @@ use tokio::sync::Mutex;
 pub async fn build_memory_store(
     sqlite: SqliteStore,
     passphrase: Option<&str>,
-) -> Result<Arc<Mutex<dyn MemoryStore>>> {
+) -> Result<Arc<dyn MemoryStore>> {
     match passphrase {
-        None => Ok(Arc::new(Mutex::new(sqlite))),
+        None => Ok(Arc::new(sqlite)),
         Some(pp) => {
             let enc = EncryptedStore::new(sqlite, pp).await?;
-            Ok(Arc::new(Mutex::new(enc)))
+            Ok(Arc::new(enc))
         }
     }
 }

@@ -54,7 +54,6 @@ use hone_tools::{Tool, ToolContext, ToolInput};
 use memory_read_tool::MemoryReadTool;
 use serde_json::{Value, json};
 use tempfile::NamedTempFile;
-use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,12 +80,12 @@ fn make_memory(id: &str, content: &str, kind: MemoryKind, description: Option<&s
 }
 
 /// Open a file-backed `SqliteStore` (interval=0 skips 24h decay gating) and
-/// wrap as `Arc<Mutex<dyn MemoryStore>>`.  The caller must keep `tmp` alive.
-async fn open_store(tmp: &NamedTempFile) -> Arc<Mutex<dyn MemoryStore>> {
+/// wrap as `Arc<dyn MemoryStore>`.  The caller must keep `tmp` alive.
+async fn open_store(tmp: &NamedTempFile) -> Arc<dyn MemoryStore> {
     let store = SqliteStore::open_with_decay_interval(tmp.path(), 0)
         .await
         .expect("open SqliteStore");
-    Arc::new(Mutex::new(store)) as Arc<Mutex<dyn MemoryStore>>
+    Arc::new(store) as Arc<dyn MemoryStore>
 }
 
 /// Build a minimal `ToolContext`.  The `memory_read` tool never touches the
@@ -109,18 +108,15 @@ async fn memory_read_returns_body_for_known_id() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut guard = store.lock().await;
-        guard
-            .record(make_memory(
-                "mem-001",
-                "the full body text",
-                MemoryKind::Feedback,
-                None,
-            ))
-            .await
-            .expect("record");
-    }
+    store
+        .record(make_memory(
+            "mem-001",
+            "the full body text",
+            MemoryKind::Feedback,
+            None,
+        ))
+        .await
+        .expect("record");
 
     let tool = MemoryReadTool::new(Arc::clone(&store));
     let ctx = make_ctx();
@@ -227,28 +223,25 @@ async fn memory_read_returns_found_false_for_decayed_id() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut guard = store.lock().await;
-        // decay_at = 1 means this memory expired at Unix epoch + 1 second.
-        // Call decay(0.0, now) to remove all memories whose decay_at <= now.
-        let expired = Memory {
-            id: "mem-expired".to_string(),
-            content: "will decay".to_string(),
-            tags: vec![],
-            weight: 1.0,
-            created_at: 1,
-            decay_at: Some(1),
-            kind: MemoryKind::Conversation,
-            description: None,
-        };
-        guard.record(expired).await.expect("record");
-        // Decay with factor 0.0 and a large `now` so everything with a
-        // decay_at <= now is purged.
-        guard
-            .decay(0.0, now_secs())
-            .await
-            .expect("decay must succeed");
-    }
+    // decay_at = 1 means this memory expired at Unix epoch + 1 second.
+    // Call decay(0.0, now) to remove all memories whose decay_at <= now.
+    let expired = Memory {
+        id: "mem-expired".to_string(),
+        content: "will decay".to_string(),
+        tags: vec![],
+        weight: 1.0,
+        created_at: 1,
+        decay_at: Some(1),
+        kind: MemoryKind::Conversation,
+        description: None,
+    };
+    store.record(expired).await.expect("record");
+    // Decay with factor 0.0 and a large `now` so everything with a
+    // decay_at <= now is purged.
+    store
+        .decay(0.0, now_secs())
+        .await
+        .expect("decay must succeed");
 
     let tool = MemoryReadTool::new(Arc::clone(&store));
     let ctx = make_ctx();
@@ -276,18 +269,15 @@ async fn memory_read_includes_description_when_present() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut guard = store.lock().await;
-        guard
-            .record(make_memory(
-                "mem-desc",
-                "body text",
-                MemoryKind::User,
-                Some("the why"),
-            ))
-            .await
-            .expect("record");
-    }
+    store
+        .record(make_memory(
+            "mem-desc",
+            "body text",
+            MemoryKind::User,
+            Some("the why"),
+        ))
+        .await
+        .expect("record");
 
     let tool = MemoryReadTool::new(Arc::clone(&store));
     let ctx = make_ctx();
@@ -311,18 +301,15 @@ async fn memory_read_nulls_description_when_absent() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    {
-        let mut guard = store.lock().await;
-        guard
-            .record(make_memory(
-                "mem-nodesc",
-                "body text",
-                MemoryKind::Project,
-                None,
-            ))
-            .await
-            .expect("record");
-    }
+    store
+        .record(make_memory(
+            "mem-nodesc",
+            "body text",
+            MemoryKind::Project,
+            None,
+        ))
+        .await
+        .expect("record");
 
     let tool = MemoryReadTool::new(Arc::clone(&store));
     let ctx = make_ctx();

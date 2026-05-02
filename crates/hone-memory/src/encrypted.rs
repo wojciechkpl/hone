@@ -78,8 +78,8 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
     ///   required — see module doc).
     /// - Argon2 key derivation fails.
     /// - The cipher cannot be initialised.
-    pub async fn new(mut inner: S, passphrase: &str) -> Result<Self, MemoryError> {
-        let salt = load_or_init_salt(&mut inner).await?;
+    pub async fn new(inner: S, passphrase: &str) -> Result<Self, MemoryError> {
+        let salt = load_or_init_salt(&inner).await?;
         let key = derive_key(passphrase, &salt)?;
         let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|e| MemoryError::Io(std::io::Error::other(format!("cipher init: {e}"))))?;
@@ -155,7 +155,7 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
 
 #[async_trait]
 impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
-    async fn record(&mut self, memory: Memory) -> Result<(), MemoryError> {
+    async fn record(&self, memory: Memory) -> Result<(), MemoryError> {
         let encrypted = self.encrypt_memory(memory)?;
         self.inner.record(encrypted).await
     }
@@ -196,11 +196,11 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
         Ok(results)
     }
 
-    async fn forget(&mut self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
+    async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
         self.inner.forget(filter).await
     }
 
-    async fn decay(&mut self, factor: f64, now: u64) -> Result<u32, MemoryError> {
+    async fn decay(&self, factor: f64, now: u64) -> Result<u32, MemoryError> {
         self.inner.decay(factor, now).await
     }
 
@@ -249,7 +249,7 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
 /// Returns an error if encrypted records exist but the sentinel is absent
 /// (this indicates the store was created with the old fixed-salt code and the
 /// sentinel was never written — migration is required).
-async fn load_or_init_salt(store: &mut impl MemoryStore) -> Result<Vec<u8>, MemoryError> {
+async fn load_or_init_salt(store: &impl MemoryStore) -> Result<Vec<u8>, MemoryError> {
     use base64::Engine;
 
     let sentinel_query = MemoryQuery {
@@ -332,7 +332,7 @@ mod tests {
     #[tokio::test]
     async fn test_round_trip_encrypt_decrypt() {
         let inner = InMemoryStore::new();
-        let mut store = EncryptedStore::new(inner, "test-passphrase")
+        let store = EncryptedStore::new(inner, "test-passphrase")
             .await
             .expect("create encrypted store");
 
@@ -366,7 +366,7 @@ mod tests {
     #[tokio::test]
     async fn test_inner_store_has_encrypted_content() {
         let inner = InMemoryStore::new();
-        let mut store = EncryptedStore::new(inner, "my-secret")
+        let store = EncryptedStore::new(inner, "my-secret")
             .await
             .expect("create encrypted store");
 
@@ -411,7 +411,7 @@ mod tests {
     #[tokio::test]
     async fn test_wrong_passphrase_fails() {
         let inner = InMemoryStore::new();
-        let mut store = EncryptedStore::new(inner, "correct-passphrase")
+        let store = EncryptedStore::new(inner, "correct-passphrase")
             .await
             .expect("create encrypted store");
 
@@ -474,10 +474,10 @@ mod tests {
         let inner_a = InMemoryStore::new();
         let inner_b = InMemoryStore::new();
 
-        let mut store_a = EncryptedStore::new(inner_a, "hunter2")
+        let store_a = EncryptedStore::new(inner_a, "hunter2")
             .await
             .expect("store A");
-        let mut store_b = EncryptedStore::new(inner_b, "hunter2")
+        let store_b = EncryptedStore::new(inner_b, "hunter2")
             .await
             .expect("store B");
 
@@ -553,7 +553,7 @@ mod tests {
         let inner = InMemoryStore::new();
 
         // First open: write a record.
-        let mut store1 = EncryptedStore::new(inner, "correct-horse-battery-staple")
+        let store1 = EncryptedStore::new(inner, "correct-horse-battery-staple")
             .await
             .expect("first open");
         store1
@@ -594,7 +594,7 @@ mod tests {
     /// Missing sentinel with existing encrypted records must return an error.
     #[tokio::test]
     async fn test_missing_sentinel_with_encrypted_records_errors() {
-        let mut inner = InMemoryStore::new();
+        let inner = InMemoryStore::new();
 
         // Manually insert a record that looks encrypted (no sentinel).
         inner

@@ -41,7 +41,6 @@ use std::sync::Arc;
 
 use hone_memory::{InMemoryStore, Memory, MemoryKind, MemoryQuery, MemoryStore};
 use memory_cmd::{MemoryCmd, run};
-use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -67,15 +66,15 @@ fn make_memory(
     }
 }
 
-async fn store_with_memories(memories: Vec<Memory>) -> Arc<Mutex<dyn MemoryStore>> {
+async fn store_with_memories(memories: Vec<Memory>) -> Arc<dyn MemoryStore> {
     let mut inner = InMemoryStore::new();
     for m in memories {
         inner.record(m).await.expect("record");
     }
-    Arc::new(Mutex::new(inner)) as Arc<Mutex<dyn MemoryStore>>
+    Arc::new(inner) as Arc<dyn MemoryStore>
 }
 
-fn capture(cmd: MemoryCmd, store: Arc<Mutex<dyn MemoryStore>>) -> anyhow::Result<String> {
+fn capture(cmd: MemoryCmd, store: Arc<dyn MemoryStore>) -> anyhow::Result<String> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -432,8 +431,6 @@ fn forget_by_tag_returns_removed_count() {
         .unwrap()
         .block_on(async {
             store
-                .lock()
-                .await
                 .recall(&MemoryQuery {
                     text: String::new(),
                     limit: 100,
@@ -508,8 +505,6 @@ fn forget_by_kind_returns_removed_count() {
         .unwrap()
         .block_on(async {
             store
-                .lock()
-                .await
                 .recall(&MemoryQuery {
                     text: String::new(),
                     limit: 100,
@@ -597,8 +592,6 @@ fn forget_by_before_removes_old_records() {
         .unwrap()
         .block_on(async {
             store
-                .lock()
-                .await
                 .recall(&MemoryQuery {
                     text: String::new(),
                     limit: 100,

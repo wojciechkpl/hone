@@ -8,10 +8,6 @@
 //! are live: decayed or forgotten memories will not appear because the store
 //! filters them before `recall` returns.
 
-use std::sync::Arc;
-
-use tokio::sync::Mutex;
-
 use hone_memory::{Memory, MemoryError, MemoryKind, MemoryQuery, MemoryStore};
 
 // ---------------------------------------------------------------------------
@@ -118,20 +114,17 @@ fn render_entry(memory: &Memory) -> String {
 /// Output is capped to `budget.max_entries` entry lines and `budget.max_chars`
 /// total characters; overflow is indicated by a trailing truncation message.
 pub async fn render_index(
-    store: &Arc<Mutex<dyn MemoryStore>>,
+    store: &dyn MemoryStore,
     budget: IndexBudget,
 ) -> Result<String, MemoryError> {
-    // Fetch all live memories in one lock acquisition.
-    let memories = {
-        let guard = store.lock().await;
-        guard
-            .recall(&MemoryQuery {
-                text: String::new(),
-                limit: usize::MAX,
-                kind: None,
-            })
-            .await?
-    };
+    // Fetch all live memories directly — no outer lock needed.
+    let memories = store
+        .recall(&MemoryQuery {
+            text: String::new(),
+            limit: usize::MAX,
+            kind: None,
+        })
+        .await?;
 
     if memories.is_empty() {
         return Ok(String::new());
@@ -238,21 +231,16 @@ pub async fn render_index(
 /// Returns `Ok(Some(memory))` if the id is found, `Ok(None)` if the memory
 /// does not exist or has been decayed/forgotten.
 pub async fn read_memory(
-    store: &Arc<Mutex<dyn MemoryStore>>,
+    store: &dyn MemoryStore,
     id: &str,
 ) -> Result<Option<Memory>, MemoryError> {
-    // Release the lock immediately after recall returns so that concurrent
-    // writes and recalls are not blocked while we scan the returned Vec.
-    let memories = {
-        let guard = store.lock().await;
-        guard
-            .recall(&MemoryQuery {
-                text: String::new(),
-                limit: usize::MAX,
-                kind: None,
-            })
-            .await?
-    };
+    let memories = store
+        .recall(&MemoryQuery {
+            text: String::new(),
+            limit: usize::MAX,
+            kind: None,
+        })
+        .await?;
 
     Ok(memories.into_iter().find(|m| m.id == id))
 }

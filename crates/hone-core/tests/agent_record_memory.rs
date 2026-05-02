@@ -21,15 +21,14 @@ use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::MockProvider;
 use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
-use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
 // Helper: build a minimal AgentConfig with an InMemoryStore attached.
-// Returns (Agent, Arc<Mutex<InMemoryStore>>) so tests can inspect the store.
+// Returns (Agent, Arc<dyn MemoryStore>) so tests can inspect the store directly.
 // ---------------------------------------------------------------------------
 
-fn make_agent_with_store() -> (Agent, Arc<Mutex<InMemoryStore>>) {
-    let store = Arc::new(Mutex::new(InMemoryStore::new()));
+fn make_agent_with_store() -> (Agent, Arc<dyn hone_memory::MemoryStore>) {
+    let store: Arc<dyn hone_memory::MemoryStore> = Arc::new(InMemoryStore::new());
 
     let provider = Arc::new(MockProvider::new(vec!["ok".to_owned()]));
 
@@ -50,7 +49,7 @@ fn make_agent_with_store() -> (Agent, Arc<Mutex<InMemoryStore>>) {
             cache_creation_per_million: None,
         },
         working_dir: std::path::PathBuf::from("/tmp"),
-        memory_store: Some(store.clone() as Arc<Mutex<dyn hone_memory::MemoryStore>>),
+        memory_store: Some(Arc::clone(&store)),
         retry_config: RetryConfig::default(),
         index: None,
         inject_context: false,
@@ -96,8 +95,6 @@ async fn noisy_turn_does_not_write_memory() {
 
     // Store must remain empty.
     let recalled = store
-        .lock()
-        .await
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
@@ -138,8 +135,6 @@ async fn correction_turn_writes_feedback_memory() {
     agent.record_memory(candidate).await;
 
     let recalled = store
-        .lock()
-        .await
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,
@@ -194,8 +189,6 @@ async fn dup_correction_upserts_not_inserts() {
     agent.record_memory(candidate2).await;
 
     let recalled = store
-        .lock()
-        .await
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 100,

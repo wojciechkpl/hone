@@ -57,7 +57,7 @@ fn trigram_jaccard(a: &str, b: &str) -> f64 {
 
 #[async_trait]
 pub trait MemoryStore: Send + Sync {
-    async fn record(&mut self, memory: Memory) -> Result<(), MemoryError>;
+    async fn record(&self, memory: Memory) -> Result<(), MemoryError>;
 
     /// Retrieve memories matching `query`.
     ///
@@ -71,11 +71,11 @@ pub trait MemoryStore: Send + Sync {
     /// memory has that id. Implementations MUST NOT do a full table scan.
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError>;
 
-    async fn forget(&mut self, filter: &MemoryFilter) -> Result<u32, MemoryError>;
+    async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError>;
 
     /// Multiply all weights by `factor`. Remove memories whose `decay_at` is
     /// `Some(t)` with `t <= now`. Returns the count of memories removed.
-    async fn decay(&mut self, factor: f64, now: u64) -> Result<u32, MemoryError>;
+    async fn decay(&self, factor: f64, now: u64) -> Result<u32, MemoryError>;
 
     async fn export(&self, path: &Path) -> Result<(), MemoryError>;
 
@@ -119,3 +119,4 @@ pub trait MemoryStore: Send + Sync {
         Ok(best.map(|(_, m)| m))
     }
 }
+

@@ -6,7 +6,6 @@ use clap::Subcommand;
 use hone_memory::{MemoryFilter, MemoryKind, MemoryQuery, MemoryStore};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
 // Public enum — the contract pinned by `bins/hone/tests/memory_cmd_test.rs`.
@@ -102,15 +101,14 @@ fn truncate(s: &str, max_chars: usize) -> String {
 
 pub async fn run(
     cmd: MemoryCmd,
-    store: Arc<Mutex<dyn MemoryStore>>,
+    store: Arc<dyn MemoryStore>,
     out: &mut dyn Write,
 ) -> Result<()> {
     match cmd {
         MemoryCmd::Ls { limit, kind } => {
             let effective_limit = limit.unwrap_or(50);
             let target_kind = kind.as_deref().map(kind_from_str).transpose()?;
-            let locked = store.lock().await;
-            let memories = locked
+            let memories = store
                 .recall(&MemoryQuery {
                     text: String::new(),
                     limit: effective_limit,
@@ -131,14 +129,13 @@ pub async fn run(
         }
 
         MemoryCmd::Show { id } => {
-            let locked = store.lock().await;
             // Try exact match via recall_by_id (O(log n)).  If that misses,
             // fall back to a bounded prefix scan — handles 8-char prefixes
             // shown in `memory ls` as well as any future non-uuid id format.
-            let memory = if let Some(m) = locked.recall_by_id(&id).await? {
+            let memory = if let Some(m) = store.recall_by_id(&id).await? {
                 m
             } else {
-                let all = locked
+                let all = store
                     .recall(&MemoryQuery {
                         text: String::new(),
                         limit: 1000,
@@ -193,8 +190,7 @@ pub async fn run(
                 MemoryFilter::Before(epoch_secs)
             };
 
-            let mut locked = store.lock().await;
-            let n = locked.forget(&filter).await?;
+            let n = store.forget(&filter).await?;
             writeln!(out, "Removed {n}")?;
 
             Ok(())

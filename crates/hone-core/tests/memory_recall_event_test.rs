@@ -22,7 +22,7 @@ use hone_proto::{
 use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
-use tokio::sync::{Mutex as TokioMutex, mpsc};
+use tokio::sync::mpsc;
 
 // ---------------------------------------------------------------------------
 // Minimal mock provider: always returns a single text token then Done.
@@ -92,8 +92,8 @@ async fn memory_recalled_event_uses_friendly_key_not_uuid() {
     // in agent_turn.rs).
     let query_text = "known label topic";
 
-    let store = {
-        let mut s = InMemoryStore::new();
+    let store: Arc<dyn hone_memory::MemoryStore> = {
+        let s = InMemoryStore::new();
         s.record(Memory {
             // Use a real-looking UUIDv7 so the test proves it is NOT returned.
             id: "01935b0c-aabb-7000-8000-000000000001".to_owned(),
@@ -107,7 +107,7 @@ async fn memory_recalled_event_uses_friendly_key_not_uuid() {
         })
         .await
         .unwrap();
-        s
+        Arc::new(s)
     };
 
     let config = AgentConfig {
@@ -127,7 +127,7 @@ async fn memory_recalled_event_uses_friendly_key_not_uuid() {
             cache_creation_per_million: None,
         },
         working_dir: std::path::PathBuf::from("/tmp"),
-        memory_store: Some(Arc::new(TokioMutex::new(store)) as Arc<TokioMutex<dyn hone_memory::MemoryStore>>),
+        memory_store: Some(Arc::clone(&store)),
         retry_config: hone_core::RetryConfig::default(),
         index: None,
         inject_context: false,

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use tokio::sync::RwLock;
 
 use crate::bm25::{Bm25Index, Bm25Params};
 use crate::error::MemoryError;
@@ -9,13 +11,13 @@ use crate::store::MemoryStore;
 use crate::types::{Memory, MemoryFilter, MemoryQuery};
 
 pub struct InMemoryStore {
-    memories: HashMap<String, Memory>,
+    memories: Arc<RwLock<HashMap<String, Memory>>>,
 }
 
 impl InMemoryStore {
     pub fn new() -> Self {
         Self {
-            memories: HashMap::new(),
+            memories: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -28,8 +30,8 @@ impl Default for InMemoryStore {
 
 #[async_trait]
 impl MemoryStore for InMemoryStore {
-    async fn record(&mut self, memory: Memory) -> Result<(), MemoryError> {
-        self.memories.insert(memory.id.clone(), memory);
+    async fn record(&self, memory: Memory) -> Result<(), MemoryError> {
+        self.memories.write().await.insert(memory.id.clone(), memory);
         Ok(())
     }
 
@@ -37,7 +39,8 @@ impl MemoryStore for InMemoryStore {
         // Collect memories into a stable-ordered Vec so that BM25 doc indices
         // correspond to positions in this slice.  Sort by id to make doc-index
         // assignment deterministic across runs (HashMap iteration order is not).
-        let mut all: Vec<&Memory> = self.memories.values().collect();
+        let guard = self.memories.read().await;
+        let mut all: Vec<&Memory> = guard.values().collect();
         all.sort_by(|a, b| a.id.cmp(&b.id));
 
         // Apply kind filter BEFORE limit (and before BM25 scoring).
@@ -96,45 +99,49 @@ impl MemoryStore for InMemoryStore {
     }
 
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
-        Ok(self.memories.get(id).cloned())
+        Ok(self.memories.read().await.get(id).cloned())
     }
 
-    async fn forget(&mut self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
-        let before = self.memories.len();
+    async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
+        let mut guard = self.memories.write().await;
+        let before = guard.len();
         match filter {
             MemoryFilter::Tag(tag) => {
-                self.memories.retain(|_, m| !m.tags.contains(tag));
+                guard.retain(|_, m| !m.tags.contains(tag));
             }
             MemoryFilter::Before(ts) => {
-                self.memories.retain(|_, m| m.created_at >= *ts);
+                guard.retain(|_, m| m.created_at >= *ts);
             }
             MemoryFilter::After(ts) => {
-                self.memories.retain(|_, m| m.created_at <= *ts);
+                guard.retain(|_, m| m.created_at <= *ts);
             }
             MemoryFilter::Kind(kind) => {
-                self.memories.retain(|_, m| m.kind != *kind);
+                guard.retain(|_, m| m.kind != *kind);
             }
         }
-        let removed = before.saturating_sub(self.memories.len()) as u32;
+        let removed = before.saturating_sub(guard.len()) as u32;
         Ok(removed)
     }
 
-    async fn decay(&mut self, factor: f64, now: u64) -> Result<u32, MemoryError> {
-        let before = self.memories.len();
+    async fn decay(&self, factor: f64, now: u64) -> Result<u32, MemoryError> {
+        let mut guard = self.memories.write().await;
+        let before = guard.len();
 
         // Apply weight decay and remove expired memories in one pass.
-        self.memories.retain(|_, m| {
+        guard.retain(|_, m| {
             m.weight *= factor;
             !matches!(m.decay_at, Some(t) if t <= now)
         });
 
-        let removed = before.saturating_sub(self.memories.len()) as u32;
+        let removed = before.saturating_sub(guard.len()) as u32;
         Ok(removed)
     }
 
     async fn export(&self, path: &Path) -> Result<(), MemoryError> {
-        let memories: Vec<&Memory> = self.memories.values().collect();
+        let guard = self.memories.read().await;
+        let memories: Vec<&Memory> = guard.values().collect();
         let json = serde_json::to_string_pretty(&memories)?;
+        drop(guard);
         tokio::fs::write(path, json).await?;
         Ok(())
     }
@@ -143,6 +150,8 @@ impl MemoryStore for InMemoryStore {
         let bytes = tokio::fs::read(path).await?;
         let memories: Vec<Memory> = serde_json::from_slice(&bytes)?;
         let map = memories.into_iter().map(|m| (m.id.clone(), m)).collect();
-        Ok(Self { memories: map })
+        Ok(Self {
+            memories: Arc::new(RwLock::new(map)),
+        })
     }
 }

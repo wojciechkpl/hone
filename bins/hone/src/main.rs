@@ -52,7 +52,7 @@ use hone_tui::render::root;
 use hone_tui::{App, AppState};
 use hone_tui::{execute_shell_escape, run_interactive_blocking};
 use ratatui::{Terminal, backend::CrosstermBackend};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::mpsc;
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing via clap
@@ -671,7 +671,7 @@ async fn detect_lsp_bridge() -> Arc<dyn LspBridge> {
 fn build_tool_registry(
     lsp: Arc<dyn LspBridge>,
     index: Option<Arc<SqliteIndex>>,
-    memory: Option<Arc<Mutex<dyn MemoryStore>>>,
+    memory: Option<Arc<dyn MemoryStore>>,
     cache: Option<Arc<ToolResultCache>>,
     mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
 ) -> ToolRegistry {
@@ -787,7 +787,7 @@ fn build_agent_config(
     system_prompt: String,
     lsp: Arc<dyn LspBridge>,
     index: Option<Arc<SqliteIndex>>,
-    memory_store: Option<Arc<Mutex<dyn MemoryStore>>>,
+    memory_store: Option<Arc<dyn MemoryStore>>,
     tool_cache: Option<Arc<ToolResultCache>>,
     mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
     no_inject_flag: bool,
@@ -1494,8 +1494,8 @@ fn data_dir() -> PathBuf {
 
 /// Return type for `init_persistence`.
 struct PersistenceHandles {
-    /// The opened memory store, wrapped for shared async mutation.
-    memory: Option<Arc<Mutex<dyn MemoryStore>>>,
+    /// The opened memory store.
+    memory: Option<Arc<dyn MemoryStore>>,
     /// The opened symbol index, shared with the tool registry.
     index: Option<Arc<SqliteIndex>>,
     /// Keeps the file-watcher task alive.  Must be held for the process lifetime.
@@ -1536,7 +1536,7 @@ async fn init_persistence(
 
     // Memory store
     let memory_path = dir.join("memory.db");
-    let memory: Option<Arc<Mutex<dyn MemoryStore>>> = match SqliteStore::open(&memory_path).await {
+    let memory: Option<Arc<dyn MemoryStore>> = match SqliteStore::open(&memory_path).await {
         Ok(store) => {
             tracing::info!(path = %memory_path.display(), "memory store initialised");
             let passphrase_ref = memory_passphrase.as_deref();
@@ -1764,8 +1764,8 @@ async fn main() -> Result<()> {
         if let Err(e) = std::fs::create_dir_all(data_dir()) {
             eprintln!("warning: could not create data dir: {e}");
         }
-        let store: Arc<Mutex<dyn MemoryStore>> = match SqliteStore::open(&memory_path).await {
-            Ok(s) => Arc::new(Mutex::new(s)),
+        let store: Arc<dyn MemoryStore> = match SqliteStore::open(&memory_path).await {
+            Ok(s) => Arc::new(s),
             Err(e) => {
                 return Err(anyhow::anyhow!(
                     "failed to open memory store at {}: {e}",
@@ -1869,7 +1869,7 @@ async fn main() -> Result<()> {
     // a concern.
     let memory_index_str = if let Some(store) = memory_store.as_ref() {
         match hone_core::memory_index::render_index(
-            store,
+            store.as_ref(),
             hone_core::memory_index::IndexBudget::default(),
         )
         .await
