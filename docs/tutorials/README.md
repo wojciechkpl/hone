@@ -25,6 +25,8 @@ Start here if you're new to Hone:
 
 - **[TUI Keybindings and Themes](tui-keybindings-and-themes.md)** — Layout overview, every keybinding, the command palette, autocomplete with descriptions, switching themes (`crimson`, `neon`, `chalk`, `minimal`), `~/.config/hone/theme.toml` overrides, accessibility flags (`HONE_NO_COLOR`, `HONE_REDUCED_MOTION`, `HONE_ASCII_ONLY`), vim-style bindings, mouse selection
 
+- **[Agent Rail](agent-rail.md)** — `Ctrl+R` toggle, four observability sections (FILES / AGENTS / CONTEXT / MEMORY), status glyphs, NO_COLOR fallback, data flow from `AgentEvent` to `TurnLedger` to widget, recorded vhs demo, troubleshooting empty sections
+
 - **[TDD with Hone](tdd-with-hone.md)** — `/tdd` watcher (auto-detected test commands, status badges, fix-on-failure flow), `tdd-feature` recipe (full Red-Green-Refactor automation), `bug-fix` recipe (regression-first), separating test author from implementer via `@`-agents, fast inner loops (single-crate, `cargo nextest`), CI integration
 
 - **[Debugging and Troubleshooting](debugging.md)** — `--doctor` first checks, provider issues (API keys, rate limits, model not found, hot-swap), tool dispatch (no calls, timeouts, ACP-specific failures), TUI issues (size, theme, mouse), sessions and state (memory, daemon crash), sandbox failures, recipes/TDD pitfalls, logging and observability, bug reports
@@ -152,6 +154,7 @@ docs/
 │   ├── recipes.md                         # YAML recipes & automation
 │   ├── tdd-with-hone.md                   # /tdd watcher + tdd-feature recipe
 │   ├── tui-keybindings-and-themes.md      # TUI bindings, themes, accessibility
+│   ├── agent-rail.md                      # Per-turn observability sidebar (Ctrl+R)
 │   ├── debugging.md                       # Symptom-driven troubleshooting
 │   ├── memory.md                          # Memory layers & pass-through caching
 │   ├── server-and-remote.md               # Daemon & HTTP API
