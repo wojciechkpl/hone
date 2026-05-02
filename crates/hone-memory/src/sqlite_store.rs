@@ -593,12 +593,12 @@ impl MemoryStore for SqliteStore {
         let memories = memories?;
 
         let json = serde_json::to_string_pretty(&memories)?;
-        std::fs::write(path, json)?;
+        tokio::fs::write(path, json).await?;
         Ok(())
     }
 
     async fn import(path: &Path) -> Result<Self, MemoryError> {
-        let bytes = std::fs::read(path)?;
+        let bytes = tokio::fs::read(path).await?;
         let memories: Vec<Memory> = serde_json::from_slice(&bytes)?;
 
         let store = SqliteStore::in_memory().await?;

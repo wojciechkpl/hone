@@ -224,7 +224,7 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
         }
 
         let json = serde_json::to_string_pretty(&decrypted)?;
-        std::fs::write(path, json)?;
+        tokio::fs::write(path, json).await?;
         Ok(())
     }
 
