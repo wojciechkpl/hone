@@ -6,6 +6,7 @@ mod registry;
 mod screen;
 mod shell;
 mod traits;
+pub mod web;
 
 pub use error::ToolError;
 pub use file::{EditFileTool, GlobTool, GrepTool, MultiEditTool, ReadFileTool, WriteFileTool};
@@ -23,3 +24,4 @@ pub use screen::{ComputerControlTool, ScreenCaptureTool};
 pub use shell::ShellTool;
 pub use shell::validation::{CommandIntent, ValidationResult};
 pub use traits::{Tool, ToolContext, ToolInput, ToolOutput};
+pub use web::{SearchResult, WebFetchTool, WebSearchTool};

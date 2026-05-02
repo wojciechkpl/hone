@@ -1404,6 +1404,7 @@ dependencies = [
  "hone-cache",
  "hone-config",
  "hone-core",
+ "hone-eval",
  "hone-index",
  "hone-mcp",
  "hone-memory",
@@ -1471,8 +1472,27 @@ dependencies = [
  "tiktoken-rs",
  "tokio",
  "tokio-util",
+ "toml",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "hone-eval"
+version = "0.1.0"
+dependencies = [
+ "hone-core",
+ "hone-proto",
+ "hone-providers",
+ "hone-sandbox",
+ "hone-tools",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
 ]
 
 [[package]]
@@ -1635,6 +1655,7 @@ dependencies = [
  "ignore",
  "proptest",
  "regex",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
@@ -1648,14 +1669,18 @@ name = "hone-tui"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "async-trait",
  "criterion",
  "crossterm",
+ "hone-config",
  "hone-core",
  "hone-proto",
+ "hone-tools",
  "notify",
  "ratatui",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tempfile",
  "thiserror",
  "tokio",
