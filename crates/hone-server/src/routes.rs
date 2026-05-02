@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use axum::body::HttpBody as _;
 use axum::extract::{Path, Query, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
@@ -7,7 +8,8 @@ use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde_json::json;
-use subtle::ConstantTimeEq;
+use subtle::{Choice, ConstantTimeEq};
+use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::collaborative_routes::collaborative_router;
 use crate::error::ServerError;
@@ -63,7 +65,63 @@ pub fn router(state: AppState) -> Router {
             state.rate_limiter.clone(),
             rate_limit_middleware,
         ))
+        // Two-layer body-size cap, applied outermost so that a giant
+        // unauthenticated body is rejected before any handler logic runs.
+        // Layers compose right-to-left; the last `.layer()` call runs first
+        // from the request's perspective.  AUDIT-P1 #3.
+        //
+        // Layer A — `body_size_hint_check`: cheap, synchronous.  Covers two
+        // fast-path cases without reading a single byte:
+        //   1. `Content-Length` header present and over limit.
+        //   2. Body size-hint upper bound known and over limit (in-memory
+        //      bodies such as those used in integration tests that carry no
+        //      `Content-Length` header, e.g. `Body::from(Vec<u8>)`).
+        //
+        // Layer B — `RequestBodyLimitLayer`: wraps the body stream.  Covers
+        // chunked / streaming bodies where neither check above fires.  The
+        // stream enforces the limit as bytes are polled by extractors or
+        // handlers that read the body.
+        //
+        // Together the two layers close the hole the original implementation
+        // had: chunked streams with no `Content-Length` and no size hint are
+        // now capped by Layer B.  See `HONE_MAX_BODY_BYTES` in `lib.rs`.
+        .layer(RequestBodyLimitLayer::new(crate::HONE_MAX_BODY_BYTES))
+        .layer(middleware::from_fn(body_size_hint_check))
         .with_state(state)
+}
+
+/// Cheap synchronous body-size guard.  Rejects with `413` when either
+/// the `Content-Length` request header or the body's `size_hint().upper()`
+/// bound exceeds [`crate::HONE_MAX_BODY_BYTES`] — without reading a byte.
+///
+/// `Content-Length` covers well-behaved HTTP clients.  `size_hint().upper()`
+/// covers in-memory bodies (e.g. `Body::from(Vec<u8>)`) used in integration
+/// tests that send no header.
+///
+/// Chunked / streaming bodies that provide neither (the reviewer's original
+/// concern) are handled by the surrounding `RequestBodyLimitLayer` which wraps
+/// the stream and enforces the cap as bytes are consumed.
+async fn body_size_hint_check(request: Request, next: Next) -> axum::response::Response {
+    let limit = crate::HONE_MAX_BODY_BYTES as u64;
+
+    if let Some(content_length) = request
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+    {
+        if content_length > limit {
+            return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+        }
+    }
+
+    if let Some(upper) = request.body().size_hint().upper() {
+        if upper > limit {
+            return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+        }
+    }
+
+    next.run(request).await
 }
 
 async fn auth_middleware(
@@ -71,7 +129,7 @@ async fn auth_middleware(
     request: Request,
     next: Next,
 ) -> axum::response::Response {
-    if let Some(expected) = &state.auth_token {
+    if state.auth_token.is_some() || !state.admin_tokens.is_empty() {
         // Extract bearer token manually from request parts.
         let token = request
             .headers()
@@ -80,9 +138,34 @@ async fn auth_middleware(
             .and_then(|v| v.strip_prefix("Bearer "))
             .map(str::to_owned);
 
-        match token {
-            Some(t) if tokens_match(&t, expected) => next.run(request).await,
-            _ => ServerError::Unauthorized.into_response(),
+        let is_valid = match &token {
+            Some(t) => {
+                // Accept the token if it matches the shared auth_token OR if it
+                // is a member of the admin_tokens set (admins are also authenticated).
+                let matches_auth = state
+                    .auth_token
+                    .as_deref()
+                    .map(|expected| tokens_match(t, expected))
+                    .unwrap_or(false);
+                // Constant-time membership check: always iterates every element
+                // so that the set size (not a match position) determines wall
+                // time, closing the short-circuit timing oracle.
+                let t_bytes = t.as_bytes();
+                let admin_result: Choice = state
+                    .admin_tokens
+                    .iter()
+                    .map(|admin| admin.as_bytes().ct_eq(t_bytes))
+                    .fold(Choice::from(0u8), |acc, c| acc | c);
+                let is_admin = bool::from(admin_result);
+                matches_auth || is_admin
+            }
+            None => false,
+        };
+
+        if is_valid {
+            next.run(request).await
+        } else {
+            ServerError::Unauthorized.into_response()
         }
     } else {
         next.run(request).await

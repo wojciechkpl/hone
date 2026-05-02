@@ -1,6 +1,9 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+
+use hone_providers::ModelProvider;
 
 use crate::collaborative::CollaborativeStore;
 use crate::governance::GovernanceStore;
@@ -40,6 +43,15 @@ pub struct AppState {
     /// agent is spawned.  Defaults to the server process's `current_dir()`
     /// (canonicalized).  See AUDIT-CRITICAL-1 / `tests/run_working_dir.rs`.
     pub workspace_root: PathBuf,
+    /// Bearer tokens whose holders carry the "admin" role.  Any token NOT in
+    /// this set is treated as non-admin regardless of whether it passes the
+    /// `auth_token` gate.  When the set is empty (the default), no caller is
+    /// admin — operators must explicitly opt in by populating the set.
+    /// Wrapped in `Arc` so cloning `AppState` is cheap (O(1)) even with large sets.
+    pub admin_tokens: Arc<HashSet<String>>,
+    /// Optional provider override used by tests to avoid live API calls.
+    /// When `Some`, `run_handler` uses this instead of `AnthropicProvider`.
+    pub mock_provider: Option<Arc<dyn ModelProvider>>,
 }
 
 impl AppState {
@@ -53,6 +65,8 @@ impl AppState {
             rate_limiter: RateLimiter::new(DEFAULT_RATE_LIMIT, DEFAULT_RATE_WINDOW),
             provider_key: std::env::var("ANTHROPIC_API_KEY").ok(),
             workspace_root: default_workspace_root(),
+            admin_tokens: Arc::new(HashSet::new()),
+            mock_provider: None,
         }
     }
 
@@ -66,6 +80,8 @@ impl AppState {
             rate_limiter: RateLimiter::new(DEFAULT_RATE_LIMIT, DEFAULT_RATE_WINDOW),
             provider_key: std::env::var("ANTHROPIC_API_KEY").ok(),
             workspace_root: default_workspace_root(),
+            admin_tokens: Arc::new(HashSet::new()),
+            mock_provider: None,
         }
     }
 
@@ -82,6 +98,8 @@ impl AppState {
             rate_limiter: RateLimiter::new(DEFAULT_RATE_LIMIT, DEFAULT_RATE_WINDOW),
             provider_key: std::env::var("ANTHROPIC_API_KEY").ok(),
             workspace_root: default_workspace_root(),
+            admin_tokens: Arc::new(HashSet::new()),
+            mock_provider: None,
         }
     }
 
@@ -108,6 +126,24 @@ impl AppState {
     /// the server's cwd.
     pub fn with_workspace_root(mut self, root: PathBuf) -> Self {
         self.workspace_root = root;
+        self
+    }
+
+    /// Populate the set of bearer tokens whose holders carry the "admin" role.
+    ///
+    /// Only callers presenting a token from this set are permitted to call
+    /// `POST /team/policy`.  An empty set (the default) means no caller is
+    /// admin — operators must explicitly opt in.
+    pub fn with_admin_tokens(mut self, tokens: HashSet<String>) -> Self {
+        self.admin_tokens = Arc::new(tokens);
+        self
+    }
+
+    /// Inject a test-only provider that replaces `AnthropicProvider` in
+    /// `run_handler`.  Allows driving the full `/run` → usage-tracking path
+    /// without a live API key.
+    pub fn with_mock_provider(mut self, p: Arc<dyn ModelProvider>) -> Self {
+        self.mock_provider = Some(p);
         self
     }
 }

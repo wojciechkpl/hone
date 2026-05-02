@@ -10,7 +10,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use futures::stream;
 use hone_core::{AgentConfig, AgentHandle, RetryConfig, SkeletonStrategy};
 use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ToolApprovalPolicy};
-use hone_providers::{AnthropicProvider, PricingTable};
+use hone_providers::{AnthropicProvider, ModelProvider, PricingTable};
 use hone_sandbox::{Sandbox, SandboxBuilder};
 use hone_tools::{
     EditFileTool, GlobTool, GrepTool, ReadFileTool, ShellTool, ToolRegistry, WriteFileTool,
@@ -164,17 +164,27 @@ pub async fn run_handler(
     // AUDIT-CRITICAL-1.
     let working_dir = resolve_working_dir(req.working_dir.as_deref(), &state.workspace_root)?;
 
-    let api_key = state.provider_key.clone();
+    // Resolve the provider: prefer the test-injected mock over the live provider.
+    let provider: Option<Arc<dyn ModelProvider>> = state
+        .mock_provider
+        .clone()
+        .or_else(|| {
+            state
+                .provider_key
+                .clone()
+                .map(|key| -> Arc<dyn ModelProvider> { Arc::new(AnthropicProvider::new(key)) })
+        });
+
     let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
-    match api_key {
+    match provider {
         None => {
             let _ = tx.try_send(AgentEvent::Error {
                 message: "ANTHROPIC_API_KEY is not configured on this server.".to_string(),
             });
             // tx dropped → rx drains the one error event then closes.
         }
-        Some(key) => {
+        Some(provider) => {
             let model_id = ModelId::new(req.model.as_deref().unwrap_or("claude-sonnet-4-6"));
 
             let tools = ToolRegistry::builder()
@@ -187,7 +197,7 @@ pub async fn run_handler(
                 .build();
 
             let config = AgentConfig {
-                provider: Arc::new(AnthropicProvider::new(key)),
+                provider,
                 tools,
                 sandbox: build_sandbox(),
                 system_prompt: SYSTEM_PROMPT.to_string(),
@@ -228,13 +238,22 @@ pub async fn run_handler(
                 .collect();
 
             let prompt = req.prompt;
+            let governance = Arc::clone(&state.governance);
+            let model_id_str = model_id.as_str().to_owned();
 
             tokio::spawn(async move {
                 let handle = AgentHandle::spawn(config);
                 if !history.is_empty() {
                     handle.load_history(history).await;
                 }
-                let _ = handle.run_turn(prompt, tx).await;
+                if let Ok(result) = handle.run_turn(prompt, tx).await {
+                    // Wire governance usage tracking from the turn result.
+                    // `total()` returns input + output + cache_read + cache_creation.
+                    let tokens = u64::from(result.usage.total());
+                    governance
+                        .add_usage(&model_id_str, tokens, result.cost_usd)
+                        .await;
+                }
                 handle.shutdown().await;
             });
         }

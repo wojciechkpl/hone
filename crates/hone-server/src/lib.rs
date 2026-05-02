@@ -1,3 +1,13 @@
+/// Maximum request body size enforced at the router level for ALL routes.
+///
+/// Chosen to be above Axum 0.8's implicit per-extractor `DefaultBodyLimit`
+/// of 2 MiB so that legitimate `POST /run` payloads at the 2 MiB boundary
+/// continue to reach the `Json<T>` extractor, while bodies well above any
+/// sane limit (e.g. 16 MiB) are rejected with `413 Payload Too Large` before
+/// any handler logic runs — including routes that have no body extractor at
+/// all (e.g. `POST /sessions`).
+pub const HONE_MAX_BODY_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
+
 pub mod auth;
 pub mod bore_tunnel;
 pub mod collaborative;
