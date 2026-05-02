@@ -6,6 +6,9 @@ assets.zip
 priv/
 .hone/plan.md
 .hone/plan/
+# Catch hone session/cache directories created at any depth (e.g. when the
+# binary is run from inside `bins/hone/`).
+**/.hone/
 .venv-docs/
 site/
 .cache/
