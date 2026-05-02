@@ -1,4 +1,5 @@
 pub mod animation;
+pub mod user_commands;
 pub mod app;
 pub mod commands;
 pub mod error;
@@ -19,6 +20,7 @@ pub mod turn_ledger;
 pub mod vim_mode;
 
 pub use animation::AnimationState;
+pub use user_commands::{UserCommand, UserCommandError, UserCommandRegistry};
 pub use app::{App, AppState};
 pub use error::TuiError;
 pub use layout::{FocusTarget, LayoutMode};
