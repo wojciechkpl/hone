@@ -130,7 +130,8 @@ impl AdaptiveClassifier {
     ///
     /// Returns `None` if there's insufficient history (< 5 outcomes).
     pub async fn suggest_tier(&self, task_summary: &str) -> Option<ComplexityTier> {
-        let results = self.store
+        let results = self
+            .store
             .recall(&MemoryQuery {
                 text: "outcome:".to_string(),
                 limit: 100,

@@ -84,8 +84,11 @@ fn make_memories(count: usize) -> Vec<Memory> {
 ///   runtime delivers the signal before `timeout` expires.
 /// - Work that parks the runtime thread for longer than `timeout` prevents the
 ///   receiver from being polled; the timeout fires; this function panics.
-async fn assert_runtime_not_blocked_inner<F, Fut>(work_fn: F, probe_delay: Duration, timeout: Duration)
-where
+async fn assert_runtime_not_blocked_inner<F, Fut>(
+    work_fn: F,
+    probe_delay: Duration,
+    timeout: Duration,
+) where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
@@ -99,10 +102,8 @@ where
     });
 
     // Race the actual work against a timeout-wrapped signal receiver.
-    let (work_result, signal_result) = tokio::join!(
-        async { work_fn().await },
-        tokio::time::timeout(timeout, rx),
-    );
+    let (work_result, signal_result) =
+        tokio::join!(async { work_fn().await }, tokio::time::timeout(timeout, rx),);
 
     // The work future returns `()`; bind to suppress the path-statement lint.
     let () = work_result;
@@ -111,8 +112,10 @@ where
     // and the timeout fired. The panic message must contain "runtime was blocked"
     // so the `#[should_panic]` self-test can match it.
     signal_result
-        .expect("runtime was blocked — spawn_blocking signal never received; \
-                 fix: replace std::fs::write/read with tokio::fs::write/read")
+        .expect(
+            "runtime was blocked — spawn_blocking signal never received; \
+                 fix: replace std::fs::write/read with tokio::fs::write/read",
+        )
         .expect("oneshot sender was dropped before sending");
 }
 
@@ -122,12 +125,8 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
-    assert_runtime_not_blocked_inner(
-        work_fn,
-        Duration::from_millis(5),
-        Duration::from_secs(2),
-    )
-    .await;
+    assert_runtime_not_blocked_inner(work_fn, Duration::from_millis(5), Duration::from_secs(2))
+        .await;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,7 +270,9 @@ async fn assert_blocking_std_fs_is_detected_by_test_design() {
     // is parked, so this timeout fires at ~50 ms.
     tokio::time::timeout(Duration::from_millis(50), work_handle)
         .await
-        .expect("runtime was blocked — blocking std::fs call detected by timeout; \
-                 this is expected: the self-test is proving detection works")
+        .expect(
+            "runtime was blocked — blocking std::fs call detected by timeout; \
+                 this is expected: the self-test is proving detection works",
+        )
         .expect("spawned task panicked");
 }

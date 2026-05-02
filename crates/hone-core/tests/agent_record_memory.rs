@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use hone_core::memory_worthy::classify_turn;
 use hone_core::{Agent, AgentConfig, RetryConfig};
-use hone_memory::{InMemoryStore, MemoryQuery, MemoryKind, MemoryStore};
+use hone_memory::{InMemoryStore, MemoryKind, MemoryQuery, MemoryStore};
 use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::MockProvider;
 use hone_sandbox::NullSandbox;
@@ -121,9 +121,11 @@ async fn noisy_turn_does_not_write_memory() {
 async fn correction_turn_writes_feedback_memory() {
     let (agent, store) = make_agent_with_store();
 
-    let candidate =
-        classify_turn("don't mock the database", "Understood, I'll use the real DB in tests.")
-            .expect("correction pattern must be classified as Some(_)");
+    let candidate = classify_turn(
+        "don't mock the database",
+        "Understood, I'll use the real DB in tests.",
+    )
+    .expect("correction pattern must be classified as Some(_)");
 
     assert_eq!(
         candidate.kind,
@@ -171,12 +173,10 @@ async fn dup_correction_upserts_not_inserts() {
     let (agent, store) = make_agent_with_store();
 
     let candidate1 =
-        classify_turn("don't mock the database", "Understood.")
-            .expect("correction must classify");
+        classify_turn("don't mock the database", "Understood.").expect("correction must classify");
 
-    let candidate2 =
-        classify_turn("don't mock the database", "Got it.")
-            .expect("correction must classify on second call too");
+    let candidate2 = classify_turn("don't mock the database", "Got it.")
+        .expect("correction must classify on second call too");
 
     // Record first time.
     agent.record_memory(candidate1).await;

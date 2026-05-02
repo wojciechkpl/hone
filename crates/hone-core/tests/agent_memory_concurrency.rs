@@ -153,7 +153,11 @@ impl MemoryStore for SlowMockStore {
             .filter(|m| query.kind.map_or(true, |k| m.kind == k))
             .cloned()
             .collect();
-        let limit = if query.limit == 0 { all.len() } else { query.limit };
+        let limit = if query.limit == 0 {
+            all.len()
+        } else {
+            query.limit
+        };
         Ok(all.into_iter().take(limit).collect())
     }
 
@@ -215,10 +219,7 @@ impl MemoryStore for SlowMockStore {
 /// with no outer `Mutex`.  Tests that previously contended on the outer mutex
 /// via `store.lock().await` now call store methods directly — the `SlowMockStore`
 /// uses an internal `Arc<RwLock<HashMap<…>>>` for its own synchronisation.
-fn make_agent(
-    record_delay: Duration,
-    recall_delay: Duration,
-) -> (Agent, Arc<dyn MemoryStore>) {
+fn make_agent(record_delay: Duration, recall_delay: Duration) -> (Agent, Arc<dyn MemoryStore>) {
     let store = SlowMockStore::new(record_delay, recall_delay);
     let store_arc: Arc<dyn MemoryStore> = Arc::new(store);
     let store_arc_for_config = Arc::clone(&store_arc);
@@ -304,11 +305,15 @@ async fn record_memory_does_not_lose_writes_on_shutdown() {
     agent.record_memory(make_candidate(0)).await;
 
     // Query directly — no outer mutex after option-(b).
-    let count = store.recall(&MemoryQuery {
-        text: String::new(),
-        limit: 64,
-        kind: None,
-    }).await.unwrap().len();
+    let count = store
+        .recall(&MemoryQuery {
+            text: String::new(),
+            limit: 64,
+            kind: None,
+        })
+        .await
+        .unwrap()
+        .len();
 
     assert!(
         count >= 1,
@@ -355,11 +360,15 @@ async fn record_memory_concurrent_writes_do_not_deadlock() {
         h.await.expect("spawned task panicked");
     }
 
-    let count = store.recall(&MemoryQuery {
-        text: String::new(),
-        limit: 64,
-        kind: None,
-    }).await.unwrap().len();
+    let count = store
+        .recall(&MemoryQuery {
+            text: String::new(),
+            limit: 64,
+            kind: None,
+        })
+        .await
+        .unwrap()
+        .len();
 
     assert_eq!(
         count, N,
@@ -409,11 +418,13 @@ async fn recall_overlaps_with_concurrent_record() {
     let wait_start = Instant::now();
     let recall_handle = tokio::spawn(async move {
         // No lock acquisition needed — call through Arc<dyn MemoryStore> directly.
-        let _ = store_clone.recall(&MemoryQuery {
-            text: String::new(),
-            limit: 1,
-            kind: None,
-        }).await;
+        let _ = store_clone
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: 1,
+                kind: None,
+            })
+            .await;
         // Returns immediately — we only measured the wait.
     });
 
@@ -462,11 +473,14 @@ async fn concurrent_recall_calls_do_not_serialize() {
         let store_clone = Arc::clone(&store);
         handles.push(tokio::spawn(async move {
             // Call recall directly — no outer lock; concurrent reads proceed in parallel.
-            store_clone.recall(&MemoryQuery {
-                text: String::new(),
-                limit: 32,
-                kind: None,
-            }).await.unwrap()
+            store_clone
+                .recall(&MemoryQuery {
+                    text: String::new(),
+                    limit: 32,
+                    kind: None,
+                })
+                .await
+                .unwrap()
         }));
     }
 
@@ -507,15 +521,18 @@ async fn record_memory_returns_only_after_write_completes() {
     agent.record_memory(make_candidate(7)).await;
 
     // Query directly — no outer Mutex after option-(b); no yield, no sleep.
-    let count = store.recall(&MemoryQuery {
-        text: String::new(),
-        limit: 64,
-        kind: None,
-    }).await.unwrap().len();
+    let count = store
+        .recall(&MemoryQuery {
+            text: String::new(),
+            limit: 64,
+            kind: None,
+        })
+        .await
+        .unwrap()
+        .len();
 
     assert_eq!(
-        count,
-        1,
+        count, 1,
         "record_memory returned but store is still empty (count={count}). \
          Detached spawn (fire-and-forget): write was not completed before \
          record_memory returned (P1 #4)."

@@ -76,7 +76,14 @@ fn capture(cmd: MemoryCmd, store: Arc<dyn MemoryStore>) -> anyhow::Result<String
 fn ls_kind_filter_is_pre_limit() {
     // 3 User memories with low created_at (inserted first, older).
     let mut memories: Vec<Memory> = (1..=3u64)
-        .map(|i| make_memory(&format!("user-{i}"), &format!("user pref {i}"), MemoryKind::User, i))
+        .map(|i| {
+            make_memory(
+                &format!("user-{i}"),
+                &format!("user pref {i}"),
+                MemoryKind::User,
+                i,
+            )
+        })
         .collect();
 
     // 50 Conversation memories with higher created_at (inserted last, newer).

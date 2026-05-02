@@ -105,7 +105,6 @@ fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
     })
 }
 
-
 /// Return the current schema version stored in the `schema_version` table.
 ///
 /// Returns `0` when the table exists but is empty, and propagates a
@@ -268,14 +267,12 @@ async fn run_migrations_inner(conn: &mut sqlx::SqliteConnection) -> Result<i32, 
         // Stamp the version row.  INSERT OR IGNORE ensures that if two openers
         // somehow reach this point concurrently (impossible under IMMEDIATE, but
         // defensive), only the first writer wins.
-        sqlx::query(
-            "INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (?1, ?2)",
-        )
-        .bind(v)
-        .bind(&now_str)
-        .execute(&mut *conn)
-        .await
-        .map_err(to_io_err)?;
+        sqlx::query("INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (?1, ?2)")
+            .bind(v)
+            .bind(&now_str)
+            .execute(&mut *conn)
+            .await
+            .map_err(to_io_err)?;
     }
 
     Ok(CURRENT_SCHEMA_VERSION)
@@ -458,7 +455,11 @@ impl MemoryStore for SqliteStore {
         // Empty-query short-circuit: return all memories ordered by weight.
         if query.text.is_empty() {
             let mut all: Vec<Memory> = memories;
-            all.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal));
+            all.sort_by(|a, b| {
+                b.weight
+                    .partial_cmp(&a.weight)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             let results = all.into_iter().take(query.limit).collect();
             return Ok(results);
         }
@@ -713,4 +714,3 @@ mod tests {
         assert_eq!(results.len(), 2, "expected 2 memories from empty query");
     }
 }
-

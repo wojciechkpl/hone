@@ -29,8 +29,8 @@ pub mod tunnel_routes;
 pub mod web;
 
 pub use bore_tunnel::BoreTunnelManager;
-pub use execution::build_sandbox;
 pub use collaborative::{CollaborativeStore, Participant, ParticipantRole};
+pub use execution::build_sandbox;
 pub use governance::{GovernanceStore, ModelUsage, TeamMember, TeamPolicy, TeamUsage};
 pub use openapi::ApiDoc;
 pub use rate_limit::RateLimiter;

@@ -230,10 +230,7 @@ pub async fn render_index(
 ///
 /// Returns `Ok(Some(memory))` if the id is found, `Ok(None)` if the memory
 /// does not exist or has been decayed/forgotten.
-pub async fn read_memory(
-    store: &dyn MemoryStore,
-    id: &str,
-) -> Result<Option<Memory>, MemoryError> {
+pub async fn read_memory(store: &dyn MemoryStore, id: &str) -> Result<Option<Memory>, MemoryError> {
     let memories = store
         .recall(&MemoryQuery {
             text: String::new(),

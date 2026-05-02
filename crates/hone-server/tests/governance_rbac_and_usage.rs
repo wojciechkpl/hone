@@ -134,8 +134,8 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use hone_providers::{MockProvider, ModelProvider};
 use hone_proto::TokenUsage;
+use hone_providers::{MockProvider, ModelProvider};
 use hone_server::{AppState, TeamPolicy, router};
 use tower::ServiceExt;
 
@@ -257,10 +257,7 @@ async fn set_policy_succeeds_with_admin_role() {
 async fn set_policy_returns_401_unauthenticated() {
     let app = app_with_auth_no_admin();
 
-    let response = app
-        .oneshot(post_policy_request(None))
-        .await
-        .unwrap();
+    let response = app.oneshot(post_policy_request(None)).await.unwrap();
 
     assert_eq!(
         response.status(),
@@ -419,7 +416,5 @@ fn make_mock_done_provider() -> Arc<dyn ModelProvider> {
         cache_read: 0,
         cache_creation: 0,
     };
-    Arc::new(
-        MockProvider::new(vec!["hello from mock".to_owned()]).with_usage(usage),
-    )
+    Arc::new(MockProvider::new(vec!["hello from mock".to_owned()]).with_usage(usage))
 }

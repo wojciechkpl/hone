@@ -119,4 +119,3 @@ pub trait MemoryStore: Send + Sync {
         Ok(best.map(|(_, m)| m))
     }
 }
-

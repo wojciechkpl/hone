@@ -89,22 +89,70 @@ async fn render_groups_by_kind_with_headers() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    store.record(make_memory("u1", "user content", MemoryKind::User, 1.0, None, None))
+    store
+        .record(make_memory(
+            "u1",
+            "user content",
+            MemoryKind::User,
+            1.0,
+            None,
+            None,
+        ))
         .await
         .expect("record User");
-    store.record(make_memory("f1", "feedback content", MemoryKind::Feedback, 1.0, None, None))
+    store
+        .record(make_memory(
+            "f1",
+            "feedback content",
+            MemoryKind::Feedback,
+            1.0,
+            None,
+            None,
+        ))
         .await
         .expect("record Feedback");
-    store.record(make_memory("p1", "project content", MemoryKind::Project, 1.0, None, None))
+    store
+        .record(make_memory(
+            "p1",
+            "project content",
+            MemoryKind::Project,
+            1.0,
+            None,
+            None,
+        ))
         .await
         .expect("record Project");
-    store.record(make_memory("r1", "reference content", MemoryKind::Reference, 1.0, None, None))
+    store
+        .record(make_memory(
+            "r1",
+            "reference content",
+            MemoryKind::Reference,
+            1.0,
+            None,
+            None,
+        ))
         .await
         .expect("record Reference");
-    store.record(make_memory("o1", "outcome content", MemoryKind::Outcome, 1.0, None, None))
+    store
+        .record(make_memory(
+            "o1",
+            "outcome content",
+            MemoryKind::Outcome,
+            1.0,
+            None,
+            None,
+        ))
         .await
         .expect("record Outcome");
-    store.record(make_memory("c1", "conversation content", MemoryKind::Conversation, 1.0, None, None))
+    store
+        .record(make_memory(
+            "c1",
+            "conversation content",
+            MemoryKind::Conversation,
+            1.0,
+            None,
+            None,
+        ))
         .await
         .expect("record Conversation");
 
@@ -113,12 +161,30 @@ async fn render_groups_by_kind_with_headers() {
         .expect("render_index");
 
     // All six headers must be present.
-    assert!(result.contains("### User"), "missing ### User; got:\n{result}");
-    assert!(result.contains("### Feedback"), "missing ### Feedback; got:\n{result}");
-    assert!(result.contains("### Project"), "missing ### Project; got:\n{result}");
-    assert!(result.contains("### Reference"), "missing ### Reference; got:\n{result}");
-    assert!(result.contains("### Outcome"), "missing ### Outcome; got:\n{result}");
-    assert!(result.contains("### Conversation"), "missing ### Conversation; got:\n{result}");
+    assert!(
+        result.contains("### User"),
+        "missing ### User; got:\n{result}"
+    );
+    assert!(
+        result.contains("### Feedback"),
+        "missing ### Feedback; got:\n{result}"
+    );
+    assert!(
+        result.contains("### Project"),
+        "missing ### Project; got:\n{result}"
+    );
+    assert!(
+        result.contains("### Reference"),
+        "missing ### Reference; got:\n{result}"
+    );
+    assert!(
+        result.contains("### Outcome"),
+        "missing ### Outcome; got:\n{result}"
+    );
+    assert!(
+        result.contains("### Conversation"),
+        "missing ### Conversation; got:\n{result}"
+    );
 
     // Order: User before Feedback before Project before Reference before Outcome before Conversation.
     let pos_user = result.find("### User").expect("### User");
@@ -130,9 +196,18 @@ async fn render_groups_by_kind_with_headers() {
 
     assert!(pos_user < pos_feedback, "User must precede Feedback");
     assert!(pos_feedback < pos_project, "Feedback must precede Project");
-    assert!(pos_project < pos_reference, "Project must precede Reference");
-    assert!(pos_reference < pos_outcome, "Reference must precede Outcome");
-    assert!(pos_outcome < pos_conversation, "Outcome must precede Conversation");
+    assert!(
+        pos_project < pos_reference,
+        "Project must precede Reference"
+    );
+    assert!(
+        pos_reference < pos_outcome,
+        "Reference must precede Outcome"
+    );
+    assert!(
+        pos_outcome < pos_conversation,
+        "Outcome must precede Conversation"
+    );
 }
 
 /// Test 3: only Feedback + User memories → only those two headers appear.
@@ -141,10 +216,26 @@ async fn render_skips_kinds_with_no_memories() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    store.record(make_memory("u1", "user content", MemoryKind::User, 1.0, None, None))
+    store
+        .record(make_memory(
+            "u1",
+            "user content",
+            MemoryKind::User,
+            1.0,
+            None,
+            None,
+        ))
         .await
         .expect("record User");
-    store.record(make_memory("f1", "feedback content", MemoryKind::Feedback, 1.0, None, None))
+    store
+        .record(make_memory(
+            "f1",
+            "feedback content",
+            MemoryKind::Feedback,
+            1.0,
+            None,
+            None,
+        ))
         .await
         .expect("record Feedback");
 
@@ -152,8 +243,14 @@ async fn render_skips_kinds_with_no_memories() {
         .await
         .expect("render_index");
 
-    assert!(result.contains("### User"), "### User must be present; got:\n{result}");
-    assert!(result.contains("### Feedback"), "### Feedback must be present; got:\n{result}");
+    assert!(
+        result.contains("### User"),
+        "### User must be present; got:\n{result}"
+    );
+    assert!(
+        result.contains("### Feedback"),
+        "### Feedback must be present; got:\n{result}"
+    );
     assert!(
         !result.contains("### Project"),
         "### Project must NOT be present; got:\n{result}"
@@ -183,28 +280,30 @@ async fn render_uses_description_when_present_and_content_otherwise() {
     let long_content = "x".repeat(200); // definitely > 80 chars
 
     // First memory: has a description.
-    store.record(make_memory(
-        "d1",
-        &long_content,
-        MemoryKind::User,
-        1.0,
-        Some("the why"),
-        None,
-    ))
-    .await
-    .expect("record d1");
+    store
+        .record(make_memory(
+            "d1",
+            &long_content,
+            MemoryKind::User,
+            1.0,
+            Some("the why"),
+            None,
+        ))
+        .await
+        .expect("record d1");
 
     // Second memory: no description, short content.
-    store.record(make_memory(
-        "d2",
-        "fallback short",
-        MemoryKind::User,
-        1.0,
-        None,
-        None,
-    ))
-    .await
-    .expect("record d2");
+    store
+        .record(make_memory(
+            "d2",
+            "fallback short",
+            MemoryKind::User,
+            1.0,
+            None,
+            None,
+        ))
+        .await
+        .expect("record d2");
 
     let result = render_index(store.as_ref(), IndexBudget::default())
         .await
@@ -232,13 +331,37 @@ async fn render_orders_by_weight_then_recency_within_kind() {
     let store = open_store(&tmp).await;
 
     // Insert in order 1.0 → 3.0 → 2.0.
-    store.record(make_memory("w1", "weight one", MemoryKind::Feedback, 1.0, None, None))
+    store
+        .record(make_memory(
+            "w1",
+            "weight one",
+            MemoryKind::Feedback,
+            1.0,
+            None,
+            None,
+        ))
         .await
         .expect("record w1");
-    store.record(make_memory("w3", "weight three", MemoryKind::Feedback, 3.0, None, None))
+    store
+        .record(make_memory(
+            "w3",
+            "weight three",
+            MemoryKind::Feedback,
+            3.0,
+            None,
+            None,
+        ))
         .await
         .expect("record w3");
-    store.record(make_memory("w2", "weight two", MemoryKind::Feedback, 2.0, None, None))
+    store
+        .record(make_memory(
+            "w2",
+            "weight two",
+            MemoryKind::Feedback,
+            2.0,
+            None,
+            None,
+        ))
         .await
         .expect("record w2");
 
@@ -246,7 +369,9 @@ async fn render_orders_by_weight_then_recency_within_kind() {
         .await
         .expect("render_index");
 
-    let pos_three = result.find("weight three").expect("weight three must appear");
+    let pos_three = result
+        .find("weight three")
+        .expect("weight three must appear");
     let pos_two = result.find("weight two").expect("weight two must appear");
     let pos_one = result.find("weight one").expect("weight one must appear");
 
@@ -270,7 +395,15 @@ async fn render_truncates_at_max_entries() {
     for i in 0..60 {
         let id = format!("entry-{i:03}");
         let content = format!("memory entry number {i}");
-        store.record(make_memory(&id, &content, MemoryKind::User, 1.0, None, None))
+        store
+            .record(make_memory(
+                &id,
+                &content,
+                MemoryKind::User,
+                1.0,
+                None,
+                None,
+            ))
             .await
             .expect("record");
     }
@@ -308,16 +441,17 @@ async fn render_truncates_at_max_chars() {
 
     for i in 0..50 {
         let id = format!("long-{i:03}");
-        store.record(make_memory(
-            &id,
-            "body",
-            MemoryKind::User,
-            1.0,
-            Some(&long_desc),
-            None,
-        ))
-        .await
-        .expect("record");
+        store
+            .record(make_memory(
+                &id,
+                "body",
+                MemoryKind::User,
+                1.0,
+                Some(&long_desc),
+                None,
+            ))
+            .await
+            .expect("record");
     }
 
     let budget = IndexBudget {
@@ -356,7 +490,15 @@ async fn render_truncation_message_does_not_appear_when_all_fit() {
 
     for i in 0..5 {
         let id = format!("fit-{i}");
-        store.record(make_memory(&id, "short content", MemoryKind::User, 1.0, None, None))
+        store
+            .record(make_memory(
+                &id,
+                "short content",
+                MemoryKind::User,
+                1.0,
+                None,
+                None,
+            ))
             .await
             .expect("record");
     }
@@ -384,7 +526,15 @@ async fn render_includes_id_for_each_entry() {
     let ids = ["alpha-id", "beta-id", "gamma-id"];
 
     for id in &ids {
-        store.record(make_memory(id, "some content", MemoryKind::User, 1.0, None, None))
+        store
+            .record(make_memory(
+                id,
+                "some content",
+                MemoryKind::User,
+                1.0,
+                None,
+                None,
+            ))
             .await
             .expect("record");
     }
@@ -431,9 +581,7 @@ async fn render_skips_decayed_memories() {
     .expect("record decayed memory");
 
     // Trigger decay to actually remove the expired memory.
-    bare.decay(1.0, now_secs())
-        .await
-        .expect("decay");
+    bare.decay(1.0, now_secs()).await.expect("decay");
 
     // Now wrap in Arc<dyn MemoryStore> for the render call.
     let store: Arc<dyn MemoryStore> = Arc::new(bare);
@@ -459,18 +607,19 @@ async fn read_existing_id_returns_full_body() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    store.record(make_memory(
-        "read-me",
-        "full body content",
-        MemoryKind::User,
-        1.0,
-        None,
-        None,
-    ))
-    .await
-    .expect("record");
+    store
+        .record(make_memory(
+            "read-me",
+            "full body content",
+            MemoryKind::User,
+            1.0,
+            None,
+            None,
+        ))
+        .await
+        .expect("record");
 
-    let result = read_memory(store.as_ref(),"read-me")
+    let result = read_memory(store.as_ref(), "read-me")
         .await
         .expect("read_memory must not error");
 
@@ -489,7 +638,7 @@ async fn read_unknown_id_returns_none() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    let result = read_memory(store.as_ref(),"nonexistent_id")
+    let result = read_memory(store.as_ref(), "nonexistent_id")
         .await
         .expect("read_memory must not error on unknown id");
 
@@ -508,23 +657,31 @@ async fn read_after_forget_returns_none() {
     let tmp = NamedTempFile::new().expect("create temp file");
     let store = open_store(&tmp).await;
 
-    let mut m = make_memory("forget-me", "to be forgotten", MemoryKind::User, 1.0, None, None);
+    let mut m = make_memory(
+        "forget-me",
+        "to be forgotten",
+        MemoryKind::User,
+        1.0,
+        None,
+        None,
+    );
     m.tags = vec!["sentinel-forget-tag".to_string()];
     store.record(m).await.expect("record");
 
     // Verify it exists first.
-    let before = read_memory(store.as_ref(),"forget-me")
+    let before = read_memory(store.as_ref(), "forget-me")
         .await
         .expect("read_memory before forget");
     assert!(before.is_some(), "memory must exist before forget");
 
     // Forget by the sentinel tag.
-    store.forget(&MemoryFilter::Tag("sentinel-forget-tag".to_string()))
+    store
+        .forget(&MemoryFilter::Tag("sentinel-forget-tag".to_string()))
         .await
         .expect("forget");
 
     // Now read_memory must return None.
-    let after = read_memory(store.as_ref(),"forget-me")
+    let after = read_memory(store.as_ref(), "forget-me")
         .await
         .expect("read_memory after forget");
     assert!(
@@ -561,14 +718,12 @@ async fn read_decayed_memory_returns_none() {
     .expect("record");
 
     // Trigger decay to remove the expired memory.
-    bare.decay(1.0, now_secs())
-        .await
-        .expect("decay");
+    bare.decay(1.0, now_secs()).await.expect("decay");
 
     // Wrap and call read_memory.
     let store: Arc<dyn MemoryStore> = Arc::new(bare);
 
-    let result = read_memory(store.as_ref(),"will-decay")
+    let result = read_memory(store.as_ref(), "will-decay")
         .await
         .expect("read_memory must not error");
 

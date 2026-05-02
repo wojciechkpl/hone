@@ -31,7 +31,10 @@ impl Default for InMemoryStore {
 #[async_trait]
 impl MemoryStore for InMemoryStore {
     async fn record(&self, memory: Memory) -> Result<(), MemoryError> {
-        self.memories.write().await.insert(memory.id.clone(), memory);
+        self.memories
+            .write()
+            .await
+            .insert(memory.id.clone(), memory);
         Ok(())
     }
 
@@ -50,8 +53,7 @@ impl MemoryStore for InMemoryStore {
 
         // Empty-query short-circuit: return all memories unfiltered (by kind already applied).
         if query.text.is_empty() {
-            let mut scored: Vec<(f64, &Memory)> =
-                all.iter().map(|m| (m.weight, *m)).collect();
+            let mut scored: Vec<(f64, &Memory)> = all.iter().map(|m| (m.weight, *m)).collect();
             scored.sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
             let results = scored
                 .into_iter()

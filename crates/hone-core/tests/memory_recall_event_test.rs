@@ -16,8 +16,7 @@ use futures::{Stream, stream};
 use hone_core::{Agent, AgentConfig};
 use hone_memory::{InMemoryStore, Memory, MemoryKind, MemoryStore};
 use hone_proto::{
-    AgentEvent, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
-    ToolApprovalPolicy,
+    AgentEvent, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, ToolApprovalPolicy,
 };
 use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
@@ -181,10 +180,9 @@ async fn memory_recalled_event_uses_friendly_key_not_uuid() {
     );
 
     // Belt-and-suspenders: the key must NOT look like a UUID (8-4-4-4-12).
-    let uuid_re = regex::Regex::new(
-        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    )
-    .unwrap();
+    let uuid_re =
+        regex::Regex::new(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+            .unwrap();
     assert!(
         !uuid_re.is_match(first_key),
         "MemoryRecalled key must NOT be a raw UUID; got: {first_key:?}"

@@ -913,7 +913,11 @@ impl Agent {
                         .map(|t| t.is_read_only())
                         .unwrap_or(false);
 
-                    if self.config.approval_policy.requires_approval(&call.name, is_ro) {
+                    if self
+                        .config
+                        .approval_policy
+                        .requires_approval(&call.name, is_ro)
+                    {
                         let _ = events
                             .send(AgentEvent::ToolCallPaused {
                                 id: call.id.clone(),

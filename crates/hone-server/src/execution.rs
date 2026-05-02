@@ -165,15 +165,12 @@ pub async fn run_handler(
     let working_dir = resolve_working_dir(req.working_dir.as_deref(), &state.workspace_root)?;
 
     // Resolve the provider: prefer the test-injected mock over the live provider.
-    let provider: Option<Arc<dyn ModelProvider>> = state
-        .mock_provider
-        .clone()
-        .or_else(|| {
-            state
-                .provider_key
-                .clone()
-                .map(|key| -> Arc<dyn ModelProvider> { Arc::new(AnthropicProvider::new(key)) })
-        });
+    let provider: Option<Arc<dyn ModelProvider>> = state.mock_provider.clone().or_else(|| {
+        state
+            .provider_key
+            .clone()
+            .map(|key| -> Arc<dyn ModelProvider> { Arc::new(AnthropicProvider::new(key)) })
+    });
 
     let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 

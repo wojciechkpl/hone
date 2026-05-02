@@ -7,7 +7,7 @@ use hone_core::{Agent, AgentConfig, AgentHandle};
 use hone_memory::{InMemoryStore, Memory, MemoryStore};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, Role,
-    ToolApprovalPolicy, TokenUsage, ToolCallRequest, ToolLayer,
+    TokenUsage, ToolApprovalPolicy, ToolCallRequest, ToolLayer,
 };
 use hone_providers::{CompletionRequest, MockProvider, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;

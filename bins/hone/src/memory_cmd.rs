@@ -99,11 +99,7 @@ fn truncate(s: &str, max_chars: usize) -> String {
 // Main entry point
 // ---------------------------------------------------------------------------
 
-pub async fn run(
-    cmd: MemoryCmd,
-    store: Arc<dyn MemoryStore>,
-    out: &mut dyn Write,
-) -> Result<()> {
+pub async fn run(cmd: MemoryCmd, store: Arc<dyn MemoryStore>, out: &mut dyn Write) -> Result<()> {
     match cmd {
         MemoryCmd::Ls { limit, kind } => {
             let effective_limit = limit.unwrap_or(50);

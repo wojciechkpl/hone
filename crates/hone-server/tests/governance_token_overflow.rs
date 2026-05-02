@@ -46,10 +46,7 @@ async fn add_usage_saturates_at_u64_max_for_per_entry_tokens() {
     // Given – seed the model entry close to u64::MAX
     let state = make_state();
     let model = "claude-opus-4-5";
-    state
-        .governance
-        .add_usage(model, u64::MAX - 100, 0.0)
-        .await;
+    state.governance.add_usage(model, u64::MAX - 100, 0.0).await;
 
     // When – overflow the per-entry counter
     state.governance.add_usage(model, 1_000, 0.0).await;
@@ -81,9 +78,6 @@ async fn add_usage_does_not_panic_on_overflow_in_debug_build() {
         .add_usage("claude-haiku-3-5", u64::MAX, 0.0)
         .await;
     // A second call would overflow both total_tokens and entry.tokens.
-    state
-        .governance
-        .add_usage("claude-haiku-3-5", 1, 0.0)
-        .await;
+    state.governance.add_usage("claude-haiku-3-5", 1, 0.0).await;
     // Reaching this line is the assertion.
 }
