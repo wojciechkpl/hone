@@ -401,7 +401,10 @@ fn test_theme_command_switches() {
     let mut app = App::new();
     app.type_text("/theme neon");
     app.submit_input();
-    assert_eq!(app.theme().accent_hot, ratatui::style::Color::Indexed(197));
+    // Theme::neon().accent_hot is electric cyan (Indexed(51)) since fa184af.
+    // Pre-fa184af value was Indexed(197); the integration test was missed in
+    // that commit's update, hence this one-line correction.
+    assert_eq!(app.theme().accent_hot, ratatui::style::Color::Indexed(51));
 }
 
 #[test]
