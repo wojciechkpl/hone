@@ -83,7 +83,7 @@ impl GovernanceStore {
 
     pub async fn add_usage(&self, model: &str, tokens: u64, cost: f64) {
         let mut usage = self.usage.write().await;
-        usage.total_tokens += tokens;
+        usage.total_tokens = usage.total_tokens.saturating_add(tokens);
         usage.total_cost_usd += cost;
         let entry = usage
             .by_model
@@ -92,7 +92,7 @@ impl GovernanceStore {
                 tokens: 0,
                 cost_usd: 0.0,
             });
-        entry.tokens += tokens;
+        entry.tokens = entry.tokens.saturating_add(tokens);
         entry.cost_usd += cost;
     }
 }
