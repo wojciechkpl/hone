@@ -11,7 +11,7 @@ use futures::stream;
 use hone_core::{AgentConfig, AgentHandle, RetryConfig, SkeletonStrategy};
 use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::{AnthropicProvider, PricingTable};
-use hone_sandbox::NullSandbox;
+use hone_sandbox::{Sandbox, SandboxBuilder};
 use hone_tools::{
     EditFileTool, GlobTool, GrepTool, ReadFileTool, ShellTool, ToolRegistry, WriteFileTool,
 };
@@ -19,6 +19,29 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::state::AppState;
+
+/// Construct the sandbox instance that will be installed on every agent
+/// spawned by `POST /run`.
+///
+/// This function is the single authoritative source of the server's sandbox
+/// selection logic.  Both the handler and the test suite must call this
+/// function so that the tests pin the same code path that is exercised in
+/// production.
+///
+/// # Contract (audited in `tests/run_sandbox_enforced.rs`)
+///
+/// On platforms that provide a native kernel sandbox (macOS → Seatbelt,
+/// Linux → Landlock) this function MUST return an implementation whose
+/// `platform()` accessor reports a non-`Null` variant.  Returning
+/// `NullSandbox` on a supported host is the bug being fixed (AUDIT-P0:
+/// `execution.rs` hardcoded `Arc::new(NullSandbox)` instead of calling
+/// `SandboxBuilder::detect()`).
+///
+/// On genuinely unsupported hosts (no kernel sandbox available) `Null` is
+/// acceptable and the corresponding tests are `#[cfg]`-gated to skip.
+pub fn build_sandbox() -> Arc<dyn Sandbox> {
+    Arc::from(SandboxBuilder::detect())
+}
 
 const SYSTEM_PROMPT: &str = "You are Hone, an expert AI coding assistant. \
     Help the user with their coding tasks concisely and accurately. \
@@ -166,7 +189,7 @@ pub async fn run_handler(
             let config = AgentConfig {
                 provider: Arc::new(AnthropicProvider::new(key)),
                 tools,
-                sandbox: Arc::new(NullSandbox),
+                sandbox: build_sandbox(),
                 system_prompt: SYSTEM_PROMPT.to_string(),
                 model: model_id.clone(),
                 max_tokens: None,
