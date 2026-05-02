@@ -37,6 +37,8 @@ fn make_config(tokens: Vec<String>) -> AgentConfig {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     }
 }
 
@@ -180,6 +182,8 @@ async fn test_ensemble_handles_candidate_failure() {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     };
 
     let ensemble = AgentEnsemble::new(failing_config, vec![0.0, 0.3]);

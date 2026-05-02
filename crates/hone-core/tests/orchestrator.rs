@@ -45,6 +45,8 @@ fn base_config(provider: Arc<MockProvider>) -> AgentConfig {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     }
 }
 
@@ -416,6 +418,8 @@ fn panic_agent_config() -> AgentConfig {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     }
 }
 

@@ -6,6 +6,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hone_proto::AgentEvent;
 use tokio::sync::mpsc;
 
+use hone_core::AgentMode;
+
 use crate::{
     animation::AnimationState,
     commands::{Command, TddSubcommand, parse_inline_agent},
@@ -193,6 +195,13 @@ pub struct App {
     /// used by `apply_theme_overrides()` to re-apply per-field color
     /// overrides after a `ThemeSwitch` command.
     pub(crate) theme_toml_path: std::path::PathBuf,
+
+    /// Current operational mode of the agent.  Cycled by Shift+Tab.
+    pub(crate) agent_mode: AgentMode,
+    /// Pending mode change — applied on the next event loop iteration.
+    /// Set by Shift+Tab; consumed by the TUI event loop which calls
+    /// `agent.set_mode()` and clears this field.
+    pub(crate) pending_mode_change: Option<AgentMode>,
 }
 
 impl App {
@@ -267,6 +276,8 @@ impl App {
             theme_toml_path: std::env::var("HOME")
                 .map(|h| std::path::PathBuf::from(h).join(".config/hone/theme.toml"))
                 .unwrap_or_default(),
+            agent_mode: AgentMode::Build,
+            pending_mode_change: None,
         };
         // Restore draft from previous session if present.
         let draft_file = draft_path();
@@ -873,6 +884,12 @@ impl App {
                     self.focus = self.focus.cycle();
                 }
             }
+            // Shift+Tab — cycle agent mode (Build → Plan → AutoApprove → Build).
+            KeyCode::BackTab => {
+                self.agent_mode = self.agent_mode.cycle_next();
+                self.status.mode = self.agent_mode.label().to_string();
+                self.pending_mode_change = Some(self.agent_mode);
+            }
             KeyCode::Esc => {
                 if matches!(self.state, AppState::WaitingForResponse) {
                     self.request_cancel();
@@ -1435,6 +1452,11 @@ impl App {
         self.pending_model_change.take()
     }
 
+    /// Drain the pending agent-mode change (set by Shift+Tab) and return it.
+    pub fn take_pending_mode_change(&mut self) -> Option<AgentMode> {
+        self.pending_mode_change.take()
+    }
+
     /// Apply the result of an async shell escape execution to the app state.
     pub fn handle_shell_escape_result(&mut self, result: ShellEscapeResult) {
         match result {
@@ -1671,6 +1693,13 @@ impl App {
                 let msg = format!("Unknown command: /{name}  (type /help for help)");
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::Error, msg));
+            }
+            Command::User { name, args } => {
+                // User-defined slash command: treat the rendered body as a new
+                // user message submitted to the agent.
+                let _ = (name, args);
+                // Full dispatch wiring (registry lookup + send) is deferred;
+                // the variant is recognised so the match is exhaustive.
             }
         }
     }
@@ -2311,6 +2340,12 @@ impl App {
                 self.debugger_paused_name = Some(name);
                 self.debugger_paused_args = Some(args);
                 self.debugger_open = true;
+            }
+
+            AgentEvent::PlanSaved { path } => {
+                let msg = format!("Plan saved to {}", path.display());
+                self.messages.push(DisplayMessage::new(DisplayRole::System, msg));
+                self.scroll_offset = 0;
             }
 
             // Forward-compat: unknown AgentEvent variants are silently ignored by the TUI.

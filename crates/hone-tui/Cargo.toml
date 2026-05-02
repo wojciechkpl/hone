@@ -28,6 +28,9 @@ arboard = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 criterion = { workspace = true }
+hone-tools = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
 
 [[bench]]
 name = "render_perf"

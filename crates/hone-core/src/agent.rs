@@ -22,12 +22,15 @@ use crate::context_injector::{ContextInjector, SkeletonStrategy};
 use crate::cost::CostAccumulator;
 use crate::egress_log::{EgressEntry, EgressLog, SpanKind, TraceContext, now_rfc3339, preview};
 use crate::error::AgentError;
+use crate::hooks::{HookEvent, HookOutcome, HookRegistry};
 use crate::injection_detector::InjectionDetector;
 use crate::memory_format::format_memory_body;
 use crate::memory_worthy::{MemoryCandidate, classify_turn};
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
+use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
+use crate::skills::SkillRegistry;
 use crate::turn::TurnResult;
 
 /// Configuration for creating an `Agent`.
@@ -83,6 +86,20 @@ pub struct AgentConfig {
     /// Wrapped in `Arc<Mutex>` so `AgentConfig` can remain `Clone`.
     pub step_rx:
         Option<std::sync::Arc<tokio::sync::Mutex<tokio::sync::mpsc::Receiver<StepAction>>>>,
+    /// Optional hook registry.  When `None` (the default) the hook system is
+    /// completely bypassed with zero overhead.
+    pub hooks: Option<Arc<HookRegistry>>,
+    /// Optional skill registry.  When `Some`, skills matching the user's prompt
+    /// are rendered and injected as a dedicated system-role message immediately
+    /// after the memories block.  When `None` (the default) the skill system is
+    /// completely bypassed with zero overhead.
+    pub skills: Option<Arc<SkillRegistry>>,
+    /// Operational mode controlling tool access and plan capture.
+    ///
+    /// Defaults to `AgentMode::Build` (full tool access, no plan capture).
+    /// When set to `AgentMode::Plan`, the tool registry is filtered to
+    /// read-only tools and the final assistant response is saved as a plan.
+    pub mode: AgentMode,
 }
 
 // ---------------------------------------------------------------------------
@@ -186,14 +203,29 @@ pub struct Agent {
     /// response — so the TUI can populate `StatusInfo::context_limit` early
     /// without re-emitting on every subsequent turn.
     model_info_emitted: bool,
+    /// Snapshot of the tool registry at construction time.
+    ///
+    /// Used by `SetMode` to restore the full registry when transitioning from
+    /// `Plan` back to `Build` / `AutoApprove`, and to compute the read-only
+    /// subset when transitioning to `Plan`.
+    base_tools: ToolRegistry,
 }
 
 impl Agent {
-    pub fn new(config: AgentConfig) -> Self {
+    pub fn new(mut config: AgentConfig) -> Self {
         let metrics = Arc::new(ContextMetrics::new());
         let context_config = crate::context::ContextConfig::for_model(config.model.model_name());
         let context =
             ContextManager::with_config(context_config).with_metrics(Arc::clone(&metrics));
+
+        // Snapshot the original tool registry before any mode filtering.
+        let base_tools = config.tools.clone();
+
+        // Eagerly filter to read-only tools when starting in Plan mode.
+        if config.mode == AgentMode::Plan {
+            config.tools = read_only_registry(&base_tools);
+        }
+
         Self {
             config,
             context,
@@ -202,6 +234,7 @@ impl Agent {
             metrics,
             guards: TurnGuards::default(),
             model_info_emitted: false,
+            base_tools,
         }
     }
 
@@ -334,6 +367,16 @@ impl Agent {
         }
     }
 
+    /// Fire hooks for `event`, returning all outcomes.
+    /// When no `HookRegistry` is configured this returns an empty `Vec` with
+    /// zero overhead.
+    async fn fire_hooks(hooks: Option<&Arc<HookRegistry>>, event: &HookEvent) -> Vec<HookOutcome> {
+        match hooks {
+            Some(h) => h.dispatch(event).await,
+            None => Vec::new(),
+        }
+    }
+
     /// Run a single conversation turn: stream tokens, dispatch any tool calls,
     /// and return a `TurnResult`.
     ///
@@ -361,6 +404,42 @@ impl Agent {
 
         self.cost.check_budget(self.config.budget_limit)?;
         let cost_before_turn = self.cost.total_usd();
+
+        // Fire UserPromptSubmit hooks.  A deny outcome blocks the turn early.
+        {
+            let event = HookEvent::UserPromptSubmit {
+                prompt: user_input.to_string(),
+            };
+            let outcomes =
+                Self::fire_hooks(self.config.hooks.as_ref(), &event).await;
+            for outcome in &outcomes {
+                if outcome.deny {
+                    let msg = outcome
+                        .message
+                        .clone()
+                        .unwrap_or_else(|| "blocked by hook".to_string());
+                    let _ = events
+                        .send(AgentEvent::Error {
+                            message: msg.clone(),
+                        })
+                        .await;
+                    return Ok(TurnResult {
+                        response: msg,
+                        usage: TokenUsage::default(),
+                        cost_usd: 0.0,
+                        tool_calls_count: 0,
+                    });
+                }
+            }
+        }
+
+        // Compute skills block using the original user prompt (before context
+        // injection prefixes it with file skeletons).  The raw intent is a better
+        // trigger signal than the augmented effective_input.
+        let skills_block = match &self.config.skills {
+            Some(reg) => reg.render_for_prompt(user_input),
+            None => String::new(),
+        };
 
         // Fetch memories before adding the user message so the query is clean.
         let (memories, memory_entries) = self.fetch_relevant_memories(user_input).await;
@@ -425,7 +504,7 @@ impl Agent {
             //    crashing on a context-length error mid-stream.
             //    Port of ml-intern's emergency summary path.
             //
-            //    The system prompt and any memory block are prepended at
+            //    The system prompt and any memory/skills blocks are prepended at
             //    request-build time and not stored in `self.context`, so we
             //    pass their estimated token counts as `extra_tokens` to keep
             //    the 95% trigger honest against the real outgoing payload.
@@ -434,6 +513,11 @@ impl Agent {
                     0
                 } else {
                     estimate_text_tokens(&memories)
+                }
+                + if skills_block.is_empty() {
+                    0
+                } else {
+                    estimate_text_tokens(&skills_block)
                 };
             if !context_emergency && self.context.is_over_ratio(0.95, extra_tokens) {
                 context_emergency = true;
@@ -488,6 +572,27 @@ impl Agent {
                     messages.insert(1, memory_msg);
                 } else {
                     messages.insert(0, memory_msg);
+                }
+            }
+
+            // Inject matched skills as a separate system-role message right
+            // after the memories block (or after the base system prompt when
+            // no memories are present).  `render_for_prompt` already includes
+            // the `## Skills` header, so no additional header is added here.
+            if !skills_block.is_empty() {
+                let skills_msg = Message {
+                    role: hone_proto::Role::System,
+                    content: hone_proto::Content::Text(skills_block.clone()),
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                };
+                // Position: after memories (index 2) when memories are present,
+                // otherwise right after the base system prompt (index 1).
+                let pos = if !memories.is_empty() { 2 } else { 1 };
+                if messages.len() > pos {
+                    messages.insert(pos, skills_msg);
+                } else {
+                    messages.push(skills_msg);
                 }
             }
 
@@ -715,9 +820,89 @@ impl Agent {
                     }
 
                     // Execute [i..j] in parallel and collect results in order.
-                    let batch = pending_tool_calls[i..j].to_vec();
-                    let batch_results =
-                        dispatch_parallel(&self.config.tools, &ctx, batch.clone(), &events).await;
+                    // Before parallel dispatch, run PreToolUse hooks serially.
+                    // Denied calls get a synthetic error injected immediately and
+                    // are NOT forwarded to dispatch_parallel.
+                    //
+                    // `ordered_batch` preserves the original call order for the
+                    // result-consuming loop; denied entries carry their result
+                    // pre-filled, live entries have `None` (filled after dispatch).
+                    let raw_batch = pending_tool_calls[i..j].to_vec();
+                    // (call, pre_filled_result)
+                    let mut ordered_batch: Vec<(hone_proto::ToolCallRequest, Option<Result<Value, AgentError>>)> =
+                        Vec::with_capacity(raw_batch.len());
+                    let mut live_batch: Vec<hone_proto::ToolCallRequest> = Vec::new();
+
+                    for mut call_item in raw_batch {
+                        let hook_event = HookEvent::PreToolUse {
+                            tool_name: call_item.name.clone(),
+                            args: call_item.arguments.clone(),
+                        };
+                        let hook_outcomes =
+                            Self::fire_hooks(self.config.hooks.as_ref(), &hook_event).await;
+                        let mut deny_msg: Option<String> = None;
+                        for outcome in &hook_outcomes {
+                            if outcome.deny {
+                                deny_msg = Some(
+                                    outcome
+                                        .message
+                                        .clone()
+                                        .unwrap_or_else(|| "blocked by hook".to_string()),
+                                );
+                                break;
+                            }
+                        }
+                        if let Some(msg) = deny_msg {
+                            let deny_val = serde_json::json!({ "error": msg.clone() });
+                            let _ = events
+                                .send(AgentEvent::ToolCallEnd {
+                                    id: call_item.id.clone(),
+                                    result: deny_val,
+                                    is_error: true,
+                                    duration_ms: 0,
+                                    cache_hit: false,
+                                })
+                                .await;
+                            self.context.add_message(Message::tool_result(
+                                call_item.id.clone(),
+                                format!("(blocked by hook): {msg}"),
+                            ));
+                            ordered_batch.push((
+                                call_item,
+                                Some(Err(AgentError::Internal {
+                                    detail: format!("(blocked by hook): {msg}"),
+                                })),
+                            ));
+                        } else {
+                            // Apply mutated_input if any.
+                            if let Some(mutated) =
+                                hook_outcomes.iter().find_map(|o| o.mutated_input.as_ref())
+                            {
+                                call_item.arguments = mutated.clone();
+                            }
+                            ordered_batch.push((call_item.clone(), None));
+                            live_batch.push(call_item);
+                        }
+                    }
+
+                    let live_results =
+                        dispatch_parallel(&self.config.tools, &ctx, live_batch, &events).await;
+                    let mut live_iter = live_results.into_iter();
+
+                    // Reconstitute final (call, result) pairs in original order.
+                    let batch: Vec<hone_proto::ToolCallRequest> = ordered_batch
+                        .iter()
+                        .map(|(c, _)| c.clone())
+                        .collect();
+                    let batch_results: Vec<Result<Value, AgentError>> = ordered_batch
+                        .into_iter()
+                        .map(|(_, pre)| match pre {
+                            Some(r) => r,
+                            None => live_iter.next().unwrap_or(Err(AgentError::Internal {
+                                detail: "missing live result".into(),
+                            })),
+                        })
+                        .collect();
 
                     // Consume both vecs by value to avoid needing Clone on AgentError.
                     for (call, result) in batch.into_iter().zip(batch_results.into_iter()) {
@@ -783,6 +968,30 @@ impl Agent {
                                     log.lock().await.record(entry);
                                 }
 
+                                // Fire PostToolUse hook (advisory).
+                                {
+                                    let post_event = HookEvent::PostToolUse {
+                                        tool_name: call.name.clone(),
+                                        args: call.arguments.clone(),
+                                        result: value.clone(),
+                                        is_error: false,
+                                        duration_ms: 0,
+                                    };
+                                    let post_outcomes =
+                                        Self::fire_hooks(self.config.hooks.as_ref(), &post_event)
+                                            .await;
+                                    for outcome in &post_outcomes {
+                                        if outcome.deny {
+                                            let msg =
+                                                outcome.message.as_deref().unwrap_or("denied");
+                                            tracing::warn!(
+                                                tool = %call.name,
+                                                "hook denied PostToolUse but action already completed: {msg}"
+                                            );
+                                        }
+                                    }
+                                }
+
                                 self.context
                                     .add_message(Message::tool_result(call.id.clone(), final_str));
                             }
@@ -814,8 +1023,7 @@ impl Agent {
                     i = j;
                 } else {
                     // Side-effecting call: dispatch sequentially.
-                    let call = &pending_tool_calls[i];
-                    tracing::debug!(tool_name = %call.name, "tool dispatched (sequential)");
+                    tracing::debug!(tool_name = %pending_tool_calls[i].name, "tool dispatched (sequential)");
 
                     // ----------------------------------------------------------
                     // Guard 1: Must-read-before-edit
@@ -823,12 +1031,15 @@ impl Agent {
                     // turn, automatically inject a read_file call first and feed
                     // its result back before proceeding with the edit.
                     // ----------------------------------------------------------
-                    if is_edit_tool(&call.name) {
-                        if let Some(file_path) = extract_file_path(&call.name, &call.arguments) {
+                    if is_edit_tool(&pending_tool_calls[i].name) {
+                        if let Some(file_path) = extract_file_path(
+                            &pending_tool_calls[i].name,
+                            &pending_tool_calls[i].arguments,
+                        ) {
                             if self.guards.needs_read_before_edit(&file_path) {
                                 tracing::debug!(
                                     file = %file_path,
-                                    edit_tool = %call.name,
+                                    edit_tool = %pending_tool_calls[i].name,
                                     "guard: injecting read_file before edit on unread file"
                                 );
 
@@ -876,7 +1087,7 @@ impl Agent {
                     // If the agent has made 3+ consecutive edits, inject a hint
                     // message before processing this call.
                     // ----------------------------------------------------------
-                    if is_edit_tool(&call.name) {
+                    if is_edit_tool(&pending_tool_calls[i].name) {
                         let streak = self.guards.record_edit();
                         if streak >= 3 {
                             tracing::debug!(
@@ -895,6 +1106,54 @@ impl Agent {
                         // Shell or any other non-edit sequential call resets the streak.
                         self.guards.break_edit_streak();
                     }
+
+                    // Fire PreToolUse hooks (sequential path).
+                    // A deny outcome skips the tool and injects a synthetic result.
+                    {
+                        let hook_event = HookEvent::PreToolUse {
+                            tool_name: pending_tool_calls[i].name.clone(),
+                            args: pending_tool_calls[i].arguments.clone(),
+                        };
+                        let hook_outcomes =
+                            Self::fire_hooks(self.config.hooks.as_ref(), &hook_event).await;
+                        let mut denied = false;
+                        for outcome in &hook_outcomes {
+                            if outcome.deny {
+                                let msg = outcome
+                                    .message
+                                    .clone()
+                                    .unwrap_or_else(|| "blocked by hook".to_string());
+                                let deny_result = serde_json::json!({ "error": msg.clone() });
+                                let _ = events
+                                    .send(AgentEvent::ToolCallEnd {
+                                        id: pending_tool_calls[i].id.clone(),
+                                        result: deny_result,
+                                        is_error: true,
+                                        duration_ms: 0,
+                                        cache_hit: false,
+                                    })
+                                    .await;
+                                self.context.add_message(Message::tool_result(
+                                    pending_tool_calls[i].id.clone(),
+                                    format!("(blocked by hook): {msg}"),
+                                ));
+                                denied = true;
+                                break;
+                            }
+                        }
+                        if denied {
+                            i += 1;
+                            continue;
+                        }
+                        // Apply the first mutated_input to call arguments if present.
+                        if let Some(mutated) = hook_outcomes
+                            .iter()
+                            .find_map(|o| o.mutated_input.as_ref())
+                        {
+                            pending_tool_calls[i].arguments = mutated.clone();
+                        }
+                    }
+                    let call = &pending_tool_calls[i];
 
                     let _ = events
                         .send(AgentEvent::ToolCallStart {
@@ -1079,6 +1338,32 @@ impl Agent {
                                 })
                                 .await;
 
+                            // Fire PostToolUse hook (advisory — log denial, no unwind).
+                            {
+                                let post_event = HookEvent::PostToolUse {
+                                    tool_name: call.name.clone(),
+                                    args: call.arguments.clone(),
+                                    result: value.clone(),
+                                    is_error: false,
+                                    duration_ms,
+                                };
+                                let post_outcomes =
+                                    Self::fire_hooks(self.config.hooks.as_ref(), &post_event)
+                                        .await;
+                                for outcome in &post_outcomes {
+                                    if outcome.deny {
+                                        let msg = outcome
+                                            .message
+                                            .as_deref()
+                                            .unwrap_or("denied");
+                                        tracing::warn!(
+                                            tool = %call.name,
+                                            "hook denied PostToolUse but action already completed: {msg}"
+                                        );
+                                    }
+                                }
+                            }
+
                             let content_str =
                                 serde_json::to_string(&augmented_value).unwrap_or_default();
                             let final_content = if risk.is_actionable() {
@@ -1149,6 +1434,40 @@ impl Agent {
         if let Some(log) = &self.config.egress_log {
             if let Err(e) = log.lock().await.flush() {
                 tracing::warn!(error = %e, "failed to flush egress audit log");
+            }
+        }
+
+        // Fire Stop hook (advisory — denials are logged but not acted on).
+        {
+            let stop_event = HookEvent::Stop {
+                turn_summary: response_text.clone(),
+            };
+            let stop_outcomes =
+                Self::fire_hooks(self.config.hooks.as_ref(), &stop_event).await;
+            for outcome in &stop_outcomes {
+                if outcome.deny {
+                    let msg = outcome.message.as_deref().unwrap_or("denied");
+                    tracing::warn!("hook denied Stop but turn already completed: {msg}");
+                }
+            }
+        }
+
+        // In Plan mode, save the assistant's response as a plan file (best-effort).
+        if self.config.mode == AgentMode::Plan && !response_text.is_empty() {
+            let plan = SavedPlan {
+                timestamp: now_rfc3339(),
+                slug: slugify(user_input),
+                user_prompt: user_input.to_string(),
+                plan_body: response_text.clone(),
+            };
+            let store = PlanModeStore::default_for(&self.config.working_dir);
+            match store.save(&plan).await {
+                Ok(path) => {
+                    let _ = events.send(AgentEvent::PlanSaved { path }).await;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to save plan file");
+                }
             }
         }
 
@@ -1428,6 +1747,15 @@ enum AgentCommand {
     SetModel {
         model: ModelId,
     },
+    /// Replace the agent's active tool registry (for inline @agent tool allowlists).
+    SetTools {
+        tools: ToolRegistry,
+    },
+    /// Change the agent's operational mode.  Automatically adjusts the tool
+    /// registry: Plan → read-only subset; Build/AutoApprove → full base registry.
+    SetMode {
+        mode: AgentMode,
+    },
     Shutdown,
 }
 
@@ -1489,6 +1817,22 @@ impl AgentHandle {
                     }
                     AgentCommand::SetModel { model } => {
                         agent.config.model = model;
+                    }
+                    AgentCommand::SetTools { tools } => {
+                        agent.config.tools = tools;
+                    }
+                    AgentCommand::SetMode { mode } => {
+                        if agent.config.mode != mode {
+                            match mode {
+                                AgentMode::Plan => {
+                                    agent.config.tools = read_only_registry(&agent.base_tools);
+                                }
+                                AgentMode::Build | AgentMode::AutoApprove => {
+                                    agent.config.tools = agent.base_tools.clone();
+                                }
+                            }
+                            agent.config.mode = mode;
+                        }
                     }
                     AgentCommand::Shutdown => break,
                 }
@@ -1593,6 +1937,29 @@ impl AgentHandle {
                 prompt: prompt.into(),
             })
             .await;
+    }
+
+    /// Replace the agent's active tool registry.
+    ///
+    /// Fire-and-forget — the command is queued; it takes effect before the next
+    /// `run_turn` call because the actor processes commands sequentially.
+    ///
+    /// Used by the TUI's `@agent-name` inline dispatch to apply per-agent tool
+    /// allowlists for one turn.
+    pub async fn set_tools(&self, tools: ToolRegistry) {
+        let _ = self.cmd_tx.send(AgentCommand::SetTools { tools }).await;
+    }
+
+    /// Change the agent's operational mode.
+    ///
+    /// Fire-and-forget — the command is queued; it takes effect before the next
+    /// `run_turn` call because the actor processes commands sequentially.
+    ///
+    /// Transitioning to `Plan` filters the tool registry to read-only tools.
+    /// Transitioning to `Build` or `AutoApprove` restores the full base registry.
+    /// Same-mode transitions are no-ops.
+    pub async fn set_mode(&self, mode: AgentMode) {
+        let _ = self.cmd_tx.send(AgentCommand::SetMode { mode }).await;
     }
 
     /// Change the model identifier used for subsequent turns.

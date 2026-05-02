@@ -99,6 +99,8 @@ fn base_config_with_cli(binary: &str) -> AgentConfig {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     }
 }
 

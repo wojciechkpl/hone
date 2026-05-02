@@ -139,6 +139,10 @@ pub enum AgentEvent {
         /// (memory_id, short_snippet ≤ 80 chars) pairs.
         entries: Vec<(String, String)>,
     },
+    /// Emitted at the end of a Plan-mode turn after the plan file is written.
+    PlanSaved {
+        path: std::path::PathBuf,
+    },
 }
 
 /// Action sent from the TUI to the agent when step mode is active and the
