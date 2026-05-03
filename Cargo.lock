@@ -1511,6 +1511,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "toml",
  "tracing",
 ]
 
@@ -1542,6 +1543,18 @@ dependencies = [
  "thiserror",
  "time",
  "uuid",
+]
+
+[[package]]
+name = "hone-provenance"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -1589,6 +1602,7 @@ dependencies = [
  "hone-proto",
  "landlock",
  "rustix 0.38.44",
+ "serde",
  "tempfile",
  "thiserror",
  "tracing",
