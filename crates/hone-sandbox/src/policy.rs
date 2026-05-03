@@ -7,7 +7,8 @@ use crate::error::SandboxError;
 /// The mode is informational for the policy builder's validation logic; the
 /// actual enforcement is determined by whichever [`crate::Sandbox`] backend
 /// is active.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SandboxMode {
     /// The operator configures the policy by hand.  No minimum-path
     /// requirements are enforced at build time.

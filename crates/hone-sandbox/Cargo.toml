@@ -15,6 +15,7 @@ hone-proto = { workspace = true }
 thiserror = { workspace = true }
 cfg-if = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix = { workspace = true }
