@@ -8,7 +8,7 @@ mod shell;
 mod traits;
 
 pub use error::ToolError;
-pub use file::{EditFileTool, GlobTool, GrepTool, MultiEditTool, ReadFileTool, WriteFileTool};
+pub use file::{EditFileTool, GlobTool, GrepTool, MultiEditTool, PatchTool, ReadFileTool, WriteFileTool};
 pub use git::{
     AutoCommitter, GitBranchTool, GitCheckoutTool, GitCommitTool, GitDiffTool, GitRedoTool,
     GitStatusTool, GitUndoTool, UndoStack,
