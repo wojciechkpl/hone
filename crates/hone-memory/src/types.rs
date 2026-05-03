@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::embedding::Embedding;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MemoryKind {
@@ -30,6 +32,11 @@ pub struct Memory {
     pub kind: MemoryKind,
     #[serde(default)]
     pub description: Option<String>,
+    /// Optional pre-computed embedding vector. Absent for memories stored
+    /// before the semantic-recall feature was introduced; those memories
+    /// are skipped by `recall_semantic`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<Embedding>,
 }
 
 impl Default for Memory {
@@ -43,6 +50,7 @@ impl Default for Memory {
             decay_at: None,
             kind: MemoryKind::Conversation,
             description: None,
+            embedding: None,
         }
     }
 }

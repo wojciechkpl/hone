@@ -118,6 +118,7 @@ impl AdaptiveClassifier {
             decay_at: Some(now + 30 * 86_400), // decay after 30 days
             kind: hone_memory::MemoryKind::Outcome,
             description: None,
+            embedding: None,
         };
 
         if let Err(e) = self.store.record(memory).await {
