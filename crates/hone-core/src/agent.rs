@@ -7,7 +7,7 @@ use futures::StreamExt;
 use hone_index::SqliteIndex;
 use hone_memory::{Memory, MemoryQuery, MemoryStore};
 use hone_proto::{
-    AgentEvent, Message, ModelId, PricingEntry, ProviderEvent, StepAction, TokenUsage,
+    AgentEvent, Content, Message, ModelId, PricingEntry, ProviderEvent, StepAction, TokenUsage,
     ToolApprovalPolicy, ToolCallRequest,
 };
 use hone_providers::{CompletionRequest, ContextWindowTable, ModelProvider, ProviderError};
@@ -485,6 +485,30 @@ impl Agent {
         self.context
             .add_message(Message::user(effective_input.as_ref()));
 
+        self.run_turn_inner(user_input, memories, skills_block, cost_before_turn, turn_trace, events)
+            .await
+    }
+
+    /// Shared LLM-loop executed after the user message is already in context.
+    ///
+    /// Both [`run_turn`] and [`run_turn_content`] call this after appending
+    /// the appropriate user [`Message`] to `self.context`.
+    ///
+    /// * `user_text`       — plain-text of the user turn (used for memory classification).
+    /// * `memories`        — pre-fetched memory block string (may be empty).
+    /// * `skills_block`    — pre-rendered skills block (may be empty).
+    /// * `cost_before_turn`— USD cost snapshot taken before the turn started.
+    /// * `turn_trace`      — egress-log trace context for this turn's span.
+    #[allow(clippy::too_many_lines)]
+    async fn run_turn_inner(
+        &mut self,
+        user_text: &str,
+        memories: String,
+        skills_block: String,
+        cost_before_turn: f64,
+        turn_trace: TraceContext,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Result<TurnResult, AgentError> {
         let mut response_text = String::new();
         let mut turn_usage = TokenUsage::default();
         let mut tool_calls_count: u32 = 0;
@@ -1428,7 +1452,7 @@ impl Agent {
 
         // Persist memory (fire-and-forget). The classifier gates writes:
         // noisy turns return None and write nothing.
-        if let Some(candidate) = classify_turn(user_input, &response_text) {
+        if let Some(candidate) = classify_turn(user_text, &response_text) {
             self.record_memory(candidate).await;
         }
 
@@ -1458,8 +1482,8 @@ impl Agent {
         if self.config.mode == AgentMode::Plan && !response_text.is_empty() {
             let plan = SavedPlan {
                 timestamp: now_rfc3339(),
-                slug: slugify(user_input),
-                user_prompt: user_input.to_string(),
+                slug: slugify(user_text),
+                user_prompt: user_text.to_string(),
                 plan_body: response_text.clone(),
             };
             let store = PlanModeStore::default_for(&self.config.working_dir);
@@ -1486,6 +1510,58 @@ impl Agent {
             cost_usd,
             tool_calls_count,
         })
+    }
+
+    /// Like [`run_turn`] but accepts a pre-built [`Content`] value directly.
+    ///
+    /// Used by the CLI `--image` flag to pass multimodal user messages without
+    /// serialising image data through the string path.  Context injection is
+    /// skipped (the caller owns the full content), but memory recall and all
+    /// other per-turn logic run as normal.
+    pub async fn run_turn_content(
+        &mut self,
+        content: Content,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Result<TurnResult, AgentError> {
+        let text_for_memory = content.as_text();
+
+        self.turn_count += 1;
+        tracing::Span::current().record("turn", self.turn_count);
+        tracing::debug!(turn_number = self.turn_count, "starting turn (content)");
+
+        self.guards.reset();
+        let turn_trace = TraceContext::new();
+
+        self.cost.check_budget(self.config.budget_limit)?;
+        let cost_before_turn = self.cost.total_usd();
+
+        let (memories, memory_entries) = self.fetch_relevant_memories(&text_for_memory).await;
+        if !memory_entries.is_empty() {
+            let _ = events
+                .send(AgentEvent::MemoryRecalled {
+                    entries: memory_entries,
+                })
+                .await;
+        }
+
+        // Add the full multimodal content as the user message (no injection).
+        self.context.add_message(Message::user(content));
+
+        // run_turn_content is multimodal — skills are matched against the text
+        // portion only (image bytes don't drive trigger regexes).
+        let skills_block = match &self.config.skills {
+            Some(reg) => reg.render_for_prompt(&text_for_memory),
+            None => String::new(),
+        };
+        self.run_turn_inner(
+            &text_for_memory,
+            memories,
+            skills_block,
+            cost_before_turn,
+            turn_trace,
+            events,
+        )
+        .await
     }
 }
 
@@ -1724,6 +1800,11 @@ enum AgentCommand {
         events: mpsc::Sender<AgentEvent>,
         reply: oneshot::Sender<Result<TurnResult, AgentError>>,
     },
+    RunTurnContent {
+        content: Content,
+        events: mpsc::Sender<AgentEvent>,
+        reply: oneshot::Sender<Result<TurnResult, AgentError>>,
+    },
     SwapProvider {
         provider: Arc<dyn ModelProvider>,
     },
@@ -1796,6 +1877,15 @@ impl AgentHandle {
                         tokens_writer.store(agent.context_token_count(), Ordering::Relaxed);
                         let _ = reply.send(result);
                     }
+                    AgentCommand::RunTurnContent {
+                        content,
+                        events,
+                        reply,
+                    } => {
+                        let result = agent.run_turn_content(content, events).await;
+                        tokens_writer.store(agent.context_token_count(), Ordering::Relaxed);
+                        let _ = reply.send(result);
+                    }
                     AgentCommand::SwapProvider { provider } => {
                         agent.swap_provider(provider);
                     }
@@ -1858,6 +1948,28 @@ impl AgentHandle {
         self.cmd_tx
             .send(AgentCommand::RunTurn {
                 user_input: user_input.into(),
+                events,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| AgentError::Cancelled)?;
+
+        reply_rx.await.map_err(|_| AgentError::Cancelled)?
+    }
+
+    /// Run a single conversation turn with a pre-built [`Content`] value.
+    ///
+    /// Used for multimodal prompts (e.g. image + text) where the caller
+    /// has already assembled the [`Content::Parts`] payload.
+    pub async fn run_turn_content(
+        &self,
+        content: Content,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Result<TurnResult, AgentError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.cmd_tx
+            .send(AgentCommand::RunTurnContent {
+                content,
                 events,
                 reply: reply_tx,
             })
