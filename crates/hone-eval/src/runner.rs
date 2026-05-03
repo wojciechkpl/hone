@@ -18,7 +18,7 @@ pub enum TaskStatus {
     AgentError,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TaskOutcome {
     pub id: String,
     pub status: TaskStatus,
