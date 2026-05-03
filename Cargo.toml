@@ -11,6 +11,7 @@ members = [
     "crates/hone-memory",
     "crates/hone-core",
     "crates/hone-recipes",
+    "crates/hone-eval",
     "crates/hone-server",
     "crates/hone-tui",
     "bins/hone",
@@ -41,6 +42,7 @@ hone-index = { version = "0.1.0", path = "crates/hone-index" }
 hone-memory = { version = "0.1.0", path = "crates/hone-memory" }
 hone-core = { version = "0.1.0", path = "crates/hone-core" }
 hone-recipes = { version = "0.1.0", path = "crates/hone-recipes" }
+hone-eval = { version = "0.1.0", path = "crates/hone-eval" }
 hone-server = { version = "0.1.0", path = "crates/hone-server" }
 hone-tui = { version = "0.1.0", path = "crates/hone-tui" }
 

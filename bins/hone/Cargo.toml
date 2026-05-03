@@ -27,6 +27,7 @@ hone-sandbox = { workspace = true }
 hone-tools = { workspace = true }
 hone-memory = { workspace = true }
 hone-index = { workspace = true }
+hone-eval = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

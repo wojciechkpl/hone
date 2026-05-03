@@ -40,6 +40,7 @@ use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, ModelProvider, adapters::anthropic::AnthropicProvider,
     adapters::ollama::OllamaProvider, adapters::openai::OpenAiProvider,
 };
+use hone_eval::{EvalConfig, EvalReport, EvalRunner};
 use hone_recipes::Recipe;
 use hone_sandbox::SandboxBuilder;
 use hone_tools::{
@@ -106,6 +107,14 @@ enum HoneCmd {
     Memory {
         #[command(subcommand)]
         cmd: memory_cmd::MemoryCmd,
+    },
+    /// Run evaluation tasks from a TOML file and produce a report.
+    Eval {
+        /// Path to the tasks.toml file.
+        tasks: PathBuf,
+        /// Output directory for report.json and report.md (default: parent dir of tasks file).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -1494,6 +1503,94 @@ async fn cmd_session_delete(name: &str) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Eval subcommand
+// ---------------------------------------------------------------------------
+
+/// Run evaluation tasks from a TOML file and write report.json + report.md.
+///
+/// Provider support in v1: Anthropic (ANTHROPIC_API_KEY) and OpenAI
+/// (OPENAI_API_KEY / HONE_OPENAI_BASE_URL / HONE_OPENAI_MODEL). Other
+/// providers (Ollama, CLI pass-throughs) are a follow-up.
+async fn cmd_eval(
+    tasks_path: &std::path::Path,
+    output_dir: Option<PathBuf>,
+    wizard_cfg: &configure::ResolvedConfig,
+) -> Result<()> {
+    use std::path::Path;
+
+    let config = EvalConfig::from_toml_file(tasks_path)
+        .map_err(|e| anyhow::anyhow!("failed to load tasks file: {e}"))?;
+
+    let base_dir = tasks_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+
+    let out_dir = output_dir.unwrap_or_else(|| base_dir.clone());
+
+    std::fs::create_dir_all(&out_dir)
+        .map_err(|e| anyhow::anyhow!("cannot create output dir {}: {e}", out_dir.display()))?;
+
+    // Snapshot wizard config fields needed inside the closure (must be 'static).
+    let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .or_else(|| wizard_cfg.anthropic_api_key.clone());
+    let openai_key = std::env::var("OPENAI_API_KEY")
+        .ok()
+        .or_else(|| wizard_cfg.openai_api_key.clone());
+    let openai_base_url = std::env::var("HONE_OPENAI_BASE_URL")
+        .ok()
+        .or_else(|| wizard_cfg.openai_base_url.clone());
+    let openai_model = std::env::var("HONE_OPENAI_MODEL")
+        .ok()
+        .or_else(|| wizard_cfg.openai_model.clone())
+        .unwrap_or_else(|| "gpt-4o".into());
+    let _ = &openai_model; // referenced by the OpenAI closure branch below
+
+    let provider_factory: Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync> =
+        if let Some(key) = anthropic_key {
+            Box::new(move || Arc::new(AnthropicProvider::new(key.clone())) as Arc<dyn ModelProvider>)
+        } else if let Some(key) = openai_key {
+            let base_url = openai_base_url.clone();
+            Box::new(move || {
+                let provider = if let Some(ref url) = base_url {
+                    OpenAiProvider::with_base_url(key.clone(), url.clone())
+                } else {
+                    OpenAiProvider::new(key.clone())
+                };
+                Arc::new(provider) as Arc<dyn ModelProvider>
+            })
+        } else {
+            anyhow::bail!(
+                "eval requires a provider: set ANTHROPIC_API_KEY or OPENAI_API_KEY"
+            );
+        };
+
+    let outcomes = EvalRunner::new(config, base_dir, provider_factory)
+        .run_all()
+        .await;
+
+    let report = EvalReport::from_outcomes(outcomes);
+
+    hone_eval::report::write_json(&report, &out_dir.join("report.json"))
+        .map_err(|e| anyhow::anyhow!("failed to write report.json: {e}"))?;
+    hone_eval::report::write_markdown(&report, &out_dir.join("report.md"))
+        .map_err(|e| anyhow::anyhow!("failed to write report.md: {e}"))?;
+
+    let pass_pct = report.pass_rate() * 100.0;
+    println!(
+        "{}/{} passed ({:.0}%) — total cost ${:.4} — see {}/report.md for details",
+        report.passed,
+        report.total,
+        pass_pct,
+        report.total_cost_usd,
+        out_dir.display(),
+    );
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // SQLite persistence initialisation
 // ---------------------------------------------------------------------------
 
@@ -1766,6 +1863,10 @@ async fn main() -> Result<()> {
             HoneCmd::Memory { .. } => {
                 // Handled below, outside the `Some(ref cmd)` borrow scope,
                 // so we can take ownership of the MemoryCmd variant.
+            }
+            HoneCmd::Eval { tasks, output } => {
+                cmd_eval(tasks, output.clone(), &wizard_cfg).await?;
+                return Ok(());
             }
         }
     }
