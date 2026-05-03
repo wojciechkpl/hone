@@ -1,0 +1,24 @@
+[package]
+name = "hone-acp-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Wire types are duplicated from hone-providers/src/acp/types.rs to avoid
+# a dependency cycle (hone-acp-server must not depend on hone-providers).
+# TODO: move shared types into hone-proto::acp when convenient.
+
+[dependencies]
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+tokio       = { workspace = true }
+async-trait = { workspace = true }
+thiserror   = { workspace = true }
+tracing     = { workspace = true }
+uuid        = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "io-util", "rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true
