@@ -19,6 +19,8 @@ toml = { workspace = true }
 figment = { workspace = true }
 pulldown-cmark = { workspace = true }
 tracing = { workspace = true }
+globset = "0.4"
+dirs-next = "2"
 
 [dev-dependencies]
 tempfile = { workspace = true }
