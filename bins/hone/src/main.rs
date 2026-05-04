@@ -1,4 +1,5 @@
 mod configure;
+mod image_input;
 mod memory_cmd;
 mod memory_init;
 mod report;
@@ -35,7 +36,7 @@ use hone_core::{
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_mcp::McpManager;
 use hone_memory::{MemoryStore, SqliteStore};
-use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ToolApprovalPolicy};
+use hone_proto::{AgentEvent, Content, Message, ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, ModelProvider, adapters::anthropic::AnthropicProvider,
     adapters::ollama::OllamaProvider, adapters::openai::OpenAiProvider,
@@ -213,6 +214,11 @@ struct Cli {
     /// Build mode). The file must be a SavedPlan written by plan mode.
     #[arg(long, value_name = "FILE")]
     plan: Option<PathBuf>,
+
+    /// Attach one or more image files to the initial prompt. Supported formats:
+    /// png, jpg/jpeg, gif, webp. Repeatable for multi-image prompts.
+    #[arg(long, value_name = "FILE")]
+    image: Vec<PathBuf>,
 
     /// Subcommand (session management, configure wizard, etc.)
     #[command(subcommand)]
@@ -1299,6 +1305,35 @@ async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
     Ok(())
 }
 
+/// Run a one-shot multimodal turn (text + images) and stream tokens to stdout.
+async fn run_one_shot_content(agent: AgentHandle, content: Content) -> Result<()> {
+    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+    let printer = tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                AgentEvent::Token { text } => {
+                    print!("{text}");
+                    use io::Write;
+                    let _ = io::stdout().flush();
+                }
+                AgentEvent::Done { .. } => break,
+                AgentEvent::Error { message } => {
+                    eprintln!("\nerror: {message}");
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    agent.run_turn_content(content, tx).await?;
+
+    let _ = printer.await;
+    println!();
+    Ok(())
+}
+
 /// Run a one-shot prompt and output structured JSON.
 ///
 /// Output format:
@@ -2355,7 +2390,11 @@ async fn run_selected_mode(
             }
         }
 
-        if cli.json {
+        if !cli.image.is_empty() {
+            let content = image_input::build_content(&cli.image, prompt)
+                .map_err(|e| anyhow::anyhow!("image input error: {e}"))?;
+            run_one_shot_content(agent.clone(), content).await?;
+        } else if cli.json {
             run_json_mode(agent.clone(), prompt, model_id.as_str()).await?;
         } else {
             run_one_shot(agent.clone(), prompt).await?;
