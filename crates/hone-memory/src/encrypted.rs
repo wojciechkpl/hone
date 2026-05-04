@@ -299,6 +299,7 @@ async fn load_or_init_salt(store: &impl MemoryStore) -> Result<Vec<u8>, MemoryEr
             decay_at: None,
             kind: crate::types::MemoryKind::Conversation,
             description: None,
+            embedding: None,
         })
         .await?;
 
@@ -345,6 +346,7 @@ mod tests {
             decay_at: None,
             kind: crate::types::MemoryKind::Conversation,
             description: None,
+            embedding: None,
         };
 
         store.record(memory.clone()).await.unwrap();
@@ -380,6 +382,7 @@ mod tests {
                 decay_at: None,
                 kind: crate::types::MemoryKind::Conversation,
                 description: None,
+                embedding: None,
             })
             .await
             .unwrap();
@@ -425,6 +428,7 @@ mod tests {
                 decay_at: None,
                 kind: crate::types::MemoryKind::Conversation,
                 description: None,
+                embedding: None,
             })
             .await
             .unwrap();
@@ -493,6 +497,7 @@ mod tests {
                 decay_at: None,
                 kind: crate::types::MemoryKind::Conversation,
                 description: None,
+                embedding: None,
             })
             .await
             .unwrap();
@@ -506,6 +511,7 @@ mod tests {
                 decay_at: None,
                 kind: crate::types::MemoryKind::Conversation,
                 description: None,
+                embedding: None,
             })
             .await
             .unwrap();
@@ -566,6 +572,7 @@ mod tests {
                 decay_at: None,
                 kind: crate::types::MemoryKind::Conversation,
                 description: None,
+                embedding: None,
             })
             .await
             .unwrap();
@@ -607,6 +614,7 @@ mod tests {
                 decay_at: None,
                 kind: crate::types::MemoryKind::Conversation,
                 description: None,
+                embedding: None,
             })
             .await
             .unwrap();

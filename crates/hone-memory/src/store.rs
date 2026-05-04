@@ -3,6 +3,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
+use crate::embedding::{ScoredMemory, cosine_similarity};
 use crate::error::MemoryError;
 use crate::types::{Memory, MemoryFilter, MemoryQuery};
 
@@ -82,6 +83,47 @@ pub trait MemoryStore: Send + Sync {
     async fn import(path: &Path) -> Result<Self, MemoryError>
     where
         Self: Sized;
+
+    /// Semantic recall: return up to `limit` memories ranked by cosine
+    /// similarity to `query_embedding`. Memories without a stored embedding
+    /// are silently skipped.
+    ///
+    /// The default implementation fetches all memories via
+    /// `recall(MemoryQuery { text: "", limit: 1024, kind: None })`, then for
+    /// each memory whose `embedding` is `Some`, computes cosine similarity and
+    /// returns the top `limit` as `ScoredMemory`. Implementations with native
+    /// vector indexes should override for efficiency.
+    async fn recall_semantic(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+    ) -> Result<Vec<ScoredMemory>, MemoryError> {
+        let candidates = self
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: 1024,
+                kind: None,
+            })
+            .await?;
+
+        let mut scored: Vec<ScoredMemory> = candidates
+            .into_iter()
+            .filter_map(|m| {
+                let embedding = m.embedding.clone()?;
+                let score = cosine_similarity(query_embedding, &embedding);
+                Some(ScoredMemory { memory: m, score })
+            })
+            .collect();
+
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        scored.truncate(limit);
+        Ok(scored)
+    }
 
     /// Find the memory whose content is most similar to `query` and whose
     /// trigram-Jaccard similarity score is at or above `threshold`.

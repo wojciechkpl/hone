@@ -349,6 +349,7 @@ impl Agent {
                 kind: candidate.kind,
                 tags: existing.tags,
                 decay_at: existing.decay_at,
+                embedding: None,
             };
             let _ = store.record(updated).await;
         } else {
@@ -362,6 +363,7 @@ impl Agent {
                 decay_at: None,
                 kind: candidate.kind,
                 description: candidate.description,
+                embedding: None,
             };
             let _ = store.record(memory).await;
         }

@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use sqlx::Row;
 
 use crate::bm25::{Bm25Index, Bm25Params};
+use crate::embedding::{ScoredMemory, cosine_similarity};
 use crate::error::MemoryError;
 use crate::store::MemoryStore;
 use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
@@ -15,7 +16,7 @@ pub struct SqliteStore {
 /// The highest schema version this binary understands.  Bump this whenever a
 /// new migration is added to `run_migrations`.
 // crate-external for tests; not stable API
-pub const CURRENT_SCHEMA_VERSION: i32 = 2;
+pub const CURRENT_SCHEMA_VERSION: i32 = 3;
 
 /// Maximum number of memories fetched for BM25 scoring.
 ///
@@ -48,6 +49,21 @@ const CREATE_META_TABLE_SQL: &str = "
 // once R7 lands — do not remove as dead weight even if recall ignores it now.
 const CREATE_KIND_INDEX_SQL: &str =
     "CREATE INDEX IF NOT EXISTS memories_kind_idx ON memories(kind)";
+
+fn embedding_to_bytes(emb: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(emb.len() * 4);
+    for v in emb {
+        bytes.extend_from_slice(&v.to_le_bytes());
+    }
+    bytes
+}
+
+fn bytes_to_embedding(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
+}
 
 fn to_io_err(e: impl std::fmt::Display) -> MemoryError {
     MemoryError::Io(std::io::Error::other(e.to_string()))
@@ -93,6 +109,12 @@ fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
 
     let tags: Vec<String> = serde_json::from_str(&tags_json)?;
 
+    let embedding: Option<Vec<f32>> = row
+        .try_get::<Option<Vec<u8>>, _>("embedding")
+        .ok()
+        .flatten()
+        .map(|bytes| bytes_to_embedding(&bytes));
+
     Ok(Memory {
         id,
         content,
@@ -102,6 +124,7 @@ fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
         decay_at: decay_at.map(|t| t as u64),
         kind,
         description,
+        embedding,
     })
 }
 
@@ -259,6 +282,15 @@ async fn run_migrations_inner(conn: &mut sqlx::SqliteConnection) -> Result<i32, 
                         .map_err(to_io_err)?;
                 }
             }
+            3 => {
+                // v3: add `embedding` BLOB column for semantic recall.
+                if !column_exists(&mut *conn, "memories", "embedding").await? {
+                    sqlx::query("ALTER TABLE memories ADD COLUMN embedding BLOB")
+                        .execute(&mut *conn)
+                        .await
+                        .map_err(to_io_err)?;
+                }
+            }
             _ => {
                 // Future migrations go here.
             }
@@ -368,11 +400,12 @@ impl MemoryStore for SqliteStore {
         let created_at = memory.created_at as i64;
         let decay_at = memory.decay_at.map(|t| t as i64);
         let kind_str = kind_to_str(memory.kind);
+        let embedding_bytes = memory.embedding.as_deref().map(embedding_to_bytes);
 
         sqlx::query(
             "INSERT OR REPLACE INTO memories
-             (id, content, tags, weight, created_at, decay_at, kind, description)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             (id, content, tags, weight, created_at, decay_at, kind, description, embedding)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         )
         .bind(&memory.id)
         .bind(&memory.content)
@@ -382,6 +415,7 @@ impl MemoryStore for SqliteStore {
         .bind(decay_at)
         .bind(kind_str)
         .bind(&memory.description)
+        .bind(embedding_bytes)
         .execute(&self.pool)
         .await
         .map_err(to_io_err)?;
@@ -408,7 +442,7 @@ impl MemoryStore for SqliteStore {
         let memories: Vec<Memory> = if let Some(kind) = query.kind {
             let kind_str = kind_to_str(kind);
             let rows = sqlx::query(
-                "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+                "SELECT id, content, tags, weight, created_at, decay_at, kind, description, embedding
                  FROM memories
                  WHERE kind = ?1
                  ORDER BY created_at DESC
@@ -431,7 +465,7 @@ impl MemoryStore for SqliteStore {
                 .collect()
         } else {
             let rows = sqlx::query(
-                "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+                "SELECT id, content, tags, weight, created_at, decay_at, kind, description, embedding
                  FROM memories
                  ORDER BY created_at DESC
                  LIMIT ?",
@@ -502,7 +536,7 @@ impl MemoryStore for SqliteStore {
 
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
         let row = sqlx::query(
-            "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+            "SELECT id, content, tags, weight, created_at, decay_at, kind, description, embedding
              FROM memories
              WHERE id = ?1
              LIMIT 1",
@@ -583,7 +617,7 @@ impl MemoryStore for SqliteStore {
 
     async fn export(&self, path: &Path) -> Result<(), MemoryError> {
         let rows = sqlx::query(
-            "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+            "SELECT id, content, tags, weight, created_at, decay_at, kind, description, embedding
              FROM memories",
         )
         .fetch_all(&self.pool)
@@ -604,30 +638,48 @@ impl MemoryStore for SqliteStore {
 
         let store = SqliteStore::in_memory().await?;
         for memory in memories {
-            let tags_json = serde_json::to_string(&memory.tags)?;
-            let created_at = memory.created_at as i64;
-            let decay_at = memory.decay_at.map(|t| t as i64);
-            let kind_str = kind_to_str(memory.kind);
-
-            sqlx::query(
-                "INSERT OR REPLACE INTO memories
-                 (id, content, tags, weight, created_at, decay_at, kind, description)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            )
-            .bind(&memory.id)
-            .bind(&memory.content)
-            .bind(&tags_json)
-            .bind(memory.weight)
-            .bind(created_at)
-            .bind(decay_at)
-            .bind(kind_str)
-            .bind(&memory.description)
-            .execute(&store.pool)
-            .await
-            .map_err(to_io_err)?;
+            store.record(memory).await?;
         }
 
         Ok(store)
+    }
+
+    async fn recall_semantic(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+    ) -> Result<Vec<ScoredMemory>, MemoryError> {
+        let rows = sqlx::query(
+            "SELECT id, content, tags, weight, created_at, decay_at, kind, description, embedding
+             FROM memories
+             WHERE embedding IS NOT NULL",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+
+        let mut scored: Vec<ScoredMemory> = rows
+            .iter()
+            .filter_map(|row| match row_to_memory(row) {
+                Ok(m) => {
+                    let embedding = m.embedding.clone()?;
+                    let score = cosine_similarity(query_embedding, &embedding);
+                    Some(ScoredMemory { memory: m, score })
+                }
+                Err(e) => {
+                    tracing::warn!(error = ?e, "skipping memory row that failed to deserialize");
+                    None
+                }
+            })
+            .collect();
+
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        scored.truncate(limit);
+        Ok(scored)
     }
 }
 
@@ -646,6 +698,21 @@ mod tests {
             decay_at: None,
             kind: MemoryKind::Conversation,
             description: None,
+            embedding: None,
+        }
+    }
+
+    fn make_memory_with_embedding(id: &str, content: &str, emb: Vec<f32>) -> Memory {
+        Memory {
+            id: id.to_owned(),
+            content: content.to_owned(),
+            tags: vec![],
+            weight: 1.0,
+            created_at: 1_000_000,
+            decay_at: None,
+            kind: MemoryKind::Conversation,
+            description: None,
+            embedding: Some(emb),
         }
     }
 
@@ -712,5 +779,159 @@ mod tests {
             .expect("recall");
 
         assert_eq!(results.len(), 2, "expected 2 memories from empty query");
+    }
+
+    // -----------------------------------------------------------------------
+    // Semantic recall tests (red phase — require embedding column + impl)
+    // -----------------------------------------------------------------------
+
+    /// A memory stored with an embedding must come back with the same embedding
+    /// (within f32 round-trip tolerance from the BLOB encoding).
+    #[tokio::test]
+    async fn sqlite_store_record_with_embedding_round_trips() {
+        let store = SqliteStore::in_memory().await.expect("in_memory");
+        let emb = vec![0.1_f32, 0.2, 0.3];
+        store
+            .record(make_memory_with_embedding("id-emb", "content with embedding", emb.clone()))
+            .await
+            .expect("record");
+
+        let result = store
+            .recall_by_id("id-emb")
+            .await
+            .expect("recall_by_id")
+            .expect("memory should exist");
+
+        let returned = result.embedding.expect("embedding should be Some");
+        assert_eq!(
+            returned.len(),
+            emb.len(),
+            "embedding length must match after round-trip"
+        );
+        for (got, expected) in returned.iter().zip(emb.iter()) {
+            assert!(
+                (got - expected).abs() < 1e-5,
+                "embedding element mismatch: got {got}, expected {expected}"
+            );
+        }
+    }
+
+    /// A memory stored without an embedding must come back with embedding=None.
+    #[tokio::test]
+    async fn sqlite_store_record_without_embedding_round_trips() {
+        let store = SqliteStore::in_memory().await.expect("in_memory");
+        store
+            .record(make_memory("id-no-emb", "content without embedding"))
+            .await
+            .expect("record");
+
+        let result = store
+            .recall_by_id("id-no-emb")
+            .await
+            .expect("recall_by_id")
+            .expect("memory should exist");
+
+        assert!(
+            result.embedding.is_none(),
+            "embedding should be None when not stored"
+        );
+    }
+
+    /// recall_semantic returns the top-K memories ranked by cosine similarity.
+    #[tokio::test]
+    async fn sqlite_store_recall_semantic_returns_top_k() {
+        let store = SqliteStore::in_memory().await.expect("in_memory");
+
+        // Three orthogonal 4-dim unit vectors.
+        store
+            .record(make_memory_with_embedding(
+                "alpha",
+                "alpha content",
+                vec![1.0, 0.0, 0.0, 0.0],
+            ))
+            .await
+            .expect("record alpha");
+        store
+            .record(make_memory_with_embedding(
+                "beta",
+                "beta content",
+                vec![0.0, 1.0, 0.0, 0.0],
+            ))
+            .await
+            .expect("record beta");
+        store
+            .record(make_memory_with_embedding(
+                "gamma",
+                "gamma content",
+                vec![0.0, 0.0, 1.0, 0.0],
+            ))
+            .await
+            .expect("record gamma");
+
+        // Query aligned with "alpha".
+        let query = vec![1.0_f32, 0.0, 0.0, 0.0];
+        let results = store.recall_semantic(&query, 1).await.expect("recall_semantic");
+
+        assert_eq!(results.len(), 1, "expected exactly 1 result");
+        assert_eq!(
+            results[0].memory.id, "alpha",
+            "top result should be 'alpha'"
+        );
+        assert!(
+            (results[0].score - 1.0).abs() < 1e-5,
+            "score for identical direction should be 1.0, got {}",
+            results[0].score
+        );
+    }
+
+    /// recall_semantic must silently skip memories that have no stored embedding.
+    #[tokio::test]
+    async fn sqlite_store_recall_semantic_skips_null_embeddings() {
+        let store = SqliteStore::in_memory().await.expect("in_memory");
+
+        store
+            .record(make_memory_with_embedding(
+                "with-emb",
+                "has embedding",
+                vec![1.0, 0.0],
+            ))
+            .await
+            .expect("record with embedding");
+        store
+            .record(make_memory("without-emb", "no embedding"))
+            .await
+            .expect("record without embedding");
+
+        let query = vec![1.0_f32, 0.0];
+        let results = store
+            .recall_semantic(&query, 10)
+            .await
+            .expect("recall_semantic");
+
+        assert_eq!(
+            results.len(),
+            1,
+            "only memory with embedding should be returned"
+        );
+        assert_eq!(results[0].memory.id, "with-emb");
+    }
+
+    /// Opening the same SQLite file twice must not fail — the schema migration
+    /// (ADD COLUMN embedding BLOB) must be idempotent.
+    #[tokio::test]
+    async fn sqlite_store_schema_migration_idempotent() {
+        let dir = TempDir::new().expect("create tempdir");
+        let db_path = dir.path().join("idem.db");
+
+        let store1 = SqliteStore::open(&db_path)
+            .await
+            .expect("first open should succeed");
+        drop(store1);
+
+        // Second open must not error out even though embedding column already exists.
+        let store2 = SqliteStore::open(&db_path)
+            .await
+            .expect("second open (idempotent migration) should succeed");
+        drop(store2);
     }
 }

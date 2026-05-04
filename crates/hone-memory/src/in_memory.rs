@@ -157,3 +157,106 @@ impl MemoryStore for InMemoryStore {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::MemoryKind;
+
+    fn make_memory_with_embedding(id: &str, content: &str, emb: Vec<f32>) -> Memory {
+        Memory {
+            id: id.to_owned(),
+            content: content.to_owned(),
+            tags: vec![],
+            weight: 1.0,
+            created_at: 1_000_000,
+            decay_at: None,
+            kind: MemoryKind::Conversation,
+            description: None,
+            embedding: Some(emb),
+        }
+    }
+
+    fn make_memory_no_embedding(id: &str, content: &str) -> Memory {
+        Memory {
+            id: id.to_owned(),
+            content: content.to_owned(),
+            tags: vec![],
+            weight: 1.0,
+            created_at: 1_000_000,
+            decay_at: None,
+            kind: MemoryKind::Conversation,
+            description: None,
+            embedding: None,
+        }
+    }
+
+    /// recall_semantic must return the top-K memories by cosine similarity to
+    /// the query embedding, using only memories that have a stored embedding.
+    #[tokio::test]
+    async fn in_memory_recall_semantic_returns_top_k_by_cosine() {
+        let store = InMemoryStore::new();
+
+        // Three orthogonal 3-dim unit vectors: rust=[1,0,0], python=[0,1,0], js=[0,0,1]
+        store
+            .record(make_memory_with_embedding("rust", "rust", vec![1.0, 0.0, 0.0]))
+            .await
+            .unwrap();
+        store
+            .record(make_memory_with_embedding(
+                "python",
+                "python",
+                vec![0.0, 1.0, 0.0],
+            ))
+            .await
+            .unwrap();
+        store
+            .record(make_memory_with_embedding(
+                "javascript",
+                "javascript",
+                vec![0.0, 0.0, 1.0],
+            ))
+            .await
+            .unwrap();
+
+        // Query embedding aligned with "rust"
+        let query = vec![1.0_f32, 0.0, 0.0];
+        let results = store.recall_semantic(&query, 1).await.unwrap();
+
+        assert_eq!(results.len(), 1, "expected exactly 1 result");
+        assert_eq!(
+            results[0].memory.id, "rust",
+            "top result should be the rust memory"
+        );
+        assert!(
+            (results[0].score - 1.0).abs() < 1e-5,
+            "score for identical direction should be 1.0, got {}",
+            results[0].score
+        );
+    }
+
+    /// Memories without an embedding field must be silently skipped.
+    #[tokio::test]
+    async fn in_memory_recall_semantic_skips_memories_without_embedding() {
+        let store = InMemoryStore::new();
+
+        store
+            .record(make_memory_with_embedding("has-emb", "has embedding", vec![1.0, 0.0]))
+            .await
+            .unwrap();
+        store
+            .record(make_memory_no_embedding("no-emb", "no embedding"))
+            .await
+            .unwrap();
+
+        let query = vec![1.0_f32, 0.0];
+        let results = store.recall_semantic(&query, 10).await.unwrap();
+
+        assert_eq!(
+            results.len(),
+            1,
+            "only the memory with an embedding should be returned"
+        );
+        assert_eq!(results[0].memory.id, "has-emb");
+    }
+}
