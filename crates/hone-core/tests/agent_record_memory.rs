@@ -57,6 +57,8 @@ fn make_agent_with_store() -> (Agent, Arc<dyn hone_memory::MemoryStore>) {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     };
 
     (Agent::new(config), store)

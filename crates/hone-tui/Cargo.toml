@@ -13,8 +13,10 @@ description = "Ratatui terminal UI for Hone"
 [dependencies]
 hone-proto = { workspace = true }
 hone-core = { workspace = true }
+hone-config = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 ratatui = { workspace = true }
@@ -26,6 +28,9 @@ arboard = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 criterion = { workspace = true }
+hone-tools = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
 
 [[bench]]
 name = "render_perf"

@@ -141,6 +141,8 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     }
 }
 
@@ -1199,6 +1201,8 @@ async fn test_dynamic_read_only_tool_dispatched_in_parallel() {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     };
 
     let mut agent = Agent::new(config);

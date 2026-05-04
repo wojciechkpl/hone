@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures::stream;
-use hone_core::{AgentConfig, AgentHandle, RetryConfig, SkeletonStrategy};
+use hone_core::{AgentConfig, AgentHandle, AgentMode, RetryConfig, SkeletonStrategy};
 use hone_proto::{AgentEvent, Message, ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::{AnthropicProvider, ModelProvider, PricingTable};
 use hone_sandbox::{Sandbox, SandboxBuilder};
@@ -222,6 +222,9 @@ pub async fn run_handler(
                 egress_log: None,
                 approval_policy: ToolApprovalPolicy::Auto,
                 step_rx: None,
+                hooks: None,
+                skills: None,
+                mode: AgentMode::Build,
             };
 
             let history: Vec<Message> = req

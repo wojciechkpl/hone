@@ -55,6 +55,8 @@ async fn test_budget_cap_blocks_new_turn() {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     };
 
     let mut agent = Agent::new(config);

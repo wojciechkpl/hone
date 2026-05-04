@@ -88,6 +88,9 @@ impl ReviewerAgent {
             egress_log: None,
             approval_policy: ToolApprovalPolicy::Auto,
             step_rx: None,
+            hooks: None,
+            skills: None,
+            mode: crate::plan_mode::AgentMode::Build,
         };
 
         Self { agent_config }
@@ -123,6 +126,9 @@ impl ReviewerAgent {
             egress_log: None,
             approval_policy: ToolApprovalPolicy::Auto,
             step_rx: None,
+            hooks: None,
+            skills: None,
+            mode: crate::plan_mode::AgentMode::Build,
         });
 
         let turn = agent.run_turn(context, events).await?;

@@ -183,6 +183,8 @@ fn make_config(
         // `approval_policy` is added and `step_mode`/`step_rx` are removed.
         approval_policy,
         step_rx: None,
+        hooks: None,
+        skills: None,
     }
 }
 

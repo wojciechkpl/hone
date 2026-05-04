@@ -103,6 +103,8 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     }
 }
 

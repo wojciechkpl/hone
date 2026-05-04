@@ -37,6 +37,8 @@ pub enum Command {
     Configure(String),
     /// A `/` prefixed word that was not recognised.
     Unknown(String),
+    /// A user-defined slash command loaded from a markdown file.
+    User { name: String, args: String },
 }
 
 /// Sub-command for `:tdd`.
@@ -121,6 +123,35 @@ impl Command {
             "configure" => Command::Configure(arg.to_string()),
             other => Command::Unknown(other.to_string()),
         };
+        Some(cmd)
+    }
+
+    /// Like [`Command::parse`] but also checks a [`UserCommandRegistry`] for
+    /// unknown slash commands. An `Unknown(n)` that matches a registered user
+    /// command is converted to `Command::User { name, args }`.
+    pub fn parse_with_user_commands(
+        input: &str,
+        registry: &crate::user_commands::UserCommandRegistry,
+    ) -> Option<Self> {
+        let cmd = Self::parse(input)?;
+        if let Command::Unknown(ref raw) = cmd {
+            // `raw` is just the keyword (the existing `parse` strips the `/`
+            // prefix and splits on the first space to extract `keyword`). The
+            // args portion never reaches Unknown. Re-parse from the original
+            // input to recover the full arg string.
+            let rest = input.strip_prefix('/').unwrap_or(input);
+            let (keyword, arg) = match rest.split_once(' ') {
+                Some((kw, a)) => (kw, a.trim()),
+                None => (rest, ""),
+            };
+            let _ = raw;
+            if registry.get(keyword).is_some() {
+                return Some(Command::User {
+                    name: keyword.to_string(),
+                    args: arg.to_string(),
+                });
+            }
+        }
         Some(cmd)
     }
 
@@ -357,6 +388,43 @@ mod tests {
     #[test]
     fn rust_expert_in_agent_names() {
         assert!(AGENT_NAMES.contains(&"rust-expert"));
+    }
+
+    // --- parse_with_user_commands -------------------------------------------
+
+    fn make_registry_with(name: &str, description: &str, body: &str) -> crate::user_commands::UserCommandRegistry {
+        let mut r = crate::user_commands::UserCommandRegistry::new();
+        r.commands.push(crate::user_commands::UserCommand {
+            name: name.to_string(),
+            description: description.to_string(),
+            args: None,
+            model: None,
+            agent: None,
+            tools: vec![],
+            body: body.to_string(),
+        });
+        r
+    }
+
+    #[test]
+    fn parse_with_user_commands_routes_registered_name() {
+        let registry = make_registry_with("review-pr", "Review PR", "review {{args}}");
+        let cmd = Command::parse_with_user_commands("/review-pr 42", &registry).unwrap();
+        assert_eq!(cmd, Command::User { name: "review-pr".into(), args: "42".into() });
+    }
+
+    #[test]
+    fn parse_with_user_commands_falls_through_for_unknown() {
+        let registry = crate::user_commands::UserCommandRegistry::new();
+        let cmd = Command::parse_with_user_commands("/not-a-thing", &registry).unwrap();
+        assert_eq!(cmd, Command::Unknown("not-a-thing".into()));
+    }
+
+    #[test]
+    fn parse_with_user_commands_captures_args() {
+        let registry = make_registry_with("deploy", "Deploy", "deploy {{args}}");
+        let cmd = Command::parse_with_user_commands("/deploy production", &registry).unwrap();
+        assert_eq!(cmd, Command::User { name: "deploy".into(), args: "production".into() });
     }
 
     // --- completions_with_descriptions coverage ----------------------------

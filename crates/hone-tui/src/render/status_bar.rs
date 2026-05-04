@@ -200,7 +200,7 @@ fn accent(s: impl Into<String>, theme: &Theme) -> Span<'static> {
     Span::styled(s.into(), Style::default().fg(theme.accent_hot))
 }
 
-/// Left zone: `model │ session_name │ phase`
+/// Left zone: `model │ session_name │ phase │ mode: <mode>`
 fn left_zone(status: &StatusInfo, theme: &Theme, tier: WidthTier) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
 
@@ -231,6 +231,12 @@ fn left_zone(status: &StatusInfo, theme: &Theme, tier: WidthTier) -> Vec<Span<'s
         };
         spans.push(sep(theme));
         spans.push(muted(phase_label, theme));
+
+        // Agent mode indicator — always show in Standard+.
+        if !status.mode.is_empty() && status.mode != "chat" {
+            spans.push(sep(theme));
+            spans.push(muted(format!("mode:{}", status.mode), theme));
+        }
     }
 
     spans

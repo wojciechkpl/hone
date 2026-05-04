@@ -134,6 +134,8 @@ async fn memory_recalled_event_uses_friendly_key_not_uuid() {
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     };
 
     let mut agent = Agent::new(config);

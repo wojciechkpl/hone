@@ -28,9 +28,9 @@ use futures::StreamExt;
 use hone_cache::{SqliteBackend, ToolResultCache};
 use hone_config::{Config, HoneMd, McpConfig};
 use hone_core::{
-    AdaptiveClassifier, AgentConfig, AgentEnsemble, AgentHandle, AgentRegistry,
+    AdaptiveClassifier, AgentConfig, AgentEnsemble, AgentHandle, AgentMode, AgentRegistry,
     ClarificationDetector, ComplexityClassifier, ComplexityTier, Orchestrator, OutcomeRecord,
-    PlanStore, SelfRefineLoop, SkeletonStrategy, TestVerificationLoop,
+    PlanModeStore, PlanStore, SelfRefineLoop, SkeletonStrategy, TestVerificationLoop,
 };
 use hone_index::{IndexWatcher, SqliteIndex, WatcherHandle};
 use hone_mcp::McpManager;
@@ -40,13 +40,14 @@ use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, ModelProvider, adapters::anthropic::AnthropicProvider,
     adapters::ollama::OllamaProvider, adapters::openai::OpenAiProvider,
 };
+use hone_eval::{EvalConfig, EvalReport, EvalRunner};
 use hone_recipes::Recipe;
 use hone_sandbox::SandboxBuilder;
 use hone_tools::{
     ComputerControlTool, EditFileTool, GitCommitTool, GitDiffTool, GitStatusTool, GlobTool,
     GrepTool, Language, LspBridge, LspCodeActionTool, LspDiagnosticsTool, LspHoverTool,
     MockLspBridge, MultiEditTool, ReadFileTool, ScreenCaptureTool, ShellTool, StdioLspBridge,
-    ToolRegistry, WriteFileTool,
+    ToolRegistry, WebFetchTool, WebSearchTool, WriteFileTool,
 };
 use hone_tui::render::root;
 use hone_tui::{App, AppState};
@@ -106,6 +107,14 @@ enum HoneCmd {
     Memory {
         #[command(subcommand)]
         cmd: memory_cmd::MemoryCmd,
+    },
+    /// Run evaluation tasks from a TOML file and produce a report.
+    Eval {
+        /// Path to the tasks.toml file.
+        tasks: PathBuf,
+        /// Output directory for report.json and report.md (default: parent dir of tasks file).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -199,6 +208,11 @@ struct Cli {
     /// Press Space/Enter to proceed, s to skip, Esc to proceed.
     #[arg(long, default_value_t = false)]
     step: bool,
+
+    /// Execute a saved plan file (plan_body is loaded as the prompt and run in
+    /// Build mode). The file must be a SavedPlan written by plan mode.
+    #[arg(long, value_name = "FILE")]
+    plan: Option<PathBuf>,
 
     /// Subcommand (session management, configure wizard, etc.)
     #[command(subcommand)]
@@ -706,6 +720,11 @@ fn build_tool_registry(
         .register(wrap(Box::new(LspDiagnosticsTool::new(Arc::clone(&lsp)))))
         .register(wrap(Box::new(LspHoverTool::new(Arc::clone(&lsp)))))
         .register(wrap(Box::new(LspCodeActionTool::new(Arc::clone(&lsp)))))
+        // Web tools — read-only network egress. WebSearch is Disabled unless
+        // HONE_WEBSEARCH_PROVIDER + HONE_WEBSEARCH_KEY are set; WebFetch is
+        // always live (uses reqwest with 15s timeout).
+        .register(wrap(Box::new(WebSearchTool::from_env())))
+        .register(wrap(Box::new(WebFetchTool::new())))
         // Write / mutating tools — never cached.
         .register(Box::new(WriteFileTool))
         .register(Box::new(EditFileTool))
@@ -866,6 +885,9 @@ fn build_agent_config(
         egress_log,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
+        mode: AgentMode::Build,
     }
 }
 
@@ -1481,6 +1503,94 @@ async fn cmd_session_delete(name: &str) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Eval subcommand
+// ---------------------------------------------------------------------------
+
+/// Run evaluation tasks from a TOML file and write report.json + report.md.
+///
+/// Provider support in v1: Anthropic (ANTHROPIC_API_KEY) and OpenAI
+/// (OPENAI_API_KEY / HONE_OPENAI_BASE_URL / HONE_OPENAI_MODEL). Other
+/// providers (Ollama, CLI pass-throughs) are a follow-up.
+async fn cmd_eval(
+    tasks_path: &std::path::Path,
+    output_dir: Option<PathBuf>,
+    wizard_cfg: &configure::ResolvedConfig,
+) -> Result<()> {
+    use std::path::Path;
+
+    let config = EvalConfig::from_toml_file(tasks_path)
+        .map_err(|e| anyhow::anyhow!("failed to load tasks file: {e}"))?;
+
+    let base_dir = tasks_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+
+    let out_dir = output_dir.unwrap_or_else(|| base_dir.clone());
+
+    std::fs::create_dir_all(&out_dir)
+        .map_err(|e| anyhow::anyhow!("cannot create output dir {}: {e}", out_dir.display()))?;
+
+    // Snapshot wizard config fields needed inside the closure (must be 'static).
+    let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .or_else(|| wizard_cfg.anthropic_api_key.clone());
+    let openai_key = std::env::var("OPENAI_API_KEY")
+        .ok()
+        .or_else(|| wizard_cfg.openai_api_key.clone());
+    let openai_base_url = std::env::var("HONE_OPENAI_BASE_URL")
+        .ok()
+        .or_else(|| wizard_cfg.openai_base_url.clone());
+    let openai_model = std::env::var("HONE_OPENAI_MODEL")
+        .ok()
+        .or_else(|| wizard_cfg.openai_model.clone())
+        .unwrap_or_else(|| "gpt-4o".into());
+    let _ = &openai_model; // referenced by the OpenAI closure branch below
+
+    let provider_factory: Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync> =
+        if let Some(key) = anthropic_key {
+            Box::new(move || Arc::new(AnthropicProvider::new(key.clone())) as Arc<dyn ModelProvider>)
+        } else if let Some(key) = openai_key {
+            let base_url = openai_base_url.clone();
+            Box::new(move || {
+                let provider = if let Some(ref url) = base_url {
+                    OpenAiProvider::with_base_url(key.clone(), url.clone())
+                } else {
+                    OpenAiProvider::new(key.clone())
+                };
+                Arc::new(provider) as Arc<dyn ModelProvider>
+            })
+        } else {
+            anyhow::bail!(
+                "eval requires a provider: set ANTHROPIC_API_KEY or OPENAI_API_KEY"
+            );
+        };
+
+    let outcomes = EvalRunner::new(config, base_dir, provider_factory)
+        .run_all()
+        .await;
+
+    let report = EvalReport::from_outcomes(outcomes);
+
+    hone_eval::report::write_json(&report, &out_dir.join("report.json"))
+        .map_err(|e| anyhow::anyhow!("failed to write report.json: {e}"))?;
+    hone_eval::report::write_markdown(&report, &out_dir.join("report.md"))
+        .map_err(|e| anyhow::anyhow!("failed to write report.md: {e}"))?;
+
+    let pass_pct = report.pass_rate() * 100.0;
+    println!(
+        "{}/{} passed ({:.0}%) — total cost ${:.4} — see {}/report.md for details",
+        report.passed,
+        report.total,
+        pass_pct,
+        report.total_cost_usd,
+        out_dir.display(),
+    );
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // SQLite persistence initialisation
 // ---------------------------------------------------------------------------
 
@@ -1753,6 +1863,10 @@ async fn main() -> Result<()> {
             HoneCmd::Memory { .. } => {
                 // Handled below, outside the `Some(ref cmd)` borrow scope,
                 // so we can take ownership of the MemoryCmd variant.
+            }
+            HoneCmd::Eval { tasks, output } => {
+                cmd_eval(tasks, output.clone(), &wizard_cfg).await?;
+                return Ok(());
             }
         }
     }
@@ -2194,6 +2308,23 @@ async fn run_selected_mode(
         return run_ensemble(&base_config, &prompt, n).await;
     }
 
+    // --plan: load a saved plan file and execute its plan_body as a one-shot prompt.
+    if let Some(ref plan_path) = cli.plan {
+        let plan = PlanModeStore::load(plan_path).await.map_err(|e| {
+            anyhow::anyhow!("failed to load plan from {}: {}", plan_path.display(), e)
+        })?;
+        println!(
+            "Executing plan {} ({})",
+            plan.slug, plan.timestamp
+        );
+        run_one_shot(agent.clone(), &plan.plan_body).await?;
+        if !cli.ephemeral {
+            auto_save_session(&agent, session_name.as_deref()).await;
+        }
+        println!("Executed plan {} ({})", plan.slug, plan.timestamp);
+        return Ok(());
+    }
+
     // --orchestrate: full orchestrator for the supplied prompt (or a default).
     if cli.orchestrate {
         let prompt = cli
@@ -2546,6 +2677,11 @@ async fn run_tui(
                                 app.status_mut().context_limit = model_context_limit(&new_model);
                             }
 
+                            // Handle pending agent mode changes from Shift+Tab.
+                            if let Some(new_mode) = app.take_pending_mode_change() {
+                                agent.set_mode(new_mode).await;
+                            }
+
                             if !is_command && !is_shell_escape && matches!(app.state(), AppState::WaitingForResponse) {
                                 // Only spawn an AI turn for regular messages, not commands or
                                 // shell escapes.
@@ -2557,12 +2693,26 @@ async fn run_tui(
                                     None
                                 };
 
+                                // Track whether we applied a filtered tool registry so we
+                                // can restore the base registry after the turn completes.
+                                let mut applied_tool_filter = false;
                                 if let Some(ref agent_name) = maybe_inline_agent {
                                     // Look up the agent definition and swap the prompt.
                                     let registry = AgentRegistry::load_hierarchical(app.working_dir());
                                     if let Some(def) = registry.get(agent_name) {
                                         let persona_prompt = def.system_prompt.clone();
                                         agent.set_system_prompt(persona_prompt).await;
+
+                                        // Apply tool allowlist when the AgentDef specifies one.
+                                        if !def.tools.is_empty() {
+                                            let filtered = hone_core::filtered_registry(
+                                                &base_config.tools,
+                                                &def.tools,
+                                            );
+                                            agent.set_tools(filtered).await;
+                                            applied_tool_filter = true;
+                                        }
+
                                         tracing::info!(agent = %agent_name, "inline @agent persona active");
                                         app.status_mut().mode = format!("@{agent_name}");
                                     } else {
@@ -2603,12 +2753,14 @@ async fn run_tui(
                                 let base_config_clone = base_config.clone();
                                 let agent_tx_clone = agent_tx.clone();
                                 let original_prompt = base_config.system_prompt.clone();
+                                let base_tools = base_config.tools.clone();
                                 let restore_prompt = maybe_inline_agent.is_some();
 
                                 let task_handle: tokio::task::JoinHandle<()> = match tier {
                                     ComplexityTier::Simple => {
                                         tracing::debug!("complexity: Simple — direct agent turn");
                                         if restore_prompt {
+                                            let restore_tools = applied_tool_filter;
                                             tokio::spawn(async move {
                                                 let (tx2, rx2) = mpsc::channel(256);
                                                 spawn_agent_turn(agent_clone.clone(), effective_text_clone, tx2);
@@ -2617,6 +2769,9 @@ async fn run_tui(
                                                     let _ = agent_tx_clone.send(ev).await;
                                                 }
                                                 agent_clone.set_system_prompt(original_prompt).await;
+                                                if restore_tools {
+                                                    agent_clone.set_tools(base_tools).await;
+                                                }
                                             })
                                         } else {
                                             spawn_agent_turn(agent.clone(), effective_text, agent_tx.clone())
@@ -2625,6 +2780,7 @@ async fn run_tui(
                                     ComplexityTier::Medium => {
                                         tracing::debug!("complexity: Medium — self-refine turn");
                                         if restore_prompt {
+                                            let restore_tools = applied_tool_filter;
                                             tokio::spawn(async move {
                                                 let (tx2, rx2) = mpsc::channel(256);
                                                 spawn_medium_turn(agent_clone.clone(), effective_text_clone, tx2);
@@ -2633,6 +2789,9 @@ async fn run_tui(
                                                     let _ = agent_tx_clone.send(ev).await;
                                                 }
                                                 agent_clone.set_system_prompt(original_prompt).await;
+                                                if restore_tools {
+                                                    agent_clone.set_tools(base_tools).await;
+                                                }
                                             })
                                         } else {
                                             spawn_medium_turn(agent.clone(), effective_text, agent_tx.clone())
@@ -2641,6 +2800,7 @@ async fn run_tui(
                                     ComplexityTier::Complex => {
                                         tracing::debug!("complexity: Complex — orchestrated turn");
                                         if restore_prompt {
+                                            let restore_tools = applied_tool_filter;
                                             tokio::spawn(async move {
                                                 let (tx2, rx2) = mpsc::channel(256);
                                                 // agent_clone.clone() passes ownership into spawn_orchestrated_turn;
@@ -2651,6 +2811,9 @@ async fn run_tui(
                                                     let _ = agent_tx_clone.send(ev).await;
                                                 }
                                                 agent_clone.set_system_prompt(original_prompt).await;
+                                                if restore_tools {
+                                                    agent_clone.set_tools(base_tools).await;
+                                                }
                                             })
                                         } else {
                                             spawn_orchestrated_turn(base_config.clone(), effective_text, agent_tx.clone(), agent.clone())
@@ -3035,6 +3198,9 @@ mod tests {
             egress_log: None,
             approval_policy: ToolApprovalPolicy::Auto,
             step_rx: None,
+            hooks: None,
+            skills: None,
+            mode: AgentMode::Build,
         };
 
         // Spawn the persistent agent that should accumulate context.

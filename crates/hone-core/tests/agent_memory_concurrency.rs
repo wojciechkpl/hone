@@ -251,6 +251,8 @@ fn make_agent(record_delay: Duration, recall_delay: Duration) -> (Agent, Arc<dyn
         egress_log: None,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
+        hooks: None,
+        skills: None,
     };
 
     (Agent::new(config), store_arc)

@@ -79,6 +79,14 @@ impl ToolRegistryBuilder {
         self
     }
 
+    /// Register a tool already wrapped in an [`Arc`]. An existing entry with
+    /// the same name is replaced.
+    pub fn register_arc(mut self, tool: Arc<dyn Tool>) -> Self {
+        let name = tool.name().to_string();
+        self.tools.insert(name, tool);
+        self
+    }
+
     /// Finalise the builder and return the immutable [`ToolRegistry`].
     pub fn build(self) -> ToolRegistry {
         ToolRegistry {

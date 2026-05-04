@@ -1,5 +1,6 @@
 mod agent;
 pub mod agent_def;
+pub mod hooks;
 pub mod memory_index;
 pub mod memory_format;
 pub mod memory_key;
@@ -24,6 +25,7 @@ pub mod injection_detector;
 pub mod learning;
 pub mod metrics;
 pub mod orchestrator;
+pub mod plan_mode;
 pub mod plan_store;
 pub mod ralph_loop;
 pub mod rbac;
@@ -39,7 +41,7 @@ mod turn;
 #[allow(deprecated)]
 pub use agent::{Agent, AgentConfig, AgentHandle, is_read_only_tool};
 pub use agent_def::{AgentDef, AgentDefError};
-pub use agent_registry::AgentRegistry;
+pub use agent_registry::{AgentRegistry, AllowlistRejection, filtered_registry};
 pub use audit::{AuditEntry, AuditError, AuditFilter, AuditKind, AuditLog, InMemoryAuditLog};
 pub use checkpoint::{CheckpointError, CheckpointStore, OrchestrationCheckpoint};
 pub use clarify::ClarificationDetector;
@@ -59,6 +61,7 @@ pub use learning::{AdaptiveClassifier, OutcomeRecord};
 pub use memory_key::friendly_memory_key;
 pub use metrics::{ContextMetrics, MetricsSnapshot};
 pub use orchestrator::Orchestrator;
+pub use plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
 pub use plan_store::PlanStore;
 pub use rbac::{RbacError, RbacPolicy, Role, ToolAccess};
 pub use recovery::{FailureScenario, RecoveryAction};
@@ -70,3 +73,6 @@ pub use test_loop::{
     GreenCommands, GreenContract, GreenLevel, TestLoopResult, TestStatus, TestVerificationLoop,
 };
 pub use turn::TurnResult;
+pub use hooks::{HookError, HookEvent, HookOutcome, HookRegistry, HookSpec};
+pub mod skills;
+pub use skills::{Skill, SkillError, SkillRegistry};
