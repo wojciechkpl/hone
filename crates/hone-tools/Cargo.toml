@@ -36,6 +36,7 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 async-trait = { workspace = true }
 proptest = { workspace = true }
+futures = { workspace = true }
 
 [lints]
 workspace = true

@@ -1,5 +1,6 @@
 mod agent;
 pub mod agent_def;
+pub mod handoff;
 pub mod hooks;
 pub mod memory_index;
 pub mod memory_format;

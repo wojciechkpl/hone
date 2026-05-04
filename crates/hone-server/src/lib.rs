@@ -19,6 +19,7 @@ pub mod governance_routes;
 pub mod openapi;
 pub mod rate_limit;
 pub mod routes;
+pub mod scheduler;
 pub mod session;
 pub mod session_storage;
 pub mod sqlite_session;

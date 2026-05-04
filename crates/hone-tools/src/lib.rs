@@ -1,6 +1,7 @@
 mod error;
 mod file;
 mod git;
+pub mod handoff;
 pub mod lsp;
 mod registry;
 mod screen;
@@ -9,6 +10,7 @@ mod traits;
 pub mod web;
 
 pub use error::ToolError;
+pub use handoff::HandoffTool;
 pub use file::{EditFileTool, GlobTool, GrepTool, MultiEditTool, PatchTool, ReadFileTool, WriteFileTool};
 pub use git::{
     AutoCommitter, GitBranchTool, GitCheckoutTool, GitCommitTool, GitDiffTool, GitRedoTool,
