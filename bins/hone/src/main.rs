@@ -2382,21 +2382,23 @@ async fn run_selected_mode(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Build the step-mode channel if --step was passed.
-    let (step_tx, step_rx_arc) = if cli.step {
-        let (tx, rx) = tokio::sync::mpsc::channel::<hone_proto::StepAction>(1);
-        (
-            Some(tx),
-            Some(std::sync::Arc::new(tokio::sync::Mutex::new(rx))),
-        )
-    } else {
-        (None, None)
-    };
+    // Always wire the step-mode channel in interactive TUI mode so the
+    // approval menu can surface for risky tool calls. The default policy
+    // is AskRisky (auto-approve read-only, prompt for write/shell) which
+    // matches Claude Code's interactive UX. `--step` upgrades this to
+    // AlwaysAsk (prompt for every tool, including read-only).
+    let (step_tx, step_rx) = tokio::sync::mpsc::channel::<hone_proto::StepAction>(1);
+    let step_rx_arc = std::sync::Arc::new(tokio::sync::Mutex::new(step_rx));
     let mut base_config = base_config;
-    if let Some(rx) = step_rx_arc {
-        base_config.approval_policy = ToolApprovalPolicy::AlwaysAsk;
-        base_config.step_rx = Some(rx);
-    }
+    base_config.approval_policy = if cli.step {
+        ToolApprovalPolicy::AlwaysAsk
+    } else {
+        ToolApprovalPolicy::AskRisky {
+            always_allowed: Vec::new(),
+        }
+    };
+    base_config.step_rx = Some(step_rx_arc);
+    let step_tx = Some(step_tx);
 
     let result = run_tui(
         &mut terminal,
