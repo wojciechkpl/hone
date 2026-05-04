@@ -309,6 +309,7 @@ mod tests {
             memory: String::new(),
             sub_agents: vec![],
             system_prompt: String::new(),
+            sandbox: None,
         }
     }
 

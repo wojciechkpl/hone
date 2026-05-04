@@ -64,6 +64,7 @@ fn filtered_registry_applied_to_agent_def_tools() {
         model: "sonnet".to_string(),
         memory: String::new(),
         sub_agents: vec![],
+        sandbox: None,
     };
 
     let filtered = filtered_registry(&base, &agent_def.tools);
