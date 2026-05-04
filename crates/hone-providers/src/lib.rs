@@ -24,7 +24,7 @@ pub use fallback::FallbackChain;
 pub use mock::MockProvider;
 pub use pricing::PricingTable;
 pub use registry::ProviderRegistry;
-pub use router::{ModelRouter, RoutingRule};
+pub use router::{ModelRouter, ProviderTier, RoutePolicy, RoutingRule, TierFallbackProvider};
 pub use traits::{
     CompletionRequest, ModelProvider, ToolResultSendError, ToolResultSender, ToolResultStream,
 };
