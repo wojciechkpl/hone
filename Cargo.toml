@@ -14,6 +14,7 @@ members = [
     "crates/hone-eval",
     "crates/hone-server",
     "crates/hone-tui",
+    "crates/hone-provenance",
     "bins/hone",
     "bins/honed",
     "bins/hone-mcp-server",
@@ -100,6 +101,8 @@ figment = { version = "0.10", features = ["toml", "env"] }
 
 # Hashing
 blake3 = "1"
+sha2 = "0.10"
+hex = "0.4"
 
 # Encryption
 aes-gcm = "0.10"
