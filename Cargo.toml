@@ -16,6 +16,8 @@ members = [
     "crates/hone-tui",
     "bins/hone",
     "bins/honed",
+    "bins/hone-mcp-server",
+    "crates/hone-mcp-server",
 ]
 resolver = "3"
 
@@ -45,6 +47,7 @@ hone-recipes = { version = "0.1.0", path = "crates/hone-recipes" }
 hone-eval = { version = "0.1.0", path = "crates/hone-eval" }
 hone-server = { version = "0.1.0", path = "crates/hone-server" }
 hone-tui = { version = "0.1.0", path = "crates/hone-tui" }
+hone-mcp-server = { version = "0.1.0", path = "crates/hone-mcp-server" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

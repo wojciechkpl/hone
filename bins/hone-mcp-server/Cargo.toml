@@ -1,0 +1,18 @@
+[package]
+name = "hone-mcp-server-bin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "hone-mcp-server"
+path = "src/main.rs"
+
+[dependencies]
+hone-mcp-server = { workspace = true }
+hone-tools = { workspace = true }
+hone-sandbox = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util", "io-std"] }
+anyhow = { workspace = true }
+tracing-subscriber = { workspace = true }
