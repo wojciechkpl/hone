@@ -1752,6 +1752,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "hone-spec"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "hone-core",
+ "hone-proto",
+ "hone-providers",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "hone-tools"
 version = "0.1.0"
 dependencies = [

@@ -15,6 +15,7 @@ members = [
     "crates/hone-server",
     "crates/hone-tui",
     "crates/hone-provenance",
+    "crates/hone-spec",
     "bins/hone",
     "bins/honed",
     "bins/hone-mcp-server",
@@ -49,6 +50,7 @@ hone-eval = { version = "0.1.0", path = "crates/hone-eval" }
 hone-server = { version = "0.1.0", path = "crates/hone-server" }
 hone-tui = { version = "0.1.0", path = "crates/hone-tui" }
 hone-mcp-server = { version = "0.1.0", path = "crates/hone-mcp-server" }
+hone-spec = { version = "0.1.0", path = "crates/hone-spec" }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
