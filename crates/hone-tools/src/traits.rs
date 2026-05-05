@@ -74,6 +74,9 @@ impl ToolOutput {
 pub struct ToolContext {
     /// The sandbox that constrains what the tool is allowed to do.
     pub sandbox: Arc<dyn Sandbox>,
+    /// The declarative policy that `sandbox.restrict_child` enforces for child
+    /// processes spawned by this tool.
+    pub sandbox_policy: Arc<hone_sandbox::SandboxPolicy>,
     /// The working directory from which relative paths are resolved.
     pub working_dir: PathBuf,
 }
@@ -106,5 +109,25 @@ pub trait Tool: Send + Sync + 'static {
     /// any unknown dynamic tools are conservatively assumed to be stateful.
     fn is_read_only(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hone_sandbox::{NullSandbox, SandboxMode};
+
+    /// `ToolContext` must carry the `sandbox_policy` field and expose it to tools.
+    #[test]
+    fn tool_context_carries_sandbox_policy() {
+        let policy = hone_sandbox::SandboxPolicy::permissive();
+        let expected_mode = policy.mode;
+        let ctx = ToolContext {
+            sandbox: Arc::new(NullSandbox),
+            sandbox_policy: Arc::new(policy),
+            working_dir: PathBuf::from("/tmp"),
+        };
+        assert_eq!(ctx.sandbox_policy.mode, expected_mode);
+        assert_eq!(ctx.sandbox_policy.mode, SandboxMode::Manual);
     }
 }

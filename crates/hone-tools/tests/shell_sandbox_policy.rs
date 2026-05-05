@@ -15,6 +15,7 @@ use tempfile::TempDir;
 fn make_ctx(dir: &TempDir) -> ToolContext {
     ToolContext {
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: dir.path().to_path_buf(),
     }
 }
@@ -74,6 +75,7 @@ async fn test_shell_macos_write_to_etc_hosts_denied() {
     let dir = TempDir::new().unwrap();
     let ctx = ToolContext {
         sandbox: Arc::new(SeatbeltSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: dir.path().to_path_buf(),
     };
 

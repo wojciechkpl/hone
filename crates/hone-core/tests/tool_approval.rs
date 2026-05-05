@@ -159,6 +159,7 @@ fn make_config(
         provider,
         tools: registry,
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "test".to_owned(),
         model: ModelId::new("mock:test"),
         max_tokens: None,

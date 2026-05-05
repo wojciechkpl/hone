@@ -40,6 +40,7 @@ async fn test_budget_cap_blocks_new_turn() {
         provider,
         tools: ToolRegistry::new(),
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "You are a helpful assistant.".to_owned(),
         model: ModelId::new("mock:test"),
         max_tokens: None,

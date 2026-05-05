@@ -50,6 +50,7 @@ fn make_ctx() -> ToolContext {
 
     ToolContext {
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: PathBuf::from("/tmp"),
     }
 }
