@@ -588,28 +588,62 @@ impl Orchestrator {
             }
         }
 
-        // Poll plan_status until queued + leased == 0.
-        loop {
-            tokio::time::sleep(self.distributed_poll_interval).await;
-            match client.plan_status(&plan_id).await {
-                Ok(snap) => {
-                    if snap.queued + snap.leased == 0 {
+        // Try SSE first; fall back to polling on any error.
+        let sse_completed: bool = match client.stream_events(&plan_id).await {
+            Ok(stream) => {
+                use futures::StreamExt;
+                let mut count = 0usize;
+                let mut s = std::pin::pin!(stream);
+                while let Some(_event) = s.next().await {
+                    count += 1;
+                    if count >= total_tasks {
                         break;
                     }
+                    // Total budget check during SSE consumption.
+                    if let Some(total) = self.total_budget {
+                        if let Ok(rows) = client.pull_results(&plan_id).await {
+                            let spent: f64 = rows.iter().map(|r| r.cost_usd).sum();
+                            if spent >= total {
+                                tracing::warn!(
+                                    "total budget exceeded during distributed run; stopping SSE consumption"
+                                );
+                                break;
+                            }
+                        }
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!("plan_status poll failed: {e}; continuing");
-                }
+                true
             }
-            // Total budget check.
-            if let Some(total) = self.total_budget {
-                if let Ok(rows) = client.pull_results(&plan_id).await {
-                    let spent: f64 = rows.iter().map(|r| r.cost_usd).sum();
-                    if spent >= total {
-                        tracing::warn!(
-                            "total budget exceeded during distributed run; stopping poll"
-                        );
-                        break;
+            Err(e) => {
+                tracing::warn!("SSE stream_events failed: {e}; falling back to polling");
+                false
+            }
+        };
+
+        if !sse_completed {
+            // Polling fallback: poll plan_status until queued + leased == 0.
+            loop {
+                tokio::time::sleep(self.distributed_poll_interval).await;
+                match client.plan_status(&plan_id).await {
+                    Ok(snap) => {
+                        if snap.queued + snap.leased == 0 {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("plan_status poll failed: {e}; continuing");
+                    }
+                }
+                // Total budget check.
+                if let Some(total) = self.total_budget {
+                    if let Ok(rows) = client.pull_results(&plan_id).await {
+                        let spent: f64 = rows.iter().map(|r| r.cost_usd).sum();
+                        if spent >= total {
+                            tracing::warn!(
+                                "total budget exceeded during distributed run; stopping poll"
+                            );
+                            break;
+                        }
                     }
                 }
             }

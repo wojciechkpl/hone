@@ -22,6 +22,7 @@ hone-core = { workspace = true }
 hone-providers = { workspace = true }
 hone-tools = { workspace = true }
 hone-proto = { workspace = true }
+hone-mcp = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
