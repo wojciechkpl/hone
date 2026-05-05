@@ -6,6 +6,8 @@
 
 mod chain;
 mod event;
+pub mod merkle;
 
 pub use chain::{ProvenanceLog, ProvenanceLogError, VerifyError};
 pub use event::{ProvenanceEntry, ProvenanceEvent};
+pub use merkle::merkle_root;

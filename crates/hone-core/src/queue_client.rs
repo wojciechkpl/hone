@@ -72,6 +72,18 @@ pub struct CompletionRequestBody {
     pub error_msg: Option<String>,
     pub usage: hone_proto::TokenUsage,
     pub cost_usd: f64,
+    /// SHA-256 hex head of the per-task ProvenanceLog. None for workers
+    /// that do not support provenance yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance_head: Option<String>,
+}
+
+/// Wire type returned by `GET /distributed/plans/{plan_id}/provenance`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlanProvenanceWire {
+    pub merkle_root: String,
+    /// task_id -> head_hash
+    pub per_task_heads: std::collections::BTreeMap<String, String>,
 }
 
 /// Errors returned by every `QueueClient` method.
@@ -252,6 +264,42 @@ impl QueueClient {
                     .await
                     .map_err(|e| QueueClientError::Json(e.to_string()))?;
                 Ok(rows)
+            }
+            401 => Err(QueueClientError::Unauthorized),
+            503 => Err(QueueClientError::NotConfigured),
+            s => {
+                let body = resp.text().await.unwrap_or_default();
+                Err(QueueClientError::ServerError { status: s, body })
+            }
+        }
+    }
+
+    /// GET /distributed/plans/{plan_id}/provenance
+    /// Returns the Merkle root and per-task provenance heads.
+    pub async fn pull_provenance(
+        &self,
+        plan_id: &str,
+    ) -> Result<PlanProvenanceWire, QueueClientError> {
+        let url = format!(
+            "{}/distributed/plans/{}/provenance",
+            self.coordinator_url, plan_id
+        );
+
+        let resp = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.auth_token)
+            .send()
+            .await
+            .map_err(|e| QueueClientError::Http(e.to_string()))?;
+
+        match resp.status().as_u16() {
+            200 => {
+                let prov: PlanProvenanceWire = resp
+                    .json()
+                    .await
+                    .map_err(|e| QueueClientError::Json(e.to_string()))?;
+                Ok(prov)
             }
             401 => Err(QueueClientError::Unauthorized),
             503 => Err(QueueClientError::NotConfigured),
@@ -546,6 +594,7 @@ mod tests {
                 cache_creation: 0,
             },
             cost_usd: 0.001,
+            provenance_head: None,
         }
     }
 
@@ -1217,6 +1266,56 @@ mod tests {
             claimed.subtask.requires_capabilities,
             vec!["rust".to_owned(), "python".to_owned()],
             "requires_capabilities must survive client deserialisation"
+        );
+    }
+
+    // ── pull_provenance ───────────────────────────────────────────────────────
+
+    /// GET /distributed/plans/p1/provenance → 200 deserialises root + heads.
+    #[tokio::test]
+    async fn pull_provenance_returns_root_and_heads() {
+        let server = mock_coordinator().await;
+        let head_a = "a".repeat(64);
+        let head_b = "b".repeat(64);
+        let body = serde_json::json!({
+            "merkle_root": "d".repeat(64),
+            "per_task_heads": {
+                "task-1": head_a,
+                "task-2": head_b,
+            }
+        });
+        server.mock(|when, then| {
+            when.method(GET).path("/distributed/plans/p1/provenance");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .json_body(body);
+        });
+
+        let client = client_for(&server);
+        let prov = client.pull_provenance("p1").await.expect("pull_provenance should succeed");
+        assert_eq!(prov.merkle_root, "d".repeat(64));
+        assert_eq!(prov.per_task_heads.len(), 2);
+        assert!(prov.per_task_heads.contains_key("task-1"));
+        assert!(prov.per_task_heads.contains_key("task-2"));
+    }
+
+    /// GET /distributed/plans/p1/provenance → 503 maps to NotConfigured.
+    #[tokio::test]
+    async fn pull_provenance_503_returns_not_configured() {
+        let server = mock_coordinator().await;
+        server.mock(|when, then| {
+            when.method(GET).path("/distributed/plans/p1/provenance");
+            then.status(503).body("not configured");
+        });
+
+        let client = client_for(&server);
+        let err = client
+            .pull_provenance("p1")
+            .await
+            .expect_err("503 must be an error");
+        assert!(
+            matches!(err, QueueClientError::NotConfigured),
+            "expected NotConfigured, got {err:?}"
         );
     }
 }

@@ -78,6 +78,9 @@ pub struct CompletionPayload {
     pub error_msg: Option<String>,
     pub usage: TokenUsage,
     pub cost_usd: f64,
+    /// SHA-256 hex head of the per-task ProvenanceLog. None when worker does
+    /// not support provenance.
+    pub provenance_head: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -117,15 +120,16 @@ impl DistributedTaskStore {
                 ON distributed_tasks(plan_id);
 
             CREATE TABLE IF NOT EXISTS distributed_results (
-                task_id       TEXT    PRIMARY KEY REFERENCES distributed_tasks(id),
-                worker_id     TEXT    NOT NULL,
-                status        TEXT    NOT NULL,
-                response      TEXT    NOT NULL,
-                error_msg     TEXT,
-                tokens_input  INTEGER NOT NULL,
-                tokens_output INTEGER NOT NULL,
-                cost_usd      REAL    NOT NULL,
-                completed_at  INTEGER NOT NULL
+                task_id          TEXT    PRIMARY KEY REFERENCES distributed_tasks(id),
+                worker_id        TEXT    NOT NULL,
+                status           TEXT    NOT NULL,
+                response         TEXT    NOT NULL,
+                error_msg        TEXT,
+                tokens_input     INTEGER NOT NULL,
+                tokens_output    INTEGER NOT NULL,
+                cost_usd         REAL    NOT NULL,
+                completed_at     INTEGER NOT NULL,
+                provenance_head  TEXT
             );
 
             CREATE TABLE IF NOT EXISTS distributed_workers (
@@ -370,8 +374,8 @@ impl DistributedTaskStore {
         sqlx::query(
             "INSERT INTO distributed_results
              (task_id, worker_id, status, response, error_msg,
-              tokens_input, tokens_output, cost_usd, completed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+              tokens_input, tokens_output, cost_usd, completed_at, provenance_head)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         )
         .bind(&payload.task_id)
         .bind(payload.worker_id.as_str())
@@ -382,6 +386,7 @@ impl DistributedTaskStore {
         .bind(payload.usage.output as i64)
         .bind(payload.cost_usd)
         .bind(now_micros)
+        .bind(&payload.provenance_head)
         .execute(&mut *txn)
         .await?;
 
@@ -669,6 +674,7 @@ fn make_payload(task_id: &str, worker_id: &WorkerId, status: &str) -> Completion
             cache_creation: 0,
         },
         cost_usd: 0.001,
+        provenance_head: None,
     }
 }
 
@@ -685,6 +691,7 @@ pub struct TaskResultRow {
     pub tokens_input: u32,
     pub tokens_output: u32,
     pub cost_usd: f64,
+    pub provenance_head: Option<String>,
 }
 
 impl DistributedTaskStore {
@@ -700,7 +707,7 @@ impl DistributedTaskStore {
             r#"
             SELECT r.task_id, t.plan_id, t.subtask_json, r.status, r.response,
                    r.error_msg, r.tokens_input, r.tokens_output, r.cost_usd,
-                   r.completed_at
+                   r.completed_at, r.provenance_head
             FROM distributed_results r
             JOIN distributed_tasks t ON t.id = r.task_id
             WHERE t.plan_id = ?
@@ -723,6 +730,7 @@ impl DistributedTaskStore {
             let tokens_input: i64 = row.get("tokens_input");
             let tokens_output: i64 = row.get("tokens_output");
             let cost_usd: f64 = row.get("cost_usd");
+            let provenance_head: Option<String> = row.try_get("provenance_head").ok().flatten();
             out.push(TaskResultRow {
                 task_id,
                 plan_id: plan_id_db,
@@ -733,9 +741,45 @@ impl DistributedTaskStore {
                 tokens_input: tokens_input as u32,
                 tokens_output: tokens_output as u32,
                 cost_usd,
+                provenance_head,
             });
         }
         Ok(out)
+    }
+}
+
+/// Merkle provenance summary for a plan.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PlanProvenance {
+    /// SHA-256 Merkle root over all per-task head hashes that are present.
+    pub merkle_root: String,
+    /// task_id -> head_hash (only tasks that reported a provenance_head).
+    pub per_task_heads: std::collections::BTreeMap<String, String>,
+}
+
+impl DistributedTaskStore {
+    /// Return per-task provenance heads + the Merkle root over them.
+    /// Tasks without a provenance_head are EXCLUDED from the merkle computation.
+    pub async fn compute_plan_provenance(
+        &self,
+        plan_id: &str,
+    ) -> Result<PlanProvenance, DistributedError> {
+        let rows = self.pull_results(plan_id).await?;
+
+        let mut per_task_heads = std::collections::BTreeMap::new();
+        for row in rows {
+            if let Some(head) = row.provenance_head {
+                per_task_heads.insert(row.task_id, head);
+            }
+        }
+
+        let leaves: Vec<String> = per_task_heads.values().cloned().collect();
+        let merkle_root = hone_provenance::merkle_root(&leaves);
+
+        Ok(PlanProvenance {
+            merkle_root,
+            per_task_heads,
+        })
     }
 }
 
@@ -927,6 +971,7 @@ mod tests {
             error_msg: None,
             usage: TokenUsage { input: 100, output: 200, cache_read: 10, cache_creation: 0 },
             cost_usd: 0.042,
+            provenance_head: None,
         };
         store.complete(payload).await.unwrap();
 
@@ -1480,6 +1525,7 @@ mod tests {
             error_msg: Some("boom".to_owned()),
             usage: TokenUsage { input: 5, output: 10, cache_read: 0, cache_creation: 0 },
             cost_usd: 0.005,
+            provenance_head: None,
         };
         store.complete(payload).await.unwrap();
 
@@ -1767,5 +1813,104 @@ mod tests {
         );
         // worker_id for synthetic rows is implementation-defined, but must not be empty.
         assert!(!worker_id.is_empty());
+    }
+
+    // ── compute_plan_provenance ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn compute_plan_provenance_returns_genesis_for_empty_plan() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        let prov = store.compute_plan_provenance("no-such-plan").await.unwrap();
+        // No tasks -> no leaves -> genesis hash.
+        assert_eq!(prov.merkle_root, "0".repeat(64));
+        assert!(prov.per_task_heads.is_empty());
+    }
+
+    #[tokio::test]
+    async fn compute_plan_provenance_returns_correct_root_for_two_completed_tasks() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        store
+            .enqueue("plan-prov-2", vec![make_subtask("s1"), make_subtask("s2")])
+            .await
+            .unwrap();
+
+        let worker = WorkerId::new("w1");
+        let head_a = "a".repeat(64);
+        let head_b = "b".repeat(64);
+
+        let c1 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+        store.complete(CompletionPayload {
+            task_id: c1.task_id.clone(),
+            worker_id: worker.clone(),
+            status_str: "completed".to_owned(),
+            response: "r1".to_owned(),
+            error_msg: None,
+            usage: TokenUsage { input: 1, output: 1, cache_read: 0, cache_creation: 0 },
+            cost_usd: 0.0,
+            provenance_head: Some(head_a.clone()),
+        }).await.unwrap();
+
+        let c2 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+        store.complete(CompletionPayload {
+            task_id: c2.task_id.clone(),
+            worker_id: worker.clone(),
+            status_str: "completed".to_owned(),
+            response: "r2".to_owned(),
+            error_msg: None,
+            usage: TokenUsage { input: 1, output: 1, cache_read: 0, cache_creation: 0 },
+            cost_usd: 0.0,
+            provenance_head: Some(head_b.clone()),
+        }).await.unwrap();
+
+        let prov = store.compute_plan_provenance("plan-prov-2").await.unwrap();
+        assert_eq!(prov.per_task_heads.len(), 2);
+
+        // Compute expected root: leaves sorted -> "aaa..." < "bbb..."
+        let expected_root = hone_provenance::merkle_root(&[head_a, head_b]);
+        assert_eq!(prov.merkle_root, expected_root);
+    }
+
+    #[tokio::test]
+    async fn compute_plan_provenance_excludes_tasks_without_head() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        store
+            .enqueue("plan-prov-excl", vec![make_subtask("s1"), make_subtask("s2")])
+            .await
+            .unwrap();
+
+        let worker = WorkerId::new("w1");
+        let head = "c".repeat(64);
+
+        // Task 1: has provenance head.
+        let c1 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+        store.complete(CompletionPayload {
+            task_id: c1.task_id.clone(),
+            worker_id: worker.clone(),
+            status_str: "completed".to_owned(),
+            response: "r1".to_owned(),
+            error_msg: None,
+            usage: TokenUsage { input: 1, output: 1, cache_read: 0, cache_creation: 0 },
+            cost_usd: 0.0,
+            provenance_head: Some(head.clone()),
+        }).await.unwrap();
+
+        // Task 2: no provenance head (legacy worker).
+        let c2 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+        store.complete(CompletionPayload {
+            task_id: c2.task_id.clone(),
+            worker_id: worker.clone(),
+            status_str: "completed".to_owned(),
+            response: "r2".to_owned(),
+            error_msg: None,
+            usage: TokenUsage { input: 1, output: 1, cache_read: 0, cache_creation: 0 },
+            cost_usd: 0.0,
+            provenance_head: None,
+        }).await.unwrap();
+
+        let prov = store.compute_plan_provenance("plan-prov-excl").await.unwrap();
+        // Only one task reported a head.
+        assert_eq!(prov.per_task_heads.len(), 1);
+        // Root equals the single leaf (single-leaf rule: root == leaf).
+        assert_eq!(prov.merkle_root, head);
     }
 }

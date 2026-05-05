@@ -2044,6 +2044,7 @@ dependencies = [
  "futures",
  "hone-core",
  "hone-proto",
+ "hone-provenance",
  "hone-providers",
  "hone-sandbox",
  "hone-tools",

@@ -26,6 +26,9 @@ pub struct ExecutionOutcome {
     pub tokens_input: u32,
     pub tokens_output: u32,
     pub cost_usd: f64,
+    /// SHA-256 hex head of the per-task ProvenanceLog. None when the executor
+    /// does not support provenance.
+    pub provenance_head: Option<String>,
 }
 
 impl ExecutionOutcome {
@@ -37,6 +40,7 @@ impl ExecutionOutcome {
             tokens_input: 0,
             tokens_output: 0,
             cost_usd: 0.0,
+            provenance_head: None,
         }
     }
 
@@ -49,6 +53,7 @@ impl ExecutionOutcome {
             tokens_input: 0,
             tokens_output: 0,
             cost_usd: 0.0,
+            provenance_head: None,
         }
     }
 
@@ -61,7 +66,14 @@ impl ExecutionOutcome {
             tokens_input: 0,
             tokens_output: 0,
             cost_usd: 0.0,
+            provenance_head: None,
         }
+    }
+
+    /// Builder to attach a provenance head hash to this outcome.
+    pub fn with_provenance_head(mut self, head: String) -> Self {
+        self.provenance_head = Some(head);
+        self
     }
 }
 
@@ -77,6 +89,7 @@ impl From<ExecutionOutcome> for CompletionRequestBody {
                 ..Default::default()
             },
             cost_usd: o.cost_usd,
+            provenance_head: o.provenance_head,
         }
     }
 }
@@ -203,6 +216,7 @@ impl WorkerPool {
                                     ..Default::default()
                                 },
                                 cost_usd: outcome.cost_usd,
+                                provenance_head: outcome.provenance_head,
                             };
                             if let Err(e) = self
                                 .client
@@ -258,6 +272,7 @@ impl TaskExecutor for MockExecutor {
                 tokens_input: 0,
                 tokens_output: 0,
                 cost_usd: 0.0,
+                provenance_head: None,
             }
         }
     }
@@ -404,6 +419,7 @@ mod tests {
             tokens_input: 10,
             tokens_output: 20,
             cost_usd: 0.001,
+            provenance_head: None,
         }]));
         let call_count = executor.call_count.clone();
 
@@ -821,6 +837,57 @@ mod tests {
         assert!(
             handle.is_finished(),
             "pool JoinHandle must be finished within 100ms of abort()"
+        );
+    }
+
+    // ── Provenance head propagation ───────────────────────────────────────────
+
+    /// MockExecutor returns an outcome with a provenance_head; the body posted
+    /// to /results must include that head in the JSON payload.
+    #[tokio::test]
+    async fn pool_passes_provenance_head_to_complete_endpoint() {
+        let server = MockServer::start_async().await;
+        mock_heartbeat_204(&server);
+
+        server.mock(|when, then| {
+            when.method(POST)
+                .path("/distributed/workers/worker-test/claim");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .json_body(make_claimed_task_json("task-prov"));
+        });
+        // Drain subsequent claims.
+        server.mock(|when, then| {
+            when.method(POST)
+                .path("/distributed/workers/worker-test/claim");
+            then.status(204);
+        });
+
+        let expected_head = "a".repeat(64);
+        let results_mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/distributed/workers/worker-test/results/task-prov")
+                .body_contains(&"a".repeat(64));
+            then.status(204);
+        });
+
+        let executor = Arc::new(MockExecutor::new(vec![ExecutionOutcome {
+            status_str: "completed".to_owned(),
+            response: "done".to_owned(),
+            error_msg: None,
+            tokens_input: 0,
+            tokens_output: 0,
+            cost_usd: 0.0,
+            provenance_head: Some(expected_head),
+        }]));
+        let handle = build_pool(&server, executor).spawn();
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        handle.abort();
+
+        assert!(
+            results_mock.hits() >= 1,
+            "results endpoint must be called with provenance_head in body; hits={}",
+            results_mock.hits()
         );
     }
 }
