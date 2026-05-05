@@ -12,6 +12,7 @@ use subtle::{Choice, ConstantTimeEq};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::collaborative_routes::collaborative_router;
+use crate::distributed_routes::distributed_router;
 use crate::error::ServerError;
 use crate::execution::run_handler;
 use crate::governance_routes::governance_router;
@@ -46,6 +47,7 @@ pub fn router(state: AppState) -> Router {
         .merge(tunnel_router())
         .merge(governance_router())
         .merge(collaborative_router())
+        .merge(distributed_router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,

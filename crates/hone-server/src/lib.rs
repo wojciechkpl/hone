@@ -12,6 +12,8 @@ pub mod auth;
 pub mod bore_tunnel;
 pub mod collaborative;
 pub mod distributed;
+pub mod distributed_reaper;
+pub mod distributed_routes;
 pub mod collaborative_routes;
 pub mod error;
 pub mod execution;
@@ -35,6 +37,8 @@ pub use collaborative::{CollaborativeStore, Participant, ParticipantRole};
 pub use distributed::{
     ClaimedTask, CompletionPayload, DistributedError, DistributedTaskStore, TaskState, WorkerId,
 };
+pub use distributed_reaper::spawn_lease_reaper;
+pub use distributed_routes::distributed_router;
 pub use execution::build_sandbox;
 pub use governance::{GovernanceStore, ModelUsage, TeamMember, TeamPolicy, TeamUsage};
 pub use openapi::ApiDoc;

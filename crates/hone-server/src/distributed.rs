@@ -60,7 +60,7 @@ impl TaskState {
 }
 
 /// A task pulled by a worker, with all the info needed to execute.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ClaimedTask {
     pub task_id: String,
     pub plan_id: String,
@@ -69,7 +69,7 @@ pub struct ClaimedTask {
     pub attempts: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompletionPayload {
     pub task_id: String,
     pub worker_id: WorkerId,
@@ -518,6 +518,12 @@ impl DistributedTaskStore {
         .await?;
 
         Ok(())
+    }
+
+    /// Expose the raw pool for white-box assertions in unit tests only.
+    #[cfg(test)]
+    pub fn pool_for_test(&self) -> &SqlitePool {
+        &self.pool
     }
 
     /// Extend the lease on a task that this worker owns.
