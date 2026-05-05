@@ -52,6 +52,19 @@ async fn main() -> Result<()> {
             "  HONE_DISTRIBUTED_REAP_SECS Lease-reaper tick interval in seconds (default 15)"
         );
         println!("  HONE_DISTRIBUTED_MAX_ATTEMPTS  Max claim attempts before force-fail (default 3)");
+        println!(
+            "  HONE_WORKER_COORDINATOR    Coordinator URL (e.g. http://10.0.0.5:3117) — when set,"
+        );
+        println!(
+            "                             this honed runs in worker mode: polls /distributed/claim,"
+        );
+        println!("                             executes via Agent, posts results back");
+        println!(
+            "  HONE_WORKER_ID             This worker's id (default: hostname or random uuid v7)"
+        );
+        println!(
+            "  HONE_WORKER_CAPABILITIES   Comma-separated capability tags (e.g. 'rust,python')"
+        );
         println!();
         println!("Endpoints:");
         println!("  POST   /sessions           Create a new session");
@@ -186,6 +199,107 @@ async fn main() -> Result<()> {
                 max_attempts,
             )
         });
+
+    // Worker mode (P2-4 Phase 3b): when HONE_WORKER_COORDINATOR is set,
+    // spawn a WorkerPool that polls the named coordinator for work, runs
+    // each claimed SubTask through a real Agent, and posts results back.
+    // The same honed binary now plays one of three roles based on env vars:
+    //   default                     pure session/HTTP server
+    //   HONE_DISTRIBUTED_DB         coordinator (queue + reaper)
+    //   HONE_WORKER_COORDINATOR     worker (poll-claim-execute loop)
+    //   both env vars               coordinator + worker on same machine
+    let _worker_handle: Option<tokio::task::JoinHandle<()>> =
+        if let Ok(coordinator_url) = std::env::var("HONE_WORKER_COORDINATOR") {
+            let worker_id = std::env::var("HONE_WORKER_ID").unwrap_or_else(|_| {
+                hostname::get()
+                    .ok()
+                    .and_then(|h| h.into_string().ok())
+                    .unwrap_or_else(|| format!("worker-{}", uuid::Uuid::now_v7()))
+            });
+            let capabilities: Vec<String> = std::env::var("HONE_WORKER_CAPABILITIES")
+                .unwrap_or_default()
+                .split(',')
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.trim().to_string())
+                .collect();
+            let token = std::env::var("HONE_AUTH_TOKEN").unwrap_or_default();
+            if token.is_empty() {
+                tracing::warn!(
+                    "HONE_WORKER_COORDINATOR set but HONE_AUTH_TOKEN empty; coordinator may reject"
+                );
+            }
+
+            // Provider: Anthropic preferred, OpenAI fallback (mirrors hone eval).
+            let provider: Option<Arc<dyn hone_providers::ModelProvider>> =
+                if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+                    Some(Arc::new(
+                        hone_providers::adapters::anthropic::AnthropicProvider::new(key),
+                    ))
+                } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+                    Some(Arc::new(hone_providers::adapters::openai::OpenAiProvider::new(key)))
+                } else {
+                    None
+                };
+
+            match provider {
+                None => {
+                    tracing::warn!(
+                        "worker mode requires ANTHROPIC_API_KEY or OPENAI_API_KEY; \
+                         worker pool not spawned"
+                    );
+                    None
+                }
+                Some(provider) => {
+                    let registry = hone_core::AgentRegistry::load_hierarchical(
+                        &std::env::current_dir().unwrap_or_default(),
+                    );
+                    // Minimal default tool registry for v1 worker mode.  LSP/MCP/
+                    // memory wiring is a follow-up.
+                    let base_tools = hone_tools::ToolRegistry::builder()
+                        .register(Box::new(hone_tools::ReadFileTool))
+                        .register(Box::new(hone_tools::GlobTool))
+                        .register(Box::new(hone_tools::GrepTool))
+                        .register(Box::new(hone_tools::WriteFileTool))
+                        .register(Box::new(hone_tools::EditFileTool))
+                        .register(Box::new(hone_tools::MultiEditTool))
+                        .register(Box::new(hone_tools::ShellTool))
+                        .register(Box::new(hone_tools::GitStatusTool))
+                        .register(Box::new(hone_tools::GitDiffTool))
+                        .register(Box::new(hone_tools::GitCommitTool))
+                        .build();
+                    let model = hone_proto::ModelId::new("anthropic:claude-sonnet-4-5");
+                    let pricing = hone_proto::PricingEntry {
+                        model: model.clone(),
+                        input_per_million: 3.0,
+                        output_per_million: 15.0,
+                        cache_read_per_million: None,
+                        cache_creation_per_million: None,
+                    };
+                    let working_dir = std::env::current_dir().unwrap_or_default();
+
+                    let executor = Arc::new(hone_server::AgentTaskExecutor::new(
+                        registry, base_tools, provider, model, pricing, working_dir,
+                    ));
+                    let client = Arc::new(hone_core::queue_client::QueueClient::new(
+                        coordinator_url.clone(),
+                        token,
+                    ));
+                    let pool = hone_server::WorkerPool::new(
+                        client,
+                        worker_id.clone(),
+                        capabilities.clone(),
+                        executor,
+                    );
+                    tracing::info!(
+                        "worker pool spawned: id={worker_id}, capabilities={:?}, coordinator={coordinator_url}",
+                        capabilities
+                    );
+                    Some(pool.spawn())
+                }
+            }
+        } else {
+            None
+        };
 
     // Background session GC: purge sessions older than 30 days every hour.
     {
