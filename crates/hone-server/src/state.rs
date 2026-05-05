@@ -6,6 +6,7 @@ use std::time::Duration;
 use hone_providers::ModelProvider;
 
 use crate::collaborative::CollaborativeStore;
+use crate::distributed::DistributedTaskStore;
 use crate::governance::GovernanceStore;
 use crate::rate_limit::RateLimiter;
 use crate::session::SessionStore;
@@ -52,6 +53,8 @@ pub struct AppState {
     /// Optional provider override used by tests to avoid live API calls.
     /// When `Some`, `run_handler` uses this instead of `AnthropicProvider`.
     pub mock_provider: Option<Arc<dyn ModelProvider>>,
+    /// When Some, /distributed/* endpoints are enabled.
+    pub distributed_store: Option<Arc<DistributedTaskStore>>,
 }
 
 impl AppState {
@@ -67,6 +70,7 @@ impl AppState {
             workspace_root: default_workspace_root(),
             admin_tokens: Arc::new(HashSet::new()),
             mock_provider: None,
+            distributed_store: None,
         }
     }
 
@@ -82,6 +86,7 @@ impl AppState {
             workspace_root: default_workspace_root(),
             admin_tokens: Arc::new(HashSet::new()),
             mock_provider: None,
+            distributed_store: None,
         }
     }
 
@@ -100,6 +105,7 @@ impl AppState {
             workspace_root: default_workspace_root(),
             admin_tokens: Arc::new(HashSet::new()),
             mock_provider: None,
+            distributed_store: None,
         }
     }
 
@@ -144,6 +150,12 @@ impl AppState {
     /// without a live API key.
     pub fn with_mock_provider(mut self, p: Arc<dyn ModelProvider>) -> Self {
         self.mock_provider = Some(p);
+        self
+    }
+
+    /// Attach a distributed task store, enabling the `/distributed/*` endpoints.
+    pub fn with_distributed_store(mut self, store: Arc<DistributedTaskStore>) -> Self {
+        self.distributed_store = Some(store);
         self
     }
 }
