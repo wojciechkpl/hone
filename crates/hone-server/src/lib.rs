@@ -9,6 +9,7 @@
 pub const HONE_MAX_BODY_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
 
 pub mod auth;
+pub mod worker_pool;
 pub mod bore_tunnel;
 pub mod collaborative;
 pub mod distributed;
@@ -33,6 +34,9 @@ pub mod tunnel_routes;
 pub mod web;
 
 pub use bore_tunnel::BoreTunnelManager;
+pub use worker_pool::{ExecutionOutcome, TaskExecutor, WorkerPool};
+#[cfg(any(test, feature = "test-stub"))]
+pub use worker_pool::MockExecutor;
 pub use collaborative::{CollaborativeStore, Participant, ParticipantRole};
 pub use distributed::{
     ClaimedTask, CompletionPayload, DistributedError, DistributedTaskStore, TaskResultRow,
