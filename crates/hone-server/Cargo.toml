@@ -33,6 +33,7 @@ utoipa = { workspace = true }
 subtle = { workspace = true }
 croner = "2"
 chrono = { version = "0.4", features = ["serde"] }
+async-stream = { workspace = true }
 
 [features]
 test-stub = []

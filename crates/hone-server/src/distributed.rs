@@ -520,6 +520,73 @@ impl DistributedTaskStore {
         Ok(())
     }
 
+    /// Mark all queued+leased tasks for `plan_id` as Failed with the given
+    /// reason. Returns the count of tasks transitioned.
+    ///
+    /// A synthetic result row is inserted for each cancelled task so callers
+    /// can inspect the cancellation reason via `pull_results`.
+    ///
+    /// Tasks already in a terminal state (done, failed, timed_out) are NOT
+    /// touched.
+    pub async fn cancel_plan(
+        &self,
+        plan_id: &str,
+        reason: impl Into<String>,
+    ) -> Result<usize, DistributedError> {
+        use sqlx::Row;
+
+        let reason = reason.into();
+        let mut tx = self.pool.begin().await?;
+
+        let rows = sqlx::query(
+            "SELECT id FROM distributed_tasks WHERE plan_id = ? AND state IN ('queued', 'leased')",
+        )
+        .bind(plan_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        let now = chrono::Utc::now().timestamp_micros();
+        let mut count = 0usize;
+
+        for row in rows {
+            let task_id: String = row.get("id");
+
+            sqlx::query(
+                "UPDATE distributed_tasks \
+                 SET state = 'failed', leased_by = NULL, lease_expires_at = NULL, \
+                     completed_at = ? \
+                 WHERE id = ?",
+            )
+            .bind(now)
+            .bind(&task_id)
+            .execute(&mut *tx)
+            .await?;
+
+            sqlx::query(
+                "INSERT OR IGNORE INTO distributed_results \
+                 (task_id, worker_id, status, response, error_msg, \
+                  tokens_input, tokens_output, cost_usd, completed_at) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&task_id)
+            .bind("system-cancel")
+            .bind("failed")
+            .bind("")
+            .bind(&reason)
+            .bind(0i64)
+            .bind(0i64)
+            .bind(0.0f64)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+
+            count += 1;
+        }
+
+        tx.commit().await?;
+        Ok(count)
+    }
+
     /// Expose the raw pool for white-box assertions in unit tests only.
     #[cfg(test)]
     pub fn pool_for_test(&self) -> &SqlitePool {
@@ -1541,5 +1608,164 @@ mod tests {
         // Each task claimed exactly once (no duplicates).
         let unique: std::collections::HashSet<_> = ids.iter().collect();
         assert_eq!(unique.len(), 10, "each task must be claimed by exactly one worker");
+    }
+
+    // ── cancel_plan ───────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn cancel_plan_marks_queued_tasks_failed() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        store
+            .enqueue("plan-cancel", vec![make_subtask("s1"), make_subtask("s2")])
+            .await
+            .unwrap();
+
+        let count = store
+            .cancel_plan("plan-cancel", "cancelled by user")
+            .await
+            .unwrap();
+
+        assert_eq!(count, 2);
+        let (queued, leased, _done, failed, _timed_out) =
+            store.plan_state_counts("plan-cancel").await.unwrap();
+        assert_eq!(queued, 0, "no tasks should remain queued after cancel");
+        assert_eq!(leased, 0);
+        assert_eq!(failed, 2, "both queued tasks should be failed");
+    }
+
+    #[tokio::test]
+    async fn cancel_plan_marks_leased_tasks_failed() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        store
+            .enqueue("plan-cancel-leased", vec![make_subtask("s1")])
+            .await
+            .unwrap();
+
+        let worker = WorkerId::new("w1");
+        let _claimed = store
+            .claim_one(&worker, &[], Duration::from_secs(60))
+            .await
+            .unwrap()
+            .unwrap();
+
+        let count = store
+            .cancel_plan("plan-cancel-leased", "cancelled by user")
+            .await
+            .unwrap();
+
+        assert_eq!(count, 1, "leased task should be transitioned");
+        let (_queued, leased, _done, failed, _timed_out) =
+            store.plan_state_counts("plan-cancel-leased").await.unwrap();
+        assert_eq!(leased, 0, "no tasks should remain leased");
+        assert_eq!(failed, 1, "leased task should now be failed");
+    }
+
+    #[tokio::test]
+    async fn cancel_plan_does_not_touch_done_tasks() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        store
+            .enqueue(
+                "plan-cancel-done",
+                vec![make_subtask("s1"), make_subtask("s2")],
+            )
+            .await
+            .unwrap();
+
+        let worker = WorkerId::new("w1");
+        let claimed = store
+            .claim_one(&worker, &[], Duration::from_secs(60))
+            .await
+            .unwrap()
+            .unwrap();
+        store
+            .complete(make_payload(&claimed.task_id, &worker, "completed"))
+            .await
+            .unwrap();
+
+        // s1 is now done, s2 is still queued — cancel should only touch s2.
+        let count = store
+            .cancel_plan("plan-cancel-done", "cancelled by user")
+            .await
+            .unwrap();
+
+        assert_eq!(count, 1, "only the queued task should be transitioned");
+        let (queued, leased, done, failed, _timed_out) =
+            store.plan_state_counts("plan-cancel-done").await.unwrap();
+        assert_eq!(done, 1, "already-done task must stay done");
+        assert_eq!(failed, 1, "the queued task should be failed");
+        assert_eq!(queued + leased, 0);
+    }
+
+    #[tokio::test]
+    async fn cancel_plan_returns_correct_count() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        let subtasks: Vec<_> = (1..=5).map(|i| make_subtask(&format!("s{i}"))).collect();
+        store.enqueue("plan-cancel-count", subtasks).await.unwrap();
+
+        // Claim 2 tasks — they become leased; 3 remain queued.
+        let worker = WorkerId::new("w1");
+        let _c1 = store
+            .claim_one(&worker, &[], Duration::from_secs(60))
+            .await
+            .unwrap()
+            .unwrap();
+        let _c2 = store
+            .claim_one(&worker, &[], Duration::from_secs(60))
+            .await
+            .unwrap()
+            .unwrap();
+
+        // cancel_plan must cancel all 5 (2 leased + 3 queued).
+        let count = store
+            .cancel_plan("plan-cancel-count", "cancelled by user")
+            .await
+            .unwrap();
+
+        assert_eq!(count, 5, "all queued+leased tasks (5) should be cancelled");
+    }
+
+    #[tokio::test]
+    async fn cancel_plan_unknown_plan_returns_zero_count() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        let count = store
+            .cancel_plan("no-such-plan", "cancelled by user")
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "cancelling a non-existent plan should return 0");
+    }
+
+    #[tokio::test]
+    async fn cancel_plan_inserts_failed_result_rows_with_synthetic_reason() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        let ids = store
+            .enqueue("plan-cancel-rows", vec![make_subtask("s1")])
+            .await
+            .unwrap();
+        let task_id = &ids[0];
+
+        store
+            .cancel_plan("plan-cancel-rows", "cancelled by user")
+            .await
+            .unwrap();
+
+        // A result row must exist with error_msg == "cancelled by user".
+        let row: Option<(String, String, Option<String>)> = sqlx::query_as(
+            "SELECT worker_id, status, error_msg FROM distributed_results WHERE task_id = ?1",
+        )
+        .bind(task_id)
+        .fetch_optional(store.pool_for_test())
+        .await
+        .unwrap();
+
+        let (worker_id, status, error_msg) =
+            row.expect("a result row must be inserted by cancel_plan");
+        assert_eq!(status, "failed");
+        assert_eq!(
+            error_msg.as_deref(),
+            Some("cancelled by user"),
+            "synthetic error_msg must match the cancellation reason"
+        );
+        // worker_id for synthetic rows is implementation-defined, but must not be empty.
+        assert!(!worker_id.is_empty());
     }
 }

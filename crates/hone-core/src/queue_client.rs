@@ -12,6 +12,35 @@ use crate::task_plan::SubTask;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
+/// JSON shape inside each SSE `data:` line emitted by
+/// `GET /distributed/plans/:id/events`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PlanEvent {
+    pub task_id: String,
+    /// One of "completed" | "failed" | "timed_out".
+    pub status: String,
+}
+
+/// Parse SSE frames from a raw byte buffer and return all `PlanEvent`s that
+/// can be decoded from `data:` lines.  Lines beginning with `event:` or `:`
+/// (keep-alive comments) are accepted and ignored.
+///
+/// This is intentionally a pure function with no async / HTTP so that it can
+/// be unit-tested directly.
+pub fn parse_sse_data_lines(raw: &[u8]) -> Vec<PlanEvent> {
+    let text = std::str::from_utf8(raw).unwrap_or("");
+    let mut events = vec![];
+    for line in text.lines() {
+        if let Some(data) = line.strip_prefix("data:") {
+            let data = data.trim();
+            if let Ok(ev) = serde_json::from_str::<PlanEvent>(data) {
+                events.push(ev);
+            }
+        }
+    }
+    events
+}
+
 /// Snapshot of state counts for a plan.
 /// Mirrors `PlanStatusResponse` in hone-server without pulling in that crate.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -350,6 +379,92 @@ impl QueueClient {
                 Err(QueueClientError::ServerError { status: s, body })
             }
         }
+    }
+
+    /// POST /distributed/plans/{plan_id}/cancel
+    /// Cancels all queued + leased tasks and returns the count transitioned.
+    ///
+    /// # Errors
+    /// Returns `Err(NotConfigured)` on 503, `Err(Unauthorized)` on 401.
+    pub async fn cancel_plan(
+        &self,
+        plan_id: &str,
+    ) -> Result<usize, QueueClientError> {
+        let url = format!("{}/distributed/plans/{}/cancel", self.coordinator_url, plan_id);
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.auth_token)
+            .timeout(self.request_timeout)
+            .send()
+            .await
+            .map_err(|e| QueueClientError::Http(e.to_string()))?;
+
+        match resp.status().as_u16() {
+            200 => {
+                let body: serde_json::Value = resp
+                    .json()
+                    .await
+                    .map_err(|e| QueueClientError::Json(e.to_string()))?;
+                Ok(body["cancelled"].as_u64().unwrap_or(0) as usize)
+            }
+            401 => Err(QueueClientError::Unauthorized),
+            503 => Err(QueueClientError::NotConfigured),
+            s => {
+                let body = resp.text().await.unwrap_or_default();
+                Err(QueueClientError::ServerError { status: s, body })
+            }
+        }
+    }
+
+    /// GET /distributed/plans/{plan_id}/events
+    /// Opens the SSE event stream and returns a stream of `PlanEvent` items.
+    /// The stream ends when the server closes the connection (plan terminal).
+    ///
+    /// # Errors
+    /// Returns `Err(NotConfigured)` on 503, `Err(Unauthorized)` on 401.
+    pub async fn stream_events(
+        &self,
+        plan_id: &str,
+    ) -> Result<impl futures::Stream<Item = PlanEvent>, QueueClientError> {
+        use bytes::BytesMut;
+        use futures::StreamExt;
+
+        let url = format!("{}/distributed/plans/{}/events", self.coordinator_url, plan_id);
+        let resp = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.auth_token)
+            .send()
+            .await
+            .map_err(|e| QueueClientError::Http(e.to_string()))?;
+
+        let status = resp.status().as_u16();
+        if status != 200 {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(QueueClientError::ServerError { status, body });
+        }
+
+        let bytes_stream = resp.bytes_stream();
+
+        let stream = async_stream::stream! {
+            let mut buf = BytesMut::new();
+            let mut bs = bytes_stream;
+            while let Some(chunk_res) = bs.next().await {
+                let Ok(chunk) = chunk_res else { break; };
+                buf.extend_from_slice(&chunk);
+
+                // Look for complete events (terminated by \n\n).
+                while let Some(pos) = buf.windows(2).position(|w| w == b"\n\n") {
+                    let frame = buf.split_to(pos + 2);
+                    for evt in parse_sse_data_lines(&frame) {
+                        yield evt;
+                    }
+                }
+            }
+        };
+
+        Ok(stream)
     }
 
     /// POST /distributed/workers/{worker_id}/extend-lease/{task_id}
@@ -848,6 +963,72 @@ mod tests {
             matches!(err, QueueClientError::NotConfigured),
             "expected NotConfigured, got {err:?}"
         );
+    }
+
+    // ── cancel_plan ───────────────────────────────────────────────────────────
+
+    /// POST /distributed/plans/p1/cancel → 200 {"cancelled": 3} deserialises count.
+    #[tokio::test]
+    async fn cancel_plan_returns_count_from_body() {
+        let server = mock_coordinator().await;
+        server.mock(|when, then| {
+            when.method(POST).path("/distributed/plans/p1/cancel");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(r#"{"cancelled":3}"#);
+        });
+
+        let client = client_for(&server);
+        let count = client
+            .cancel_plan("p1")
+            .await
+            .expect("cancel_plan should succeed on 200");
+        assert_eq!(count, 3, "count must match JSON field");
+    }
+
+    /// POST /distributed/plans/p1/cancel → 503 maps to NotConfigured.
+    #[tokio::test]
+    async fn cancel_plan_503_returns_not_configured() {
+        let server = mock_coordinator().await;
+        server.mock(|when, then| {
+            when.method(POST).path("/distributed/plans/p1/cancel");
+            then.status(503).body("not configured");
+        });
+
+        let client = client_for(&server);
+        let err = client
+            .cancel_plan("p1")
+            .await
+            .expect_err("503 must be an error");
+        assert!(
+            matches!(err, QueueClientError::NotConfigured),
+            "expected NotConfigured, got {err:?}"
+        );
+    }
+
+    // ── stream_events SSE parser ──────────────────────────────────────────────
+
+    /// Unit-test the hand-rolled SSE frame parser via a byte-slice fixture.
+    /// No HTTP server needed — we call the parser helper directly.
+    #[test]
+    fn stream_events_parses_sse_frames() {
+        // Hand-built SSE payload: two frames.
+        let raw = concat!(
+            "event: task_completion\n",
+            "data: {\"task_id\":\"a\",\"status\":\"completed\"}\n",
+            "\n",
+            "event: task_completion\n",
+            "data: {\"task_id\":\"b\",\"status\":\"failed\"}\n",
+            "\n",
+        );
+
+        let events = crate::queue_client::parse_sse_data_lines(raw.as_bytes());
+
+        assert_eq!(events.len(), 2, "should parse exactly 2 PlanEvents");
+        assert_eq!(events[0].task_id, "a");
+        assert_eq!(events[0].status, "completed");
+        assert_eq!(events[1].task_id, "b");
+        assert_eq!(events[1].status, "failed");
     }
 
     /// Pointing the client at a port with nothing listening produces Http(_).

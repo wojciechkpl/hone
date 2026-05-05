@@ -71,8 +71,8 @@ pub use retry::{RetryConfig, is_transient_error, retry};
 pub use reviewer::{ReviewIssue, ReviewResult, ReviewSeverity, ReviewerAgent};
 pub use self_refine::{RefineResult, SelfRefineLoop};
 pub use queue_client::{
-    ClaimedTaskWire, CompletionRequestBody, PlanStatusSnapshot, QueueClient, QueueClientError,
-    WorkerResultWire,
+    ClaimedTaskWire, CompletionRequestBody, PlanEvent, PlanStatusSnapshot, QueueClient,
+    QueueClientError, WorkerResultWire,
 };
 pub use task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
 pub use test_loop::{
