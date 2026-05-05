@@ -32,6 +32,11 @@ pub struct Orchestrator {
     worker_timeout_secs: u64,
     /// Optional crash-recovery checkpoint store.
     checkpoint_store: Option<CheckpointStore>,
+    /// When set, execute_plan dispatches subtasks through a remote honed
+    /// coordinator instead of running agents in-process.
+    queue_client: Option<Arc<crate::queue_client::QueueClient>>,
+    /// Polling interval for distributed mode (default 500ms).
+    distributed_poll_interval: std::time::Duration,
 }
 
 impl Orchestrator {
@@ -46,6 +51,8 @@ impl Orchestrator {
             plan_store: None,
             worker_timeout_secs: DEFAULT_WORKER_TIMEOUT_SECS,
             checkpoint_store: None,
+            queue_client: None,
+            distributed_poll_interval: std::time::Duration::from_millis(500),
         }
     }
 
@@ -96,6 +103,22 @@ impl Orchestrator {
     /// interrupted run.
     pub fn with_checkpoint_store(mut self, store: CheckpointStore) -> Self {
         self.checkpoint_store = Some(store);
+        self
+    }
+
+    /// Attach a QueueClient for distributed dispatch.
+    ///
+    /// When set, `execute_plan` routes subtasks through the remote coordinator
+    /// instead of running agents in-process.
+    pub fn with_queue_client(mut self, client: Arc<crate::queue_client::QueueClient>) -> Self {
+        self.queue_client = Some(client);
+        self
+    }
+
+    /// Override the polling interval used when waiting for distributed tasks
+    /// to complete (default 500ms).
+    pub fn with_distributed_poll_interval(mut self, d: std::time::Duration) -> Self {
+        self.distributed_poll_interval = d;
         self
     }
 
@@ -300,6 +323,25 @@ impl Orchestrator {
         prior_spend_usd: Option<f64>,
         events: mpsc::Sender<AgentEvent>,
     ) -> Vec<WorkerResult> {
+        // Distributed dispatch: when a QueueClient is attached, delegate to
+        // the remote coordinator path instead of running agents in-process.
+        if self.queue_client.is_some() {
+            return self
+                .execute_plan_distributed(plan, prior_spend_usd, events)
+                .await;
+        }
+
+        self.execute_plan_in_proc(plan, prior_spend_usd, events).await
+    }
+
+    /// In-process plan execution. Called directly from `execute_plan` (when no
+    /// queue_client is set) and from `execute_plan_distributed` for the 503 fallback.
+    async fn execute_plan_in_proc(
+        &self,
+        plan: TaskPlan,
+        prior_spend_usd: Option<f64>,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Vec<WorkerResult> {
         let total_tasks = plan.subtasks.len();
         let mut pending: VecDeque<SubTask> = plan.subtasks.into_iter().collect();
         let mut completed: HashSet<String> = HashSet::new();
@@ -480,6 +522,149 @@ impl Orchestrator {
                         })
                         .await;
                 }
+            }
+        }
+
+        results
+    }
+
+    // -----------------------------------------------------------------------
+    // Distributed dispatch
+    // -----------------------------------------------------------------------
+
+    /// Drive `execute_plan` via a remote coordinator.
+    ///
+    /// Steps:
+    /// 1. Generate a plan_id (uuid v7).
+    /// 2. Enqueue subtasks via the QueueClient. On 503/NotConfigured, log a
+    ///    warning and fall back to the in-process path so the caller's run
+    ///    is not silently lost.
+    /// 3. Poll plan_status every `distributed_poll_interval` until
+    ///    `queued + leased == 0` (all terminal).
+    /// 4. pull_results, convert WorkerResultWire → WorkerResult, return.
+    async fn execute_plan_distributed(
+        &self,
+        plan: TaskPlan,
+        prior_spend_usd: Option<f64>,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Vec<WorkerResult> {
+        use uuid::Uuid;
+        let client = self.queue_client.as_ref().expect("queue_client must be set");
+        let plan_id = Uuid::now_v7().to_string();
+        let subtasks_for_fallback = plan.subtasks.clone();
+        let total_tasks = plan.subtasks.len();
+
+        // Enqueue. On NotConfigured (503), fall back to in-proc.
+        if let Err(e) = client.enqueue(&plan_id, plan.subtasks).await {
+            match e {
+                crate::queue_client::QueueClientError::NotConfigured => {
+                    tracing::warn!(
+                        "coordinator returned 503 NotConfigured; falling back to in-proc execution"
+                    );
+                    let plan_fallback = TaskPlan {
+                        goal: plan.goal,
+                        subtasks: subtasks_for_fallback,
+                    };
+                    // Call in-proc directly to avoid infinite recursion
+                    // (execute_plan would route back here via execute_plan_distributed).
+                    return self
+                        .execute_plan_in_proc(plan_fallback, prior_spend_usd, events)
+                        .await;
+                }
+                other => {
+                    tracing::error!("enqueue failed: {other}; returning failed results");
+                    return subtasks_for_fallback
+                        .into_iter()
+                        .map(|s| WorkerResult {
+                            task_id: s.id,
+                            agent: s.agent,
+                            status: WorkerStatus::Failed(format!("enqueue failed: {other}")),
+                            response: String::new(),
+                            usage: TokenUsage::default(),
+                            cost_usd: 0.0,
+                        })
+                        .collect();
+                }
+            }
+        }
+
+        // Poll plan_status until queued + leased == 0.
+        loop {
+            tokio::time::sleep(self.distributed_poll_interval).await;
+            match client.plan_status(&plan_id).await {
+                Ok(snap) => {
+                    if snap.queued + snap.leased == 0 {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("plan_status poll failed: {e}; continuing");
+                }
+            }
+            // Total budget check.
+            if let Some(total) = self.total_budget {
+                if let Ok(rows) = client.pull_results(&plan_id).await {
+                    let spent: f64 = rows.iter().map(|r| r.cost_usd).sum();
+                    if spent >= total {
+                        tracing::warn!(
+                            "total budget exceeded during distributed run; stopping poll"
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Pull final results.
+        let rows = match client.pull_results(&plan_id).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("pull_results failed: {e}; returning empty");
+                return Vec::new();
+            }
+        };
+
+        // Convert WorkerResultWire → WorkerResult.
+        let mut results: Vec<WorkerResult> = rows
+            .into_iter()
+            .map(|r| WorkerResult {
+                task_id: r.task_id,
+                agent: r.agent,
+                status: match r.status.as_str() {
+                    "completed" => WorkerStatus::Completed,
+                    "failed" => WorkerStatus::Failed(r.error_msg.unwrap_or_default()),
+                    "timed_out" => WorkerStatus::TimedOut(r.error_msg.unwrap_or_default()),
+                    other => WorkerStatus::Failed(format!("unknown status: {other}")),
+                },
+                response: r.response,
+                usage: TokenUsage {
+                    input: r.tokens_input,
+                    output: r.tokens_output,
+                    ..Default::default()
+                },
+                cost_usd: r.cost_usd,
+            })
+            .collect();
+
+        // Synthesise Failed results for tasks still in-flight or missing.
+        if results.len() < total_tasks {
+            let returned_count = results.len();
+            tracing::warn!(
+                total_tasks,
+                returned_count,
+                "some tasks did not produce results; synthesising Failed entries"
+            );
+            // We don't know which IDs are missing since we lost the task_ids
+            // returned by enqueue. Pad with synthetic entries.
+            for i in returned_count..total_tasks {
+                results.push(WorkerResult {
+                    task_id: format!("missing-{i}"),
+                    agent: String::new(),
+                    status: WorkerStatus::Failed("task did not complete in time".to_owned()),
+                    response: String::new(),
+                    usage: TokenUsage::default(),
+                    cost_usd: 0.0,
+                });
             }
         }
 

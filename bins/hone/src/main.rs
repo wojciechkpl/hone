@@ -229,6 +229,13 @@ struct Cli {
     #[arg(long, value_name = "FILE")]
     image: Vec<PathBuf>,
 
+    /// Coordinator URL for distributed orchestration (e.g. http://10.0.0.5:3117).
+    /// When set, --orchestrate dispatches per-worker tasks through a remote
+    /// honed coordinator instead of running them in-process. Requires
+    /// HONE_AUTH_TOKEN to be set to the coordinator's bearer token.
+    #[arg(long, value_name = "URL")]
+    distributed: Option<String>,
+
     /// Subcommand (session management, configure wizard, etc.)
     #[command(subcommand)]
     command: Option<HoneCmd>,
@@ -1160,11 +1167,34 @@ fn spawn_orchestrated_turn(
 // Orchestrate mode (blocking, for the --orchestrate one-shot path)
 // ---------------------------------------------------------------------------
 
-async fn run_orchestrate(lead_config: AgentConfig, prompt: &str) -> Result<()> {
+async fn run_orchestrate(
+    lead_config: AgentConfig,
+    prompt: &str,
+    distributed: Option<&str>,
+) -> Result<()> {
     let registry = AgentRegistry::load_hierarchical(&lead_config.working_dir);
 
     let plan_store = PlanStore::default_for(&lead_config.working_dir);
     let mut orchestrator = Orchestrator::new(lead_config, registry, 4).with_plan_store(plan_store);
+
+    // P2-4 Phase 2b/2c: when --distributed COORDINATOR_URL is set, route
+    // per-task dispatch through a remote honed coordinator's /distributed/*
+    // endpoints instead of running every worker in-process.  Auth token
+    // comes from HONE_AUTH_TOKEN.
+    if let Some(coordinator_url) = distributed {
+        let token = std::env::var("HONE_AUTH_TOKEN").unwrap_or_default();
+        if token.is_empty() {
+            tracing::warn!(
+                "--distributed set but HONE_AUTH_TOKEN env is empty; coordinator may reject requests"
+            );
+        }
+        let client = std::sync::Arc::new(hone_core::queue_client::QueueClient::new(
+            coordinator_url.to_string(),
+            token,
+        ));
+        orchestrator = orchestrator.with_queue_client(client);
+        tracing::info!("distributed orchestrator enabled, coordinator at {coordinator_url}");
+    }
 
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 
@@ -2445,7 +2475,7 @@ async fn run_selected_mode(
             .clone()
             .unwrap_or_else(|| "Please describe what you need help with.".to_owned());
 
-        return run_orchestrate(base_config, &prompt).await;
+        return run_orchestrate(base_config, &prompt, cli.distributed.as_deref()).await;
     }
 
     // One-shot mode: run a single turn, print to stdout, and exit.

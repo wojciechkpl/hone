@@ -605,6 +605,73 @@ fn make_payload(task_id: &str, worker_id: &WorkerId, status: &str) -> Completion
     }
 }
 
+/// Wire shape for one row of `distributed_results` plus the related task's
+/// agent name (joined from distributed_tasks). Used by GET /plans/:id/results.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskResultRow {
+    pub task_id: String,
+    pub plan_id: String,
+    pub agent: String,
+    pub status: String,
+    pub response: String,
+    pub error_msg: Option<String>,
+    pub tokens_input: u32,
+    pub tokens_output: u32,
+    pub cost_usd: f64,
+}
+
+impl DistributedTaskStore {
+    /// Return all `distributed_results` rows for a plan. Tasks that haven't
+    /// completed yet are not included. Sorted by completed_at ascending.
+    pub async fn pull_results(
+        &self,
+        plan_id: &str,
+    ) -> Result<Vec<TaskResultRow>, DistributedError> {
+        use sqlx::Row;
+
+        let rows = sqlx::query(
+            r#"
+            SELECT r.task_id, t.plan_id, t.subtask_json, r.status, r.response,
+                   r.error_msg, r.tokens_input, r.tokens_output, r.cost_usd,
+                   r.completed_at
+            FROM distributed_results r
+            JOIN distributed_tasks t ON t.id = r.task_id
+            WHERE t.plan_id = ?
+            ORDER BY r.completed_at ASC
+            "#,
+        )
+        .bind(plan_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let task_id: String = row.get("task_id");
+            let plan_id_db: String = row.get("plan_id");
+            let subtask_json: String = row.get("subtask_json");
+            let subtask: SubTask = serde_json::from_str(&subtask_json)?;
+            let status: String = row.get("status");
+            let response: String = row.get("response");
+            let error_msg: Option<String> = row.try_get("error_msg").ok().flatten();
+            let tokens_input: i64 = row.get("tokens_input");
+            let tokens_output: i64 = row.get("tokens_output");
+            let cost_usd: f64 = row.get("cost_usd");
+            out.push(TaskResultRow {
+                task_id,
+                plan_id: plan_id_db,
+                agent: subtask.agent,
+                status,
+                response,
+                error_msg,
+                tokens_input: tokens_input as u32,
+                tokens_output: tokens_output as u32,
+                cost_usd,
+            });
+        }
+        Ok(out)
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1293,6 +1360,135 @@ mod tests {
     }
 
     // ── Concurrency: atomicity of claim_one ───────────────────────────────────
+
+    // ── pull_results ──────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn pull_results_returns_empty_when_no_completions() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        store.enqueue("plan-pr-empty", vec![make_subtask("s1")]).await.unwrap();
+        // Nothing completed — pull_results should return empty vec.
+        let results = store.pull_results("plan-pr-empty").await.unwrap();
+        assert!(results.is_empty(), "no completed tasks should yield empty results");
+    }
+
+    #[tokio::test]
+    async fn pull_results_returns_completed_tasks_only() {
+        // Enqueue 3 subtasks, complete 1, leave 2 in queued/leased state.
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        store
+            .enqueue("plan-pr-partial", vec![
+                make_subtask("s1"),
+                make_subtask("s2"),
+                make_subtask("s3"),
+            ])
+            .await
+            .unwrap();
+
+        let worker = WorkerId::new("w1");
+        let c1 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+        // Complete only the first claimed task.
+        store.complete(make_payload(&c1.task_id, &worker, "completed")).await.unwrap();
+
+        // Claim second but don't complete it (leave leased).
+        let _c2 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap();
+
+        let results = store.pull_results("plan-pr-partial").await.unwrap();
+        assert_eq!(results.len(), 1, "only the 1 completed task should appear");
+        assert_eq!(results[0].status, "completed");
+    }
+
+    #[tokio::test]
+    async fn pull_results_includes_response_and_error_msg_fields() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        store.enqueue("plan-pr-fields", vec![make_subtask("s1")]).await.unwrap();
+
+        let worker = WorkerId::new("w1");
+        let claimed = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+        let payload = CompletionPayload {
+            task_id: claimed.task_id.clone(),
+            worker_id: worker.clone(),
+            status_str: "failed".to_owned(),
+            response: String::new(),
+            error_msg: Some("boom".to_owned()),
+            usage: TokenUsage { input: 5, output: 10, cache_read: 0, cache_creation: 0 },
+            cost_usd: 0.005,
+        };
+        store.complete(payload).await.unwrap();
+
+        let results = store.pull_results("plan-pr-fields").await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].response, "");
+        assert_eq!(results[0].error_msg.as_deref(), Some("boom"));
+        assert_eq!(results[0].tokens_input, 5);
+        assert_eq!(results[0].tokens_output, 10);
+        assert!((results[0].cost_usd - 0.005).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn pull_results_orders_by_completed_at_ascending() {
+        // Complete tasks in order T2, T1, T3; pull_results should return T2, T1, T3.
+        // We use a single-connection in-memory store so completed_at timestamps
+        // are guaranteed monotone across sequential completions.
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        store
+            .enqueue("plan-pr-order", vec![
+                make_subtask("T1"),
+                make_subtask("T2"),
+                make_subtask("T3"),
+            ])
+            .await
+            .unwrap();
+
+        let worker = WorkerId::new("w1");
+
+        // Claim all three (FIFO: T1 first).
+        let c1 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+        let c2 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+        let c3 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+
+        // Complete in order T2, T1, T3.
+        store.complete(make_payload(&c2.task_id, &worker, "completed")).await.unwrap();
+        store.complete(make_payload(&c1.task_id, &worker, "completed")).await.unwrap();
+        store.complete(make_payload(&c3.task_id, &worker, "completed")).await.unwrap();
+
+        let results = store.pull_results("plan-pr-order").await.unwrap();
+        assert_eq!(results.len(), 3);
+        // Order must be ascending completed_at: T2, T1, T3.
+        assert_eq!(results[0].task_id, c2.task_id, "first result should be the T2 task (completed first)");
+        assert_eq!(results[1].task_id, c1.task_id, "second result should be the T1 task");
+        assert_eq!(results[2].task_id, c3.task_id, "third result should be the T3 task (completed last)");
+    }
+
+    #[tokio::test]
+    async fn pull_results_returns_correct_status_strings_for_each_outcome() {
+        let store = DistributedTaskStore::open_in_memory().await.unwrap();
+        store
+            .enqueue("plan-pr-statuses", vec![
+                make_subtask("s-done"),
+                make_subtask("s-failed"),
+                make_subtask("s-timed"),
+            ])
+            .await
+            .unwrap();
+
+        let worker = WorkerId::new("w1");
+        let c1 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+        let c2 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+        let c3 = store.claim_one(&worker, &[], Duration::from_secs(60)).await.unwrap().unwrap();
+
+        store.complete(make_payload(&c1.task_id, &worker, "completed")).await.unwrap();
+        store.complete(make_payload(&c2.task_id, &worker, "failed")).await.unwrap();
+        store.complete(make_payload(&c3.task_id, &worker, "timed_out")).await.unwrap();
+
+        let results = store.pull_results("plan-pr-statuses").await.unwrap();
+        assert_eq!(results.len(), 3);
+        let statuses: std::collections::HashSet<&str> =
+            results.iter().map(|r| r.status.as_str()).collect();
+        assert!(statuses.contains("completed"), "should have completed status");
+        assert!(statuses.contains("failed"), "should have failed status");
+        assert!(statuses.contains("timed_out"), "should have timed_out status");
+    }
 
     #[tokio::test]
     async fn concurrent_claim_one_calls_dispense_each_task_exactly_once() {

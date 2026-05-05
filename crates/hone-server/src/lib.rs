@@ -35,7 +35,8 @@ pub mod web;
 pub use bore_tunnel::BoreTunnelManager;
 pub use collaborative::{CollaborativeStore, Participant, ParticipantRole};
 pub use distributed::{
-    ClaimedTask, CompletionPayload, DistributedError, DistributedTaskStore, TaskState, WorkerId,
+    ClaimedTask, CompletionPayload, DistributedError, DistributedTaskStore, TaskResultRow,
+    TaskState, WorkerId,
 };
 pub use distributed_reaper::spawn_lease_reaper;
 pub use distributed_routes::distributed_router;
