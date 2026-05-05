@@ -13,6 +13,7 @@ use hone_core::agent_registry::AgentRegistry;
 use hone_core::task_plan::SubTask;
 use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::ModelProvider;
+use hone_provenance::{ProvenanceEvent, ProvenanceLog};
 use hone_sandbox::{NullSandbox, Sandbox, SandboxBuilder, SandboxPolicy};
 use hone_tools::ToolRegistry;
 use tokio::sync::mpsc;
@@ -181,19 +182,52 @@ impl TaskExecutor for AgentTaskExecutor {
             format!("{}\n\n{}", task.description, task.context)
         };
 
+        // Build provenance log for this task.
+        let mut prov_log = ProvenanceLog::new();
+        let _ = prov_log.append(ProvenanceEvent::UserPrompt {
+            text: user_input.clone(),
+        });
+
         let result = handle.run_turn(user_input, event_tx).await;
         handle.shutdown().await;
 
         match result {
-            Ok(turn_result) => ExecutionOutcome {
-                status_str: "completed".into(),
-                response: turn_result.response,
-                error_msg: None,
-                tokens_input: turn_result.usage.input,
-                tokens_output: turn_result.usage.output,
-                cost_usd: turn_result.cost_usd,
-            },
-            Err(e) => ExecutionOutcome::failed(e.to_string()),
+            Ok(turn_result) => {
+                let _ = prov_log.append(ProvenanceEvent::ModelCompletion {
+                    model: self.model.to_string(),
+                    output: turn_result.response.clone(),
+                });
+                let _ = prov_log.append(ProvenanceEvent::SessionEnd {
+                    reason: "task_complete".into(),
+                });
+                let head = prov_log
+                    .entries()
+                    .last()
+                    .map(|e| e.body_hash());
+                ExecutionOutcome {
+                    status_str: "completed".into(),
+                    response: turn_result.response,
+                    error_msg: None,
+                    tokens_input: turn_result.usage.input,
+                    tokens_output: turn_result.usage.output,
+                    cost_usd: turn_result.cost_usd,
+                    provenance_head: head,
+                }
+            }
+            Err(e) => {
+                let _ = prov_log.append(ProvenanceEvent::SessionEnd {
+                    reason: "task_failed".into(),
+                });
+                let head = prov_log
+                    .entries()
+                    .last()
+                    .map(|e| e.body_hash());
+                let mut outcome = ExecutionOutcome::failed(e.to_string());
+                if let Some(h) = head {
+                    outcome = outcome.with_provenance_head(h);
+                }
+                outcome
+            }
         }
     }
 }
@@ -728,6 +762,44 @@ mod tests {
         assert!(
             config.sandbox_policy.allow_read.is_empty(),
             "permissive policy must have empty allow_read"
+        );
+    }
+
+    // ── Provenance head ───────────────────────────────────────────────────────
+
+    /// A successful execution must produce a provenance_head that is Some.
+    #[tokio::test]
+    async fn execute_returns_provenance_head_when_completed() {
+        let provider = Arc::new(MockProvider::new(vec!["done".into()]));
+        let executor = build_executor(provider, registry_with_agent("bot", "sys"));
+        let task = make_task("bot");
+
+        let outcome = executor.execute(&task).await;
+
+        assert_eq!(outcome.status_str, "completed");
+        assert!(
+            outcome.provenance_head.is_some(),
+            "completed execution must have a provenance_head"
+        );
+    }
+
+    /// The provenance_head must be a 64-character lowercase hex string
+    /// (SHA-256 output).
+    #[tokio::test]
+    async fn execute_provenance_head_is_64_char_hex() {
+        let provider = Arc::new(MockProvider::new(vec!["output".into()]));
+        let executor = build_executor(provider, registry_with_agent("bot", "sys"));
+        let task = make_task("bot");
+
+        let outcome = executor.execute(&task).await;
+
+        let head = outcome
+            .provenance_head
+            .expect("provenance_head must be Some for completed execution");
+        assert_eq!(head.len(), 64, "provenance_head must be 64 hex chars; got: {head}");
+        assert!(
+            head.chars().all(|c| c.is_ascii_hexdigit()),
+            "provenance_head must be all hex digits; got: {head}"
         );
     }
 }

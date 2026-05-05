@@ -66,6 +66,8 @@ pub struct ResultsRequest {
     pub error_msg: Option<String>,
     pub usage: hone_proto::TokenUsage,
     pub cost_usd: f64,
+    #[serde(default)]
+    pub provenance_head: Option<String>,
 }
 
 // ── Router ────────────────────────────────────────────────────────────────────
@@ -109,6 +111,10 @@ pub fn distributed_router() -> Router<AppState> {
         .route(
             "/distributed/plans/{plan_id}/cancel",
             post(plan_cancel_handler),
+        )
+        .route(
+            "/distributed/plans/{plan_id}/provenance",
+            get(plan_provenance_handler),
         )
 }
 
@@ -250,6 +256,7 @@ async fn results_handler(
         error_msg: req.error_msg,
         usage: req.usage,
         cost_usd: req.cost_usd,
+        provenance_head: req.provenance_head,
     };
     match store.complete(payload).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
@@ -345,6 +352,25 @@ async fn plan_cancel_handler(
             Json(serde_json::json!({ "cancelled": count })),
         )
             .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// GET /distributed/plans/{plan_id}/provenance
+/// Returns the Merkle root and per-task provenance heads for a plan.
+async fn plan_provenance_handler(
+    State(state): State<AppState>,
+    Path(plan_id): Path<String>,
+) -> axum::response::Response {
+    let Some(store) = require_store(&state) else {
+        return store_unavailable();
+    };
+    match store.compute_plan_provenance(&plan_id).await {
+        Ok(prov) => (StatusCode::OK, Json(prov)).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
@@ -1009,6 +1035,7 @@ mod tests {
                     cache_creation: 0,
                 },
                 cost_usd: 0.001,
+                provenance_head: None,
             })
             .await
             .unwrap();
@@ -1253,6 +1280,7 @@ mod tests {
                     cache_creation: 0,
                 },
                 cost_usd: 0.0,
+                provenance_head: None,
             })
             .await
             .unwrap();
@@ -1350,6 +1378,7 @@ mod tests {
                         cache_creation: 0,
                     },
                     cost_usd: 0.0,
+                    provenance_head: None,
                 })
                 .await
                 .unwrap();
@@ -1442,5 +1471,85 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::CONFLICT);
+    }
+
+    // ── provenance endpoint ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn provenance_with_no_store_returns_503() {
+        let app = router(build_test_state_no_store());
+        let resp = app
+            .oneshot(authed_get("/distributed/plans/plan-1/provenance"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn provenance_returns_genesis_for_unknown_plan() {
+        let app = router(build_test_state_with_store().await);
+        let resp = app
+            .oneshot(authed_get("/distributed/plans/no-such-plan/provenance"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["merkle_root"], "0".repeat(64));
+        let heads = json["per_task_heads"].as_object().expect("per_task_heads must be object");
+        assert!(heads.is_empty(), "unknown plan must have empty per_task_heads");
+    }
+
+    #[tokio::test]
+    async fn provenance_returns_root_and_heads_for_known_plan() {
+        let state = build_test_state_with_store().await;
+        let store = state.distributed_store.clone().unwrap();
+        let app = router(state);
+
+        store
+            .enqueue(
+                "plan-prov-route",
+                vec![hone_core::task_plan::SubTask {
+                    id: "s1".to_owned(),
+                    description: "prov test".to_owned(),
+                    agent: "test-agent".to_owned(),
+                    context: String::new(),
+                    depends_on: vec![],
+                    acceptance_tests: vec![],
+                    budget_usd: None,
+                    scope: vec![],
+                    requires_capabilities: vec![],
+                }],
+            )
+            .await
+            .unwrap();
+
+        let wid = WorkerId::new("worker-1");
+        let claimed = store.claim_one(&wid, &[], std::time::Duration::from_secs(60)).await.unwrap().unwrap();
+        let head = "a".repeat(64);
+        store.complete(crate::distributed::CompletionPayload {
+            task_id: claimed.task_id.clone(),
+            worker_id: wid.clone(),
+            status_str: "completed".to_owned(),
+            response: "done".to_owned(),
+            error_msg: None,
+            usage: hone_proto::TokenUsage { input: 1, output: 1, cache_read: 0, cache_creation: 0 },
+            cost_usd: 0.0,
+            provenance_head: Some(head.clone()),
+        }).await.unwrap();
+
+        let resp = app
+            .oneshot(authed_get("/distributed/plans/plan-prov-route/provenance"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        // Single leaf -> root == leaf
+        assert_eq!(json["merkle_root"], head.as_str());
+        let heads = json["per_task_heads"].as_object().expect("must be object");
+        assert_eq!(heads.len(), 1);
+        let stored_head = heads.values().next().unwrap().as_str().unwrap();
+        assert_eq!(stored_head, head);
     }
 }
