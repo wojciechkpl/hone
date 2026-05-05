@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,11 @@ pub struct EnqueueRequest {
 #[derive(Debug, Serialize)]
 pub struct EnqueueResponse {
     pub task_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CancelResponse {
+    pub cancelled: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -95,6 +101,14 @@ pub fn distributed_router() -> Router<AppState> {
         .route(
             "/distributed/workers/{worker_id}/extend-lease/{task_id}",
             post(extend_lease_handler),
+        )
+        .route(
+            "/distributed/plans/{plan_id}/events",
+            get(plan_events_handler),
+        )
+        .route(
+            "/distributed/plans/{plan_id}/cancel",
+            post(plan_cancel_handler),
         )
 }
 
@@ -257,6 +271,80 @@ async fn plan_results_handler(
     };
     match store.pull_results(&plan_id).await {
         Ok(rows) => (StatusCode::OK, Json(rows)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// GET /distributed/plans/{plan_id}/events
+/// SSE stream that emits task_completion events as tasks finish.
+/// Closes automatically when the plan becomes fully terminal.
+async fn plan_events_handler(
+    State(state): State<AppState>,
+    Path(plan_id): Path<String>,
+) -> axum::response::Response {
+    let Some(store) = require_store(&state) else {
+        return store_unavailable();
+    };
+
+    let store = Arc::clone(&store);
+    let plan_id_owned = plan_id.clone();
+
+    let stream = async_stream::stream! {
+        use std::collections::HashSet;
+        use std::time::Duration;
+
+        let mut emitted: HashSet<String> = HashSet::new();
+        let poll_interval = Duration::from_millis(200);
+
+        loop {
+            // Pull current results and emit any new ones.
+            if let Ok(rows) = store.pull_results(&plan_id_owned).await {
+                for row in rows {
+                    if emitted.insert(row.task_id.clone()) {
+                        let payload = serde_json::json!({
+                            "task_id": row.task_id,
+                            "status": row.status,
+                        });
+                        let evt = Event::default()
+                            .event("task_completion")
+                            .data(payload.to_string());
+                        yield Ok::<_, axum::Error>(evt);
+                    }
+                }
+            }
+
+            // Check if plan is fully terminal (no queued or leased tasks remain).
+            match store.plan_state_counts(&plan_id_owned).await {
+                Ok((queued, leased, _, _, _)) if queued + leased == 0 => break,
+                _ => {}
+            }
+
+            tokio::time::sleep(poll_interval).await;
+        }
+    };
+
+    Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
+}
+
+/// POST /distributed/plans/{plan_id}/cancel
+/// Flips all queued+leased tasks to Failed. Returns {"cancelled": N}.
+async fn plan_cancel_handler(
+    State(state): State<AppState>,
+    Path(plan_id): Path<String>,
+) -> axum::response::Response {
+    let Some(store) = require_store(&state) else {
+        return store_unavailable();
+    };
+    match store.cancel_plan(&plan_id, "cancelled by user").await {
+        Ok(count) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "cancelled": count })),
+        )
+            .into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
@@ -983,6 +1071,334 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    }
+
+    // ── cancel endpoint ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn cancel_with_no_store_returns_503() {
+        let app = router(build_test_state_no_store());
+        let resp = app
+            .oneshot(authed_post(
+                "/distributed/plans/plan-1/cancel",
+                serde_json::json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn cancel_returns_count_in_body() {
+        let state = build_test_state_with_store().await;
+        let store = state.distributed_store.clone().unwrap();
+        let app = router(state);
+
+        store
+            .enqueue(
+                "plan-cancel-route",
+                vec![hone_core::task_plan::SubTask {
+                    id: "s1".to_owned(),
+                    description: "test".to_owned(),
+                    agent: "test-agent".to_owned(),
+                    context: String::new(),
+                    depends_on: vec![],
+                    acceptance_tests: vec![],
+                    budget_usd: None,
+                    scope: vec![],
+                    requires_capabilities: vec![],
+                }],
+            )
+            .await
+            .unwrap();
+
+        let resp = app
+            .oneshot(authed_post(
+                "/distributed/plans/plan-cancel-route/cancel",
+                serde_json::json!({}),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            json["cancelled"], 1,
+            "cancel should report 1 task transitioned"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_with_no_queued_tasks_returns_zero() {
+        let app = router(build_test_state_with_store().await);
+        let resp = app
+            .oneshot(authed_post(
+                "/distributed/plans/no-tasks-plan/cancel",
+                serde_json::json!({}),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["cancelled"], 0, "plan with no tasks should return 0");
+    }
+
+    // ── events (SSE) endpoint ─────────────────────────────────────────────────
+
+    /// Collect all bytes from the SSE response body within a timeout.
+    /// Returns the raw bytes accumulated before the stream closes.
+    async fn collect_sse_bytes(body: axum::body::Body, timeout_ms: u64) -> Vec<u8> {
+        use tokio::time::{Duration, timeout};
+        // Collect with a generous upper bound; SSE streams are short in tests.
+        let result = timeout(
+            Duration::from_millis(timeout_ms),
+            axum::body::to_bytes(body, usize::MAX),
+        )
+        .await;
+        match result {
+            Ok(Ok(b)) => b.to_vec(),
+            _ => vec![],
+        }
+    }
+
+    /// Parse SSE frames from raw bytes. Returns a vec of (event_name, data) pairs.
+    fn parse_sse_frames(raw: &[u8]) -> Vec<(String, String)> { // raw is &[u8] — sized OK
+        let text = std::str::from_utf8(raw).unwrap_or("");
+        let mut frames = vec![];
+        let mut current_event = String::new();
+        let mut current_data = String::new();
+        let mut in_frame = false;
+
+        for line in text.lines() {
+            if line.starts_with("event:") {
+                current_event = line.trim_start_matches("event:").trim().to_owned();
+                in_frame = true;
+            } else if line.starts_with("data:") {
+                current_data = line.trim_start_matches("data:").trim().to_owned();
+                in_frame = true;
+            } else if line.is_empty() && in_frame {
+                if !current_data.is_empty() {
+                    frames.push((current_event.clone(), current_data.clone()));
+                }
+                current_event.clear();
+                current_data.clear();
+                in_frame = false;
+            }
+        }
+
+        frames
+    }
+
+    #[tokio::test]
+    async fn events_with_no_store_returns_503() {
+        let app = router(build_test_state_no_store());
+        let resp = app
+            .oneshot(authed_get("/distributed/plans/plan-1/events"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn events_emits_completion_for_already_done_task() {
+        let state = build_test_state_with_store().await;
+        let store = state.distributed_store.clone().unwrap();
+        let app = router(state);
+
+        // Enqueue and complete one task before the subscriber connects.
+        let ids = store
+            .enqueue(
+                "plan-sse-done",
+                vec![hone_core::task_plan::SubTask {
+                    id: "s1".to_owned(),
+                    description: "test".to_owned(),
+                    agent: "test-agent".to_owned(),
+                    context: String::new(),
+                    depends_on: vec![],
+                    acceptance_tests: vec![],
+                    budget_usd: None,
+                    scope: vec![],
+                    requires_capabilities: vec![],
+                }],
+            )
+            .await
+            .unwrap();
+        let task_id = ids[0].clone();
+
+        let wid = WorkerId::new("worker-1");
+        let claimed = store
+            .claim_one(&wid, &[], Duration::from_secs(60))
+            .await
+            .unwrap()
+            .unwrap();
+
+        store
+            .complete(crate::distributed::CompletionPayload {
+                task_id: claimed.task_id.clone(),
+                worker_id: wid.clone(),
+                status_str: "completed".to_owned(),
+                response: "done".to_owned(),
+                error_msg: None,
+                usage: hone_proto::TokenUsage {
+                    input: 1,
+                    output: 1,
+                    cache_read: 0,
+                    cache_creation: 0,
+                },
+                cost_usd: 0.0,
+            })
+            .await
+            .unwrap();
+
+        // Now subscribe — the plan is already terminal.
+        let resp = app
+            .oneshot(authed_get("/distributed/plans/plan-sse-done/events"))
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let ct = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
+        assert!(ct.contains("text/event-stream"), "content-type must be text/event-stream");
+
+        let raw = collect_sse_bytes(resp.into_body(), 3000).await;
+        let frames = parse_sse_frames(&raw);
+
+        assert!(
+            !frames.is_empty(),
+            "should have received at least one SSE frame for the completed task"
+        );
+
+        // Find a frame whose data mentions our task_id with status "completed".
+        let matching = frames.iter().any(|(_ev, data)| {
+            let v: serde_json::Value = serde_json::from_str(data).unwrap_or_default();
+            v["task_id"].as_str() == Some(&task_id) && v["status"].as_str() == Some("completed")
+        });
+        assert!(
+            matching,
+            "expected an SSE event with task_id={task_id} status=completed; frames={frames:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn events_keeps_connection_open_until_terminal_then_closes() {
+        use std::sync::Arc;
+        use tokio::time::{Duration, timeout};
+
+        let state = build_test_state_with_store().await;
+        let store = Arc::new(state.distributed_store.clone().unwrap());
+        let app = router(state);
+
+        // Enqueue 2 tasks.
+        let ids = store
+            .enqueue(
+                "plan-sse-stream",
+                vec![
+                    hone_core::task_plan::SubTask {
+                        id: "s1".to_owned(),
+                        description: "first".to_owned(),
+                        agent: "test-agent".to_owned(),
+                        context: String::new(),
+                        depends_on: vec![],
+                        acceptance_tests: vec![],
+                        budget_usd: None,
+                        scope: vec![],
+                        requires_capabilities: vec![],
+                    },
+                    hone_core::task_plan::SubTask {
+                        id: "s2".to_owned(),
+                        description: "second".to_owned(),
+                        agent: "test-agent".to_owned(),
+                        context: String::new(),
+                        depends_on: vec![],
+                        acceptance_tests: vec![],
+                        budget_usd: None,
+                        scope: vec![],
+                        requires_capabilities: vec![],
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+
+        // Complete both tasks before connecting so the stream must emit 2 events
+        // and then close (plan is terminal from the subscriber's perspective).
+        let wid = WorkerId::new("worker-sse");
+        for _ in 0..2 {
+            let claimed = store
+                .claim_one(&wid, &[], Duration::from_secs(60))
+                .await
+                .unwrap()
+                .unwrap();
+            store
+                .complete(crate::distributed::CompletionPayload {
+                    task_id: claimed.task_id.clone(),
+                    worker_id: wid.clone(),
+                    status_str: "completed".to_owned(),
+                    response: "ok".to_owned(),
+                    error_msg: None,
+                    usage: hone_proto::TokenUsage {
+                        input: 1,
+                        output: 1,
+                        cache_read: 0,
+                        cache_creation: 0,
+                    },
+                    cost_usd: 0.0,
+                })
+                .await
+                .unwrap();
+        }
+
+        // Subscribe to the event stream — it should close once it detects the plan is terminal.
+        let resp = app
+            .oneshot(authed_get("/distributed/plans/plan-sse-stream/events"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Stream must terminate (close) within 5 seconds.
+        let raw = timeout(Duration::from_secs(5), collect_sse_bytes(resp.into_body(), 4500))
+            .await
+            .expect("SSE stream did not close within 5s — handler may not be sending EOS");
+
+        let frames = parse_sse_frames(&raw);
+        // Must have exactly 2 task_completion events (one per task).
+        let completion_events: Vec<_> = frames
+            .iter()
+            .filter(|(ev, _)| ev == "task_completion" || ev.is_empty())
+            .filter(|(_, data)| {
+                let v: serde_json::Value = serde_json::from_str(data).unwrap_or_default();
+                v["status"].as_str() == Some("completed")
+            })
+            .collect();
+
+        assert_eq!(
+            completion_events.len(),
+            2,
+            "expected 2 completion events for 2 tasks; got {}: frames={frames:?}",
+            completion_events.len()
+        );
+
+        // Both our task_ids must appear.
+        let seen_ids: Vec<String> = completion_events
+            .iter()
+            .filter_map(|(_, data)| {
+                let v: serde_json::Value = serde_json::from_str(data).ok()?;
+                v["task_id"].as_str().map(String::from)
+            })
+            .collect();
+        for id in &ids {
+            assert!(
+                seen_ids.contains(id),
+                "task_id {id} missing from SSE events; seen={seen_ids:?}"
+            );
+        }
     }
 
     #[tokio::test]
