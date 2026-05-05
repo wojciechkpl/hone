@@ -9,8 +9,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use hone_memory::MemoryStore;
 use hone_proto::ToolLayer;
-use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput};
 use serde_json::{Value, json};
+
+use crate::{Tool, ToolContext, ToolError, ToolInput, ToolOutput};
 
 pub struct MemoryReadTool {
     store: Arc<dyn MemoryStore>,
@@ -56,7 +57,7 @@ impl Tool for MemoryReadTool {
             });
         }
 
-        match hone_core::memory_index::read_memory(self.store.as_ref(), id).await {
+        match hone_memory::read_memory(self.store.as_ref(), id).await {
             Ok(Some(mem)) => {
                 let kind_str = serde_json::to_value(mem.kind)
                     .ok()

@@ -11,6 +11,7 @@ categories.workspace = true
 description = "Layer 2 native tools for Hone (file, shell, git, LSP)"
 
 [dependencies]
+hone-memory = { workspace = true }
 hone-proto = { workspace = true }
 hone-sandbox = { workspace = true }
 serde = { workspace = true }
@@ -30,6 +31,7 @@ reqwest = { workspace = true }
 test-stub = []
 
 [dev-dependencies]
+hone-memory = { workspace = true }
 hone-proto = { workspace = true }
 hone-sandbox = { workspace = true }
 tempfile = { workspace = true }

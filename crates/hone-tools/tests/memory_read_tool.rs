@@ -1,57 +1,11 @@
-//! Red-phase tests for R7 Phase B: `MemoryReadTool`.
-//!
-//! Every test in this file MUST fail to compile on `main` because the module
-//! `bins/hone/src/tools/memory_read_tool.rs` does not yet exist.
-//!
-//! # Contract assumed by the implementer
-//!
-//! A new file `bins/hone/src/tools/memory_read_tool.rs` must expose:
-//!
-//! ```rust,ignore
-//! pub struct MemoryReadTool {
-//!     store: Arc<Mutex<dyn MemoryStore>>,
-//! }
-//!
-//! impl MemoryReadTool {
-//!     pub fn new(store: Arc<Mutex<dyn MemoryStore>>) -> Self { … }
-//! }
-//!
-//! #[async_trait]
-//! impl Tool for MemoryReadTool {
-//!     fn name(&self) -> &str { "memory_read" }
-//!     fn description(&self) -> &str { /* ~2 sentences */ }
-//!     fn schema(&self) -> Value { /* { id: string, required: ["id"] } */ }
-//!     async fn call(&self, input: ToolInput, _ctx: &ToolContext) -> Result<ToolOutput, ToolError>;
-//!     fn layer(&self) -> ToolLayer { ToolLayer::Native }
-//! }
-//! ```
-//!
-//! # Behaviour pinned by these tests
-//!
-//! - `id` missing or empty → `ToolError::InvalidInput`.
-//! - Known id → `ToolOutput` with JSON containing `id`, `content`, `kind`
-//!   (lowercase serde name), `description` (nullable), `weight`, `tags`.
-//! - Unknown id → `ToolOutput` with `{ "id": …, "found": false }`. NOT a `ToolError`.
-//! - Decayed memory → same as unknown id (`found: false`).
-//! - `description` present → field equals the stored string.
-//! - `description` absent → field is JSON `null`.
-//!
-//! # Linking strategy
-//!
-//! `bins/hone` has no `[lib]` target, so the module is pulled in with `#[path]`
-//! mirroring the pattern used by `system_prompt_test.rs`, `memory_cmd_test.rs`,
-//! and `encrypted_memory_test.rs`.
-
-#[path = "../src/tools/memory_read_tool.rs"]
-mod memory_read_tool;
+//! Tests for `MemoryReadTool` (now in `hone-tools::memory`).
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hone_memory::{Memory, MemoryKind, MemoryQuery, MemoryStore, SqliteStore};
 use hone_sandbox::NullSandbox;
-use hone_tools::{Tool, ToolContext, ToolInput};
-use memory_read_tool::MemoryReadTool;
+use hone_tools::{MemoryReadTool, Tool, ToolContext, ToolInput};
 use serde_json::{Value, json};
 use tempfile::NamedTempFile;
 
@@ -76,6 +30,7 @@ fn make_memory(id: &str, content: &str, kind: MemoryKind, description: Option<&s
         decay_at: None,
         kind,
         description: description.map(String::from),
+        embedding: None,
     }
 }
 
@@ -234,6 +189,7 @@ async fn memory_read_returns_found_false_for_decayed_id() {
         decay_at: Some(1),
         kind: MemoryKind::Conversation,
         description: None,
+        embedding: None,
     };
     store.record(expired).await.expect("record");
     // Decay with factor 0.0 and a large `now` so everything with a

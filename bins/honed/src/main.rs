@@ -335,17 +335,30 @@ async fn main() -> Result<()> {
                     }
 
                     // HONE_WORKER_MEMORY_DB — memory read tool backed by SQLite.
-                    // KNOWN LIMITATION: MemoryReadTool lives in bins/hone and is not
-                    // yet in a shared crate.  The env var surface is wired so users can
-                    // configure it now; full wiring will land when MemoryReadTool is
-                    // promoted to hone-tools or a dedicated crate.
                     if let Ok(memory_db_path) = std::env::var("HONE_WORKER_MEMORY_DB") {
-                        tracing::warn!(
-                            "HONE_WORKER_MEMORY_DB is set ('{}') but memory tool support is \
-                             not yet wired in honed (MemoryReadTool is not yet in a shared \
-                             crate); ignored for now",
-                            memory_db_path
-                        );
+                        match hone_memory::SqliteStore::open(
+                            std::path::Path::new(&memory_db_path),
+                        )
+                        .await
+                        {
+                            Ok(store) => {
+                                let store: std::sync::Arc<dyn hone_memory::MemoryStore> =
+                                    std::sync::Arc::new(store);
+                                builder = builder.register(Box::new(
+                                    hone_tools::MemoryReadTool::new(store),
+                                ));
+                                tracing::info!(
+                                    "worker memory read tool enabled (db: {memory_db_path})"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "HONE_WORKER_MEMORY_DB: failed to open '{}': {e}; \
+                                     memory tool not registered",
+                                    memory_db_path
+                                );
+                            }
+                        }
                     }
 
                     let base_tools = builder.build();
