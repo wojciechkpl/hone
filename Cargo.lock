@@ -1485,6 +1485,7 @@ dependencies = [
  "hone-providers",
  "hone-recipes",
  "hone-sandbox",
+ "hone-spec",
  "hone-tools",
  "hone-tui",
  "ratatui",

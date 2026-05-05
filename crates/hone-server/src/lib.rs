@@ -11,6 +11,7 @@ pub const HONE_MAX_BODY_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
 pub mod auth;
 pub mod bore_tunnel;
 pub mod collaborative;
+pub mod distributed;
 pub mod collaborative_routes;
 pub mod error;
 pub mod execution;
@@ -31,6 +32,9 @@ pub mod web;
 
 pub use bore_tunnel::BoreTunnelManager;
 pub use collaborative::{CollaborativeStore, Participant, ParticipantRole};
+pub use distributed::{
+    ClaimedTask, CompletionPayload, DistributedError, DistributedTaskStore, TaskState, WorkerId,
+};
 pub use execution::build_sandbox;
 pub use governance::{GovernanceStore, ModelUsage, TeamMember, TeamPolicy, TeamUsage};
 pub use openapi::ApiDoc;

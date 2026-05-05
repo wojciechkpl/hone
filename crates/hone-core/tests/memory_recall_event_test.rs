@@ -136,6 +136,7 @@ async fn memory_recalled_event_uses_friendly_key_not_uuid() {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     };
 
     let mut agent = Agent::new(config);

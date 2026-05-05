@@ -59,6 +59,7 @@ fn make_agent_with_store() -> (Agent, Arc<dyn hone_memory::MemoryStore>) {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     };
 
     (Agent::new(config), store)

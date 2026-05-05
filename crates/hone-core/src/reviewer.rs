@@ -90,6 +90,7 @@ impl ReviewerAgent {
             step_rx: None,
             hooks: None,
             skills: None,
+        embedder: None,
             mode: crate::plan_mode::AgentMode::Build,
         };
 
@@ -128,6 +129,7 @@ impl ReviewerAgent {
             step_rx: None,
             hooks: None,
             skills: None,
+        embedder: None,
             mode: crate::plan_mode::AgentMode::Build,
         });
 

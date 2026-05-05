@@ -209,6 +209,7 @@ fn make_config() -> AgentConfig {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     }
 }
 

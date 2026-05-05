@@ -42,6 +42,8 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 criterion = { workspace = true }
 proptest = { workspace = true }
+async-trait = { workspace = true }
+hone-memory = { workspace = true, features = ["test-stub"] }
 
 [[bench]]
 name = "context_perf"

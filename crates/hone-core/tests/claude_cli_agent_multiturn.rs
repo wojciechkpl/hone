@@ -101,6 +101,7 @@ fn base_config_with_cli(binary: &str) -> AgentConfig {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     }
 }
 

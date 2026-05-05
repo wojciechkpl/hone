@@ -224,6 +224,7 @@ pub async fn run_handler(
                 step_rx: None,
                 hooks: None,
                 skills: None,
+                embedder: None,
                 mode: AgentMode::Build,
             };
 

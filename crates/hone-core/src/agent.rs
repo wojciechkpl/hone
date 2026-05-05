@@ -100,6 +100,16 @@ pub struct AgentConfig {
     /// When set to `AgentMode::Plan`, the tool registry is filtered to
     /// read-only tools and the final assistant response is saved as a plan.
     pub mode: AgentMode,
+    /// Optional text embedder for semantic memory.
+    ///
+    /// When `Some`, `record_memory` embeds the memory body and persists the
+    /// vector in `Memory.embedding`.  `fetch_relevant_memories` performs both
+    /// BM25 recall and cosine recall, fusing the two ranked lists via RRF.
+    ///
+    /// When `None` (the default), behaviour is unchanged from the pre-semantic
+    /// era: embeddings are never computed, and recall is BM25-only.  There is
+    /// zero performance overhead in the `None` branch.
+    pub embedder: Option<Arc<dyn hone_memory::Embedder>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -289,25 +299,68 @@ impl Agent {
             kind: None,
         };
 
-        match store.recall(&memory_query).await {
-            Ok(memories) if !memories.is_empty() => {
-                let entries: Vec<(String, String)> = memories
-                    .iter()
-                    .map(|m| {
-                        (
-                            crate::memory_key::friendly_memory_key(m),
-                            m.content.chars().take(80).collect(),
-                        )
-                    })
-                    .collect();
-                let mut prompt = String::from("\n\n## Relevant context from memory:\n");
-                for mem in &memories {
-                    prompt.push_str(&format!("- {}\n", mem.content));
+        // BM25 (existing path)
+        let bm25_memories = match store.recall(&memory_query).await {
+            Ok(m) => m,
+            Err(_) => Vec::new(),
+        };
+
+        // Semantic (when embedder present)
+        let semantic_memories: Vec<hone_memory::Memory> =
+            if let Some(embedder) = &self.config.embedder {
+                match embedder.embed(query).await {
+                    Ok(query_vec) => store
+                        .recall_semantic(&query_vec, 5)
+                        .await
+                        .map(|scored| scored.into_iter().map(|s| s.memory).collect())
+                        .unwrap_or_default(),
+                    Err(_) => Vec::new(),
                 }
-                (prompt, entries)
+            } else {
+                Vec::new()
+            };
+
+        // Fuse via RRF when both signals are present; otherwise use whichever is non-empty
+        let final_memories: Vec<hone_memory::Memory> = if !semantic_memories.is_empty() {
+            let bm25_ids: Vec<String> = bm25_memories.iter().map(|m| m.id.clone()).collect();
+            let semantic_ids: Vec<String> =
+                semantic_memories.iter().map(|m| m.id.clone()).collect();
+            let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], 60);
+            let mut by_id: std::collections::HashMap<String, hone_memory::Memory> =
+                std::collections::HashMap::new();
+            for m in bm25_memories
+                .into_iter()
+                .chain(semantic_memories.into_iter())
+            {
+                by_id.entry(m.id.clone()).or_insert(m);
             }
-            _ => (String::new(), vec![]),
+            fused_ids
+                .into_iter()
+                .take(5)
+                .filter_map(|id| by_id.remove(&id))
+                .collect()
+        } else {
+            bm25_memories
+        };
+
+        if final_memories.is_empty() {
+            return (String::new(), vec![]);
         }
+
+        let entries: Vec<(String, String)> = final_memories
+            .iter()
+            .map(|m| {
+                (
+                    crate::memory_key::friendly_memory_key(m),
+                    m.content.chars().take(80).collect(),
+                )
+            })
+            .collect();
+        let mut prompt = String::from("\n\n## Relevant context from memory:\n");
+        for mem in &final_memories {
+            prompt.push_str(&format!("- {}\n", mem.content));
+        }
+        (prompt, entries)
     }
 
     /// Record a classified memory candidate (fire-and-forget; errors are
@@ -336,6 +389,19 @@ impl Agent {
 
         let body = format_memory_body(candidate.kind, candidate.body);
 
+        // Compute embedding when an embedder is configured; degrade gracefully on error.
+        let embedding = if let Some(embedder) = &self.config.embedder {
+            match embedder.embed(&body).await {
+                Ok(vec) => Some(vec),
+                Err(e) => {
+                    tracing::warn!(error = %e, "embedder failed; recording memory without embedding");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         // R6: check for a near-duplicate and upsert instead of inserting twice.
         let existing = store.find_similar(&body, 0.8).await.ok().flatten();
 
@@ -349,7 +415,7 @@ impl Agent {
                 kind: candidate.kind,
                 tags: existing.tags,
                 decay_at: existing.decay_at,
-                embedding: None,
+                embedding,
             };
             let _ = store.record(updated).await;
         } else {
@@ -363,7 +429,7 @@ impl Agent {
                 decay_at: None,
                 kind: candidate.kind,
                 description: candidate.description,
-                embedding: None,
+                embedding,
             };
             let _ = store.record(memory).await;
         }

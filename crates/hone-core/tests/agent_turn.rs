@@ -143,6 +143,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     }
 }
 
@@ -1203,6 +1204,7 @@ async fn test_dynamic_read_only_tool_dispatched_in_parallel() {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     };
 
     let mut agent = Agent::new(config);

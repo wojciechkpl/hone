@@ -39,6 +39,7 @@ fn make_config_with_skills(registry: SkillRegistry) -> AgentConfig {
         step_rx: None,
         hooks: None,
         skills: Some(Arc::new(registry)),
+        embedder: None,
     }
 }
 
@@ -86,6 +87,7 @@ async fn always_skill_injected_into_provider_messages() {
         step_rx: None,
         hooks: None,
         skills: Some(Arc::new(registry)),
+        embedder: None,
     };
 
     let mut agent = Agent::new(config);
@@ -137,6 +139,7 @@ async fn no_skills_no_extra_system_message() {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     };
 
     let mut agent = Agent::new(config);

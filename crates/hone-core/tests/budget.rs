@@ -57,6 +57,7 @@ async fn test_budget_cap_blocks_new_turn() {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     };
 
     let mut agent = Agent::new(config);

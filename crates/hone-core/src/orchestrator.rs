@@ -555,6 +555,7 @@ impl Orchestrator {
             step_rx: None,
             hooks: None,
             skills: None,
+        embedder: None,
             mode: crate::plan_mode::AgentMode::Build,
         }
     }
@@ -610,6 +611,7 @@ impl Orchestrator {
             step_rx: None,
             hooks: None,
             skills: None,
+        embedder: None,
             mode: crate::plan_mode::AgentMode::Build,
         }
     }
@@ -756,6 +758,7 @@ fn single_subtask_plan(request: &str, registry: &AgentRegistry) -> TaskPlan {
             acceptance_tests: Vec::new(),
             budget_usd: None,
             scope: Vec::new(),
+            requires_capabilities: Vec::new(),
         }],
     }
 }

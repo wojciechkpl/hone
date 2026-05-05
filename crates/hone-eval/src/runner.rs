@@ -128,6 +128,7 @@ impl EvalRunner {
             hooks: None,
             skills: None,
             mode: AgentMode::Build,
+            embedder: None,
         };
 
         let handle = AgentHandle::spawn(config);

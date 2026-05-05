@@ -47,6 +47,7 @@ fn base_config(provider: Arc<MockProvider>) -> AgentConfig {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     }
 }
 
@@ -78,6 +79,7 @@ fn test_task_plan_serialization() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
+            requires_capabilities: vec![],
             },
             SubTask {
                 id: "2".to_owned(),
@@ -88,6 +90,7 @@ fn test_task_plan_serialization() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
+            requires_capabilities: vec![],
             },
         ],
     };
@@ -221,6 +224,7 @@ async fn test_dependency_ordering_logic() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
+            requires_capabilities: vec![],
             },
             SubTask {
                 id: "B".to_owned(),
@@ -231,6 +235,7 @@ async fn test_dependency_ordering_logic() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
+            requires_capabilities: vec![],
             },
         ],
     };
@@ -276,6 +281,7 @@ async fn test_max_workers_respected() {
             acceptance_tests: vec![],
             budget_usd: None,
             scope: vec![],
+            requires_capabilities: vec![],
         })
         .collect();
 
@@ -315,6 +321,7 @@ fn test_subtask_serialization_with_new_fields() {
         ],
         budget_usd: Some(0.50),
         scope: vec!["src/auth.rs".to_owned(), "src/auth/jwt.rs".to_owned()],
+        requires_capabilities: vec![],
     };
 
     let json = serde_json::to_string(&task).expect("serialization should succeed");
@@ -420,6 +427,7 @@ fn panic_agent_config() -> AgentConfig {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     }
 }
 
@@ -456,6 +464,7 @@ async fn test_panicked_worker_has_correct_task_id() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
+            requires_capabilities: vec![],
             },
             SubTask {
                 id: "task-panic-B".to_owned(),
@@ -466,6 +475,7 @@ async fn test_panicked_worker_has_correct_task_id() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
+            requires_capabilities: vec![],
             },
             SubTask {
                 id: "task-panic-C".to_owned(),
@@ -476,6 +486,7 @@ async fn test_panicked_worker_has_correct_task_id() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
+            requires_capabilities: vec![],
             },
         ],
     };

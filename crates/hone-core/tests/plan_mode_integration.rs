@@ -43,6 +43,7 @@ fn make_plan_config(working_dir: std::path::PathBuf) -> AgentConfig {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
         mode: AgentMode::Plan,
     }
 }
@@ -172,6 +173,7 @@ async fn build_mode_agent_does_not_save_plan() {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
         mode: AgentMode::Build,
     };
 
