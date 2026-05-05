@@ -2036,6 +2036,7 @@ dependencies = [
 name = "hone-server"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-stream",
  "async-trait",
  "axum",
@@ -2061,6 +2062,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "tracing-subscriber",
  "utoipa",
  "uuid",
 ]
