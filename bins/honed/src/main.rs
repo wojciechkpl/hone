@@ -45,6 +45,13 @@ async fn main() -> Result<()> {
             "  HONE_SESSION_DB    Path to SQLite file (default ~/.local/share/hone/sessions.db)"
         );
         println!("  HONE_EPHEMERAL     Disable session persistence entirely");
+        println!(
+            "  HONE_DISTRIBUTED_DB        Enable distributed orchestrator at this SQLite path"
+        );
+        println!(
+            "  HONE_DISTRIBUTED_REAP_SECS Lease-reaper tick interval in seconds (default 15)"
+        );
+        println!("  HONE_DISTRIBUTED_MAX_ATTEMPTS  Max claim attempts before force-fail (default 3)");
         println!();
         println!("Endpoints:");
         println!("  POST   /sessions           Create a new session");
@@ -130,7 +137,55 @@ async fn main() -> Result<()> {
         Arc::new(MockTunnelManager::new())
     };
 
-    let state = AppState::with_sessions(auth_token, sessions).with_tunnel(tunnel_manager);
+    // Distributed orchestrator (P2-4 Phase 1): when HONE_DISTRIBUTED_DB is
+    // set, open the DistributedTaskStore + spawn the lease reaper. Otherwise
+    // distributed mode is off and /distributed/* endpoints return 503.
+    let distributed_store: Option<Arc<hone_server::distributed::DistributedTaskStore>> =
+        if let Ok(db_path) = std::env::var("HONE_DISTRIBUTED_DB") {
+            match hone_server::distributed::DistributedTaskStore::open(Path::new(&db_path)).await {
+                Ok(store) => {
+                    tracing::info!("distributed orchestrator enabled, store at {}", db_path);
+                    Some(Arc::new(store))
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "failed to open distributed store {}: {e}; distributed mode disabled",
+                        db_path
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+    let mut state = AppState::with_sessions(auth_token, sessions).with_tunnel(tunnel_manager);
+    if let Some(ref store) = distributed_store {
+        state = state.with_distributed_store(Arc::clone(store));
+    }
+
+    // Spawn the lease reaper when distributed mode is on. Default per
+    // design doc §5.3: 15s interval, 3 max attempts. Override via
+    // HONE_DISTRIBUTED_REAP_SECS / HONE_DISTRIBUTED_MAX_ATTEMPTS.
+    let _reaper_handle: Option<tokio::task::JoinHandle<()>> =
+        distributed_store.as_ref().map(|store| {
+            let interval_secs: u64 = std::env::var("HONE_DISTRIBUTED_REAP_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(15);
+            let max_attempts: u32 = std::env::var("HONE_DISTRIBUTED_MAX_ATTEMPTS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(3);
+            tracing::info!(
+                "lease reaper spawned (interval={interval_secs}s, max_attempts={max_attempts})"
+            );
+            hone_server::distributed_reaper::spawn_lease_reaper(
+                Arc::clone(store),
+                std::time::Duration::from_secs(interval_secs),
+                max_attempts,
+            )
+        });
 
     // Background session GC: purge sessions older than 30 days every hour.
     {
