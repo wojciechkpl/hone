@@ -2022,6 +2022,7 @@ dependencies = [
  "hone-providers",
  "hone-sandbox",
  "hone-tools",
+ "httpmock",
  "hyper 1.9.0",
  "reqwest",
  "serde",
