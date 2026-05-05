@@ -2135,6 +2135,7 @@ dependencies = [
  "axum",
  "hone-config",
  "hone-core",
+ "hone-mcp",
  "hone-proto",
  "hone-providers",
  "hone-recipes",

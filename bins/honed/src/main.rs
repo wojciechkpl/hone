@@ -65,6 +65,15 @@ async fn main() -> Result<()> {
         println!(
             "  HONE_WORKER_CAPABILITIES   Comma-separated capability tags (e.g. 'rust,python')"
         );
+        println!(
+            "  HONE_WORKER_LSP_LANGS      Comma-separated LSP languages to enable (rust|python|typescript|go)"
+        );
+        println!(
+            "  HONE_WORKER_MCP_CONFIG     Path to an mcp.json config file (enables MCP tools on the worker)"
+        );
+        println!(
+            "  HONE_WORKER_MEMORY_DB      Path to a SQLite memory file (enables memory read tool)"
+        );
         println!();
         println!("Endpoints:");
         println!("  POST   /sessions           Create a new session");
@@ -253,9 +262,9 @@ async fn main() -> Result<()> {
                     let registry = hone_core::AgentRegistry::load_hierarchical(
                         &std::env::current_dir().unwrap_or_default(),
                     );
-                    // Minimal default tool registry for v1 worker mode.  LSP/MCP/
-                    // memory wiring is a follow-up.
-                    let base_tools = hone_tools::ToolRegistry::builder()
+
+                    // Base tools always registered.
+                    let mut builder = hone_tools::ToolRegistry::builder()
                         .register(Box::new(hone_tools::ReadFileTool))
                         .register(Box::new(hone_tools::GlobTool))
                         .register(Box::new(hone_tools::GrepTool))
@@ -265,8 +274,81 @@ async fn main() -> Result<()> {
                         .register(Box::new(hone_tools::ShellTool))
                         .register(Box::new(hone_tools::GitStatusTool))
                         .register(Box::new(hone_tools::GitDiffTool))
-                        .register(Box::new(hone_tools::GitCommitTool))
-                        .build();
+                        .register(Box::new(hone_tools::GitCommitTool));
+
+                    // HONE_WORKER_LSP_LANGS — per-language LSP tools.
+                    let lsp_langs: Vec<String> = std::env::var("HONE_WORKER_LSP_LANGS")
+                        .unwrap_or_default()
+                        .split(',')
+                        .filter(|s| !s.trim().is_empty())
+                        .map(|s| s.trim().to_lowercase())
+                        .collect();
+                    for lang_str in &lsp_langs {
+                        let lang = match lang_str.as_str() {
+                            "rust" => hone_tools::lsp::Language::Rust,
+                            "python" => hone_tools::lsp::Language::Python,
+                            "typescript" => hone_tools::lsp::Language::TypeScript,
+                            "go" => hone_tools::lsp::Language::Go,
+                            other => {
+                                tracing::warn!(
+                                    "HONE_WORKER_LSP_LANGS: unknown language '{other}'; skipping"
+                                );
+                                continue;
+                            }
+                        };
+                        match hone_tools::lsp::StdioLspBridge::for_language(lang).await {
+                            Ok(bridge) => {
+                                let bridge: std::sync::Arc<dyn hone_tools::lsp::LspBridge> =
+                                    std::sync::Arc::new(bridge);
+                                builder = builder
+                                    .register(Box::new(hone_tools::lsp::LspDiagnosticsTool::new(
+                                        std::sync::Arc::clone(&bridge),
+                                    )))
+                                    .register(Box::new(hone_tools::lsp::LspHoverTool::new(
+                                        std::sync::Arc::clone(&bridge),
+                                    )))
+                                    .register(Box::new(hone_tools::lsp::LspCodeActionTool::new(
+                                        std::sync::Arc::clone(&bridge),
+                                    )));
+                                tracing::info!("worker LSP enabled for: {lang_str}");
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "HONE_WORKER_LSP_LANGS: failed to spawn LSP server for \
+                                     '{lang_str}': {e}; skipping"
+                                );
+                            }
+                        }
+                    }
+
+                    // HONE_WORKER_MCP_CONFIG — MCP tools from a config file.
+                    if let Ok(mcp_config_path) = std::env::var("HONE_WORKER_MCP_CONFIG") {
+                        let path = std::path::Path::new(&mcp_config_path);
+                        let mcp_config = hone_config::McpConfig::load(None, Some(path));
+                        let mcp_manager = hone_mcp::McpManager::from_config(&mcp_config).await;
+                        for mcp_tool in mcp_manager.tools_as_native() {
+                            builder = builder.register(mcp_tool);
+                        }
+                        tracing::info!(
+                            "worker MCP enabled with config at: {mcp_config_path}"
+                        );
+                    }
+
+                    // HONE_WORKER_MEMORY_DB — memory read tool backed by SQLite.
+                    // KNOWN LIMITATION: MemoryReadTool lives in bins/hone and is not
+                    // yet in a shared crate.  The env var surface is wired so users can
+                    // configure it now; full wiring will land when MemoryReadTool is
+                    // promoted to hone-tools or a dedicated crate.
+                    if let Ok(memory_db_path) = std::env::var("HONE_WORKER_MEMORY_DB") {
+                        tracing::warn!(
+                            "HONE_WORKER_MEMORY_DB is set ('{}') but memory tool support is \
+                             not yet wired in honed (MemoryReadTool is not yet in a shared \
+                             crate); ignored for now",
+                            memory_db_path
+                        );
+                    }
+
+                    let base_tools = builder.build();
                     let model = hone_proto::ModelId::new("anthropic:claude-sonnet-4-5");
                     let pricing = hone_proto::PricingEntry {
                         model: model.clone(),
