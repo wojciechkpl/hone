@@ -104,6 +104,7 @@ impl EvalRunner {
             provider: (self.provider_factory)(),
             tools: ToolRegistry::default(),
             sandbox: Arc::new(NullSandbox),
+            sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
             system_prompt: String::new(),
             model: model_id.clone(),
             max_tokens: None,

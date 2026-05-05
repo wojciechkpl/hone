@@ -47,6 +47,31 @@ pub struct SandboxPolicy {
     pub allow_env: Vec<String>,
 }
 
+impl SandboxPolicy {
+    /// Return a permissive policy that places no meaningful restrictions on the
+    /// child process.
+    ///
+    /// The policy uses [`SandboxMode::Manual`] (the least restrictive mode
+    /// semantically, with no build-time path requirements) and leaves all
+    /// allow-lists empty.  When passed to the [`NullSandbox`] backend — or any
+    /// backend that respects the fail-open manual mode — it imposes zero
+    /// overhead.
+    ///
+    /// This is the default for [`AgentConfig::sandbox_policy`] and
+    /// [`ToolContext::sandbox_policy`] when no per-agent profile is configured.
+    pub fn permissive() -> Self {
+        Self {
+            mode: SandboxMode::Manual,
+            allow_read: Vec::new(),
+            allow_write: Vec::new(),
+            allow_exec: Vec::new(),
+            allow_network: true,
+            allowed_domains: Vec::new(),
+            allow_env: Vec::new(),
+        }
+    }
+}
+
 /// Builder for [`SandboxPolicy`].
 ///
 /// # Example

@@ -197,6 +197,7 @@ pub async fn run_handler(
                 provider,
                 tools,
                 sandbox: build_sandbox(),
+                sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
                 system_prompt: SYSTEM_PROMPT.to_string(),
                 model: model_id.clone(),
                 max_tokens: None,

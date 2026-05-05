@@ -11,7 +11,7 @@ use hone_proto::{
     ToolApprovalPolicy, ToolCallRequest,
 };
 use hone_providers::{CompletionRequest, ContextWindowTable, ModelProvider, ProviderError};
-use hone_sandbox::Sandbox;
+use hone_sandbox::{Sandbox, SandboxPolicy};
 use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput, ToolRegistry};
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
@@ -39,6 +39,10 @@ pub struct AgentConfig {
     pub provider: Arc<dyn ModelProvider>,
     pub tools: ToolRegistry,
     pub sandbox: Arc<dyn Sandbox>,
+    /// Declarative policy forwarded to `ToolContext` for child-process
+    /// restriction.  Defaults to `SandboxPolicy::permissive()` (no
+    /// restrictions) when no per-agent profile is configured.
+    pub sandbox_policy: Arc<SandboxPolicy>,
     pub system_prompt: String,
     pub model: ModelId,
     pub max_tokens: Option<u32>,
@@ -896,6 +900,7 @@ impl Agent {
             // calls are always dispatched sequentially to preserve safety.
             let ctx = ToolContext {
                 sandbox: Arc::clone(&self.config.sandbox),
+                sandbox_policy: Arc::clone(&self.config.sandbox_policy),
                 working_dir: self.config.working_dir.clone(),
             };
 

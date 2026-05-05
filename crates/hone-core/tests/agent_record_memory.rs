@@ -36,6 +36,7 @@ fn make_agent_with_store() -> (Agent, Arc<dyn hone_memory::MemoryStore>) {
         provider,
         tools: ToolRegistry::new(),
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "test".to_owned(),
         model: ModelId::new("mock:test"),
         max_tokens: None,

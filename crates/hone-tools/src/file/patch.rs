@@ -761,6 +761,7 @@ mod tests {
         use hone_sandbox::NullSandbox;
         ToolContext {
             sandbox: Arc::new(NullSandbox),
+            sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
             working_dir: dir.path().to_path_buf(),
         }
     }

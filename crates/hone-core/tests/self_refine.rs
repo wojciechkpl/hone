@@ -81,6 +81,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         provider,
         tools: ToolRegistry::new(),
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "You are a helpful coder.".to_owned(),
         model: ModelId::new("mock:test"),
         max_tokens: None,

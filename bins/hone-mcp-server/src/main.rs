@@ -16,6 +16,7 @@ async fn main() -> Result<()> {
 
     let ctx = ToolContext {
         sandbox: Arc::new(hone_sandbox::NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: std::env::current_dir()?,
     };
 

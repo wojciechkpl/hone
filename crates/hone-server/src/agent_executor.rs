@@ -13,7 +13,7 @@ use hone_core::agent_registry::AgentRegistry;
 use hone_core::task_plan::SubTask;
 use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::ModelProvider;
-use hone_sandbox::{NullSandbox, Sandbox, SandboxBuilder};
+use hone_sandbox::{NullSandbox, Sandbox, SandboxBuilder, SandboxPolicy};
 use hone_tools::ToolRegistry;
 use tokio::sync::mpsc;
 
@@ -114,16 +114,21 @@ impl AgentTaskExecutor {
             self.base_tools.clone()
         };
 
-        let sandbox: Arc<dyn Sandbox> = if let Some(profile) = &agent_def.sandbox {
-            let _policy = profile.to_policy();
-            tracing::debug!(
-                agent = %agent_def.name,
-                "per-agent sandbox profile captured (not enforced in v1)"
-            );
-            Arc::new(NullSandbox) as Arc<dyn Sandbox>
-        } else {
-            Arc::clone(&self.default_sandbox)
-        };
+        let (sandbox, sandbox_policy): (Arc<dyn Sandbox>, Arc<SandboxPolicy>) =
+            if let Some(profile) = &agent_def.sandbox {
+                let policy = profile.to_policy();
+                tracing::debug!(
+                    agent = %agent_def.name,
+                    mode = ?policy.mode,
+                    "per-agent sandbox policy applied"
+                );
+                (Arc::new(NullSandbox) as Arc<dyn Sandbox>, Arc::new(policy))
+            } else {
+                (
+                    Arc::clone(&self.default_sandbox),
+                    Arc::new(SandboxPolicy::permissive()),
+                )
+            };
 
         let budget_limit = task.budget_usd.or(self.default_budget_usd);
 
@@ -131,6 +136,7 @@ impl AgentTaskExecutor {
             provider: Arc::clone(&self.provider),
             tools,
             sandbox,
+            sandbox_policy,
             system_prompt: agent_def.system_prompt.clone(),
             model: self.model.clone(),
             max_tokens: None,
@@ -631,5 +637,97 @@ mod tests {
     #[allow(dead_code)]
     fn _assert_agent_task_executor_is_task_executor() {
         _check_task_executor_impl::<AgentTaskExecutor>();
+    }
+
+    // ── sandbox_policy propagation ────────────────────────────────────────────
+
+    /// When `AgentDef.sandbox` is `None`, `build_agent_config_for_task` must
+    /// return a config whose `sandbox_policy.mode` is the permissive variant
+    /// (`Manual`), preserving existing behaviour.
+    #[test]
+    fn agent_task_executor_uses_default_policy_when_agent_has_no_sandbox() {
+        use hone_sandbox::SandboxMode;
+
+        let provider = Arc::new(MockProvider::new(vec![]));
+        let executor = build_executor(provider, registry_with_agent("bot", "sys"));
+        let task = make_task("bot");
+
+        let config = executor
+            .build_agent_config_for_task(&task)
+            .expect("must succeed for known agent");
+
+        assert_eq!(
+            config.sandbox_policy.mode,
+            SandboxMode::Manual,
+            "default (no sandbox override) must yield the permissive Manual mode"
+        );
+    }
+
+    /// When `AgentDef.sandbox` carries a `SandboxProfile` with an explicit
+    /// mode and allow_read paths, `build_agent_config_for_task` must set
+    /// `sandbox_policy` to match that profile's mode and paths.
+    #[test]
+    fn agent_task_executor_uses_per_agent_sandbox_policy() {
+        use hone_core::agent_def::SandboxProfile;
+        use hone_sandbox::SandboxMode;
+
+        let mut def = make_agent_def("restricted-bot", "sys");
+        def.sandbox = Some(SandboxProfile {
+            mode: SandboxMode::Manual,
+            allow_read: vec![std::path::PathBuf::from("/workspace")],
+            allow_write: vec![],
+        });
+
+        let mut registry = AgentRegistry::new();
+        registry.register(def);
+
+        let provider = Arc::new(MockProvider::new(vec![]));
+        let executor = AgentTaskExecutor::new(
+            registry,
+            ToolRegistry::default(),
+            provider,
+            ModelId::new("mock:dummy"),
+            zero_pricing(),
+            std::env::temp_dir(),
+        );
+
+        let task = make_task("restricted-bot");
+        let config = executor
+            .build_agent_config_for_task(&task)
+            .expect("must succeed for known agent with sandbox");
+
+        assert_eq!(
+            config.sandbox_policy.mode,
+            SandboxMode::Manual,
+            "per-agent policy mode must match the profile"
+        );
+        assert_eq!(
+            config.sandbox_policy.allow_read,
+            vec![std::path::PathBuf::from("/workspace")],
+            "per-agent policy allow_read must match the profile"
+        );
+    }
+
+    /// `AgentConfig` constructed via the test fixture must have its
+    /// `sandbox_policy.mode` in the permissive variant, confirming the default.
+    #[test]
+    fn agent_config_sandbox_policy_default_is_permissive() {
+        use hone_sandbox::SandboxMode;
+
+        let provider = Arc::new(MockProvider::new(vec![]));
+        let executor = build_executor(provider, registry_with_agent("bot", "sys"));
+        let task = make_task("bot");
+
+        let config = executor
+            .build_agent_config_for_task(&task)
+            .expect("must succeed");
+
+        // Permissive is Manual — the least restrictive mode with no build-time
+        // path requirements.
+        assert_eq!(config.sandbox_policy.mode, SandboxMode::Manual);
+        assert!(
+            config.sandbox_policy.allow_read.is_empty(),
+            "permissive policy must have empty allow_read"
+        );
     }
 }

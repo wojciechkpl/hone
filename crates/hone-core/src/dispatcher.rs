@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use hone_proto::{ToolCallRequest, ToolResult};
-use hone_sandbox::Sandbox;
+use hone_sandbox::{Sandbox, SandboxPolicy};
 use hone_tools::{ToolContext, ToolInput, ToolRegistry};
 
 use crate::error::AgentError;
@@ -36,6 +36,7 @@ impl ToolDispatcher {
 
         let ctx = ToolContext {
             sandbox: Arc::clone(&self.sandbox),
+            sandbox_policy: Arc::new(SandboxPolicy::permissive()),
             working_dir: self.working_dir.clone(),
         };
 

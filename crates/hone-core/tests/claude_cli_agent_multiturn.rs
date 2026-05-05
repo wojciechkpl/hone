@@ -73,6 +73,7 @@ fn base_config_with_cli(binary: &str) -> AgentConfig {
         provider: provider as Arc<dyn hone_providers::ModelProvider>,
         tools: ToolRegistry::new(),
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "You are a helpful assistant.".to_owned(),
         model,
         max_tokens: None,
