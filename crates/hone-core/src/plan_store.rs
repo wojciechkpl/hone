@@ -153,6 +153,7 @@ mod tests {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
+                requires_capabilities: vec![],
             }],
         };
         store.write_plan(&plan, &[]).await.unwrap();
@@ -177,6 +178,7 @@ mod tests {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
+                requires_capabilities: vec![],
             }],
         };
         let results = vec![WorkerResult {
@@ -208,6 +210,7 @@ mod tests {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
+                requires_capabilities: vec![],
             }],
         };
         let results = vec![WorkerResult {

@@ -105,6 +105,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     }
 }
 

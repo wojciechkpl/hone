@@ -183,6 +183,7 @@ async fn pre_tool_use_hook_deny_prevents_shell_invocation() {
         step_rx: None,
         hooks: Some(Arc::new(registry)),
         skills: None,
+        embedder: None,
     };
 
     let mut agent = Agent::new(config);
@@ -345,6 +346,7 @@ async fn no_hooks_no_overhead() {
         step_rx: None,
         hooks: None, // no hooks — must be a perfect no-op
         skills: None,
+        embedder: None,
     };
 
     let mut agent = Agent::new(config);

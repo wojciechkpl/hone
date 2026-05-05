@@ -5,6 +5,7 @@ mod memory_init;
 mod report;
 mod reports_cmd;
 mod session;
+mod spec_cmd;
 mod system_prompt;
 mod tools;
 mod trace;
@@ -116,6 +117,14 @@ enum HoneCmd {
         /// Output directory for report.json and report.md (default: parent dir of tasks file).
         #[arg(short, long)]
         output: Option<PathBuf>,
+    },
+    /// Generate a Kiro-style spec (requirements + design + tasks) for a goal.
+    Spec {
+        /// Natural-language goal describing what to build.
+        goal: String,
+        /// Project root (default: current working directory).
+        #[arg(short, long)]
+        cwd: Option<PathBuf>,
     },
 }
 
@@ -893,6 +902,7 @@ fn build_agent_config(
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
         mode: AgentMode::Build,
     }
 }
@@ -1626,6 +1636,70 @@ async fn cmd_eval(
 }
 
 // ---------------------------------------------------------------------------
+// Spec subcommand
+// ---------------------------------------------------------------------------
+
+async fn cmd_spec_run(
+    goal: &str,
+    cwd: Option<PathBuf>,
+    wizard_cfg: &configure::ResolvedConfig,
+) -> Result<()> {
+    use spec_cmd::{SpecCommandError, SpecGeneratorImpl, cmd_spec};
+
+    let project_root = match cwd {
+        Some(p) => p,
+        None => std::env::current_dir()?,
+    };
+
+    let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .or_else(|| wizard_cfg.anthropic_api_key.clone());
+    let openai_key = std::env::var("OPENAI_API_KEY")
+        .ok()
+        .or_else(|| wizard_cfg.openai_api_key.clone());
+    let openai_base_url = std::env::var("HONE_OPENAI_BASE_URL")
+        .ok()
+        .or_else(|| wizard_cfg.openai_base_url.clone());
+    let openai_model = std::env::var("HONE_OPENAI_MODEL")
+        .ok()
+        .or_else(|| wizard_cfg.openai_model.clone())
+        .unwrap_or_else(|| "gpt-4o".into());
+
+    let provider: Arc<dyn ModelProvider> = if let Some(key) = anthropic_key {
+        Arc::new(AnthropicProvider::new(key))
+    } else if let Some(key) = openai_key {
+        if let Some(url) = openai_base_url {
+            Arc::new(OpenAiProvider::with_base_url(key, url))
+        } else {
+            Arc::new(OpenAiProvider::new(key))
+        }
+    } else {
+        anyhow::bail!("spec requires a provider: set ANTHROPIC_API_KEY or OPENAI_API_KEY");
+    };
+
+    let model = hone_proto::ModelId::new("anthropic:claude-3-5-sonnet-20241022");
+    let _ = &openai_model; // used when openai path is taken above
+    let generator = SpecGeneratorImpl::new(provider, model);
+
+    match cmd_spec(goal, &project_root, &generator).await {
+        Ok(out) => {
+            println!("Spec created: {}", out.spec_dir.display());
+            println!("  slug:   {}", out.slug);
+            println!("  goal:   {}", out.goal);
+            println!("  tasks:  {}", out.task_count);
+            Ok(())
+        }
+        Err(SpecCommandError::AlreadyExists(path)) => {
+            anyhow::bail!(
+                "spec already exists at {}; remove it or use a different goal",
+                path.display()
+            );
+        }
+        Err(e) => Err(anyhow::anyhow!("{}", e)),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SQLite persistence initialisation
 // ---------------------------------------------------------------------------
 
@@ -1901,6 +1975,10 @@ async fn main() -> Result<()> {
             }
             HoneCmd::Eval { tasks, output } => {
                 cmd_eval(tasks, output.clone(), &wizard_cfg).await?;
+                return Ok(());
+            }
+            HoneCmd::Spec { goal, cwd } => {
+                cmd_spec_run(goal, cwd.clone(), &wizard_cfg).await?;
                 return Ok(());
             }
         }
@@ -3241,6 +3319,7 @@ mod tests {
             step_rx: None,
             hooks: None,
             skills: None,
+        embedder: None,
             mode: AgentMode::Build,
         };
 

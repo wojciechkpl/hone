@@ -253,6 +253,7 @@ fn make_agent(record_delay: Duration, recall_delay: Duration) -> (Agent, Arc<dyn
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     };
 
     (Agent::new(config), store_arc)

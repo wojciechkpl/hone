@@ -42,6 +42,7 @@ fn base_config(provider: Arc<dyn hone_providers::ModelProvider>) -> AgentConfig 
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     }
 }
 

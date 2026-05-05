@@ -185,6 +185,7 @@ fn make_config(
         step_rx: None,
         hooks: None,
         skills: None,
+        embedder: None,
     }
 }
 

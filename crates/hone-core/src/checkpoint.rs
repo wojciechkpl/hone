@@ -480,6 +480,7 @@ mod tests {
                     acceptance_tests: vec![],
                     budget_usd: None,
                     scope: vec![],
+                    requires_capabilities: vec![],
                 },
                 SubTask {
                     id: "t2".to_owned(),
@@ -490,6 +491,7 @@ mod tests {
                     acceptance_tests: vec![],
                     budget_usd: None,
                     scope: vec![],
+                    requires_capabilities: vec![],
                 },
             ],
         }

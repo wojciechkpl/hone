@@ -2,7 +2,7 @@ use hone_proto::TokenUsage;
 use serde::{Deserialize, Serialize};
 
 /// A single unit of work assigned to a specialist agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SubTask {
     pub id: String,
     pub description: String,
@@ -21,6 +21,10 @@ pub struct SubTask {
     /// Files the worker is allowed to modify. Empty = no restriction.
     #[serde(default)]
     pub scope: Vec<String>,
+    /// Capability tags the worker must declare to be eligible.
+    /// Empty = any worker.
+    #[serde(default)]
+    pub requires_capabilities: Vec<String>,
 }
 
 /// The full decomposition of a user request into subtasks.
