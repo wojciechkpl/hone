@@ -35,6 +35,7 @@ pub mod relevance;
 pub mod retry;
 pub mod reviewer;
 pub mod self_refine;
+pub mod queue_client;
 pub mod task_plan;
 pub mod test_loop;
 mod turn;
@@ -69,6 +70,9 @@ pub use recovery::{FailureScenario, RecoveryAction};
 pub use retry::{RetryConfig, is_transient_error, retry};
 pub use reviewer::{ReviewIssue, ReviewResult, ReviewSeverity, ReviewerAgent};
 pub use self_refine::{RefineResult, SelfRefineLoop};
+pub use queue_client::{
+    ClaimedTaskWire, CompletionRequestBody, PlanStatusSnapshot, QueueClient, QueueClientError,
+};
 pub use task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
 pub use test_loop::{
     GreenCommands, GreenContract, GreenLevel, TestLoopResult, TestStatus, TestVerificationLoop,
