@@ -3,6 +3,7 @@ mod file;
 mod git;
 pub mod handoff;
 pub mod lsp;
+pub mod memory;
 mod registry;
 mod screen;
 mod shell;
@@ -10,6 +11,7 @@ mod traits;
 pub mod web;
 
 pub use error::ToolError;
+pub use memory::MemoryReadTool;
 pub use handoff::HandoffTool;
 pub use file::{EditFileTool, GlobTool, GrepTool, MultiEditTool, PatchTool, ReadFileTool, WriteFileTool};
 pub use git::{

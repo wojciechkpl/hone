@@ -13,7 +13,7 @@ use hone_core::agent_registry::AgentRegistry;
 use hone_core::task_plan::SubTask;
 use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::ModelProvider;
-use hone_sandbox::{NullSandbox, Sandbox};
+use hone_sandbox::{NullSandbox, Sandbox, SandboxBuilder};
 use hone_tools::ToolRegistry;
 use tokio::sync::mpsc;
 
@@ -30,8 +30,10 @@ pub struct AgentTaskExecutor {
     base_tools: ToolRegistry,
     /// LLM provider used by every spawned agent.
     provider: Arc<dyn ModelProvider>,
-    /// Default sandbox; per-agent override applied when `AgentDef.sandbox` is
-    /// `Some`.
+    /// Default sandbox selected via `SandboxBuilder::detect()` at construction
+    /// time (Seatbelt on macOS, Landlock on Linux, NullSandbox elsewhere).
+    /// Per-agent `AgentDef.sandbox` profile data is captured but enforcement
+    /// requires plumbing the policy through `ToolContext`, which is a follow-up.
     default_sandbox: Arc<dyn Sandbox>,
     /// Model identifier forwarded to `AgentConfig`.
     model: ModelId,
@@ -45,7 +47,8 @@ pub struct AgentTaskExecutor {
 }
 
 impl AgentTaskExecutor {
-    /// Build a new executor with `NullSandbox` and no default budget cap.
+    /// Build a new executor using the strongest sandbox available on the current
+    /// platform (`SandboxBuilder::detect()`) and no default budget cap.
     pub fn new(
         registry: AgentRegistry,
         base_tools: ToolRegistry,
@@ -58,7 +61,7 @@ impl AgentTaskExecutor {
             registry,
             base_tools,
             provider,
-            default_sandbox: Arc::new(NullSandbox),
+            default_sandbox: Arc::from(SandboxBuilder::detect()),
             model,
             pricing,
             working_dir,
@@ -66,7 +69,7 @@ impl AgentTaskExecutor {
         }
     }
 
-    /// Override the default sandbox (default: `NullSandbox`).
+    /// Override the default sandbox (default: platform-detected via `SandboxBuilder::detect()`).
     pub fn with_default_sandbox(mut self, sandbox: Arc<dyn Sandbox>) -> Self {
         self.default_sandbox = sandbox;
         self
