@@ -75,6 +75,21 @@ pub enum QueueClientError {
 
 // ── QueueClient ───────────────────────────────────────────────────────────────
 
+/// Mirror of TaskResultRow from hone-server (intentional duplication, same
+/// reasoning as ClaimedTaskWire).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkerResultWire {
+    pub task_id: String,
+    pub plan_id: String,
+    pub agent: String,
+    pub status: String,
+    pub response: String,
+    pub error_msg: Option<String>,
+    pub tokens_input: u32,
+    pub tokens_output: u32,
+    pub cost_usd: f64,
+}
+
 /// Reqwest-based HTTP client for the coordinator's `/distributed/*` endpoints.
 pub struct QueueClient {
     coordinator_url: String,
@@ -178,6 +193,39 @@ impl QueueClient {
             401 => Err(QueueClientError::Unauthorized),
             503 => Err(QueueClientError::NotConfigured),
             409 => Err(QueueClientError::LeaseLost),
+            s => {
+                let body = resp.text().await.unwrap_or_default();
+                Err(QueueClientError::ServerError { status: s, body })
+            }
+        }
+    }
+
+    /// GET /distributed/plans/{plan_id}/results
+    /// Pull all completed results for a plan.
+    pub async fn pull_results(
+        &self,
+        plan_id: &str,
+    ) -> Result<Vec<WorkerResultWire>, QueueClientError> {
+        let url = format!("{}/distributed/plans/{}/results", self.coordinator_url, plan_id);
+
+        let resp = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.auth_token)
+            .send()
+            .await
+            .map_err(|e| QueueClientError::Http(e.to_string()))?;
+
+        match resp.status().as_u16() {
+            200 => {
+                let rows: Vec<WorkerResultWire> = resp
+                    .json()
+                    .await
+                    .map_err(|e| QueueClientError::Json(e.to_string()))?;
+                Ok(rows)
+            }
+            401 => Err(QueueClientError::Unauthorized),
+            503 => Err(QueueClientError::NotConfigured),
             s => {
                 let body = resp.text().await.unwrap_or_default();
                 Err(QueueClientError::ServerError { status: s, body })
@@ -840,6 +888,109 @@ mod tests {
             matches!(err, QueueClientError::Http(_)),
             "expected Http(timeout), got {err:?}"
         );
+    }
+
+    // ── pull_results ──────────────────────────────────────────────────────────
+
+    /// GET /distributed/plans/p1/results → 200 with empty array.
+    #[tokio::test]
+    async fn pull_results_returns_empty_vec_for_empty_response() {
+        let server = mock_coordinator().await;
+        server.mock(|when, then| {
+            when.method(GET).path("/distributed/plans/p1/results");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body("[]");
+        });
+
+        let client = client_for(&server);
+        let results = client.pull_results("p1").await.expect("pull_results should succeed");
+        assert!(results.is_empty(), "empty JSON array should deserialise to empty Vec");
+    }
+
+    /// GET /distributed/plans/p1/results → 200 with two WorkerResultWire rows.
+    #[tokio::test]
+    async fn pull_results_deserialises_array_of_worker_result_wire() {
+        let server = mock_coordinator().await;
+        let body = serde_json::json!([
+            {
+                "task_id": "t1",
+                "plan_id": "p1",
+                "agent": "rust-expert",
+                "status": "completed",
+                "response": "done",
+                "error_msg": null,
+                "tokens_input": 100,
+                "tokens_output": 200,
+                "cost_usd": 0.01
+            },
+            {
+                "task_id": "t2",
+                "plan_id": "p1",
+                "agent": "python-expert",
+                "status": "failed",
+                "response": "",
+                "error_msg": "boom",
+                "tokens_input": 50,
+                "tokens_output": 0,
+                "cost_usd": 0.0
+            }
+        ]);
+        server.mock(|when, then| {
+            when.method(GET).path("/distributed/plans/p1/results");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .json_body(body);
+        });
+
+        let client = client_for(&server);
+        let results = client.pull_results("p1").await.expect("pull_results should succeed");
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].task_id, "t1");
+        assert_eq!(results[0].agent, "rust-expert");
+        assert_eq!(results[0].status, "completed");
+        assert_eq!(results[0].tokens_input, 100);
+        assert_eq!(results[0].tokens_output, 200);
+        assert_eq!(results[1].task_id, "t2");
+        assert_eq!(results[1].error_msg.as_deref(), Some("boom"));
+    }
+
+    /// GET /distributed/plans/p1/results → 503 should map to NotConfigured.
+    #[tokio::test]
+    async fn pull_results_503_returns_not_configured() {
+        let server = mock_coordinator().await;
+        server.mock(|when, then| {
+            when.method(GET).path("/distributed/plans/p1/results");
+            then.status(503).body("not configured");
+        });
+
+        let client = client_for(&server);
+        let err = client.pull_results("p1").await.expect_err("503 must be an error");
+        assert!(
+            matches!(err, QueueClientError::NotConfigured),
+            "expected NotConfigured, got {err:?}"
+        );
+    }
+
+    /// GET /distributed/plans/p1/results → 500 should map to ServerError.
+    #[tokio::test]
+    async fn pull_results_500_returns_server_error() {
+        let server = mock_coordinator().await;
+        server.mock(|when, then| {
+            when.method(GET).path("/distributed/plans/p1/results");
+            then.status(500).body("internal error detail");
+        });
+
+        let client = client_for(&server);
+        let err = client.pull_results("p1").await.expect_err("500 must be an error");
+        match err {
+            QueueClientError::ServerError { status, body } => {
+                assert_eq!(status, 500);
+                assert!(body.contains("internal error detail"));
+            }
+            other => panic!("expected ServerError, got {other:?}"),
+        }
     }
 
     // ── Shape validation ──────────────────────────────────────────────────────

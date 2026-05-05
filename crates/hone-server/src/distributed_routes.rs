@@ -77,6 +77,10 @@ pub fn distributed_router() -> Router<AppState> {
             get(plan_status_handler),
         )
         .route(
+            "/distributed/plans/{plan_id}/results",
+            get(plan_results_handler),
+        )
+        .route(
             "/distributed/workers/{worker_id}/heartbeat",
             post(heartbeat_handler),
         )
@@ -236,6 +240,23 @@ async fn results_handler(
     match store.complete(payload).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(DistributedError::LeaseLost { .. }) => lease_lost_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn plan_results_handler(
+    State(state): State<AppState>,
+    Path(plan_id): Path<String>,
+) -> axum::response::Response {
+    let Some(store) = require_store(&state) else {
+        return store_unavailable();
+    };
+    match store.pull_results(&plan_id).await {
+        Ok(rows) => (StatusCode::OK, Json(rows)).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
@@ -824,6 +845,100 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    // ── plan results endpoint ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn plan_results_with_no_store_returns_503() {
+        let app = router(build_test_state_no_store());
+        let resp = app
+            .oneshot(authed_get("/distributed/plans/plan-1/results"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn plan_results_returns_empty_array_for_unknown_plan() {
+        let app = router(build_test_state_with_store().await);
+        let resp = app
+            .oneshot(authed_get("/distributed/plans/no-such-plan/results"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let arr = json.as_array().expect("response must be a JSON array");
+        assert!(arr.is_empty(), "unknown plan should yield empty results array");
+    }
+
+    #[tokio::test]
+    async fn plan_results_returns_completed_tasks_for_known_plan() {
+        let state = build_test_state_with_store().await;
+        let store = state.distributed_store.clone().unwrap();
+        let app = router(state);
+
+        // Enqueue and complete one task directly via the store.
+        store
+            .enqueue(
+                "plan-results",
+                vec![hone_core::task_plan::SubTask {
+                    id: "s1".to_owned(),
+                    description: "results test".to_owned(),
+                    agent: "test-agent".to_owned(),
+                    context: String::new(),
+                    depends_on: vec![],
+                    acceptance_tests: vec![],
+                    budget_usd: None,
+                    scope: vec![],
+                    requires_capabilities: vec![],
+                }],
+            )
+            .await
+            .unwrap();
+
+        let wid = WorkerId::new("worker-1");
+        let claimed = store
+            .claim_one(&wid, &[], Duration::from_secs(60))
+            .await
+            .unwrap()
+            .unwrap();
+
+        store
+            .complete(crate::distributed::CompletionPayload {
+                task_id: claimed.task_id.clone(),
+                worker_id: wid.clone(),
+                status_str: "completed".to_owned(),
+                response: "done output".to_owned(),
+                error_msg: None,
+                usage: hone_proto::TokenUsage {
+                    input: 10,
+                    output: 20,
+                    cache_read: 0,
+                    cache_creation: 0,
+                },
+                cost_usd: 0.001,
+            })
+            .await
+            .unwrap();
+
+        let resp = app
+            .oneshot(authed_get("/distributed/plans/plan-results/results"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let rows: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let arr = rows.as_array().expect("response must be a JSON array");
+        assert_eq!(arr.len(), 1, "one completed task should appear");
+        assert_eq!(arr[0]["status"], "completed");
+        assert_eq!(arr[0]["response"], "done output");
+        assert_eq!(arr[0]["agent"], "test-agent");
     }
 
     // ── extend-lease ──────────────────────────────────────────────────────────
