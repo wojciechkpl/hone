@@ -125,7 +125,20 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Phase 5 slice A (this drop) — multi-daemon switcher:**
+**Phase 5 slice B (this drop) — artifact pane:**
+- New Tauri command `reveal_in_finder(path)` — opens the OS file
+  manager at `path` (macOS `open -R`, Windows `explorer /select,`,
+  Linux `xdg-open` on parent dir). Rejects null bytes + nonexistent
+  paths.
+- GUI: collapsible **Artifacts** card in the sidebar tracks every
+  `write_file` / `edit_file` / `read_file` tool call. Each row shows
+  tool pill + path + call count + relative timestamp + a **Reveal**
+  button. Clear button wipes the session list.
+- Implementation is JS-only on the consumer side; ties into the
+  existing `tool_call_start` / `tool_call_end` event flow by stashing
+  the `args` at start time so `end` can resolve the path.
+
+**Phase 5 slice A — multi-daemon switcher:**
 - `DesktopConfig` extended with a list of named `DaemonProfile`s plus
   an `active` pointer. Legacy single-daemon configs auto-migrate to a
   profile named `local sidecar` (or `external`) on load.

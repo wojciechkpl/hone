@@ -104,6 +104,18 @@
             </div>
           </details>
           <details class="card" open>
+            <summary>Artifacts <span id="artifact-count" class="badge hidden">0</span></summary>
+            <div class="artifact-pane">
+              <p class="hint" id="artifact-empty">
+                Files the assistant touches in this session appear here.
+              </p>
+              <ul id="artifact-list" class="artifact-list"></ul>
+              <div class="row" style="margin-top:6px;">
+                <button id="btn-clear-artifacts" class="ghost mini">clear</button>
+              </div>
+            </div>
+          </details>
+          <details class="card" open>
             <summary>Tasks <span id="task-count" class="badge hidden">0</span></summary>
             <div id="task-tree" class="task-tree">
               <p class="hint" id="task-empty">
@@ -190,10 +202,11 @@
           <details class="card">
             <summary>About this build</summary>
             <p class="hint">
-              Hone Desktop v0.1.1 — Phase 5 slice A: multi-daemon
-              switcher in the topbar. Click the daemon badge to switch
-              between profiles or add an external daemon (team VM, cloud).
-              Sessions are namespaced per daemon.
+              Hone Desktop v0.1.2 — Phase 5 slice B: artifact pane.
+              Every <code>write_file</code> / <code>edit_file</code>
+              tool call surfaces in the Artifacts card with a
+              <em>Reveal</em> button that opens the file in your OS
+              file manager.
             </p>
           </details>
         </aside>

@@ -313,6 +313,52 @@ pub async fn list_recipes(
     fetch_json(&state, "/recipes").await
 }
 
+/// Reveal `path` in the OS file manager. On macOS uses `open -R` so the
+/// file is selected within Finder; on Linux uses `xdg-open` on the
+/// parent directory; on Windows uses `explorer /select,`.
+///
+/// We deliberately do NOT use the daemon's permissioned filesystem
+/// surface here — this is a pure desktop-side capability that opens a
+/// path the user already knows about (because the chat showed it).
+///
+/// Refuses paths containing null bytes; otherwise the OS handles the
+/// rest.
+#[tauri::command]
+pub async fn reveal_in_finder(path: String) -> Result<(), String> {
+    if path.contains('\0') {
+        return Err("path contains null byte".into());
+    }
+    let p = std::path::PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("path does not exist: {path}"));
+    }
+
+    let status = if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&p)
+            .status()
+    } else if cfg!(target_os = "windows") {
+        // /select, requires the path to be passed as a single argument
+        // form; the shell-mode invocation handles quoting.
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", p.display()))
+            .status()
+    } else {
+        // Linux/BSD: xdg-open the parent dir. Selecting a specific file
+        // inside the file manager is portable-incompatible, so we just
+        // open the directory.
+        let target = p.parent().unwrap_or(&p);
+        std::process::Command::new("xdg-open").arg(target).status()
+    };
+
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(format!("file manager exited with status {s}")),
+        Err(e) => Err(format!("failed to launch file manager: {e}")),
+    }
+}
+
 /// `GET /evals?limit=N&tag=...` proxy.
 #[tauri::command]
 pub async fn list_evals(
@@ -961,6 +1007,20 @@ mod tests {
         .expect("add");
         let state = DaemonState::new(cfg);
         assert!(state.external.lock().is_none());
+    }
+
+    #[tokio::test]
+    async fn reveal_in_finder_rejects_null_byte_in_path() {
+        let err = reveal_in_finder("a\0b".to_string()).await.expect_err("must reject");
+        assert!(err.contains("null byte"), "unexpected: {err}");
+    }
+
+    #[tokio::test]
+    async fn reveal_in_finder_rejects_nonexistent_path() {
+        let err = reveal_in_finder("/definitely/not/a/real/path/xyzzy".to_string())
+            .await
+            .expect_err("must reject");
+        assert!(err.contains("does not exist"), "unexpected: {err}");
     }
 
     #[test]
