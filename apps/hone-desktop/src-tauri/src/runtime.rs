@@ -142,6 +142,43 @@ pub fn spawn_run(
     run_id
 }
 
+/// Parallel to [`spawn_run`] but routes through the daemon's
+/// `/orchestrate` endpoint. Body is opaque JSON so the GUI can iterate on
+/// `OrchestrateRequest` shape without round-tripping through Rust types.
+pub fn spawn_orchestrate(
+    app: AppHandle,
+    registry: Arc<RunRegistry>,
+    base_url: String,
+    bearer: Option<String>,
+    body: serde_json::Value,
+) -> String {
+    let run_id = Uuid::now_v7().to_string();
+    let run_id_for_task = run_id.clone();
+    let run_id_for_registry = run_id.clone();
+
+    let registry_for_cleanup = Arc::clone(&registry);
+    let handle = tokio::spawn(async move {
+        let result =
+            stream_orchestrate(&app, &run_id_for_task, &base_url, bearer.as_deref(), body).await;
+        if let Err(err) = result {
+            let _ = app.emit(
+                EVENT_CHANNEL,
+                WirePayload {
+                    run_id: run_id_for_task.clone(),
+                    event: serde_json::json!({
+                        "type": "error",
+                        "message": err,
+                    }),
+                },
+            );
+        }
+        registry_for_cleanup.forget(&run_id_for_task);
+    });
+
+    registry.insert(run_id_for_registry, handle);
+    run_id
+}
+
 async fn stream_run(
     app: &AppHandle,
     run_id: &str,
@@ -150,10 +187,34 @@ async fn stream_run(
     body: RunRequest,
 ) -> Result<(), String> {
     let url = format!("{}/run", base_url.trim_end_matches('/'));
+    stream_sse_post(app, run_id, &url, bearer, &body).await
+}
+
+async fn stream_orchestrate(
+    app: &AppHandle,
+    run_id: &str,
+    base_url: &str,
+    bearer: Option<&str>,
+    body: serde_json::Value,
+) -> Result<(), String> {
+    let url = format!("{}/orchestrate", base_url.trim_end_matches('/'));
+    stream_sse_post(app, run_id, &url, bearer, &body).await
+}
+
+/// Generic SSE-streaming POST. Sends `body` as JSON, parses the
+/// `text/event-stream` response, and emits every `AgentEvent` JSON to the
+/// frontend via `EVENT_CHANNEL`.
+async fn stream_sse_post<B: serde::Serialize + ?Sized>(
+    app: &AppHandle,
+    run_id: &str,
+    url: &str,
+    bearer: Option<&str>,
+    body: &B,
+) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .build()
         .map_err(|e| e.to_string())?;
-    let mut req = client.post(&url).json(&body);
+    let mut req = client.post(url).json(body);
     if let Some(t) = bearer {
         req = req.bearer_auth(t);
     }
@@ -161,7 +222,7 @@ async fn stream_run(
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("run failed: {status} {body}"));
+        return Err(format!("request failed: {status} {body}"));
     }
 
     let mut framer = SseFramer::new();

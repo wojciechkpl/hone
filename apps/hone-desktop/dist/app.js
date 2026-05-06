@@ -77,6 +77,9 @@ const chatState = {
   activeAssistantEl: null,
   toolCards: new Map(),   // tool_id -> DOM node
   pendingApprovals: new Map(), // approvalId -> {runId, name, desc, kind}
+  plan: null,             // { goal, subtask_count } | null
+  workers: new Map(),     // task_id -> { agent, description, status, cost_usd }
+  budget: null,           // { spent_usd, budget_usd, workers_completed, workers_total }
 };
 
 function appendUserMessage(text) {
@@ -201,16 +204,56 @@ function handleAgentEvent(event) {
       break;
     }
     case 'budget_progress': {
+      chatState.budget = {
+        spent_usd: event.spent_usd,
+        budget_usd: event.budget_usd,
+        workers_completed: event.workers_completed,
+        workers_total: event.workers_total,
+      };
       if (typeof event.spent_usd === 'number') {
-        // Replace cumulative usd if the daemon provides authoritative number.
         cost.usd = event.spent_usd;
         cost.render();
       }
+      renderTaskTree();
+      break;
+    }
+    case 'plan_created': {
+      chatState.plan = {
+        goal: event.goal || '(no goal)',
+        subtask_count: event.subtask_count || 0,
+      };
+      // Workers start in `queued` once the plan exists; they're filled in
+      // as worker_started arrives. We don't yet know the per-task ids
+      // until worker_started fires.
+      chatState.workers.clear();
+      renderTaskTree();
+      break;
+    }
+    case 'worker_started': {
+      chatState.workers.set(event.task_id, {
+        agent: event.agent || 'unknown',
+        description: event.description || '',
+        status: 'running',
+        cost_usd: 0,
+      });
+      renderTaskTree();
+      break;
+    }
+    case 'worker_completed': {
+      const cur = chatState.workers.get(event.task_id) || {
+        agent: event.agent || 'unknown',
+        description: '',
+      };
+      cur.status = (event.status === 'completed') ? 'completed' : 'failed';
+      cur.cost_usd = event.cost_usd || 0;
+      cur.agent = event.agent || cur.agent;
+      chatState.workers.set(event.task_id, cur);
+      renderTaskTree();
       break;
     }
     default:
-      // Unhandled event types (worker_*, plan_*, approval_required,
-      // memory_recalled, ...) are surfaced only in the next slice.
+      // Unhandled event types (memory_recalled, model_info, etc.) are
+      // surfaced when there's a UI use for them.
       break;
   }
 }
@@ -289,6 +332,74 @@ async function respondToApproval(item, action) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Task-tree (orchestrator viz)
+// ---------------------------------------------------------------------------
+
+function renderTaskTree() {
+  const root = document.getElementById('task-tree');
+  const empty = document.getElementById('task-empty');
+  const badge = document.getElementById('task-count');
+
+  // Wipe everything except the empty hint.
+  Array.from(root.querySelectorAll('.plan, .task-node, .budget')).forEach((el) => el.remove());
+
+  const tasks = Array.from(chatState.workers.entries());
+  badge.textContent = String(tasks.length);
+  badge.classList.toggle('hidden', tasks.length === 0 && !chatState.plan);
+  empty.style.display = (tasks.length === 0 && !chatState.plan) ? 'block' : 'none';
+
+  if (chatState.plan) {
+    const plan = document.createElement('div');
+    plan.className = 'plan';
+    const goal = document.createElement('span');
+    goal.innerHTML = '<strong>Goal:</strong> ';
+    goal.append(document.createTextNode(chatState.plan.goal));
+    plan.appendChild(goal);
+    plan.appendChild(document.createElement('br'));
+    plan.append(`${chatState.plan.subtask_count} subtask${chatState.plan.subtask_count === 1 ? '' : 's'}`);
+    root.appendChild(plan);
+  }
+
+  for (const [taskId, w] of tasks) {
+    const node = document.createElement('div');
+    node.className = 'task-node';
+    node.dataset.status = w.status;
+    const icon = document.createElement('span');
+    icon.className = 'task-icon';
+    const body = document.createElement('div');
+    const title = document.createElement('div');
+    const agentSpan = document.createElement('span');
+    agentSpan.className = 'task-agent';
+    agentSpan.textContent = w.agent;
+    title.append(agentSpan, ` · ${taskId}`);
+    body.appendChild(title);
+    if (w.description) {
+      const desc = document.createElement('div');
+      desc.textContent = w.description;
+      body.appendChild(desc);
+    }
+    if (w.status !== 'queued') {
+      const meta = document.createElement('span');
+      meta.className = 'task-meta';
+      meta.textContent = `${w.status}${w.cost_usd ? ` · $${w.cost_usd.toFixed(4)}` : ''}`;
+      body.appendChild(meta);
+    }
+    node.append(icon, body);
+    root.appendChild(node);
+  }
+
+  if (chatState.budget) {
+    const b = document.createElement('div');
+    b.className = 'budget';
+    const cap = chatState.budget.budget_usd != null
+      ? ` / $${chatState.budget.budget_usd.toFixed(2)}`
+      : '';
+    b.textContent = `Spent $${(chatState.budget.spent_usd || 0).toFixed(4)}${cap} · ${chatState.budget.workers_completed}/${chatState.budget.workers_total} workers`;
+    root.appendChild(b);
+  }
+}
+
 async function sendPrompt() {
   const ta = document.getElementById('chat-input');
   const prompt = ta.value.trim();
@@ -301,22 +412,42 @@ async function sendPrompt() {
   chatState.history.push({ role: 'user', content: prompt });
   startAssistantBubble();
   chatState.toolCards.clear();
+  // Reset orchestrator state for the new turn.
+  chatState.plan = null;
+  chatState.workers.clear();
+  chatState.budget = null;
+  renderTaskTree();
 
-  // Generate request_id client-side so the GUI and daemon share the same
-  // correlation key from the very first frame.
+  const orchestrate = document.getElementById('orchestrate-toggle').checked;
+  const stepMode = document.getElementById('step-mode-toggle').checked;
+
+  if (orchestrate) {
+    // Orchestrate path: the daemon mints its own correlation key. We
+    // assign a Tauri-side run_id once spawn returns it.
+    const body = { prompt, history: chatState.history.slice(0, -1) };
+    try {
+      const runId = await invoke('run_orchestrate', { request: body });
+      chatState.activeRunId = runId;
+    } catch (err) {
+      appendErrorBubble(`run_orchestrate failed: ${err}`);
+      finishRun();
+    }
+    return;
+  }
+
+  // Single-agent /run path. We generate request_id client-side so the
+  // GUI and daemon share the same step-mode correlation key.
   const requestId = (typeof crypto !== 'undefined' && crypto.randomUUID)
     ? crypto.randomUUID()
     : `r-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
   chatState.activeRunId = requestId;
 
-  const stepMode = document.getElementById('step-mode-toggle').checked;
   const requestBody = {
     prompt,
     history: chatState.history.slice(0, -1),
     request_id: requestId,
   };
   if (stepMode) {
-    // AskRisky pauses for write/shell tools but auto-allows read-only ones.
     requestBody.approval_policy = { AskRisky: { always_allowed: [] } };
   }
 

@@ -39,6 +39,7 @@ pub fn run() -> anyhow::Result<()> {
             commands::run_turn,
             commands::run_cancel,
             commands::run_step,
+            commands::run_orchestrate,
         ])
         .setup(|app| {
             tray::install(app.handle())?;
