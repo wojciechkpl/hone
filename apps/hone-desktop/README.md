@@ -125,7 +125,21 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Phase 3 slice C (this drop) — MCP marketplace + installed list:**
+**Phase 4 slice A (this drop) — sandbox policy viewer (read-only):**
+- New honed endpoint `GET /sandbox/policies` returns the active
+  server-wide policy (currently `SandboxPolicy::permissive()` wired
+  into the agent path) plus every per-agent override declared via the
+  `sandbox:` block in agent frontmatter.
+- `SandboxPolicyWire` mirrors `hone_sandbox::SandboxPolicy` since the
+  underlying type doesn't derive `Serialize`. The active policy carries
+  a human-readable `description`; per-agent overrides are bare.
+- GUI: collapsible **Sandbox** card showing the active policy as a
+  rule table (network on/off, allow_read/write/exec/domains/env counts)
+  plus a row per agent override (mode + path counts + network flag).
+  Read-only — editor lands in slice A.2 once the sandbox builder gains
+  serde support.
+
+**Phase 3 slice C — MCP marketplace + installed list:**
 - New honed endpoints `GET /mcp/marketplace` (returns the bundled
   `Marketplace::builtin()` catalog of curated servers — filesystem,
   github, git, slack, puppeteer, sqlite, brave-search) and

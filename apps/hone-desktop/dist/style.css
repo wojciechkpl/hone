@@ -407,6 +407,67 @@ button.mini { padding: 0px 6px; font-size: 0.85em; line-height: 1.4; }
 .entry-detail .actions button { font-size: 0.8em; padding: 4px 8px; }
 .entry-detail .hint { color: var(--muted); margin: 4px 0 0; font-size: 0.8em; }
 
+.sandbox-pane { display: flex; flex-direction: column; gap: 10px; }
+.sandbox-active {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 0.85em;
+}
+.sandbox-active .mode-pill {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8em;
+  margin-left: 4px;
+}
+.sandbox-active .mode-pill.manual     { color: var(--muted); }
+.sandbox-active .mode-pill.supervised { color: var(--warn); }
+.sandbox-active .mode-pill.autonomous { color: var(--accent); }
+.sandbox-active .desc {
+  color: var(--muted);
+  font-size: 0.85em;
+  margin: 6px 0 8px;
+}
+.sandbox-active .rules {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8em;
+}
+.sandbox-active .rules dt { color: var(--muted); }
+.sandbox-active .rules dd { margin: 0; word-wrap: break-word; }
+.sandbox-overrides {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sandbox-overrides h4 {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--muted);
+}
+.sandbox-overrides .override-row {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.8em;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+.sandbox-overrides .override-row .name {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+  color: var(--accent);
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);

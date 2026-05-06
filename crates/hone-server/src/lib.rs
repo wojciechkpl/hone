@@ -28,6 +28,7 @@ pub mod orchestration;
 pub mod rate_limit;
 pub mod routes;
 pub mod run_registry;
+pub mod sandbox_routes;
 pub mod scheduler;
 pub mod session;
 pub mod session_storage;

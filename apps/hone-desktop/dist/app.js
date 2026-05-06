@@ -689,6 +689,101 @@ function toggleMcpMarketplaceDetail(detail, entry) {
   detail.appendChild(actions);
 }
 
+// ---------------------------------------------------------------------------
+// Sandbox policy viewer
+// ---------------------------------------------------------------------------
+
+async function refreshSandbox() {
+  const activeRoot = document.getElementById('sandbox-active');
+  const overridesRoot = document.getElementById('sandbox-overrides');
+  activeRoot.innerHTML = '<p class="hint">loading…</p>';
+  overridesRoot.innerHTML = '';
+  try {
+    const data = await invoke('list_sandbox_policies');
+    renderSandboxActive(activeRoot, data.active || {});
+    renderSandboxOverrides(overridesRoot, data.agent_overrides || []);
+    const badge = document.getElementById('sandbox-count');
+    badge.textContent = String((data.agent_overrides || []).length);
+    badge.classList.toggle('hidden', (data.agent_overrides || []).length === 0);
+  } catch (err) {
+    activeRoot.innerHTML = `<p class="hint">error: ${err}</p>`;
+  }
+}
+
+function renderSandboxActive(root, active) {
+  root.innerHTML = '';
+  const head = document.createElement('div');
+  const label = document.createElement('strong');
+  label.textContent = 'Active server policy';
+  head.appendChild(label);
+  const pill = document.createElement('span');
+  pill.className = `mode-pill ${active.mode || 'manual'}`;
+  pill.textContent = active.mode || '?';
+  head.appendChild(pill);
+  root.appendChild(head);
+  if (active.description) {
+    const desc = document.createElement('p');
+    desc.className = 'desc';
+    desc.textContent = active.description;
+    root.appendChild(desc);
+  }
+  const dl = document.createElement('dl');
+  dl.className = 'rules';
+  const rows = [
+    ['network', active.allow_network ? 'on' : 'off'],
+    ['allow_read', listOrEmpty(active.allow_read)],
+    ['allow_write', listOrEmpty(active.allow_write)],
+    ['allow_exec', listOrEmpty(active.allow_exec)],
+    ['allowed_domains', listOrEmpty(active.allowed_domains)],
+    ['allow_env', listOrEmpty(active.allow_env)],
+  ];
+  for (const [k, v] of rows) {
+    const dt = document.createElement('dt');
+    dt.textContent = k;
+    const dd = document.createElement('dd');
+    dd.textContent = v;
+    dl.append(dt, dd);
+  }
+  root.appendChild(dl);
+}
+
+function listOrEmpty(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return '(none)';
+  return arr.join(', ');
+}
+
+function renderSandboxOverrides(root, overrides) {
+  root.innerHTML = '';
+  if (overrides.length === 0) {
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = 'No agent overrides — every agent inherits the active server policy.';
+    root.appendChild(hint);
+    return;
+  }
+  const h = document.createElement('h4');
+  h.textContent = `Per-agent overrides (${overrides.length})`;
+  root.appendChild(h);
+  for (const o of overrides) {
+    const row = document.createElement('div');
+    row.className = 'override-row';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = o.agent;
+    const meta = document.createElement('span');
+    const p = o.policy || {};
+    const counts = [
+      `mode=${p.mode || '?'}`,
+      `r=${(p.allow_read || []).length}`,
+      `w=${(p.allow_write || []).length}`,
+      `net=${p.allow_network ? 'on' : 'off'}`,
+    ].join(' ');
+    meta.textContent = counts;
+    row.append(name, meta);
+    root.appendChild(row);
+  }
+}
+
 async function installMcpEntry(entry) {
   const projectRoot = prompt('Install into project root:', '');
   if (!projectRoot) return;
@@ -895,6 +990,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-refresh-recipes').addEventListener('click', refreshRecipes);
   document.getElementById('btn-refresh-mcp-installed').addEventListener('click', refreshMcpInstalled);
   document.getElementById('btn-refresh-mcp-marketplace').addEventListener('click', refreshMcpMarketplace);
+  document.getElementById('btn-refresh-sandbox').addEventListener('click', refreshSandbox);
 
   // Chat
   document.getElementById('chat-form').addEventListener('submit', (e) => {

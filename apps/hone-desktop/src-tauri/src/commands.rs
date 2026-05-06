@@ -195,6 +195,14 @@ pub async fn list_recipes(
     fetch_json(&state, "/recipes").await
 }
 
+/// `GET /sandbox/policies` proxy.
+#[tauri::command]
+pub async fn list_sandbox_policies(
+    state: tauri::State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, "/sandbox/policies").await
+}
+
 /// `GET /mcp/marketplace` proxy.
 #[tauri::command]
 pub async fn list_mcp_marketplace(
