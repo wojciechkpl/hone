@@ -106,25 +106,31 @@ generates the full set from a single 1024×1024 source.
 
 ## Phase 2 status
 
-Slice A (this drop) ships:
+**Slice A (shipped):**
+- Streaming chat surface — `POST /run` SSE consumer, assistant bubble,
+  inline tool-call cards.
+- Cost / token meter in the topbar.
+- `run_turn` / `run_cancel` Tauri commands.
 
-- Streaming chat surface — `POST /run` SSE consumer, assistant bubble that
-  streams tokens, inline tool-call cards (running → done with `duration_ms`,
-  red border on error, `(cached)` suffix on cache hits).
-- Cost / token meter in the topbar — updates on `done` and `budget_progress`
-  events. `Reset session cost meter` from the Cmd+K palette.
-- `run_turn` / `run_cancel` Tauri commands. Cancellation is best-effort
-  (aborts the local SSE task; the daemon keeps going until honed exposes
-  `DELETE /run/:id`).
+**Slice B.1 (this drop) — approval queue, end-to-end:**
+- New honed endpoint `POST /run/{request_id}/step` accepting a
+  `StepAction` JSON body. Returns 202 / 404 / 410 / 400.
+- `RunRequest` gained `request_id` and `approval_policy` fields. When
+  `approval_policy != Auto`, the agent loop runs in step-mode; the GUI's
+  `request_id` is registered server-side so subsequent `/step` posts
+  reach the right agent.
+- GUI: "Step-mode" toggle in the sidebar. When on, requests carry
+  `approval_policy: { AskRisky: { always_allowed: [] } }`.
+- GUI: approval queue pane lists `tool_call_paused` and `approval_required`
+  events; each card has Approve / Approve all / Skip / Deny buttons that
+  POST a `StepAction` via the new `run_step` Tauri command.
 
-Slice B (deferred) needs daemon-side endpoints first:
-
-- **Approval queue pane** — needs honed to expose a step-mode HTTP endpoint
-  (`POST /run/:id/step` with `StepAction`). Today the agent runs with
-  `ToolApprovalPolicy::Auto`, so the GUI never sees `ApprovalRequired`.
+**Slice B.2 (deferred):**
 - **Task-tree DAG sidebar** — needs honed to expose distributed
-  orchestrator events over SSE. The events exist in `hone-core` but are
-  not yet on the wire.
+  orchestrator events on a public SSE channel. `WorkerStarted`,
+  `WorkerCompleted`, `PlanCreated`, `BudgetProgress` already flow through
+  the agent's event channel, but the `/run` endpoint invokes a single
+  agent rather than the orchestrator.
 
 Beyond Phase 2: real chat UI styling (will move to the SolidJS web UI),
 auto-update, real icon artwork, in-process embed of `honed`.

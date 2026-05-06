@@ -24,6 +24,7 @@ pub mod governance_routes;
 pub mod openapi;
 pub mod rate_limit;
 pub mod routes;
+pub mod run_registry;
 pub mod scheduler;
 pub mod session;
 pub mod session_storage;
@@ -51,6 +52,7 @@ pub use governance::{GovernanceStore, ModelUsage, TeamMember, TeamPolicy, TeamUs
 pub use openapi::ApiDoc;
 pub use rate_limit::RateLimiter;
 pub use routes::router;
+pub use run_registry::{DuplicateRunId, RunGuard, RunRegistry, StepResult};
 pub use session_storage::SessionStorage;
 pub use sqlite_session::SqliteSessionStore;
 pub use state::AppState;

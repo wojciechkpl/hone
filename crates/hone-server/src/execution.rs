@@ -67,6 +67,17 @@ pub struct RunRequest {
     pub history: Vec<HistoryMessage>,
     /// Working directory passed to file tools (default: server's cwd).
     pub working_dir: Option<String>,
+    /// Client-supplied identifier used to route subsequent
+    /// `POST /run/{request_id}/step` calls back to this run.
+    /// Required when `approval_policy` is anything other than `Auto`.
+    /// When omitted (Auto policy), the run is fire-and-forget and steps
+    /// cannot be sent.
+    #[serde(default)]
+    pub request_id: Option<String>,
+    /// Approval policy for this run. Defaults to `Auto` (no pausing) for
+    /// backwards compatibility.
+    #[serde(default)]
+    pub approval_policy: Option<ToolApprovalPolicy>,
 }
 
 fn event_type(event: &AgentEvent) -> &'static str {
@@ -193,6 +204,39 @@ pub async fn run_handler(
                 .register(Box::new(ShellTool))
                 .build();
 
+            // ---- Step-mode plumbing -------------------------------------
+            //
+            // The wire shape is: client supplies `request_id` AND
+            // `approval_policy != Auto`. Anything else (Auto policy, or no
+            // request_id) preserves the legacy fire-and-forget behaviour.
+            let approval_policy = req
+                .approval_policy
+                .clone()
+                .unwrap_or(ToolApprovalPolicy::Auto);
+            let step_mode_enabled = !matches!(approval_policy, ToolApprovalPolicy::Auto);
+            let (step_rx, run_guard) = if step_mode_enabled {
+                let request_id = req.request_id.clone().ok_or_else(|| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        "request_id is required when approval_policy != Auto".to_string(),
+                    )
+                })?;
+                match state.run_registry.register(request_id) {
+                    Ok((rx, guard)) => (
+                        Some(Arc::new(tokio::sync::Mutex::new(rx))),
+                        Some(guard),
+                    ),
+                    Err(crate::run_registry::DuplicateRunId(id)) => {
+                        return Err((
+                            StatusCode::CONFLICT,
+                            format!("request_id already in use: {id}"),
+                        ));
+                    }
+                }
+            } else {
+                (None, None)
+            };
+
             let config = AgentConfig {
                 provider,
                 tools,
@@ -221,8 +265,8 @@ pub async fn run_handler(
                 inject_context: false,
                 skeleton_strategy: SkeletonStrategy::default(),
                 egress_log: None,
-                approval_policy: ToolApprovalPolicy::Auto,
-                step_rx: None,
+                approval_policy,
+                step_rx,
                 hooks: None,
                 skills: None,
                 embedder: None,
@@ -244,13 +288,14 @@ pub async fn run_handler(
             let model_id_str = model_id.as_str().to_owned();
 
             tokio::spawn(async move {
+                // Hold the registry guard for the full run lifetime; dropping
+                // it removes the entry and prevents stale step posts.
+                let _guard = run_guard;
                 let handle = AgentHandle::spawn(config);
                 if !history.is_empty() {
                     handle.load_history(history).await;
                 }
                 if let Ok(result) = handle.run_turn(prompt, tx).await {
-                    // Wire governance usage tracking from the turn result.
-                    // `total()` returns input + output + cache_read + cache_creation.
                     let tokens = u64::from(result.usage.total());
                     governance
                         .add_usage(&model_id_str, tokens, result.cost_usd)
