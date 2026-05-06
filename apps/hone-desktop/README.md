@@ -183,6 +183,23 @@ generates the full set from a single 1024×1024 source.
 **Phase 4 (Differentiators) is now complete.** All four feature areas
 from the design doc ship with daemon endpoint + GUI surface + tests.
 
+**Phase 4 slice C+ (this drop) — provenance writer:**
+- New `crates/hone-server/src/provenance_writer.rs` module bridges the
+  agent's `AgentEvent` stream to the on-disk hash chain. `EventMapper`
+  is the pure mapper (token-buffering, tool-call → tool-result pairing,
+  error → SessionEnd). `ProvenanceTee` is the inline observer the SSE
+  pipeline calls from `stream::unfold` (lock-and-append per event,
+  no extra task or channel).
+- Wired into both `execution::run_handler` (uses the step-mode
+  `request_id` as the session id when set, else a fresh UUID) and
+  `orchestration::orchestrate_handler` (always mints a UUID).
+- 7 unit tests for mapper edge cases + a tee end-to-end + a fresh-
+  reopen verify. 3 integration tests cover the wire-level POST /run
+  scenario: chain on disk, no-write-when-no-dir, custom session id.
+- Combined with PR #38's verifier-only explorer, the GUI's Provenance
+  card now surfaces real tamper-evident chains for live runs — one of
+  the design doc's §6 differentiators no other agent harness offers.
+
 **Phase 4 slice C — provenance hash-chain explorer:**
 - New honed endpoints `GET /provenance` (lists `*.jsonl` files under
   `HONE_PROVENANCE_DIR`), `GET /provenance/{id}` (returns full chain),

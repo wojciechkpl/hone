@@ -37,6 +37,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::execution::{HistoryMessage, build_sandbox};
+use crate::provenance_writer::{ProvenanceTee, append_user_prompt, open_session_log};
 use crate::state::AppState;
 
 /// Default lead-agent system prompt for orchestrated runs. Distinct from
@@ -184,6 +185,36 @@ pub async fn orchestrate_handler(
             .map(|key| -> Arc<dyn ModelProvider> { Arc::new(AnthropicProvider::new(key)) })
     });
 
+    let model_id = ModelId::new(req.model.as_deref().unwrap_or("claude-sonnet-4-6"));
+    let model_id_str = model_id.as_str().to_owned();
+
+    // ---- Provenance tee --------------------------------------
+    //
+    // Same shape as `execution::run_handler`. /orchestrate has no
+    // step-mode `request_id`, so we always mint a fresh UUID for the
+    // session.
+    let provenance_tee: Option<ProvenanceTee> = if let Some(dir) = state.provenance_dir.clone() {
+        let session_id = uuid::Uuid::now_v7().to_string();
+        match open_session_log(&dir, &session_id) {
+            Ok(mut log) => {
+                if let Err(e) = append_user_prompt(&mut log, &req.prompt) {
+                    tracing::warn!("provenance: failed to append user prompt: {e}");
+                }
+                let log = std::sync::Arc::new(tokio::sync::Mutex::new(log));
+                Some(ProvenanceTee::new(log, model_id_str.clone()))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "provenance: failed to open session log under {}: {e}",
+                    dir.display()
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
     match provider {
@@ -193,7 +224,6 @@ pub async fn orchestrate_handler(
             });
         }
         Some(provider) => {
-            let model_id = ModelId::new(req.model.as_deref().unwrap_or("claude-sonnet-4-6"));
             let max_workers = req.max_workers.unwrap_or(DEFAULT_MAX_WORKERS);
             let total_budget = req.total_budget_usd;
             let prompt = req.prompt;
@@ -222,13 +252,22 @@ pub async fn orchestrate_handler(
     }
 
     let mut event_id = 0u64;
-    let sse_stream = stream::unfold(rx, move |mut rx| async move {
-        rx.recv().await.map(|event| {
-            event_id += 1;
-            let sse = make_sse_event(event, event_id);
-            (Ok::<Event, Infallible>(sse), rx)
-        })
-    });
+    let sse_stream = stream::unfold(
+        (rx, provenance_tee),
+        move |(mut rx, mut tee)| async move {
+            match rx.recv().await {
+                Some(event) => {
+                    if let Some(t) = tee.as_mut() {
+                        t.observe(&event).await;
+                    }
+                    event_id += 1;
+                    let sse = make_sse_event(event, event_id);
+                    Some((Ok::<Event, Infallible>(sse), (rx, tee)))
+                }
+                None => None,
+            }
+        },
+    );
 
     Ok(Sse::new(sse_stream)
         .keep_alive(KeepAlive::default())
