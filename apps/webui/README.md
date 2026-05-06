@@ -4,7 +4,27 @@ Phase 0 scaffold of the SolidJS web UI from `priv/webui-design.md`.
 Served by `honed` at `/ui` via `rust-embed` (the build output lands in
 `apps/webui/dist/` and is compiled into the daemon binary).
 
-## What's in Phase 2A (this drop)
+## What's in Phase 2B (this drop)
+
+- **Resizable split-pane gutter** — 6px draggable bar between chat
+  and preview. Updates a persisted `--split-ratio` (clamped to
+  [0.25, 0.85], stored in localStorage so the layout survives reload).
+- **`<SideBySideDiff>`** — in-house unified-diff parser
+  (`lib/diff.ts`, no dep). Tool-call results that look like diffs
+  render as side-by-side hunks with theme add/remove/hunk colors.
+  Falls back to the existing collapsible monospace pre when the
+  result isn't a diff.
+- **`<WorkerProgressPanel>`** — top-of-chat banner that surfaces the
+  orchestrator events the SSE stream already emits
+  (`plan_created` / `worker_started` / `worker_completed` /
+  `budget_progress`). Per-worker status dot pulses while running,
+  flips to green / red on completion. Auto-hides when no
+  orchestration is in flight; resets at the start of every new turn.
+- Bundle: 53.28 KB JS + 6.70 KB CSS gzipped (was 43.95 + 6.59).
+  Shiki syntax highlighting still deferred — its lazy-WASM bundle
+  impact needs its own PR.
+
+## What's in Phase 2A
 
 - New honed endpoints `GET /files?path=<rel>` (directory listing,
   workspace-scoped, hidden entries skipped) and

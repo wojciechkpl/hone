@@ -78,3 +78,8 @@ pre {
 .dot--unknown {
   background: var(--text-secondary, #888);
 }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
