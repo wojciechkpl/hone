@@ -125,7 +125,18 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Phase 3 slice A (this drop) — discover pane (read-only):**
+**Phase 3 slice B (this drop) — detail expand + Run/Fork actions:**
+- New honed endpoints `GET /agents/{name}` and `GET /recipes/{name}`
+  return full detail (system prompt for agents, all steps for recipes).
+- GUI: clicking a Discover entry expands inline with the detail. Recipe
+  expansion shows every step + a "Use first step as prompt" button that
+  populates the chat input. Agent expansion shows the system prompt and,
+  for non-project entries, a "Fork to .hone/agents/" button.
+- New Tauri command `agent_fork` writes `<project_root>/.hone/agents/<name>.md`
+  reconstructed from the detail JSON. Refuses to overwrite without
+  `force=true`. Rejects path-traversal in agent names.
+
+**Phase 3 slice A — discover pane (read-only):**
 - New honed endpoints `GET /agents` and `GET /recipes` returning JSON
   arrays. Each entry has a `source` tag (`builtin` / `user` / `project`).
 - GUI: collapsible **Discover** card in the sidebar with two sections.

@@ -82,3 +82,75 @@ async fn agents_endpoint_each_entry_has_source_tag() {
         );
     }
 }
+
+#[tokio::test]
+async fn agent_detail_endpoint_returns_full_prompt_for_builtin() {
+    let state = AppState::new(None);
+    let app = router(state.clone());
+
+    // Discover the name of any built-in via the list endpoint, then ask
+    // for its detail.
+    let list_resp = app
+        .oneshot(Request::builder().uri("/agents").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let arr = body_json(list_resp).await;
+    let first = arr
+        .as_array()
+        .and_then(|a| a.first())
+        .expect("at least one builtin");
+    let name = first.get("name").and_then(|v| v.as_str()).unwrap();
+
+    let app2 = router(state);
+    let detail_resp = app2
+        .oneshot(
+            Request::builder()
+                .uri(format!("/agents/{name}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(detail_resp.status(), StatusCode::OK);
+    let detail = body_json(detail_resp).await;
+    assert_eq!(detail.get("name").and_then(|v| v.as_str()), Some(name));
+    let prompt = detail
+        .get("system_prompt")
+        .and_then(|v| v.as_str())
+        .expect("system_prompt is a string");
+    assert!(!prompt.is_empty(), "builtin must have non-empty body");
+}
+
+#[tokio::test]
+async fn agent_detail_endpoint_returns_404_for_unknown_name() {
+    let state = AppState::new(None);
+    let app = router(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/agents/no-such-agent-xyz")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn recipe_detail_endpoint_returns_404_for_unknown_name() {
+    let state = AppState::new(None);
+    let app = router(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/recipes/no-such-recipe-xyz")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}

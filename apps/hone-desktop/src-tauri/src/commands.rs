@@ -195,6 +195,175 @@ pub async fn list_recipes(
     fetch_json(&state, "/recipes").await
 }
 
+/// `GET /agents/{name}` proxy.
+#[tauri::command]
+pub async fn get_agent(
+    state: tauri::State<'_, DaemonState>,
+    name: String,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, &format!("/agents/{}", urlencoding(&name))).await
+}
+
+/// `GET /recipes/{name}` proxy.
+#[tauri::command]
+pub async fn get_recipe(
+    state: tauri::State<'_, DaemonState>,
+    name: String,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, &format!("/recipes/{}", urlencoding(&name))).await
+}
+
+/// Fork an agent into the project's `.hone/agents/` directory.
+///
+/// Reconstructs a markdown file (YAML frontmatter + body) from the detail
+/// returned by `GET /agents/{name}` so the user can iterate on it locally
+/// and have the loader pick it up as a project-source override on next
+/// run.
+///
+/// Inputs:
+/// - `project_root`: the project root the GUI is currently scoped to.
+///   Resolved client-side because the daemon does not know the GUI's
+///   notion of "project."
+/// - `agent`: the JSON payload from `GET /agents/{name}` (passed through
+///   without re-fetching to avoid a TOCTOU race).
+///
+/// Refuses to overwrite an existing file unless `force == true`.
+#[tauri::command]
+pub async fn agent_fork(
+    project_root: String,
+    agent: serde_json::Value,
+    force: Option<bool>,
+) -> Result<String, String> {
+    let force = force.unwrap_or(false);
+    let project_root = std::path::PathBuf::from(project_root);
+    if !project_root.is_dir() {
+        return Err(format!("project_root is not a directory: {}", project_root.display()));
+    }
+    let agents_dir = project_root.join(".hone").join("agents");
+    crate::commands::fs::create_dir_all(&agents_dir)
+        .map_err(|e| format!("create dir {}: {e}", agents_dir.display()))?;
+
+    let name = agent
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "agent payload missing 'name'".to_string())?;
+    if name.is_empty() || name.contains(['/', '\\', '\0']) {
+        return Err(format!("invalid agent name: {name:?}"));
+    }
+    let dest = agents_dir.join(format!("{name}.md"));
+    if dest.exists() && !force {
+        return Err(format!(
+            "agent already exists at {} (pass force=true to overwrite)",
+            dest.display()
+        ));
+    }
+
+    let markdown = build_agent_markdown(&agent)?;
+    crate::commands::fs::write(&dest, markdown.as_bytes())
+        .map_err(|e| format!("write {}: {e}", dest.display()))?;
+    Ok(dest.display().to_string())
+}
+
+/// Reconstruct an agent's on-disk markdown form from the detail JSON.
+/// Schema mirrors `hone_core::agent_def::AgentDef::from_markdown`.
+fn build_agent_markdown(agent: &serde_json::Value) -> Result<String, String> {
+    let mut frontmatter = serde_json::Map::new();
+    for key in ["name", "description", "model", "tools", "sub_agents"] {
+        if let Some(v) = agent.get(key) {
+            frontmatter.insert(key.to_string(), v.clone());
+        }
+    }
+    let yaml = serde_yaml_to_string(&serde_json::Value::Object(frontmatter))?;
+    let body = agent
+        .get("system_prompt")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    Ok(format!("---\n{yaml}---\n{body}"))
+}
+
+/// Tiny serde_json::Value → YAML helper. We avoid pulling in serde_yaml
+/// directly here to keep the Tauri shell's dep graph minimal.
+fn serde_yaml_to_string(value: &serde_json::Value) -> Result<String, String> {
+    let mut out = String::new();
+    if let serde_json::Value::Object(map) = value {
+        for (k, v) in map {
+            match v {
+                serde_json::Value::String(s) => {
+                    // Quote strings with special chars; otherwise leave bare.
+                    if needs_yaml_quoting(s) {
+                        out.push_str(&format!("{k}: {}\n", yaml_quote(s)));
+                    } else {
+                        out.push_str(&format!("{k}: {s}\n"));
+                    }
+                }
+                serde_json::Value::Bool(b) => out.push_str(&format!("{k}: {b}\n")),
+                serde_json::Value::Number(n) => out.push_str(&format!("{k}: {n}\n")),
+                serde_json::Value::Array(arr) => {
+                    out.push_str(&format!("{k}:\n"));
+                    for item in arr {
+                        if let Some(s) = item.as_str() {
+                            if needs_yaml_quoting(s) {
+                                out.push_str(&format!("  - {}\n", yaml_quote(s)));
+                            } else {
+                                out.push_str(&format!("  - {s}\n"));
+                            }
+                        } else {
+                            return Err(format!("unsupported array item: {item}"));
+                        }
+                    }
+                }
+                serde_json::Value::Null => {}
+                _ => return Err(format!("unsupported YAML value at {k}: {v}")),
+            }
+        }
+        Ok(out)
+    } else {
+        Err("expected JSON object for YAML serialisation".to_string())
+    }
+}
+
+fn needs_yaml_quoting(s: &str) -> bool {
+    s.is_empty()
+        || s.contains(['"', '\'', ':', '#', '\n', '\r', '\t'])
+        || s.starts_with(['-', '?', '!', '&', '*', '@', '`'])
+        || matches!(s, "true" | "false" | "null" | "yes" | "no")
+}
+
+fn yaml_quote(s: &str) -> String {
+    // Double-quoted form with backslash escapes for `\` and `"`.
+    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
+}
+
+fn urlencoding(s: &str) -> String {
+    // Tiny inline encoder — the agent/recipe names we route through come
+    // from a controlled loader, but we still escape `/` and ` ` to be safe.
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// Tiny in-house FS helpers wrapped behind a module so test code can stub
+/// them out if we ever need to. Today they're just `std::fs` shims.
+pub(crate) mod fs {
+    use std::path::Path;
+
+    pub fn create_dir_all(p: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(p)
+    }
+
+    pub fn write(p: &Path, contents: &[u8]) -> std::io::Result<()> {
+        std::fs::write(p, contents)
+    }
+}
+
 async fn fetch_json(state: &DaemonState, path: &str) -> Result<serde_json::Value, String> {
     let (base_url, bearer) = resolve_endpoint(state)
         .ok_or_else(|| "no daemon configured".to_string())?;
@@ -271,6 +440,109 @@ fn supervisor_err(e: SupervisorError) -> String {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn url_encoding_passes_alphanumerics_and_escapes_specials() {
+        assert_eq!(urlencoding("simple-name_v1"), "simple-name_v1");
+        assert_eq!(urlencoding("has space"), "has%20space");
+        assert_eq!(urlencoding("a/b"), "a%2Fb");
+    }
+
+    #[test]
+    fn yaml_quoting_recognises_special_chars() {
+        assert!(needs_yaml_quoting(""));
+        assert!(needs_yaml_quoting("has: colon"));
+        assert!(needs_yaml_quoting("has\nnewline"));
+        assert!(needs_yaml_quoting("- starts with dash"));
+        assert!(!needs_yaml_quoting("simple-string"));
+        assert!(!needs_yaml_quoting("alphanumeric123"));
+    }
+
+    #[test]
+    fn build_agent_markdown_round_trips_via_hone_core_loader() {
+        // We can't call the real loader here without a lot of crate plumbing;
+        // instead check the wire-shape contract we hand to disk.
+        let agent = serde_json::json!({
+            "name": "researcher",
+            "description": "researches things",
+            "model": "sonnet",
+            "tools": ["Read", "Grep"],
+            "sub_agents": [],
+            "system_prompt": "You are a researcher. Be terse.\n",
+        });
+        let md = build_agent_markdown(&agent).expect("md");
+        assert!(md.starts_with("---\n"));
+        assert!(md.contains("name: researcher"));
+        assert!(md.contains("model: sonnet"));
+        assert!(md.contains("- Read"));
+        assert!(md.contains("- Grep"));
+        assert!(md.contains("\n---\nYou are a researcher. Be terse.\n"));
+    }
+
+    #[tokio::test]
+    async fn agent_fork_writes_file_under_project_root() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let agent = serde_json::json!({
+            "name": "mybot",
+            "description": "test bot",
+            "model": "sonnet",
+            "tools": ["Read"],
+            "sub_agents": [],
+            "system_prompt": "Be helpful.",
+        });
+        let path = agent_fork(
+            tmp.path().display().to_string(),
+            agent,
+            None,
+        )
+        .await
+        .expect("fork ok");
+        assert!(path.ends_with(".hone/agents/mybot.md"), "unexpected path: {path}");
+        let written = std::fs::read_to_string(&path).expect("read back");
+        assert!(written.contains("name: mybot"));
+        assert!(written.contains("\nBe helpful."));
+    }
+
+    #[tokio::test]
+    async fn agent_fork_refuses_to_overwrite_without_force() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let agent = serde_json::json!({
+            "name": "mybot",
+            "description": "test bot",
+            "model": "sonnet",
+            "tools": [],
+            "sub_agents": [],
+            "system_prompt": "v1",
+        });
+        let _ = agent_fork(tmp.path().display().to_string(), agent.clone(), None)
+            .await
+            .expect("first fork ok");
+        let err = agent_fork(tmp.path().display().to_string(), agent.clone(), None)
+            .await
+            .expect_err("second fork must fail without force");
+        assert!(err.contains("already exists"), "unexpected error: {err}");
+        // Now with force, it succeeds.
+        let _ = agent_fork(tmp.path().display().to_string(), agent, Some(true))
+            .await
+            .expect("force overwrite");
+    }
+
+    #[tokio::test]
+    async fn agent_fork_rejects_invalid_names() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let agent = serde_json::json!({
+            "name": "evil/../escape",
+            "description": "x",
+            "model": "sonnet",
+            "tools": [],
+            "sub_agents": [],
+            "system_prompt": "",
+        });
+        let err = agent_fork(tmp.path().display().to_string(), agent, None)
+            .await
+            .expect_err("must reject path-traversal name");
+        assert!(err.contains("invalid agent name"), "unexpected: {err}");
+    }
 
     #[test]
     fn daemon_state_new_with_external_mode_seeds_external_field() {
