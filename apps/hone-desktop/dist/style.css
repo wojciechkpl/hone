@@ -49,6 +49,78 @@ html, body {
 .dot--ok { background: var(--ok); }
 .dot--bad { background: var(--bad); }
 
+.daemon-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.9em;
+}
+.daemon-switcher:hover { border-color: var(--accent); color: var(--fg); }
+.daemon-switcher .caret { font-size: 0.7em; opacity: 0.6; }
+
+.daemon-menu {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 90vw);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+  padding: 12px;
+  z-index: 50;
+}
+.daemon-menu-head {
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 0.85em;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.daemon-menu-list { list-style: none; padding: 0; margin: 0 0 12px; display: flex; flex-direction: column; gap: 4px; }
+.daemon-menu-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+.daemon-menu-list li.active { border-color: var(--accent); }
+.daemon-menu-list li .name { font-family: ui-monospace, monospace; font-weight: 600; }
+.daemon-menu-list li .meta { color: var(--muted); font-size: 0.85em; font-family: ui-monospace, monospace; }
+.daemon-menu-list li .actions { display: flex; gap: 4px; }
+.daemon-menu-list li button { padding: 2px 8px; font-size: 0.85em; }
+
+.daemon-add-form { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--border); }
+.daemon-add-form .daemon-add-head { font-weight: 600; font-size: 0.85em; color: var(--muted); margin-bottom: 4px; }
+.daemon-add-form label { display: grid; gap: 2px; color: var(--muted); font-size: 0.8em; }
+.daemon-add-form input {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.85em;
+}
+.daemon-add-form button {
+  margin-top: 4px;
+  align-self: flex-start;
+  padding: 4px 12px;
+  font-size: 0.85em;
+}
+
 .cost-meter {
   display: flex;
   align-items: center;

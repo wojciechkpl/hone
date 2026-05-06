@@ -56,6 +56,10 @@ pub fn run() -> anyhow::Result<()> {
             commands::verify_provenance,
             commands::list_evals,
             commands::get_eval,
+            commands::list_daemons,
+            commands::add_daemon,
+            commands::remove_daemon,
+            commands::switch_daemon,
         ])
         .setup(|app| {
             tray::install(app.handle())?;

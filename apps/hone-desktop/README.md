@@ -125,7 +125,20 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Phase 4 slice D (this drop) — eval-run dashboard:**
+**Phase 5 slice A (this drop) — multi-daemon switcher:**
+- `DesktopConfig` extended with a list of named `DaemonProfile`s plus
+  an `active` pointer. Legacy single-daemon configs auto-migrate to a
+  profile named `local sidecar` (or `external`) on load.
+- New Tauri commands: `list_daemons`, `add_daemon`, `remove_daemon`,
+  `switch_daemon`. Switch tears down the previously active sidecar
+  (if any) and seeds the external slot for HTTP-mode profiles.
+- GUI: topbar shows `<active-name> · <mode> @ <url>` with a clickable
+  caret that opens a profile dropdown — switch / remove / add external.
+- 12 new config + command tests cover migration idempotency,
+  add/remove/switch invariants, and the internally-tagged wire shape
+  for `DaemonProfile`.
+
+**Phase 4 slice D — eval-run dashboard:**
 - New honed endpoints `GET /evals?limit=N&tag=...` (returns recent
   `RunSummary` rows) and `GET /evals/{id}` (returns full
   `EvalRunRecord` with per-task outcomes). Both 503 when no eval store

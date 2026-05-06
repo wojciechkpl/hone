@@ -10,10 +10,11 @@
     <header class="topbar">
       <div class="brand">Hone</div>
       <div class="topbar-center">
-        <div class="status">
+        <button id="daemon-switcher" class="daemon-switcher" aria-haspopup="true" aria-expanded="false" title="Switch daemon">
           <span id="daemon-dot" class="dot dot--unknown"></span>
           <span id="daemon-label">checking daemon…</span>
-        </div>
+          <span class="caret">▾</span>
+        </button>
         <div id="cost-meter" class="cost-meter" title="Tokens / cost in this session">
           <span id="cost-tokens">0 tok</span>
           <span class="sep">·</span>
@@ -22,6 +23,18 @@
       </div>
       <button id="palette-trigger" class="ghost">Cmd+K</button>
     </header>
+
+    <div id="daemon-menu" class="daemon-menu hidden" role="dialog" aria-label="Daemon switcher">
+      <div class="daemon-menu-head">Daemons</div>
+      <ul id="daemon-menu-list" class="daemon-menu-list"></ul>
+      <form id="daemon-add-form" class="daemon-add-form">
+        <div class="daemon-add-head">Add external daemon</div>
+        <label>Name <input id="daemon-add-name" placeholder="team vm" required /></label>
+        <label>URL <input id="daemon-add-url" placeholder="http://10.0.0.5:3117" required /></label>
+        <label>Bearer token (optional) <input id="daemon-add-token" type="password" /></label>
+        <button type="submit">Add</button>
+      </form>
+    </div>
 
     <main id="main">
       <section id="wizard" class="wizard hidden" aria-live="polite">
@@ -177,10 +190,10 @@
           <details class="card">
             <summary>About this build</summary>
             <p class="hint">
-              Hone Desktop v0.1.0 — Phase 4 complete. Adds the Evals
-              dashboard alongside Sandbox / Memory / Provenance. Set
-              <code>HONE_EVAL_HISTORY_DB</code> to surface
-              <code>hone eval</code> run history with per-task pass/fail.
+              Hone Desktop v0.1.1 — Phase 5 slice A: multi-daemon
+              switcher in the topbar. Click the daemon badge to switch
+              between profiles or add an external daemon (team VM, cloud).
+              Sessions are namespaced per daemon.
             </p>
           </details>
         </aside>
