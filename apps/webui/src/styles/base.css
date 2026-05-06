@@ -1,0 +1,80 @@
+/* Base reset + layout primitives. Theme-specific colors live in
+ * styles/themes/*.css and are toggled via the [data-theme] attribute on
+ * <html>.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  background: var(--surface-base, #0e0f12);
+  color: var(--text-primary, #e9eaee);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#root {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "topbar"
+    "main"
+    "statusbar";
+  height: 100vh;
+}
+
+button {
+  background: var(--surface-raised, #15171c);
+  color: var(--text-primary);
+  border: 1px solid var(--surface-border, #2a2d36);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover {
+  border-color: var(--surface-focus, var(--accent-hot, #5ac8fa));
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+textarea,
+input {
+  font: inherit;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+code,
+pre {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot--ok {
+  background: var(--role-tool-result, #2ecc71);
+}
+.dot--bad {
+  background: var(--role-error, #e74c3c);
+}
+.dot--unknown {
+  background: var(--text-secondary, #888);
+}

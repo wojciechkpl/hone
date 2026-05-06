@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt clean release deny bench test-real test-acp coverage coverage-html coverage-ci
+.PHONY: build test lint fmt clean release deny bench test-real test-acp coverage coverage-html coverage-ci webui webui-dev webui-clean
 
 build:
 	cargo build
@@ -66,3 +66,21 @@ install:
 # Requires: OPENAI_API_KEY, optional HONE_OPENAI_BASE_URL / HONE_OPENAI_MODEL
 learning-benchmark: release
 	python3 benchmarks/learning_benchmark.py
+
+# -----------------------------------------------------------------------------
+# Web UI (apps/webui — SolidJS + Vite + UnoCSS)
+# -----------------------------------------------------------------------------
+# Production build of the SPA. Output lands in apps/webui/dist/, which the
+# hone-server crate picks up via rust-embed at compile time. After running
+# `make webui` you must rebuild honed (`cargo build --release -p honed`) for
+# the new bundle to be embedded in the binary.
+webui:
+	cd apps/webui && npm install --no-audit --no-fund && npm run build
+
+# Run the SolidJS dev server with hot reload at http://127.0.0.1:5174.
+# Vite proxies API + SSE requests to a locally-running honed at :3117.
+webui-dev:
+	cd apps/webui && npm install --no-audit --no-fund && npm run dev
+
+webui-clean:
+	rm -rf apps/webui/dist apps/webui/node_modules

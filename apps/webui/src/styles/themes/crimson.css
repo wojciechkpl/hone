@@ -1,0 +1,35 @@
+:root[data-theme="crimson"] {
+  --surface-base: #1a1a1a;
+  --surface-raised: #1e1e1e;
+  --surface-overlay: #222222;
+  --surface-border: #333333;
+  --surface-focus: #e06c75;
+  --text-primary: #d0d0d0;
+  --text-secondary: #888888;
+  --text-muted: #3a3a3a;
+  --role-user: #5fafff;
+  --role-assistant: #e06c75;
+  --role-tool: #af87d7;
+  --role-tool-result: #87d787;
+  --role-error: #ff5f5f;
+  --accent-hot: #e06c75;
+  --accent-mid: #e0005f;
+  --accent-deep: #870000;
+  --syntax-keyword: #e06c75;
+  --syntax-string: #87d787;
+  --syntax-number: #ffd75f;
+  --syntax-comment: #585858;
+  --syntax-type: #5fafff;
+  --syntax-function: #af87d7;
+  --diff-add-bg: #003300;
+  --diff-add-fg: #87d787;
+  --diff-remove-bg: #330000;
+  --diff-remove-fg: #ff5f5f;
+  --diff-hunk-bg: #003050;
+  --diff-hunk-fg: #888888;
+  --budget-low: #87d787;
+  --budget-mid: #ffd75f;
+  --budget-high: #ff5f5f;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+  --font-ui: "Inter", system-ui, sans-serif;
+}

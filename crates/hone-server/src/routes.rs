@@ -33,6 +33,7 @@ use crate::session::SessionInfo;
 use crate::state::AppState;
 use crate::tunnel_routes::tunnel_router;
 use crate::web::serve_ui;
+use crate::webui::{serve_asset as serve_webui_asset, serve_index as serve_webui_index};
 
 pub fn router(state: AppState) -> Router {
     // Public sub-router: endpoints that MUST be reachable without an
@@ -45,7 +46,13 @@ pub fn router(state: AppState) -> Router {
     // caller cannot brute-force these endpoints into a DoS vector.
     let public = Router::new()
         .route("/health", get(health))
-        .route("/openapi.json", get(openapi_json));
+        .route("/openapi.json", get(openapi_json))
+        // Web UI static assets — public so the SPA can load before
+        // the user authenticates. The actual API endpoints the SPA
+        // calls remain auth-gated, so this is safe.
+        .route("/ui", get(serve_webui_index))
+        .route("/ui/", get(serve_webui_index))
+        .route("/ui/{*path}", get(serve_webui_asset));
 
     // Protected sub-router: everything that mutates server state or reveals
     // session/governance data.  Behind `auth_middleware` when an
