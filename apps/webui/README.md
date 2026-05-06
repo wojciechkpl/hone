@@ -4,6 +4,27 @@ Phase 0 scaffold of the SolidJS web UI from `priv/webui-design.md`.
 Served by `honed` at `/ui` via `rust-embed` (the build output lands in
 `apps/webui/dist/` and is compiled into the daemon binary).
 
+## What's in Phase 1 (this drop)
+
+Builds on Phase 0 with:
+- All four themes from the design doc's 35-token palette: crimson,
+  chalk, neon, minimal. Topbar button cycles through them.
+- Agent selector — dropdown driven by `GET /agents` showing every
+  built-in / user / project agent with name, source pill, description.
+- Slash-command autocomplete in the input bar: `/theme <name>`,
+  `/clear` (reset cost meter), `/help`. Commands are intercepted
+  client-side and never hit `/run`.
+- Cost / token meter in the StatusBar — accumulates `done` events.
+- Markdown rendering in assistant bubbles: fenced code blocks
+  (with lang label), inline code, bold, italic. In-house parser
+  (~50 LoC, no dep) — Phase 2 will swap in Shiki for syntax
+  highlighting.
+- Collapsible tool-call cards: long output (>6 lines) collapses by
+  default with a "show all" button. JSON results pretty-print.
+
+Bundle: **30 KB JS + 6.5 KB CSS gzipped** (still well under the
+200 KB budget).
+
 ## What's in Phase 0
 
 - Project scaffolding: Vite 6, SolidJS, TypeScript strict, UnoCSS.

@@ -1,0 +1,35 @@
+:root[data-theme="neon"] {
+  --surface-base: #0a0613;
+  --surface-raised: #110a1f;
+  --surface-overlay: #170d29;
+  --surface-border: #2d1c4d;
+  --surface-focus: #ff10f0;
+  --text-primary: #e0d0ff;
+  --text-secondary: #8c7dba;
+  --text-muted: #322050;
+  --role-user: #00ffff;
+  --role-assistant: #ff10f0;
+  --role-tool: #b300ff;
+  --role-tool-result: #00ff88;
+  --role-error: #ff3366;
+  --accent-hot: #ff10f0;
+  --accent-mid: #b300ff;
+  --accent-deep: #5a00aa;
+  --syntax-keyword: #ff10f0;
+  --syntax-string: #00ff88;
+  --syntax-number: #ffd700;
+  --syntax-comment: #4a3870;
+  --syntax-type: #00ffff;
+  --syntax-function: #b300ff;
+  --diff-add-bg: #00220e;
+  --diff-add-fg: #00ff88;
+  --diff-remove-bg: #2a0010;
+  --diff-remove-fg: #ff3366;
+  --diff-hunk-bg: #001a30;
+  --diff-hunk-fg: #8c7dba;
+  --budget-low: #00ff88;
+  --budget-mid: #ffd700;
+  --budget-high: #ff3366;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+  --font-ui: "Inter", system-ui, sans-serif;
+}

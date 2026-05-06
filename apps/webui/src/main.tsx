@@ -3,6 +3,8 @@ import "uno.css";
 import "./styles/base.css";
 import "./styles/themes/crimson.css";
 import "./styles/themes/chalk.css";
+import "./styles/themes/neon.css";
+import "./styles/themes/minimal.css";
 
 import { render } from "solid-js/web";
 import { App } from "./App";

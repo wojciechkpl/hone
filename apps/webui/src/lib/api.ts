@@ -16,3 +16,14 @@ export async function getJson<T>(path: string, bearer: string | null): Promise<T
 }
 
 export type DaemonHealth = { status: string };
+
+/** Wire shape of GET /agents — see crates/hone-server/src/discovery.rs */
+export type AgentSummary = {
+  name: string;
+  description: string;
+  model: string;
+  tools: string[];
+  sub_agents: string[];
+  has_sandbox_profile: boolean;
+  source: "builtin" | "user" | "project";
+};
