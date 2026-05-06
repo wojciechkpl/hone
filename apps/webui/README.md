@@ -4,7 +4,26 @@ Phase 0 scaffold of the SolidJS web UI from `priv/webui-design.md`.
 Served by `honed` at `/ui` via `rust-embed` (the build output lands in
 `apps/webui/dist/` and is compiled into the daemon binary).
 
-## What's in Phase 1 (this drop)
+## What's in Phase 1B (this drop)
+
+- `<SessionSelector>` in the topbar: lists local sessions (created /
+  last_used / first-prompt-as-title), switch with one click,
+  ✕ deletes both the local bucket and the daemon's session record.
+  New sessions mint a UUID client-side and are persisted to IndexedDB.
+- IndexedDB persistence for messages — `lib/db.ts` is a tiny
+  Promise-based wrapper (no dep). Each session id maps to an array of
+  `PersistedMessage`s. On session switch the chat panel hydrates from
+  IDB; on every milestone event (tool start/end, done, error) it
+  saves back. Survives page refresh.
+- New `<ApprovalModal>` — when **step** is enabled in the topbar,
+  every `tool_call_paused` (and `approval_required`) event pops a
+  centred modal with `Allow` / `Always allow` / `Skip` / `Deny`
+  buttons. POSTs the chosen `StepAction` to
+  `POST /run/{request_id}/step`.
+- New honed endpoint `GET /sessions` returns the list of session
+  summaries (id + created_at + last_used). 2 integration tests.
+
+## What's in Phase 1 (slice A)
 
 Builds on Phase 0 with:
 - All four themes from the design doc's 35-token palette: crimson,

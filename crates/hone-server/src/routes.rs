@@ -76,7 +76,7 @@ pub fn router(state: AppState) -> Router {
         .route("/provenance/{id}/verify", get(log_verify_handler))
         .route("/evals", get(list_evals_handler))
         .route("/evals/{id}", get(eval_detail_handler))
-        .route("/sessions", post(create_session))
+        .route("/sessions", post(create_session).get(list_sessions))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/gc", delete(gc_sessions))
         .merge(tunnel_router())
@@ -281,6 +281,21 @@ pub(crate) async fn create_session(
     let info = state.sessions.create_new().await?;
     let body = Json(json!({ "session_id": info.id.to_string() }));
     Ok((StatusCode::CREATED, body))
+}
+
+#[utoipa::path(
+    get, path = "/sessions",
+    tag = "sessions",
+    responses(
+        (status = 200, description = "Session list", body = Vec<SessionInfo>),
+        (status = 401, description = "Unauthorized"),
+    )
+)]
+pub(crate) async fn list_sessions(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, ServerError> {
+    let infos = state.sessions.list().await?;
+    Ok(Json(infos))
 }
 
 #[utoipa::path(

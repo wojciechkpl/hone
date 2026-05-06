@@ -1,5 +1,7 @@
 import type { Component } from "solid-js";
 import { AgentSelector } from "./AgentSelector";
+import { SessionSelector } from "./SessionSelector";
+import { useStepMode, setStepMode } from "../lib/step";
 
 export type Theme = "crimson" | "chalk" | "neon" | "minimal";
 
@@ -8,9 +10,11 @@ type Props = {
   onCycleTheme: () => void;
   healthy: boolean | null;
   onRefreshHealth: () => void;
+  onSwitchSession: (id: string) => void;
 };
 
 export const TopBar: Component<Props> = (props) => {
+  const stepMode = useStepMode();
   return (
     <header
       class="px-4 flex items-center justify-between border-b"
@@ -24,10 +28,29 @@ export const TopBar: Component<Props> = (props) => {
       <div class="flex items-center gap-3">
         <strong style={{ "letter-spacing": "0.05em" }}>HONE</strong>
         <span style={{ color: "var(--text-secondary)", "font-size": "0.85em" }}>web</span>
+        <SessionSelector onSwitch={props.onSwitchSession} />
       </div>
 
       <div class="flex items-center gap-3" style={{ color: "var(--text-secondary)" }}>
         <AgentSelector />
+        <label
+          class="px-2 py-1 flex items-center"
+          style={{
+            gap: "6px",
+            "font-size": "0.85em",
+            cursor: "pointer",
+            border: "1px solid var(--surface-border)",
+            "border-radius": "6px",
+          }}
+          title="Pause for risky tools (write/shell). When off, all tools auto-approve."
+        >
+          <input
+            type="checkbox"
+            checked={stepMode()}
+            onInput={(e) => setStepMode(e.currentTarget.checked)}
+          />
+          step
+        </label>
         <button
           class="px-2 py-1"
           style={{ "font-size": "0.85em" }}

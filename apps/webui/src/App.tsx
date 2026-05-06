@@ -2,14 +2,17 @@ import { createSignal, onMount, type Component } from "solid-js";
 import { TopBar, type Theme } from "./components/TopBar";
 import { StatusBar } from "./components/StatusBar";
 import { ChatPanel } from "./components/ChatPanel";
+import { ApprovalModal } from "./components/ApprovalModal";
 import { getJson, type DaemonHealth } from "./lib/api";
 import { resetCost } from "./lib/cost";
+import { ensureSession, useActiveSession } from "./lib/session";
 
 const THEMES: Theme[] = ["crimson", "chalk", "neon", "minimal"];
 
 export const App: Component = () => {
   const [healthy, setHealthy] = createSignal<boolean | null>(null);
   const [theme, setTheme] = createSignal<Theme>("crimson");
+  const active = useActiveSession();
 
   function applyTheme(next: Theme) {
     document.documentElement.setAttribute("data-theme", next);
@@ -32,11 +35,13 @@ export const App: Component = () => {
     }
   }
 
-  onMount(() => {
-    probeHealth();
+  onMount(async () => {
+    void probeHealth();
+    // Make sure we always have a current session so the chat panel
+    // has somewhere to persist.
+    await ensureSession(active());
   });
 
-  // Allow other components (slash commands, palette) to drive the theme.
   function setThemeByName(name: string): boolean {
     const lower = name.toLowerCase() as Theme;
     if ((THEMES as string[]).includes(lower)) {
@@ -53,11 +58,16 @@ export const App: Component = () => {
         onCycleTheme={cycleTheme}
         healthy={healthy()}
         onRefreshHealth={probeHealth}
+        onSwitchSession={() => {
+          // ChatPanel reacts to the active-session signal via
+          // createEffect — nothing else to do here.
+        }}
       />
       <ChatPanel
         onSlashCommand={(cmd, arg) => handleSlashCommand(cmd, arg, { setThemeByName })}
       />
       <StatusBar />
+      <ApprovalModal />
     </>
   );
 };

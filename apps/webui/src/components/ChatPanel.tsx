@@ -1,9 +1,12 @@
-import { For, Show, createSignal, type Component } from "solid-js";
+import { For, Show, createEffect, createSignal, type Component } from "solid-js";
 import { createStore, produce } from "solid-js/store";
-import { streamRun } from "../lib/sse";
+import { streamRun, type RunRequest } from "../lib/sse";
 import { baseUrl } from "../lib/api";
 import { parseMarkdown, type Node as MdNode } from "../lib/markdown";
 import { addUsage } from "../lib/cost";
+import { ensureSession, touchSession, useActiveSession } from "../lib/session";
+import { loadMessages, saveMessages, type PersistedMessage } from "../lib/db";
+import { setPendingApproval, useStepMode } from "../lib/step";
 import type { AgentEvent } from "../types/events";
 
 type Bubble =
@@ -28,10 +31,36 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
   const [streaming, setStreaming] = createSignal(false);
   let aborter: AbortController | null = null;
   let listEl: HTMLDivElement | undefined;
+  const activeSession = useActiveSession();
+  const stepMode = useStepMode();
+  // The id we're streaming under right now (so step events route back).
+  let activeRunId: string | null = null;
+
+  // Hydrate from IDB whenever the active session changes. Bubbles are
+  // a flat replay of what was persisted — close to the original render
+  // but without live SSE state (token cursor, etc.).
+  createEffect(async () => {
+    const id = activeSession();
+    setBubbles([]);
+    if (!id) return;
+    const msgs = await loadMessages(id);
+    setBubbles(msgs.map(persistedToBubble));
+    queueMicrotask(() => listEl?.scrollTo({ top: listEl.scrollHeight }));
+  });
+
+  /** Persist the current bubble list under the active session. */
+  async function persist() {
+    const id = activeSession();
+    if (!id) return;
+    const ts = Date.now();
+    const msgs: PersistedMessage[] = bubbles.map((b) => bubbleToPersisted(b, ts));
+    await saveMessages(id, msgs);
+  }
 
   function append(bubble: Bubble) {
     setBubbles(bubbles.length, bubble);
     queueMicrotask(() => listEl?.scrollTo({ top: listEl.scrollHeight }));
+    void persist();
   }
 
   function appendToken(text: string) {
@@ -45,6 +74,8 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
       }),
     );
     queueMicrotask(() => listEl?.scrollTo({ top: listEl.scrollHeight }));
+    // Don't persist on every token — too chatty. We persist on
+    // milestone events (tool start/end, done, error) below.
   }
 
   function dispatch(event: AgentEvent) {
@@ -75,6 +106,35 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
             }
           }),
         );
+        void persist();
+        break;
+      }
+      case "tool_call_paused": {
+        // Step-mode: the agent paused before a risky tool — surface the
+        // approval modal. The active run id was generated client-side
+        // when we POSTed /run with an AskRisky policy.
+        if (activeRunId) {
+          setPendingApproval({
+            runId: activeRunId,
+            toolId: event.id,
+            name: event.name,
+            args: event.args,
+          });
+        }
+        break;
+      }
+      case "approval_required": {
+        // Generic approval (rare today; emitted by some agents at
+        // session level rather than per tool call). Show a modal anyway
+        // — Skip / Deny still work.
+        if (activeRunId) {
+          setPendingApproval({
+            runId: activeRunId,
+            toolId: `req-${Date.now()}`,
+            name: event.action || "approval_required",
+            args: event.description,
+          });
+        }
         break;
       }
       case "done": {
@@ -88,6 +148,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         );
         addUsage(event.usage, event.cost_usd);
         setStreaming(false);
+        void persist();
         break;
       }
       case "error": {
@@ -95,15 +156,15 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         setStreaming(false);
         break;
       }
-      // Other variants (worker_*, plan_*, approval_required, etc.) are
-      // intentionally ignored in Phase 0 — they're surfaced once the
+      // Other variants (worker_*, plan_*, memory_recalled) are
+      // intentionally ignored in Phase 1B — they're surfaced once the
       // matching panes land.
       default:
         break;
     }
   }
 
-  function send() {
+  async function send() {
     const prompt = draft().trim();
     if (!prompt || streaming()) return;
 
@@ -125,14 +186,44 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
     append({ kind: "user", text: prompt });
     setStreaming(true);
 
+    // Make sure we have a session and bump its title/last_used.
+    const id = await ensureSession(activeSession());
+    void touchSession(id, prompt.slice(0, 60));
+
+    // Mint a stable run id so the daemon's run-registry and our
+    // approval modal share the same correlation key.
+    const runId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    activeRunId = runId;
+
+    const body: RunRequest = {
+      prompt,
+      request_id: runId,
+    };
+    if (stepMode()) {
+      // Honed wants the policy as a serde tag union. AskRisky pauses
+      // for write/shell tools but auto-allows read-only ones.
+      // The generic `RunRequest.approval_policy` field accepts any
+      // serializable shape; we cast through unknown to avoid widening
+      // the typed wire shape just for one optional field.
+      (body as unknown as { approval_policy: unknown }).approval_policy = {
+        AskRisky: { always_allowed: [] },
+      };
+    }
+
     aborter = streamRun(
       baseUrl,
       null,
-      { prompt },
+      body,
       {
         onEvent: dispatch,
         onError: (e) => append({ kind: "error", message: e }),
-        onClose: () => setStreaming(false),
+        onClose: () => {
+          setStreaming(false);
+          activeRunId = null;
+        },
       },
     );
   }
@@ -265,6 +356,43 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
     </main>
   );
 };
+
+function bubbleToPersisted(b: Bubble, ts: number): PersistedMessage {
+  switch (b.kind) {
+    case "user":
+      return { kind: "user", text: b.text, ts };
+    case "assistant":
+      return { kind: "assistant", text: b.text, ts };
+    case "tool":
+      return {
+        kind: "tool",
+        name: b.name,
+        status: b.status,
+        result: b.result,
+        ts,
+      };
+    case "error":
+      return { kind: "error", message: b.message, ts };
+  }
+}
+
+function persistedToBubble(m: PersistedMessage): Bubble {
+  switch (m.kind) {
+    case "user":
+      return { kind: "user", text: m.text };
+    case "assistant":
+      return { kind: "assistant", text: m.text, done: true };
+    case "tool":
+      return {
+        kind: "tool",
+        name: m.name,
+        status: m.status,
+        result: m.result,
+      };
+    case "error":
+      return { kind: "error", message: m.message };
+  }
+}
 
 const ToolCardView: Component<{
   card: { kind: "tool"; name: string; status: "running" | "done" | "error"; result?: string };
