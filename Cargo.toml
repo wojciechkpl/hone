@@ -22,6 +22,7 @@ members = [
     "bins/honed",
     "bins/hone-mcp-server",
     "crates/hone-mcp-server",
+    "apps/hone-desktop/src-tauri",
 ]
 resolver = "3"
 

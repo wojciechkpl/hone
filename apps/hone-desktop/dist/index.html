@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hone</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">Hone</div>
+      <div class="status">
+        <span id="daemon-dot" class="dot dot--unknown"></span>
+        <span id="daemon-label">checking daemon…</span>
+      </div>
+      <button id="palette-trigger" class="ghost">Cmd+K</button>
+    </header>
+
+    <main id="main">
+      <section id="wizard" class="wizard hidden" aria-live="polite">
+        <h1>Welcome to Hone</h1>
+        <p>How would you like to connect to the Hone daemon?</p>
+        <div class="wizard-options">
+          <button class="wizard-card" data-mode="sidecar">
+            <h3>Manage daemon for me</h3>
+            <p>Spawn a private <code>honed</code> on a free local port. Recommended.</p>
+          </button>
+          <button class="wizard-card" data-mode="external">
+            <h3>Connect to an existing daemon</h3>
+            <p>Point at <code>honed</code> running on a server I already manage.</p>
+          </button>
+        </div>
+        <form id="external-form" class="external-form hidden">
+          <label>URL <input id="external-url" placeholder="http://10.0.0.5:3117" /></label>
+          <label>Bearer token <input id="external-token" type="password" placeholder="optional" /></label>
+          <button type="submit">Connect</button>
+        </form>
+      </section>
+
+      <section id="home" class="home hidden">
+        <h1>Hone Desktop <span class="version">v0.0.1</span></h1>
+        <p class="hint">
+          This is a placeholder shell — Phase 1 of the GUI roadmap.
+          The full SolidJS web UI ships separately and will be loaded here in a
+          later phase.
+        </p>
+        <div class="cards">
+          <div class="card">
+            <h3>Daemon</h3>
+            <pre id="daemon-info">loading…</pre>
+            <div class="row">
+              <button id="btn-start">Start</button>
+              <button id="btn-stop">Stop</button>
+              <button id="btn-refresh">Refresh</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>What you can do today</h3>
+            <ul>
+              <li>See the daemon's health.</li>
+              <li>Use the system tray icon (right-click for menu).</li>
+              <li>Open <kbd>Cmd</kbd>+<kbd>K</kbd> for the command palette stub.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="palette" class="palette hidden" role="dialog" aria-label="Command palette">
+      <input id="palette-input" placeholder="Type a command…" />
+      <ul id="palette-results"></ul>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
