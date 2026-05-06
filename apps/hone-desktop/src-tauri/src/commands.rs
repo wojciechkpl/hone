@@ -178,6 +178,46 @@ pub async fn run_cancel(
     Ok(registry.cancel(&run_id))
 }
 
+/// `GET /agents` proxy. Returns the JSON array as opaque values so the
+/// GUI can iterate on the schema without round-tripping through Rust.
+#[tauri::command]
+pub async fn list_agents(
+    state: tauri::State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, "/agents").await
+}
+
+/// `GET /recipes` proxy.
+#[tauri::command]
+pub async fn list_recipes(
+    state: tauri::State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, "/recipes").await
+}
+
+async fn fetch_json(state: &DaemonState, path: &str) -> Result<serde_json::Value, String> {
+    let (base_url, bearer) = resolve_endpoint(state)
+        .ok_or_else(|| "no daemon configured".to_string())?;
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut req = client.get(&url);
+    if let Some(t) = bearer {
+        req = req.bearer_auth(t);
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("{path} failed: {status} {body}"));
+    }
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Forwards a `StepAction` to the in-flight daemon-side run identified by
 /// `run_id`. The action JSON shape matches `hone_proto::StepAction`'s
 /// `serde` representation (e.g. `"Proceed"`, `{"ApproveAlways":"shell"}`).

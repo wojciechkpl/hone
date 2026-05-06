@@ -125,7 +125,15 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Slice B.2 (this drop) — multi-agent orchestrate + task tree:**
+**Phase 3 slice A (this drop) — discover pane (read-only):**
+- New honed endpoints `GET /agents` and `GET /recipes` returning JSON
+  arrays. Each entry has a `source` tag (`builtin` / `user` / `project`).
+- GUI: collapsible **Discover** card in the sidebar with two sections.
+  Each entry shows name + source pill + description + meta line
+  (model/tool count for agents; step count + `test_cmd` flag for recipes).
+- Read-only — running a recipe / forking a builtin agent is the next slice.
+
+**Phase 2 slice B.2 — multi-agent orchestrate + task tree:**
 - New honed endpoint `POST /orchestrate` that runs the multi-agent
   `Orchestrator` (decompose → execute → merge) and streams the same SSE
   shape as `/run` plus `plan_created` / `worker_started` /

@@ -57,6 +57,25 @@
         </div>
 
         <aside class="sidecar">
+          <details class="card">
+            <summary>Discover <span id="discover-count" class="badge hidden">0</span></summary>
+            <div id="discover-pane" class="discover-pane">
+              <div class="discover-section">
+                <h4>
+                  Agents <span id="agents-count" class="muted-count">·</span>
+                  <button id="btn-refresh-agents" class="ghost mini">↻</button>
+                </h4>
+                <ul id="agents-list" class="discover-list"><li class="hint">click ↻ to load</li></ul>
+              </div>
+              <div class="discover-section">
+                <h4>
+                  Recipes <span id="recipes-count" class="muted-count">·</span>
+                  <button id="btn-refresh-recipes" class="ghost mini">↻</button>
+                </h4>
+                <ul id="recipes-list" class="discover-list"><li class="hint">click ↻ to load</li></ul>
+              </div>
+            </div>
+          </details>
           <details class="card" open>
             <summary>Tasks <span id="task-count" class="badge hidden">0</span></summary>
             <div id="task-tree" class="task-tree">
@@ -96,10 +115,10 @@
           <details class="card">
             <summary>About this build</summary>
             <p class="hint">
-              Hone Desktop v0.0.4 — Phase 2 slice B.2 ships the task tree:
-              tick <em>Orchestrate</em> to route the prompt through the
-              multi-agent orchestrator (lead decomposes → workers execute).
-              <em>Step-mode</em> still works for single-agent runs.
+              Hone Desktop v0.0.5 — Phase 3 slice A adds the Discover card
+              with read-only Agents and Recipes lists, sourced from
+              built-ins, <code>~/.config/hone</code>, and
+              <code>.hone/</code> overrides.
             </p>
           </details>
         </aside>

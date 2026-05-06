@@ -14,6 +14,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 use crate::collaborative_routes::collaborative_router;
 use crate::distributed_routes::distributed_router;
 use crate::error::ServerError;
+use crate::discovery::{list_agents_handler, list_recipes_handler};
 use crate::execution::run_handler;
 use crate::orchestration::orchestrate_handler;
 use crate::run_registry::StepResult;
@@ -45,6 +46,8 @@ pub fn router(state: AppState) -> Router {
         .route("/run", post(run_handler))
         .route("/run/{request_id}/step", post(step_handler))
         .route("/orchestrate", post(orchestrate_handler))
+        .route("/agents", get(list_agents_handler))
+        .route("/recipes", get(list_recipes_handler))
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/gc", delete(gc_sessions))

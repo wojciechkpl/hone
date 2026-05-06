@@ -333,6 +333,119 @@ async function respondToApproval(item, action) {
 }
 
 // ---------------------------------------------------------------------------
+// Discover (agents + recipes)
+// ---------------------------------------------------------------------------
+
+async function refreshAgents() {
+  const list = document.getElementById('agents-list');
+  list.innerHTML = '<li class="hint">loading…</li>';
+  try {
+    const items = await invoke('list_agents');
+    renderDiscoverList(list, items, renderAgentEntry);
+    document.getElementById('agents-count').textContent = `· ${items.length}`;
+    updateDiscoverBadge();
+  } catch (err) {
+    list.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = `error: ${err}`;
+    list.appendChild(li);
+  }
+}
+
+async function refreshRecipes() {
+  const list = document.getElementById('recipes-list');
+  list.innerHTML = '<li class="hint">loading…</li>';
+  try {
+    const items = await invoke('list_recipes');
+    renderDiscoverList(list, items, renderRecipeEntry);
+    document.getElementById('recipes-count').textContent = `· ${items.length}`;
+    updateDiscoverBadge();
+  } catch (err) {
+    list.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = `error: ${err}`;
+    list.appendChild(li);
+  }
+}
+
+function renderDiscoverList(list, items, renderItem) {
+  list.innerHTML = '';
+  if (!Array.isArray(items) || items.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = 'none found';
+    list.appendChild(li);
+    return;
+  }
+  for (const item of items) {
+    list.appendChild(renderItem(item));
+  }
+}
+
+function renderAgentEntry(a) {
+  const li = document.createElement('li');
+  li.className = 'entry';
+  const head = document.createElement('div');
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = a.name || '(unnamed)';
+  const tag = document.createElement('span');
+  tag.className = `src-tag ${a.source || 'builtin'}`;
+  tag.textContent = a.source || 'builtin';
+  head.append(name, tag);
+  li.appendChild(head);
+  if (a.description) {
+    const desc = document.createElement('span');
+    desc.className = 'desc';
+    desc.textContent = a.description;
+    li.appendChild(desc);
+  }
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  const toolCount = Array.isArray(a.tools) ? a.tools.length : 0;
+  meta.textContent = `model: ${a.model || '(default)'} · ${toolCount} tool${toolCount === 1 ? '' : 's'}${a.has_sandbox_profile ? ' · sandbox' : ''}`;
+  li.appendChild(meta);
+  return li;
+}
+
+function renderRecipeEntry(r) {
+  const li = document.createElement('li');
+  li.className = 'entry';
+  const head = document.createElement('div');
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = r.name || '(unnamed)';
+  const tag = document.createElement('span');
+  tag.className = `src-tag ${r.source || 'builtin'}`;
+  tag.textContent = r.source || 'builtin';
+  head.append(name, tag);
+  li.appendChild(head);
+  if (r.description) {
+    const desc = document.createElement('span');
+    desc.className = 'desc';
+    desc.textContent = r.description;
+    li.appendChild(desc);
+  }
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  const stepCount = r.step_count || 0;
+  meta.textContent = `${stepCount} step${stepCount === 1 ? '' : 's'}${r.has_test_cmd ? ' · test_cmd' : ''}`;
+  li.appendChild(meta);
+  return li;
+}
+
+function updateDiscoverBadge() {
+  const a = parseInt(document.getElementById('agents-count').textContent.replace(/\D/g, ''), 10) || 0;
+  const r = parseInt(document.getElementById('recipes-count').textContent.replace(/\D/g, ''), 10) || 0;
+  const total = a + r;
+  const badge = document.getElementById('discover-count');
+  badge.textContent = String(total);
+  badge.classList.toggle('hidden', total === 0);
+}
+
+// ---------------------------------------------------------------------------
 // Task-tree (orchestrator viz)
 // ---------------------------------------------------------------------------
 
@@ -520,6 +633,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshDaemon();
   });
   document.getElementById('btn-refresh').addEventListener('click', refreshDaemon);
+
+  // Discover pane refresh handlers
+  document.getElementById('btn-refresh-agents').addEventListener('click', refreshAgents);
+  document.getElementById('btn-refresh-recipes').addEventListener('click', refreshRecipes);
 
   // Chat
   document.getElementById('chat-form').addEventListener('submit', (e) => {
