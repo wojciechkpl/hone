@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, type Component } from "solid-js";
+import { For, Show, createEffect, createResource, createSignal, type Component } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { streamRun, type RunRequest } from "../lib/sse";
 import { baseUrl } from "../lib/api";
@@ -9,6 +9,7 @@ import { loadMessages, saveMessages, type PersistedMessage } from "../lib/db";
 import { setPendingApproval, useStepMode } from "../lib/step";
 import { openFile } from "../lib/preview";
 import { looksLikeDiff } from "../lib/diff";
+import { highlightCode } from "../lib/highlight";
 import {
   completeWorker,
   resetOrchestratorState,
@@ -596,38 +597,54 @@ const MdNodeView: Component<{ node: MdNode }> = (props) => {
         </code>
       );
     case "block":
-      return (
-        <pre
+      return <HighlightedBlock lang={n.lang} value={n.value} />;
+  }
+};
+
+const HighlightedBlock: Component<{ lang: string; value: string }> = (props) => {
+  const [html] = createResource(
+    () => ({ lang: props.lang, value: props.value }),
+    async (input) => (input.lang ? highlightCode(input.value, input.lang) : null),
+  );
+  return (
+    <pre
+      style={{
+        background: "var(--surface-overlay)",
+        border: "1px solid var(--surface-border)",
+        "border-radius": "6px",
+        padding: "8px 10px",
+        margin: "8px 0",
+        "font-family": "var(--font-mono)",
+        "font-size": "0.85em",
+        "white-space": "pre",
+        "overflow-x": "auto",
+      }}
+    >
+      <Show when={props.lang}>
+        <span
           style={{
-            background: "var(--surface-overlay)",
-            border: "1px solid var(--surface-border)",
-            "border-radius": "6px",
-            padding: "8px 10px",
-            margin: "8px 0",
-            "font-family": "var(--font-mono)",
-            "font-size": "0.85em",
-            "white-space": "pre",
-            "overflow-x": "auto",
+            display: "block",
+            color: "var(--text-secondary)",
+            "font-size": "0.7em",
+            "text-transform": "uppercase",
+            "letter-spacing": "0.05em",
+            "margin-bottom": "4px",
           }}
         >
-          <Show when={n.lang}>
-            <span
-              style={{
-                display: "block",
-                color: "var(--text-secondary)",
-                "font-size": "0.7em",
-                "text-transform": "uppercase",
-                "letter-spacing": "0.05em",
-                "margin-bottom": "4px",
-              }}
-            >
-              {n.lang}
-            </span>
-          </Show>
-          {n.value}
-        </pre>
-      );
-  }
+          {props.lang}
+        </span>
+      </Show>
+      <Show
+        when={!html.loading && html()}
+        fallback={<>{props.value}</>}
+      >
+        <span
+          // eslint-disable-next-line solid/no-innerhtml
+          innerHTML={html()!}
+        />
+      </Show>
+    </pre>
+  );
 };
 
 const BubbleView: Component<{ bubble: Bubble }> = (props) => {
