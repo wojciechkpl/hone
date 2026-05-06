@@ -8,7 +8,8 @@
 use std::path::{Path, PathBuf};
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path as AxumPath, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use hone_core::agent_def::AgentDef;
 use hone_core::agent_registry::AgentRegistry;
@@ -191,6 +192,166 @@ fn collect_recipes(workspace_root: &Path) -> Vec<RecipeSummary> {
     summaries
 }
 
+// ---------------------------------------------------------------------------
+// Detail endpoints
+// ---------------------------------------------------------------------------
+
+/// Full agent detail returned by `GET /agents/{name}`. Carries the entire
+/// `AgentDef` (including the markdown body the loader preserves) plus the
+/// resolved source.
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentDetail {
+    pub name: String,
+    pub description: String,
+    pub model: String,
+    pub tools: Vec<String>,
+    pub sub_agents: Vec<String>,
+    /// The full system prompt (markdown body after frontmatter). Always
+    /// included so the GUI can preview / fork the agent.
+    pub system_prompt: String,
+    pub has_sandbox_profile: bool,
+    pub source: DiscoverySource,
+}
+
+/// Full recipe detail returned by `GET /recipes/{name}`. Includes every
+/// step plus the resolved on-disk path.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecipeDetail {
+    pub name: String,
+    pub description: Option<String>,
+    pub steps: Vec<RecipeStepWire>,
+    pub test_cmd: Option<String>,
+    pub source: DiscoverySource,
+    pub path: String,
+}
+
+/// Wire shape of a recipe step. `hone_recipes::RecipeStep` is re-serialised
+/// here so the GUI does not depend on the recipes crate's exact field
+/// ordering.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecipeStepWire {
+    pub name: String,
+    pub prompt: String,
+}
+
+/// `GET /agents/{name}` — full detail for one agent. 404 if not found in
+/// any layer.
+pub async fn agent_detail_handler(
+    State(state): State<AppState>,
+    AxumPath(name): AxumPath<String>,
+) -> Result<Json<AgentDetail>, (StatusCode, String)> {
+    find_agent(&state.workspace_root, &name)
+        .map(Json)
+        .ok_or((StatusCode::NOT_FOUND, format!("no agent named '{name}'")))
+}
+
+/// `GET /recipes/{name}` — full detail for one recipe. 404 if not found
+/// in any layer.
+pub async fn recipe_detail_handler(
+    State(state): State<AppState>,
+    AxumPath(name): AxumPath<String>,
+) -> Result<Json<RecipeDetail>, (StatusCode, String)> {
+    find_recipe(&state.workspace_root, &name)
+        .map(Json)
+        .ok_or((StatusCode::NOT_FOUND, format!("no recipe named '{name}'")))
+}
+
+fn find_agent(working_dir: &Path, name: &str) -> Option<AgentDetail> {
+    // Same source-resolution logic as `collect_agents`, applied to one name.
+    let mut builtin_registry = AgentRegistry::new();
+    builtin_registry.load_builtins();
+    let builtin_names: std::collections::HashSet<String> = builtin_registry
+        .list()
+        .iter()
+        .map(|d| d.name.clone())
+        .collect();
+
+    let user_defs: Vec<AgentDef> = match dirs::config_dir() {
+        Some(d) => AgentDef::load_dir_lenient(&d.join("hone").join("agents")),
+        None => Vec::new(),
+    };
+    let user_names: std::collections::HashSet<String> =
+        user_defs.iter().map(|d| d.name.clone()).collect();
+
+    let project_defs: Vec<AgentDef> = match hone_config::find_project_root(working_dir) {
+        Some(root) => AgentDef::load_dir_lenient(&root.join(".hone/agents")),
+        None => Vec::new(),
+    };
+    let project_names: std::collections::HashSet<String> =
+        project_defs.iter().map(|d| d.name.clone()).collect();
+
+    let merged = AgentRegistry::load_hierarchical(working_dir);
+    let def = merged.get(name)?;
+    let source = if project_names.contains(&def.name) {
+        DiscoverySource::Project
+    } else if user_names.contains(&def.name) {
+        DiscoverySource::User
+    } else if builtin_names.contains(&def.name) {
+        DiscoverySource::Builtin
+    } else {
+        DiscoverySource::Builtin
+    };
+    Some(AgentDetail {
+        name: def.name.clone(),
+        description: def.description.clone(),
+        model: def.model.clone(),
+        tools: def.tools.clone(),
+        sub_agents: def.sub_agents.clone(),
+        system_prompt: def.system_prompt.clone(),
+        has_sandbox_profile: def.sandbox.is_some(),
+        source,
+    })
+}
+
+fn find_recipe(workspace_root: &Path, name: &str) -> Option<RecipeDetail> {
+    // Walk the same directory layering, but stop at the highest-precedence
+    // match (project > user > builtin). That mirrors the loader semantics
+    // a runtime would use to actually run the recipe.
+    let mut search: Vec<(PathBuf, DiscoverySource)> = recipe_dirs(workspace_root);
+    search.reverse(); // last entry was project — check it first
+
+    for (dir, source) in search {
+        let read_dir = match std::fs::read_dir(&dir) {
+            Ok(rd) => rd,
+            Err(_) => continue,
+        };
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            let ext = path.extension().and_then(|e| e.to_str());
+            if ext != Some("yaml") && ext != Some("yml") {
+                continue;
+            }
+            let body = match std::fs::read_to_string(&path) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let recipe = match Recipe::from_yaml(&body) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            if recipe.name == name {
+                let steps = recipe
+                    .steps
+                    .into_iter()
+                    .map(|s| RecipeStepWire {
+                        name: s.name,
+                        prompt: s.prompt,
+                    })
+                    .collect();
+                return Some(RecipeDetail {
+                    name: recipe.name,
+                    description: recipe.description,
+                    steps,
+                    test_cmd: recipe.test_cmd,
+                    source,
+                    path: path.display().to_string(),
+                });
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
@@ -262,5 +423,55 @@ test_cmd: cargo test
             recipes.iter().all(|r| !r.path.ends_with("notes.txt")),
             "non-yaml files must be skipped",
         );
+    }
+
+    #[test]
+    fn find_agent_returns_none_for_unknown_name() {
+        let tmp = TempDir::new().expect("tmp");
+        assert!(find_agent(tmp.path(), "this-does-not-exist-xyz").is_none());
+    }
+
+    #[test]
+    fn find_agent_returns_a_known_builtin_with_full_prompt() {
+        let tmp = TempDir::new().expect("tmp");
+        // Pick the first built-in by listing.
+        let agents = collect_agents(tmp.path());
+        let first = agents.first().expect("at least one builtin");
+        let detail = find_agent(tmp.path(), &first.name).expect("detail for builtin");
+        assert_eq!(detail.name, first.name);
+        assert!(matches!(detail.source, DiscoverySource::Builtin));
+        // The system prompt is the markdown body; built-in agents always
+        // have one. Empty body would be a regression in the loader.
+        assert!(!detail.system_prompt.is_empty(), "builtin must have a body");
+    }
+
+    #[test]
+    fn find_recipe_returns_full_steps_when_found() {
+        let tmp = TempDir::new().expect("tmp");
+        let recipes_dir = tmp.path().join("recipes");
+        std::fs::create_dir_all(&recipes_dir).expect("mkdir");
+        let yaml = r#"
+name: alpha
+description: alpha desc
+steps:
+  - name: s1
+    prompt: do alpha
+  - name: s2
+    prompt: then beta
+"#;
+        std::fs::write(recipes_dir.join("alpha.yaml"), yaml).expect("write");
+
+        let detail = find_recipe(tmp.path(), "alpha").expect("found");
+        assert_eq!(detail.name, "alpha");
+        assert_eq!(detail.steps.len(), 2);
+        assert_eq!(detail.steps[0].name, "s1");
+        assert_eq!(detail.steps[1].prompt, "then beta");
+        assert!(matches!(detail.source, DiscoverySource::Builtin));
+    }
+
+    #[test]
+    fn find_recipe_returns_none_for_unknown_name() {
+        let tmp = TempDir::new().expect("tmp");
+        assert!(find_recipe(tmp.path(), "no-such-recipe").is_none());
     }
 }

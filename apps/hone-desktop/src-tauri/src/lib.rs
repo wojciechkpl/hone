@@ -42,6 +42,9 @@ pub fn run() -> anyhow::Result<()> {
             commands::run_orchestrate,
             commands::list_agents,
             commands::list_recipes,
+            commands::get_agent,
+            commands::get_recipe,
+            commands::agent_fork,
         ])
         .setup(|app| {
             tray::install(app.handle())?;

@@ -386,8 +386,9 @@ function renderDiscoverList(list, items, renderItem) {
 
 function renderAgentEntry(a) {
   const li = document.createElement('li');
-  li.className = 'entry';
+  li.className = 'entry expandable';
   const head = document.createElement('div');
+  head.className = 'entry-head';
   const name = document.createElement('span');
   name.className = 'name';
   name.textContent = a.name || '(unnamed)';
@@ -407,13 +408,76 @@ function renderAgentEntry(a) {
   const toolCount = Array.isArray(a.tools) ? a.tools.length : 0;
   meta.textContent = `model: ${a.model || '(default)'} · ${toolCount} tool${toolCount === 1 ? '' : 's'}${a.has_sandbox_profile ? ' · sandbox' : ''}`;
   li.appendChild(meta);
+  const detail = document.createElement('div');
+  detail.className = 'entry-detail hidden';
+  li.appendChild(detail);
+  head.addEventListener('click', () => toggleAgentDetail(li, detail, a.name, a.source));
   return li;
+}
+
+async function toggleAgentDetail(li, detail, name, source) {
+  if (!detail.classList.contains('hidden')) {
+    detail.classList.add('hidden');
+    return;
+  }
+  detail.innerHTML = '<p class="hint">loading…</p>';
+  detail.classList.remove('hidden');
+  try {
+    const full = await invoke('get_agent', { name });
+    detail.innerHTML = '';
+    if (Array.isArray(full.tools) && full.tools.length > 0) {
+      const tools = document.createElement('div');
+      tools.className = 'detail-row';
+      tools.innerHTML = `<strong>tools:</strong> ${full.tools.map(t => `<code>${t}</code>`).join(' ')}`;
+      detail.appendChild(tools);
+    }
+    const promptHead = document.createElement('strong');
+    promptHead.textContent = 'system prompt:';
+    detail.appendChild(promptHead);
+    const pre = document.createElement('pre');
+    pre.className = 'system-prompt';
+    pre.textContent = full.system_prompt || '(empty)';
+    detail.appendChild(pre);
+    if (source !== 'project') {
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      const fork = document.createElement('button');
+      fork.textContent = 'Fork to .hone/agents/';
+      fork.addEventListener('click', () => forkAgent(full));
+      actions.appendChild(fork);
+      detail.appendChild(actions);
+    } else {
+      const note = document.createElement('p');
+      note.className = 'hint';
+      note.textContent = 'This agent already lives in your project. Edit the .hone/agents/<name>.md file directly.';
+      detail.appendChild(note);
+    }
+  } catch (err) {
+    detail.innerHTML = `<p class="hint">error: ${err}</p>`;
+  }
+}
+
+async function forkAgent(full) {
+  // For v1 the project root is the user's chosen working dir; we use the
+  // app's cwd derived from where honed was launched. The Tauri side
+  // refuses path-traversal, so prompting the user for an explicit dir is
+  // a follow-up.
+  const projectRoot = prompt('Fork into project root:', '');
+  if (!projectRoot) return;
+  try {
+    const path = await invoke('agent_fork', { projectRoot, agent: full });
+    appendErrorBubble(`Forked to ${path}`);
+    refreshAgents();
+  } catch (err) {
+    appendErrorBubble(`fork failed: ${err}`);
+  }
 }
 
 function renderRecipeEntry(r) {
   const li = document.createElement('li');
-  li.className = 'entry';
+  li.className = 'entry expandable';
   const head = document.createElement('div');
+  head.className = 'entry-head';
   const name = document.createElement('span');
   name.className = 'name';
   name.textContent = r.name || '(unnamed)';
@@ -433,7 +497,61 @@ function renderRecipeEntry(r) {
   const stepCount = r.step_count || 0;
   meta.textContent = `${stepCount} step${stepCount === 1 ? '' : 's'}${r.has_test_cmd ? ' · test_cmd' : ''}`;
   li.appendChild(meta);
+  const detail = document.createElement('div');
+  detail.className = 'entry-detail hidden';
+  li.appendChild(detail);
+  head.addEventListener('click', () => toggleRecipeDetail(li, detail, r.name));
   return li;
+}
+
+async function toggleRecipeDetail(li, detail, name) {
+  if (!detail.classList.contains('hidden')) {
+    detail.classList.add('hidden');
+    return;
+  }
+  detail.innerHTML = '<p class="hint">loading…</p>';
+  detail.classList.remove('hidden');
+  try {
+    const full = await invoke('get_recipe', { name });
+    detail.innerHTML = '';
+    if (Array.isArray(full.steps) && full.steps.length > 0) {
+      const ol = document.createElement('ol');
+      ol.className = 'step-list';
+      for (const step of full.steps) {
+        const li2 = document.createElement('li');
+        const sname = document.createElement('strong');
+        sname.textContent = step.name;
+        li2.appendChild(sname);
+        const sprompt = document.createElement('pre');
+        sprompt.className = 'step-prompt';
+        sprompt.textContent = step.prompt;
+        li2.appendChild(sprompt);
+        ol.appendChild(li2);
+      }
+      detail.appendChild(ol);
+    }
+    if (full.test_cmd) {
+      const tc = document.createElement('div');
+      tc.className = 'detail-row';
+      tc.innerHTML = `<strong>test_cmd:</strong> <code>${full.test_cmd}</code>`;
+      detail.appendChild(tc);
+    }
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const useBtn = document.createElement('button');
+    useBtn.textContent = 'Use first step as prompt';
+    useBtn.addEventListener('click', () => {
+      const first = full.steps && full.steps[0];
+      if (first) {
+        document.getElementById('chat-input').value = first.prompt;
+        document.getElementById('chat-input').focus();
+      }
+    });
+    actions.appendChild(useBtn);
+    detail.appendChild(actions);
+  } catch (err) {
+    detail.innerHTML = `<p class="hint">error: ${err}</p>`;
+  }
 }
 
 function updateDiscoverBadge() {

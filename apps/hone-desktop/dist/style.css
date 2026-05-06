@@ -362,6 +362,50 @@ button.mini { padding: 0px 6px; font-size: 0.85em; line-height: 1.4; }
   font-size: 0.75em;
   margin-top: 2px;
 }
+.discover-list li.entry.expandable .entry-head { cursor: pointer; }
+.discover-list li.entry.expandable .entry-head:hover .name { color: var(--accent); }
+
+.entry-detail {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.entry-detail .detail-row { font-size: 0.8em; }
+.entry-detail .detail-row code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 0.85em;
+}
+.entry-detail .system-prompt,
+.entry-detail .step-prompt {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 4px 0 0;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75em;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 18em;
+  overflow-y: auto;
+}
+.entry-detail .step-list {
+  padding-left: 20px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.entry-detail .step-list li { font-size: 0.8em; }
+.entry-detail .actions { display: flex; gap: 6px; margin-top: 4px; }
+.entry-detail .actions button { font-size: 0.8em; padding: 4px 8px; }
+.entry-detail .hint { color: var(--muted); margin: 4px 0 0; font-size: 0.8em; }
 
 .card {
   background: var(--card);
