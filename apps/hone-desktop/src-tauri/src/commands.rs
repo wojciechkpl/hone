@@ -195,6 +195,106 @@ pub async fn list_recipes(
     fetch_json(&state, "/recipes").await
 }
 
+/// `GET /mcp/marketplace` proxy.
+#[tauri::command]
+pub async fn list_mcp_marketplace(
+    state: tauri::State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, "/mcp/marketplace").await
+}
+
+/// `GET /mcp/installed` proxy.
+#[tauri::command]
+pub async fn list_mcp_installed(
+    state: tauri::State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, "/mcp/installed").await
+}
+
+/// Install an MCP marketplace entry into the project's `.hone/mcp.json`.
+///
+/// Writes (or merges) one entry under its `id` as the server name. The
+/// command + args + env from the marketplace entry are copied verbatim.
+/// Refuses to overwrite an existing entry without `force=true`.
+///
+/// Returns the absolute path of the file written.
+#[tauri::command]
+pub async fn mcp_install(
+    project_root: String,
+    entry: serde_json::Value,
+    force: Option<bool>,
+) -> Result<String, String> {
+    let force = force.unwrap_or(false);
+    let project_root = std::path::PathBuf::from(project_root);
+    if !project_root.is_dir() {
+        return Err(format!(
+            "project_root is not a directory: {}",
+            project_root.display()
+        ));
+    }
+    let id = entry
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "marketplace entry missing 'id'".to_string())?;
+    if id.is_empty() || id.contains(['/', '\\', '\0']) {
+        return Err(format!("invalid mcp id: {id:?}"));
+    }
+    let command = entry
+        .get("command")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "marketplace entry missing 'command'".to_string())?;
+    let args: Vec<String> = entry
+        .get("args")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let hone_dir = project_root.join(".hone");
+    crate::commands::fs::create_dir_all(&hone_dir)
+        .map_err(|e| format!("create dir {}: {e}", hone_dir.display()))?;
+    let path = hone_dir.join("mcp.json");
+
+    // Read existing config (if any) so we preserve sibling entries.
+    let mut root: serde_json::Value = if path.exists() {
+        let body = std::fs::read_to_string(&path)
+            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let servers = root
+        .as_object_mut()
+        .ok_or_else(|| "existing mcp.json is not a JSON object".to_string())?
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    let servers_obj = servers
+        .as_object_mut()
+        .ok_or_else(|| "mcpServers field is not a JSON object".to_string())?;
+    if servers_obj.contains_key(id) && !force {
+        return Err(format!(
+            "mcp.json already has an entry for '{id}' (pass force=true to overwrite)"
+        ));
+    }
+    servers_obj.insert(
+        id.to_string(),
+        serde_json::json!({
+            "command": command,
+            "args": args,
+        }),
+    );
+
+    let written = serde_json::to_string_pretty(&root)
+        .map_err(|e| format!("serialise mcp.json: {e}"))?;
+    crate::commands::fs::write(&path, written.as_bytes())
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(path.display().to_string())
+}
+
 /// `GET /agents/{name}` proxy.
 #[tauri::command]
 pub async fn get_agent(
@@ -525,6 +625,90 @@ mod tests {
         let _ = agent_fork(tmp.path().display().to_string(), agent, Some(true))
             .await
             .expect("force overwrite");
+    }
+
+    #[tokio::test]
+    async fn mcp_install_writes_entry_under_id() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let entry = serde_json::json!({
+            "id": "filesystem",
+            "name": "Filesystem",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+        });
+        let path = mcp_install(tmp.path().display().to_string(), entry, None)
+            .await
+            .expect("install ok");
+        assert!(path.ends_with(".hone/mcp.json"), "unexpected path: {path}");
+        let text = std::fs::read_to_string(&path).expect("read back");
+        let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid json");
+        let server = parsed
+            .get("mcpServers")
+            .and_then(|s| s.get("filesystem"))
+            .expect("filesystem server present");
+        assert_eq!(server.get("command").and_then(|v| v.as_str()), Some("npx"));
+    }
+
+    #[tokio::test]
+    async fn mcp_install_preserves_sibling_entries() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let hone_dir = tmp.path().join(".hone");
+        std::fs::create_dir(&hone_dir).expect("mkdir");
+        let existing = r#"{
+            "mcpServers": {
+                "git": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-git"]}
+            }
+        }"#;
+        std::fs::write(hone_dir.join("mcp.json"), existing).expect("seed");
+
+        let entry = serde_json::json!({
+            "id": "fs",
+            "command": "npx",
+            "args": [],
+        });
+        let _ = mcp_install(tmp.path().display().to_string(), entry, None)
+            .await
+            .expect("install ok");
+
+        let text = std::fs::read_to_string(hone_dir.join("mcp.json")).expect("read");
+        let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid json");
+        let servers = parsed.get("mcpServers").expect("mcpServers");
+        assert!(servers.get("git").is_some(), "existing entry preserved");
+        assert!(servers.get("fs").is_some(), "new entry added");
+    }
+
+    #[tokio::test]
+    async fn mcp_install_refuses_to_overwrite_without_force() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let entry = serde_json::json!({
+            "id": "filesystem",
+            "command": "npx",
+            "args": [],
+        });
+        let _ = mcp_install(tmp.path().display().to_string(), entry.clone(), None)
+            .await
+            .expect("first install");
+        let err = mcp_install(tmp.path().display().to_string(), entry.clone(), None)
+            .await
+            .expect_err("second must fail");
+        assert!(err.contains("already has an entry"), "unexpected: {err}");
+        let _ = mcp_install(tmp.path().display().to_string(), entry, Some(true))
+            .await
+            .expect("force overwrite");
+    }
+
+    #[tokio::test]
+    async fn mcp_install_rejects_invalid_id() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let entry = serde_json::json!({
+            "id": "evil/../escape",
+            "command": "npx",
+            "args": [],
+        });
+        let err = mcp_install(tmp.path().display().to_string(), entry, None)
+            .await
+            .expect_err("must reject path-traversal");
+        assert!(err.contains("invalid mcp id"), "unexpected: {err}");
     }
 
     #[tokio::test]

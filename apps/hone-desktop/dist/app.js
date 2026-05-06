@@ -555,12 +555,150 @@ async function toggleRecipeDetail(li, detail, name) {
 }
 
 function updateDiscoverBadge() {
-  const a = parseInt(document.getElementById('agents-count').textContent.replace(/\D/g, ''), 10) || 0;
-  const r = parseInt(document.getElementById('recipes-count').textContent.replace(/\D/g, ''), 10) || 0;
-  const total = a + r;
+  const ids = ['agents-count', 'recipes-count', 'mcp-installed-count', 'mcp-marketplace-count'];
+  let total = 0;
+  for (const id of ids) {
+    total += parseInt(document.getElementById(id).textContent.replace(/\D/g, ''), 10) || 0;
+  }
   const badge = document.getElementById('discover-count');
   badge.textContent = String(total);
   badge.classList.toggle('hidden', total === 0);
+}
+
+async function refreshMcpInstalled() {
+  const list = document.getElementById('mcp-installed-list');
+  list.innerHTML = '<li class="hint">loading…</li>';
+  try {
+    const items = await invoke('list_mcp_installed');
+    renderDiscoverList(list, items, renderMcpInstalledEntry);
+    document.getElementById('mcp-installed-count').textContent = `· ${items.length}`;
+    updateDiscoverBadge();
+  } catch (err) {
+    list.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = `error: ${err}`;
+    list.appendChild(li);
+  }
+}
+
+async function refreshMcpMarketplace() {
+  const list = document.getElementById('mcp-marketplace-list');
+  list.innerHTML = '<li class="hint">loading…</li>';
+  try {
+    const items = await invoke('list_mcp_marketplace');
+    renderDiscoverList(list, items, renderMcpMarketplaceEntry);
+    document.getElementById('mcp-marketplace-count').textContent = `· ${items.length}`;
+    updateDiscoverBadge();
+  } catch (err) {
+    list.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = `error: ${err}`;
+    list.appendChild(li);
+  }
+}
+
+function renderMcpInstalledEntry(s) {
+  const li = document.createElement('li');
+  li.className = 'entry';
+  const head = document.createElement('div');
+  head.className = 'entry-head';
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = s.name || '(unnamed)';
+  const tag = document.createElement('span');
+  tag.className = `src-tag ${s.source || 'global'}`;
+  tag.textContent = s.source || 'global';
+  head.append(name, tag);
+  li.appendChild(head);
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  meta.textContent = `${s.command || ''} ${(s.args || []).join(' ')}${s.disabled ? ' · disabled' : ''}`;
+  li.appendChild(meta);
+  return li;
+}
+
+function renderMcpMarketplaceEntry(e) {
+  const li = document.createElement('li');
+  li.className = 'entry expandable';
+  const head = document.createElement('div');
+  head.className = 'entry-head';
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = e.name || e.id || '(unnamed)';
+  if (e.official) {
+    const tag = document.createElement('span');
+    tag.className = 'src-tag project'; // green = official
+    tag.textContent = 'official';
+    head.append(name, tag);
+  } else {
+    const tag = document.createElement('span');
+    tag.className = 'src-tag';
+    tag.textContent = 'community';
+    head.append(name, tag);
+  }
+  li.appendChild(head);
+  if (e.description) {
+    const desc = document.createElement('span');
+    desc.className = 'desc';
+    desc.textContent = e.description;
+    li.appendChild(desc);
+  }
+  const detail = document.createElement('div');
+  detail.className = 'entry-detail hidden';
+  li.appendChild(detail);
+  head.addEventListener('click', () => toggleMcpMarketplaceDetail(detail, e));
+  return li;
+}
+
+function toggleMcpMarketplaceDetail(detail, entry) {
+  if (!detail.classList.contains('hidden')) {
+    detail.classList.add('hidden');
+    return;
+  }
+  detail.innerHTML = '';
+  detail.classList.remove('hidden');
+  const cmd = document.createElement('div');
+  cmd.className = 'detail-row';
+  cmd.innerHTML = `<strong>command:</strong> <code>${entry.command} ${(entry.args || []).join(' ')}</code>`;
+  detail.appendChild(cmd);
+  if (entry.install_hint) {
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = entry.install_hint;
+    detail.appendChild(hint);
+  }
+  if (entry.source_url) {
+    const link = document.createElement('p');
+    link.className = 'hint';
+    const a = document.createElement('a');
+    a.href = entry.source_url;
+    a.textContent = entry.source_url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    link.appendChild(a);
+    detail.appendChild(link);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  const installBtn = document.createElement('button');
+  installBtn.textContent = `Install '${entry.id}' to .hone/mcp.json`;
+  installBtn.addEventListener('click', () => installMcpEntry(entry));
+  actions.appendChild(installBtn);
+  detail.appendChild(actions);
+}
+
+async function installMcpEntry(entry) {
+  const projectRoot = prompt('Install into project root:', '');
+  if (!projectRoot) return;
+  try {
+    const path = await invoke('mcp_install', { projectRoot, entry });
+    appendErrorBubble(`Installed '${entry.id}' to ${path}`);
+    refreshMcpInstalled();
+  } catch (err) {
+    appendErrorBubble(`mcp_install failed: ${err}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -755,6 +893,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Discover pane refresh handlers
   document.getElementById('btn-refresh-agents').addEventListener('click', refreshAgents);
   document.getElementById('btn-refresh-recipes').addEventListener('click', refreshRecipes);
+  document.getElementById('btn-refresh-mcp-installed').addEventListener('click', refreshMcpInstalled);
+  document.getElementById('btn-refresh-mcp-marketplace').addEventListener('click', refreshMcpMarketplace);
 
   // Chat
   document.getElementById('chat-form').addEventListener('submit', (e) => {

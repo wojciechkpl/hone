@@ -45,6 +45,9 @@ pub fn run() -> anyhow::Result<()> {
             commands::get_agent,
             commands::get_recipe,
             commands::agent_fork,
+            commands::list_mcp_marketplace,
+            commands::list_mcp_installed,
+            commands::mcp_install,
         ])
         .setup(|app| {
             tray::install(app.handle())?;
