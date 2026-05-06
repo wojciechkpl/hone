@@ -74,6 +74,20 @@
                 </h4>
                 <ul id="recipes-list" class="discover-list"><li class="hint">click ↻ to load</li></ul>
               </div>
+              <div class="discover-section">
+                <h4>
+                  MCP installed <span id="mcp-installed-count" class="muted-count">·</span>
+                  <button id="btn-refresh-mcp-installed" class="ghost mini">↻</button>
+                </h4>
+                <ul id="mcp-installed-list" class="discover-list"><li class="hint">click ↻ to load</li></ul>
+              </div>
+              <div class="discover-section">
+                <h4>
+                  MCP marketplace <span id="mcp-marketplace-count" class="muted-count">·</span>
+                  <button id="btn-refresh-mcp-marketplace" class="ghost mini">↻</button>
+                </h4>
+                <ul id="mcp-marketplace-list" class="discover-list"><li class="hint">click ↻ to load</li></ul>
+              </div>
             </div>
           </details>
           <details class="card" open>
@@ -115,10 +129,10 @@
           <details class="card">
             <summary>About this build</summary>
             <p class="hint">
-              Hone Desktop v0.0.5 — Phase 3 slice A adds the Discover card
-              with read-only Agents and Recipes lists, sourced from
-              built-ins, <code>~/.config/hone</code>, and
-              <code>.hone/</code> overrides.
+              Hone Desktop v0.0.6 — Phase 3 slice C adds the MCP installed
+              + marketplace lists. Click an installed entry for command
+              detail; click an Install button to drop the marketplace
+              entry into your project's <code>.hone/mcp.json</code>.
             </p>
           </details>
         </aside>

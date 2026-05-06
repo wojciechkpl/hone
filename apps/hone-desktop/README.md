@@ -125,7 +125,21 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Phase 3 slice B (this drop) — detail expand + Run/Fork actions:**
+**Phase 3 slice C (this drop) — MCP marketplace + installed list:**
+- New honed endpoints `GET /mcp/marketplace` (returns the bundled
+  `Marketplace::builtin()` catalog of curated servers — filesystem,
+  github, git, slack, puppeteer, sqlite, brave-search) and
+  `GET /mcp/installed` (merges global `~/.config/hone/mcp.json` with
+  project `.hone/mcp.json`, tagging each entry with its source layer).
+- GUI: two new sections inside the Discover card. Installed shows
+  command + args inline; marketplace entries are click-to-expand and
+  carry an Install button that writes the entry to the project's
+  `.hone/mcp.json`.
+- New Tauri command `mcp_install` preserves sibling entries when adding
+  to an existing config, refuses to overwrite without `force`, rejects
+  path-traversal in ids.
+
+**Phase 3 slice B — detail expand + Run/Fork actions:**
 - New honed endpoints `GET /agents/{name}` and `GET /recipes/{name}`
   return full detail (system prompt for agents, all steps for recipes).
 - GUI: clicking a Discover entry expands inline with the detail. Recipe

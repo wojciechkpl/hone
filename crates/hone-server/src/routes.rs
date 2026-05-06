@@ -17,6 +17,7 @@ use crate::error::ServerError;
 use crate::discovery::{
     agent_detail_handler, list_agents_handler, list_recipes_handler, recipe_detail_handler,
 };
+use crate::mcp_routes::{installed_handler, marketplace_handler};
 use crate::execution::run_handler;
 use crate::orchestration::orchestrate_handler;
 use crate::run_registry::StepResult;
@@ -52,6 +53,8 @@ pub fn router(state: AppState) -> Router {
         .route("/agents/{name}", get(agent_detail_handler))
         .route("/recipes", get(list_recipes_handler))
         .route("/recipes/{name}", get(recipe_detail_handler))
+        .route("/mcp/marketplace", get(marketplace_handler))
+        .route("/mcp/installed", get(installed_handler))
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/gc", delete(gc_sessions))
