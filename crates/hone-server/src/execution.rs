@@ -18,6 +18,9 @@ use hone_tools::{
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
+use crate::provenance_writer::{
+    ProvenanceTee, append_user_prompt, open_session_log,
+};
 use crate::state::AppState;
 
 /// Construct the sandbox instance that will be installed on every agent
@@ -183,6 +186,45 @@ pub async fn run_handler(
             .map(|key| -> Arc<dyn ModelProvider> { Arc::new(AnthropicProvider::new(key)) })
     });
 
+    // Hoist the model id resolution so both the agent path and the
+    // provenance tee see the same string.
+    let model_id = ModelId::new(req.model.as_deref().unwrap_or("claude-sonnet-4-6"));
+    let model_id_str = model_id.as_str().to_owned();
+
+    // ---- Provenance tee --------------------------------------
+    //
+    // When `state.provenance_dir` is set, every event flowing through
+    // the SSE pipeline is also appended to a per-session hash chain on
+    // disk. Session id reuses the step-mode `request_id` when present
+    // so the same id surfaces in both `/run/{id}/step` and
+    // `/provenance/{id}/verify`. When `request_id` is absent we mint
+    // one — the chain still verifies, the GUI just won't be able to
+    // step into it.
+    let provenance_tee: Option<ProvenanceTee> = if let Some(dir) = state.provenance_dir.clone() {
+        let session_id = req
+            .request_id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+        match open_session_log(&dir, &session_id) {
+            Ok(mut log) => {
+                if let Err(e) = append_user_prompt(&mut log, &req.prompt) {
+                    tracing::warn!("provenance: failed to append user prompt: {e}");
+                }
+                let log = std::sync::Arc::new(tokio::sync::Mutex::new(log));
+                Some(ProvenanceTee::new(log, model_id_str.clone()))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "provenance: failed to open session log under {}: {e}",
+                    dir.display()
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
     match provider {
@@ -193,8 +235,6 @@ pub async fn run_handler(
             // tx dropped → rx drains the one error event then closes.
         }
         Some(provider) => {
-            let model_id = ModelId::new(req.model.as_deref().unwrap_or("claude-sonnet-4-6"));
-
             let tools = ToolRegistry::builder()
                 .register(Box::new(ReadFileTool))
                 .register(Box::new(WriteFileTool))
@@ -285,7 +325,6 @@ pub async fn run_handler(
 
             let prompt = req.prompt;
             let governance = Arc::clone(&state.governance);
-            let model_id_str = model_id.as_str().to_owned();
 
             tokio::spawn(async move {
                 // Hold the registry guard for the full run lifetime; dropping
@@ -307,13 +346,22 @@ pub async fn run_handler(
     }
 
     let mut event_id = 0u64;
-    let sse_stream = stream::unfold(rx, move |mut rx| async move {
-        rx.recv().await.map(|event| {
-            event_id += 1;
-            let sse = make_sse_event(event, event_id);
-            (Ok::<Event, Infallible>(sse), rx)
-        })
-    });
+    let sse_stream = stream::unfold(
+        (rx, provenance_tee),
+        move |(mut rx, mut tee)| async move {
+            match rx.recv().await {
+                Some(event) => {
+                    if let Some(t) = tee.as_mut() {
+                        t.observe(&event).await;
+                    }
+                    event_id += 1;
+                    let sse = make_sse_event(event, event_id);
+                    Some((Ok::<Event, Infallible>(sse), (rx, tee)))
+                }
+                None => None,
+            }
+        },
+    );
 
     Ok(Sse::new(sse_stream)
         .keep_alive(KeepAlive::default())
