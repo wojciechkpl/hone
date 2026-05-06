@@ -29,6 +29,8 @@ apps/hone-desktop/
         ├── commands.rs    Tauri commands invoked from JS
         ├── config.rs      ~/.config/hone/desktop.json
         ├── supervisor.rs  honed sidecar spawn / health / shutdown
+        ├── sse.rs         SSE frame parser + buffered framer
+        ├── runtime.rs     in-flight `POST /run` consumer + event router
         └── tray.rs        system tray menu
 ```
 
@@ -102,18 +104,30 @@ icons in `src-tauri/icons/` are placeholder transparent PNGs; replace them
 with real artwork before shipping. `cargo tauri icon path/to/source.png`
 generates the full set from a single 1024×1024 source.
 
-## What's intentionally NOT here yet
+## Phase 2 status
 
-- **The chat UI.** That ships with the SolidJS web UI; this shell will
-  load it from `dist/` when ready.
-- **SSE consumption.** Approval-pending notifications are wired in Phase 2
-  alongside the streaming-chat surface.
-- **Cross-IPC into hone crates.** The supervisor still talks to `honed`
-  over HTTP. A future optimisation is to embed the daemon in-process via
-  Tauri-managed state, but the HTTP path keeps the GUI honest about the
-  same wire format the TUI / web UI use.
-- **Auto-update.** Tauri 2 supports it; we wire it once the marketing
-  site has a signed release feed.
+Slice A (this drop) ships:
+
+- Streaming chat surface — `POST /run` SSE consumer, assistant bubble that
+  streams tokens, inline tool-call cards (running → done with `duration_ms`,
+  red border on error, `(cached)` suffix on cache hits).
+- Cost / token meter in the topbar — updates on `done` and `budget_progress`
+  events. `Reset session cost meter` from the Cmd+K palette.
+- `run_turn` / `run_cancel` Tauri commands. Cancellation is best-effort
+  (aborts the local SSE task; the daemon keeps going until honed exposes
+  `DELETE /run/:id`).
+
+Slice B (deferred) needs daemon-side endpoints first:
+
+- **Approval queue pane** — needs honed to expose a step-mode HTTP endpoint
+  (`POST /run/:id/step` with `StepAction`). Today the agent runs with
+  `ToolApprovalPolicy::Auto`, so the GUI never sees `ApprovalRequired`.
+- **Task-tree DAG sidebar** — needs honed to expose distributed
+  orchestrator events over SSE. The events exist in `hone-core` but are
+  not yet on the wire.
+
+Beyond Phase 2: real chat UI styling (will move to the SolidJS web UI),
+auto-update, real icon artwork, in-process embed of `honed`.
 
 ## Architecture invariants
 
