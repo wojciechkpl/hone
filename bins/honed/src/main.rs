@@ -218,6 +218,22 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Optional eval history store. HONE_EVAL_HISTORY_DB points at a sqlite
+    // file (the same format `hone_eval::EvalRunStore` writes when running
+    // `hone eval`). When unset, /evals* endpoints return 503.
+    if let Ok(eval_db) = std::env::var("HONE_EVAL_HISTORY_DB") {
+        let path = std::path::Path::new(&eval_db);
+        match hone_eval::EvalRunStore::open(path).await {
+            Ok(store) => {
+                state = state.with_eval_history(Arc::new(store));
+                tracing::info!("eval history opened at {eval_db}");
+            }
+            Err(e) => {
+                tracing::warn!("failed to open eval history at {eval_db}: {e}");
+            }
+        }
+    }
+
     // Spawn the lease reaper when distributed mode is on. Default per
     // design doc §5.3: 15s interval, 3 max attempts. Override via
     // HONE_DISTRIBUTED_REAP_SECS / HONE_DISTRIBUTED_MAX_ATTEMPTS.

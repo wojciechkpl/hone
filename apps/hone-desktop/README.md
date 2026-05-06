@@ -125,7 +125,22 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Phase 4 slice C (this drop) — provenance hash-chain explorer:**
+**Phase 4 slice D (this drop) — eval-run dashboard:**
+- New honed endpoints `GET /evals?limit=N&tag=...` (returns recent
+  `RunSummary` rows) and `GET /evals/{id}` (returns full
+  `EvalRunRecord` with per-task outcomes). Both 503 when no eval store
+  configured.
+- AppState gained `eval_history: Option<Arc<EvalRunStore>>`. honed
+  opens a `SqliteStore` at `HONE_EVAL_HISTORY_DB` on startup.
+- GUI: collapsible **Evals** card with tag-filter input. Each row
+  shows model + tag pill + colored pass/total + visual pass-bar +
+  timestamp + commit. Click expands per-task outcomes (status dot,
+  duration_ms, cost, tokens) plus a total cost footer.
+
+**Phase 4 (Differentiators) is now complete.** All four feature areas
+from the design doc ship with daemon endpoint + GUI surface + tests.
+
+**Phase 4 slice C — provenance hash-chain explorer:**
 - New honed endpoints `GET /provenance` (lists `*.jsonl` files under
   `HONE_PROVENANCE_DIR`), `GET /provenance/{id}` (returns full chain),
   and `GET /provenance/{id}/verify` (returns `{ valid, broken_at,

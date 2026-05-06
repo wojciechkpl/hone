@@ -19,6 +19,7 @@ pub mod distributed_routes;
 pub mod collaborative_routes;
 pub mod discovery;
 pub mod error;
+pub mod eval_routes;
 pub mod execution;
 pub mod governance;
 pub mod governance_routes;

@@ -13,6 +13,7 @@ use crate::run_registry::RunRegistry;
 use crate::session::SessionStore;
 use crate::session_storage::SessionStorage;
 use crate::tunnel::{MockTunnelManager, TunnelManager};
+use hone_eval::EvalRunStore;
 use hone_memory::MemoryStore;
 
 /// Default: 100 requests per minute per client — generous enough that existing
@@ -69,6 +70,9 @@ pub struct AppState {
     /// are discoverable. When `None`, `GET /provenance*` endpoints
     /// return 503. Wired from `HONE_PROVENANCE_DIR` by the daemon.
     pub provenance_dir: Option<PathBuf>,
+    /// Optional eval-history store. When `None`, `GET /evals*` endpoints
+    /// return 503. Wired from `HONE_EVAL_HISTORY_DB` by the daemon.
+    pub eval_history: Option<Arc<EvalRunStore>>,
 }
 
 impl AppState {
@@ -88,6 +92,7 @@ impl AppState {
             run_registry: RunRegistry::new(),
             memory_store: None,
             provenance_dir: None,
+            eval_history: None,
         }
     }
 
@@ -107,6 +112,7 @@ impl AppState {
             run_registry: RunRegistry::new(),
             memory_store: None,
             provenance_dir: None,
+            eval_history: None,
         }
     }
 
@@ -129,6 +135,7 @@ impl AppState {
             run_registry: RunRegistry::new(),
             memory_store: None,
             provenance_dir: None,
+            eval_history: None,
         }
     }
 
@@ -191,6 +198,12 @@ impl AppState {
     /// Attach a provenance directory, enabling the `/provenance*` endpoints.
     pub fn with_provenance_dir(mut self, dir: PathBuf) -> Self {
         self.provenance_dir = Some(dir);
+        self
+    }
+
+    /// Attach an eval history store, enabling the `/evals*` endpoints.
+    pub fn with_eval_history(mut self, store: Arc<EvalRunStore>) -> Self {
+        self.eval_history = Some(store);
         self
     }
 }

@@ -127,6 +127,18 @@
             </div>
           </details>
           <details class="card">
+            <summary>Evals <span id="evals-count" class="badge hidden">0</span></summary>
+            <div class="evals-pane">
+              <div class="row" style="margin-bottom:8px; gap:6px;">
+                <input id="evals-tag" placeholder="tag filter…" />
+                <button id="btn-refresh-evals" class="ghost mini">↻</button>
+              </div>
+              <ul id="evals-list" class="discover-list">
+                <li class="hint">click ↻ to load eval runs (set HONE_EVAL_HISTORY_DB)</li>
+              </ul>
+            </div>
+          </details>
+          <details class="card">
             <summary>Provenance <span id="prov-count" class="badge hidden">0</span></summary>
             <div class="prov-pane">
               <div class="row" style="margin-bottom:8px;">
@@ -165,10 +177,10 @@
           <details class="card">
             <summary>About this build</summary>
             <p class="hint">
-              Hone Desktop v0.0.9 — Phase 4 slice C adds the Provenance
-              hash-chain explorer. Set <code>HONE_PROVENANCE_DIR</code>
-              to a directory with <code>*.jsonl</code> chain files; click
-              an entry to verify and see the Merkle root.
+              Hone Desktop v0.1.0 — Phase 4 complete. Adds the Evals
+              dashboard alongside Sandbox / Memory / Provenance. Set
+              <code>HONE_EVAL_HISTORY_DB</code> to surface
+              <code>hone eval</code> run history with per-task pass/fail.
             </p>
           </details>
         </aside>

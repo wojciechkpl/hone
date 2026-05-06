@@ -54,6 +54,8 @@ pub fn run() -> anyhow::Result<()> {
             commands::list_provenance,
             commands::get_provenance_entries,
             commands::verify_provenance,
+            commands::list_evals,
+            commands::get_eval,
         ])
         .setup(|app| {
             tray::install(app.handle())?;
