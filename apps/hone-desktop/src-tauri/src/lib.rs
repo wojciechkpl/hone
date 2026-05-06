@@ -25,10 +25,24 @@ pub fn run() -> anyhow::Result<()> {
     let cfg = config::DesktopConfig::load_or_default();
     let state = DaemonState::new(cfg);
 
-    tauri::Builder::default()
+    // The `mut` is only needed when the `updater` feature is enabled;
+    // suppress the unused warning so default builds stay quiet.
+    #[cfg_attr(not(feature = "updater"), allow(unused_mut))]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+
+    // Only register the updater plugin when the `updater` cargo feature
+    // is enabled. Adding the plugin without a configured endpoint /
+    // signing key is a runtime panic waiting to happen, so we keep it
+    // strictly opt-in.
+    #[cfg(feature = "updater")]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
         .manage(state)
         .manage(Arc::new(RunRegistry::new()))
         .invoke_handler(tauri::generate_handler![

@@ -26,6 +26,9 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-notification = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
+# Updater is optional — gated behind the `updater` feature so dev
+# builds without a signing keypair compile without warnings.
+tauri-plugin-updater = { version = "2", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -43,6 +46,11 @@ parking_lot = "0.12"
 tempfile = { workspace = true }
 
 [features]
+default = []
+# Enable the auto-updater plugin. Requires `TAURI_SIGNING_PRIVATE_KEY`
+# at bundle time and a public `updaterEndpoint` in `tauri.conf.json`.
+# Off by default so dev/CI builds without keys still compile.
+updater = ["dep:tauri-plugin-updater"]
 # When enabled, the supervisor uses a stub child rather than spawning a
 # real `honed`. Used in tests so we don't need the daemon binary on PATH.
 test-stub = []
