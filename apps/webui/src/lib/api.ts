@@ -15,6 +15,20 @@ export async function getJson<T>(path: string, bearer: string | null): Promise<T
   return (await resp.json()) as T;
 }
 
+export async function postJson(
+  path: string,
+  body: unknown,
+  bearer: string | null,
+): Promise<Response> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (bearer) headers.authorization = `Bearer ${bearer}`;
+  return fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
 export type DaemonHealth = { status: string };
 
 /** Wire shape of GET /agents — see crates/hone-server/src/discovery.rs */
