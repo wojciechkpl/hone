@@ -28,6 +28,14 @@ pub struct RunRequest {
     pub history: Vec<HistoryEntry>,
     #[serde(default)]
     pub working_dir: Option<String>,
+    /// Set when the GUI wants step-mode approvals (and a routable run id).
+    /// The Tauri runtime fills this in if absent.
+    #[serde(default)]
+    pub request_id: Option<String>,
+    /// When set, daemon-side `approval_policy` is overridden. Use
+    /// `"AlwaysAsk"` or `{"AskRisky":{"always_allowed":[...]}}`.
+    #[serde(default)]
+    pub approval_policy: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,9 +105,17 @@ pub fn spawn_run(
     registry: Arc<RunRegistry>,
     base_url: String,
     bearer: Option<String>,
-    body: RunRequest,
+    mut body: RunRequest,
 ) -> String {
-    let run_id = Uuid::now_v7().to_string();
+    // Reuse the client-supplied request_id when present so the daemon's
+    // step-mode registry shares the GUI's correlation key. Otherwise mint
+    // one and inject it into the outgoing body too — that way the daemon
+    // knows the same id we use locally.
+    let run_id = body
+        .request_id
+        .clone()
+        .unwrap_or_else(|| Uuid::now_v7().to_string());
+    body.request_id = Some(run_id.clone());
     let run_id_for_task = run_id.clone();
     let run_id_for_registry = run_id.clone();
 

@@ -38,6 +38,7 @@ pub fn run() -> anyhow::Result<()> {
             commands::daemon_set_external,
             commands::run_turn,
             commands::run_cancel,
+            commands::run_step,
         ])
         .setup(|app| {
             tray::install(app.handle())?;

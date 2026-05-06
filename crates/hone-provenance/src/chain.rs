@@ -110,10 +110,9 @@ impl ProvenanceLog {
     /// Re-verify the chain from genesis. Returns Err on the FIRST broken
     /// link with the bad entry's index.
     pub fn verify(&self) -> Result<(), VerifyError> {
-        let mut expected_index: u64 = 0;
         let mut expected_prev = genesis_prev_hash();
 
-        for entry in &self.entries {
+        for (expected_index, entry) in (0_u64..).zip(self.entries.iter()) {
             if entry.index != expected_index {
                 return Err(VerifyError::IndexOutOfOrder {
                     index: entry.index,
@@ -128,7 +127,6 @@ impl ProvenanceLog {
                 });
             }
             expected_prev = entry.body_hash();
-            expected_index += 1;
         }
 
         Ok(())

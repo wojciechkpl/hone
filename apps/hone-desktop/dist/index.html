@@ -58,6 +58,18 @@
 
         <aside class="sidecar">
           <details class="card" open>
+            <summary>Approvals <span id="approval-count" class="badge hidden">0</span></summary>
+            <div id="approval-queue" class="approval-queue">
+              <p class="hint" id="approval-empty">No pending approvals.</p>
+            </div>
+            <div class="row">
+              <label class="hint" style="display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" id="step-mode-toggle" />
+                Step-mode (ask before risky tools)
+              </label>
+            </div>
+          </details>
+          <details class="card">
             <summary>Daemon</summary>
             <pre id="daemon-info">loading…</pre>
             <div class="row">
@@ -69,9 +81,10 @@
           <details class="card">
             <summary>About this build</summary>
             <p class="hint">
-              Hone Desktop v0.0.2 — Phase 2 slice A: SSE chat surface +
-              cost meter. Approval queue and task-tree DAG land in slice B
-              once the daemon exposes the matching endpoints.
+              Hone Desktop v0.0.3 — Phase 2 slice B.1: approval queue.
+              Toggle <em>Step-mode</em> to require approval for risky tools
+              (write/shell). Task-tree DAG ships in B.2 alongside an
+              orchestrator-events SSE channel.
             </p>
           </details>
         </aside>

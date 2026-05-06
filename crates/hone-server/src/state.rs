@@ -9,6 +9,7 @@ use crate::collaborative::CollaborativeStore;
 use crate::distributed::DistributedTaskStore;
 use crate::governance::GovernanceStore;
 use crate::rate_limit::RateLimiter;
+use crate::run_registry::RunRegistry;
 use crate::session::SessionStore;
 use crate::session_storage::SessionStorage;
 use crate::tunnel::{MockTunnelManager, TunnelManager};
@@ -55,6 +56,10 @@ pub struct AppState {
     pub mock_provider: Option<Arc<dyn ModelProvider>>,
     /// When Some, /distributed/* endpoints are enabled.
     pub distributed_store: Option<Arc<DistributedTaskStore>>,
+    /// In-flight step-mode runs. `POST /run/{id}/step` looks up the
+    /// corresponding `mpsc::Sender<StepAction>` here. Always populated;
+    /// the registry is empty when no step-mode runs are active.
+    pub run_registry: RunRegistry,
 }
 
 impl AppState {
@@ -71,6 +76,7 @@ impl AppState {
             admin_tokens: Arc::new(HashSet::new()),
             mock_provider: None,
             distributed_store: None,
+            run_registry: RunRegistry::new(),
         }
     }
 
@@ -87,6 +93,7 @@ impl AppState {
             admin_tokens: Arc::new(HashSet::new()),
             mock_provider: None,
             distributed_store: None,
+            run_registry: RunRegistry::new(),
         }
     }
 
@@ -106,6 +113,7 @@ impl AppState {
             admin_tokens: Arc::new(HashSet::new()),
             mock_provider: None,
             distributed_store: None,
+            run_registry: RunRegistry::new(),
         }
     }
 

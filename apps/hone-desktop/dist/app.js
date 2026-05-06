@@ -76,6 +76,7 @@ const chatState = {
   activeRunId: null,
   activeAssistantEl: null,
   toolCards: new Map(),   // tool_id -> DOM node
+  pendingApprovals: new Map(), // approvalId -> {runId, name, desc, kind}
 };
 
 function appendUserMessage(text) {
@@ -153,6 +154,28 @@ function handleAgentEvent(event) {
       finalizeToolCard(event.id, event);
       break;
     }
+    case 'tool_call_paused': {
+      // Step-mode pause — render in approval queue. The id is the tool
+      // call's id; we use it to dedupe in case the agent re-emits.
+      enqueueApproval({
+        runId: chatState.activeRunId,
+        approvalId: `tool:${event.id}`,
+        name: event.name,
+        desc: event.args ? JSON.stringify(event.args, null, 2) : '',
+        kind: 'tool',
+      });
+      break;
+    }
+    case 'approval_required': {
+      enqueueApproval({
+        runId: chatState.activeRunId,
+        approvalId: `req:${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        name: event.action || 'unknown',
+        desc: event.description || '',
+        kind: 'generic',
+      });
+      break;
+    }
     case 'done': {
       if (chatState.activeAssistantEl) {
         const meta = document.createElement('span');
@@ -197,6 +220,73 @@ function finishRun() {
   chatState.activeAssistantEl = null;
   document.getElementById('btn-send').disabled = false;
   document.getElementById('btn-cancel').classList.add('hidden');
+  // A finished run invalidates any leftover approvals — the daemon won't
+  // accept steps for it anymore.
+  chatState.pendingApprovals.clear();
+  renderApprovalQueue();
+}
+
+// ---------------------------------------------------------------------------
+// Approval queue
+// ---------------------------------------------------------------------------
+
+function enqueueApproval(item) {
+  if (!item.runId) return;
+  chatState.pendingApprovals.set(item.approvalId, item);
+  renderApprovalQueue();
+}
+
+function renderApprovalQueue() {
+  const root = document.getElementById('approval-queue');
+  const empty = document.getElementById('approval-empty');
+  const badge = document.getElementById('approval-count');
+  const items = Array.from(chatState.pendingApprovals.values());
+
+  badge.textContent = String(items.length);
+  badge.classList.toggle('hidden', items.length === 0);
+  empty.style.display = items.length === 0 ? 'block' : 'none';
+
+  // Wipe non-empty rendering area
+  Array.from(root.querySelectorAll('.approval-card')).forEach((el) => el.remove());
+
+  for (const item of items) {
+    const card = document.createElement('div');
+    card.className = 'approval-card';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = item.name;
+    const desc = document.createElement('div');
+    desc.className = 'desc';
+    desc.textContent = item.desc || '(no detail provided)';
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+
+    const buttons = [
+      { label: 'Approve', action: 'Proceed' },
+      { label: 'Approve all', action: { ApproveAlways: item.name } },
+      { label: 'Skip', action: 'Skip' },
+      { label: 'Deny', action: { Deny: 'user denied' } },
+    ];
+    for (const b of buttons) {
+      const btn = document.createElement('button');
+      btn.textContent = b.label;
+      btn.addEventListener('click', () => respondToApproval(item, b.action));
+      actions.appendChild(btn);
+    }
+
+    card.append(name, desc, actions);
+    root.appendChild(card);
+  }
+}
+
+async function respondToApproval(item, action) {
+  try {
+    await invoke('run_step', { runId: item.runId, action });
+    chatState.pendingApprovals.delete(item.approvalId);
+    renderApprovalQueue();
+  } catch (err) {
+    appendErrorBubble(`step failed: ${err}`);
+  }
 }
 
 async function sendPrompt() {
@@ -212,14 +302,26 @@ async function sendPrompt() {
   startAssistantBubble();
   chatState.toolCards.clear();
 
+  // Generate request_id client-side so the GUI and daemon share the same
+  // correlation key from the very first frame.
+  const requestId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `r-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
+  chatState.activeRunId = requestId;
+
+  const stepMode = document.getElementById('step-mode-toggle').checked;
+  const requestBody = {
+    prompt,
+    history: chatState.history.slice(0, -1),
+    request_id: requestId,
+  };
+  if (stepMode) {
+    // AskRisky pauses for write/shell tools but auto-allows read-only ones.
+    requestBody.approval_policy = { AskRisky: { always_allowed: [] } };
+  }
+
   try {
-    const runId = await invoke('run_turn', {
-      request: {
-        prompt,
-        history: chatState.history.slice(0, -1), // server takes the last as current; pass prior turns
-      },
-    });
-    chatState.activeRunId = runId;
+    await invoke('run_turn', { request: requestBody });
   } catch (err) {
     appendErrorBubble(`run_turn failed: ${err}`);
     finishRun();

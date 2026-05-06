@@ -15,6 +15,7 @@ use crate::collaborative_routes::collaborative_router;
 use crate::distributed_routes::distributed_router;
 use crate::error::ServerError;
 use crate::execution::run_handler;
+use crate::run_registry::StepResult;
 use crate::governance_routes::governance_router;
 use crate::rate_limit::rate_limit_middleware;
 use crate::session::SessionInfo;
@@ -41,6 +42,7 @@ pub fn router(state: AppState) -> Router {
     let protected = Router::new()
         .route("/", get(serve_ui))
         .route("/run", post(run_handler))
+        .route("/run/{request_id}/step", post(step_handler))
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/gc", delete(gc_sessions))
@@ -193,6 +195,43 @@ fn tokens_match(presented: &str, expected: &str) -> bool {
 )]
 pub(crate) async fn health() -> impl IntoResponse {
     Json(json!({ "status": "ok" }))
+}
+
+/// `POST /run/{request_id}/step`
+///
+/// Routes a `StepAction` from the client back to the in-flight agent
+/// identified by `request_id`. The agent must have been started in
+/// step-mode (`approval_policy != Auto` AND `request_id` supplied).
+///
+/// Status codes:
+/// - 202 Accepted — the action was forwarded to the agent.
+/// - 404 Not Found — no run with this id is registered (either it never
+///   started in step-mode, has already finished, or the id is wrong).
+/// - 410 Gone — the run was registered but the agent's receiver has
+///   already been dropped (rare race with shutdown).
+/// - 400 Bad Request — body did not deserialise into `StepAction`.
+pub(crate) async fn step_handler(
+    State(state): State<AppState>,
+    Path(request_id): Path<String>,
+    Json(action): Json<hone_proto::StepAction>,
+) -> impl IntoResponse {
+    match state.run_registry.step(&request_id, action) {
+        StepResult::Accepted => (
+            StatusCode::ACCEPTED,
+            Json(json!({ "status": "accepted", "request_id": request_id })),
+        )
+            .into_response(),
+        StepResult::NotFound => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "status": "not_found", "request_id": request_id })),
+        )
+            .into_response(),
+        StepResult::Closed => (
+            StatusCode::GONE,
+            Json(json!({ "status": "gone", "request_id": request_id })),
+        )
+            .into_response(),
+    }
 }
 
 #[utoipa::path(

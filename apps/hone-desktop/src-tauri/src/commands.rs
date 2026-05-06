@@ -159,6 +159,35 @@ pub async fn run_cancel(
     Ok(registry.cancel(&run_id))
 }
 
+/// Forwards a `StepAction` to the in-flight daemon-side run identified by
+/// `run_id`. The action JSON shape matches `hone_proto::StepAction`'s
+/// `serde` representation (e.g. `"Proceed"`, `{"ApproveAlways":"shell"}`).
+#[tauri::command]
+pub async fn run_step(
+    state: tauri::State<'_, DaemonState>,
+    run_id: String,
+    action: serde_json::Value,
+) -> Result<String, String> {
+    let (base_url, bearer) = resolve_endpoint(&state)
+        .ok_or_else(|| "no daemon configured".to_string())?;
+    let url = format!("{}/run/{}/step", base_url.trim_end_matches('/'), run_id);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut req = client.post(&url).json(&action);
+    if let Some(t) = bearer {
+        req = req.bearer_auth(t);
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("step failed: {status} {body}"));
+    }
+    Ok(status.as_u16().to_string())
+}
+
 async fn http_health(base_url: &str, token: Option<&str>) -> bool {
     let url = format!("{}/health", base_url.trim_end_matches('/'));
     let client = match reqwest::Client::builder()
