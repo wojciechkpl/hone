@@ -195,6 +195,33 @@ pub async fn list_recipes(
     fetch_json(&state, "/recipes").await
 }
 
+/// `GET /evals?limit=N&tag=...` proxy.
+#[tauri::command]
+pub async fn list_evals(
+    state: tauri::State<'_, DaemonState>,
+    limit: Option<usize>,
+    tag: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut query = String::new();
+    if let Some(n) = limit {
+        query.push_str(&format!("?limit={n}"));
+    }
+    if let Some(t) = tag.filter(|s| !s.is_empty()) {
+        query.push_str(if query.is_empty() { "?" } else { "&" });
+        query.push_str(&format!("tag={}", urlencoding(&t)));
+    }
+    fetch_json(&state, &format!("/evals{query}")).await
+}
+
+/// `GET /evals/{id}` proxy.
+#[tauri::command]
+pub async fn get_eval(
+    state: tauri::State<'_, DaemonState>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, &format!("/evals/{}", urlencoding(&id))).await
+}
+
 /// `GET /provenance` proxy.
 #[tauri::command]
 pub async fn list_provenance(

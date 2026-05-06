@@ -20,6 +20,7 @@ hone-config = { workspace = true }
 hone-recipes = { workspace = true }
 hone-core = { workspace = true }
 hone-memory = { workspace = true }
+hone-eval = { workspace = true }
 hone-providers = { workspace = true }
 hone-tools = { workspace = true }
 hone-proto = { workspace = true }

@@ -581,6 +581,75 @@ button.mini { padding: 0px 6px; font-size: 0.85em; line-height: 1.4; }
 .prov-entries .idx { color: var(--muted); margin-right: 6px; }
 .prov-entries .ev-kind { color: var(--accent); }
 
+.evals-pane #evals-tag {
+  flex: 1;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.85em;
+}
+.eval-row .pass-bar {
+  display: inline-block;
+  width: 60px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  vertical-align: middle;
+  margin-left: 6px;
+  position: relative;
+  overflow: hidden;
+}
+.eval-row .pass-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+.eval-row .pass-text {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75em;
+  margin-left: 4px;
+}
+.eval-row .pass-text.green { color: var(--ok); }
+.eval-row .pass-text.amber { color: var(--warn); }
+.eval-row .pass-text.red   { color: var(--bad); }
+.eval-outcomes {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.eval-outcomes li {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.75em;
+  font-family: ui-monospace, monospace;
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+.eval-outcomes .status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.eval-outcomes li[data-status="pass"]    .status-dot { background: var(--ok); }
+.eval-outcomes li[data-status="fail"]    .status-dot { background: var(--bad); }
+.eval-outcomes li[data-status="skipped"] .status-dot { background: var(--muted); }
+.eval-outcomes li[data-status="error"]   .status-dot { background: var(--warn); }
+.eval-outcomes .meta { color: var(--muted); font-size: 0.7em; }
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);

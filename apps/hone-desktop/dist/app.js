@@ -785,6 +785,136 @@ function renderSandboxOverrides(root, overrides) {
 }
 
 // ---------------------------------------------------------------------------
+// Eval-run dashboard
+// ---------------------------------------------------------------------------
+
+async function refreshEvals() {
+  const list = document.getElementById('evals-list');
+  list.innerHTML = '<li class="hint">loading…</li>';
+  const tag = document.getElementById('evals-tag').value.trim();
+  try {
+    const items = await invoke('list_evals', { limit: 50, tag: tag || null });
+    list.innerHTML = '';
+    if (!Array.isArray(items) || items.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'hint';
+      li.textContent = 'no eval runs found';
+      list.appendChild(li);
+    } else {
+      for (const summary of items) {
+        list.appendChild(renderEvalRow(summary));
+      }
+    }
+    const badge = document.getElementById('evals-count');
+    badge.textContent = String(Array.isArray(items) ? items.length : 0);
+    badge.classList.toggle('hidden', !Array.isArray(items) || items.length === 0);
+  } catch (err) {
+    list.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = String(err).includes('not configured')
+      ? 'set HONE_EVAL_HISTORY_DB when launching honed'
+      : `error: ${err}`;
+    list.appendChild(li);
+  }
+}
+
+function renderEvalRow(summary) {
+  const li = document.createElement('li');
+  li.className = 'entry expandable eval-row';
+  const head = document.createElement('div');
+  head.className = 'entry-head';
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = summary.model || '(no model)';
+  head.appendChild(name);
+  if (summary.tag) {
+    const tagPill = document.createElement('span');
+    tagPill.className = 'src-tag';
+    tagPill.textContent = summary.tag;
+    head.appendChild(tagPill);
+  }
+  const passed = summary.passed || 0;
+  const total = summary.total || 0;
+  const pct = total > 0 ? passed / total : 0;
+  const passText = document.createElement('span');
+  passText.className = 'pass-text';
+  passText.classList.add(pct >= 0.9 ? 'green' : (pct >= 0.5 ? 'amber' : 'red'));
+  passText.textContent = `${passed}/${total}`;
+  head.appendChild(passText);
+  const bar = document.createElement('span');
+  bar.className = 'pass-bar';
+  const fill = document.createElement('span');
+  fill.style.width = `${(pct * 100).toFixed(0)}%`;
+  bar.appendChild(fill);
+  head.appendChild(bar);
+  li.appendChild(head);
+
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  const ts = summary.timestamp ? new Date(summary.timestamp).toLocaleString() : '?';
+  const sha = summary.commit_sha ? ` · ${summary.commit_sha.slice(0, 7)}` : '';
+  meta.textContent = `${ts}${sha}`;
+  li.appendChild(meta);
+
+  const detail = document.createElement('div');
+  detail.className = 'entry-detail hidden';
+  li.appendChild(detail);
+  head.addEventListener('click', () => toggleEvalDetail(detail, summary.id));
+  return li;
+}
+
+async function toggleEvalDetail(detail, id) {
+  if (!detail.classList.contains('hidden')) {
+    detail.classList.add('hidden');
+    return;
+  }
+  detail.innerHTML = '<p class="hint">loading…</p>';
+  detail.classList.remove('hidden');
+  try {
+    const record = await invoke('get_eval', { id });
+    detail.innerHTML = '';
+    const head = document.createElement('div');
+    head.className = 'detail-row';
+    head.innerHTML = `<strong>config:</strong> <code>${(record.config_hash || '').slice(0, 16)}</code>`;
+    detail.appendChild(head);
+
+    const outcomes = Array.isArray(record.outcomes) ? record.outcomes : [];
+    if (outcomes.length === 0) {
+      const p = document.createElement('p');
+      p.className = 'hint';
+      p.textContent = '(no per-task outcomes)';
+      detail.appendChild(p);
+      return;
+    }
+    const ul = document.createElement('ul');
+    ul.className = 'eval-outcomes';
+    let totalCost = 0;
+    for (const o of outcomes) {
+      totalCost += (o.cost_usd || 0);
+      const li2 = document.createElement('li');
+      li2.dataset.status = String(o.status || '').toLowerCase();
+      const dot = document.createElement('span');
+      dot.className = 'status-dot';
+      const idSpan = document.createElement('span');
+      idSpan.textContent = o.id || '';
+      const meta = document.createElement('span');
+      meta.className = 'meta';
+      meta.textContent = `${o.duration_ms || 0}ms · $${(o.cost_usd || 0).toFixed(4)} · ${(o.tokens_input || 0) + (o.tokens_output || 0)} tok`;
+      li2.append(dot, idSpan, meta);
+      ul.appendChild(li2);
+    }
+    detail.appendChild(ul);
+    const footer = document.createElement('p');
+    footer.className = 'hint';
+    footer.textContent = `total: $${totalCost.toFixed(4)} across ${outcomes.length} task${outcomes.length === 1 ? '' : 's'}`;
+    detail.appendChild(footer);
+  } catch (err) {
+    detail.innerHTML = `<p class="hint">error: ${err}</p>`;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Provenance hash-chain explorer
 // ---------------------------------------------------------------------------
 
@@ -1234,6 +1364,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-refresh-sandbox').addEventListener('click', refreshSandbox);
   document.getElementById('btn-refresh-memory').addEventListener('click', refreshMemory);
   document.getElementById('btn-refresh-prov').addEventListener('click', refreshProvenance);
+  document.getElementById('btn-refresh-evals').addEventListener('click', refreshEvals);
+  document.getElementById('evals-tag').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); refreshEvals(); }
+  });
   document.getElementById('memory-q').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); refreshMemory(); }
   });
