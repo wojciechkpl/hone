@@ -18,6 +18,7 @@ use crate::discovery::{
     agent_detail_handler, list_agents_handler, list_recipes_handler, recipe_detail_handler,
 };
 use crate::mcp_routes::{installed_handler, marketplace_handler};
+use crate::memory_routes::{list_memory_handler, memory_stats_handler};
 use crate::sandbox_routes::sandbox_policies_handler;
 use crate::execution::run_handler;
 use crate::orchestration::orchestrate_handler;
@@ -57,6 +58,8 @@ pub fn router(state: AppState) -> Router {
         .route("/mcp/marketplace", get(marketplace_handler))
         .route("/mcp/installed", get(installed_handler))
         .route("/sandbox/policies", get(sandbox_policies_handler))
+        .route("/memory", get(list_memory_handler))
+        .route("/memory/stats", get(memory_stats_handler))
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/gc", delete(gc_sessions))

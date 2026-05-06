@@ -2910,6 +2910,7 @@ dependencies = [
  "hone-config",
  "hone-core",
  "hone-mcp",
+ "hone-memory",
  "hone-proto",
  "hone-provenance",
  "hone-providers",

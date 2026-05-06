@@ -195,6 +195,32 @@ pub async fn list_recipes(
     fetch_json(&state, "/recipes").await
 }
 
+/// `GET /memory?limit=N` proxy.
+#[tauri::command]
+pub async fn list_memory(
+    state: tauri::State<'_, DaemonState>,
+    limit: Option<usize>,
+    q: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut query = String::new();
+    if let Some(n) = limit {
+        query.push_str(&format!("?limit={n}"));
+    }
+    if let Some(q_s) = q.filter(|s| !s.is_empty()) {
+        query.push_str(if query.is_empty() { "?" } else { "&" });
+        query.push_str(&format!("q={}", urlencoding(&q_s)));
+    }
+    fetch_json(&state, &format!("/memory{query}")).await
+}
+
+/// `GET /memory/stats` proxy.
+#[tauri::command]
+pub async fn memory_stats(
+    state: tauri::State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, "/memory/stats").await
+}
+
 /// `GET /sandbox/policies` proxy.
 #[tauri::command]
 pub async fn list_sandbox_policies(

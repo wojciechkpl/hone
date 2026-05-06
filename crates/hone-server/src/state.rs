@@ -13,6 +13,7 @@ use crate::run_registry::RunRegistry;
 use crate::session::SessionStore;
 use crate::session_storage::SessionStorage;
 use crate::tunnel::{MockTunnelManager, TunnelManager};
+use hone_memory::MemoryStore;
 
 /// Default: 100 requests per minute per client — generous enough that existing
 /// tests never hit the ceiling.
@@ -60,6 +61,10 @@ pub struct AppState {
     /// corresponding `mpsc::Sender<StepAction>` here. Always populated;
     /// the registry is empty when no step-mode runs are active.
     pub run_registry: RunRegistry,
+    /// Optional memory store. When set, `GET /memory` and friends serve
+    /// data; otherwise they return 503 Service Unavailable.
+    /// Wired by the daemon at startup if `HONE_MEMORY_DB` is set.
+    pub memory_store: Option<Arc<dyn MemoryStore>>,
 }
 
 impl AppState {
@@ -77,6 +82,7 @@ impl AppState {
             mock_provider: None,
             distributed_store: None,
             run_registry: RunRegistry::new(),
+            memory_store: None,
         }
     }
 
@@ -94,6 +100,7 @@ impl AppState {
             mock_provider: None,
             distributed_store: None,
             run_registry: RunRegistry::new(),
+            memory_store: None,
         }
     }
 
@@ -114,6 +121,7 @@ impl AppState {
             mock_provider: None,
             distributed_store: None,
             run_registry: RunRegistry::new(),
+            memory_store: None,
         }
     }
 
@@ -164,6 +172,12 @@ impl AppState {
     /// Attach a distributed task store, enabling the `/distributed/*` endpoints.
     pub fn with_distributed_store(mut self, store: Arc<DistributedTaskStore>) -> Self {
         self.distributed_store = Some(store);
+        self
+    }
+
+    /// Attach a memory store, enabling the `/memory*` endpoints.
+    pub fn with_memory_store(mut self, store: Arc<dyn MemoryStore>) -> Self {
+        self.memory_store = Some(store);
         self
     }
 }

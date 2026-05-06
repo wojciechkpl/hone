@@ -186,6 +186,24 @@ async fn main() -> Result<()> {
         state = state.with_distributed_store(Arc::clone(store));
     }
 
+    // Optional memory store. HONE_MEMORY_DB selects the file path; when
+    // unset, /memory* endpoints return 503. We deliberately do NOT mint a
+    // default path on startup — operators opt in by setting the env var so
+    // the daemon can run on hosts without persistent disk write access.
+    if let Ok(memory_db) = std::env::var("HONE_MEMORY_DB") {
+        let path = std::path::Path::new(&memory_db);
+        match hone_memory::SqliteStore::open(path).await {
+            Ok(store) => {
+                let store: Arc<dyn hone_memory::MemoryStore> = Arc::new(store);
+                state = state.with_memory_store(store);
+                tracing::info!("memory store opened at {memory_db}");
+            }
+            Err(e) => {
+                tracing::warn!("failed to open memory store at {memory_db}: {e}");
+            }
+        }
+    }
+
     // Spawn the lease reaper when distributed mode is on. Default per
     // design doc §5.3: 15s interval, 3 max attempts. Override via
     // HONE_DISTRIBUTED_REAP_SECS / HONE_DISTRIBUTED_MAX_ATTEMPTS.

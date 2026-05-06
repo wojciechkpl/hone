@@ -49,6 +49,8 @@ pub fn run() -> anyhow::Result<()> {
             commands::list_mcp_installed,
             commands::mcp_install,
             commands::list_sandbox_policies,
+            commands::list_memory,
+            commands::memory_stats,
         ])
         .setup(|app| {
             tray::install(app.handle())?;
