@@ -2,6 +2,7 @@ import type { Component } from "solid-js";
 import { AgentSelector } from "./AgentSelector";
 import { SessionSelector } from "./SessionSelector";
 import { useStepMode, setStepMode } from "../lib/step";
+import { togglePreview, usePreviewOpen } from "../lib/preview";
 
 export type Theme = "crimson" | "chalk" | "neon" | "minimal";
 
@@ -15,6 +16,7 @@ type Props = {
 
 export const TopBar: Component<Props> = (props) => {
   const stepMode = useStepMode();
+  const previewOpen = usePreviewOpen();
   return (
     <header
       class="px-4 flex items-center justify-between border-b"
@@ -67,6 +69,14 @@ export const TopBar: Component<Props> = (props) => {
             style={{ "margin-right": "6px", "vertical-align": "middle" }}
           />
           {props.healthy === true ? "daemon ok" : props.healthy === false ? "daemon down" : "checking…"}
+        </button>
+        <button
+          class="px-2 py-1"
+          style={{ "font-size": "0.85em" }}
+          onClick={togglePreview}
+          title="Toggle file preview pane"
+        >
+          {previewOpen() ? "preview ▾" : "preview ▸"}
         </button>
         <button
           class="px-2 py-1"

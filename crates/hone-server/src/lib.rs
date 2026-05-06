@@ -21,6 +21,7 @@ pub mod discovery;
 pub mod error;
 pub mod eval_routes;
 pub mod execution;
+pub mod files_routes;
 pub mod governance;
 pub mod governance_routes;
 pub mod mcp_routes;

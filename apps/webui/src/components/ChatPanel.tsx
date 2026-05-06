@@ -7,6 +7,7 @@ import { addUsage } from "../lib/cost";
 import { ensureSession, touchSession, useActiveSession } from "../lib/session";
 import { loadMessages, saveMessages, type PersistedMessage } from "../lib/db";
 import { setPendingApproval, useStepMode } from "../lib/step";
+import { openFile } from "../lib/preview";
 import type { AgentEvent } from "../types/events";
 
 type Bubble =
@@ -24,6 +25,30 @@ const SLASH_COMMANDS = [
   { name: "/clear", desc: "reset cost meter" },
   { name: "/help", desc: "list available commands" },
 ];
+
+/** Tools that carry a path arg we can auto-open in the preview pane. */
+const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
+
+/**
+ * Tool args sometimes include the daemon's absolute path
+ * (`/Users/.../proj/foo.rs`). The /files endpoints accept relative
+ * paths only — strip a common workspace prefix when we can guess one
+ * from the leading slash. The daemon sets `workspace_root` to its CWD
+ * by default; the GUI doesn't know what that is, so we just trim a
+ * leading `/` and let the endpoint reject if it escapes.
+ */
+function stripWorkspacePrefix(path: string): string {
+  // If path is absolute, the simplest fallback is the basename — the
+  // file tree shows everything under workspace_root anyway, so this
+  // succeeds when the file exists at the root and gracefully 404s
+  // otherwise. Future improvement: GET /workspace would let us
+  // compute the correct relative path here.
+  if (path.startsWith("/")) {
+    const segs = path.split("/").filter(Boolean);
+    return segs[segs.length - 1] ?? "";
+  }
+  return path.replace(/^\.\//, "");
+}
 
 export const ChatPanel: Component<ChatPanelProps> = (props) => {
   const [bubbles, setBubbles] = createStore<Bubble[]>([]);
@@ -90,6 +115,17 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
       }
       case "tool_call_start": {
         append({ kind: "tool", name: event.name, status: "running" });
+        // Auto-open the file in the preview pane for any tool that
+        // names a path. read_file / edit_file / write_file all carry
+        // either `path` or `file_path`. Best-effort: if there's no
+        // path arg (shell, glob, grep) we leave the pane untouched.
+        if (FILE_TOOLS.has(event.name)) {
+          const args = (event.args ?? {}) as Record<string, unknown>;
+          const path = (args["path"] ?? args["file_path"]) as unknown;
+          if (typeof path === "string" && path.length > 0) {
+            openFile(stripWorkspacePrefix(path));
+          }
+        }
         break;
       }
       case "tool_call_end": {
@@ -251,9 +287,8 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
   }
 
   return (
-    <main
+    <section
       style={{
-        "grid-area": "main",
         display: "grid",
         "grid-template-rows": "1fr auto",
         "min-height": 0,
@@ -353,7 +388,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
           </button>
         </div>
       </form>
-    </main>
+    </section>
   );
 };
 

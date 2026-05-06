@@ -28,6 +28,7 @@ export default defineConfig({
       "/evals": "http://127.0.0.1:3117",
       "/sandbox": "http://127.0.0.1:3117",
       "/mcp": "http://127.0.0.1:3117",
+      "/files": "http://127.0.0.1:3117",
     },
   },
 });
