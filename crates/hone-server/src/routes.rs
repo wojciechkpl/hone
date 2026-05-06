@@ -18,6 +18,7 @@ use crate::discovery::{
     agent_detail_handler, list_agents_handler, list_recipes_handler, recipe_detail_handler,
 };
 use crate::eval_routes::{eval_detail_handler, list_evals_handler};
+use crate::files_routes::{list_files_handler, read_file_handler};
 use crate::mcp_routes::{installed_handler, marketplace_handler};
 use crate::memory_routes::{list_memory_handler, memory_stats_handler};
 use crate::provenance_routes::{
@@ -76,6 +77,8 @@ pub fn router(state: AppState) -> Router {
         .route("/provenance/{id}/verify", get(log_verify_handler))
         .route("/evals", get(list_evals_handler))
         .route("/evals/{id}", get(eval_detail_handler))
+        .route("/files", get(list_files_handler))
+        .route("/files/content", get(read_file_handler))
         .route("/sessions", post(create_session).get(list_sessions))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/gc", delete(gc_sessions))

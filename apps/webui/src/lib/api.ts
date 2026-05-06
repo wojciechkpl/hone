@@ -41,3 +41,17 @@ export type AgentSummary = {
   has_sandbox_profile: boolean;
   source: "builtin" | "user" | "project";
 };
+
+/** Wire shape of GET /files — see crates/hone-server/src/files_routes.rs */
+export type FileEntry = {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+};
+
+export async function fetchText(path: string): Promise<string> {
+  const resp = await fetch(`${baseUrl}${path}`);
+  if (!resp.ok) throw new Error(`${path} → ${resp.status}`);
+  return resp.text();
+}

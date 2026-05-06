@@ -4,7 +4,23 @@ Phase 0 scaffold of the SolidJS web UI from `priv/webui-design.md`.
 Served by `honed` at `/ui` via `rust-embed` (the build output lands in
 `apps/webui/dist/` and is compiled into the daemon binary).
 
-## What's in Phase 1B (this drop)
+## What's in Phase 2A (this drop)
+
+- New honed endpoints `GET /files?path=<rel>` (directory listing,
+  workspace-scoped, hidden entries skipped) and
+  `GET /files/content?path=<rel>` (text-only file read, 2 MiB cap,
+  binary detection via NUL byte sniff). Path traversal rejected with
+  400 BAD REQUEST.
+- New `<FilePreviewPanel>` docked to the right of the chat. Toggle on
+  / off via the topbar `preview` button. Two columns: a lazy file
+  tree (left) and a `<CodeViewer>` (right) with line numbers.
+- Tool calls that name a path (`read_file`, `edit_file`, `write_file`)
+  auto-open that file in the preview pane.
+- 4 unit tests + 7 integration tests for the file endpoints
+  (listing / hidden / traversal / read / binary / oversized /
+  not-a-file).
+
+## What's in Phase 1B
 
 - `<SessionSelector>` in the topbar: lists local sessions (created /
   last_used / first-prompt-as-title), switch with one click,

@@ -1,11 +1,13 @@
-import { createSignal, onMount, type Component } from "solid-js";
+import { Show, createSignal, onMount, type Component } from "solid-js";
 import { TopBar, type Theme } from "./components/TopBar";
 import { StatusBar } from "./components/StatusBar";
 import { ChatPanel } from "./components/ChatPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
+import { FilePreviewPanel } from "./components/FilePreviewPanel";
 import { getJson, type DaemonHealth } from "./lib/api";
 import { resetCost } from "./lib/cost";
 import { ensureSession, useActiveSession } from "./lib/session";
+import { usePreviewOpen } from "./lib/preview";
 
 const THEMES: Theme[] = ["crimson", "chalk", "neon", "minimal"];
 
@@ -13,6 +15,7 @@ export const App: Component = () => {
   const [healthy, setHealthy] = createSignal<boolean | null>(null);
   const [theme, setTheme] = createSignal<Theme>("crimson");
   const active = useActiveSession();
+  const previewOpen = usePreviewOpen();
 
   function applyTheme(next: Theme) {
     document.documentElement.setAttribute("data-theme", next);
@@ -63,9 +66,21 @@ export const App: Component = () => {
           // createEffect — nothing else to do here.
         }}
       />
-      <ChatPanel
-        onSlashCommand={(cmd, arg) => handleSlashCommand(cmd, arg, { setThemeByName })}
-      />
+      <main
+        style={{
+          "grid-area": "main",
+          display: "grid",
+          "grid-template-columns": previewOpen() ? "1fr minmax(360px, 45vw)" : "1fr",
+          "min-height": 0,
+        }}
+      >
+        <ChatPanel
+          onSlashCommand={(cmd, arg) => handleSlashCommand(cmd, arg, { setThemeByName })}
+        />
+        <Show when={previewOpen()}>
+          <FilePreviewPanel />
+        </Show>
+      </main>
       <StatusBar />
       <ApprovalModal />
     </>
