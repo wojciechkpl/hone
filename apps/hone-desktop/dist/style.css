@@ -542,6 +542,45 @@ button.mini { padding: 0px 6px; font-size: 0.85em; line-height: 1.4; }
   color: var(--muted);
 }
 
+.prov-pane { display: flex; flex-direction: column; gap: 8px; }
+.prov-verify-line {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8em;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.prov-verify-line.valid   { background: rgba(46,204,113,0.08); border-color: var(--ok); color: var(--ok); }
+.prov-verify-line.invalid { background: rgba(231,76,60,0.08);  border-color: var(--bad); color: var(--bad); }
+.prov-verify-line .merkle {
+  display: block;
+  word-break: break-all;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.prov-entries {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.prov-entries li {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75em;
+}
+.prov-entries .idx { color: var(--muted); margin-right: 6px; }
+.prov-entries .ev-kind { color: var(--accent); }
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);

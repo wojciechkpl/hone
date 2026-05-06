@@ -51,6 +51,9 @@ pub fn run() -> anyhow::Result<()> {
             commands::list_sandbox_policies,
             commands::list_memory,
             commands::memory_stats,
+            commands::list_provenance,
+            commands::get_provenance_entries,
+            commands::verify_provenance,
         ])
         .setup(|app| {
             tray::install(app.handle())?;

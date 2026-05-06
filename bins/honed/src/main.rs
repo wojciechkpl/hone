@@ -204,6 +204,20 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Optional provenance directory. HONE_PROVENANCE_DIR points at a
+    // directory containing one or more `*.jsonl` log files (the format
+    // hone_provenance::ProvenanceLog produces). When unset, /provenance*
+    // endpoints return 503.
+    if let Ok(prov_dir) = std::env::var("HONE_PROVENANCE_DIR") {
+        let path = std::path::PathBuf::from(&prov_dir);
+        if path.is_dir() {
+            state = state.with_provenance_dir(path);
+            tracing::info!("provenance dir attached at {prov_dir}");
+        } else {
+            tracing::warn!("HONE_PROVENANCE_DIR={prov_dir} is not a directory");
+        }
+    }
+
     // Spawn the lease reaper when distributed mode is on. Default per
     // design doc §5.3: 15s interval, 3 max attempts. Override via
     // HONE_DISTRIBUTED_REAP_SECS / HONE_DISTRIBUTED_MAX_ATTEMPTS.
