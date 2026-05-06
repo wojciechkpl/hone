@@ -15,6 +15,7 @@ use crate::collaborative_routes::collaborative_router;
 use crate::distributed_routes::distributed_router;
 use crate::error::ServerError;
 use crate::execution::run_handler;
+use crate::orchestration::orchestrate_handler;
 use crate::run_registry::StepResult;
 use crate::governance_routes::governance_router;
 use crate::rate_limit::rate_limit_middleware;
@@ -43,6 +44,7 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(serve_ui))
         .route("/run", post(run_handler))
         .route("/run/{request_id}/step", post(step_handler))
+        .route("/orchestrate", post(orchestrate_handler))
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/gc", delete(gc_sessions))

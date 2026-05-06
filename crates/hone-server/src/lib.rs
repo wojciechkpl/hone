@@ -22,6 +22,7 @@ pub mod execution;
 pub mod governance;
 pub mod governance_routes;
 pub mod openapi;
+pub mod orchestration;
 pub mod rate_limit;
 pub mod routes;
 pub mod run_registry;

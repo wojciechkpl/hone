@@ -125,12 +125,19 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Slice B.2 (deferred):**
-- **Task-tree DAG sidebar** — needs honed to expose distributed
-  orchestrator events on a public SSE channel. `WorkerStarted`,
-  `WorkerCompleted`, `PlanCreated`, `BudgetProgress` already flow through
-  the agent's event channel, but the `/run` endpoint invokes a single
-  agent rather than the orchestrator.
+**Slice B.2 (this drop) — multi-agent orchestrate + task tree:**
+- New honed endpoint `POST /orchestrate` that runs the multi-agent
+  `Orchestrator` (decompose → execute → merge) and streams the same SSE
+  shape as `/run` plus `plan_created` / `worker_started` /
+  `worker_completed` / `budget_progress`.
+- `OrchestrateRequest` accepts `prompt`, optional `model`, `history`,
+  `working_dir`, `max_workers` (default 4), `total_budget_usd`.
+- GUI: "Orchestrate (multi-agent)" toggle next to the task-tree pane.
+  When checked, the prompt is dispatched via the new `run_orchestrate`
+  Tauri command instead of `run_turn`.
+- GUI: live task-tree shows the goal, one task node per worker with a
+  status icon (queued/running/completed/failed), budget bar at the
+  bottom. Worker nodes pulse while running.
 
 Beyond Phase 2: real chat UI styling (will move to the SolidJS web UI),
 auto-update, real icon artwork, in-process embed of `honed`.

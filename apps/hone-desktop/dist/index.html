@@ -58,6 +58,21 @@
 
         <aside class="sidecar">
           <details class="card" open>
+            <summary>Tasks <span id="task-count" class="badge hidden">0</span></summary>
+            <div id="task-tree" class="task-tree">
+              <p class="hint" id="task-empty">
+                Multi-agent runs appear here. Toggle "Orchestrate" before
+                sending to decompose your prompt across worker agents.
+              </p>
+            </div>
+            <div class="row">
+              <label class="hint" style="display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" id="orchestrate-toggle" />
+                Orchestrate (multi-agent)
+              </label>
+            </div>
+          </details>
+          <details class="card" open>
             <summary>Approvals <span id="approval-count" class="badge hidden">0</span></summary>
             <div id="approval-queue" class="approval-queue">
               <p class="hint" id="approval-empty">No pending approvals.</p>
@@ -81,10 +96,10 @@
           <details class="card">
             <summary>About this build</summary>
             <p class="hint">
-              Hone Desktop v0.0.3 — Phase 2 slice B.1: approval queue.
-              Toggle <em>Step-mode</em> to require approval for risky tools
-              (write/shell). Task-tree DAG ships in B.2 alongside an
-              orchestrator-events SSE channel.
+              Hone Desktop v0.0.4 — Phase 2 slice B.2 ships the task tree:
+              tick <em>Orchestrate</em> to route the prompt through the
+              multi-agent orchestrator (lead decomposes → workers execute).
+              <em>Step-mode</em> still works for single-agent runs.
             </p>
           </details>
         </aside>

@@ -151,6 +151,25 @@ pub async fn run_turn(
     Ok(run_id)
 }
 
+/// Multi-agent orchestrated execution. Same wire format on the SSE side
+/// as `run_turn`, but the daemon goes through the multi-agent
+/// `Orchestrator` which emits `plan_created` / `worker_started` /
+/// `worker_completed` / `budget_progress` events the GUI uses to render
+/// the task tree.
+#[tauri::command]
+pub async fn run_orchestrate(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DaemonState>,
+    registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
+    request: serde_json::Value,
+) -> Result<String, String> {
+    let (base_url, bearer) = resolve_endpoint(&state)
+        .ok_or_else(|| "no daemon configured".to_string())?;
+    let registry = std::sync::Arc::clone(&registry);
+    let run_id = crate::runtime::spawn_orchestrate(app, registry, base_url, bearer, request);
+    Ok(run_id)
+}
+
 #[tauri::command]
 pub async fn run_cancel(
     registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
