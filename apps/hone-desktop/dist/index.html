@@ -9,9 +9,16 @@
   <body>
     <header class="topbar">
       <div class="brand">Hone</div>
-      <div class="status">
-        <span id="daemon-dot" class="dot dot--unknown"></span>
-        <span id="daemon-label">checking daemon…</span>
+      <div class="topbar-center">
+        <div class="status">
+          <span id="daemon-dot" class="dot dot--unknown"></span>
+          <span id="daemon-label">checking daemon…</span>
+        </div>
+        <div id="cost-meter" class="cost-meter" title="Tokens / cost in this session">
+          <span id="cost-tokens">0 tok</span>
+          <span class="sep">·</span>
+          <span id="cost-usd">$0.000</span>
+        </div>
       </div>
       <button id="palette-trigger" class="ghost">Cmd+K</button>
     </header>
@@ -38,31 +45,36 @@
       </section>
 
       <section id="home" class="home hidden">
-        <h1>Hone Desktop <span class="version">v0.0.1</span></h1>
-        <p class="hint">
-          This is a placeholder shell — Phase 1 of the GUI roadmap.
-          The full SolidJS web UI ships separately and will be loaded here in a
-          later phase.
-        </p>
-        <div class="cards">
-          <div class="card">
-            <h3>Daemon</h3>
+        <div id="chat" class="chat">
+          <div id="messages" class="messages" aria-live="polite"></div>
+          <form id="chat-form" class="chat-form">
+            <textarea id="chat-input" rows="3" placeholder="Ask Hone…  (Cmd+Enter to send)"></textarea>
+            <div class="chat-actions">
+              <button type="button" id="btn-cancel" class="ghost hidden">Cancel</button>
+              <button type="submit" id="btn-send">Send</button>
+            </div>
+          </form>
+        </div>
+
+        <aside class="sidecar">
+          <details class="card" open>
+            <summary>Daemon</summary>
             <pre id="daemon-info">loading…</pre>
             <div class="row">
               <button id="btn-start">Start</button>
               <button id="btn-stop">Stop</button>
               <button id="btn-refresh">Refresh</button>
             </div>
-          </div>
-          <div class="card">
-            <h3>What you can do today</h3>
-            <ul>
-              <li>See the daemon's health.</li>
-              <li>Use the system tray icon (right-click for menu).</li>
-              <li>Open <kbd>Cmd</kbd>+<kbd>K</kbd> for the command palette stub.</li>
-            </ul>
-          </div>
-        </div>
+          </details>
+          <details class="card">
+            <summary>About this build</summary>
+            <p class="hint">
+              Hone Desktop v0.0.2 — Phase 2 slice A: SSE chat surface +
+              cost meter. Approval queue and task-tree DAG land in slice B
+              once the daemon exposes the matching endpoints.
+            </p>
+          </details>
+        </aside>
       </section>
     </main>
 

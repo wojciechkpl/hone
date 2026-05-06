@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 
 use crate::config::{DaemonMode, DesktopConfig};
+use crate::runtime::{RunRegistry, RunRequest};
 use crate::supervisor::{SidecarSupervisor, SupervisorError};
 
 /// Shared state managed by Tauri.
@@ -121,6 +122,41 @@ pub async fn daemon_set_external(
         let _ = cfg.save();
     }
     daemon_status(state).await
+}
+
+/// Endpoint resolution result. `base_url` strips any trailing `/` so callers
+/// can append `/run`, `/health`, etc. without double-slashing.
+fn resolve_endpoint(state: &DaemonState) -> Option<(String, Option<String>)> {
+    if let Some(info) = state.sidecar.lock().as_ref().map(|s| s.info().clone()) {
+        return Some((info.url, info.bearer_token));
+    }
+    state
+        .external
+        .lock()
+        .clone()
+        .map(|e| (e.url, e.token))
+}
+
+#[tauri::command]
+pub async fn run_turn(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DaemonState>,
+    registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
+    request: RunRequest,
+) -> Result<String, String> {
+    let (base_url, bearer) = resolve_endpoint(&state)
+        .ok_or_else(|| "no daemon configured".to_string())?;
+    let registry = std::sync::Arc::clone(&registry);
+    let run_id = crate::runtime::spawn_run(app, registry, base_url, bearer, request);
+    Ok(run_id)
+}
+
+#[tauri::command]
+pub async fn run_cancel(
+    registry: tauri::State<'_, std::sync::Arc<RunRegistry>>,
+    run_id: String,
+) -> Result<bool, String> {
+    Ok(registry.cancel(&run_id))
 }
 
 async fn http_health(base_url: &str, token: Option<&str>) -> bool {

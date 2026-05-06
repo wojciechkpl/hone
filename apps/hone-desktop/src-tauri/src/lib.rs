@@ -10,10 +10,15 @@
 
 pub mod commands;
 pub mod config;
+pub mod runtime;
+pub mod sse;
 pub mod supervisor;
 pub mod tray;
 
+use std::sync::Arc;
+
 use crate::commands::DaemonState;
+use crate::runtime::RunRegistry;
 
 /// Run the Tauri application. Returns when the user quits.
 pub fn run() -> anyhow::Result<()> {
@@ -25,11 +30,14 @@ pub fn run() -> anyhow::Result<()> {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(state)
+        .manage(Arc::new(RunRegistry::new()))
         .invoke_handler(tauri::generate_handler![
             commands::daemon_status,
             commands::daemon_start,
             commands::daemon_stop,
             commands::daemon_set_external,
+            commands::run_turn,
+            commands::run_cancel,
         ])
         .setup(|app| {
             tray::install(app.handle())?;
