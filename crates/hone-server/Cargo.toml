@@ -20,6 +20,7 @@ hone-provenance = { workspace = true }
 hone-recipes = { workspace = true }
 hone-config = { workspace = true }
 hone-mcp = { workspace = true }
+hone-memory = { workspace = true }
 dirs = "5"
 futures = { workspace = true }
 serde = { workspace = true }

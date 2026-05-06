@@ -125,7 +125,19 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Phase 4 slice A (this drop) — sandbox policy viewer (read-only):**
+**Phase 4 slice B (this drop) — memory browser:**
+- New honed endpoints `GET /memory` (returns up to N memories, optionally
+  filtered by `?q=` substring or `?kind=`) and `GET /memory/stats`
+  (returns `{ total, by_kind, top_tags }`). Both 503 when no store
+  configured.
+- AppState gained `memory_store: Option<Arc<dyn MemoryStore>>`. honed
+  opens a `SqliteStore` at `HONE_MEMORY_DB` on startup; absent var means
+  `/memory*` returns 503 (read-only viewer).
+- GUI: collapsible **Memory** card with search box, stats summary
+  (total + per-kind breakdown + top tags as chips), and a scrollable
+  list of memory rows (kind pill, content preview, weight + tags).
+
+**Phase 4 slice A — sandbox policy viewer (read-only):**
 - New honed endpoint `GET /sandbox/policies` returns the active
   server-wide policy (currently `SandboxPolicy::permissive()` wired
   into the agent path) plus every per-agent override declared via the

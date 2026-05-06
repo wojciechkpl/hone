@@ -468,6 +468,80 @@ button.mini { padding: 0px 6px; font-size: 0.85em; line-height: 1.4; }
   color: var(--accent);
 }
 
+.memory-pane #memory-q {
+  flex: 1;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.85em;
+}
+.memory-stats {
+  font-size: 0.8em;
+  color: var(--muted);
+  margin-bottom: 6px;
+  font-family: ui-monospace, monospace;
+}
+.memory-stats .top-tags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+.memory-stats .top-tags .tag-chip {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.75em;
+}
+.memory-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.memory-list .mem-row {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.8em;
+}
+.memory-list .mem-row .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.memory-list .mem-row .kind-pill {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, monospace;
+  font-size: 0.7em;
+  color: var(--muted);
+}
+.memory-list .mem-row .kind-pill.user        { color: var(--accent); }
+.memory-list .mem-row .kind-pill.feedback    { color: var(--warn); }
+.memory-list .mem-row .kind-pill.outcome     { color: var(--ok); }
+.memory-list .mem-row .content {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 5em;
+  overflow-y: auto;
+}
+.memory-list .mem-row .meta {
+  display: block;
+  margin-top: 2px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7em;
+  color: var(--muted);
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);

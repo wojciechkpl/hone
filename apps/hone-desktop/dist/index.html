@@ -127,6 +127,19 @@
             </div>
           </details>
           <details class="card">
+            <summary>Memory <span id="memory-count" class="badge hidden">0</span></summary>
+            <div class="memory-pane">
+              <div class="row" style="margin-bottom:8px; gap:6px;">
+                <input id="memory-q" placeholder="search…" />
+                <button id="btn-refresh-memory" class="ghost mini">↻</button>
+              </div>
+              <div id="memory-stats" class="memory-stats">
+                <p class="hint">click ↻ to load memory</p>
+              </div>
+              <ul id="memory-list" class="memory-list"></ul>
+            </div>
+          </details>
+          <details class="card">
             <summary>Sandbox <span id="sandbox-count" class="badge hidden">0</span></summary>
             <div id="sandbox-pane" class="sandbox-pane">
               <div class="row" style="margin-bottom:8px;">
@@ -141,10 +154,10 @@
           <details class="card">
             <summary>About this build</summary>
             <p class="hint">
-              Hone Desktop v0.0.7 — Phase 4 slice A adds the read-only
-              Sandbox card surfacing the active server policy plus any
-              per-agent <code>sandbox:</code> overrides declared in agent
-              frontmatter.
+              Hone Desktop v0.0.8 — Phase 4 slice B adds the Memory
+              browser. Set <code>HONE_MEMORY_DB</code> when launching
+              honed to enable; otherwise the card shows
+              <em>memory store not configured</em>.
             </p>
           </details>
         </aside>

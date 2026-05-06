@@ -784,6 +784,115 @@ function renderSandboxOverrides(root, overrides) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Memory viewer
+// ---------------------------------------------------------------------------
+
+async function refreshMemory() {
+  const statsRoot = document.getElementById('memory-stats');
+  const list = document.getElementById('memory-list');
+  const q = document.getElementById('memory-q').value.trim();
+  statsRoot.innerHTML = '<span>loading…</span>';
+  list.innerHTML = '';
+
+  try {
+    const [stats, items] = await Promise.all([
+      invoke('memory_stats').catch((e) => ({ error: String(e) })),
+      invoke('list_memory', { limit: 200, q: q || null }).catch((e) => ({ error: String(e) })),
+    ]);
+    if (stats && stats.error) {
+      statsRoot.textContent = stats.error.includes('not configured')
+        ? 'memory store not configured (set HONE_MEMORY_DB)'
+        : `error: ${stats.error}`;
+      const badge = document.getElementById('memory-count');
+      badge.classList.add('hidden');
+      return;
+    }
+    renderMemoryStats(statsRoot, stats);
+    if (Array.isArray(items)) {
+      renderMemoryList(list, items);
+      const badge = document.getElementById('memory-count');
+      badge.textContent = String(items.length);
+      badge.classList.toggle('hidden', items.length === 0);
+    } else if (items && items.error) {
+      list.innerHTML = '';
+      const li = document.createElement('li');
+      li.className = 'mem-row';
+      li.textContent = items.error;
+      list.appendChild(li);
+    }
+  } catch (err) {
+    statsRoot.textContent = `error: ${err}`;
+  }
+}
+
+function renderMemoryStats(root, stats) {
+  root.innerHTML = '';
+  const total = document.createElement('div');
+  total.textContent = `total: ${stats.total || 0}`;
+  root.appendChild(total);
+  if (stats.by_kind && Object.keys(stats.by_kind).length > 0) {
+    const breakdown = Object.entries(stats.by_kind)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(' · ');
+    const div = document.createElement('div');
+    div.textContent = breakdown;
+    root.appendChild(div);
+  }
+  if (Array.isArray(stats.top_tags) && stats.top_tags.length > 0) {
+    const tagsDiv = document.createElement('div');
+    tagsDiv.className = 'top-tags';
+    for (const [name, count] of stats.top_tags.slice(0, 12)) {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.textContent = `${name} (${count})`;
+      tagsDiv.appendChild(chip);
+    }
+    root.appendChild(tagsDiv);
+  }
+}
+
+function renderMemoryList(list, items) {
+  list.innerHTML = '';
+  if (items.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'mem-row';
+    li.textContent = '(no memories)';
+    list.appendChild(li);
+    return;
+  }
+  for (const m of items) {
+    const li = document.createElement('li');
+    li.className = 'mem-row';
+
+    const head = document.createElement('div');
+    head.className = 'head';
+    const idSpan = document.createElement('span');
+    idSpan.className = 'kind-pill';
+    idSpan.classList.add(m.kind || 'unknown');
+    idSpan.textContent = m.kind || '?';
+    const idText = document.createElement('span');
+    idText.className = 'meta';
+    idText.textContent = (m.id || '').slice(0, 12);
+    head.append(idSpan, idText);
+    li.appendChild(head);
+
+    const content = document.createElement('div');
+    content.className = 'content';
+    content.textContent = m.content || '(empty)';
+    li.appendChild(content);
+
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    const tags = (m.tags || []).slice(0, 5).join(', ');
+    const w = (typeof m.weight === 'number') ? m.weight.toFixed(2) : '?';
+    meta.textContent = `weight ${w}${tags ? ` · ${tags}` : ''}${m.has_embedding ? ' · embedded' : ''}`;
+    li.appendChild(meta);
+
+    list.appendChild(li);
+  }
+}
+
 async function installMcpEntry(entry) {
   const projectRoot = prompt('Install into project root:', '');
   if (!projectRoot) return;
@@ -991,6 +1100,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-refresh-mcp-installed').addEventListener('click', refreshMcpInstalled);
   document.getElementById('btn-refresh-mcp-marketplace').addEventListener('click', refreshMcpMarketplace);
   document.getElementById('btn-refresh-sandbox').addEventListener('click', refreshSandbox);
+  document.getElementById('btn-refresh-memory').addEventListener('click', refreshMemory);
+  document.getElementById('memory-q').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); refreshMemory(); }
+  });
 
   // Chat
   document.getElementById('chat-form').addEventListener('submit', (e) => {
