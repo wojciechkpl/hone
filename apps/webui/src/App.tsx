@@ -4,10 +4,11 @@ import { StatusBar } from "./components/StatusBar";
 import { ChatPanel } from "./components/ChatPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
 import { FilePreviewPanel } from "./components/FilePreviewPanel";
+import { SplitGutter } from "./components/SplitGutter";
 import { getJson, type DaemonHealth } from "./lib/api";
 import { resetCost } from "./lib/cost";
 import { ensureSession, useActiveSession } from "./lib/session";
-import { usePreviewOpen } from "./lib/preview";
+import { usePreviewOpen, useSplitRatio } from "./lib/preview";
 
 const THEMES: Theme[] = ["crimson", "chalk", "neon", "minimal"];
 
@@ -16,6 +17,8 @@ export const App: Component = () => {
   const [theme, setTheme] = createSignal<Theme>("crimson");
   const active = useActiveSession();
   const previewOpen = usePreviewOpen();
+  const splitRatio = useSplitRatio();
+  let mainEl: HTMLElement | null = null;
 
   function applyTheme(next: Theme) {
     document.documentElement.setAttribute("data-theme", next);
@@ -67,10 +70,18 @@ export const App: Component = () => {
         }}
       />
       <main
+        ref={(el) => {
+          mainEl = el;
+        }}
         style={{
           "grid-area": "main",
           display: "grid",
-          "grid-template-columns": previewOpen() ? "1fr minmax(360px, 45vw)" : "1fr",
+          // When the preview pane is open we have THREE tracks:
+          // chat | gutter (6px) | preview. The chat-vs-preview ratio
+          // comes from the persisted splitRatio signal.
+          "grid-template-columns": previewOpen()
+            ? `${(splitRatio() * 100).toFixed(2)}fr 6px ${((1 - splitRatio()) * 100).toFixed(2)}fr`
+            : "1fr",
           "min-height": 0,
         }}
       >
@@ -78,6 +89,7 @@ export const App: Component = () => {
           onSlashCommand={(cmd, arg) => handleSlashCommand(cmd, arg, { setThemeByName })}
         />
         <Show when={previewOpen()}>
+          <SplitGutter containerRef={() => mainEl} />
           <FilePreviewPanel />
         </Show>
       </main>

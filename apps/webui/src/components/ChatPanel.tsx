@@ -8,6 +8,16 @@ import { ensureSession, touchSession, useActiveSession } from "../lib/session";
 import { loadMessages, saveMessages, type PersistedMessage } from "../lib/db";
 import { setPendingApproval, useStepMode } from "../lib/step";
 import { openFile } from "../lib/preview";
+import { looksLikeDiff } from "../lib/diff";
+import {
+  completeWorker,
+  resetOrchestratorState,
+  setBudget,
+  setPlan,
+  startWorker,
+} from "../lib/orchestrator";
+import { SideBySideDiff } from "./SideBySideDiff";
+import { WorkerProgressPanel } from "./WorkerProgressPanel";
 import type { AgentEvent } from "../types/events";
 
 type Bubble =
@@ -159,6 +169,35 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         }
         break;
       }
+      case "plan_created": {
+        setPlan({ goal: event.goal, subtask_count: event.subtask_count });
+        break;
+      }
+      case "worker_started": {
+        startWorker({
+          task_id: event.task_id,
+          agent: event.agent,
+          description: event.description,
+        });
+        break;
+      }
+      case "worker_completed": {
+        completeWorker(
+          event.task_id,
+          event.status === "completed" ? "completed" : "failed",
+          event.cost_usd,
+        );
+        break;
+      }
+      case "budget_progress": {
+        setBudget({
+          spent_usd: event.spent_usd,
+          budget_usd: event.budget_usd,
+          workers_completed: event.workers_completed,
+          workers_total: event.workers_total,
+        });
+        break;
+      }
       case "approval_required": {
         // Generic approval (rare today; emitted by some agents at
         // session level rather than per tool call). Show a modal anyway
@@ -219,6 +258,8 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
     }
 
     setDraft("");
+    // Each new turn starts with a clean orchestrator slate.
+    resetOrchestratorState();
     append({ kind: "user", text: prompt });
     setStreaming(true);
 
@@ -290,11 +331,12 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
     <section
       style={{
         display: "grid",
-        "grid-template-rows": "1fr auto",
+        "grid-template-rows": "auto 1fr auto",
         "min-height": 0,
         background: "var(--surface-base)",
       }}
     >
+      <WorkerProgressPanel />
       <div
         ref={listEl}
         class="px-4 py-4"
@@ -488,17 +530,32 @@ const ToolCardView: Component<{
         </Show>
       </div>
       <Show when={props.card.result}>
-        <pre
-          style={{
-            "white-space": "pre-wrap",
-            "max-height": expanded() ? "20em" : `${COLLAPSED_LINES * 1.4}em`,
-            "overflow-y": "auto",
-            margin: "6px 0 0",
-            color: props.card.status === "error" ? "var(--role-error)" : "var(--text-primary)",
-          }}
+        <Show
+          when={looksLikeDiff(props.card.result ?? "")}
+          fallback={
+            <pre
+              style={{
+                "white-space": "pre-wrap",
+                "max-height": expanded() ? "20em" : `${COLLAPSED_LINES * 1.4}em`,
+                "overflow-y": "auto",
+                margin: "6px 0 0",
+                color: props.card.status === "error" ? "var(--role-error)" : "var(--text-primary)",
+              }}
+            >
+              {visible()}
+            </pre>
+          }
         >
-          {visible()}
-        </pre>
+          <div
+            style={{
+              "max-height": expanded() ? "30em" : `${COLLAPSED_LINES * 2}em`,
+              "overflow-y": "auto",
+              "margin-top": "6px",
+            }}
+          >
+            <SideBySideDiff text={props.card.result ?? ""} />
+          </div>
+        </Show>
       </Show>
     </div>
   );
