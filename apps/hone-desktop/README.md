@@ -125,7 +125,24 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Phase 5 slice B (this drop) — artifact pane:**
+**Phase 5 slice C (this drop) — release pipeline:**
+- New CI workflow `.github/workflows/desktop-release.yml` builds the
+  app on macOS arm64/x86_64, Linux x86_64, and Windows x86_64 on every
+  `desktop-v*` tag push. Uses the official `tauri-action` wrapper to
+  produce per-platform installers (`.dmg`, `.app`, `.deb`,
+  `.AppImage`, `.msi`) and uploads them to a draft GitHub release.
+- Optional `tauri-plugin-updater` wired behind a `updater` cargo
+  feature so dev/CI builds without signing keys still compile.
+- Branded Hone monogram icons replace the transparent placeholders.
+  Generator at `scripts/generate_icons.py` is reproducible (pure
+  stdlib PNG writer — no PIL/imagemagick dep).
+- Bundle metadata polished: publisher, copyright, longDescription,
+  macOS minimum version, Linux .deb depends.
+- Release process documented in `apps/hone-desktop/RELEASE.md` with
+  every signing-secret slot enumerated and instructions for first-time
+  Tauri updater key generation + Apple Developer ID enrolment.
+
+**Phase 5 slice B — artifact pane:**
 - New Tauri command `reveal_in_finder(path)` — opens the OS file
   manager at `path` (macOS `open -R`, Windows `explorer /select,`,
   Linux `xdg-open` on parent dir). Rejects null bytes + nonexistent
