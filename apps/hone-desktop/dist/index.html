@@ -127,12 +127,24 @@
             </div>
           </details>
           <details class="card">
+            <summary>Sandbox <span id="sandbox-count" class="badge hidden">0</span></summary>
+            <div id="sandbox-pane" class="sandbox-pane">
+              <div class="row" style="margin-bottom:8px;">
+                <button id="btn-refresh-sandbox" class="ghost mini">↻ refresh</button>
+              </div>
+              <div id="sandbox-active" class="sandbox-active">
+                <p class="hint">click ↻ to load sandbox policies</p>
+              </div>
+              <div id="sandbox-overrides" class="sandbox-overrides"></div>
+            </div>
+          </details>
+          <details class="card">
             <summary>About this build</summary>
             <p class="hint">
-              Hone Desktop v0.0.6 — Phase 3 slice C adds the MCP installed
-              + marketplace lists. Click an installed entry for command
-              detail; click an Install button to drop the marketplace
-              entry into your project's <code>.hone/mcp.json</code>.
+              Hone Desktop v0.0.7 — Phase 4 slice A adds the read-only
+              Sandbox card surfacing the active server policy plus any
+              per-agent <code>sandbox:</code> overrides declared in agent
+              frontmatter.
             </p>
           </details>
         </aside>
