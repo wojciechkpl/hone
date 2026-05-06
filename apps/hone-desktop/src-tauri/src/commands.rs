@@ -8,7 +8,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use serde::Serialize;
 
-use crate::config::{DaemonMode, DesktopConfig};
+use crate::config::{DaemonMode, DaemonProfile, DesktopConfig, LEGACY_SIDECAR_NAME};
 use crate::runtime::{RunRegistry, RunRequest};
 use crate::supervisor::{SidecarSupervisor, SupervisorError};
 
@@ -27,8 +27,14 @@ pub(crate) struct ExternalDaemon {
 
 impl DaemonState {
     pub fn new(cfg: DesktopConfig) -> Self {
-        let external = match cfg.daemon.clone() {
-            Some(DaemonMode::External { url, token }) => Some(ExternalDaemon { url, token }),
+        // Seed the active external slot from the active profile if it
+        // happens to be External. Sidecar profiles only become live when
+        // `daemon_start` runs.
+        let external = match cfg.active_profile().map(|p| &p.mode) {
+            Some(DaemonMode::External { url, token }) => Some(ExternalDaemon {
+                url: url.clone(),
+                token: token.clone(),
+            }),
             _ => None,
         };
         Self {
@@ -91,10 +97,24 @@ pub async fn daemon_start(state: tauri::State<'_, DaemonState>) -> Result<Daemon
     }
     {
         let mut cfg = state.cfg.lock();
-        cfg.daemon = Some(DaemonMode::Sidecar);
+        ensure_named_profile(&mut cfg, LEGACY_SIDECAR_NAME, DaemonMode::Sidecar);
+        let _ = cfg.set_active(LEGACY_SIDECAR_NAME);
         let _ = cfg.save();
     }
     daemon_status(state).await
+}
+
+/// Insert a profile if absent; promote the existing one's mode if it
+/// already exists with a different mode under the same name.
+fn ensure_named_profile(cfg: &mut DesktopConfig, name: &str, mode: DaemonMode) {
+    if let Some(existing) = cfg.daemons.iter_mut().find(|p| p.name == name) {
+        existing.mode = mode;
+    } else {
+        let _ = cfg.add_profile(DaemonProfile {
+            name: name.to_string(),
+            mode,
+        });
+    }
 }
 
 #[tauri::command]
@@ -118,8 +138,106 @@ pub async fn daemon_set_external(
     }
     {
         let mut cfg = state.cfg.lock();
-        cfg.daemon = Some(DaemonMode::External { url, token });
+        ensure_named_profile(
+            &mut cfg,
+            "external",
+            DaemonMode::External { url, token },
+        );
+        let _ = cfg.set_active("external");
         let _ = cfg.save();
+    }
+    daemon_status(state).await
+}
+
+/// `list_daemons` — returns `{ daemons: [...], active: <name|null> }`.
+#[tauri::command]
+pub async fn list_daemons(
+    state: tauri::State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    let cfg = state.cfg.lock();
+    Ok(serde_json::json!({
+        "daemons": cfg.daemons.clone(),
+        "active": cfg.active.clone(),
+    }))
+}
+
+/// `add_daemon` — register an external daemon profile.
+#[tauri::command]
+pub async fn add_daemon(
+    state: tauri::State<'_, DaemonState>,
+    name: String,
+    url: String,
+    token: Option<String>,
+) -> Result<(), String> {
+    let mut cfg = state.cfg.lock();
+    cfg.add_profile(DaemonProfile {
+        name,
+        mode: DaemonMode::External { url, token },
+    })?;
+    cfg.save()
+        .map_err(|e| format!("save failed: {e}"))
+}
+
+/// `remove_daemon` — drop a profile by name. Stops the supervised
+/// sidecar if removing the active sidecar profile.
+#[tauri::command]
+pub async fn remove_daemon(
+    state: tauri::State<'_, DaemonState>,
+    name: String,
+) -> Result<(), String> {
+    {
+        let mut cfg = state.cfg.lock();
+        let was_active = cfg.active.as_deref() == Some(&name);
+        let removed = cfg.remove_profile(&name);
+        if !removed {
+            return Err(format!("no profile named '{name}'"));
+        }
+        cfg.save().map_err(|e| format!("save failed: {e}"))?;
+        // If we removed the active profile and it was a sidecar, stop the
+        // supervised child. Best-effort.
+        if was_active {
+            let taken = state.sidecar.lock().take();
+            if let Some(sup) = taken {
+                let _ = sup.shutdown();
+            }
+            *state.external.lock() = None;
+        }
+    }
+    Ok(())
+}
+
+/// `switch_daemon` — make `name` the active profile. For an external
+/// profile, seeds the in-memory external slot. For a sidecar profile,
+/// the user must still call `daemon_start` to actually spawn it.
+#[tauri::command]
+pub async fn switch_daemon(
+    state: tauri::State<'_, DaemonState>,
+    name: String,
+) -> Result<DaemonStatus, String> {
+    {
+        let mut cfg = state.cfg.lock();
+        cfg.set_active(&name)?;
+        // Tear down the previously-active sidecar (if any) — switching
+        // away from it should release the port.
+        let mode = cfg
+            .active_profile()
+            .map(|p| p.mode.clone())
+            .unwrap_or_default();
+        let prev_sidecar = state.sidecar.lock().take();
+        if let Some(sup) = prev_sidecar {
+            let _ = sup.shutdown();
+        }
+        match mode {
+            DaemonMode::External { url, token } => {
+                *state.external.lock() = Some(ExternalDaemon { url, token });
+            }
+            DaemonMode::Sidecar => {
+                // Active is now a sidecar; clear the external slot. The
+                // user must call daemon_start to actually spawn.
+                *state.external.lock() = None;
+            }
+        }
+        cfg.save().map_err(|e| format!("save failed: {e}"))?;
     }
     daemon_status(state).await
 }
@@ -816,13 +934,16 @@ mod tests {
     }
 
     #[test]
-    fn daemon_state_new_with_external_mode_seeds_external_field() {
-        let cfg = DesktopConfig {
-            daemon: Some(DaemonMode::External {
+    fn daemon_state_new_with_external_active_profile_seeds_external_field() {
+        let mut cfg = DesktopConfig::default();
+        cfg.add_profile(DaemonProfile {
+            name: "team-vm".into(),
+            mode: DaemonMode::External {
                 url: "http://10.0.0.5:3117".into(),
                 token: Some("t0k".into()),
-            }),
-        };
+            },
+        })
+        .expect("add");
         let state = DaemonState::new(cfg);
         let ext = state.external.lock().clone().expect("should be seeded");
         assert_eq!(ext.url, "http://10.0.0.5:3117");
@@ -831,9 +952,32 @@ mod tests {
     }
 
     #[test]
-    fn daemon_state_new_with_sidecar_mode_leaves_external_empty() {
-        let cfg = DesktopConfig { daemon: Some(DaemonMode::Sidecar) };
+    fn daemon_state_new_with_sidecar_active_profile_leaves_external_empty() {
+        let mut cfg = DesktopConfig::default();
+        cfg.add_profile(DaemonProfile {
+            name: LEGACY_SIDECAR_NAME.into(),
+            mode: DaemonMode::Sidecar,
+        })
+        .expect("add");
         let state = DaemonState::new(cfg);
         assert!(state.external.lock().is_none());
+    }
+
+    #[test]
+    fn ensure_named_profile_inserts_or_updates() {
+        let mut cfg = DesktopConfig::default();
+        ensure_named_profile(&mut cfg, "p1", DaemonMode::Sidecar);
+        assert_eq!(cfg.daemons.len(), 1);
+        // Upsert: same name, different mode → in-place update, no dup.
+        ensure_named_profile(
+            &mut cfg,
+            "p1",
+            DaemonMode::External {
+                url: "http://x".into(),
+                token: None,
+            },
+        );
+        assert_eq!(cfg.daemons.len(), 1);
+        assert!(matches!(cfg.daemons[0].mode, DaemonMode::External { .. }));
     }
 }

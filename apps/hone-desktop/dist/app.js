@@ -29,12 +29,19 @@ async function refreshDaemon() {
   const info = document.getElementById('daemon-info');
   try {
     const status = await invoke('daemon_status');
+    // Prefix the topbar label with the active profile name when known.
+    let prefix = '';
+    try {
+      const list = await invoke('list_daemons');
+      if (list && list.active) prefix = `${list.active} · `;
+    } catch (_) {}
+
     if (status && status.healthy) {
       dot.className = 'dot dot--ok';
-      label.textContent = `${status.mode} @ ${status.url}`;
+      label.textContent = `${prefix}${status.mode} @ ${status.url}`;
     } else {
       dot.className = 'dot dot--bad';
-      label.textContent = 'daemon not reachable';
+      label.textContent = prefix ? `${prefix}unreachable` : 'daemon not reachable';
     }
     if (info) info.textContent = JSON.stringify(status, null, 2);
   } catch (err) {
@@ -42,6 +49,100 @@ async function refreshDaemon() {
     label.textContent = `error: ${err}`;
     if (info) info.textContent = String(err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-daemon switcher (topbar dropdown)
+// ---------------------------------------------------------------------------
+
+async function openDaemonMenu() {
+  const menu = document.getElementById('daemon-menu');
+  const list = document.getElementById('daemon-menu-list');
+  list.innerHTML = '<li class="hint">loading…</li>';
+  menu.classList.remove('hidden');
+  document.getElementById('daemon-switcher').setAttribute('aria-expanded', 'true');
+
+  try {
+    const data = await invoke('list_daemons');
+    list.innerHTML = '';
+    const profiles = (data && Array.isArray(data.daemons)) ? data.daemons : [];
+    const active = data && data.active;
+    if (profiles.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'hint';
+      li.textContent = '(no profiles yet — add one below)';
+      list.appendChild(li);
+    }
+    for (const p of profiles) {
+      list.appendChild(renderDaemonProfileRow(p, active));
+    }
+  } catch (err) {
+    list.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = `error: ${err}`;
+    list.appendChild(li);
+  }
+}
+
+function closeDaemonMenu() {
+  document.getElementById('daemon-menu').classList.add('hidden');
+  document.getElementById('daemon-switcher').setAttribute('aria-expanded', 'false');
+}
+
+function renderDaemonProfileRow(profile, activeName) {
+  const li = document.createElement('li');
+  if (profile.name === activeName) li.classList.add('active');
+
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = profile.name;
+  li.appendChild(name);
+
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  meta.textContent = describeProfileMode(profile);
+  li.appendChild(meta);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  if (profile.name !== activeName) {
+    const switchBtn = document.createElement('button');
+    switchBtn.textContent = 'Switch';
+    switchBtn.addEventListener('click', async () => {
+      try {
+        await invoke('switch_daemon', { name: profile.name });
+        closeDaemonMenu();
+        refreshDaemon();
+      } catch (err) { appendErrorBubble(`switch failed: ${err}`); }
+    });
+    actions.appendChild(switchBtn);
+  }
+  const removeBtn = document.createElement('button');
+  removeBtn.textContent = '✕';
+  removeBtn.title = 'Remove profile';
+  removeBtn.addEventListener('click', async () => {
+    if (!confirm(`Remove profile '${profile.name}'?`)) return;
+    try {
+      await invoke('remove_daemon', { name: profile.name });
+      openDaemonMenu();
+      refreshDaemon();
+    } catch (err) { appendErrorBubble(`remove failed: ${err}`); }
+  });
+  actions.appendChild(removeBtn);
+  li.appendChild(actions);
+  return li;
+}
+
+function describeProfileMode(profile) {
+  // Wire shape (internally-tagged + flattened):
+  //   sidecar  → { name, kind: "sidecar" }
+  //   external → { name, kind: "external", url, token }
+  if (!profile) return '';
+  if (profile.kind === 'external' && profile.url) {
+    return `external @ ${profile.url}`;
+  }
+  return 'sidecar (managed)';
 }
 
 // ---------------------------------------------------------------------------
@@ -1365,6 +1466,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-refresh-memory').addEventListener('click', refreshMemory);
   document.getElementById('btn-refresh-prov').addEventListener('click', refreshProvenance);
   document.getElementById('btn-refresh-evals').addEventListener('click', refreshEvals);
+
+  // Multi-daemon switcher
+  const switcher = document.getElementById('daemon-switcher');
+  switcher.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const menu = document.getElementById('daemon-menu');
+    if (menu.classList.contains('hidden')) openDaemonMenu(); else closeDaemonMenu();
+  });
+  document.getElementById('daemon-menu').addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', (e) => {
+    const menu = document.getElementById('daemon-menu');
+    if (!menu.classList.contains('hidden') && !menu.contains(e.target) && e.target !== switcher) {
+      closeDaemonMenu();
+    }
+  });
+  document.getElementById('daemon-add-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('daemon-add-name').value.trim();
+    const url = document.getElementById('daemon-add-url').value.trim();
+    const token = document.getElementById('daemon-add-token').value.trim() || null;
+    if (!name || !url) return;
+    try {
+      await invoke('add_daemon', { name, url, token });
+      document.getElementById('daemon-add-name').value = '';
+      document.getElementById('daemon-add-url').value = '';
+      document.getElementById('daemon-add-token').value = '';
+      openDaemonMenu();
+    } catch (err) {
+      appendErrorBubble(`add_daemon failed: ${err}`);
+    }
+  });
   document.getElementById('evals-tag').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); refreshEvals(); }
   });
