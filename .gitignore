@@ -26,3 +26,9 @@ benchmarks/.venv/
 benchmarks/aider-repo/
 *.debug-eval.json
 *.debug-single.json
+# Tauri build artefacts (auto-generated each build)
+apps/hone-desktop/src-tauri/gen/
+# Override the user-global `dist/` ignore — our static frontend is checked in
+!apps/hone-desktop/dist/
+!apps/hone-desktop/dist/**
+
