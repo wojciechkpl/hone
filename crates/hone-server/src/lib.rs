@@ -26,6 +26,7 @@ pub mod mcp_routes;
 pub mod memory_routes;
 pub mod openapi;
 pub mod orchestration;
+pub mod provenance_routes;
 pub mod rate_limit;
 pub mod routes;
 pub mod run_registry;

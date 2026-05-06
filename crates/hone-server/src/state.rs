@@ -65,6 +65,10 @@ pub struct AppState {
     /// data; otherwise they return 503 Service Unavailable.
     /// Wired by the daemon at startup if `HONE_MEMORY_DB` is set.
     pub memory_store: Option<Arc<dyn MemoryStore>>,
+    /// Optional directory under which provenance log files (`*.jsonl`)
+    /// are discoverable. When `None`, `GET /provenance*` endpoints
+    /// return 503. Wired from `HONE_PROVENANCE_DIR` by the daemon.
+    pub provenance_dir: Option<PathBuf>,
 }
 
 impl AppState {
@@ -83,6 +87,7 @@ impl AppState {
             distributed_store: None,
             run_registry: RunRegistry::new(),
             memory_store: None,
+            provenance_dir: None,
         }
     }
 
@@ -101,6 +106,7 @@ impl AppState {
             distributed_store: None,
             run_registry: RunRegistry::new(),
             memory_store: None,
+            provenance_dir: None,
         }
     }
 
@@ -122,6 +128,7 @@ impl AppState {
             distributed_store: None,
             run_registry: RunRegistry::new(),
             memory_store: None,
+            provenance_dir: None,
         }
     }
 
@@ -178,6 +185,12 @@ impl AppState {
     /// Attach a memory store, enabling the `/memory*` endpoints.
     pub fn with_memory_store(mut self, store: Arc<dyn MemoryStore>) -> Self {
         self.memory_store = Some(store);
+        self
+    }
+
+    /// Attach a provenance directory, enabling the `/provenance*` endpoints.
+    pub fn with_provenance_dir(mut self, dir: PathBuf) -> Self {
+        self.provenance_dir = Some(dir);
         self
     }
 }

@@ -19,6 +19,9 @@ use crate::discovery::{
 };
 use crate::mcp_routes::{installed_handler, marketplace_handler};
 use crate::memory_routes::{list_memory_handler, memory_stats_handler};
+use crate::provenance_routes::{
+    list_logs_handler, log_entries_handler, log_verify_handler,
+};
 use crate::sandbox_routes::sandbox_policies_handler;
 use crate::execution::run_handler;
 use crate::orchestration::orchestrate_handler;
@@ -60,6 +63,9 @@ pub fn router(state: AppState) -> Router {
         .route("/sandbox/policies", get(sandbox_policies_handler))
         .route("/memory", get(list_memory_handler))
         .route("/memory/stats", get(memory_stats_handler))
+        .route("/provenance", get(list_logs_handler))
+        .route("/provenance/{id}", get(log_entries_handler))
+        .route("/provenance/{id}/verify", get(log_verify_handler))
         .route("/sessions", post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
         .route("/sessions/gc", delete(gc_sessions))

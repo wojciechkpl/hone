@@ -195,6 +195,32 @@ pub async fn list_recipes(
     fetch_json(&state, "/recipes").await
 }
 
+/// `GET /provenance` proxy.
+#[tauri::command]
+pub async fn list_provenance(
+    state: tauri::State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, "/provenance").await
+}
+
+/// `GET /provenance/{id}` proxy.
+#[tauri::command]
+pub async fn get_provenance_entries(
+    state: tauri::State<'_, DaemonState>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, &format!("/provenance/{}", urlencoding(&id))).await
+}
+
+/// `GET /provenance/{id}/verify` proxy.
+#[tauri::command]
+pub async fn verify_provenance(
+    state: tauri::State<'_, DaemonState>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    fetch_json(&state, &format!("/provenance/{}/verify", urlencoding(&id))).await
+}
+
 /// `GET /memory?limit=N` proxy.
 #[tauri::command]
 pub async fn list_memory(

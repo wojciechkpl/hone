@@ -127,6 +127,17 @@
             </div>
           </details>
           <details class="card">
+            <summary>Provenance <span id="prov-count" class="badge hidden">0</span></summary>
+            <div class="prov-pane">
+              <div class="row" style="margin-bottom:8px;">
+                <button id="btn-refresh-prov" class="ghost mini">↻ refresh</button>
+              </div>
+              <ul id="prov-list" class="discover-list">
+                <li class="hint">click ↻ to load provenance logs (set HONE_PROVENANCE_DIR)</li>
+              </ul>
+            </div>
+          </details>
+          <details class="card">
             <summary>Memory <span id="memory-count" class="badge hidden">0</span></summary>
             <div class="memory-pane">
               <div class="row" style="margin-bottom:8px; gap:6px;">
@@ -154,10 +165,10 @@
           <details class="card">
             <summary>About this build</summary>
             <p class="hint">
-              Hone Desktop v0.0.8 — Phase 4 slice B adds the Memory
-              browser. Set <code>HONE_MEMORY_DB</code> when launching
-              honed to enable; otherwise the card shows
-              <em>memory store not configured</em>.
+              Hone Desktop v0.0.9 — Phase 4 slice C adds the Provenance
+              hash-chain explorer. Set <code>HONE_PROVENANCE_DIR</code>
+              to a directory with <code>*.jsonl</code> chain files; click
+              an entry to verify and see the Merkle root.
             </p>
           </details>
         </aside>

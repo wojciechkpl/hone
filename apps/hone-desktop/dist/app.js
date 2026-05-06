@@ -785,6 +785,138 @@ function renderSandboxOverrides(root, overrides) {
 }
 
 // ---------------------------------------------------------------------------
+// Provenance hash-chain explorer
+// ---------------------------------------------------------------------------
+
+async function refreshProvenance() {
+  const list = document.getElementById('prov-list');
+  list.innerHTML = '<li class="hint">loading…</li>';
+  try {
+    const items = await invoke('list_provenance');
+    list.innerHTML = '';
+    if (!Array.isArray(items) || items.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'hint';
+      li.textContent = 'no provenance logs found';
+      list.appendChild(li);
+    } else {
+      for (const summary of items) {
+        list.appendChild(renderProvEntry(summary));
+      }
+    }
+    const badge = document.getElementById('prov-count');
+    badge.textContent = String(Array.isArray(items) ? items.length : 0);
+    badge.classList.toggle('hidden', !Array.isArray(items) || items.length === 0);
+  } catch (err) {
+    list.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = String(err).includes('not configured')
+      ? 'set HONE_PROVENANCE_DIR when launching honed'
+      : `error: ${err}`;
+    list.appendChild(li);
+  }
+}
+
+function renderProvEntry(summary) {
+  const li = document.createElement('li');
+  li.className = 'entry expandable';
+  const head = document.createElement('div');
+  head.className = 'entry-head';
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = summary.id || '(unnamed)';
+  head.appendChild(name);
+  const meta = document.createElement('span');
+  meta.className = 'src-tag';
+  meta.textContent = `${summary.size_bytes || 0} B`;
+  head.appendChild(meta);
+  li.appendChild(head);
+
+  const detail = document.createElement('div');
+  detail.className = 'entry-detail hidden';
+  li.appendChild(detail);
+
+  head.addEventListener('click', () => toggleProvDetail(detail, summary.id));
+  return li;
+}
+
+async function toggleProvDetail(detail, id) {
+  if (!detail.classList.contains('hidden')) {
+    detail.classList.add('hidden');
+    return;
+  }
+  detail.innerHTML = '<p class="hint">verifying…</p>';
+  detail.classList.remove('hidden');
+  try {
+    const [verify, entries] = await Promise.all([
+      invoke('verify_provenance', { id }),
+      invoke('get_provenance_entries', { id }),
+    ]);
+    detail.innerHTML = '';
+    const line = document.createElement('div');
+    line.className = `prov-verify-line ${verify.valid ? 'valid' : 'invalid'}`;
+    if (verify.valid) {
+      line.textContent = `✓ chain valid · ${verify.entry_count} entries`;
+    } else {
+      line.textContent = `✗ chain invalid${verify.broken_at != null ? ` at index ${verify.broken_at}` : ''}: ${verify.reason || ''}`;
+    }
+    const merkle = document.createElement('span');
+    merkle.className = 'merkle';
+    merkle.textContent = `merkle: ${verify.merkle_root || '(none)'}`;
+    line.appendChild(merkle);
+    detail.appendChild(line);
+
+    if (Array.isArray(entries) && entries.length > 0) {
+      const ul = document.createElement('ul');
+      ul.className = 'prov-entries';
+      for (const e of entries.slice(0, 200)) {
+        const li2 = document.createElement('li');
+        const idx = document.createElement('span');
+        idx.className = 'idx';
+        idx.textContent = `#${e.index ?? '?'}`;
+        const kind = document.createElement('span');
+        kind.className = 'ev-kind';
+        kind.textContent = (e.event && e.event.kind) || '?';
+        li2.append(idx, kind);
+        const summary = describeProvEvent(e.event);
+        if (summary) {
+          li2.append(' ', document.createTextNode(summary));
+        }
+        ul.appendChild(li2);
+      }
+      detail.appendChild(ul);
+      if (entries.length > 200) {
+        const note = document.createElement('p');
+        note.className = 'hint';
+        note.textContent = `(truncated; showing first 200 of ${entries.length})`;
+        detail.appendChild(note);
+      }
+    }
+  } catch (err) {
+    detail.innerHTML = `<p class="hint">error: ${err}</p>`;
+  }
+}
+
+function describeProvEvent(ev) {
+  if (!ev || typeof ev !== 'object') return '';
+  switch (ev.kind) {
+    case 'user_prompt':
+      return (ev.text || '').slice(0, 80);
+    case 'model_completion':
+      return `${ev.model || '?'}: ${(ev.output || '').slice(0, 60)}`;
+    case 'tool_call':
+      return ev.name || '';
+    case 'tool_result':
+      return `${ev.name || '?'} ${ev.is_error ? '(err)' : ''}`;
+    case 'session_end':
+      return ev.reason || '';
+    default:
+      return '';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Memory viewer
 // ---------------------------------------------------------------------------
 
@@ -1101,6 +1233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-refresh-mcp-marketplace').addEventListener('click', refreshMcpMarketplace);
   document.getElementById('btn-refresh-sandbox').addEventListener('click', refreshSandbox);
   document.getElementById('btn-refresh-memory').addEventListener('click', refreshMemory);
+  document.getElementById('btn-refresh-prov').addEventListener('click', refreshProvenance);
   document.getElementById('memory-q').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); refreshMemory(); }
   });

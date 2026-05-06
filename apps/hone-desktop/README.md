@@ -125,7 +125,19 @@ generates the full set from a single 1024×1024 source.
   events; each card has Approve / Approve all / Skip / Deny buttons that
   POST a `StepAction` via the new `run_step` Tauri command.
 
-**Phase 4 slice B (this drop) — memory browser:**
+**Phase 4 slice C (this drop) — provenance hash-chain explorer:**
+- New honed endpoints `GET /provenance` (lists `*.jsonl` files under
+  `HONE_PROVENANCE_DIR`), `GET /provenance/{id}` (returns full chain),
+  and `GET /provenance/{id}/verify` (returns `{ valid, broken_at,
+  reason, merkle_root, entry_count }`).
+- All return 503 when no provenance dir is configured. Path-traversal
+  in `{id}` is rejected with 400.
+- GUI: collapsible **Provenance** card listing chain files. Click an
+  entry to expand: green ✓ banner + Merkle root for valid chains,
+  red ✗ banner pinpointing the broken index for tampered ones, plus
+  the first 200 entries (kind + summary).
+
+**Phase 4 slice B — memory browser:**
 - New honed endpoints `GET /memory` (returns up to N memories, optionally
   filtered by `?q=` substring or `?kind=`) and `GET /memory/stats`
   (returns `{ total, by_kind, top_tags }`). Both 503 when no store
