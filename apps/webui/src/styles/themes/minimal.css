@@ -1,0 +1,35 @@
+:root[data-theme="minimal"] {
+  --surface-base: #ffffff;
+  --surface-raised: #fafafa;
+  --surface-overlay: #f4f4f4;
+  --surface-border: #e0e0e0;
+  --surface-focus: #2563eb;
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #a1a1aa;
+  --role-user: #2563eb;
+  --role-assistant: #18181b;
+  --role-tool: #7c3aed;
+  --role-tool-result: #15803d;
+  --role-error: #b91c1c;
+  --accent-hot: #2563eb;
+  --accent-mid: #1d4ed8;
+  --accent-deep: #1e3a8a;
+  --syntax-keyword: #b91c1c;
+  --syntax-string: #15803d;
+  --syntax-number: #b45309;
+  --syntax-comment: #71717a;
+  --syntax-type: #2563eb;
+  --syntax-function: #7c3aed;
+  --diff-add-bg: #f0fdf4;
+  --diff-add-fg: #15803d;
+  --diff-remove-bg: #fef2f2;
+  --diff-remove-fg: #b91c1c;
+  --diff-hunk-bg: #eff6ff;
+  --diff-hunk-fg: #71717a;
+  --budget-low: #15803d;
+  --budget-mid: #b45309;
+  --budget-high: #b91c1c;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+  --font-ui: "Inter", system-ui, sans-serif;
+}

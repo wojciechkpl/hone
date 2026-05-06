@@ -1,8 +1,11 @@
 import type { Component } from "solid-js";
+import { AgentSelector } from "./AgentSelector";
+
+export type Theme = "crimson" | "chalk" | "neon" | "minimal";
 
 type Props = {
-  theme: "crimson" | "chalk";
-  onToggleTheme: () => void;
+  theme: Theme;
+  onCycleTheme: () => void;
   healthy: boolean | null;
   onRefreshHealth: () => void;
 };
@@ -24,10 +27,12 @@ export const TopBar: Component<Props> = (props) => {
       </div>
 
       <div class="flex items-center gap-3" style={{ color: "var(--text-secondary)" }}>
+        <AgentSelector />
         <button
           class="px-2 py-1"
           style={{ "font-size": "0.85em" }}
           onClick={props.onRefreshHealth}
+          title="Click to re-probe daemon /health"
         >
           <span
             class="dot"
@@ -43,8 +48,8 @@ export const TopBar: Component<Props> = (props) => {
         <button
           class="px-2 py-1"
           style={{ "font-size": "0.85em" }}
-          onClick={props.onToggleTheme}
-          title="Toggle theme"
+          onClick={props.onCycleTheme}
+          title="Cycle theme (crimson → chalk → neon → minimal)"
         >
           theme: {props.theme}
         </button>
