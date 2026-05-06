@@ -301,6 +301,68 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   50%      { opacity: 0.4; }
 }
 
+.discover-pane { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.discover-section h4 {
+  margin: 0 0 4px;
+  font-size: 0.85em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.discover-section h4 .muted-count { color: var(--muted); font-weight: normal; font-size: 0.85em; }
+button.mini { padding: 0px 6px; font-size: 0.85em; line-height: 1.4; }
+
+.discover-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.discover-list li.hint { color: var(--muted); font-size: 0.8em; padding: 6px 8px; }
+.discover-list li.entry {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.85em;
+}
+.discover-list li.entry .name {
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+}
+.discover-list li.entry .src-tag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.75em;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.discover-list li.entry .src-tag.user    { color: var(--accent); }
+.discover-list li.entry .src-tag.project { color: var(--ok); }
+.discover-list li.entry .desc {
+  display: block;
+  color: var(--muted);
+  margin-top: 2px;
+  font-size: 0.8em;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.discover-list li.entry .meta {
+  display: block;
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.75em;
+  margin-top: 2px;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);

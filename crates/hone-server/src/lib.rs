@@ -17,6 +17,7 @@ pub mod distributed;
 pub mod distributed_reaper;
 pub mod distributed_routes;
 pub mod collaborative_routes;
+pub mod discovery;
 pub mod error;
 pub mod execution;
 pub mod governance;
