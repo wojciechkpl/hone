@@ -60,6 +60,7 @@ pub fn run() -> anyhow::Result<()> {
             commands::add_daemon,
             commands::remove_daemon,
             commands::switch_daemon,
+            commands::reveal_in_finder,
         ])
         .setup(|app| {
             tray::install(app.handle())?;

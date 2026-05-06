@@ -181,6 +181,8 @@ const chatState = {
   plan: null,             // { goal, subtask_count } | null
   workers: new Map(),     // task_id -> { agent, description, status, cost_usd }
   budget: null,           // { spent_usd, budget_usd, workers_completed, workers_total }
+  pendingToolArgs: new Map(), // tool_call_id -> { name, args } captured at start
+  artifacts: new Map(),   // path -> { tool, count, last_ts, last_was_error }
 };
 
 function appendUserMessage(text) {
@@ -252,10 +254,19 @@ function handleAgentEvent(event) {
     }
     case 'tool_call_start': {
       appendToolCard(event.id, event.name);
+      // Stash args by tool_call_id so the tool_call_end can resolve the path.
+      if (event.id) {
+        chatState.pendingToolArgs.set(event.id, { name: event.name, args: event.args });
+      }
       break;
     }
     case 'tool_call_end': {
       finalizeToolCard(event.id, event);
+      const start = chatState.pendingToolArgs.get(event.id);
+      if (start) {
+        recordArtifactFromTool(start.name, start.args, event);
+        chatState.pendingToolArgs.delete(event.id);
+      }
       break;
     }
     case 'tool_call_paused': {
@@ -886,6 +897,99 @@ function renderSandboxOverrides(root, overrides) {
 }
 
 // ---------------------------------------------------------------------------
+// Artifact pane (Phase 5B)
+// ---------------------------------------------------------------------------
+
+// Tools we track as artifacts. Mapped to a default action label for the row.
+const ARTIFACT_TOOLS = new Set(['write_file', 'edit_file', 'read_file']);
+
+function recordArtifactFromTool(name, args, endEvent) {
+  if (!name || !ARTIFACT_TOOLS.has(name)) return;
+  // Tools accept either { path } or { file_path }; tolerate both.
+  const path = args && (args.path || args.file_path);
+  if (!path || typeof path !== 'string') return;
+  const existing = chatState.artifacts.get(path);
+  const next = {
+    tool: name,
+    count: (existing ? existing.count : 0) + 1,
+    last_ts: Date.now(),
+    last_was_error: !!(endEvent && endEvent.is_error),
+  };
+  chatState.artifacts.set(path, next);
+  renderArtifactList();
+}
+
+function renderArtifactList() {
+  const root = document.getElementById('artifact-list');
+  const empty = document.getElementById('artifact-empty');
+  const badge = document.getElementById('artifact-count');
+  if (!root || !empty || !badge) return;
+
+  const entries = Array.from(chatState.artifacts.entries())
+    .sort((a, b) => b[1].last_ts - a[1].last_ts);
+
+  badge.textContent = String(entries.length);
+  badge.classList.toggle('hidden', entries.length === 0);
+  empty.style.display = entries.length === 0 ? 'block' : 'none';
+
+  root.innerHTML = '';
+  for (const [path, info] of entries) {
+    root.appendChild(renderArtifactRow(path, info));
+  }
+}
+
+function renderArtifactRow(path, info) {
+  const li = document.createElement('li');
+
+  const main = document.createElement('div');
+  const tool = document.createElement('span');
+  tool.className = `tool-pill ${info.tool}`;
+  tool.textContent = info.tool;
+  const pathSpan = document.createElement('span');
+  pathSpan.className = 'path';
+  pathSpan.textContent = path;
+  main.append(tool, pathSpan);
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  const ago = humanAgo(Date.now() - info.last_ts);
+  meta.textContent = `${info.count} call${info.count === 1 ? '' : 's'} · ${ago}${info.last_was_error ? ' · last failed' : ''}`;
+  main.appendChild(meta);
+  li.appendChild(main);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  const reveal = document.createElement('button');
+  reveal.textContent = 'Reveal';
+  reveal.addEventListener('click', () => revealArtifact(path));
+  actions.appendChild(reveal);
+  li.appendChild(actions);
+
+  return li;
+}
+
+function humanAgo(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ago`;
+}
+
+async function revealArtifact(path) {
+  try {
+    await invoke('reveal_in_finder', { path });
+  } catch (err) {
+    appendErrorBubble(`reveal failed: ${err}`);
+  }
+}
+
+function clearArtifacts() {
+  chatState.artifacts.clear();
+  renderArtifactList();
+}
+
+// ---------------------------------------------------------------------------
 // Eval-run dashboard
 // ---------------------------------------------------------------------------
 
@@ -1466,6 +1570,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-refresh-memory').addEventListener('click', refreshMemory);
   document.getElementById('btn-refresh-prov').addEventListener('click', refreshProvenance);
   document.getElementById('btn-refresh-evals').addEventListener('click', refreshEvals);
+
+  // Artifact pane
+  renderArtifactList();
+  document.getElementById('btn-clear-artifacts').addEventListener('click', clearArtifacts);
 
   // Multi-daemon switcher
   const switcher = document.getElementById('daemon-switcher');

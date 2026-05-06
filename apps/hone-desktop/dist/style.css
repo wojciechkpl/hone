@@ -722,6 +722,57 @@ button.mini { padding: 0px 6px; font-size: 0.85em; line-height: 1.4; }
 .eval-outcomes li[data-status="error"]   .status-dot { background: var(--warn); }
 .eval-outcomes .meta { color: var(--muted); font-size: 0.7em; }
 
+.artifact-pane { display: flex; flex-direction: column; gap: 6px; }
+.artifact-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.artifact-list li {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.8em;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+.artifact-list li .path {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  word-break: break-all;
+}
+.artifact-list li .tool-pill {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, monospace;
+  font-size: 0.7em;
+  color: var(--muted);
+  margin-right: 4px;
+}
+.artifact-list li .tool-pill.write_file { color: var(--ok); }
+.artifact-list li .tool-pill.edit_file  { color: var(--accent); }
+.artifact-list li .tool-pill.read_file  { color: var(--muted); }
+.artifact-list li .meta {
+  display: block;
+  color: var(--muted);
+  font-size: 0.7em;
+  font-family: ui-monospace, monospace;
+  margin-top: 2px;
+}
+.artifact-list li .actions { display: flex; gap: 4px; }
+.artifact-list li .actions button { padding: 2px 8px; font-size: 0.75em; }
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
