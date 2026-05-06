@@ -1,0 +1,35 @@
+:root[data-theme="chalk"] {
+  --surface-base: #f5f5f5;
+  --surface-raised: #ffffff;
+  --surface-overlay: #f0f0f0;
+  --surface-border: #d0d0d0;
+  --surface-focus: #d04060;
+  --text-primary: #222222;
+  --text-secondary: #555555;
+  --text-muted: #aaaaaa;
+  --role-user: #2b6cb0;
+  --role-assistant: #c53030;
+  --role-tool: #6b46c1;
+  --role-tool-result: #2f855a;
+  --role-error: #c53030;
+  --accent-hot: #d04060;
+  --accent-mid: #b00040;
+  --accent-deep: #6a0010;
+  --syntax-keyword: #c53030;
+  --syntax-string: #2f855a;
+  --syntax-number: #b07d00;
+  --syntax-comment: #888888;
+  --syntax-type: #2b6cb0;
+  --syntax-function: #6b46c1;
+  --diff-add-bg: #e8f5e9;
+  --diff-add-fg: #2f855a;
+  --diff-remove-bg: #fce8e6;
+  --diff-remove-fg: #c53030;
+  --diff-hunk-bg: #e3f2fd;
+  --diff-hunk-fg: #555555;
+  --budget-low: #2f855a;
+  --budget-mid: #b07d00;
+  --budget-high: #c53030;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+  --font-ui: "Inter", system-ui, sans-serif;
+}

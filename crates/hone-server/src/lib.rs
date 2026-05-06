@@ -42,6 +42,7 @@ pub mod state;
 pub mod tunnel;
 pub mod tunnel_routes;
 pub mod web;
+pub mod webui;
 
 pub use bore_tunnel::BoreTunnelManager;
 pub use agent_executor::AgentTaskExecutor;

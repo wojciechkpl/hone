@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Hone — web UI not built</title>
+    <style>
+      body {
+        background: #0e0f12; color: #d0d0d0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        max-width: 640px; margin: 80px auto; padding: 24px;
+        line-height: 1.6;
+      }
+      code { background: #15171c; padding: 2px 6px; border-radius: 4px; }
+      a { color: #5ac8fa; }
+    </style>
+  </head>
+  <body>
+    <h1>Hone web UI is not bundled in this <code>honed</code> binary.</h1>
+    <p>
+      The SolidJS app source lives at <code>apps/webui/</code>. To build
+      and embed it:
+    </p>
+    <pre>make webui
+cargo build --release -p honed</pre>
+    <p>
+      For dev iteration you can also run the SolidJS app directly with
+      hot reload — it proxies API + SSE requests to a locally-running
+      <code>honed</code>:
+    </p>
+    <pre>make webui-dev
+# then open http://127.0.0.1:5174</pre>
+    <p>
+      The TUI and CLI work without this build step;
+      <code>hone</code> and <code>hone tui</code> are unaffected.
+    </p>
+  </body>
+</html>
