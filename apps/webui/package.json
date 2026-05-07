@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "shiki": "^1.24.4",
     "solid-js": "^1.9.3"
   },
   "devDependencies": {

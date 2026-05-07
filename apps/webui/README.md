@@ -4,7 +4,31 @@ Phase 0 scaffold of the SolidJS web UI from `priv/webui-design.md`.
 Served by `honed` at `/ui` via `rust-embed` (the build output lands in
 `apps/webui/dist/` and is compiled into the daemon binary).
 
-## What's in Phase 2B (this drop)
+## What's in Phase 2C (this drop)
+
+- **Lazy Shiki syntax highlighting** in `<CodeViewer>` (whole files
+  picked up via the file tree or auto-opened by tool calls) and in
+  `<MarkdownView>` fenced code blocks.
+- `lib/highlight.ts` uses `createHighlighterCore` + dynamic
+  per-language imports rather than the full `createHighlighter`
+  bundle — only the languages we whitelist (rust, ts/js/tsx/jsx,
+  python, go, ruby, java, c/cpp/csharp, html/css/scss, json/yaml/toml/xml,
+  markdown, bash, sql, graphql, diff, dockerfile, makefile) ship in
+  the build.
+- Two themes wired: `github-dark-default` for crimson/neon, `github-light`
+  for chalk/minimal. Theme picked at highlight time from the
+  `[data-theme]` attribute on `<html>`.
+- Bundle:
+  - **Initial chunk: 20 KB JS + 2 KB CSS gzipped** (was 53 KB in
+    Phase 2B; the Shiki dynamic import nudged vite to split more
+    aggressively across the rest of the app too).
+  - On first highlight: Shiki core (~53 KB gz) + Oniguruma WASM
+    (~231 KB gz) + the language chunk (e.g. typescript = 17 KB gz,
+    rust = 3 KB gz). Cached after first fetch.
+  - Total dist directory: 3.1 MB (was 9.5 MB before the
+    `createHighlighterCore` refactor).
+
+## What's in Phase 2B
 
 - **Resizable split-pane gutter** — 6px draggable bar between chat
   and preview. Updates a persisted `--split-ratio` (clamped to

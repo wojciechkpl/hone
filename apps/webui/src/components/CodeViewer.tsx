@@ -4,15 +4,27 @@ import {
   type Component,
 } from "solid-js";
 import { fetchText } from "../lib/api";
+import { highlightCode, langFromPath } from "../lib/highlight";
 
 type Props = {
   /** Path relative to workspace_root. */
   path: string | null;
 };
 
-async function fetchFileContent(path: string | null): Promise<string | null> {
+type LoadedFile = {
+  text: string;
+  /** Highlighted HTML if Shiki returned a result, else null. */
+  html: string | null;
+  lang: string;
+};
+
+async function fetchFileContent(path: string | null): Promise<LoadedFile | null> {
   if (!path) return null;
-  return fetchText(`/files/content?path=${encodeURIComponent(path)}`);
+  const text = await fetchText(`/files/content?path=${encodeURIComponent(path)}`);
+  const lang = langFromPath(path);
+  // Trigger Shiki lazy-load; nullable so the fallback stays in sync.
+  const html = await highlightCode(text, lang);
+  return { text, html, lang };
 }
 
 export const CodeViewer: Component<Props> = (props) => {
@@ -50,13 +62,37 @@ export const CodeViewer: Component<Props> = (props) => {
               </div>
             }
           >
-            <Show when={content() !== null && content() !== undefined}>
-              <CodeWithLineNumbers text={content() ?? ""} />
+            <Show when={content()}>
+              <CodeBody file={content()!} />
             </Show>
           </Show>
         </Show>
       </Show>
     </div>
+  );
+};
+
+const CodeBody: Component<{ file: LoadedFile }> = (props) => {
+  return (
+    <Show
+      when={props.file.html}
+      fallback={<CodeWithLineNumbers text={props.file.text} />}
+    >
+      <ShikiBlock html={props.file.html!} />
+    </Show>
+  );
+};
+
+/** Render Shiki's pre-built HTML. Shiki returns `<pre><code>...</code></pre>`
+ * with inline styles per token, so we just inject it. The container
+ * styling comes from the parent <pre> defaults. */
+const ShikiBlock: Component<{ html: string }> = (props) => {
+  return (
+    <div
+      style={{ "min-width": "100%" }}
+      // eslint-disable-next-line solid/no-innerhtml
+      innerHTML={props.html}
+    />
   );
 };
 
@@ -70,7 +106,6 @@ const CodeWithLineNumbers: Component<{ text: string }> = (props) => {
         margin: 0,
         padding: "8px 0",
         "white-space": "pre",
-        // Theme-driven baseline; future Phase 2B swaps in Shiki.
         color: "var(--text-primary)",
       }}
     >
