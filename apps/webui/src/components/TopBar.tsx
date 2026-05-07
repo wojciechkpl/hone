@@ -1,6 +1,7 @@
 import type { Component } from "solid-js";
 import { AgentSelector } from "./AgentSelector";
 import { SessionSelector } from "./SessionSelector";
+import { CollaborativePanel } from "./CollaborativePanel";
 import { useStepMode, setStepMode } from "../lib/step";
 import { togglePreview, usePreviewOpen } from "../lib/preview";
 import { toggleSettings } from "../lib/settings";
@@ -35,6 +36,7 @@ export const TopBar: Component<Props> = (props) => {
       </div>
 
       <div class="flex items-center gap-3" style={{ color: "var(--text-secondary)" }}>
+        <CollaborativePanel />
         <AgentSelector />
         <label
           class="px-2 py-1 flex items-center"
