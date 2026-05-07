@@ -55,3 +55,40 @@ export async function fetchText(path: string): Promise<string> {
   if (!resp.ok) throw new Error(`${path} → ${resp.status}`);
   return resp.text();
 }
+
+export async function deleteRequest(path: string): Promise<Response> {
+  return fetch(`${baseUrl}${path}`, { method: "DELETE" });
+}
+
+// ---- Tunnel (POST/DELETE/GET /tunnel) ----
+
+export type TunnelInfo = {
+  url: string;
+  local_port: number;
+  is_active: boolean;
+};
+
+// ---- Team usage / governance ----
+// Wire shape mirrors hone-server::governance::TeamUsage.
+
+export type ModelUsage = {
+  tokens: number;
+  cost_usd: number;
+};
+
+export type TeamUsage = {
+  total_tokens: number;
+  total_cost_usd: number;
+  /** keyed by model id */
+  by_model: Record<string, ModelUsage>;
+};
+
+// ---- Collaborative sessions ----
+
+export type ParticipantRole = "Owner" | "Editor" | "Viewer";
+export type Participant = {
+  user_id: string;
+  name: string;
+  role: ParticipantRole;
+  joined_at: number;
+};

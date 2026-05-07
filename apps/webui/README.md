@@ -4,7 +4,27 @@ Phase 0 scaffold of the SolidJS web UI from `priv/webui-design.md`.
 Served by `honed` at `/ui` via `rust-embed` (the build output lands in
 `apps/webui/dist/` and is compiled into the daemon binary).
 
-## What's in Phase 3A (this drop)
+## What's in Phase 3B (this drop)
+
+- **Tunnel section** in SettingsPanel — start / stop / status against
+  the existing `POST /tunnel`, `DELETE /tunnel`, `GET /tunnel`
+  endpoints. Public URL displayed in a monospace box with a Copy
+  button (clipboard API).
+- **Team usage section** in SettingsPanel — read-only display of
+  `GET /team/usage`. Shows total tokens + USD plus a per-model
+  breakdown. Refresh button.
+- **`<CollaborativePanel>`** — new topbar dropdown next to the agent
+  selector. Lists participants of the active session via
+  `GET /sessions/{id}/participants`. Join with display name (POST
+  `/join`), Leave (POST `/leave`). Owners get a Kick button per
+  other participant (POST `/kick`). Display name + per-browser
+  user_id persisted to localStorage.
+- All four daemon surfaces in this PR are read/wrote against
+  endpoints that already exist (tunnel, governance, collaborative).
+  Zero daemon changes.
+- Bundle: 23.75 KB JS gzipped initial (was 21.74).
+
+## What's in Phase 3A
 
 - New **\`<SettingsPanel>\`** slide-in drawer (right-docked, opens on
   ⚙ topbar button or \`/settings\` slash command). Theme picker

@@ -1,4 +1,4 @@
-import { For, Show, type Component } from "solid-js";
+import { For, Show, createResource, createSignal, type Component } from "solid-js";
 import {
   FONT_SIZES,
   resetAll,
@@ -8,6 +8,13 @@ import {
   useSettingsOpen,
   type FontSize,
 } from "../lib/settings";
+import {
+  deleteRequest,
+  getJson,
+  postJson,
+  type TeamUsage,
+  type TunnelInfo,
+} from "../lib/api";
 import type { Theme } from "./TopBar";
 
 const THEMES: Theme[] = ["crimson", "chalk", "neon", "minimal"];
@@ -171,6 +178,9 @@ export const SettingsPanel: Component<Props> = (props) => {
               </p>
             </Section>
 
+            <TunnelSection />
+            <TeamUsageSection />
+
             <Section title="About">
               <p
                 style={{
@@ -246,3 +256,189 @@ function fontSizeLabel(s: FontSize): string {
       return "Large";
   }
 }
+
+// ---------------------------------------------------------------------------
+// Tunnel section — POST/DELETE/GET /tunnel
+// ---------------------------------------------------------------------------
+
+const TunnelSection: Component = () => {
+  // Local versioning bump to force the resource to re-fetch after a
+  // start/stop click. createResource is keyed on this signal.
+  const [version, setVersion] = createSignal(0);
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [info] = createResource(version, async () => {
+    try {
+      // GET /tunnel returns the TunnelInfo when active; honed responds
+      // 204 No Content when not. We pretend that's null.
+      const resp = await fetch("/tunnel");
+      if (resp.status === 204) return null;
+      if (!resp.ok) throw new Error(`tunnel status: ${resp.status}`);
+      return (await resp.json()) as TunnelInfo;
+    } catch (e) {
+      // Network errors flag it as inactive rather than blowing up the
+      // whole panel.
+      setError(String(e));
+      return null;
+    }
+  });
+
+  async function start() {
+    setBusy(true);
+    setError(null);
+    try {
+      const resp = await postJson("/tunnel", { local_port: 3117 }, null);
+      if (!resp.ok) throw new Error(`start ${resp.status}`);
+      setVersion(version() + 1);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stop() {
+    setBusy(true);
+    setError(null);
+    try {
+      const resp = await deleteRequest("/tunnel");
+      if (!resp.ok && resp.status !== 204) {
+        throw new Error(`stop ${resp.status}`);
+      }
+      setVersion(version() + 1);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyUrl() {
+    const url = info()?.url;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      /* clipboard blocked; user can select manually */
+    }
+  }
+
+  return (
+    <Section title="Tunnel">
+      <Show
+        when={!info.loading}
+        fallback={<p style={{ "font-size": "0.8em", color: "var(--text-secondary)" }}>checking…</p>}
+      >
+        <Show
+          when={info()?.is_active}
+          fallback={
+            <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
+              <p style={{ margin: 0, "font-size": "0.8em", color: "var(--text-secondary)" }}>
+                No public tunnel is active. honed is reachable on
+                127.0.0.1 only until you start one.
+              </p>
+              <button onClick={start} disabled={busy()} style={{ "align-self": "flex-start" }}>
+                Start tunnel
+              </button>
+            </div>
+          }
+        >
+          <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
+            <div
+              style={{
+                "font-family": "var(--font-mono)",
+                "font-size": "0.85em",
+                "word-break": "break-all",
+                background: "var(--surface-overlay)",
+                border: "1px solid var(--surface-border)",
+                "border-radius": "6px",
+                padding: "6px 8px",
+              }}
+            >
+              {info()!.url}
+            </div>
+            <div style={{ display: "flex", gap: "6px" }}>
+              <button onClick={copyUrl}>Copy URL</button>
+              <button
+                onClick={stop}
+                disabled={busy()}
+                style={{ "border-color": "var(--role-error)", color: "var(--role-error)" }}
+              >
+                Stop tunnel
+              </button>
+            </div>
+          </div>
+        </Show>
+      </Show>
+      <Show when={error()}>
+        <p style={{ "font-size": "0.75em", color: "var(--role-error)", margin: 0 }}>{error()}</p>
+      </Show>
+    </Section>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Team usage — GET /team/usage
+// ---------------------------------------------------------------------------
+
+const TeamUsageSection: Component = () => {
+  const [version, setVersion] = createSignal(0);
+  const [usage] = createResource(version, async () => {
+    try {
+      return await getJson<TeamUsage>("/team/usage", null);
+    } catch {
+      return null;
+    }
+  });
+
+  return (
+    <Section title="Team usage">
+      <Show
+        when={!usage.loading}
+        fallback={<p style={{ "font-size": "0.8em", color: "var(--text-secondary)" }}>loading…</p>}
+      >
+        <Show
+          when={usage()}
+          fallback={
+            <p style={{ "font-size": "0.8em", color: "var(--text-secondary)" }}>
+              unavailable (no governance data)
+            </p>
+          }
+        >
+          <div
+            style={{
+              "font-family": "var(--font-mono)",
+              "font-size": "0.85em",
+              background: "var(--surface-overlay)",
+              border: "1px solid var(--surface-border)",
+              "border-radius": "6px",
+              padding: "6px 8px",
+            }}
+          >
+            <div>
+              total: {usage()!.total_tokens.toLocaleString()} tok ·
+              ${usage()!.total_cost_usd.toFixed(4)}
+            </div>
+            <Show when={Object.keys(usage()!.by_model).length > 0}>
+              <div style={{ "margin-top": "6px", "font-size": "0.85em" }}>
+                <For each={Object.entries(usage()!.by_model)}>
+                  {([model, m]) => (
+                    <div style={{ color: "var(--text-secondary)" }}>
+                      {model}: {m.tokens.toLocaleString()} tok · ${m.cost_usd.toFixed(4)}
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
+          <button
+            onClick={() => setVersion(version() + 1)}
+            style={{ "align-self": "flex-start", "font-size": "0.85em", padding: "4px 10px" }}
+          >
+            Refresh
+          </button>
+        </Show>
+      </Show>
+    </Section>
+  );
+};
