@@ -33,6 +33,7 @@ type ChatPanelProps = {
 
 const SLASH_COMMANDS = [
   { name: "/theme", desc: "set theme: crimson | chalk | neon | minimal" },
+  { name: "/settings", desc: "open the settings drawer" },
   { name: "/clear", desc: "reset cost meter" },
   { name: "/help", desc: "list available commands" },
 ];

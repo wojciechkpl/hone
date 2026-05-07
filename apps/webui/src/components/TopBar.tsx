@@ -3,6 +3,7 @@ import { AgentSelector } from "./AgentSelector";
 import { SessionSelector } from "./SessionSelector";
 import { useStepMode, setStepMode } from "../lib/step";
 import { togglePreview, usePreviewOpen } from "../lib/preview";
+import { toggleSettings } from "../lib/settings";
 
 export type Theme = "crimson" | "chalk" | "neon" | "minimal";
 
@@ -85,6 +86,15 @@ export const TopBar: Component<Props> = (props) => {
           title="Cycle theme (crimson → chalk → neon → minimal)"
         >
           theme: {props.theme}
+        </button>
+        <button
+          class="px-2 py-1"
+          style={{ "font-size": "0.85em" }}
+          onClick={toggleSettings}
+          aria-label="Open settings"
+          title="Open settings"
+        >
+          ⚙
         </button>
       </div>
     </header>

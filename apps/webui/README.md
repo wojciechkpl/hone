@@ -4,7 +4,30 @@ Phase 0 scaffold of the SolidJS web UI from `priv/webui-design.md`.
 Served by `honed` at `/ui` via `rust-embed` (the build output lands in
 `apps/webui/dist/` and is compiled into the daemon binary).
 
-## What's in Phase 2C (this drop)
+## What's in Phase 3A (this drop)
+
+- New **\`<SettingsPanel>\`** slide-in drawer (right-docked, opens on
+  ⚙ topbar button or \`/settings\` slash command). Theme picker
+  grid, font-size selector (small / medium / large), daemon-endpoint
+  override input (persisted but not yet read by the fetch helpers —
+  next slice), and a Reset button that wipes settings without
+  touching sessions or chat history.
+- Settings persisted to \`localStorage\` via \`lib/settings.ts\`;
+  applied on first paint via a tiny `applyToDocument` shim from
+  \`main.tsx\` so the layout doesn't flash to defaults.
+- New PWA **\`manifest.json\`** with name, icons, start_url \`/ui/\`,
+  scope \`/ui/\`, and the brand colors. \`apple-mobile-web-app-*\`
+  meta tags so iOS Safari "Add to Home Screen" picks the right
+  display + name.
+- New **service worker** at \`/ui/sw.js\` (registered only in
+  production builds — dev keeps Vite's HMR untouched). Cache-first
+  for hashed \`/ui/assets/*\`, stale-while-revalidate for the SPA
+  shell, no caching for the API (so SSE / POST always go straight
+  to the daemon).
+- New \`/settings\` slash command opens the drawer.
+- Bundle: 21.74 KB JS gzipped initial chunk (was 20 KB in Phase 2C).
+
+## What's in Phase 2C
 
 - **Lazy Shiki syntax highlighting** in `<CodeViewer>` (whole files
   picked up via the file tree or auto-opened by tool calls) and in

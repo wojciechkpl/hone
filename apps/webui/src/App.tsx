@@ -5,10 +5,12 @@ import { ChatPanel } from "./components/ChatPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
 import { FilePreviewPanel } from "./components/FilePreviewPanel";
 import { SplitGutter } from "./components/SplitGutter";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { getJson, type DaemonHealth } from "./lib/api";
 import { resetCost } from "./lib/cost";
 import { ensureSession, useActiveSession } from "./lib/session";
 import { usePreviewOpen, useSplitRatio } from "./lib/preview";
+import { setSettingsOpen } from "./lib/settings";
 
 const THEMES: Theme[] = ["crimson", "chalk", "neon", "minimal"];
 
@@ -95,6 +97,7 @@ export const App: Component = () => {
       </main>
       <StatusBar />
       <ApprovalModal />
+      <SettingsPanel theme={theme()} onPickTheme={applyTheme} />
     </>
   );
 };
@@ -115,11 +118,14 @@ function handleSlashCommand(
     case "/clear":
       resetCost();
       return { ok: true, reply: "cost meter cleared" };
+    case "/settings":
+      setSettingsOpen(true);
+      return { ok: true, reply: "settings opened" };
     case "/help":
       return {
         ok: true,
         reply:
-          "available: /theme <name>, /clear (reset cost meter), /help",
+          "available: /theme <name>, /settings, /clear (reset cost meter), /help",
       };
     default:
       return { ok: false, reply: `unknown command: ${cmd}` };
