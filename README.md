@@ -33,28 +33,40 @@
   <img src="assets/demo.svg" alt="Hone demo — fixing a ZeroDivisionError end-to-end">
 </p>
 
-<details>
-<summary>Illustrative example (text fallback)</summary>
+<sub><i>Step-by-step animation, ~12 s loop. Each panel fades in as the agent
+takes the next action: prompt → read_file → edit_file (diff) → cargo test
+(green) → fix summary → cost line.</i></sub>
 
-```
-$ hone "divide(10, 0) raises ZeroDivisionError. Fix it to return None."
+### Step-by-step
 
-  [tool] read_file  calculator.py
-  [tool] edit_file  calculator.py
-    - return a / b
-    + if b == 0:
-    +     return None
-    + return a / b
-  [shell] !cargo test
-    running 12 tests
-    test test_divide_by_zero ... ok
-    12 passed in 0.3s
-
-  Fixed. divide() now returns None on zero division.
-
-  claude-sonnet | $0.001 | ctx 18% | 5s
-```
-</details>
+1. **Prompt** — user describes the failing test.
+   ```text
+   $ hone "the test_divide test fails because divide(10, 0) raises
+           ZeroDivisionError. fix it to return None."
+   ```
+2. **`read_file`** — Hone opens `calculator.py` to see what's there.
+   ```python
+   1  def divide(a, b):
+   2      return a / b
+   ```
+3. **`edit_file`** — Hone applies a unified-diff patch.
+   ```diff
+   -     return a / b
+   +     if b == 0:
+   +         return None
+   +     return a / b
+   ```
+4. **`!cargo test`** — Hone runs the test suite to verify.
+   ```
+   running 12 tests
+   test test_divide_by_zero ... ok
+   12 passed in 0.3s
+   ```
+5. **Done** — assistant reports the fix and the cost line.
+   ```
+   Fixed. divide() now returns None on zero division.
+   claude-sonnet | $0.001 | ctx 18% | 5s
+   ```
 
 <details>
 <summary>Play the recording locally</summary>
