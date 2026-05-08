@@ -39,20 +39,20 @@
 ```
 $ hone "divide(10, 0) raises ZeroDivisionError. Fix it to return None."
 
-  ✦ read_file calculator.py
-  ✎ edit_file calculator.py
+  [tool] read_file  calculator.py
+  [tool] edit_file  calculator.py
     - return a / b
     + if b == 0:
     +     return None
     + return a / b
-  ❯ !cargo test
-  running 12 tests
-  test test_divide_by_zero ... ok
-  12 passed in 0.3s
+  [shell] !cargo test
+    running 12 tests
+    test test_divide_by_zero ... ok
+    12 passed in 0.3s
 
   Fixed. divide() now returns None on zero division.
 
-  claude-sonnet │ $0.001 │ ▓▓░░░░░░░░ 18% ctx │ 5s
+  claude-sonnet | $0.001 | ctx 18% | 5s
 ```
 </details>
 
@@ -280,23 +280,26 @@ open http://127.0.0.1:3117/ui
 
 #### 1. Chat with streaming + Cmd+K command palette
 
-```
-┌─ Hone web · session: research-task · agent: researcher · 1.4k tok · $0.012 ─┐
-│                                                                              │
-│  user: explain the agent loop in one paragraph                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │ assistant ▍                                                          │  │
-│  │ The agent loop in `crates/hone-core/src/agent.rs` is a turn-based   │  │
-│  │ state machine: each turn drives the model provider, accumulates     │  │
-│  │ tokens, and dispatches `ToolCallStart`/`ToolCallEnd` events ...     │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│  ┌─ tool: read_file · 12 ms ────────────────────────────────────────────┐  │
-│  │ {"path":"crates/hone-core/src/agent.rs"}                              │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                              │
-│ /theme |  /settings |  /clear |  /help        (Cmd+Enter to send)          │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+What the chat surface contains, in render order:
+
+- **Topbar:** brand · session selector · `collab: N` button · agent selector · step toggle · daemon health badge · theme cycler · `⚙` settings · `Cmd+K`
+- **Conversation list (scrollable):**
+  - user bubble (right-aligned, brand-color background)
+  - assistant bubble (left-aligned, accent border, streaming cursor `▍` while tokens arrive)
+  - tool-call card per invocation: tool name, status (`running` / `done` / `error`), `duration_ms`, collapsible result body, `(cached)` suffix on cache hits
+  - error bubble for any `error` event
+- **Worker progress panel** (only when `Orchestrator` is running)
+- **Input bar:** textarea + autocomplete menu when the draft starts with `/`
+- **Status bar:** version label · token count · USD spend (driven by `done.usage` + `done.cost_usd` events)
+
+Slash commands (intercepted client-side, never hit `/run`):
+
+| Command | What it does |
+|---|---|
+| `/theme <crimson \| chalk \| neon \| minimal>` | set palette |
+| `/settings` | open the settings drawer |
+| `/clear` | reset the session cost meter |
+| `/help` | list available commands |
 
 - Token stream renders with markdown (fenced code blocks get **lazy
   Shiki syntax highlighting** in 27 languages — `rust`, `ts`, `tsx`,
@@ -315,23 +318,33 @@ syntax highlighting. The gutter between chat and preview is
 **resizable** — drag to split (clamped 25–85%, persisted to
 `localStorage`).
 
-```
-┌─ Chat ────────────────────────┬─ src/lib/diff.ts ──────────────────────┐
-│ ✦ edit_file diff.ts           │  1 │ // Tiny unified-diff parser.      │
-│ ┌──────────────────────────┐  │  2 │ //                                 │
-│ │ src/lib/diff.ts          │  │  3 │ // Just enough to render edits ...│
-│ │ @@ -42,3 +42,9 @@        │  │ ...│                                    │
-│ │  context line            │  │ 99 │ }                                  │
-│ │ -    return null;        │  │                                         │
-│ │ +    return parsed;      │  │                                         │
-│ │ +  } catch (err) {       │  │                                         │
-│ │ +    return null;        │  │                                         │
-│ └──────────────────────────┘  │                                         │
-└───────────────────────────────┴─────────────────────────────────────────┘
+The two-column layout (chat left, preview right):
+
+- **Chat side** keeps streaming. Tool results that look like unified
+  diffs auto-render as **side-by-side** with theme-driven add /
+  remove / hunk colors. Long tool results (>6 lines) collapse with a
+  *show all (N lines)* button.
+- **Preview side** shows a 200 px wide file tree on its left and a
+  Shiki-highlighted code viewer on its right. The tree lazily expands
+  directories on click; hidden entries (`.git`, dotfiles) are skipped.
+- **Gutter** is the 6 px draggable bar between the two halves. The
+  ratio is clamped to `[0.25, 0.85]` and persisted to `localStorage`
+  under `hone-webui:split-ratio`.
+
+A typical diff card embedded in the chat:
+
+```diff
+diff --git a/src/lib/diff.ts b/src/lib/diff.ts
+@@ -42,3 +42,9 @@
+   context line
+-    return null;
++    return parsed;
++  } catch (err) {
++    return null;
 ```
 
 - Tool results that look like unified diffs auto-render as
-  **side-by-side** with theme-driven add/remove/hunk colors.
+  **side-by-side** with theme-driven add / remove / hunk colors.
 - File tree on the left lazily expands directories. Hidden entries
   (`.git`, dotfiles) are skipped.
 - Files >2 MiB or with NUL bytes (binaries) get a placeholder.
@@ -339,40 +352,38 @@ syntax highlighting. The gutter between chat and preview is
 #### 3. Multi-agent orchestration with task tree
 
 When you submit a turn that triggers `Orchestrator::run` (multi-agent
-plans), a `<WorkerProgressPanel>` appears above the chat:
+plans), a `<WorkerProgressPanel>` appears above the chat. It shows a
+goal header, one row per worker, and a budget footer.
 
-```
-┌─ Plan: refactor auth module · 4 subtasks ──────────────────────────┐
-│ ● researcher · t-001 · explore current auth/ tree              done · $0.003 │
-│ ● planner · t-002 · draft the migration steps                  done · $0.005 │
-│ ● implementer · t-003 · apply the rename mechanically       running ▍       │
-│ ○ reviewer · t-004 · verify against TDD harness               queued        │
-│ spent $0.008 / $0.50 · 2/4 workers                                          │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+A typical render after two of four workers have finished:
 
-Status dots: queued (muted) · running (warn, pulses) · completed (green) · failed (red).
+| status | agent | task | result |
+|---|---|---|---|
+| done (green) | researcher | `t-001` explore current `auth/` tree | $0.003 |
+| done (green) | planner | `t-002` draft the migration steps | $0.005 |
+| running (warn, pulses) | implementer | `t-003` apply the rename mechanically | — |
+| queued (muted) | reviewer | `t-004` verify against TDD harness | — |
+
+Footer: `spent $0.008 / $0.50 · 2/4 workers`.
+
+Driven by `plan_created` / `worker_started` / `worker_completed` /
+`budget_progress` events on the SSE stream.
 
 #### 4. Step-mode approvals
 
 Tick **step** in the topbar to require approval for risky tools.
-When the agent pauses on a `tool_call_paused` event, a centred modal pops:
+When the agent pauses on a `tool_call_paused` event, a centred modal
+pops with the tool name + arguments. Buttons:
 
-```
-┌─ Agent wants to run a tool ─────────────────────────────────────────┐
-│  write_file                                                          │
-│  {                                                                   │
-│    "path": "src/auth.rs",                                            │
-│    "content": "use crate::session::Session; ..."                     │
-│  }                                                                   │
-│                                                                      │
-│           [Deny] [Skip] [Always allow] [Allow]                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
+| button | StepAction wire shape | semantics |
+|---|---|---|
+| Allow | `"Proceed"` | execute this call only |
+| Always allow | `{"ApproveAlways": "<tool_name>"}` | execute and auto-allow same tool name for the rest of the session |
+| Skip | `"Skip"` | proceed without this tool; agent gets an empty result |
+| Deny | `{"Deny": "user denied"}` | agent receives a tool error and reacts |
 
-`Always allow` lets the same tool name run for the rest of the
-session. `Skip` lets the agent proceed without this tool.
-Click-outside dismisses with `Skip`.
+Click-outside dismisses with `Skip`. The chosen action is POSTed to
+`/run/{request_id}/step` (202 Accepted on success).
 
 #### 5. Multi-session + IndexedDB persistence
 
