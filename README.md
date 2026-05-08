@@ -70,6 +70,35 @@ asciinema play assets/demo.cast
 The `.cast` source is at `assets/demo.cast` — recorded from a real Hone run on DeepSeek V3 via OpenRouter (~$0.001 per task). The embedded `assets/demo.svg` above is regenerated from it with `svg-term --in assets/demo.cast --out assets/demo.svg --window --no-cursor`.
 </details>
 
+<details>
+<summary>Browser &amp; desktop GUI demos (text walk-throughs)</summary>
+
+Three independent surfaces ship alongside the TUI: a **SolidJS web UI**
+served by `honed` at `/ui`, a **Tauri 2 desktop app** with system tray
++ multi-daemon switcher, and the same daemon's HTTP/SSE API anything
+else can embed against. See the
+[Remote Access &amp; Web UI](#remote-access--web-ui) and
+[Desktop App](#desktop-app) sections below for layout sketches,
+walkthroughs of every panel (file preview, side-by-side diff,
+approval modal, task-tree DAG, sandbox / memory / provenance / evals
+viewers, artifact pane), bundle profile, and the full daemon endpoint
+table.
+
+Quick spin-up:
+
+```bash
+# Browser
+make webui                                              # build the SPA
+ANTHROPIC_API_KEY=sk-... cargo run --release -p honed   # serve at /ui
+open http://127.0.0.1:3117/ui
+
+# Desktop (Tauri 2 native shell — system tray, OS notifications, Cmd+K)
+cargo build -p honed --release && cp target/release/honed /usr/local/bin/
+cargo run -p hone-desktop
+```
+
+</details>
+
 ---
 
 ## Overview
@@ -212,13 +241,333 @@ For detailed information on how agents work and how to create custom ones, see [
 
 ## Remote Access & Web UI
 
-The `honed` daemon provides HTTP/2 + SSE endpoints for remote access, team collaboration, and browser-based chat:
+The `honed` daemon serves three independent surfaces over HTTP/2 + SSE: a
+**SolidJS web UI** at `/ui`, a **Tauri 2 desktop app** that can supervise
+its own daemon, and a documented **REST + SSE API** that can be embedded
+in anything else. All three share the same wire format.
 
-- **Web UI** (`GET /`) — Single-page chat interface at `http://localhost:8080`. Dark theme, model selector, working directory input, token-by-token streaming, tool-call cards with JSON previews, and minimal markdown rendering. Start with `hone serve` or `honed --config ~/.config/hone/config.toml`.
-- **Stateless execution endpoint** (`POST /run`) — Send `{prompt, model?, history?, working_dir?}`, receive `AgentEvent`s as SSE. No session persistence. Perfect for one-off tasks and embedded UIs. Client does not need API key—server reads `ANTHROPIC_API_KEY` from env.
-- **Session management endpoints** (`POST /sessions`, `GET /sessions/{id}`, etc.) — Persistent multi-turn sessions with Bearer token auth, team governance, and audit logging. See [docs/api/http-api.md](docs/api/http-api.md) for full reference.
+### Three GUIs, one daemon
 
-For deployment, see [docs/getting-started.md](docs/getting-started.md#12-remote-access-honed) and [docs/configuration.md](docs/configuration.md#server-configuration).
+```mermaid
+flowchart LR
+    H[(honed daemon)]
+    H -- "GET /ui (rust-embed)" --> WebUI[SolidJS web UI<br/>browser, PWA-installable]
+    H -- "HTTP/2 + SSE" --> Desktop[hone-desktop<br/>Tauri 2 native shell]
+    H -- "JSON-RPC over stdio" --> ACP[ACP / MCP clients]
+    H -- "POST /run + GET /files" --> CLI[hone CLI / hone tui]
+    Desktop -. "spawn + supervise (sidecar mode)" .-> H
+```
+
+| Surface | Path | Stack | Best for |
+|---|---|---|---|
+| **TUI** | `hone tui` | Rust + ratatui | terminal-native, SSH, vim users |
+| **Web** | `/ui` | SolidJS + UnoCSS + Vite | any browser, no install, PWA |
+| **Desktop** | `hone-desktop` | Tauri 2 (Rust shell + WebView) | system tray, OS notifications, multi-daemon switcher |
+
+### Web UI walkthrough
+
+A complete browser-based chat surface with file preview, syntax highlighting,
+diff renderer, multi-agent task tree, IndexedDB conversation history, step-mode
+approvals, multi-daemon support, and four themes. Initial bundle: **~24 KB JS
+gzipped**; on-demand syntax highlighting lazy-loads Shiki + Oniguruma WASM.
+
+```bash
+# Build the SPA into the daemon binary, then run it.
+make webui
+ANTHROPIC_API_KEY=sk-ant-... cargo run --release -p honed
+open http://127.0.0.1:3117/ui
+```
+
+#### 1. Chat with streaming + Cmd+K command palette
+
+```
+┌─ Hone web · session: research-task · agent: researcher · 1.4k tok · $0.012 ─┐
+│                                                                              │
+│  user: explain the agent loop in one paragraph                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ assistant ▍                                                          │  │
+│  │ The agent loop in `crates/hone-core/src/agent.rs` is a turn-based   │  │
+│  │ state machine: each turn drives the model provider, accumulates     │  │
+│  │ tokens, and dispatches `ToolCallStart`/`ToolCallEnd` events ...     │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌─ tool: read_file · 12 ms ────────────────────────────────────────────┐  │
+│  │ {"path":"crates/hone-core/src/agent.rs"}                              │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│ /theme |  /settings |  /clear |  /help        (Cmd+Enter to send)          │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+- Token stream renders with markdown (fenced code blocks get **lazy
+  Shiki syntax highlighting** in 27 languages — `rust`, `ts`, `tsx`,
+  `python`, `go`, `c`, `cpp`, `bash`, `json`, `yaml`, `diff`,
+  `markdown`, etc.). The first highlight fetches Shiki + Oniguruma
+  WASM; subsequent highlights are cached.
+- Type `/` to autocomplete commands. `/theme neon` swaps the palette,
+  `/settings` opens the drawer, `/clear` resets the cost meter.
+- `Cmd+Enter` sends; the **Cancel** button aborts mid-stream.
+
+#### 2. File preview + side-by-side diffs
+
+When the agent runs `read_file` / `edit_file` / `write_file`, the
+preview pane to the right opens automatically and shows the file with
+syntax highlighting. The gutter between chat and preview is
+**resizable** — drag to split (clamped 25–85%, persisted to
+`localStorage`).
+
+```
+┌─ Chat ────────────────────────┬─ src/lib/diff.ts ──────────────────────┐
+│ ✦ edit_file diff.ts           │  1 │ // Tiny unified-diff parser.      │
+│ ┌──────────────────────────┐  │  2 │ //                                 │
+│ │ src/lib/diff.ts          │  │  3 │ // Just enough to render edits ...│
+│ │ @@ -42,3 +42,9 @@        │  │ ...│                                    │
+│ │  context line            │  │ 99 │ }                                  │
+│ │ -    return null;        │  │                                         │
+│ │ +    return parsed;      │  │                                         │
+│ │ +  } catch (err) {       │  │                                         │
+│ │ +    return null;        │  │                                         │
+│ └──────────────────────────┘  │                                         │
+└───────────────────────────────┴─────────────────────────────────────────┘
+```
+
+- Tool results that look like unified diffs auto-render as
+  **side-by-side** with theme-driven add/remove/hunk colors.
+- File tree on the left lazily expands directories. Hidden entries
+  (`.git`, dotfiles) are skipped.
+- Files >2 MiB or with NUL bytes (binaries) get a placeholder.
+
+#### 3. Multi-agent orchestration with task tree
+
+When you submit a turn that triggers `Orchestrator::run` (multi-agent
+plans), a `<WorkerProgressPanel>` appears above the chat:
+
+```
+┌─ Plan: refactor auth module · 4 subtasks ──────────────────────────┐
+│ ● researcher · t-001 · explore current auth/ tree              done · $0.003 │
+│ ● planner · t-002 · draft the migration steps                  done · $0.005 │
+│ ● implementer · t-003 · apply the rename mechanically       running ▍       │
+│ ○ reviewer · t-004 · verify against TDD harness               queued        │
+│ spent $0.008 / $0.50 · 2/4 workers                                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Status dots: queued (muted) · running (warn, pulses) · completed (green) · failed (red).
+
+#### 4. Step-mode approvals
+
+Tick **step** in the topbar to require approval for risky tools.
+When the agent pauses on a `tool_call_paused` event, a centred modal pops:
+
+```
+┌─ Agent wants to run a tool ─────────────────────────────────────────┐
+│  write_file                                                          │
+│  {                                                                   │
+│    "path": "src/auth.rs",                                            │
+│    "content": "use crate::session::Session; ..."                     │
+│  }                                                                   │
+│                                                                      │
+│           [Deny] [Skip] [Always allow] [Allow]                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+`Always allow` lets the same tool name run for the rest of the
+session. `Skip` lets the agent proceed without this tool.
+Click-outside dismisses with `Skip`.
+
+#### 5. Multi-session + IndexedDB persistence
+
+The session selector in the topbar lists every session you've created
+locally. Each is a bucket of messages stored in IndexedDB; refreshing
+the page hydrates the conversation back from the local cache before
+SSE reconnects.
+
+#### 6. Settings drawer
+
+Press `⚙` in the topbar (or `/settings`) for a slide-in drawer with:
+
+- **Theme** picker (4 swatches: crimson · chalk · neon · minimal)
+- **Font size** (small / medium / large) — applied via root CSS var
+- **Daemon endpoint** override — for cross-origin / Tauri shell setups
+- **Tunnel** — start / stop / copy URL against `POST/DELETE/GET /tunnel`
+- **Team usage** — totals + per-model breakdown from `GET /team/usage`
+- **Reset** — wipes settings without touching sessions or chat history
+
+#### 7. Collaborative sessions
+
+Click the `collab: N` button next to the agent selector to join the
+active session by name. The first joiner becomes the **Owner** and
+gets a Kick button next to other participants. `user_id` is generated
+locally and persisted so the same browser keeps its identity across
+reloads. Wired against `POST /sessions/{id}/join` /
+`POST /sessions/{id}/leave` / `GET /sessions/{id}/participants` /
+`POST /sessions/{id}/kick`.
+
+#### Bundle profile
+
+| chunk | first paint | first highlight | first file open |
+|---|---|---|---|
+| initial JS | **~24 KB gz** | (cached) | (cached) |
+| initial CSS | ~2 KB gz | (cached) | (cached) |
+| Shiki core + WASM | — | ~285 KB gz once | (cached) |
+| per-language | — | 3–18 KB gz on first use | (cached) |
+| total dist on disk | — | — | 3.1 MB across 36 files |
+
+### Daemon HTTP/SSE API surface
+
+Every endpoint below is hit-tested and surfaced in at least one of the
+GUIs:
+
+| Group | Endpoint | Purpose |
+|---|---|---|
+| chat | `POST /run` | streaming turn (SSE of `AgentEvent`s) |
+| chat | `POST /run/{id}/step` | submit `StepAction` for a step-mode run |
+| chat | `POST /orchestrate` | multi-agent run via `Orchestrator` |
+| sessions | `POST /sessions` / `GET /sessions` / `GET /sessions/{id}` / `DELETE /sessions/{id}` | session lifecycle |
+| sessions | `POST /sessions/{id}/join` / `/leave` / `/kick` / `GET /sessions/{id}/participants` | collaborative |
+| discover | `GET /agents` / `GET /agents/{name}` | agent registry browser |
+| discover | `GET /recipes` / `GET /recipes/{name}` | recipe gallery |
+| discover | `GET /mcp/marketplace` / `GET /mcp/installed` | MCP marketplace |
+| files | `GET /files?path=` / `GET /files/content?path=` | workspace file tree + read |
+| sandbox | `GET /sandbox/policies` | active server policy + per-agent overrides |
+| memory | `GET /memory` / `GET /memory/stats` | encrypted memory viewer |
+| provenance | `GET /provenance` / `GET /provenance/{id}` / `/verify` | tamper-evident hash chain |
+| evals | `GET /evals` / `GET /evals/{id}` | eval-run history |
+| ops | `POST /tunnel` / `DELETE /tunnel` / `GET /tunnel` | bore-style tunnel mgmt |
+| ops | `GET /team/usage` / `/team/members` / `/team/policy` | governance |
+| meta | `GET /health` / `GET /openapi.json` | liveness + spec |
+
+For deployment, see [docs/getting-started.md](docs/getting-started.md#12-remote-access-honed)
+and [docs/configuration.md](docs/configuration.md#server-configuration).
+For the SolidJS source + dev workflow, see
+[apps/webui/README.md](apps/webui/README.md).
+
+## Desktop App
+
+`apps/hone-desktop/` is a **Tauri 2** native shell that can either
+supervise its own `honed` (sidecar mode, double-click and go) or
+connect to a daemon on a team VM (external mode). Distinct from the
+web UI: the desktop app adds a system tray, OS notifications,
+keyboard-only command palette, multi-daemon switcher, and
+right-docked artifact pane that surveys every file the agent has
+touched in the session.
+
+```mermaid
+flowchart LR
+    User[Tray icon click / app launch]
+    User --> Tauri[Tauri 2 shell]
+    Tauri --> SS[SidecarSupervisor]
+    SS -. spawn .-> Honed[(honed)]
+    Tauri --> WebView[WebView<br/>vanilla HTML/JS or SolidJS]
+    WebView -- HTTP/2 + SSE --> Honed
+    Tauri --> Tray[macOS / Windows / Linux tray]
+    Tauri --> Notif[OS notifications<br/>tauri-plugin-notification]
+    Tauri --> Updater[Auto-updater<br/>tauri-plugin-updater · feature-gated]
+```
+
+### Quick start
+
+```bash
+# Local sidecar mode — Tauri spawns a private honed on a free port
+cargo build -p honed --release
+cp target/release/honed /usr/local/bin/honed   # or any PATH dir
+cargo run -p hone-desktop                       # launches the window
+```
+
+The first-run wizard asks **Manage daemon for me** (sidecar) vs
+**Connect to an existing daemon** (external URL + bearer token).
+Choice is persisted to `~/.config/hone/desktop.json` so subsequent
+launches skip the wizard.
+
+### Feature tour
+
+- **Sidecar supervisor.** `SidecarSupervisor::spawn` allocates a free
+  `127.0.0.1` port via `TcpListener::bind(":0")`, generates a
+  per-instance bearer token, sets `HONE_EPHEMERAL=1`, and waits for
+  `/health` to come up before unlocking the UI.
+- **System tray.** Right-click → Show Hone / Hide window / Stop honed
+  sidecar / Quit. Window close hides instead of quitting so the tray
+  stays the source of truth for "is the daemon running."
+- **Cmd+K command palette.** Floating fuzzy-search overlay with
+  `Refresh daemon status`, `Start/Stop sidecar`, `Cancel current run`,
+  `Reset session cost meter`, and `Reset onboarding`.
+- **Streaming chat surface.** Same shape as the web UI — token-stream
+  bubbles, inline tool-call cards (running → done with `duration_ms`,
+  red border on error, `(cached)` suffix on cache hits), cost/token
+  meter in the topbar driven by `done.usage` events.
+- **Approval queue (step-mode).** Sidebar pane lists every pending
+  approval. Buttons: `Approve` / `Approve all` / `Skip` / `Deny`. Wired
+  to the daemon's `POST /run/{id}/step`.
+- **Task-tree DAG.** When you tick **Orchestrate**, the sidebar shows
+  per-worker status dots (queued / running pulses / completed /
+  failed) plus a budget bar. Driven by `plan_created` /
+  `worker_started` / `worker_completed` / `budget_progress`.
+- **Discover pane.** Browse the **Agents** registry (built-in / user /
+  project sources, click to expand the system prompt and Fork into
+  `<project>/.hone/agents/`), the **Recipes** gallery (click to expand
+  steps; "Use first step as prompt" prefills the chat input), and the
+  **MCP marketplace** (7 curated servers; click "Install '<id>' to
+  .hone/mcp.json" to add an entry).
+- **Sandbox policy viewer.** Read-only display of the active server
+  policy + per-agent `sandbox:` overrides. Mode pill, network on/off,
+  and rule lists for read / write / exec / domains / env.
+- **Memory browser.** When `HONE_MEMORY_DB=...` is set, the daemon
+  exposes encrypted memory entries; the GUI shows total + per-kind
+  breakdown + top-tag chips + a search box.
+- **Provenance hash-chain explorer.** When `HONE_PROVENANCE_DIR=...`
+  is set, every run writes a tamper-evident `*.jsonl` chain. Click an
+  entry → green ✓ banner with Merkle root for valid chains, red ✗
+  banner pinpointing the broken index for tampered ones, plus the
+  first 200 entries with kind + per-event summary.
+- **Eval-run dashboard.** When `HONE_EVAL_HISTORY_DB=...` is set, the
+  GUI shows recent runs with model + tag pill + colored pass/total +
+  visual pass-bar (green ≥90%, amber ≥50%, red <50%) + per-task
+  outcomes on click.
+- **Artifact pane.** Right-docked card lists every file the agent
+  has touched this session with tool pill (write/edit/read), call
+  count, relative timestamp, and a **Reveal** button that opens the
+  OS file manager at that path (macOS `open -R`, Windows
+  `explorer /select,`, Linux `xdg-open` parent dir).
+- **Multi-daemon switcher.** Click the topbar daemon badge to switch
+  between profiles (local sidecar, team VM, cloud). Switch tears
+  down the prev sidecar; **Add external daemon** form lets you
+  register an HTTP target with optional bearer token. Persisted to
+  `~/.config/hone/desktop.json`.
+
+### Walkthrough — running a step-mode turn end-to-end
+
+```
+1. Launch hone-desktop → wizard skipped → window opens to chat.
+2. Topbar shows "local sidecar · sidecar @ http://127.0.0.1:54321 · 0 tok · $0.000".
+3. Tick `step` checkbox in the sidebar.
+4. Type "create hello.txt with the word 'hi'" → Cmd+Enter.
+5. Token stream begins; assistant decides to call write_file.
+6. Approval modal pops with the path + content shown verbatim.
+7. Click `Allow` → tool runs, file appears under apps/hone-desktop/dist/.
+8. Bottom of screen: cost meter ticks to "47 tok · $0.0008".
+9. Click the Reveal button on the new artifact card → Finder opens with
+   hello.txt selected.
+10. Right-click the tray icon → Quit Hone → sidecar shuts down cleanly.
+```
+
+### Bundling + releases
+
+`apps/hone-desktop/RELEASE.md` documents the full release pipeline:
+
+- **CI workflow** at `apps/hone-desktop/ci/desktop-release.yml` —
+  builds on macOS arm64 + x86_64, Linux x86_64, Windows x86_64 on
+  every `desktop-v*` tag push (or manual `workflow_dispatch`).
+  Uses `tauri-apps/tauri-action@v0`. Produces `.dmg` / `.app` /
+  `.deb` / `.AppImage` / `.msi`.
+- **Signing slots** wired but disabled when secrets are absent —
+  `APPLE_*`, `TAURI_SIGNING_PRIVATE_KEY*`. Unsigned builds are
+  flagged as such in the release body.
+- **Updater plugin** is optional behind a `updater` cargo feature so
+  dev builds without signing keys still compile.
+- **Branded icons** generated by `scripts/generate_icons.py` (pure
+  stdlib PNG writer — no PIL/imagemagick dep).
+
+See [apps/hone-desktop/README.md](apps/hone-desktop/README.md) for the
+full layout and dev workflow.
 
 ## Customization
 
