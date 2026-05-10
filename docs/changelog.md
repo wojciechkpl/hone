@@ -4,6 +4,42 @@ All notable changes to Hone are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026-05-10] Orchestration GUI Roadmap Complete
+
+### Added
+
+**TUI slash commands for safe, repeatable orchestration:**
+- `/plan <prompt>` — preview decomposed subtasks + cost estimate before execution. In-process decomposition via `Orchestrator::decompose` (PR #60, #63). Rendered overlay with Run / Edit / Cancel keybinds at `crates/hone-tui/src/render/plan_preview.rs:20`. State machine at `crates/hone-tui/src/plan_preview.rs`.
+- `/budget <usd>` — per-run cost ceiling, validated and applied to `AgentHandle::budget_limit` (PR #58, #62). State drained after one turn. Parsing via `hone_tui/src/user_commands.rs`.
+- `/permit <tool>` — per-run tool allowlist for `ToolApprovalPolicy::Auto` mode (PR #58, #62). Idempotent; tool names dotted (e.g. `shell.run`). Drained after turn. Implementation at `hone_tui/src/governance.rs:PendingGovernance::apply_to_policy`.
+
+**Web UI surfaces for workflow discovery and planning:**
+- `/workflows` slash command opens Workflows drawer — card grid showing recipes from three layers (workspace / user ~/.config/hone / project .hone) with source tags (PR #59). Component at `apps/webui/src/components/WorkflowsPanel.tsx`. Supports single-step browser authoring via `POST /recipes` handler at `crates/hone-server/src/discovery.rs` (validates name regex, path traversal hardened).
+- `/plan` in web UI displays `<DryRunCard>` overlay (PR #61). Component at `apps/webui/src/components/WorkerProgressPanel.tsx:78`. Run / Edit / Cancel buttons dispatch through the same plan-action signal as TUI. Implementation reads `dryRunPreview` signal populated by SSE event drain in `ChatPanel.tsx:363`.
+
+**Backend plan-preview infrastructure:**
+- `POST /orchestrate?dry_run=true` query parameter (PR #55). Decomposes prompt without spawning workers. Emits `model_info` + `plan_created` + `budget_progress` + `done` (with full `TaskPlan` JSON). Cost estimate: `lead_cost + N × DEFAULT_WORKER_COST_USD` (constant at `hone_core/src/lib.rs:89`, default 0.05). Implemented at `crates/hone-server/src/orchestration.rs:187-351` (dry-run branch at line 258).
+- `AgentHandle` governance setters: `set_budget_limit(Option<f64>)` and `set_approval_policy(ToolApprovalPolicy)` (PR #62). Allow per-run mutations of in-flight config without persistence. Wired into bins/hone main loop at `bins/hone/src/main.rs:2980-2989`.
+
+**Documentation:**
+- New `docs/tutorials/orchestration-gui.md` (PR #64) — user guide for `/plan`, `/budget`, `/permit`, `/workflows` with examples and validation rules. Links to recipes.md schema.
+- New `docs/architecture/orchestration-gui-flow.md` — sequence diagrams for TUI (in-process decomposition) and web UI (SSE streaming) paths. Cost formula and governance override flows.
+- Refreshed `docs/getting-started.md` § 8.1 with Plan-Preview Gate section (PR #64).
+- Slash-command quick-reference refreshed in getting-started § 8 (PR #64).
+
+### Changed
+
+- **Orchestrator API** — `Orchestrator::decompose()` now public (was gated to `execute_plan` only). Enables in-process decomposition in TUI via `dispatch_plan_decompose()` at `bins/hone/src/main.rs:1173`. Returns `(TaskPlan, lead_cost_usd, usage)` tuple.
+- **Main loop governance flow** — /budget and /permit overrides drained before every turn, not persisted. Applied per-agent via `AgentHandle` setters (non-orchestrated) or mutated `base_config_clone` (orchestrated path). Clear semantics: one-turn overrides per the tutorial spec.
+
+### Testing
+
+- Integration tests for `?dry_run=true` query parameter (slice 1 tests in PR #55).
+- TUI plan-preview overlay state machine tests at `crates/hone-tui/src/tests/` (PR #60).
+- Web UI `/plan` interception and SSE event routing tests in `apps/webui/src/__tests__/` (PR #61).
+- Governance validation tests for budget (positive, finite, int/decimal) and tool permit parsing (PR #58).
+- Left-over test fix from slice 2: `test_theme_command_switches` alignment with neon accent_hot (PR #64).
+
 ## [Unreleased]
 
 ### Added
