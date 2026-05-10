@@ -1,6 +1,11 @@
 import { For, Show, createEffect, createResource, createSignal, type Component } from "solid-js";
 import { createStore, produce } from "solid-js/store";
-import { streamRun, type RunRequest } from "../lib/sse";
+import {
+  streamOrchestrate,
+  streamRun,
+  type OrchestrateRequest,
+  type RunRequest,
+} from "../lib/sse";
 import { baseUrl } from "../lib/api";
 import { parseMarkdown, type Node as MdNode } from "../lib/markdown";
 import { addUsage } from "../lib/cost";
@@ -11,11 +16,15 @@ import { openFile } from "../lib/preview";
 import { looksLikeDiff } from "../lib/diff";
 import { highlightCode } from "../lib/highlight";
 import {
+  buildDryRunPreview,
   completeWorker,
   resetOrchestratorState,
   setBudget,
+  setDryRunPreview,
   setPlan,
   startWorker,
+  takePendingPlanAction,
+  usePendingPlanAction,
 } from "../lib/orchestrator";
 import { SideBySideDiff } from "./SideBySideDiff";
 import { WorkerProgressPanel } from "./WorkerProgressPanel";
@@ -32,6 +41,7 @@ type ChatPanelProps = {
 };
 
 const SLASH_COMMANDS = [
+  { name: "/plan", desc: "preview an orchestrated plan before running it" },
   { name: "/theme", desc: "set theme: crimson | chalk | neon | minimal" },
   { name: "/settings", desc: "open the settings drawer" },
   { name: "/clear", desc: "reset cost meter" },
@@ -72,6 +82,10 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
   const stepMode = useStepMode();
   // The id we're streaming under right now (so step events route back).
   let activeRunId: string | null = null;
+  // The prompt for an in-flight `/plan` (dry-run) request; we need it
+  // when the `done` event arrives because the daemon doesn't echo it back.
+  let pendingDryRunPrompt: string | null = null;
+  const pendingPlanAction = usePendingPlanAction();
 
   // Hydrate from IDB whenever the active session changes. Bubbles are
   // a flat replay of what was persisted — close to the original render
@@ -215,6 +229,20 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         break;
       }
       case "done": {
+        // Dry-run paths attach the full TaskPlan in `event.plan`; lift it
+        // to the shared signal so <DryRunCard> can render the preview gate.
+        // Non-dry-run runs leave `plan` undefined and fall through to the
+        // normal completion path.
+        if (event.plan && pendingDryRunPrompt) {
+          setDryRunPreview(
+            buildDryRunPreview(
+              pendingDryRunPrompt,
+              event.plan,
+              event.cost_usd ?? 0,
+            ),
+          );
+          pendingDryRunPrompt = null;
+        }
         setBubbles(
           produce((arr) => {
             const idx = arr.length - 1;
@@ -244,6 +272,22 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
   async function send() {
     const prompt = draft().trim();
     if (!prompt || streaming()) return;
+
+    // /plan <prompt> — dry-run preview gate. Intercepted before the
+    // generic onSlashCommand hook so we own the SSE wiring.
+    if (prompt.startsWith("/plan")) {
+      const subPrompt = prompt.slice("/plan".length).trim();
+      if (!subPrompt) {
+        append({
+          kind: "error",
+          message: "usage: /plan <describe what you want done>",
+        });
+        return;
+      }
+      setDraft("");
+      await sendOrchestrate(subPrompt, { dryRun: true });
+      return;
+    }
 
     // Slash commands are intercepted client-side; they never go to /run.
     if (prompt.startsWith("/") && props.onSlashCommand) {
@@ -306,6 +350,60 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
       },
     );
   }
+
+  /**
+   * POST /orchestrate (with optional ?dry_run=true). Handles the same
+   * SSE event vocabulary as /run; dry-run terminates after `done` with
+   * `event.plan` populated and the `<DryRunCard>` overlay takes over.
+   */
+  async function sendOrchestrate(
+    prompt: string,
+    opts: { dryRun?: boolean } = {},
+  ): Promise<void> {
+    resetOrchestratorState();
+    if (opts.dryRun) {
+      pendingDryRunPrompt = prompt;
+    }
+    append({
+      kind: "user",
+      text: opts.dryRun ? `/plan ${prompt}` : prompt,
+    });
+    setStreaming(true);
+
+    const id = await ensureSession(activeSession());
+    void touchSession(id, prompt.slice(0, 60));
+
+    const body: OrchestrateRequest = { prompt };
+    aborter = streamOrchestrate(
+      baseUrl,
+      null,
+      body,
+      {
+        onEvent: dispatch,
+        onError: (e) => append({ kind: "error", message: e }),
+        onClose: () => {
+          setStreaming(false);
+          activeRunId = null;
+        },
+      },
+      { dryRun: !!opts.dryRun },
+    );
+  }
+
+  // Watch for plan-action signals from <DryRunCard>. Run replays the
+  // prompt without dry_run; Edit restores it to the input bar; Cancel
+  // is purely UI-side (state was already cleared by the card).
+  createEffect(() => {
+    if (pendingPlanAction() === null) return;
+    const action = takePendingPlanAction();
+    if (!action) return;
+    if (action.kind === "run") {
+      void sendOrchestrate(action.preview.prompt, { dryRun: false });
+    } else if (action.kind === "edit") {
+      setDraft(`/plan ${action.preview.prompt}`);
+    }
+    // "cancel" — nothing else to do.
+  });
 
   // Slash autocomplete: open when the draft starts with `/` and has no
   // space yet. Matches against the static SLASH_COMMANDS list.

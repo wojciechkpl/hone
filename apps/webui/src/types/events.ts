@@ -9,6 +9,23 @@ export type TokenUsage = {
   cache_creation?: number;
 };
 
+/**
+ * Plan payload attached to `done` events when the caller requested a
+ * dry-run (`POST /orchestrate?dry_run=true`). Mirrors `hone_core::TaskPlan`.
+ */
+export type DryRunPlan = {
+  goal: string;
+  subtasks: Array<DryRunSubtask>;
+};
+
+export type DryRunSubtask = {
+  id: string;
+  agent: string;
+  description: string;
+  /** Empty / missing on older daemons; treat absent as []. */
+  depends_on?: string[];
+};
+
 export type AgentEvent =
   | { type: "token"; text: string }
   | { type: "tool_call_start"; id: string; name: string; args?: unknown }
@@ -20,7 +37,12 @@ export type AgentEvent =
       duration_ms?: number;
       cache_hit?: boolean;
     }
-  | { type: "done"; usage: TokenUsage; cost_usd?: number }
+  | {
+      type: "done";
+      usage: TokenUsage;
+      cost_usd?: number;
+      plan?: DryRunPlan;
+    }
   | { type: "error"; message: string }
   | { type: "approval_required"; action: string; description: string }
   | { type: "plan_created"; goal: string; subtask_count: number }

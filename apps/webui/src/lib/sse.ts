@@ -65,36 +65,124 @@ export function streamRun(
       handlers.onClose?.();
       return;
     }
-    const decoder = new TextDecoder();
-    let buf = "";
+    await drainSseStream(reader, handlers, ctl);
+  }
+}
+
+/**
+ * Body for `POST /orchestrate`. Mirrors `OrchestrateRequest` in
+ * `crates/hone-server/src/orchestration.rs`.
+ */
+export type OrchestrateRequest = {
+  prompt: string;
+  model?: string;
+  history?: Array<{ role: string; content: string }>;
+  working_dir?: string;
+  max_workers?: number;
+  total_budget_usd?: number;
+};
+
+export type OrchestrateOptions = {
+  /**
+   * When `true`, append `?dry_run=true` so the daemon stops after the
+   * decompose step and emits `plan_created` + `budget_progress` + `done`
+   * (with the full TaskPlan in `done.plan`) without spawning any workers.
+   */
+  dryRun?: boolean;
+};
+
+/**
+ * Stream a multi-agent orchestrate run. Same SSE protocol as
+ * `streamRun`; different endpoint and request shape. Returns an
+ * `AbortController` so callers can cancel mid-stream.
+ */
+export function streamOrchestrate(
+  baseUrl: string,
+  bearer: string | null,
+  body: OrchestrateRequest,
+  handlers: StreamHandlers,
+  options: OrchestrateOptions = {},
+): AbortController {
+  const ctl = new AbortController();
+  void run();
+  return ctl;
+
+  async function run() {
+    const query = options.dryRun ? "?dry_run=true" : "";
+    const url = `${baseUrl.replace(/\/$/, "")}/orchestrate${query}`;
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      accept: "text/event-stream",
+    };
+    if (bearer) headers.authorization = `Bearer ${bearer}`;
+    let resp: Response;
     try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        // SSE frames end with a blank line (\n\n or \r\n\r\n). Drain
-        // every complete frame from the buffer; leave the partial tail.
-        let split: FrameBoundary | null;
-        while ((split = nextFrameBoundary(buf)) !== null) {
-          const frame = buf.slice(0, split.index);
-          buf = buf.slice(split.index + split.skip);
-          const data = extractData(frame);
-          if (!data) continue;
-          try {
-            const event = JSON.parse(data) as AgentEvent;
-            handlers.onEvent(event);
-          } catch (err) {
-            handlers.onError?.(`bad sse json: ${String(err)} (${data.slice(0, 100)})`);
-          }
+      resp = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: ctl.signal,
+      });
+    } catch (err) {
+      handlers.onError?.(`request failed: ${String(err)}`);
+      handlers.onClose?.();
+      return;
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      handlers.onError?.(`orchestrate failed: ${resp.status} ${text}`);
+      handlers.onClose?.();
+      return;
+    }
+    const reader = resp.body?.getReader();
+    if (!reader) {
+      handlers.onError?.("response has no body");
+      handlers.onClose?.();
+      return;
+    }
+    await drainSseStream(reader, handlers, ctl);
+  }
+}
+
+/**
+ * Shared SSE-frame draining loop. Extracted so `streamRun` and
+ * `streamOrchestrate` don't duplicate the parser. Closes the stream
+ * via `handlers.onClose` even on error.
+ */
+async function drainSseStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  handlers: StreamHandlers,
+  ctl: AbortController,
+): Promise<void> {
+  const decoder = new TextDecoder();
+  let buf = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let split: FrameBoundary | null;
+      while ((split = nextFrameBoundary(buf)) !== null) {
+        const frame = buf.slice(0, split.index);
+        buf = buf.slice(split.index + split.skip);
+        const data = extractData(frame);
+        if (!data) continue;
+        try {
+          const event = JSON.parse(data) as AgentEvent;
+          handlers.onEvent(event);
+        } catch (err) {
+          handlers.onError?.(
+            `bad sse json: ${String(err)} (${data.slice(0, 100)})`,
+          );
         }
       }
-    } catch (err) {
-      if (!ctl.signal.aborted) {
-        handlers.onError?.(`stream read failed: ${String(err)}`);
-      }
-    } finally {
-      handlers.onClose?.();
     }
+  } catch (err) {
+    if (!ctl.signal.aborted) {
+      handlers.onError?.(`stream read failed: ${String(err)}`);
+    }
+  } finally {
+    handlers.onClose?.();
   }
 }
 
