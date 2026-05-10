@@ -1165,6 +1165,33 @@ fn spawn_orchestrated_turn(
 }
 
 // ---------------------------------------------------------------------------
+// /plan dispatch helper — calls Orchestrator::decompose once, returns the
+// TaskPlan + lead-LLM cost + token usage so the TUI can render the
+// plan-preview overlay without spawning any workers.
+// ---------------------------------------------------------------------------
+
+async fn dispatch_plan_decompose(
+    lead_config: AgentConfig,
+    working_dir: std::path::PathBuf,
+    prompt: &str,
+) -> Result<(hone_core::TaskPlan, f64, hone_proto::TokenUsage)> {
+    let registry = AgentRegistry::load_hierarchical(&working_dir);
+    let mut orchestrator = Orchestrator::new(lead_config, registry, 4);
+    // The decompose path emits its own AgentEvents on this channel; we
+    // discard them since the overlay only needs the final triple.
+    let (events_tx, mut events_rx) = mpsc::channel::<AgentEvent>(64);
+    let drain = tokio::spawn(async move {
+        while events_rx.recv().await.is_some() {
+            // intentionally swallowed
+        }
+    });
+    let result = orchestrator.decompose(prompt, events_tx).await;
+    drop(orchestrator); // release events_tx so the drainer can exit
+    drain.await.ok();
+    result.map_err(|e| anyhow::anyhow!("decompose: {e}"))
+}
+
+// ---------------------------------------------------------------------------
 // Orchestrate mode (blocking, for the --orchestrate one-shot path)
 // ---------------------------------------------------------------------------
 
@@ -2830,6 +2857,54 @@ async fn run_tui(
                             // Handle pending agent mode changes from Shift+Tab.
                             if let Some(new_mode) = app.take_pending_mode_change() {
                                 agent.set_mode(new_mode).await;
+                            }
+
+                            // Handle /plan dispatch — call Orchestrator::decompose
+                            // in-process and surface the result through the
+                            // plan-preview overlay.
+                            if let Some(plan_prompt) = app.take_pending_plan_prompt() {
+                                match dispatch_plan_decompose(
+                                    base_config.clone(),
+                                    app.working_dir().to_path_buf(),
+                                    &plan_prompt,
+                                )
+                                .await
+                                {
+                                    Ok((task_plan, lead_cost, _lead_usage)) => {
+                                        let preview = hone_tui::plan_preview::PlanPreviewState::from_decompose(
+                                            &plan_prompt,
+                                            task_plan,
+                                            lead_cost,
+                                        );
+                                        app.set_plan_preview(preview);
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("/plan decompose failed: {e}");
+                                        app.push_error(format!("/plan decompose failed: {e}"));
+                                    }
+                                }
+                            }
+
+                            // Plan-preview overlay actions: Run replays the prompt
+                            // through the normal turn dispatch; Edit restores it
+                            // to the input bar; Cancel is a no-op.
+                            if let Some(action) = app.take_pending_plan_action() {
+                                use hone_tui::plan_preview::PlanAction;
+                                let prompt = app.plan_preview().map(|s| s.prompt.clone());
+                                match action {
+                                    PlanAction::Run => {
+                                        if let Some(p) = prompt {
+                                            app.set_input_buffer(p);
+                                            app.submit_input();
+                                        }
+                                    }
+                                    PlanAction::Edit => {
+                                        if let Some(p) = prompt {
+                                            app.set_input_buffer(p);
+                                        }
+                                    }
+                                    PlanAction::Cancel => {}
+                                }
                             }
 
                             if !is_command && !is_shell_escape && matches!(app.state(), AppState::WaitingForResponse) {

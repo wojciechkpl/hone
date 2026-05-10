@@ -10,6 +10,7 @@ pub mod help;
 pub mod history_search;
 pub mod input_widget;
 pub mod markdown;
+pub mod plan_preview;
 pub mod prompt_mirror;
 pub mod root;
 pub mod search_bar;

@@ -94,6 +94,11 @@ pub fn render(app: &App, frame: &mut Frame) {
         render_debugger(app, frame, area);
     }
 
+    // Plan-preview overlay — shown after `/plan` decompose returns.
+    if app.plan_preview_open {
+        crate::render::plan_preview::render_plan_preview(app, frame, area);
+    }
+
     // Session Switcher — full-area overlay
     if app.sessions_open {
         render_session_switcher(app, frame, area);

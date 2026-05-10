@@ -214,6 +214,10 @@ pub struct App {
     /// Action chosen by the user in the plan-preview overlay, pending
     /// consumption by the event loop.
     pub(crate) pending_plan_action: Option<crate::plan_preview::PlanAction>,
+    /// Prompt the user typed via `/plan <prompt>` that the event loop
+    /// needs to dispatch through `Orchestrator::decompose`. Drained on
+    /// `take_pending_plan_prompt`.
+    pub(crate) pending_plan_prompt: Option<String>,
 
     // --- Per-run governance overrides ----------------------------------------
     /// Budget and tool permits set by `/budget` and `/permit`; drained at the
@@ -298,6 +302,7 @@ impl App {
             plan_preview_open: false,
             plan_preview: None,
             pending_plan_action: None,
+            pending_plan_prompt: None,
             pending_governance: crate::governance::PendingGovernance::default(),
         };
         // Restore draft from previous session if present.
@@ -335,6 +340,25 @@ impl App {
 
     pub fn input(&self) -> &InputState {
         &self.input
+    }
+
+    /// Replace the input buffer's contents and reset the cursor to the end.
+    /// Used by `/plan` Edit/Run to put the planned prompt back into the input
+    /// bar (Edit) or stage it for `submit_input` (Run).
+    pub fn set_input_buffer(&mut self, text: impl Into<String>) {
+        let text = text.into();
+        self.input.buffer = text;
+        self.input.cursor_position = self.input.buffer.chars().count();
+    }
+
+    /// Push an error message into the conversation log. Used by external
+    /// dispatch (e.g. /plan decompose failure in `bins/hone`).
+    pub fn push_error(&mut self, msg: impl Into<String>) {
+        self.messages
+            .push(crate::message::DisplayMessage::new(
+                crate::message::DisplayRole::Error,
+                msg.into(),
+            ));
     }
 
     pub fn completion_index(&self) -> Option<usize> {
@@ -631,6 +655,11 @@ impl App {
         // Debugger overlay takes highest priority.
         if self.debugger_open {
             self.handle_key_debugger(key);
+            return;
+        }
+        // Plan-preview overlay captures all keys while open.
+        if self.plan_preview_open {
+            self.handle_key_plan_preview(key);
             return;
         }
         // Prompt Mirror overlay.
@@ -1259,6 +1288,12 @@ impl App {
         self.pending_plan_action.take()
     }
 
+    /// Drain the prompt set by `/plan <prompt>` so the event loop can
+    /// dispatch it through `Orchestrator::decompose`.
+    pub fn take_pending_plan_prompt(&mut self) -> Option<String> {
+        self.pending_plan_prompt.take()
+    }
+
     // -----------------------------------------------------------------------
     // Governance overrides (/budget, /permit)
     // -----------------------------------------------------------------------
@@ -1790,8 +1825,20 @@ impl App {
             Command::Permit(tool) => {
                 self.add_pending_permit(tool);
             }
-            Command::Plan(_prompt) => {
-                // slice 2.5: dispatch decompose + open plan-preview overlay.
+            Command::Plan(prompt) => {
+                let prompt = prompt.trim();
+                if prompt.is_empty() {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::Error,
+                        "usage: /plan <describe what you want done>".to_string(),
+                    ));
+                } else {
+                    self.pending_plan_prompt = Some(prompt.to_string());
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::System,
+                        format!("Planning: {prompt}"),
+                    ));
+                }
             }
             Command::Unknown(name) => {
                 let msg = format!("Unknown command: /{name}  (type /help for help)");
