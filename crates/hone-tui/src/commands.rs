@@ -35,10 +35,18 @@ pub enum Command {
     /// `/configure model <id>` — change model
     /// `/configure` — show current configuration
     Configure(String),
+    /// Preview an orchestrated plan without spawning workers.
+    ///
+    /// `/plan <prompt>` — decompose `<prompt>` and show the plan overlay.
+    /// `/plan` alone — open the overlay with an empty prompt.
+    Plan(String),
     /// A `/` prefixed word that was not recognised.
     Unknown(String),
     /// A user-defined slash command loaded from a markdown file.
-    User { name: String, args: String },
+    User {
+        name: String,
+        args: String,
+    },
 }
 
 /// Sub-command for `:tdd`.
@@ -61,6 +69,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "help",
     "split",
     "panel",
+    "plan",
     "theme",
     "theme-preview",
     "set",
@@ -118,6 +127,7 @@ impl Command {
                 "" => Command::Tdd(TddSubcommand::Start(None)),
                 cmd => Command::Tdd(TddSubcommand::Start(Some(cmd.to_string()))),
             },
+            "plan" => Command::Plan(arg.to_string()),
             "review" => Command::Review,
             "clarify" => Command::Clarify(arg.to_string()),
             "configure" => Command::Configure(arg.to_string()),
@@ -178,6 +188,10 @@ impl Command {
             ("set", "Set option (e.g. vim/novim)"),
             ("theme-preview", "Preview all theme colors"),
             ("panel", "Toggle tool output panel"),
+            (
+                "plan",
+                "Preview an orchestrated plan without spawning workers",
+            ),
             ("split", "Toggle split-pane layout"),
             ("undo", "Undo last action"),
             ("redo", "Redo last action"),
@@ -392,7 +406,11 @@ mod tests {
 
     // --- parse_with_user_commands -------------------------------------------
 
-    fn make_registry_with(name: &str, description: &str, body: &str) -> crate::user_commands::UserCommandRegistry {
+    fn make_registry_with(
+        name: &str,
+        description: &str,
+        body: &str,
+    ) -> crate::user_commands::UserCommandRegistry {
         let mut r = crate::user_commands::UserCommandRegistry::new();
         r.commands.push(crate::user_commands::UserCommand {
             name: name.to_string(),
@@ -410,7 +428,13 @@ mod tests {
     fn parse_with_user_commands_routes_registered_name() {
         let registry = make_registry_with("review-pr", "Review PR", "review {{args}}");
         let cmd = Command::parse_with_user_commands("/review-pr 42", &registry).unwrap();
-        assert_eq!(cmd, Command::User { name: "review-pr".into(), args: "42".into() });
+        assert_eq!(
+            cmd,
+            Command::User {
+                name: "review-pr".into(),
+                args: "42".into()
+            }
+        );
     }
 
     #[test]
@@ -424,7 +448,13 @@ mod tests {
     fn parse_with_user_commands_captures_args() {
         let registry = make_registry_with("deploy", "Deploy", "deploy {{args}}");
         let cmd = Command::parse_with_user_commands("/deploy production", &registry).unwrap();
-        assert_eq!(cmd, Command::User { name: "deploy".into(), args: "production".into() });
+        assert_eq!(
+            cmd,
+            Command::User {
+                name: "deploy".into(),
+                args: "production".into()
+            }
+        );
     }
 
     // --- completions_with_descriptions coverage ----------------------------
