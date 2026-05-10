@@ -8,6 +8,8 @@ use tokio::sync::mpsc;
 
 use hone_core::AgentMode;
 
+pub use crate::plan_preview::{PlanAction, PlanPreviewState, PlanPreviewSubtask};
+
 use crate::{
     animation::AnimationState,
     commands::{Command, TddSubcommand, parse_inline_agent},
@@ -202,6 +204,15 @@ pub struct App {
     /// Set by Shift+Tab; consumed by the TUI event loop which calls
     /// `agent.set_mode()` and clears this field.
     pub(crate) pending_mode_change: Option<AgentMode>,
+
+    // --- Plan preview overlay -----------------------------------------------
+    /// Whether the plan-preview overlay is currently open.
+    pub plan_preview_open: bool,
+    /// State for the plan-preview overlay, if one has been set.
+    pub(crate) plan_preview: Option<crate::plan_preview::PlanPreviewState>,
+    /// Action chosen by the user in the plan-preview overlay, pending
+    /// consumption by the event loop.
+    pub(crate) pending_plan_action: Option<crate::plan_preview::PlanAction>,
 }
 
 impl App {
@@ -278,6 +289,9 @@ impl App {
                 .unwrap_or_default(),
             agent_mode: AgentMode::Build,
             pending_mode_change: None,
+            plan_preview_open: false,
+            plan_preview: None,
+            pending_plan_action: None,
         };
         // Restore draft from previous session if present.
         let draft_file = draft_path();
@@ -1220,6 +1234,53 @@ impl App {
         self.sessions_list = sessions;
     }
 
+    // --- Plan preview overlay -----------------------------------------------
+
+    /// Store the decomposed plan state and open the overlay.
+    pub fn set_plan_preview(&mut self, state: crate::plan_preview::PlanPreviewState) {
+        self.plan_preview = Some(state);
+        self.plan_preview_open = true;
+    }
+
+    /// Read access to the current plan-preview state.
+    pub fn plan_preview(&self) -> Option<&crate::plan_preview::PlanPreviewState> {
+        self.plan_preview.as_ref()
+    }
+
+    /// Drain the pending plan action, returning it (and leaving `None`).
+    pub fn take_pending_plan_action(&mut self) -> Option<crate::plan_preview::PlanAction> {
+        self.pending_plan_action.take()
+    }
+
+    /// Handle a key event while the plan-preview overlay is open.
+    ///
+    /// * `r` / `Enter` — confirm and run the plan.
+    /// * `e` — dismiss and let the user edit the prompt.
+    /// * `c` / `Esc` — cancel; discard the plan entirely.
+    /// * Any other key — no-op.
+    pub fn handle_key_plan_preview(&mut self, key: crossterm::event::KeyEvent) {
+        use crate::plan_preview::PlanAction;
+        use crossterm::event::KeyCode;
+        match key.code {
+            KeyCode::Char('r') | KeyCode::Enter => {
+                self.pending_plan_action = Some(PlanAction::Run);
+                self.plan_preview_open = false;
+                // Keep self.plan_preview so the outer loop can read the prompt.
+            }
+            KeyCode::Char('e') => {
+                self.pending_plan_action = Some(PlanAction::Edit);
+                self.plan_preview_open = false;
+                self.plan_preview = None;
+            }
+            KeyCode::Char('c') | KeyCode::Esc => {
+                self.pending_plan_action = Some(PlanAction::Cancel);
+                self.plan_preview_open = false;
+                self.plan_preview = None;
+            }
+            _ => {}
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Draft persistence
     // -----------------------------------------------------------------------
@@ -1688,6 +1749,9 @@ impl App {
             }
             Command::Configure(arg) => {
                 self.handle_configure_command(&arg);
+            }
+            Command::Plan(_prompt) => {
+                // slice 2.5: dispatch decompose + open plan-preview overlay.
             }
             Command::Unknown(name) => {
                 let msg = format!("Unknown command: /{name}  (type /help for help)");
