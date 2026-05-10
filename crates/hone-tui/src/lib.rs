@@ -2,6 +2,7 @@ pub mod animation;
 pub mod app;
 pub mod commands;
 pub mod error;
+pub mod governance;
 pub mod history;
 pub mod input;
 pub mod layout;
