@@ -2897,10 +2897,32 @@ async fn run_tui(
                                 current_tier = Some(tier);
                                 current_turn_prompt = effective_text.chars().take(200).collect::<String>();
 
+                                // Apply per-run governance overrides set via /budget and /permit
+                                // BEFORE the turn dispatches. Drains the pending state so each
+                                // override fires exactly once. The orchestrated branch picks up
+                                // changes through `base_config_clone` below; the Simple/Medium
+                                // branches go through the AgentHandle, which has its own setters.
+                                let pending_gov = app.take_pending_governance();
+                                if pending_gov.budget_usd.is_some() {
+                                    agent.set_budget_limit(pending_gov.budget_usd).await;
+                                }
+                                if !pending_gov.permits.is_empty() {
+                                    let mut policy = agent.approval_policy().await;
+                                    for tool in &pending_gov.permits {
+                                        policy.approve_always(tool);
+                                    }
+                                    agent.set_approval_policy(policy).await;
+                                }
+
                                 // Spawn the appropriate turn.
                                 let agent_clone = agent.clone();
                                 let effective_text_clone = effective_text.clone();
-                                let base_config_clone = base_config.clone();
+                                let mut base_config_clone = base_config.clone();
+                                // Mirror the per-run gov onto the orchestrated path's clone too —
+                                // spawn_orchestrated_turn builds a disposable Orchestrator from this
+                                // clone and never sees the AgentHandle setters above.
+                                pending_gov.clone().apply_to_budget(&mut base_config_clone.budget_limit);
+                                pending_gov.apply_to_policy(&mut base_config_clone.approval_policy);
                                 let agent_tx_clone = agent_tx.clone();
                                 let original_prompt = base_config.system_prompt.clone();
                                 let base_tools = base_config.tools.clone();

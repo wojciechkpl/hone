@@ -1911,6 +1911,23 @@ enum AgentCommand {
     SetMode {
         mode: AgentMode,
     },
+    /// Override the cost ceiling. `None` clears the limit.
+    SetBudgetLimit {
+        limit: Option<f64>,
+    },
+    /// Read the current cost ceiling.
+    GetBudgetLimit {
+        reply: oneshot::Sender<Option<f64>>,
+    },
+    /// Swap the tool-approval policy (e.g. add an auto-allow rule, switch to
+    /// AlwaysAsk). The actor mutates `agent.config.approval_policy` directly.
+    SetApprovalPolicy {
+        policy: ToolApprovalPolicy,
+    },
+    /// Read the current approval policy.
+    GetApprovalPolicy {
+        reply: oneshot::Sender<ToolApprovalPolicy>,
+    },
     Shutdown,
 }
 
@@ -1997,6 +2014,18 @@ impl AgentHandle {
                             }
                             agent.config.mode = mode;
                         }
+                    }
+                    AgentCommand::SetBudgetLimit { limit } => {
+                        agent.config.budget_limit = limit;
+                    }
+                    AgentCommand::GetBudgetLimit { reply } => {
+                        let _ = reply.send(agent.config.budget_limit);
+                    }
+                    AgentCommand::SetApprovalPolicy { policy } => {
+                        agent.config.approval_policy = policy;
+                    }
+                    AgentCommand::GetApprovalPolicy { reply } => {
+                        let _ = reply.send(agent.config.approval_policy.clone());
                     }
                     AgentCommand::Shutdown => break,
                 }
@@ -2154,6 +2183,44 @@ impl AgentHandle {
     /// `run_turn` call because the actor processes commands sequentially.
     pub async fn set_model(&self, model: ModelId) {
         let _ = self.cmd_tx.send(AgentCommand::SetModel { model }).await;
+    }
+
+    /// Override the cost ceiling. Fire-and-forget; takes effect before the next
+    /// `run_turn`. Pass `None` to clear the limit.
+    pub async fn set_budget_limit(&self, limit: Option<f64>) {
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::SetBudgetLimit { limit })
+            .await;
+    }
+
+    /// Read the current cost ceiling. Round-trips through the actor.
+    pub async fn budget_limit(&self) -> Option<f64> {
+        let (tx, rx) = oneshot::channel();
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::GetBudgetLimit { reply: tx })
+            .await;
+        rx.await.unwrap_or(None)
+    }
+
+    /// Replace the tool-approval policy. Fire-and-forget.
+    pub async fn set_approval_policy(&self, policy: ToolApprovalPolicy) {
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::SetApprovalPolicy { policy })
+            .await;
+    }
+
+    /// Read the current approval policy. Falls back to `default()` if the
+    /// channel is closed.
+    pub async fn approval_policy(&self) -> ToolApprovalPolicy {
+        let (tx, rx) = oneshot::channel();
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::GetApprovalPolicy { reply: tx })
+            .await;
+        rx.await.unwrap_or_default()
     }
 
     /// Signal the actor to shut down.  The actor will finish processing any
