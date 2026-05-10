@@ -1165,13 +1165,77 @@ hone --session my-project
 **Commands in interactive mode:**
 
 ```
-/model <provider:model>   — Switch models mid-session
-/budget <usd>             — Set spending limit
-/clear                    — Clear conversation history
-/export <path>            — Save session to JSON
-/help                     — Show all commands
-/quit                     — Exit
+/help                       — Show all commands
+/model <provider:model>     — Switch models mid-session
+/configure [provider|model] — Edit live configuration
+/cost                       — Show running spend + tokens
+/quit  (or /q)              — Exit
+
+/plan <prompt>              — Preview an orchestrated plan + cost
+                              before any worker runs (see below)
+/budget <usd>               — Cap the next run's cost ceiling
+                              (e.g. /budget 0.50 — must be > 0)
+/permit <tool>              — Pre-approve a tool for the next run
+                              (e.g. /permit shell, /permit shell.run)
+
+/theme <name>               — Switch theme: crimson, chalk, neon, minimal
+/theme-preview              — Render every theme color
+/set vim | novim            — Toggle vim-style keybindings
+/split | /panel             — Toggle split-pane / bottom panel layouts
+/review                     — Show a diff of all session changes
+/clarify [prompt]           — Ask clarifying questions before next turn
+/tdd [<cmd> | off]          — Toggle TDD watch mode
+/undo  /  /redo             — Step the conversation cursor
 ```
+
+`/plan`, `/budget`, and `/permit` are **per-run governance** — they
+apply only to the next turn and then drain. They never persist to
+config. See [§ 8.1 Plan-Preview Gate](#81-plan-preview-gate-plan)
+below.
+
+### 8.1 Plan-Preview Gate (`/plan`)
+
+`/plan <prompt>` runs the orchestrator's *decompose* step in-process
+and shows you the resulting `TaskPlan` + cost estimate **before any
+worker spawns**. You then pick what happens next:
+
+- **r / Enter** — run the plan as-is (replays the prompt through the
+  normal turn dispatch).
+- **e** — restore the prompt to the input bar so you can tweak it.
+- **c / Esc** — cancel.
+
+The cost line shows two numbers:
+
+- **paid** — the real lead-LLM cost you just spent on the decompose
+  call.
+- **projected** — `paid + N × 0.05 USD`, where N is the subtask count
+  and the per-worker constant comes from
+  `hone_core::DEFAULT_WORKER_COST_USD`. Override the ceiling with
+  `/budget <usd>` before clicking Run.
+
+Example flow:
+
+```
+> /budget 0.20
+> /permit shell
+> /plan refactor the auth module to extract session state
+
+  ╭──────────────────── Plan Preview ────────────────────╮
+  │   goal  Refactor the auth module                     │
+  │   cost  paid $0.0120  ·  projected ~$0.1620         │
+  │                                                      │
+  │   subtasks (3)                                       │
+  │   · rust-expert     [1] Extract session state struct │
+  │   · code-reviewer   [2] Audit for race conditions    │
+  │   · test-architect  [3] Add integration tests        │
+  │                                                      │
+  │   r/Enter run    e edit    c/Esc cancel              │
+  ╰──────────────────────────────────────────────────────╯
+```
+
+`/plan` is also available in the web UI at `/ui` — same protocol
+(`POST /orchestrate?dry_run=true`), same overlay, same Run/Edit/Cancel
+buttons. See [§ 14 Remote Access](#14-remote-access-honed).
 
 ---
 
@@ -1180,6 +1244,13 @@ hone --session my-project
 Decompose complex tasks into parallel subtasks, executed by worker agents, then merged.
 
 **Recommended for:** Features with multiple concerns (API + CLI + tests), complex refactors.
+
+> **Tip — preview before you pay.** Inside the TUI, type
+> `/plan <prompt>` (instead of running `--orchestrate` headlessly) to
+> see the decomposed plan + cost estimate **before** any worker
+> spawns. Pick Run / Edit / Cancel from the overlay. Backs onto the
+> same daemon endpoint (`POST /orchestrate?dry_run=true`) so the web
+> UI gets it for free. See [§ 8.1 Plan-Preview Gate](#81-plan-preview-gate-plan).
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -1718,7 +1789,23 @@ The embedded single-page chat interface includes:
 - **Streaming display** — Tokens appear as they're generated
 - **Tool-call cards** — Collapsible JSON previews of tool arguments and results
 - **Markdown rendering** — Bold, lists, and code blocks
-- **Dark theme** — Optimized for long sessions
+- **Themes** — `crimson`, `chalk`, `neon`, `minimal` (Settings drawer or `/theme`)
+
+**Slash commands in the web chat input:**
+
+- `/plan <prompt>` — preview an orchestrated plan + cost estimate
+  before any worker runs. The reply is rendered as a `DryRunCard` with
+  Run / Edit / Cancel buttons.
+- `/workflows` — open the **Workflows drawer** (also reachable from
+  the topbar `workflows` button). Lists every recipe under
+  `~/.config/hone/recipes/` (and the project / built-in layers) as
+  cards. Click a card to fill in any `{{var}}` template fields and
+  click **Run** to dispatch the composed prompt.
+- **`+ New`** in the Workflows drawer — single-step recipe authoring.
+  Posts to `POST /recipes` and writes
+  `~/.config/hone/recipes/<name>.yaml`.
+- `/theme <name>`, `/settings`, `/clear`, `/help` — same as the TUI
+  where applicable.
 
 **Example usage:**
 
