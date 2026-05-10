@@ -7,8 +7,8 @@ use hone_core::{
     AgentConfig, AgentRegistry, Orchestrator, SubTask, TaskPlan, WorkerResult, WorkerStatus,
 };
 use hone_proto::{
-    Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, ToolApprovalPolicy,
-    TokenUsage,
+    Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, TokenUsage,
+    ToolApprovalPolicy,
 };
 use hone_providers::{CompletionRequest, MockProvider, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
@@ -80,7 +80,7 @@ fn test_task_plan_serialization() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
-            requires_capabilities: vec![],
+                requires_capabilities: vec![],
             },
             SubTask {
                 id: "2".to_owned(),
@@ -91,7 +91,7 @@ fn test_task_plan_serialization() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
-            requires_capabilities: vec![],
+                requires_capabilities: vec![],
             },
         ],
     };
@@ -161,7 +161,7 @@ async fn test_decompose_fallback_on_invalid_json() {
     let (tx, _rx) = mpsc::channel(256);
 
     // decompose should fall back to a single-subtask plan without panicking.
-    let plan = orchestrator
+    let (plan, _lead_cost) = orchestrator
         .decompose("do something", tx)
         .await
         .expect("decompose should succeed even with invalid JSON");
@@ -225,7 +225,7 @@ async fn test_dependency_ordering_logic() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
-            requires_capabilities: vec![],
+                requires_capabilities: vec![],
             },
             SubTask {
                 id: "B".to_owned(),
@@ -236,7 +236,7 @@ async fn test_dependency_ordering_logic() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
-            requires_capabilities: vec![],
+                requires_capabilities: vec![],
             },
         ],
     };
@@ -465,7 +465,7 @@ async fn test_panicked_worker_has_correct_task_id() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
-            requires_capabilities: vec![],
+                requires_capabilities: vec![],
             },
             SubTask {
                 id: "task-panic-B".to_owned(),
@@ -476,7 +476,7 @@ async fn test_panicked_worker_has_correct_task_id() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
-            requires_capabilities: vec![],
+                requires_capabilities: vec![],
             },
             SubTask {
                 id: "task-panic-C".to_owned(),
@@ -487,7 +487,7 @@ async fn test_panicked_worker_has_correct_task_id() {
                 acceptance_tests: vec![],
                 budget_usd: None,
                 scope: vec![],
-            requires_capabilities: vec![],
+                requires_capabilities: vec![],
             },
         ],
     };

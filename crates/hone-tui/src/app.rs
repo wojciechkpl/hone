@@ -2159,7 +2159,9 @@ impl App {
                     .push(DisplayMessage::new(DisplayRole::ToolResult, content));
             }
 
-            AgentEvent::Done { usage, cost_usd } => {
+            AgentEvent::Done {
+                usage, cost_usd, ..
+            } => {
                 // Seal the current turn ledger.
                 if let Some(ledger) = self.current_turn.take() {
                     self.completed_turns.push(ledger);
@@ -2344,7 +2346,8 @@ impl App {
 
             AgentEvent::PlanSaved { path } => {
                 let msg = format!("Plan saved to {}", path.display());
-                self.messages.push(DisplayMessage::new(DisplayRole::System, msg));
+                self.messages
+                    .push(DisplayMessage::new(DisplayRole::System, msg));
                 self.scroll_offset = 0;
             }
 

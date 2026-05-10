@@ -20,7 +20,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -72,6 +72,15 @@ pub struct OrchestrateRequest {
     pub total_budget_usd: Option<f64>,
 }
 
+/// Query parameters for `POST /orchestrate`.
+#[derive(Debug, Default, Deserialize)]
+pub struct DryRunQuery {
+    /// When `true`, the handler decomposes the prompt into a plan and returns
+    /// it without executing any worker agents.  Defaults to `false`.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
 /// Resolve an optional `working_dir` against the configured `workspace_root`.
 /// Wider mirror of `execution::resolve_working_dir`; we duplicate for now to
 /// avoid making that fn `pub`.
@@ -117,7 +126,10 @@ fn make_sse_event(event: AgentEvent, id: u64) -> Event {
         _ => "unknown",
     };
     let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_owned());
-    Event::default().event(ev_type).data(data).id(id.to_string())
+    Event::default()
+        .event(ev_type)
+        .data(data)
+        .id(id.to_string())
 }
 
 fn build_lead_agent_config(
@@ -174,6 +186,7 @@ fn build_lead_agent_config(
 /// `POST /orchestrate` — multi-agent orchestrated execution.
 pub async fn orchestrate_handler(
     State(state): State<AppState>,
+    Query(dry_run_flag): Query<DryRunQuery>,
     Json(req): Json<OrchestrateRequest>,
 ) -> Result<axum::response::Response, (StatusCode, String)> {
     let working_dir = resolve_working_dir(req.working_dir.as_deref(), &state.workspace_root)?;
@@ -235,12 +248,78 @@ pub async fn orchestrate_handler(
             // back to built-ins only.
             let registry = AgentRegistry::load_hierarchical(&working_dir);
 
+            let is_dry_run = dry_run_flag.dry_run;
             tokio::spawn(async move {
                 let mut orchestrator = Orchestrator::new(lead_config, registry, max_workers);
                 if let Some(b) = total_budget {
                     orchestrator = orchestrator.with_total_budget(b);
                 }
-                if let Err(err) = orchestrator.run(&prompt, tx.clone()).await {
+
+                if is_dry_run {
+                    // Decompose only — do not execute workers.
+                    //
+                    // We use a private channel so that the agent's internal
+                    // `Done` event (emitted by `run_turn`) does not reach the
+                    // SSE stream.  Only the orchestration-level events we
+                    // construct below are forwarded to `tx`.
+                    let (decompose_tx, mut decompose_rx) = mpsc::channel::<AgentEvent>(256);
+
+                    // Forward all events from the decompose turn to `tx`
+                    // EXCEPT the terminal `Done` — we will send our own.
+                    let tx_fwd = tx.clone();
+                    tokio::spawn(async move {
+                        while let Some(ev) = decompose_rx.recv().await {
+                            match ev {
+                                AgentEvent::Done { .. } => {
+                                    // Suppress the agent-internal Done; the
+                                    // outer dry-run path sends its own Done.
+                                }
+                                other => {
+                                    let _ = tx_fwd.send(other).await;
+                                }
+                            }
+                        }
+                    });
+
+                    match orchestrator.decompose(&prompt, decompose_tx).await {
+                        Err(err) => {
+                            let _ = tx
+                                .send(AgentEvent::Error {
+                                    message: format!("orchestrator error: {err}"),
+                                })
+                                .await;
+                        }
+                        Ok((plan, lead_cost, lead_usage)) => {
+                            let subtask_count = plan.subtasks.len();
+                            let budget_usd = lead_cost
+                                + subtask_count as f64 * hone_core::DEFAULT_WORKER_COST_USD;
+
+                            let _ = tx
+                                .send(AgentEvent::PlanCreated {
+                                    goal: plan.goal.clone(),
+                                    subtask_count,
+                                })
+                                .await;
+                            let _ = tx
+                                .send(AgentEvent::BudgetProgress {
+                                    spent_usd: lead_cost,
+                                    budget_usd: Some(budget_usd),
+                                    workers_completed: 0,
+                                    workers_total: subtask_count,
+                                })
+                                .await;
+                            let plan_value =
+                                serde_json::to_value(&plan).unwrap_or(serde_json::Value::Null);
+                            let _ = tx
+                                .send(AgentEvent::Done {
+                                    usage: lead_usage,
+                                    cost_usd: lead_cost,
+                                    plan: Some(plan_value),
+                                })
+                                .await;
+                        }
+                    }
+                } else if let Err(err) = orchestrator.run(&prompt, tx.clone()).await {
                     let _ = tx
                         .send(AgentEvent::Error {
                             message: format!("orchestrator error: {err}"),
@@ -252,22 +331,19 @@ pub async fn orchestrate_handler(
     }
 
     let mut event_id = 0u64;
-    let sse_stream = stream::unfold(
-        (rx, provenance_tee),
-        move |(mut rx, mut tee)| async move {
-            match rx.recv().await {
-                Some(event) => {
-                    if let Some(t) = tee.as_mut() {
-                        t.observe(&event).await;
-                    }
-                    event_id += 1;
-                    let sse = make_sse_event(event, event_id);
-                    Some((Ok::<Event, Infallible>(sse), (rx, tee)))
+    let sse_stream = stream::unfold((rx, provenance_tee), move |(mut rx, mut tee)| async move {
+        match rx.recv().await {
+            Some(event) => {
+                if let Some(t) = tee.as_mut() {
+                    t.observe(&event).await;
                 }
-                None => None,
+                event_id += 1;
+                let sse = make_sse_event(event, event_id);
+                Some((Ok::<Event, Infallible>(sse), (rx, tee)))
             }
-        },
-    );
+            None => None,
+        }
+    });
 
     Ok(Sse::new(sse_stream)
         .keep_alive(KeepAlive::default())

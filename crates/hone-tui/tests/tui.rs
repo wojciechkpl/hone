@@ -191,6 +191,7 @@ fn test_app_handle_done_event() {
             cache_creation: 0,
         },
         cost_usd: 0.0,
+        plan: None,
     });
     assert!(matches!(app.state(), AppState::Idle));
     let msgs = app.messages();
@@ -525,6 +526,7 @@ fn test_cost_updates_on_done() {
             cache_creation: 0,
         },
         cost_usd: 0.0105,
+        plan: None,
     });
     // cost_usd is now passed directly from the agent
     assert!(

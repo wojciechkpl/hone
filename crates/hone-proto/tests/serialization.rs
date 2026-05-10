@@ -305,6 +305,7 @@ fn agent_event_variants_roundtrip() {
                 cache_creation: 0,
             },
             cost_usd: 0.0,
+            plan: None,
         },
         AgentEvent::Error {
             message: "boom".into(),

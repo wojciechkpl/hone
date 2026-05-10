@@ -1,11 +1,5 @@
 mod agent;
 pub mod agent_def;
-pub mod handoff;
-pub mod hooks;
-pub mod memory_index;
-pub mod memory_format;
-pub mod memory_key;
-pub mod memory_worthy;
 pub mod agent_name;
 pub mod agent_registry;
 pub mod audit;
@@ -21,13 +15,20 @@ pub mod doom_loop;
 pub mod egress_log;
 pub mod ensemble;
 mod error;
+pub mod handoff;
 pub mod hierarchical_skeleton;
+pub mod hooks;
 pub mod injection_detector;
 pub mod learning;
+pub mod memory_format;
+pub mod memory_index;
+pub mod memory_key;
+pub mod memory_worthy;
 pub mod metrics;
 pub mod orchestrator;
 pub mod plan_mode;
 pub mod plan_store;
+pub mod queue_client;
 pub mod ralph_loop;
 pub mod rbac;
 pub mod recovery;
@@ -35,7 +36,6 @@ pub mod relevance;
 pub mod retry;
 pub mod reviewer;
 pub mod self_refine;
-pub mod queue_client;
 pub mod task_plan;
 pub mod test_loop;
 mod turn;
@@ -58,6 +58,7 @@ pub use dispatcher::ToolDispatcher;
 pub use egress_log::{EgressEntry, EgressLog, SpanKind, TraceContext};
 pub use ensemble::{AgentEnsemble, EnsembleResult};
 pub use error::AgentError;
+pub use hooks::{HookError, HookEvent, HookOutcome, HookRegistry, HookSpec};
 pub use injection_detector::{InjectionDetector, InjectionRisk};
 pub use learning::{AdaptiveClassifier, OutcomeRecord};
 pub use memory_key::friendly_memory_key;
@@ -65,20 +66,24 @@ pub use metrics::{ContextMetrics, MetricsSnapshot};
 pub use orchestrator::Orchestrator;
 pub use plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
 pub use plan_store::PlanStore;
+pub use queue_client::{
+    ClaimedTaskWire, CompletionRequestBody, PlanEvent, PlanStatusSnapshot, QueueClient,
+    QueueClientError, WorkerResultWire,
+};
 pub use rbac::{RbacError, RbacPolicy, Role, ToolAccess};
 pub use recovery::{FailureScenario, RecoveryAction};
 pub use retry::{RetryConfig, is_transient_error, retry};
 pub use reviewer::{ReviewIssue, ReviewResult, ReviewSeverity, ReviewerAgent};
 pub use self_refine::{RefineResult, SelfRefineLoop};
-pub use queue_client::{
-    ClaimedTaskWire, CompletionRequestBody, PlanEvent, PlanStatusSnapshot, QueueClient,
-    QueueClientError, WorkerResultWire,
-};
 pub use task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
 pub use test_loop::{
     GreenCommands, GreenContract, GreenLevel, TestLoopResult, TestStatus, TestVerificationLoop,
 };
 pub use turn::TurnResult;
-pub use hooks::{HookError, HookEvent, HookOutcome, HookRegistry, HookSpec};
 pub mod skills;
 pub use skills::{Skill, SkillError, SkillRegistry};
+
+/// Heuristic per-worker cost used by the orchestrate dry-run preview to
+/// project total spend. Operators can tune this by passing an explicit
+/// `total_budget_usd` on the request; this constant is the fallback.
+pub const DEFAULT_WORKER_COST_USD: f64 = 0.05;

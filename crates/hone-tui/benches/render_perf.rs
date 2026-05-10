@@ -30,6 +30,7 @@ fn bench_render_with_messages(c: &mut Criterion) {
         app.handle_agent_event(AgentEvent::Done {
             usage: hone_proto::TokenUsage::default(),
             cost_usd: 0.0,
+            plan: None,
         });
     }
 

@@ -108,6 +108,7 @@ fn test_full_lifecycle() {
             cache_creation: 0,
         },
         cost_usd: 0.0,
+        plan: None,
     });
     assert_eq!(*app.state(), AppState::Idle);
     assert!(!app.messages()[1].is_streaming);
@@ -264,6 +265,7 @@ fn test_render_with_messages_at_exact_boundary() {
     app.handle_agent_event(AgentEvent::Done {
         usage: TokenUsage::default(),
         cost_usd: 0.0,
+        plan: None,
     });
 
     draw(&app, &mut terminal);
@@ -327,6 +329,7 @@ fn test_render_with_scroll_indicator() {
         app.handle_agent_event(AgentEvent::Done {
             usage: TokenUsage::default(),
             cost_usd: 0.0,
+            plan: None,
         });
     }
 
@@ -445,6 +448,7 @@ fn test_tool_call_events() {
     app.handle_agent_event(AgentEvent::Done {
         usage: TokenUsage::default(),
         cost_usd: 0.0,
+        plan: None,
     });
 
     draw(&app, &mut terminal);

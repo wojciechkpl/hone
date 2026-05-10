@@ -18,9 +18,7 @@ use hone_tools::{
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
-use crate::provenance_writer::{
-    ProvenanceTee, append_user_prompt, open_session_log,
-};
+use crate::provenance_writer::{ProvenanceTee, append_user_prompt, open_session_log};
 use crate::state::AppState;
 
 /// Construct the sandbox instance that will be installed on every agent
@@ -262,10 +260,7 @@ pub async fn run_handler(
                     )
                 })?;
                 match state.run_registry.register(request_id) {
-                    Ok((rx, guard)) => (
-                        Some(Arc::new(tokio::sync::Mutex::new(rx))),
-                        Some(guard),
-                    ),
+                    Ok((rx, guard)) => (Some(Arc::new(tokio::sync::Mutex::new(rx))), Some(guard)),
                     Err(crate::run_registry::DuplicateRunId(id)) => {
                         return Err((
                             StatusCode::CONFLICT,
@@ -346,22 +341,19 @@ pub async fn run_handler(
     }
 
     let mut event_id = 0u64;
-    let sse_stream = stream::unfold(
-        (rx, provenance_tee),
-        move |(mut rx, mut tee)| async move {
-            match rx.recv().await {
-                Some(event) => {
-                    if let Some(t) = tee.as_mut() {
-                        t.observe(&event).await;
-                    }
-                    event_id += 1;
-                    let sse = make_sse_event(event, event_id);
-                    Some((Ok::<Event, Infallible>(sse), (rx, tee)))
+    let sse_stream = stream::unfold((rx, provenance_tee), move |(mut rx, mut tee)| async move {
+        match rx.recv().await {
+            Some(event) => {
+                if let Some(t) = tee.as_mut() {
+                    t.observe(&event).await;
                 }
-                None => None,
+                event_id += 1;
+                let sse = make_sse_event(event, event_id);
+                Some((Ok::<Event, Infallible>(sse), (rx, tee)))
             }
-        },
-    );
+            None => None,
+        }
+    });
 
     Ok(Sse::new(sse_stream)
         .keep_alive(KeepAlive::default())
@@ -381,7 +373,8 @@ mod tests {
         assert_eq!(
             event_type(&AgentEvent::Done {
                 usage: Default::default(),
-                cost_usd: 0.0
+                cost_usd: 0.0,
+                plan: None,
             }),
             "done"
         );
