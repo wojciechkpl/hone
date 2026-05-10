@@ -151,12 +151,44 @@ Found 3 files. You have main.rs (Rust source), Cargo.toml (manifest), and README
 Type `/help` to see available commands:
 
 ```
-/model <provider:model>   — switch models mid-session
-/budget <usd>             — set spending limit
-/clear                    — clear conversation history
-/export <path>            — save session to JSON
-/quit                     — exit
+/help                       — list every slash command
+/model <provider:model>     — switch models mid-session
+/configure [provider|model] — edit live configuration
+/cost                       — show running spend + tokens
+/quit  (or /q)              — exit
+
+# Per-run governance — applies to the very next turn, then drains:
+/plan <prompt>              — preview an orchestrated plan + cost
+                              before any worker runs
+/budget <usd>               — cap the next run's cost ceiling
+                              (must be > 0; rejects inf/NaN)
+/permit <tool>              — pre-approve a tool for the next run
+                              (e.g. /permit shell.run)
+
+/theme <name>               — crimson | chalk | neon | minimal
+/set vim | novim            — toggle vim-style keybindings
+/review | /tdd | /clarify   — see `tutorials/tdd-with-hone.md`
 ```
+
+### Try `/plan` first
+
+`/plan <prompt>` is the safest way to start a complex task. It runs
+the orchestrator's *decompose* step (one LLM call), shows the planned
+subtasks + projected cost, and waits for you to confirm with `r` /
+Enter (or edit with `e`, cancel with `c`/Esc) before any worker
+spawns. Pair it with `/budget 0.20` for a hard cost ceiling on the
+next run.
+
+```
+> /budget 0.20
+> /plan refactor auth to extract session state
+... overlay shows TaskPlan + projected cost ...
+> press r to run
+```
+
+The same workflow exists in the web UI at `/ui` — type `/plan` in the
+chat input and the preview card appears with Run / Edit / Cancel
+buttons.
 
 ## Session Management
 

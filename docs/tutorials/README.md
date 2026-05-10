@@ -21,6 +21,8 @@ Start here if you're new to Hone:
 
 - **[Recipes](recipes.md)** — YAML recipe system, recipe format with annotations, conditional steps, TDD hook (test_cmd), running recipes interactively or in batch mode, recipe output and export, writing and sharing recipes
 
+- **[Orchestration GUI](orchestration-gui.md)** — `/plan` plan-preview gate (TUI + web UI), `/budget` and `/permit` per-run governance, `/workflows` saved-recipe drawer, the `POST /orchestrate?dry_run=true` and `POST /recipes` daemon endpoints. Pairs with the [research doc](../research/gui-for-non-cli-users-2026-05.md) and [TDD plan](../plans/orchestration-gui-tdd-2026-05.md).
+
 - **[ACP: Bidirectional Tool Dispatch](acp.md)** — Configure ACP providers (`claude --acp`, `gemini --acp`), the full lifecycle (initialize → schema announce → tool_call → toolResult → continuation → done), running the integration suite, schema authoring tips, cancellation semantics, troubleshooting
 
 - **[TUI Keybindings and Themes](tui-keybindings-and-themes.md)** — Layout overview, every keybinding, the command palette, autocomplete with descriptions, switching themes (`crimson`, `neon`, `chalk`, `minimal`), `~/.config/hone/theme.toml` overrides, accessibility flags (`HONE_NO_COLOR`, `HONE_REDUCED_MOTION`, `HONE_ASCII_ONLY`), vim-style bindings, mouse selection
