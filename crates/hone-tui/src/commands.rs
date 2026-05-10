@@ -8,10 +8,14 @@ pub enum Command {
     Cost,
     Quit,
     Help,
+    /// Set a per-run budget cap in USD (must be positive).
+    Budget(f64),
     /// Toggle split-pane layout.
     Split,
     /// Toggle bottom tool output panel.
     Panel,
+    /// Pre-approve a named tool for the next run without pausing.
+    Permit(String),
     /// Switch theme — argument is the theme name.
     ThemeSwitch(String),
     /// Render a demo of all theme colors.
@@ -67,8 +71,10 @@ pub const COMMAND_NAMES: &[&str] = &[
     "quit",
     "q",
     "help",
+    "budget",
     "split",
     "panel",
+    "permit",
     "plan",
     "theme",
     "theme-preview",
@@ -115,6 +121,17 @@ impl Command {
             "help" => Command::Help,
             "split" => Command::Split,
             "panel" => Command::Panel,
+            "budget" => match arg.parse::<f64>() {
+                Ok(usd) if usd > 0.0 && usd.is_finite() => Command::Budget(usd),
+                _ => Command::Unknown(format!("budget {arg}")),
+            },
+            "permit" => {
+                if arg.is_empty() {
+                    Command::Unknown("permit".to_string())
+                } else {
+                    Command::Permit(arg.to_string())
+                }
+            }
             "theme" => Command::ThemeSwitch(arg.to_string()),
             "theme-preview" => Command::ThemePreview,
             "set" => match arg {
@@ -185,6 +202,11 @@ impl Command {
         // Supplemental descriptions for commands not in PALETTE_COMMANDS.
         const EXTRA: &[(&str, &str)] = &[
             ("q", "Exit hone"),
+            ("budget", "Set per-run USD budget cap (e.g. /budget 0.50)"),
+            (
+                "permit",
+                "Pre-approve a tool for the next run (e.g. /permit shell)",
+            ),
             ("set", "Set option (e.g. vim/novim)"),
             ("theme-preview", "Preview all theme colors"),
             ("panel", "Toggle tool output panel"),

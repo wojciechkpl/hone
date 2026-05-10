@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 
 use hone_core::AgentMode;
 
+pub use crate::governance::PendingGovernance;
 pub use crate::plan_preview::{PlanAction, PlanPreviewState, PlanPreviewSubtask};
 
 use crate::{
@@ -213,6 +214,11 @@ pub struct App {
     /// Action chosen by the user in the plan-preview overlay, pending
     /// consumption by the event loop.
     pub(crate) pending_plan_action: Option<crate::plan_preview::PlanAction>,
+
+    // --- Per-run governance overrides ----------------------------------------
+    /// Budget and tool permits set by `/budget` and `/permit`; drained at the
+    /// start of the next run.
+    pub(crate) pending_governance: crate::governance::PendingGovernance,
 }
 
 impl App {
@@ -292,6 +298,7 @@ impl App {
             plan_preview_open: false,
             plan_preview: None,
             pending_plan_action: None,
+            pending_governance: crate::governance::PendingGovernance::default(),
         };
         // Restore draft from previous session if present.
         let draft_file = draft_path();
@@ -1252,6 +1259,33 @@ impl App {
         self.pending_plan_action.take()
     }
 
+    // -----------------------------------------------------------------------
+    // Governance overrides (/budget, /permit)
+    // -----------------------------------------------------------------------
+
+    /// Set the per-run budget cap (in USD) that will be applied on the next run.
+    pub fn set_pending_budget(&mut self, usd: f64) {
+        self.pending_governance.budget_usd = Some(usd);
+    }
+
+    /// Pre-approve a named tool for the next run (idempotent).
+    pub fn add_pending_permit(&mut self, tool: impl Into<String>) {
+        let tool = tool.into();
+        if !self.pending_governance.permits.iter().any(|t| t == &tool) {
+            self.pending_governance.permits.push(tool);
+        }
+    }
+
+    /// Read access to the pending governance overrides.
+    pub fn pending_governance(&self) -> &crate::governance::PendingGovernance {
+        &self.pending_governance
+    }
+
+    /// Drain the pending governance overrides (replaces with default).
+    pub fn take_pending_governance(&mut self) -> crate::governance::PendingGovernance {
+        std::mem::take(&mut self.pending_governance)
+    }
+
     /// Handle a key event while the plan-preview overlay is open.
     ///
     /// * `r` / `Enter` — confirm and run the plan.
@@ -1749,6 +1783,12 @@ impl App {
             }
             Command::Configure(arg) => {
                 self.handle_configure_command(&arg);
+            }
+            Command::Budget(usd) => {
+                self.set_pending_budget(usd);
+            }
+            Command::Permit(tool) => {
+                self.add_pending_permit(tool);
             }
             Command::Plan(_prompt) => {
                 // slice 2.5: dispatch decompose + open plan-preview overlay.
