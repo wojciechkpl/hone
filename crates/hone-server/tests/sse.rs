@@ -25,6 +25,7 @@ fn test_encode_done_event() {
             cache_creation: 0,
         },
         cost_usd: 0.0,
+        plan: None,
     };
     let encoded = encode_event(&event, 42);
 

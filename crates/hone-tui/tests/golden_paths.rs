@@ -70,6 +70,7 @@ fn send_message_and_render() {
             cache_creation: 0,
         },
         cost_usd: 0.01,
+        plan: None,
     });
 
     let rendered = render_app(&mut app, 120, 40);
@@ -199,6 +200,7 @@ fn scroll_direction_bottom_anchored() {
                 cache_creation: 0,
             },
             cost_usd: 0.001,
+            plan: None,
         });
     }
 
@@ -282,6 +284,7 @@ fn cost_uses_provider_value_not_hardcoded() {
             cache_creation: 0,
         },
         cost_usd: 0.10,
+        plan: None,
     });
 
     // Second Done — provider reports $0.25
@@ -296,6 +299,7 @@ fn cost_uses_provider_value_not_hardcoded() {
             cache_creation: 0,
         },
         cost_usd: 0.25,
+        plan: None,
     });
 
     let total = app.status().session_cost_usd;

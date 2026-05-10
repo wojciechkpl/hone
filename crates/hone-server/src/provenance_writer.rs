@@ -111,10 +111,7 @@ pub fn append_user_prompt(
 }
 
 /// Open or create the per-session chain file under `dir`.
-pub fn open_session_log(
-    dir: &Path,
-    session_id: &str,
-) -> Result<ProvenanceLog, ProvenanceLogError> {
+pub fn open_session_log(dir: &Path, session_id: &str) -> Result<ProvenanceLog, ProvenanceLogError> {
     let path = dir.join(format!("{session_id}.jsonl"));
     ProvenanceLog::open(&path)
 }
@@ -173,6 +170,7 @@ mod tests {
         let out = m.map(&AgentEvent::Done {
             usage: hone_proto::TokenUsage::default(),
             cost_usd: 0.0,
+            plan: None,
         });
         assert_eq!(out.len(), 2);
         assert!(matches!(
@@ -188,6 +186,7 @@ mod tests {
         let out = m.map(&AgentEvent::Done {
             usage: hone_proto::TokenUsage::default(),
             cost_usd: 0.0,
+            plan: None,
         });
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], ProvenanceEvent::SessionEnd { .. }));
@@ -196,12 +195,16 @@ mod tests {
     #[test]
     fn mapper_error_flushes_buffer_then_emits_session_end_with_reason() {
         let mut m = EventMapper::new("claude");
-        m.map(&AgentEvent::Token { text: "partial".into() });
+        m.map(&AgentEvent::Token {
+            text: "partial".into(),
+        });
         let out = m.map(&AgentEvent::Error {
             message: "rate limit".into(),
         });
         assert_eq!(out.len(), 2);
-        assert!(matches!(out[0], ProvenanceEvent::ModelCompletion { ref output, .. } if output == "partial"));
+        assert!(
+            matches!(out[0], ProvenanceEvent::ModelCompletion { ref output, .. } if output == "partial")
+        );
         match &out[1] {
             ProvenanceEvent::SessionEnd { reason } => {
                 assert!(reason.contains("rate limit"));
@@ -240,7 +243,13 @@ mod tests {
             cache_hit: false,
         });
         assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], ProvenanceEvent::ToolResult { is_error: false, .. }));
+        assert!(matches!(
+            out[0],
+            ProvenanceEvent::ToolResult {
+                is_error: false,
+                ..
+            }
+        ));
 
         let mut m2 = EventMapper::new("m");
         let out = m2.map(&AgentEvent::ToolCallEnd {
@@ -250,7 +259,10 @@ mod tests {
             duration_ms: 0,
             cache_hit: false,
         });
-        assert!(matches!(out[0], ProvenanceEvent::ToolResult { is_error: true, .. }));
+        assert!(matches!(
+            out[0],
+            ProvenanceEvent::ToolResult { is_error: true, .. }
+        ));
     }
 
     #[test]
@@ -270,7 +282,9 @@ mod tests {
                 agent: "a".into(),
                 description: "d".into(),
             },
-            AgentEvent::ModelInfo { context_window: 8000 },
+            AgentEvent::ModelInfo {
+                context_window: 8000,
+            },
         ] {
             assert!(m.map(&ev).is_empty(), "{ev:?} should map to nothing");
         }
@@ -294,7 +308,9 @@ mod tests {
         // Drive a tiny session: token, token, tool_call, tool_result, done.
         for ev in [
             AgentEvent::Token { text: "hi ".into() },
-            AgentEvent::Token { text: "there".into() },
+            AgentEvent::Token {
+                text: "there".into(),
+            },
             AgentEvent::ToolCallStart {
                 id: "c1".into(),
                 name: "read_file".into(),
@@ -310,6 +326,7 @@ mod tests {
             AgentEvent::Done {
                 usage: hone_proto::TokenUsage::default(),
                 cost_usd: 0.0,
+                plan: None,
             },
         ] {
             tee.observe(&ev).await;
@@ -318,12 +335,29 @@ mod tests {
         let g = log.lock().await;
         let entries = g.entries();
         // Expected: prompt, tool_call, tool_result, model_completion, session_end.
-        assert_eq!(entries.len(), 5, "got {} entries: {entries:?}", entries.len());
-        assert!(matches!(entries[0].event, ProvenanceEvent::UserPrompt { .. }));
+        assert_eq!(
+            entries.len(),
+            5,
+            "got {} entries: {entries:?}",
+            entries.len()
+        );
+        assert!(matches!(
+            entries[0].event,
+            ProvenanceEvent::UserPrompt { .. }
+        ));
         assert!(matches!(entries[1].event, ProvenanceEvent::ToolCall { .. }));
-        assert!(matches!(entries[2].event, ProvenanceEvent::ToolResult { .. }));
-        assert!(matches!(entries[3].event, ProvenanceEvent::ModelCompletion { .. }));
-        assert!(matches!(entries[4].event, ProvenanceEvent::SessionEnd { .. }));
+        assert!(matches!(
+            entries[2].event,
+            ProvenanceEvent::ToolResult { .. }
+        ));
+        assert!(matches!(
+            entries[3].event,
+            ProvenanceEvent::ModelCompletion { .. }
+        ));
+        assert!(matches!(
+            entries[4].event,
+            ProvenanceEvent::SessionEnd { .. }
+        ));
         // The chain itself must verify (load-time + manual).
         g.verify().expect("chain verifies");
 

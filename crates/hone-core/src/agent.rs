@@ -482,8 +482,7 @@ impl Agent {
             let event = HookEvent::UserPromptSubmit {
                 prompt: user_input.to_string(),
             };
-            let outcomes =
-                Self::fire_hooks(self.config.hooks.as_ref(), &event).await;
+            let outcomes = Self::fire_hooks(self.config.hooks.as_ref(), &event).await;
             for outcome in &outcomes {
                 if outcome.deny {
                     let msg = outcome
@@ -555,8 +554,15 @@ impl Agent {
         self.context
             .add_message(Message::user(effective_input.as_ref()));
 
-        self.run_turn_inner(user_input, memories, skills_block, cost_before_turn, turn_trace, events)
-            .await
+        self.run_turn_inner(
+            user_input,
+            memories,
+            skills_block,
+            cost_before_turn,
+            turn_trace,
+            events,
+        )
+        .await
     }
 
     /// Shared LLM-loop executed after the user message is already in context.
@@ -926,8 +932,10 @@ impl Agent {
                     // pre-filled, live entries have `None` (filled after dispatch).
                     let raw_batch = pending_tool_calls[i..j].to_vec();
                     // (call, pre_filled_result)
-                    let mut ordered_batch: Vec<(hone_proto::ToolCallRequest, Option<Result<Value, AgentError>>)> =
-                        Vec::with_capacity(raw_batch.len());
+                    let mut ordered_batch: Vec<(
+                        hone_proto::ToolCallRequest,
+                        Option<Result<Value, AgentError>>,
+                    )> = Vec::with_capacity(raw_batch.len());
                     let mut live_batch: Vec<hone_proto::ToolCallRequest> = Vec::new();
 
                     for mut call_item in raw_batch {
@@ -987,10 +995,8 @@ impl Agent {
                     let mut live_iter = live_results.into_iter();
 
                     // Reconstitute final (call, result) pairs in original order.
-                    let batch: Vec<hone_proto::ToolCallRequest> = ordered_batch
-                        .iter()
-                        .map(|(c, _)| c.clone())
-                        .collect();
+                    let batch: Vec<hone_proto::ToolCallRequest> =
+                        ordered_batch.iter().map(|(c, _)| c.clone()).collect();
                     let batch_results: Vec<Result<Value, AgentError>> = ordered_batch
                         .into_iter()
                         .map(|(_, pre)| match pre {
@@ -1243,9 +1249,8 @@ impl Agent {
                             continue;
                         }
                         // Apply the first mutated_input to call arguments if present.
-                        if let Some(mutated) = hook_outcomes
-                            .iter()
-                            .find_map(|o| o.mutated_input.as_ref())
+                        if let Some(mutated) =
+                            hook_outcomes.iter().find_map(|o| o.mutated_input.as_ref())
                         {
                             pending_tool_calls[i].arguments = mutated.clone();
                         }
@@ -1445,14 +1450,10 @@ impl Agent {
                                     duration_ms,
                                 };
                                 let post_outcomes =
-                                    Self::fire_hooks(self.config.hooks.as_ref(), &post_event)
-                                        .await;
+                                    Self::fire_hooks(self.config.hooks.as_ref(), &post_event).await;
                                 for outcome in &post_outcomes {
                                     if outcome.deny {
-                                        let msg = outcome
-                                            .message
-                                            .as_deref()
-                                            .unwrap_or("denied");
+                                        let msg = outcome.message.as_deref().unwrap_or("denied");
                                         tracing::warn!(
                                             tool = %call.name,
                                             "hook denied PostToolUse but action already completed: {msg}"
@@ -1539,8 +1540,7 @@ impl Agent {
             let stop_event = HookEvent::Stop {
                 turn_summary: response_text.clone(),
             };
-            let stop_outcomes =
-                Self::fire_hooks(self.config.hooks.as_ref(), &stop_event).await;
+            let stop_outcomes = Self::fire_hooks(self.config.hooks.as_ref(), &stop_event).await;
             for outcome in &stop_outcomes {
                 if outcome.deny {
                     let msg = outcome.message.as_deref().unwrap_or("denied");
@@ -1572,6 +1572,7 @@ impl Agent {
             .send(AgentEvent::Done {
                 usage: turn_usage,
                 cost_usd: self.cost.total_usd() - cost_before_turn,
+                plan: None,
             })
             .await;
 

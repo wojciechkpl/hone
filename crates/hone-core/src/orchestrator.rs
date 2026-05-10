@@ -11,7 +11,7 @@ use crate::checkpoint::CheckpointStore;
 use crate::error::AgentError;
 use crate::plan_store::PlanStore;
 use crate::task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
-use hone_proto::{AgentEvent, ToolApprovalPolicy, TokenUsage};
+use hone_proto::{AgentEvent, TokenUsage, ToolApprovalPolicy};
 
 /// Default per-worker timeout: 5 minutes.
 const DEFAULT_WORKER_TIMEOUT_SECS: u64 = 300;
@@ -133,7 +133,7 @@ impl Orchestrator {
         events: mpsc::Sender<AgentEvent>,
     ) -> Result<OrchestratorResult, AgentError> {
         // 1. Decompose the request into a TaskPlan.
-        let plan = self.decompose(user_request, events.clone()).await?;
+        let (plan, _lead_cost, _lead_usage) = self.decompose(user_request, events.clone()).await?;
 
         let _ = events
             .send(AgentEvent::PlanCreated {
@@ -262,11 +262,18 @@ impl Orchestrator {
     // Decompose
     // -----------------------------------------------------------------------
 
+    /// Decompose a user request into a [`TaskPlan`] by running the lead agent
+    /// exactly once.
+    ///
+    /// Returns `(plan, lead_cost_usd, lead_usage)` so callers can project
+    /// budget estimates and report accurate token counts without re-running the
+    /// LLM.  The `lead_cost_usd` and `lead_usage` come directly from the
+    /// [`TurnResult`] produced by the decomposition turn.
     pub async fn decompose(
         &mut self,
         user_request: &str,
         events: mpsc::Sender<AgentEvent>,
-    ) -> Result<TaskPlan, AgentError> {
+    ) -> Result<(TaskPlan, f64, TokenUsage), AgentError> {
         let agent_list: String = self
             .registry
             .list()
@@ -293,19 +300,22 @@ impl Orchestrator {
 
         let mut lead = Agent::new(self.build_lead_config());
         let turn = lead.run_turn(&decompose_prompt, events).await?;
+        let lead_cost = turn.cost_usd;
+        let lead_usage = turn.usage.clone();
 
         let raw = turn.response.trim().to_owned();
 
         // Strip markdown code fences if present.
         let json_str = strip_code_fences(&raw);
 
-        match serde_json::from_str::<TaskPlan>(json_str) {
-            Ok(plan) => Ok(plan),
+        let plan = match serde_json::from_str::<TaskPlan>(json_str) {
+            Ok(plan) => plan,
             Err(_) => {
                 // Fallback: treat the entire request as a single subtask.
-                Ok(single_subtask_plan(user_request, &self.registry))
+                single_subtask_plan(user_request, &self.registry)
             }
-        }
+        };
+        Ok((plan, lead_cost, lead_usage))
     }
 
     // -----------------------------------------------------------------------
@@ -331,7 +341,8 @@ impl Orchestrator {
                 .await;
         }
 
-        self.execute_plan_in_proc(plan, prior_spend_usd, events).await
+        self.execute_plan_in_proc(plan, prior_spend_usd, events)
+            .await
     }
 
     /// In-process plan execution. Called directly from `execute_plan` (when no
@@ -549,7 +560,10 @@ impl Orchestrator {
         events: mpsc::Sender<AgentEvent>,
     ) -> Vec<WorkerResult> {
         use uuid::Uuid;
-        let client = self.queue_client.as_ref().expect("queue_client must be set");
+        let client = self
+            .queue_client
+            .as_ref()
+            .expect("queue_client must be set");
         let plan_id = Uuid::now_v7().to_string();
         let subtasks_for_fallback = plan.subtasks.clone();
         let total_tasks = plan.subtasks.len();
@@ -775,7 +789,7 @@ impl Orchestrator {
             step_rx: None,
             hooks: None,
             skills: None,
-        embedder: None,
+            embedder: None,
             mode: crate::plan_mode::AgentMode::Build,
         }
     }
@@ -832,7 +846,7 @@ impl Orchestrator {
             step_rx: None,
             hooks: None,
             skills: None,
-        embedder: None,
+            embedder: None,
             mode: crate::plan_mode::AgentMode::Build,
         }
     }

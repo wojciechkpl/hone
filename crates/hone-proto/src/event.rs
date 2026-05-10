@@ -84,6 +84,10 @@ pub enum AgentEvent {
         usage: TokenUsage,
         #[serde(default)]
         cost_usd: f64,
+        /// For dry-run orchestrate responses, the decomposed `TaskPlan` as a
+        /// JSON value. Absent (`None`) in normal (non-dry-run) turns.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plan: Option<serde_json::Value>,
     },
     /// An error occurred during the turn.
     Error { message: String },
@@ -140,9 +144,7 @@ pub enum AgentEvent {
         entries: Vec<(String, String)>,
     },
     /// Emitted at the end of a Plan-mode turn after the plan file is written.
-    PlanSaved {
-        path: std::path::PathBuf,
-    },
+    PlanSaved { path: std::path::PathBuf },
 }
 
 /// Action sent from the TUI to the agent when step mode is active and the
