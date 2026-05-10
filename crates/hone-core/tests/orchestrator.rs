@@ -161,7 +161,7 @@ async fn test_decompose_fallback_on_invalid_json() {
     let (tx, _rx) = mpsc::channel(256);
 
     // decompose should fall back to a single-subtask plan without panicking.
-    let (plan, _lead_cost) = orchestrator
+    let (plan, _lead_cost, _lead_usage) = orchestrator
         .decompose("do something", tx)
         .await
         .expect("decompose should succeed even with invalid JSON");
