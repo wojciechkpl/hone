@@ -26,6 +26,10 @@ import {
   takePendingPlanAction,
   usePendingPlanAction,
 } from "../lib/orchestrator";
+import {
+  takePendingWorkflowRun,
+  usePendingWorkflowRun,
+} from "../lib/workflows";
 import { SideBySideDiff } from "./SideBySideDiff";
 import { WorkerProgressPanel } from "./WorkerProgressPanel";
 import type { AgentEvent } from "../types/events";
@@ -42,6 +46,7 @@ type ChatPanelProps = {
 
 const SLASH_COMMANDS = [
   { name: "/plan", desc: "preview an orchestrated plan before running it" },
+  { name: "/workflows", desc: "open the workflows drawer (saved recipes)" },
   { name: "/theme", desc: "set theme: crimson | chalk | neon | minimal" },
   { name: "/settings", desc: "open the settings drawer" },
   { name: "/clear", desc: "reset cost meter" },
@@ -86,6 +91,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
   // when the `done` event arrives because the daemon doesn't echo it back.
   let pendingDryRunPrompt: string | null = null;
   const pendingPlanAction = usePendingPlanAction();
+  const pendingWorkflowRun = usePendingWorkflowRun();
 
   // Hydrate from IDB whenever the active session changes. Bubbles are
   // a flat replay of what was persisted — close to the original render
@@ -403,6 +409,15 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
       setDraft(`/plan ${action.preview.prompt}`);
     }
     // "cancel" — nothing else to do.
+  });
+
+  // Bridge from <WorkflowsPanel>'s Run button.
+  createEffect(() => {
+    if (pendingWorkflowRun() === null) return;
+    const prompt = takePendingWorkflowRun();
+    if (!prompt) return;
+    setDraft(prompt);
+    void send();
   });
 
   // Slash autocomplete: open when the draft starts with `/` and has no

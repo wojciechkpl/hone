@@ -73,6 +73,11 @@ pub struct AppState {
     /// Optional eval-history store. When `None`, `GET /evals*` endpoints
     /// return 503. Wired from `HONE_EVAL_HISTORY_DB` by the daemon.
     pub eval_history: Option<Arc<EvalRunStore>>,
+    /// Override for the user-level recipes directory.  When `Some`, the
+    /// `POST /recipes` handler writes here and `GET /recipes` searches here
+    /// instead of the default `~/.config/hone/recipes/`.  Primarily used
+    /// by tests to redirect writes away from the real config directory.
+    pub recipes_user_dir: Option<PathBuf>,
 }
 
 impl AppState {
@@ -93,6 +98,7 @@ impl AppState {
             memory_store: None,
             provenance_dir: None,
             eval_history: None,
+            recipes_user_dir: None,
         }
     }
 
@@ -113,6 +119,7 @@ impl AppState {
             memory_store: None,
             provenance_dir: None,
             eval_history: None,
+            recipes_user_dir: None,
         }
     }
 
@@ -136,6 +143,7 @@ impl AppState {
             memory_store: None,
             provenance_dir: None,
             eval_history: None,
+            recipes_user_dir: None,
         }
     }
 
@@ -204,6 +212,14 @@ impl AppState {
     /// Attach an eval history store, enabling the `/evals*` endpoints.
     pub fn with_eval_history(mut self, store: Arc<EvalRunStore>) -> Self {
         self.eval_history = Some(store);
+        self
+    }
+
+    /// Override the user-level recipes directory used by `POST /recipes` and
+    /// `GET /recipes`.  Primarily for tests to avoid writing to the real
+    /// `~/.config/hone/recipes/` directory.
+    pub fn with_recipes_user_dir(mut self, dir: PathBuf) -> Self {
+        self.recipes_user_dir = Some(dir);
         self
     }
 }
