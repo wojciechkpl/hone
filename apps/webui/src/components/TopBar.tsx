@@ -5,6 +5,7 @@ import { CollaborativePanel } from "./CollaborativePanel";
 import { useStepMode, setStepMode } from "../lib/step";
 import { togglePreview, usePreviewOpen } from "../lib/preview";
 import { toggleSettings } from "../lib/settings";
+import { toggleWorkflows } from "../lib/workflows";
 
 export type Theme = "crimson" | "chalk" | "neon" | "minimal";
 
@@ -88,6 +89,15 @@ export const TopBar: Component<Props> = (props) => {
           title="Cycle theme (crimson → chalk → neon → minimal)"
         >
           theme: {props.theme}
+        </button>
+        <button
+          class="px-2 py-1"
+          style={{ "font-size": "0.85em" }}
+          onClick={toggleWorkflows}
+          aria-label="Open workflows"
+          title="Open the workflows drawer"
+        >
+          workflows
         </button>
         <button
           class="px-2 py-1"

@@ -83,6 +83,41 @@ export type TeamUsage = {
   by_model: Record<string, ModelUsage>;
 };
 
+// ---- Recipes (workflows) ----
+
+/** Wire shape of GET /recipes — see crates/hone-server/src/discovery.rs */
+export type RecipeSummary = {
+  name: string;
+  description: string | null;
+  step_count: number;
+  has_test_cmd: boolean;
+  source: "builtin" | "user" | "project";
+  path: string;
+};
+
+export type RecipeStep = {
+  name: string;
+  prompt: string;
+};
+
+/** Wire shape of GET /recipes/{name} */
+export type RecipeDetail = {
+  name: string;
+  description: string | null;
+  steps: RecipeStep[];
+  test_cmd: string | null;
+  source: "builtin" | "user" | "project";
+  path: string;
+};
+
+/** Body shape for POST /recipes */
+export type CreateRecipeRequest = {
+  name: string;
+  description?: string | null;
+  steps: RecipeStep[];
+  test_cmd?: string | null;
+};
+
 // ---- Collaborative sessions ----
 
 export type ParticipantRole = "Owner" | "Editor" | "Viewer";

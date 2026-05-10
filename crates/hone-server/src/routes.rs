@@ -12,24 +12,23 @@ use subtle::{Choice, ConstantTimeEq};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::collaborative_routes::collaborative_router;
+use crate::discovery::{
+    agent_detail_handler, create_recipe_handler, list_agents_handler, list_recipes_handler,
+    recipe_detail_handler,
+};
 use crate::distributed_routes::distributed_router;
 use crate::error::ServerError;
-use crate::discovery::{
-    agent_detail_handler, list_agents_handler, list_recipes_handler, recipe_detail_handler,
-};
 use crate::eval_routes::{eval_detail_handler, list_evals_handler};
+use crate::execution::run_handler;
 use crate::files_routes::{list_files_handler, read_file_handler};
+use crate::governance_routes::governance_router;
 use crate::mcp_routes::{installed_handler, marketplace_handler};
 use crate::memory_routes::{list_memory_handler, memory_stats_handler};
-use crate::provenance_routes::{
-    list_logs_handler, log_entries_handler, log_verify_handler,
-};
-use crate::sandbox_routes::sandbox_policies_handler;
-use crate::execution::run_handler;
 use crate::orchestration::orchestrate_handler;
-use crate::run_registry::StepResult;
-use crate::governance_routes::governance_router;
+use crate::provenance_routes::{list_logs_handler, log_entries_handler, log_verify_handler};
 use crate::rate_limit::rate_limit_middleware;
+use crate::run_registry::StepResult;
+use crate::sandbox_routes::sandbox_policies_handler;
 use crate::session::SessionInfo;
 use crate::state::AppState;
 use crate::tunnel_routes::tunnel_router;
@@ -65,7 +64,10 @@ pub fn router(state: AppState) -> Router {
         .route("/orchestrate", post(orchestrate_handler))
         .route("/agents", get(list_agents_handler))
         .route("/agents/{name}", get(agent_detail_handler))
-        .route("/recipes", get(list_recipes_handler))
+        .route(
+            "/recipes",
+            get(list_recipes_handler).post(create_recipe_handler),
+        )
         .route("/recipes/{name}", get(recipe_detail_handler))
         .route("/mcp/marketplace", get(marketplace_handler))
         .route("/mcp/installed", get(installed_handler))

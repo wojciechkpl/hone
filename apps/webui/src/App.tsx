@@ -6,11 +6,13 @@ import { ApprovalModal } from "./components/ApprovalModal";
 import { FilePreviewPanel } from "./components/FilePreviewPanel";
 import { SplitGutter } from "./components/SplitGutter";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { WorkflowsPanel } from "./components/WorkflowsPanel";
 import { getJson, type DaemonHealth } from "./lib/api";
 import { resetCost } from "./lib/cost";
 import { ensureSession, useActiveSession } from "./lib/session";
 import { usePreviewOpen, useSplitRatio } from "./lib/preview";
 import { setSettingsOpen } from "./lib/settings";
+import { setPendingWorkflowRun, setWorkflowsOpen } from "./lib/workflows";
 
 const THEMES: Theme[] = ["crimson", "chalk", "neon", "minimal"];
 
@@ -98,6 +100,7 @@ export const App: Component = () => {
       <StatusBar />
       <ApprovalModal />
       <SettingsPanel theme={theme()} onPickTheme={applyTheme} />
+      <WorkflowsPanel onRun={(prompt) => setPendingWorkflowRun(prompt)} />
     </>
   );
 };
@@ -121,11 +124,14 @@ function handleSlashCommand(
     case "/settings":
       setSettingsOpen(true);
       return { ok: true, reply: "settings opened" };
+    case "/workflows":
+      setWorkflowsOpen(true);
+      return { ok: true, reply: "workflows opened" };
     case "/help":
       return {
         ok: true,
         reply:
-          "available: /theme <name>, /settings, /clear (reset cost meter), /help",
+          "available: /plan <prompt>, /workflows, /theme <name>, /settings, /clear (reset cost meter), /help",
       };
     default:
       return { ok: false, reply: `unknown command: ${cmd}` };

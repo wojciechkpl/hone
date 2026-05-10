@@ -14,7 +14,7 @@ use axum::response::IntoResponse;
 use hone_core::agent_def::AgentDef;
 use hone_core::agent_registry::AgentRegistry;
 use hone_recipes::Recipe;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
 
@@ -67,9 +67,7 @@ pub struct RecipeSummary {
 ///
 /// Builds the layered registry the agent loop uses (built-ins → user →
 /// project) and returns each entry tagged with its source.
-pub async fn list_agents_handler(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn list_agents_handler(State(state): State<AppState>) -> impl IntoResponse {
     let working_dir = &state.workspace_root;
     let summaries = collect_agents(working_dir);
     Json(summaries)
@@ -129,14 +127,13 @@ fn collect_agents(working_dir: &Path) -> Vec<AgentSummary> {
 ///
 /// Scans the well-known recipe directories and returns one summary per
 /// `*.yaml` file that parses as a [`Recipe`].
-pub async fn list_recipes_handler(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let summaries = collect_recipes(&state.workspace_root);
+pub async fn list_recipes_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let summaries = collect_recipes(&state);
     Json(summaries)
 }
 
-fn recipe_dirs(workspace_root: &Path) -> Vec<(PathBuf, DiscoverySource)> {
+fn recipe_dirs(state: &AppState) -> Vec<(PathBuf, DiscoverySource)> {
+    let workspace_root = &state.workspace_root;
     let mut dirs = Vec::new();
 
     // Built-in: workspace_root/recipes/ — the bin/hone shipping recipes
@@ -144,8 +141,11 @@ fn recipe_dirs(workspace_root: &Path) -> Vec<(PathBuf, DiscoverySource)> {
     // "recipes" folder at workspace_root.
     dirs.push((workspace_root.join("recipes"), DiscoverySource::Builtin));
 
-    // User-level: ~/.config/hone/recipes/
-    if let Some(d) = dirs::config_dir() {
+    // User-level: honor injected dir when present (e.g. tests), otherwise
+    // fall back to ~/.config/hone/recipes/.
+    if let Some(d) = state.recipes_user_dir.clone() {
+        dirs.push((d, DiscoverySource::User));
+    } else if let Some(d) = dirs::config_dir() {
         dirs.push((d.join("hone").join("recipes"), DiscoverySource::User));
     }
 
@@ -157,9 +157,9 @@ fn recipe_dirs(workspace_root: &Path) -> Vec<(PathBuf, DiscoverySource)> {
     dirs
 }
 
-fn collect_recipes(workspace_root: &Path) -> Vec<RecipeSummary> {
+fn collect_recipes(state: &AppState) -> Vec<RecipeSummary> {
     let mut summaries: Vec<RecipeSummary> = Vec::new();
-    for (dir, source) in recipe_dirs(workspace_root) {
+    for (dir, source) in recipe_dirs(state) {
         let read_dir = match std::fs::read_dir(&dir) {
             Ok(rd) => rd,
             Err(_) => continue,
@@ -251,7 +251,7 @@ pub async fn recipe_detail_handler(
     State(state): State<AppState>,
     AxumPath(name): AxumPath<String>,
 ) -> Result<Json<RecipeDetail>, (StatusCode, String)> {
-    find_recipe(&state.workspace_root, &name)
+    find_recipe(&state, &name)
         .map(Json)
         .ok_or((StatusCode::NOT_FOUND, format!("no recipe named '{name}'")))
 }
@@ -303,11 +303,11 @@ fn find_agent(working_dir: &Path, name: &str) -> Option<AgentDetail> {
     })
 }
 
-fn find_recipe(workspace_root: &Path, name: &str) -> Option<RecipeDetail> {
+fn find_recipe(state: &AppState, name: &str) -> Option<RecipeDetail> {
     // Walk the same directory layering, but stop at the highest-precedence
     // match (project > user > builtin). That mirrors the loader semantics
     // a runtime would use to actually run the recipe.
-    let mut search: Vec<(PathBuf, DiscoverySource)> = recipe_dirs(workspace_root);
+    let mut search: Vec<(PathBuf, DiscoverySource)> = recipe_dirs(state);
     search.reverse(); // last entry was project — check it first
 
     for (dir, source) in search {
@@ -352,6 +352,145 @@ fn find_recipe(workspace_root: &Path, name: &str) -> Option<RecipeDetail> {
     None
 }
 
+// ---------------------------------------------------------------------------
+// Write endpoint — POST /recipes
+// ---------------------------------------------------------------------------
+
+/// Request body for `POST /recipes`.
+#[derive(Debug, Deserialize)]
+pub struct CreateRecipeRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub steps: Vec<CreateRecipeStep>,
+    pub test_cmd: Option<String>,
+}
+
+/// A single step in a [`CreateRecipeRequest`].
+#[derive(Debug, Deserialize)]
+pub struct CreateRecipeStep {
+    pub name: String,
+    pub prompt: String,
+}
+
+fn validate_recipe_name(name: &str) -> Result<(), (StatusCode, String)> {
+    if name.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "recipe name must be non-empty".into(),
+        ));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "recipe name may only contain [a-zA-Z0-9_-]".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn user_recipes_dir(state: &AppState) -> PathBuf {
+    state.recipes_user_dir.clone().unwrap_or_else(|| {
+        dirs::config_dir()
+            .map(|d| d.join("hone").join("recipes"))
+            .unwrap_or_else(|| PathBuf::from(".hone-recipes"))
+    })
+}
+
+/// `POST /recipes` — write a new recipe YAML to the user-level directory and
+/// return the created [`RecipeDetail`].
+pub async fn create_recipe_handler(
+    State(state): State<AppState>,
+    Json(req): Json<CreateRecipeRequest>,
+) -> Result<(StatusCode, Json<RecipeDetail>), (StatusCode, String)> {
+    validate_recipe_name(&req.name)?;
+    if req.steps.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "recipe must have at least one step".into(),
+        ));
+    }
+    for s in &req.steps {
+        if s.name.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "step.name must be non-empty".into(),
+            ));
+        }
+        if s.prompt.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "step.prompt must be non-empty".into(),
+            ));
+        }
+    }
+
+    let dir = user_recipes_dir(&state);
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("create dir: {e}"),
+        )
+    })?;
+    let path = dir.join(format!("{}.yaml", req.name));
+    if path.exists() {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("recipe '{}' already exists", req.name),
+        ));
+    }
+
+    // Build a hone_recipes::Recipe so the on-disk shape matches what the GET
+    // handler expects to round-trip-parse.
+    let recipe = hone_recipes::Recipe {
+        name: req.name.clone(),
+        description: req.description.clone(),
+        steps: req
+            .steps
+            .iter()
+            .map(|s| hone_recipes::RecipeStep {
+                name: s.name.clone(),
+                prompt: s.prompt.clone(),
+                when: None,
+            })
+            .collect(),
+        test_cmd: req.test_cmd.clone(),
+    };
+    let yaml = serde_yaml::to_string(&recipe).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("serialize recipe: {e}"),
+        )
+    })?;
+    std::fs::write(&path, yaml).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("write recipe: {e}"),
+        )
+    })?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(RecipeDetail {
+            name: req.name,
+            description: req.description,
+            steps: req
+                .steps
+                .into_iter()
+                .map(|s| RecipeStepWire {
+                    name: s.name,
+                    prompt: s.prompt,
+                })
+                .collect(),
+            test_cmd: req.test_cmd,
+            source: DiscoverySource::User,
+            path: path.display().to_string(),
+        }),
+    ))
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
@@ -364,7 +503,9 @@ mod tests {
         let agents = collect_agents(tmp.path());
         assert!(!agents.is_empty(), "built-in agents must always exist");
         assert!(
-            agents.iter().any(|a| matches!(a.source, DiscoverySource::Builtin)),
+            agents
+                .iter()
+                .any(|a| matches!(a.source, DiscoverySource::Builtin)),
             "at least one agent must be tagged builtin",
         );
     }
@@ -374,8 +515,15 @@ mod tests {
         let tmp = TempDir::new().expect("tmp");
         let agents = collect_agents(tmp.path());
         for pair in agents.windows(2) {
-            assert!(pair[0].name <= pair[1].name, "agents must be sorted by name");
+            assert!(
+                pair[0].name <= pair[1].name,
+                "agents must be sorted by name"
+            );
         }
+    }
+
+    fn state_at(root: &std::path::Path) -> AppState {
+        AppState::new(None).with_workspace_root(root.to_path_buf())
     }
 
     #[test]
@@ -383,7 +531,7 @@ mod tests {
         let tmp = TempDir::new().expect("tmp");
         // No recipes dir under tmp; user/project dirs may or may not have
         // some on the test machine. We just assert this does not panic.
-        let _ = collect_recipes(tmp.path());
+        let _ = collect_recipes(&state_at(tmp.path()));
     }
 
     #[test]
@@ -401,7 +549,7 @@ test_cmd: cargo test
 "#;
         std::fs::write(recipes_dir.join("smoke.yaml"), yaml).expect("write");
 
-        let recipes = collect_recipes(tmp.path());
+        let recipes = collect_recipes(&state_at(tmp.path()));
         let smoke = recipes
             .iter()
             .find(|r| r.name == "smoke")
@@ -418,7 +566,7 @@ test_cmd: cargo test
         let recipes_dir = tmp.path().join("recipes");
         std::fs::create_dir_all(&recipes_dir).expect("mkdir");
         std::fs::write(recipes_dir.join("notes.txt"), "hello").expect("write");
-        let recipes = collect_recipes(tmp.path());
+        let recipes = collect_recipes(&state_at(tmp.path()));
         assert!(
             recipes.iter().all(|r| !r.path.ends_with("notes.txt")),
             "non-yaml files must be skipped",
@@ -461,7 +609,7 @@ steps:
 "#;
         std::fs::write(recipes_dir.join("alpha.yaml"), yaml).expect("write");
 
-        let detail = find_recipe(tmp.path(), "alpha").expect("found");
+        let detail = find_recipe(&state_at(tmp.path()), "alpha").expect("found");
         assert_eq!(detail.name, "alpha");
         assert_eq!(detail.steps.len(), 2);
         assert_eq!(detail.steps[0].name, "s1");
@@ -472,6 +620,6 @@ steps:
     #[test]
     fn find_recipe_returns_none_for_unknown_name() {
         let tmp = TempDir::new().expect("tmp");
-        assert!(find_recipe(tmp.path(), "no-such-recipe").is_none());
+        assert!(find_recipe(&state_at(tmp.path()), "no-such-recipe").is_none());
     }
 }
