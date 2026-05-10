@@ -5,8 +5,29 @@
 // per-turn — the next /run resets the plan.
 
 import { createSignal } from "solid-js";
+import type { DryRunPlan } from "../types/events";
 
 export type WorkerStatus = "running" | "completed" | "failed";
+
+/**
+ * Heuristic per-worker cost used by the orchestrate dry-run preview to
+ * project total spend. Mirrors `hone_core::DEFAULT_WORKER_COST_USD`.
+ */
+export const DEFAULT_WORKER_COST_USD = 0.05;
+
+/**
+ * State for a pending plan-preview gate: the decomposed plan, the actual
+ * cost paid for the lead-LLM decompose call, the projected total spend
+ * if the user clicks Run, and the original prompt (so Run/Edit can
+ * reuse it).
+ */
+export type DryRunPreview = {
+  prompt: string;
+  goal: string;
+  subtasks: DryRunPlan["subtasks"];
+  lead_cost_usd: number;
+  estimated_total_usd: number;
+};
 
 export type Worker = {
   task_id: string;
@@ -64,9 +85,67 @@ export function setBudget(b: Budget | null): void {
   setBudgetInternal(b);
 }
 
+const [dryRunPreview, setDryRunPreviewInternal] = createSignal<DryRunPreview | null>(null);
+export const useDryRunPreview = () => dryRunPreview;
+
+/**
+ * Build a DryRunPreview from the daemon's dry-run `done` event payload.
+ * `lead_cost_usd` comes from the same event's `cost_usd`. `prompt` is
+ * the original user prompt (the daemon doesn't echo it back).
+ */
+export function buildDryRunPreview(
+  prompt: string,
+  plan: DryRunPlan,
+  lead_cost_usd: number,
+): DryRunPreview {
+  return {
+    prompt,
+    goal: plan.goal,
+    subtasks: plan.subtasks,
+    lead_cost_usd,
+    estimated_total_usd:
+      lead_cost_usd + plan.subtasks.length * DEFAULT_WORKER_COST_USD,
+  };
+}
+
+export function setDryRunPreview(preview: DryRunPreview | null): void {
+  setDryRunPreviewInternal(preview);
+}
+
+export function clearDryRunPreview(): void {
+  setDryRunPreviewInternal(null);
+}
+
+/**
+ * Action signal driven by `<WorkerProgressPanel>` so `<ChatPanel>` (the
+ * top-level dispatcher) can react to Run / Edit / Cancel without prop
+ * drilling. Drained via `takePendingPlanAction()` so a single action
+ * fires once.
+ */
+export type PlanAction =
+  | { kind: "run"; preview: DryRunPreview }
+  | { kind: "edit"; preview: DryRunPreview }
+  | { kind: "cancel" };
+
+const [pendingPlanAction, setPendingPlanActionInternal] =
+  createSignal<PlanAction | null>(null);
+export const usePendingPlanAction = () => pendingPlanAction;
+
+export function setPendingPlanAction(action: PlanAction | null): void {
+  setPendingPlanActionInternal(action);
+}
+
+/** Returns the action if any, then clears it. */
+export function takePendingPlanAction(): PlanAction | null {
+  const v = pendingPlanAction();
+  if (v) setPendingPlanActionInternal(null);
+  return v;
+}
+
 /** Wipe all orchestrator state. Called at the start of each new turn. */
 export function resetOrchestratorState(): void {
   setPlanInternal(null);
   setWorkersInternal([]);
   setBudgetInternal(null);
+  setDryRunPreviewInternal(null);
 }

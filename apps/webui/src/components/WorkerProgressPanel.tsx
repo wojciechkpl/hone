@@ -1,8 +1,12 @@
 import { For, Show, type Component } from "solid-js";
 import {
+  clearDryRunPreview,
+  setPendingPlanAction,
   useBudget,
+  useDryRunPreview,
   usePlan,
   useWorkers,
+  type DryRunPreview,
   type Worker,
 } from "../lib/orchestrator";
 
@@ -10,10 +14,15 @@ export const WorkerProgressPanel: Component = () => {
   const plan = usePlan();
   const workers = useWorkers();
   const budget = useBudget();
+  const dryRun = useDryRunPreview();
 
-  // Hide entirely when no orchestration is running.
+  // Hide entirely when nothing is in flight.
   return (
-    <Show when={plan() || workers().length > 0}>
+    <Show when={plan() || workers().length > 0 || dryRun()}>
+      <Show when={dryRun()}>
+        <DryRunCard preview={dryRun()!} />
+      </Show>
+      <Show when={!dryRun() && (plan() || workers().length > 0)}>
       <div
         style={{
           margin: "0 12px 12px",
@@ -61,7 +70,107 @@ export const WorkerProgressPanel: Component = () => {
           </div>
         </Show>
       </div>
+      </Show>
     </Show>
+  );
+};
+
+const DryRunCard: Component<{ preview: DryRunPreview }> = (props) => {
+  const p = props.preview;
+
+  function onRun() {
+    setPendingPlanAction({ kind: "run", preview: p });
+    clearDryRunPreview();
+  }
+  function onEdit() {
+    setPendingPlanAction({ kind: "edit", preview: p });
+    clearDryRunPreview();
+  }
+  function onCancel() {
+    setPendingPlanAction({ kind: "cancel" });
+    clearDryRunPreview();
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-label="Plan preview"
+      style={{
+        margin: "0 12px 12px",
+        padding: "12px",
+        background: "var(--surface-overlay)",
+        border: "1px solid var(--accent-hot)",
+        "border-radius": "8px",
+        display: "flex",
+        "flex-direction": "column",
+        gap: "8px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          "align-items": "baseline",
+          "justify-content": "space-between",
+          gap: "8px",
+        }}
+      >
+        <strong style={{ color: "var(--accent-hot)" }}>preview</strong>
+        <span
+          style={{
+            "font-family": "var(--font-mono)",
+            "font-size": "0.75em",
+            color: "var(--text-secondary)",
+          }}
+        >
+          ~${p.estimated_total_usd.toFixed(4)} · paid ${p.lead_cost_usd.toFixed(4)}
+        </span>
+      </div>
+      <div style={{ "font-size": "0.9em" }}>{p.goal}</div>
+      <ol
+        style={{
+          margin: 0,
+          padding: "0 0 0 18px",
+          display: "flex",
+          "flex-direction": "column",
+          gap: "3px",
+          "font-size": "0.85em",
+        }}
+      >
+        <For each={p.subtasks}>
+          {(t) => (
+            <li>
+              <strong
+                style={{
+                  "font-family": "var(--font-mono)",
+                  color: "var(--accent-hot)",
+                }}
+              >
+                {t.agent}
+              </strong>
+              <span style={{ color: "var(--text-secondary)", "margin-left": "6px" }}>
+                {t.id}
+              </span>
+              <div style={{ color: "var(--text-secondary)" }}>{t.description}</div>
+            </li>
+          )}
+        </For>
+      </ol>
+      <div style={{ display: "flex", gap: "6px" }}>
+        <button onClick={onRun} title="Run the orchestrator with this plan">
+          Run
+        </button>
+        <button onClick={onEdit} title="Restore the prompt to the input bar">
+          Edit
+        </button>
+        <button
+          onClick={onCancel}
+          title="Discard the preview"
+          style={{ "border-color": "var(--role-error)", color: "var(--role-error)" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 };
 
