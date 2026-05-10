@@ -29,6 +29,28 @@ export PATH="$PWD/target/release:$PATH"
 hone --version
 ```
 
+### Optional: Enable the GUI
+
+Hone ships a SolidJS **web UI** (served by `honed` at `/ui`) and a
+**Tauri desktop app**. Both are off by default. Quick paths:
+
+```bash
+# Web UI — needs Node 18+. Builds the SPA, then rebuilds the daemon
+# so rust-embed picks up the bundle.
+make webui
+cargo build --release -p honed
+honed                              # then open http://127.0.0.1:3117/ui
+
+# Desktop app — Tauri shell that spawns + supervises a managed honed.
+cargo build --release -p honed     # ensure honed is on PATH first
+cargo run -p hone-desktop          # native window, system tray, command palette
+```
+
+For dev iteration: `make webui-dev` runs Vite at `:5174` with HMR
+proxied to a locally-running `honed`. See the main
+[Getting Started § 2](../getting-started.md#enable-the-gui) for the
+"which one should I install?" decision matrix and full feature list.
+
 ## First Run: Configure
 
 Before starting your first session, run the interactive configuration wizard:

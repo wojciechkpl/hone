@@ -6,6 +6,9 @@ This comprehensive guide walks you through installing Hone, configuring your fir
 
 1. [Prerequisites](#1-prerequisites)
 2. [Installation](#2-installation)
+   - From crates.io
+   - From source
+   - **Enable the GUI** — web UI + desktop app
 3. [First-Time Setup](#3-first-time-setup-hone-configure)
 4. [Provider Setup](#4-provider-setup)
    - Anthropic (Recommended)
@@ -99,6 +102,117 @@ sudo cp target/release/hone target/release/honed /usr/local/bin/
 hone --version    # hone-cli 0.1.0
 honed --version   # honed 0.1.0
 ```
+
+### Enable the GUI
+
+Hone ships two graphical surfaces in addition to the TUI: a **web UI**
+(SolidJS, served by `honed` at `/ui`) and a **desktop app** (Tauri 2
+shell, native window, system tray, optional managed-daemon mode).
+Both are off by default — pick whichever fits.
+
+#### Web UI (recommended)
+
+The web UI is compiled into the `honed` binary via `rust-embed`, so
+enabling it is a two-step build: build the SPA, then rebuild `honed`
+so it picks up the bundle.
+
+Prerequisites:
+- **Node.js 18+** (the SPA toolchain — Vite, UnoCSS, Shiki).
+
+From the workspace root:
+
+```bash
+# 1. Build the SolidJS app to apps/webui/dist/.
+make webui
+
+# 2. Rebuild honed so rust-embed picks up the new bundle.
+cargo build --release -p honed
+sudo cp target/release/honed /usr/local/bin/
+
+# 3. Start the daemon and open the UI.
+ANTHROPIC_API_KEY=sk-ant-... honed
+open http://127.0.0.1:3117/ui
+```
+
+If you skip step 1, the daemon's `build.rs` writes a stub
+`apps/webui/dist/index.html` that explains how to populate the real
+bundle. The daemon still starts and the TUI/CLI keep working — the
+`/ui` route just serves the stub page.
+
+For iterative web UI development, run the Vite dev server in a second
+terminal — it proxies API + SSE requests to the locally-running
+`honed` at `:3117`:
+
+```bash
+make webui-dev
+# Hot-reload at http://127.0.0.1:5174
+```
+
+What you get out of the box: streaming chat, theme picker (4 themes),
+session list with IndexedDB persistence, file preview pane with
+syntax highlighting, side-by-side diff renderer, worker progress
+panel, plan-preview gate (`/plan`), settings drawer, tunnel start/stop,
+team usage panel, collaborative session participants, workflows
+drawer (`/workflows`). PWA-installable.
+
+See [§ 14 Remote Access](#14-remote-access-honed) for the full feature
+list and [`apps/webui/README.md`](../apps/webui/README.md) for the
+phase-by-phase changelog.
+
+#### Desktop app (Tauri 2)
+
+The desktop app is a native window that wraps the same `honed` daemon
++ web UI plus a system tray and command palette. It can either spawn
+its own managed `honed` sidecar or connect to a remote daemon.
+
+Prerequisites:
+- **Rust 1.85+** (already required).
+- A C toolchain (Xcode CLT on macOS, MSVC build tools on Windows, gcc on Linux).
+- Linux only: `webkit2gtk-4.1` and `libayatana-appindicator3` dev packages.
+- Optional: `cargo install tauri-cli@^2` for the `cargo tauri` subcommand.
+
+To run the dev build straight from source:
+
+```bash
+# Make sure honed is on PATH first (managed-sidecar mode needs it).
+cargo build --release -p honed
+sudo cp target/release/honed /usr/local/bin/
+
+# Run the desktop app.
+cargo run -p hone-desktop
+```
+
+On first launch a wizard asks you to pick one of two daemon-discovery
+modes:
+
+- **Managed sidecar** (default) — the app spawns `honed` on a free
+  local port and supervises it. Cleans up on exit.
+- **External daemon** — the app speaks HTTP to a `honed` you run
+  elsewhere (e.g. a Linux dev VM, a remote tunnel). You provide the
+  URL + bearer token.
+
+For distributable binaries (`.dmg`, `.msi`, `.AppImage`), use the
+Tauri CLI:
+
+```bash
+cd apps/hone-desktop/src-tauri
+cargo tauri dev    # hot-reload dev shell
+cargo tauri build  # produce platform installer
+```
+
+See [`apps/hone-desktop/README.md`](../apps/hone-desktop/README.md)
+for layout details and [`apps/hone-desktop/RELEASE.md`](../apps/hone-desktop/RELEASE.md)
+for the signing/updater pipeline.
+
+#### Which one should I install?
+
+| If you... | Pick |
+|---|---|
+| Live in `tmux` and want a browser-tab UI alongside | **Web UI** |
+| Want a native window with menu bar + system tray | **Desktop** |
+| Need to share the UI across a team via a remote daemon | **Web UI** + tunnel |
+| Are integrating Hone into another desktop workflow (Raycast, Alfred, etc.) | **Desktop** (with managed sidecar) |
+| Just want the TUI | Skip both — `cargo install hone-cli` is enough |
 
 ### Crates Published
 
