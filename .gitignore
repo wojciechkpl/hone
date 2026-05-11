@@ -18,6 +18,7 @@ logs/
 .claude/scheduled_tasks.lock
 .hone/reports/
 Formula/
+!packaging/homebrew/Formula/
 hello.txt
 hone+*.json
 assets/demo-*.cast
