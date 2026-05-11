@@ -1,0 +1,41 @@
+[project]
+name = "hone-cli"
+version = "0.1.0"
+description = "Rust-native AI agent runtime — TUI, web UI, and orchestration (Python wheel that ships the hone + honed binaries)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT OR Apache-2.0"}
+authors = [{name = "Wojciech Kowalinski"}]
+keywords = ["ai", "agent", "llm", "anthropic", "openai", "tui", "rust"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development",
+]
+
+[project.urls]
+Homepage = "https://wojciechkpl.github.io/hone/"
+Repository = "https://github.com/wojciechkpl/hone"
+Documentation = "https://wojciechkpl.github.io/hone/getting-started/"
+Issues = "https://github.com/wojciechkpl/hone/issues"
+
+[project.scripts]
+# These names are claimed by the wheel's console_scripts; they shim to the
+# real binaries that the build step copies into the wheel's data dir.
+hone = "hone_cli:hone_main"
+honed = "hone_cli:honed_main"
+
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["hone_cli"]
+package-dir = {"" = "src"}
+include-package-data = true

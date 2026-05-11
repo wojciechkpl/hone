@@ -1,0 +1,9 @@
+# Populated at build time by setup.py's CargoBuild step.
+src/hone_cli/_bin/
+
+# Standard Python build artefacts.
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc

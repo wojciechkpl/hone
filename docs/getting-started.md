@@ -85,6 +85,46 @@ cargo install hone-cli honed
 
 This installs both the `hone` CLI and the `honed` server daemon to `~/.cargo/bin/`.
 
+### Install via Homebrew
+
+For macOS and Linux users who already use Homebrew:
+
+```bash
+# From a checkout — works today, no tap required.
+brew install --build-from-source ./packaging/homebrew/Formula/hone.rb
+
+# From the tap (once published — see packaging/README.md).
+brew tap wojciechkpl/hone
+brew install hone
+
+# Always-latest from main branch.
+brew install --HEAD wojciechkpl/hone/hone
+```
+
+The formula installs both `hone` (CLI/TUI) and `honed` (daemon),
+plus builds the embedded SolidJS web UI when `npm` is available so
+`http://127.0.0.1:3117/ui` works out of the box.
+
+### Install via pip
+
+For Python-heavy teams (ML, data, science) who want one consistent
+install path alongside their existing `pip` workflow:
+
+```bash
+# From a checkout — works today; requires Rust 1.85+ at install time.
+git clone https://github.com/wojciechkpl/hone.git
+cd hone
+pip install ./packaging/python
+
+# From PyPI (once per-platform wheels are published — see packaging/README.md).
+pip install hone-cli
+```
+
+The wheel ships both `hone` and `honed` binaries via `[project.scripts]`.
+After install, both are on your `PATH` (under `~/.local/bin/` or
+wherever pip installed scripts to). Once installed, the binaries run
+without any Python or Rust toolchain present.
+
 ### Build from Source
 
 For the latest development version:
