@@ -38,6 +38,7 @@ fn make_memory(id: &str, content: &str, kind: MemoryKind, created_at: u64) -> Me
         decay_at: None,
         kind,
         description: None,
+        embedding: None,
     }
 }
 

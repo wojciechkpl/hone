@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use hone_core::{Agent, AgentConfig, RetryConfig, Skill, SkillRegistry};
+use hone_core::{Agent, AgentConfig, AgentMode, RetryConfig, Skill, SkillRegistry};
 use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::MockProvider;
 use hone_sandbox::NullSandbox;
@@ -41,6 +41,7 @@ fn make_config_with_skills(registry: SkillRegistry) -> AgentConfig {
         hooks: None,
         skills: Some(Arc::new(registry)),
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 
@@ -90,6 +91,7 @@ async fn always_skill_injected_into_provider_messages() {
         hooks: None,
         skills: Some(Arc::new(registry)),
         embedder: None,
+        mode: AgentMode::Build,
     };
 
     let mut agent = Agent::new(config);
@@ -143,6 +145,7 @@ async fn no_skills_no_extra_system_message() {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     };
 
     let mut agent = Agent::new(config);

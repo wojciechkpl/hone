@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use futures::{Stream, stream};
-use hone_core::{Agent, AgentConfig};
+use hone_core::{Agent, AgentConfig, AgentMode};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
     StepAction, ToolApprovalPolicy, ToolCallRequest, ToolLayer,
@@ -187,6 +187,7 @@ fn make_config(
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 

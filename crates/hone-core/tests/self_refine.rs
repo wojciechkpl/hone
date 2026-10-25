@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use futures::{Stream, stream};
-use hone_core::{Agent, AgentConfig, SelfRefineLoop};
+use hone_core::{Agent, AgentConfig, AgentMode, SelfRefineLoop};
 use hone_proto::{Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, ToolApprovalPolicy};
 use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
@@ -106,6 +106,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 

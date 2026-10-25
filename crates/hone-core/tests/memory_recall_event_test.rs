@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::{Stream, stream};
-use hone_core::{Agent, AgentConfig};
+use hone_core::{Agent, AgentConfig, AgentMode};
 use hone_memory::{InMemoryStore, Memory, MemoryKind, MemoryStore};
 use hone_proto::{
     AgentEvent, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, ToolApprovalPolicy,
@@ -103,6 +103,7 @@ async fn memory_recalled_event_uses_friendly_key_not_uuid() {
             decay_at: None,
             kind: MemoryKind::Project,
             description: Some("known label".to_owned()),
+            embedding: None,
         })
         .await
         .unwrap();
@@ -138,6 +139,7 @@ async fn memory_recalled_event_uses_friendly_key_not_uuid() {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     };
 
     let mut agent = Agent::new(config);

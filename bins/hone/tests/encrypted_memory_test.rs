@@ -58,6 +58,7 @@ fn make_memory(id: &str, content: &str) -> Memory {
         decay_at: None,
         kind: MemoryKind::Conversation,
         description: None,
+        embedding: None,
     }
 }
 

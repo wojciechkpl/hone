@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use futures::{Stream, stream};
-use hone_core::{Agent, AgentConfig};
+use hone_core::{Agent, AgentConfig, AgentMode};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
     ToolApprovalPolicy, ToolCallRequest, ToolLayer,
@@ -186,6 +186,7 @@ fn make_config() -> AgentConfig {
         provider: Arc::new(ParallelPanicProvider::new()),
         tools: registry,
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "test".to_owned(),
         model: ModelId::new("mock:test"),
         max_tokens: None,
@@ -210,6 +211,7 @@ fn make_config() -> AgentConfig {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 

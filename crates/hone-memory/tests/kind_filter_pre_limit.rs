@@ -36,6 +36,7 @@ fn make_memory_with_kind(id: &str, content: &str, kind: MemoryKind, created_at: 
         decay_at: None,
         kind,
         description: None,
+        embedding: None,
     }
 }
 

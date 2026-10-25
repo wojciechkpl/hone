@@ -12,7 +12,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
-use hone_core::{Agent, AgentConfig, RetryConfig};
+use hone_core::{Agent, AgentConfig, AgentMode, RetryConfig};
 use hone_proto::{AgentEvent, ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::{ClaudeCliProvider, ModelProvider};
 use hone_sandbox::NullSandbox;
@@ -103,6 +103,7 @@ fn base_config_with_cli(binary: &str) -> AgentConfig {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 

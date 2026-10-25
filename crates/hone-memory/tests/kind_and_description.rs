@@ -25,6 +25,7 @@ fn make_memory(id: &str, content: &str, kind: MemoryKind, description: Option<&s
         decay_at: None,
         kind,
         description: description.map(String::from),
+        embedding: None,
     }
 }
 

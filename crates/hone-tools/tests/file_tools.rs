@@ -13,6 +13,7 @@ use tempfile::TempDir;
 fn make_ctx(dir: &TempDir) -> ToolContext {
     ToolContext {
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: dir.path().to_path_buf(),
     }
 }

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use futures::{Stream, stream};
 use hone_core::hooks::{HookRegistry, HookSpec};
-use hone_core::{Agent, AgentConfig};
+use hone_core::{Agent, AgentConfig, AgentMode};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
     ToolApprovalPolicy, ToolCallRequest, ToolLayer,
@@ -160,6 +160,7 @@ async fn pre_tool_use_hook_deny_prevents_shell_invocation() {
         provider: Arc::new(TwoStepProvider::new()),
         tools,
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "You are helpful.".to_owned(),
         model: ModelId::new("mock:test"),
         max_tokens: None,
@@ -184,6 +185,7 @@ async fn pre_tool_use_hook_deny_prevents_shell_invocation() {
         hooks: Some(Arc::new(registry)),
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     };
 
     let mut agent = Agent::new(config);
@@ -323,6 +325,7 @@ async fn no_hooks_no_overhead() {
         provider: Arc::new(EchoProvider::new()),
         tools,
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "You are helpful.".to_owned(),
         model: ModelId::new("mock:test"),
         max_tokens: None,
@@ -347,6 +350,7 @@ async fn no_hooks_no_overhead() {
         hooks: None, // no hooks — must be a perfect no-op
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     };
 
     let mut agent = Agent::new(config);

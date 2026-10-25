@@ -43,6 +43,7 @@ fn make_memory(id: &str, content: &str, weight: f64, decay_at: Option<u64>) -> M
         decay_at,
         kind: MemoryKind::Conversation,
         description: None,
+        embedding: None,
     }
 }
 
