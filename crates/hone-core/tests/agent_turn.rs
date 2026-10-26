@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use futures::{Stream, stream};
-use hone_core::{Agent, AgentConfig, AgentHandle};
+use hone_core::{Agent, AgentConfig, AgentHandle, AgentMode};
 use hone_memory::{InMemoryStore, Memory, MemoryStore};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, Role,
@@ -145,6 +145,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 
@@ -1207,6 +1208,7 @@ async fn test_dynamic_read_only_tool_dispatched_in_parallel() {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     };
 
     let mut agent = Agent::new(config);

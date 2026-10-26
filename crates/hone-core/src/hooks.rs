@@ -418,6 +418,11 @@ mod tests {
 
     use super::*;
 
+    // Ceiling for hooks that should finish instantly. These tests assert on
+    // hook output, not latency, and spawning a fresh script can stall for
+    // seconds on a loaded machine (e.g. while cargo is building).
+    const HOOK_TIMEOUT_MS: u64 = 30_000;
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
@@ -568,7 +573,7 @@ command = "/usr/bin/project-version"
             name: "shell-hook".into(),
             event: "PreToolUse".into(),
             command: script.clone(),
-            timeout_ms: 2000,
+            timeout_ms: HOOK_TIMEOUT_MS,
             tool_name_pattern: Some("shell".into()),
         });
 
@@ -607,7 +612,7 @@ command = "/usr/bin/project-version"
             name: "deny-hook".into(),
             event: "PreToolUse".into(),
             command: script,
-            timeout_ms: 2000,
+            timeout_ms: HOOK_TIMEOUT_MS,
             tool_name_pattern: None,
         });
 
@@ -639,7 +644,7 @@ command = "/usr/bin/project-version"
             name: "capture-hook".into(),
             event: "PreToolUse".into(),
             command: script,
-            timeout_ms: 2000,
+            timeout_ms: HOOK_TIMEOUT_MS,
             tool_name_pattern: None,
         });
 
@@ -669,7 +674,7 @@ command = "/usr/bin/project-version"
             name: "mutate-hook".into(),
             event: "PreToolUse".into(),
             command: script,
-            timeout_ms: 2000,
+            timeout_ms: HOOK_TIMEOUT_MS,
             tool_name_pattern: None,
         });
 
@@ -736,7 +741,7 @@ command = "/usr/bin/project-version"
             name: "bad-json-hook".into(),
             event: "PreToolUse".into(),
             command: script,
-            timeout_ms: 2000,
+            timeout_ms: HOOK_TIMEOUT_MS,
             tool_name_pattern: None,
         });
 
@@ -774,7 +779,7 @@ command = "/usr/bin/project-version"
             name: "prompt-hook".into(),
             event: "UserPromptSubmit".into(),
             command: script,
-            timeout_ms: 2000,
+            timeout_ms: HOOK_TIMEOUT_MS,
             tool_name_pattern: None,
         });
 
@@ -815,14 +820,14 @@ command = "/usr/bin/project-version"
             name: "hook-a".into(),
             event: "PreToolUse".into(),
             command: script_a,
-            timeout_ms: 2000,
+            timeout_ms: HOOK_TIMEOUT_MS,
             tool_name_pattern: None,
         });
         registry.register(HookSpec {
             name: "hook-b".into(),
             event: "PreToolUse".into(),
             command: script_b,
-            timeout_ms: 2000,
+            timeout_ms: HOOK_TIMEOUT_MS,
             tool_name_pattern: None,
         });
 
@@ -855,7 +860,7 @@ command = "/usr/bin/project-version"
             name: "glob-hook".into(),
             event: "PreToolUse".into(),
             command: script,
-            timeout_ms: 2000,
+            timeout_ms: HOOK_TIMEOUT_MS,
             tool_name_pattern: Some("*".into()),
         });
 
@@ -887,7 +892,7 @@ command = "/usr/bin/project-version"
             name: "no-pattern-hook".into(),
             event: "PreToolUse".into(),
             command: script,
-            timeout_ms: 2000,
+            timeout_ms: HOOK_TIMEOUT_MS,
             tool_name_pattern: None,
         });
 

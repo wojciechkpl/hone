@@ -2,7 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use hone_core::{
-    Agent, AgentConfig, GreenCommands, GreenContract, GreenLevel, TestStatus, TestVerificationLoop,
+    Agent, AgentConfig, AgentMode, GreenCommands, GreenContract, GreenLevel, TestStatus,
+    TestVerificationLoop,
 };
 use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::MockProvider;
@@ -19,6 +20,7 @@ fn base_config(provider: Arc<dyn hone_providers::ModelProvider>) -> AgentConfig 
         provider,
         tools: ToolRegistry::new(),
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "You are a helpful coder.".to_owned(),
         model: ModelId::new("mock:test"),
         max_tokens: None,
@@ -43,6 +45,7 @@ fn base_config(provider: Arc<dyn hone_providers::ModelProvider>) -> AgentConfig 
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 

@@ -146,6 +146,7 @@ async fn test_mcp_tool_call_delegates_to_client() {
     let sandbox = hone_sandbox::NullSandbox;
     let ctx = ToolContext {
         sandbox: Arc::new(sandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: PathBuf::from("/tmp"),
     };
 

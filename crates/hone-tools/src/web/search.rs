@@ -149,9 +149,13 @@ impl Tool for WebSearchTool {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::path::PathBuf;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex, PoisonError};
 
     use super::*;
+
+    /// Tests run in parallel threads of one process, so every test that sets
+    /// or removes `HONE_WEBSEARCH_*` must hold this lock for its whole body.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     fn make_ctx() -> ToolContext {
         ToolContext {
@@ -167,8 +171,9 @@ mod tests {
 
     #[test]
     fn from_env_with_no_provider_is_disabled() {
+        let _env = ENV_MUTEX.lock().unwrap_or_else(PoisonError::into_inner);
         // Given: HONE_WEBSEARCH_PROVIDER is unset
-        // SAFETY: single-threaded test; no concurrent env access
+        // SAFETY: ENV_MUTEX is held, so no other test touches the env
         unsafe {
             std::env::remove_var("HONE_WEBSEARCH_PROVIDER");
             std::env::remove_var("HONE_WEBSEARCH_KEY");
@@ -186,8 +191,9 @@ mod tests {
 
     #[test]
     fn from_env_unknown_provider_is_disabled() {
+        let _env = ENV_MUTEX.lock().unwrap_or_else(PoisonError::into_inner);
         // Given
-        // SAFETY: single-threaded test; no concurrent env access
+        // SAFETY: ENV_MUTEX is held, so no other test touches the env
         unsafe {
             std::env::set_var("HONE_WEBSEARCH_PROVIDER", "garbage");
             std::env::set_var("HONE_WEBSEARCH_KEY", "somekey");
@@ -211,8 +217,9 @@ mod tests {
 
     #[test]
     fn from_env_tavily_no_key_is_disabled() {
+        let _env = ENV_MUTEX.lock().unwrap_or_else(PoisonError::into_inner);
         // Given: provider set but key absent
-        // SAFETY: single-threaded test; no concurrent env access
+        // SAFETY: ENV_MUTEX is held, so no other test touches the env
         unsafe {
             std::env::set_var("HONE_WEBSEARCH_PROVIDER", "tavily");
             std::env::remove_var("HONE_WEBSEARCH_KEY");
@@ -235,8 +242,9 @@ mod tests {
 
     #[test]
     fn from_env_tavily_with_key_constructs_tavily_backend() {
+        let _env = ENV_MUTEX.lock().unwrap_or_else(PoisonError::into_inner);
         // Given
-        // SAFETY: single-threaded test; no concurrent env access
+        // SAFETY: ENV_MUTEX is held, so no other test touches the env
         unsafe {
             std::env::set_var("HONE_WEBSEARCH_PROVIDER", "tavily");
             std::env::set_var("HONE_WEBSEARCH_KEY", "tvly-testkey123");

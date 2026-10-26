@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use hone_core::{AgentConfig, AgentEnsemble};
+use hone_core::{AgentConfig, AgentEnsemble, AgentMode};
 use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::MockProvider;
 use hone_sandbox::NullSandbox;
@@ -41,6 +41,7 @@ fn make_config(tokens: Vec<String>) -> AgentConfig {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 
@@ -188,6 +189,7 @@ async fn test_ensemble_handles_candidate_failure() {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     };
 
     let ensemble = AgentEnsemble::new(failing_config, vec![0.0, 0.3]);

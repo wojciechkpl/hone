@@ -63,6 +63,7 @@ fn make_memory(
         decay_at: None,
         kind,
         description: description.map(String::from),
+        embedding: None,
     }
 }
 

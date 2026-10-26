@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use futures::{Stream, stream};
-use hone_core::{AgentConfig, ReviewSeverity, ReviewerAgent};
+use hone_core::{AgentConfig, AgentMode, ReviewSeverity, ReviewerAgent};
 use hone_proto::{Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, ToolApprovalPolicy};
 use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
@@ -82,6 +82,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         provider,
         tools: ToolRegistry::new(),
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "You are a coder.".to_owned(),
         model: ModelId::new("mock:test"),
         max_tokens: None,
@@ -106,6 +107,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 

@@ -28,6 +28,7 @@ fn make_memory(
         decay_at: None,
         kind,
         description: description.map(|s| s.to_owned()),
+        embedding: None,
     }
 }
 

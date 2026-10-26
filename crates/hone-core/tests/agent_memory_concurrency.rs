@@ -81,7 +81,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use hone_core::memory_format::StructuredBody;
 use hone_core::memory_worthy::MemoryCandidate;
-use hone_core::{Agent, AgentConfig, RetryConfig};
+use hone_core::{Agent, AgentConfig, AgentMode, RetryConfig};
 use hone_memory::{Memory, MemoryError, MemoryFilter, MemoryKind, MemoryQuery, MemoryStore};
 use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::MockProvider;
@@ -255,6 +255,7 @@ fn make_agent(record_delay: Duration, recall_delay: Duration) -> (Agent, Arc<dyn
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     };
 
     (Agent::new(config), store_arc)

@@ -33,6 +33,7 @@ fn make_memory(id: &str, content: &str, kind: MemoryKind) -> Memory {
         decay_at: None,
         kind,
         description: None,
+        embedding: None,
     }
 }
 

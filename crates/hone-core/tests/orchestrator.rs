@@ -4,7 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::Stream;
 use hone_core::{
-    AgentConfig, AgentRegistry, Orchestrator, SubTask, TaskPlan, WorkerResult, WorkerStatus,
+    AgentConfig, AgentMode, AgentRegistry, Orchestrator, SubTask, TaskPlan, WorkerResult,
+    WorkerStatus,
 };
 use hone_proto::{
     Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, TokenUsage,
@@ -49,6 +50,7 @@ fn base_config(provider: Arc<MockProvider>) -> AgentConfig {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 
@@ -405,6 +407,7 @@ fn panic_agent_config() -> AgentConfig {
         provider: Arc::new(PanicProvider),
         tools: ToolRegistry::new(),
         sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         system_prompt: "You are a panicking worker.".to_owned(),
         model: ModelId::new("panic:test"),
         max_tokens: None,
@@ -429,6 +432,7 @@ fn panic_agent_config() -> AgentConfig {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     }
 }
 

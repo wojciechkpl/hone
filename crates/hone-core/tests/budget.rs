@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use hone_core::{Agent, AgentConfig, AgentError};
+use hone_core::{Agent, AgentConfig, AgentError, AgentMode};
 use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy, TokenUsage};
 use hone_providers::MockProvider;
 use hone_sandbox::NullSandbox;
@@ -59,6 +59,7 @@ async fn test_budget_cap_blocks_new_turn() {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     };
 
     let mut agent = Agent::new(config);

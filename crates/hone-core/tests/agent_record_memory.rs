@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use hone_core::memory_worthy::classify_turn;
-use hone_core::{Agent, AgentConfig, RetryConfig};
+use hone_core::{Agent, AgentConfig, AgentMode, RetryConfig};
 use hone_memory::{InMemoryStore, MemoryKind, MemoryQuery, MemoryStore};
 use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
 use hone_providers::MockProvider;
@@ -61,6 +61,7 @@ fn make_agent_with_store() -> (Agent, Arc<dyn hone_memory::MemoryStore>) {
         hooks: None,
         skills: None,
         embedder: None,
+        mode: AgentMode::Build,
     };
 
     (Agent::new(config), store)
