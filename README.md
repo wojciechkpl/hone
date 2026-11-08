@@ -115,7 +115,7 @@ cargo run -p hone-desktop
 
 ## Overview
 
-Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rust. It runs locally in your terminal with kernel-enforced sandboxing, supports 7 first-party provider adapters plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL`, and learns patterns across sessions through adaptive memory. Work with your models, on your machine, under your rules.
+Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rust. It runs locally in your terminal with kernel sandboxing (Seatbelt on macOS; Landlock on Linux, currently opt-in), supports 7 first-party provider adapters plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL`, and learns patterns across sessions through adaptive memory. Work with your models, on your machine, under your rules.
 
 ## Why Hone
 
@@ -156,7 +156,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
   | ACP — `gemini --acp` | Yes | JSON-RPC | Free-tier Gemini with full bidirectional tool dispatch |
   | ACP — custom | Yes | JSON-RPC | Self-hosted ACP servers; see [`docs/api/acp-protocol.md`](docs/api/acp-protocol.md) |
   | Mock | Yes | in-process | Test double only |
-- **Kernel-enforced sandboxing** — Seatbelt on macOS, Landlock on Linux 5.13+, seccomp elsewhere. Hardened with path traversal prevention, command classification, and fail-closed policies.
+- **Kernel sandboxing** — Shell commands run under Seatbelt on macOS (enforced by default). On Linux 5.13+, Landlock enforcement is **opt-in** with `HONE_SANDBOX_ENFORCE=1` while it is validated: before November 2026 a bug meant Landlock was never applied to shell commands. Read allowlist: system and toolchain roots plus `HONE_SANDBOX_EXTRA_READ`. Also: path traversal prevention for file tools and command classification. No sandbox on other platforms.
 - **Memory encryption** — AES-256-GCM with Argon2id for encrypted memory storage. Opt-in at runtime via `--encrypted-memory` plus `HONE_MEMORY_PASSPHRASE`. A wrong or missing passphrase exits the binary non-zero rather than silently degrading. Each store persists its own random 16-byte salt (plus a version marker) as a sentinel memory record, so keys rotate per-vault and cannot be cross-replayed against a hardcoded constant.
 - **Typed memories with index-driven recall** — Memories carry a `kind` (`User`, `Feedback`, `Project`, `Reference`, `Outcome`, `Conversation`) and an optional one-line `description`. The system prompt embeds a budgeted `## Memory index`; the agent fetches bodies on demand via the `memory_read` tool. Recall ordering uses BM25 (k1=1.5, b=0.75) over content + description. Inspect or prune via `hone memory ls | show <id> | forget`.
 - **Layered tool architecture** — Native Rust layer (Layer 2) for zero-cost file/shell/git/LSP. MCP client for 70+ community extensions (Layer 1) with `.hone/mcp.json` config. Skills in markdown (Layer 3). Tool decorators for cost tracking and governance (Layer 4).
@@ -754,7 +754,7 @@ graph TB
     style Sandbox fill:#FF6B6B
 ```
 
-**Layer 2** (native tools) are direct Rust function calls—zero serialization, zero IPC overhead. **Layer 1** (MCP) uses JSON-RPC over stdio. **Layer 0** (providers) use HTTP + streaming. **Layer 3** (skills) are markdown conventions with no runtime cost. **Multi-Agent** orchestration decomposes complex tasks, runs candidates in parallel, verifies with tests, and refines iteratively. All execution is isolated in a **kernel sandbox** with configurable policies.
+**Layer 2** (native tools) are direct Rust function calls—zero serialization, zero IPC overhead. **Layer 1** (MCP) uses JSON-RPC over stdio. **Layer 0** (providers) use HTTP + streaming. **Layer 3** (skills) are markdown conventions with no runtime cost. **Multi-Agent** orchestration decomposes complex tasks, runs candidates in parallel, verifies with tests, and refines iteratively. Shell commands run in a **kernel sandbox** (Seatbelt on macOS; Landlock on Linux with `HONE_SANDBOX_ENFORCE=1`).
 
 ## Installation
 
@@ -797,7 +797,7 @@ cargo run --release --bin hone -- "fix the bug"
 |----------|-------------|--------|
 | macOS | Apple Silicon (arm64) | Fully supported, Seatbelt sandboxing |
 | macOS | Intel (x86_64) | Fully supported |
-| Linux | x86_64 | Fully supported, Landlock sandboxing |
+| Linux | x86_64 | Fully supported; Landlock sandboxing opt-in (`HONE_SANDBOX_ENFORCE=1`) |
 | Linux | arm64 | Supported (cross-compile) |
 | Windows | x86_64 | Not supported (no sandbox backend) |
 
@@ -1308,7 +1308,7 @@ An honest comparison. We list where competitors are better, not just where Hone 
 | **Open source** | MIT/Apache-2.0 | Proprietary | Open (Apache-2.0) | Open (Apache-2.0) | Proprietary | Apache-2.0 |
 | **Terminal-native** | Yes | Yes | Yes | Yes (+ Electron) | No (VS Code only) | Yes |
 | **Multi-agent orchestration** | DAG + ensemble + RALPH | No | No | No | No | No |
-| **Kernel sandboxing** | Seatbelt + Landlock | Container | Container | No | No | No |
+| **Kernel sandboxing** | Seatbelt (macOS); Landlock opt-in (Linux) | Container | Container | No | No | No |
 | **Encrypted memory** | AES-256-GCM | No | No | No | No | No |
 | **MCP extensions** | 70+ via .hone/mcp.json | Yes (native) | No | 70+ | Yes | Yes |
 | **Provider support** | 7+ (any OpenAI-compat) | Claude only | OpenAI only | 30+ | Bedrock only | Gemini only |

@@ -31,8 +31,8 @@
 use std::process::Command;
 
 use landlock::{
-    ABI, Access, AccessFs, Compatible, PathBeneath, PathFd, Ruleset, RulesetAttr,
-    RulesetCreatedAttr, RulesetStatus,
+    ABI, Access, AccessFs, BitFlags, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr,
+    RulesetStatus,
 };
 
 use crate::{Sandbox, SandboxError, SandboxHandle, SandboxPlatform, SandboxPolicy};
@@ -56,6 +56,37 @@ const TARGET_ABI: ABI = ABI::V1;
 /// Sync`.
 pub struct LandlockSandbox;
 
+/// Open `path` for a Landlock rule. A nonexistent path is skipped (`Ok(None)`)
+/// rather than failing the whole ruleset; any other error is fatal.
+fn open_path(path: &std::path::Path, kind: &str) -> Result<Option<PathFd>, SandboxError> {
+    match PathFd::new(path) {
+        Ok(fd) => Ok(Some(fd)),
+        Err(e) => {
+            let not_found = std::error::Error::source(&e)
+                .and_then(|s| s.downcast_ref::<std::io::Error>())
+                .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound);
+            if not_found {
+                tracing::debug!(path = %path.display(), kind, "landlock: skipping nonexistent path");
+                Ok(None)
+            } else {
+                Err(SandboxError::PolicyNotMet {
+                    reason: format!("landlock open path {}: {e}", path.display()),
+                })
+            }
+        }
+    }
+}
+
+/// For non-directory paths keep only file-compatible rights, so the landlock
+/// crate does not mask directory-only rights and report `PartiallyEnforced`.
+fn file_compatible(path: &std::path::Path, access: BitFlags<AccessFs>) -> BitFlags<AccessFs> {
+    if path.is_dir() {
+        access
+    } else {
+        access & AccessFs::from_file(TARGET_ABI)
+    }
+}
+
 /// Build a Landlock `RulesetCreated` from `policy` and return it ready for
 /// `restrict_self()`.
 ///
@@ -78,11 +109,11 @@ fn build_ruleset(policy: &SandboxPolicy) -> Result<landlock::RulesetCreated, San
     // Add read-only rules.
     let mut ruleset_created = ruleset_created;
     for path in &policy.allow_read {
-        let fd = PathFd::new(path).map_err(|e| SandboxError::PolicyNotMet {
-            reason: format!("landlock open path {}: {e}", path.display()),
-        })?;
+        let Some(fd) = open_path(path, "read")? else {
+            continue;
+        };
         // from_read() covers Execute | ReadFile | ReadDir.
-        let rule = PathBeneath::new(fd, AccessFs::from_read(TARGET_ABI));
+        let rule = PathBeneath::new(fd, file_compatible(path, AccessFs::from_read(TARGET_ABI)));
         ruleset_created =
             ruleset_created
                 .add_rule(rule)
@@ -93,11 +124,11 @@ fn build_ruleset(policy: &SandboxPolicy) -> Result<landlock::RulesetCreated, San
 
     // Add read-write rules (write implies read).
     for path in &policy.allow_write {
-        let fd = PathFd::new(path).map_err(|e| SandboxError::PolicyNotMet {
-            reason: format!("landlock open path {}: {e}", path.display()),
-        })?;
+        let Some(fd) = open_path(path, "write")? else {
+            continue;
+        };
         // from_all() covers every access right: read, write, exec, create, etc.
-        let rule = PathBeneath::new(fd, AccessFs::from_all(TARGET_ABI));
+        let rule = PathBeneath::new(fd, file_compatible(path, AccessFs::from_all(TARGET_ABI)));
         ruleset_created =
             ruleset_created
                 .add_rule(rule)
@@ -108,10 +139,13 @@ fn build_ruleset(policy: &SandboxPolicy) -> Result<landlock::RulesetCreated, San
 
     // Add exec-only rules.
     for path in &policy.allow_exec {
-        let fd = PathFd::new(path).map_err(|e| SandboxError::PolicyNotMet {
-            reason: format!("landlock open path {}: {e}", path.display()),
-        })?;
-        let rule = PathBeneath::new(fd, AccessFs::Execute.into());
+        let Some(fd) = open_path(path, "exec")? else {
+            continue;
+        };
+        // Pass the flag directly: `.into()` here is ambiguous (AccessFs and
+        // BitFlags<AccessFs> both satisfy the bound) and fails to compile on
+        // current stable Rust.
+        let rule = PathBeneath::new(fd, AccessFs::Execute);
         ruleset_created =
             ruleset_created
                 .add_rule(rule)

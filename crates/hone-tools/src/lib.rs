@@ -27,5 +27,9 @@ pub use registry::{ToolRegistry, ToolRegistryBuilder};
 pub use screen::{ComputerControlTool, ScreenCaptureTool};
 pub use shell::ShellTool;
 pub use shell::validation::{CommandIntent, ValidationResult};
+pub use shell::{
+    EXTRA_READ_ENV, HOME_READ_DIRS, SANDBOX_ENFORCE_ENV, SYSTEM_READ_ROOTS, WRITE_DEVICES,
+    parse_extra_read, sandbox_enforced, shell_sandbox_policy,
+};
 pub use traits::{Tool, ToolContext, ToolInput, ToolOutput};
 pub use web::{SearchResult, WebFetchTool, WebSearchTool};
