@@ -1,0 +1,9 @@
+# build outputs and run artefacts (publish results via scripts/30_report.sh --package)
+.bundle/
+.build/
+results/
+.venv/
+__pycache__/
+*.egg-info/
+uv.lock
+config/bench.env

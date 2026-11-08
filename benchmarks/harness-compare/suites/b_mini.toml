@@ -1,0 +1,176 @@
+# Suite B: Hone's 10-task mini-bench (ported from benchmarks/mini_bench.sh).
+# Graded by each task's own `check` command (exit 0 = pass), NOT by the
+# SWE-bench grader. Smoke-level evidence only: never merged into the headline.
+#
+# The runner creates /work/repo, runs `setup` there, then commits the result
+# (`init_repo = true` is the default for this suite).
+
+[[task]]
+id = "fix-typo"
+setup = '''
+cat > main.py << "PYEOF"
+def calcualte_average(numbers):
+    """Calcualte the average of a list of numbers."""
+    if len(numbers) == 0:
+        return 0
+    return sum(numbers) / len(numbers)
+
+def main():
+    result = calcualte_average([1, 2, 3, 4, 5])
+    print(f"Average: {result}")
+
+if __name__ == "__main__":
+    main()
+PYEOF
+'''
+prompt = "Fix the typo in the function name in main.py — it should be calculate_average not calcualte_average"
+check = 'grep -q "def calculate_average" main.py && python3 main.py'
+
+[[task]]
+id = "add-function"
+setup = '''
+cat > math_utils.py << "PYEOF"
+def add(a, b):
+    return a + b
+
+def subtract(a, b):
+    return a - b
+PYEOF
+'''
+prompt = "Add a multiply function to math_utils.py that takes two arguments and returns their product"
+check = 'python3 -c "from math_utils import multiply; assert multiply(3,4)==12"'
+
+[[task]]
+id = "fix-bug-off-by-one"
+setup = '''
+cat > range_check.py << "PYEOF"
+def is_in_range(value, low, high):
+    """Check if value is in range [low, high] inclusive."""
+    return low < value < high
+
+assert is_in_range(5, 1, 10) == True
+assert is_in_range(1, 1, 10) == True   # This fails! Boundary not inclusive
+assert is_in_range(10, 1, 10) == True  # This fails! Boundary not inclusive
+PYEOF
+'''
+prompt = "Fix the bug in range_check.py — is_in_range should be inclusive on both ends (use <= instead of <)"
+check = "python3 range_check.py"
+
+[[task]]
+id = "add-error-handling"
+setup = '''
+cat > divide.py << "PYEOF"
+def safe_divide(a, b):
+    return a / b
+PYEOF
+'''
+prompt = "Add error handling to safe_divide in divide.py — return None when dividing by zero instead of raising an exception"
+check = 'python3 -c "from divide import safe_divide; assert safe_divide(10,2)==5.0; assert safe_divide(10,0) is None"'
+
+[[task]]
+id = "create-file"
+setup = "mkdir -p src && touch src/.keep"
+prompt = "Create a file src/greeting.py with a function greet(name) that returns the string Hello, {name}!"
+check = '''python3 -c "from src.greeting import greet; assert greet('World')=='Hello, World!'"'''
+
+[[task]]
+id = "rename-variable"
+setup = '''
+cat > config.py << "PYEOF"
+x = "localhost"
+y = 5432
+z = "mydb"
+
+def get_connection_string():
+    return f"postgresql://{x}:{y}/{z}"
+PYEOF
+'''
+prompt = "Rename the variables in config.py to be descriptive: x->host, y->port, z->database"
+check = '''grep -q "^host" config.py && grep -q "^port" config.py && grep -q "^database" config.py && ! grep -qE "^(x|y|z) " config.py && python3 -c "from config import get_connection_string as g; assert g()=='postgresql://localhost:5432/mydb'"'''
+
+[[task]]
+id = "add-docstring"
+setup = '''
+cat > utils.py << "PYEOF"
+def flatten(nested_list):
+    result = []
+    for item in nested_list:
+        if isinstance(item, list):
+            result.extend(flatten(item))
+        else:
+            result.append(item)
+    return result
+PYEOF
+'''
+prompt = "Add a docstring to the flatten function in utils.py explaining what it does"
+check = 'python3 -c "from utils import flatten; assert flatten.__doc__ is not None and len(flatten.__doc__) > 10; assert flatten([1,[2,[3]]])==[1,2,3]"'
+
+[[task]]
+id = "fix-import"
+setup = '''
+cat > app.py << "PYEOF"
+from mathutils import calculate_sum
+
+def main():
+    result = calculate_sum([1, 2, 3])
+    print(result)
+PYEOF
+cat > math_utils.py << "PYEOF"
+def calculate_sum(numbers):
+    return sum(numbers)
+PYEOF
+'''
+prompt = "Fix the import in app.py — the module is called math_utils not mathutils"
+check = 'python3 -c "import app; app.main()"'
+
+[[task]]
+id = "add-test"
+setup = '''
+cat > calculator.py << "PYEOF"
+def add(a, b):
+    return a + b
+
+def subtract(a, b):
+    return a - b
+
+def multiply(a, b):
+    return a * b
+PYEOF
+'''
+prompt = "Create a test file test_calculator.py with pytest tests for all three functions in calculator.py"
+check = "test -f test_calculator.py && python3 -m pytest test_calculator.py -q"
+
+[[task]]
+id = "refactor-duplication"
+setup = '''
+cat > handlers.py << "PYEOF"
+def handle_get(request):
+    if not request.get("auth_token"):
+        return {"error": "unauthorized", "code": 401}
+    if not request.get("user_id"):
+        return {"error": "missing user_id", "code": 400}
+    return {"data": "get_result", "code": 200}
+
+def handle_post(request):
+    if not request.get("auth_token"):
+        return {"error": "unauthorized", "code": 401}
+    if not request.get("user_id"):
+        return {"error": "missing user_id", "code": 400}
+    return {"data": "post_result", "code": 200}
+
+def handle_delete(request):
+    if not request.get("auth_token"):
+        return {"error": "unauthorized", "code": 401}
+    if not request.get("user_id"):
+        return {"error": "missing user_id", "code": 400}
+    return {"data": "delete_result", "code": 200}
+PYEOF
+'''
+prompt = "Refactor handlers.py to extract the duplicated auth_token and user_id validation into a shared helper function"
+check = '''test "$(grep -c auth_token handlers.py)" -le 2 && python3 -c "
+from handlers import handle_get, handle_post, handle_delete
+for h in (handle_get, handle_post, handle_delete):
+    assert h({})['code'] == 401
+    assert h({'auth_token': 'x'})['code'] == 400
+    assert h({'auth_token': 'x', 'user_id': '1'})['code'] == 200
+"'''
