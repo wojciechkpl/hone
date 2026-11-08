@@ -95,11 +95,11 @@ Full SWE-bench Lite (300 real GitHub issues) evaluated on DeepSeek V3 via OpenRo
 | Metric | Result |
 |--------|--------|
 | Issues resolved | **58/300 (19.3%)** |
-| Evaluated | **28.3% of dataset** |
-| Cost per task | ~$0.001-0.002 (50x cheaper than SWE-Agent on GPT-4) |
+| Resolve rate among graded patches | 28.3% (58/205 completed evaluations) |
+| Cost per task | ~$0.03 ($8.56 for 300 tasks) |
 
 **Competitive Comparison:**
-- Hone (DeepSeek V3): 58/300 (19.3%) — Beats SWE-Agent (GPT-4) at 50x lower cost
+- Hone (DeepSeek V3): 58/300 (19.3%) at ~$0.03/task — comparable to SWE-Agent (GPT-4, 18%) at 3–7× lower cost
 - SWE-Agent (GPT-4): 18% pass rate at ~$0.10-0.20 per task
 
 See [Benchmarks](benchmarks.md) for detailed breakdown and reproduction instructions.

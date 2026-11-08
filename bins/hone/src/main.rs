@@ -182,13 +182,13 @@ struct Cli {
 
     /// Disable proactive context injection (enabled by default; set HONE_NO_INJECTION=1 to disable).
     /// Context injection pre-loads a repo skeleton and relevant code signatures
-    /// into the agent's context, improving patch rate by +20pp on SWE-bench.
+    /// into the agent's context before the first model call.
     #[arg(long)]
     no_inject: bool,
 
     /// Skeleton generation strategy for context injection.
     ///
-    /// Choices: flat, dependency-graph, call-graph, hybrid (default).
+    /// Choices: adaptive (default), call-graph, hybrid, dependency-graph, flat.
     /// Also controlled via the HONE_SKELETON_STRATEGY env var.
     #[arg(long, value_name = "STRATEGY")]
     skeleton_strategy: Option<String>,
@@ -848,8 +848,9 @@ fn build_agent_config(
         ToolRegistry::new()
     };
 
-    // Proactive context injection is ENABLED by default (validated: +20pp patch
-    // rate on SWE-bench). Disable with --no-inject or HONE_NO_INJECTION=1.
+    // Proactive context injection is ENABLED by default. Its effect on resolve
+    // rate is being measured by the pre-registered ablation in
+    // benchmarks/harness-compare. Disable with --no-inject or HONE_NO_INJECTION=1.
     let inject_context = !no_inject_flag
         && std::env::var("HONE_NO_INJECTION")
             .map(|v| v != "1")

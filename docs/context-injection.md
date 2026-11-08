@@ -2,7 +2,7 @@
 
 ## What is Context Injection?
 
-Context injection is an automated, three-tier system that proactively provides the agent with code context before it starts executing tools. Instead of the agent discovering relevant code through search and exploration, Hone now prepares a strategic selection of code signatures and directory structure upfront. This reduces exploration time, improves tool selection accuracy, and dramatically increases task success rates. On SWE-bench Lite (300 real GitHub issues), context injection increased pass rates from 75% (V3) to 95% (V4) with larger, more confident patches.
+Context injection is an automated, three-tier system that proactively provides the agent with code context before it starts executing tools. Instead of the agent discovering relevant code through search and exploration, Hone now prepares a strategic selection of code signatures and directory structure upfront. The goal is less exploration and better tool selection. On small SWE-bench Lite samples it raised patch generation (19/20 tasks produced a patch vs 15/20 without it); its effect on graded resolve rate is being measured.
 
 ---
 
@@ -24,7 +24,7 @@ Progressive budget filling ensures skeleton stays within token limits while maxi
 
 ### Tier 1: Repository Skeleton (Always Injected)
 
-The foundation of context injection. Provides a complete roadmap of the codebase structure without requiring any tool calls. The default strategy is **CallGraph** (for smaller repos) or **Hybrid/Flat** (for larger repos) which adapt based on repository size, achieving 100% patch rate on a 10-task SWE-bench sample (+30pp improvement over V1 baseline).
+The foundation of context injection. Provides a complete roadmap of the codebase structure without requiring any tool calls. The default strategy is **Adaptive**, which picks the detail level from repository size (call graph for small repos, signatures or directory tree for larger ones). On a 10-task SWE-bench sample, injection raised patch generation from 7/10 to 10/10 (CallGraph); its effect on resolve rate has not been graded yet.
 
 **Content:**
 - Function/class signatures (no bodies) for public APIs
@@ -117,32 +117,29 @@ to explore and fix this issue. Prioritize:
 
 ## Why It's the Default: Benchmark Evidence
 
-Context injection is enabled by default because it delivers extraordinary improvements across all benchmarks:
+Context injection is enabled by default. Its measured effect so far is on patch generation; its effect on resolve rate is being measured.
 
-### SWE-bench Lite (300 real GitHub issues)
+> **Correction (November 2026).** This page previously reported 86% (V3) and 95% (V4)
+> SWE-bench "pass rates" and a "50–100× cost advantage". The percentages were
+> patch-generation rates on 50- and 20-task samples, extrapolated to 300 tasks, and never
+> graded; they are withdrawn with the cost claims built on them. See
+> [the plan](plans/trust-defaults-daemon-2026-11.md) for the pre-registered comparison.
 
-| Version | Injection | Pass Rate | Key Change | Cost/Task |
-|---------|-----------|-----------|-----------|-----------|
-| **V1** | None | 58/300 (19.3%) | Baseline | $0.002 |
-| **V2** | None | 39/300 (13.0%) | Over-constrained | $0.002 |
-| **V3** | Optional | 258/300 (86%) | Skeleton + confidence-gated | $0.002 |
-| **V4** | Default | 285/300 (95%) | Multi-attempt with rollback | $0.002 |
+### SWE-bench Lite
 
-**Insight:** Enabling injection as default (not requiring `--inject-context`) removes user friction and delivers +9pp improvement in pass rate. The multi-attempt strategy in V4 (attempt with injection, rollback and retry with more budget if inject-guided exploration fails) explains the jump from 86% to 95%.
-
-### Cost Efficiency
-
-- Hone V4 (95% pass rate): ~$0.002/task
-- SWE-Agent (GPT-4, 18% pass rate): ~$0.10-0.20/task
-- **Hone is 50-100x more cost-effective**
+| Version | Injection | Result | What it measures |
+|---------|-----------|--------|------------------|
+| **V1** | None | 58/300 resolved (19.3%) | Official grader, ~$0.03/task |
+| **V2** | None | 39/300 resolved (13.0%) | Official grader; over-constrained prompt |
+| **V3** | Optional | 43/50 produced a patch (V1: 37/50) | Patch generation, 50-task sample, ungraded |
+| **V4** | Default | 19/20 produced a patch (V1: 15/20) | Patch generation, 20-task sample, ungraded; multi-attempt ran in the benchmark script |
 
 ### Quality Over Token Count
 
-Despite injection adding 200-400 tokens to the initial prompt:
-- Task completion rate increased by 9pp (86% → 95%)
-- Patch quality improved (fewer spurious edits, better reasoning)
-- Tool call efficiency improved (agents make fewer wrong turns)
-- Overall task time decreased due to fewer retries
+Injection adds 200–400 tokens to the initial prompt. In the ungraded samples the agent
+produced a patch more often; whether patch quality, tool-call efficiency and task time
+improve is what the pre-registered ablation records (tokens, tool calls, read:edit ratio,
+wall time per arm).
 
 ---
 
@@ -202,12 +199,12 @@ src/crypto.rs:
 4. Sort by file order, cap at 30 functions per budget
 5. Format as nested structure with call arrows
 
-**Benchmark Results (10-task SWE-bench sample):**
-- CallGraph: 10/10 patches (100%) — +30pp over V1 baseline (70%)
-- Hybrid: 9/10 patches (90%) — +20pp over V1
-- Flat: 9/10 patches (90%) — +20pp over V1
+**Patch generation on a 10-task SWE-bench sample (ungraded):**
+- CallGraph: 10/10 tasks produced a patch (V1 without injection: 7/10)
+- Hybrid: 9/10
+- Flat: 9/10
 
-**Why it's the default:** Function-level call relationships directly help agents understand code flow and dependencies. The agent sees which functions interact, enabling better reasoning about where bugs might be and what needs testing.
+**Why it helps:** Function-level call relationships directly help agents understand code flow and dependencies. The agent sees which functions interact, enabling better reasoning about where bugs might be and what needs testing.
 
 ### Flat
 
@@ -743,7 +740,7 @@ Tool execution loop
 - Pros: Agent has complete picture immediately
 - Cons: 2000-5000 tokens per file, context bloat, slow for large codebases, wastes budget on function details agent doesn't need
 
-**Outcome:** Signatures are 10x more token-efficient while maintaining same pass rates (95%).
+**Outcome:** Signatures are about 10× more token-efficient than full file bodies.
 
 ### Why Informational > Prescriptive
 
@@ -760,8 +757,8 @@ Do not read other files. Do not use git blame.
 ```
 
 **Outcome (from V2 benchmark):**
-- Prescriptive: 13% pass rate (over-constrained, fails on unexpected code structure)
-- Informational: 95% pass rate (agent adapts to reality, uses suggestions as guidance)
+- Prescriptive (V2): 13.0% resolved, graded (over-constrained, fails on unexpected code structure)
+- Informational (V1-style prompt plus suggestions): V1 resolved 19.3%, graded; injection's own resolve-rate effect is still being measured
 
 **Key insight:** Agents work better with suggestions than rigid rules.
 
@@ -880,12 +877,13 @@ time hone --no-inject "fix off-by-one error in bounds_check()"
 # Enable proactive context injection (default: true)
 context_injection = true
 
-# Skeleton strategy: call_graph, hybrid, flat, dependency_graph (default: call_graph)
-# call_graph: Function-level calls (100% patch rate, +30pp over V1)
-# hybrid: Dependency graph + calls for top-5 files (90% patch rate)
-# flat: Signatures only, fastest generation (90% patch rate)
-# dependency_graph: Import relationships only (85% patch rate)
-skeleton_strategy = "call_graph"
+# Skeleton strategy: adaptive, call_graph, hybrid, flat, dependency_graph (default: adaptive)
+# adaptive: detail level chosen from repo size (call graph for small repos)
+# call_graph: function-level calls, capped at 30 functions
+# hybrid: dependency graph + calls for the top-5 relevant files
+# flat: signatures only, fastest generation
+# dependency_graph: import relationships only
+skeleton_strategy = "adaptive"
 
 # BM25 confidence gap threshold (default: 0.4)
 # Lower = more aggressive injection, Higher = conservative

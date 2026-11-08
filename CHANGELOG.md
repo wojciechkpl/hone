@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Corrected: SWE-bench claims withdrawn
+
+- The README, docs and earlier changelog entries reported 86% and 95% SWE-bench "pass rates". These were patch-generation rates (any non-empty diff) on 50- and 20-task samples, extrapolated to 300 tasks, and were never graded. They are withdrawn, along with the cost comparisons built on them. The only graded result is **58/300 (19.3%)** on SWE-bench Lite (DeepSeek V3, April 2026, official harness). A pre-registered, harness-controlled comparison is in progress (`docs/plans/trust-defaults-daemon-2026-11.md`, `benchmarks/harness-compare/`).
+- Docs now name the actual default skeleton strategy, **Adaptive**. `--help` previously said "hybrid" and the README said "CallGraph".
+
 ### Memory subsystem overhaul
 
 A multi-PR rewrite of how memories are written, indexed, and recalled. The full design lives in `docs/priv/memory-improvements-plan-2026-04-30.md` (R1–R12); user-visible changes:
@@ -152,10 +157,10 @@ A multi-PR rewrite of how memories are written, indexed, and recalled. The full 
 
 ### Changed
 
-- **Context injection now enabled by default** — Proactive context injection (three-tier system: repo skeleton, confidence-gated BM25 signatures, exploration budgets) is now the default behavior, removing the need for `--inject-context` flag. Disable with `--no-inject` or `HONE_NO_INJECTION=1`. Multi-attempt strategy with rollback on failure improves pass rate from 86% to 95%.
-- **SWE-bench v4 results** — Context injection enabled by default dramatically improves pass rate from 75% to 95% (+20pp). Multi-attempt strategy: attempt with injection-guided exploration first; if insufficient, rollback and retry with larger budget and no injection constraints. Achieves 95% pass rate at 50-100x lower cost than SWE-Agent.
-- **SWE-bench v3 results** — Context injection (when opted-in) improves pass rate from 19.3% to 86% (+12pp). Three-tier injection system: skeleton-first (always), confidence-gated signatures (high-confidence matches only), exploration budget hints.
-- **SWE-bench cost efficiency** — Hone v4 achieves 95% pass rate at 50-100x lower cost than SWE-Agent (GPT-4): ~$0.002 per task vs ~$0.10-0.20.
+- **Context injection now enabled by default** — Proactive context injection (three-tier system: repo skeleton, confidence-gated BM25 signatures, exploration budgets) is now the default behavior, removing the need for `--inject-context` flag. Disable with `--no-inject` or `HONE_NO_INJECTION=1`.
+- **SWE-bench v4 sample (corrected 2026-11)** — On a 20-task sample, 19/20 tasks produced a non-empty patch (patch-generation rate, not graded) vs 15/20 for v1. The multi-attempt-with-rollback strategy ran in `benchmarks/swebench_inference.py`, not in Hone. *Originally published as a "95% pass rate" and extrapolated to 300 tasks; withdrawn.*
+- **SWE-bench v3 sample (corrected 2026-11)** — On a 50-task sample with opt-in injection, 43/50 tasks produced a non-empty patch (not graded) vs 37/50 for v1. *Originally published as an "86% pass rate"; withdrawn.*
+- **SWE-bench cost (corrected 2026-11)** — The graded v1 run cost $8.56 for 300 tasks (~$0.03/task, DeepSeek V3). *The earlier "~$0.002 per task, 50–100× cheaper than SWE-Agent" claim relied on the withdrawn v4 figures; withdrawn.*
 - **Review mode interaction** — `:review` now supports hunk-by-hunk navigation and selective acceptance. Rejected hunks are reverted; accepted hunks are staged.
 - **Exit code 1 on missing provider** — Hone now returns exit code 1 when no provider is configured (was silently falling back to MockProvider). Users must configure a provider via `hone configure` or environment variables.
 - **Security hardening (Phase 2 complete)**:

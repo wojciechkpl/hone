@@ -189,38 +189,39 @@ This bypasses the claude CLI subprocess and uses the direct HTTP provider.
 **Model:** DeepSeek V3 via OpenRouter
 **Dataset:** SWE-bench Lite (300 real GitHub issues)
 
-#### V1 vs V2 vs V3 vs V4 Results
+> **Correction (November 2026).** This page previously reported 86% (V3) and 95% (V4)
+> "pass rates". Those were **patch-generation rates** (the share of tasks producing any
+> non-empty diff) on 50- and 20-task samples, extrapolated to 300 tasks. They were never
+> graded and are withdrawn, together with the cost comparisons built on them. A
+> pre-registered, harness-controlled comparison is in progress: see
+> [the plan](plans/trust-defaults-daemon-2026-11.md) and `benchmarks/harness-compare/`.
 
-| Version | Approach | Issues Resolved | Pass Rate | Key Finding |
-|---------|----------|-----------------|-----------|-------------|
-| **V4** | **Context injection (default)** | **285/300** | **95%** | Multi-attempt strategy with rollback on failure |
-| **V3** | Context injection (opt-in) | 258/300 | 86% | Three-tier injection with skeleton-first strategy |
-| V1 | Simple prompt | 58/300 | 19.3% | Baseline — simple approach wins over V2 |
-| V2 | Structured + localization | 39/300 | 13.0% | Over-constraining hurts performance |
+#### Graded results (official SWE-bench harness)
 
-**Key Evolution:**
-- V1: Simple prompts work better than over-constrained guidance (19.3%)
-- V2: Structured guidance failed (13%) — mistake was being too prescriptive
-- V3: Selective, informational context injection succeeded (86%) — skeleton + high-confidence signatures + budget hints
-- V4: Multi-attempt strategy with injection-guided exploration and rollback on failure (95%) — attempt with injection, if exploration fails, rollback and retry with expanded budget
+| Version | Approach | Resolved | Notes |
+|---------|----------|----------|-------|
+| V1 | Simple prompt | **58/300 (19.3%)** | 226 patches submitted; 21 grading Docker errors; $8.56 total (~$0.03/task) |
+| V2 | Structured + localization | 39/300 (13.0%) | Over-constraining hurt; reverted |
 
-**Jump from 86% (V3) to 95% (V4):** Multi-attempt strategy allows agents to explore with injection guidance first, but if the injected context proves insufficient, the agent rolls back and retries with a larger exploration budget and no injection constraints. This combines the efficiency of injection (fewer spurious edits) with the adaptability of unbounded exploration.
+#### Ungraded samples (patch generation only)
 
-#### Competitive Comparison
+| Version | Sample | Non-empty patches | Same tasks, V1 | What changed |
+|---------|--------|-------------------|----------------|--------------|
+| V3 | first 50 tasks | 43/50 | 37/50 | Opt-in three-tier context injection |
+| V4 | first 20 tasks | 19/20 | 15/20 | Injection on by default + multi-attempt rollback (implemented in `benchmarks/swebench_inference.py`, not in Hone) |
 
-| Agent | Model | Pass Rate | Cost/Task |
-|-------|-------|-----------|-----------|
-| **Hone v4 (context injection default)** | DeepSeek V3 | **95%** | ~$0.002 |
-| **Hone v3 (context injection opt-in)** | DeepSeek V3 | **86%** | ~$0.002 |
-| Hone v1 (simple prompt) | DeepSeek V3 | 19.3% | ~$0.001-0.002 |
-| SWE-Agent | GPT-4 | 18% | ~$0.10-0.20 |
-| V2 (localization) | DeepSeek V3 | 13.0% | ~$0.001-0.002 |
+A patch is not a fix: these samples show that injection makes the agent *produce* a
+patch more often. Whether it raises the resolve rate is what the pre-registered ablation
+measures.
 
-Hone v4 beats SWE-Agent at **50-100x lower cost** with **5x better pass rate** (18% → 95%) and outperforms v1 by **76pp** (absolute), v2 by **82pp** (absolute).
+**What the versions taught us:**
+- V1: simple prompts beat over-constrained guidance.
+- V2: structured guidance failed (13%); being too prescriptive pre-biased the agent toward wrong files.
+- V3/V4: informational context injection (skeleton + high-confidence signatures + budget hints) increases patch generation on small samples; resolve-rate effect unmeasured.
 
 #### V3 Context Injection Strategy
 
-Hone v3 achieves 86% pass rate through a three-tier proactive context injection system that runs before the first provider call:
+Hone v3 introduced a three-tier proactive context injection system that runs before the first provider call:
 
 1. **Tier 1: Repository Skeleton (always injected)**
    - File tree structure (directory layout)
@@ -241,11 +242,11 @@ Hone v3 achieves 86% pass rate through a three-tier proactive context injection 
    - Low confidence (<0.15 gap): cap at 15 calls — open-ended exploration
    - Benefit: Soft guidance prevents unbounded exploration
 
-**Expected Impact:** 22-25% resolve rate on full SWE-bench (estimated from 86% pass rate on Lite).
+**Expected impact:** unknown until graded. (An earlier projection of 22–25% was derived from the withdrawn patch-generation figures.)
 
 #### V1 Optimizations
 
-Hone v1 achieves 19.3% pass rate (50-100x cheaper than SWE-Agent) by leveraging:
+Hone v1 resolved 19.3% (58/300) at ~$0.03/task by leveraging:
 
 1. **System Prompt Compression**
    - Tokens: 1776 → 511 (71% reduction)

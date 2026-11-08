@@ -12,21 +12,24 @@
 //!   block, telling the agent how many tool calls retrieval suggests are
 //!   needed.
 //!
-//! The system is enabled only when `HONE_CONTEXT_INJECTION=1` or the
-//! `--inject-context` CLI flag is passed, so existing behaviour is unchanged
-//! by default.
+//! The system is enabled by default in the `hone` CLI; disable it with
+//! `--no-inject` or `HONE_NO_INJECTION=1`.
 //!
 //! ## Skeleton strategies
 //!
-//! Four strategies control how the Tier 1 skeleton is formatted:
+//! Five strategies control how the Tier 1 skeleton is formatted:
 //!
+//! - **Adaptive** (default): chooses the detail level from repo size and
+//!   query relevance within a fixed token budget (see [`SkeletonStrategy`]).
 //! - **Flat** (original): One line per file with symbol signatures.
 //! - **DependencyGraph**: Flat signatures plus import-dependency arrows.
-//! - **CallGraph**: Function-level call relationships for the whole repo.
-//! - **CallGraph** (default): Function-level call graph, 100% patch rate on
-//!   SWE-bench sample (+30pp over baseline). Capped at 30 functions.
+//! - **CallGraph**: Function-level call relationships, capped at 30 functions.
 //! - **Hybrid**: Dependency arrows for all files; call details for
 //!   the top-5 BM25-relevant files only.
+//!
+//! Patch-generation on a 10-task SWE-bench sample was 7/10 without injection,
+//! 9/10 with Flat or Hybrid and 10/10 with CallGraph. That is not a resolve
+//! rate; the resolve-rate effect is measured in `benchmarks/harness-compare`.
 //!
 //! Select via the `HONE_SKELETON_STRATEGY` env var or `--skeleton-strategy`
 //! CLI flag.
@@ -69,7 +72,8 @@ pub enum SkeletonStrategy {
     /// File list with import dependency arrows (`→ [mod1, mod2]`).
     DependencyGraph,
     /// Function-level call graph (most detailed). Capped at 30 functions.
-    /// Achieved 100% patch rate on SWE-bench sample (+30pp over V1 baseline).
+    /// Produced a patch on 10/10 tasks of a SWE-bench sample (vs 7/10 without
+    /// injection); patch generation, not a graded resolve rate.
     CallGraph,
     /// Dependency graph + call details for top-5 BM25-relevant files.
     Hybrid,
