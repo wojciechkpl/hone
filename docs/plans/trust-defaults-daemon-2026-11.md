@@ -516,7 +516,7 @@ implements, `code-reviewer` reviews.
 
 | ID | Task | Main files |
 |---|---|---|
-| P2.1 | Policy model v2: subjects (command/path/host), ops, rule IDs, precedence (built-in → user → project tighten-only), and v1 TOML compatibility | `crates/hone-config/src/permissions.rs` |
+| P2.1 **done 2026-11-08** | Policy model v2: subjects (command/path/host), ops, rule IDs, precedence (built-in → user → project tighten-only), and v1 TOML compatibility. Contract: [`policy-v2-spec.md`](policy-v2-spec.md); its §8 lists what P2.2 must handle (case-insensitive filesystems, splitting commands, canonical paths, resolved IPs). | `crates/hone-config/src/policy.rs` |
 | P2.2 | Single decision point in the agent loop; `Tool::subjects(&args)` with a default implementation. File tools → paths; shell → command + best-effort paths; web tools → host. | `crates/hone-core/src/agent.rs:1291–1360`, `crates/hone-tools/src/traits.rs` |
 | P2.3 | Headless semantics: ask ⇒ deny with "requires approval (rule …)" for one-shot, `--json` and `honed`. TUI keeps the approval menu. Explicit opt-in `--approve <rule-id>`. | `bins/hone/src/main.rs:888–910`, `hone-proto/src/step_action.rs` |
 | P2.4 | Shell: **make Linux Landlock enforcement the default**, using the `hone-guarded` smoke and suite-C results from Phase 1 as evidence. Map validator classes onto policy (ask instead of hard-block). Add Landlock network deny-by-default for shell children (ABI ≥ 4) with a fallback warning. Toolchain roots and `HONE_SANDBOX_EXTRA_READ` are already done (P1.3b). | `crates/hone-tools/src/shell/{mod,validation}.rs`, `crates/hone-sandbox/src/landlock.rs` |

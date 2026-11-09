@@ -1,15 +1,57 @@
 use std::path::{Path, PathBuf};
 
+use crate::policy::Layer;
+
 // ── Error ─────────────────────────────────────────────────────────────────────
+
+/// Escape control characters so untrusted text can't reach a terminal raw.
+fn esc(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            let v: Vec<char> = if c.is_control() {
+                c.escape_default().collect()
+            } else {
+                vec![c]
+            };
+            v
+        })
+        .collect()
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum PermissionError {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    #[error("toml: {0}")]
+    #[error("toml: {}", esc(.0))]
     Toml(String),
-    #[error("invalid glob '{pattern}': {reason}")]
+    #[error("invalid glob '{}': {}", esc(.pattern), esc(.reason))]
     InvalidGlob { pattern: String, reason: String },
+    /// A policy rule failed validation (`index` is 1-based within its layer).
+    #[error("invalid rule #{index} in {layer} layer: {}", esc(.reason))]
+    InvalidRule {
+        layer: Layer,
+        index: usize,
+        reason: String,
+    },
+    /// Two rules share the same explicit id.
+    #[error("duplicate rule id '{}'", esc(.0))]
+    DuplicateRuleId(String),
+    /// The policy file declares a `version` this build does not understand.
+    #[error("unsupported policy version {0} (expected 1 or 2)")]
+    UnsupportedVersion(i64),
+    /// A policy file is not a regular file, or is too large / a forbidden symlink.
+    #[error("unsafe policy file {}: {}", esc(&.path.to_string_lossy()), esc(.reason))]
+    UnsafeFile { path: PathBuf, reason: String },
+    /// The [`crate::policy::PolicyContext`] is unusable (relative or missing paths).
+    #[error("invalid policy context: {}", esc(.0))]
+    InvalidContext(String),
+    /// A layer holds more rules than allowed.
+    #[error("too many rules in {layer} layer: {count} (max {max})")]
+    TooManyRules {
+        layer: Layer,
+        count: usize,
+        max: usize,
+    },
 }
 
 // ── Decision ──────────────────────────────────────────────────────────────────
