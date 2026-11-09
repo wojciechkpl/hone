@@ -3774,7 +3774,7 @@ mod tests {
             base_config.approval_policy,
             ToolApprovalPolicy::AskRisky { ref always_allowed } if always_allowed.is_empty()
         ));
-        assert!(base_config.step_rx.is_some(), "orchestrated turns need the channel");
+        assert!(base_config.step_rx.is_some(), "base_config must carry the channel so clones stay consistent with the running agent");
         assert!(matches!(
             agent.approval_policy().await,
             ToolApprovalPolicy::AskRisky { ref always_allowed } if always_allowed.is_empty()
@@ -3857,6 +3857,388 @@ mod tests {
             text.contains("remember the blue heron") && text.contains("noted"),
             "resumed history must survive wiring (no respawn); got: {text:?}"
         );
+    }
+
+    // ---- Review round 1 (spec section 6): R1, R2c, R6 --------------------------------------
+
+    /// Provider that replays `script[n]` on the n-th `complete()` (the last entry repeats).
+    struct SeqProvider {
+        script: Vec<Vec<hone_proto::ProviderEvent>>,
+        n: std::sync::Mutex<usize>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for SeqProvider {
+        fn id(&self) -> &str {
+            "seq"
+        }
+        fn display_name(&self) -> &str {
+            "Seq"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![hone_proto::ModelInfo {
+                id: ModelId::new("mock:test"),
+                display_name: "Test".to_owned(),
+                context_length: 4096,
+                supports_tools: true,
+                supports_streaming: true,
+            }]
+        }
+        async fn complete(
+            &self,
+            _req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let i = {
+                let mut n = self.n.lock().unwrap();
+                let i = (*n).min(self.script.len() - 1);
+                *n += 1;
+                i
+            };
+            Ok(Box::pin(futures::stream::iter(self.script[i].clone())))
+        }
+        fn estimate_tokens(&self, _m: &[Message]) -> u32 {
+            5
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    fn usage10() -> hone_proto::ProviderEvent {
+        hone_proto::ProviderEvent::Usage(hone_proto::TokenUsage {
+            input: 10,
+            output: 0,
+            cache_read: 0,
+            cache_creation: 0,
+        })
+    }
+
+    fn text_turn(t: &str) -> Vec<hone_proto::ProviderEvent> {
+        vec![
+            hone_proto::ProviderEvent::Token { text: t.to_owned() },
+            usage10(),
+            hone_proto::ProviderEvent::Done,
+        ]
+    }
+
+    /// Wait (bounded) for the first `ToolCallPaused` on `rx`.
+    async fn wait_for_pause(rx: &mut mpsc::Receiver<AgentEvent>) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    return;
+                }
+            }
+            panic!("stream ended before a pause");
+        })
+        .await
+        .expect("never paused");
+    }
+
+    /// A fresh turn on `agent` must finish (not wedge on a dead prompt).
+    async fn assert_agent_still_usable(agent: &AgentHandle) {
+        let (tx, _rx) = mpsc::channel::<AgentEvent>(256);
+        let r = tokio::time::timeout(Duration::from_secs(10), agent.run_turn("again", tx))
+            .await
+            .expect("agent actor is wedged: a second turn never completed");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    // R1: medium turns keep forwarding past the first Done and send exactly one final Done.
+    #[tokio::test]
+    async fn test_r1_medium_turn_should_forward_refine_pause_and_send_single_summed_done() {
+        use hone_proto::ProviderEvent;
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        // 1 USD per input token so cost_usd mirrors input tokens.
+        base_config.pricing.input_per_million = 1_000_000.0;
+        base_config.provider = Arc::new(SeqProvider {
+            script: vec![
+                text_turn("first answer"),
+                text_turn("the answer needs work"), // critique without APPROVED
+                vec![
+                    ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
+                        id: "c1".to_owned(),
+                        name: "mock_write".to_owned(),
+                        arguments: serde_json::json!({}),
+                    }),
+                    usage10(),
+                    ProviderEvent::Done,
+                ],
+                text_turn("refined"),
+            ],
+            n: std::sync::Mutex::new(0),
+        });
+        let agent = AgentHandle::spawn(base_config.clone());
+        let mut base_config = base_config;
+        let step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _task = spawn_medium_turn(agent.clone(), "go".to_owned(), tx);
+
+        let mut events = Vec::new();
+        let collect = async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    step_tx.send(hone_proto::StepAction::Proceed).await.unwrap();
+                }
+                events.push(e);
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(15), collect)
+            .await
+            .expect("medium turn wedged: the refine-round pause never reached the UI");
+
+        assert_eq!(paused_count(&events), 1, "{events:?}");
+        assert!(target.exists(), "approved refine write must run");
+        let dones: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::Done { usage, cost_usd, .. } => Some((*usage, *cost_usd)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dones.len(), 1, "exactly one terminal Done: {events:?}");
+        assert!(
+            matches!(events.last(), Some(AgentEvent::Done { .. })),
+            "Done must be last"
+        );
+        let (usage, cost) = dones[0];
+        assert_eq!(usage.input, 40, "usage summed over all 4 model calls");
+        assert!((cost - 40.0).abs() < 0.01, "cost summed over rounds: {cost}");
+    }
+
+    // R2c: Esc (abort of the forwarder) while paused must not wedge the actor.
+    #[tokio::test]
+    async fn test_r2c_aborting_spawn_agent_turn_while_paused_should_leave_agent_usable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+        let _step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let task = spawn_agent_turn(agent.clone(), "go".to_owned(), tx);
+        wait_for_pause(&mut rx).await;
+        task.abort();
+
+        assert_agent_still_usable(&agent).await;
+        assert!(!target.exists(), "the cancelled write must never run");
+    }
+
+    // R2c: the UI side going away (outer receiver dropped) must also release the actor.
+    #[tokio::test]
+    async fn test_r2c_closed_outer_channel_should_stop_spawn_agent_turn_forwarding_and_free_actor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+        let _step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let task = spawn_agent_turn(agent.clone(), "go".to_owned(), tx);
+        wait_for_pause(&mut rx).await;
+        drop(rx);
+
+        tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .expect("forwarder must stop once the outer channel is closed")
+            .ok();
+        assert_agent_still_usable(&agent).await;
+        assert!(!target.exists());
+    }
+
+    #[tokio::test]
+    async fn test_r2c_closed_outer_channel_should_stop_spawn_medium_turn_forwarding_and_free_actor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+        let _step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let task = spawn_medium_turn(agent.clone(), "go".to_owned(), tx);
+        wait_for_pause(&mut rx).await;
+        drop(rx);
+
+        tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .expect("forwarder must stop once the outer channel is closed")
+            .ok();
+        assert_agent_still_usable(&agent).await;
+        assert!(!target.exists());
+    }
+
+    // R2c, inline `@agent` path. Seam (free fn in main.rs, replaces the inline closures in
+    // `run_tui`):
+    //   fn spawn_inline_turn_wrapper<F>(
+    //       inner: tokio::task::JoinHandle<()>,
+    //       inner_rx: mpsc::Receiver<AgentEvent>,
+    //       outer_tx: mpsc::Sender<AgentEvent>,
+    //       after: F,
+    //   ) -> tokio::task::JoinHandle<()>
+    //   where F: std::future::Future<Output = ()> + Send + 'static
+    // It forwards `inner_rx` to `outer_tx`, runs `after` when the inner stream ends normally,
+    // and aborts `inner` if the wrapper itself is aborted or dropped (drop guard).
+    #[tokio::test]
+    async fn test_r2c_aborting_inline_wrapper_while_paused_should_abort_inner_and_free_actor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+        let _step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx2, rx2) = mpsc::channel::<AgentEvent>(256);
+        let inner = spawn_agent_turn(agent.clone(), "go".to_owned(), tx2);
+        let inner_abort = inner.abort_handle();
+        let (outer_tx, mut outer_rx) = mpsc::channel::<AgentEvent>(256);
+        let wrapper = spawn_inline_turn_wrapper(inner, rx2, outer_tx, async {});
+        wait_for_pause(&mut outer_rx).await;
+
+        wrapper.abort();
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !inner_abort.is_finished() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("aborting the wrapper must abort the inner turn task");
+        assert_agent_still_usable(&agent).await;
+        assert!(!target.exists());
+    }
+
+    #[tokio::test]
+    async fn test_r2c_inline_wrapper_should_run_after_hook_when_turn_ends_normally() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tool = MarkerTool {
+            name: "mock_read",
+            read_only: true,
+            target: tmp.path().join("unused.txt"),
+        };
+        let base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config);
+        let (tx2, rx2) = mpsc::channel::<AgentEvent>(256);
+        // Auto policy: the read-only tool just runs, the turn ends.
+        let inner = spawn_agent_turn(agent.clone(), "go".to_owned(), tx2);
+        let (outer_tx, mut outer_rx) = mpsc::channel::<AgentEvent>(256);
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
+        let wrapper = spawn_inline_turn_wrapper(inner, rx2, outer_tx, async move {
+            let _ = done_tx.send(());
+        });
+
+        let mut saw_done = false;
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while let Some(e) = outer_rx.recv().await {
+                saw_done |= matches!(e, AgentEvent::Done { .. });
+            }
+        })
+        .await
+        .expect("events must be forwarded to completion");
+        tokio::time::timeout(Duration::from_secs(5), done_rx)
+            .await
+            .expect("`after` must run on normal completion")
+            .unwrap();
+        let _ = wrapper.await;
+        assert!(saw_done);
+    }
+
+    // R6. Seam (pure fn in main.rs):
+    //   fn code_modifying_tools_that_ran(events: &[AgentEvent]) -> Vec<String>
+    // Names (in order of completion) of write_file/edit_file/multi_edit calls whose
+    // `ToolCallEnd` is a non-error result other than `{"skipped": true}`, matched to their
+    // `ToolCallStart` by id. `maybe_run_test_verification` must be fed from this, not from
+    // `ToolCallStart`.
+    fn start(id: &str, name: &str) -> AgentEvent {
+        AgentEvent::ToolCallStart {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            args: serde_json::json!({}),
+        }
+    }
+
+    fn end(id: &str, result: serde_json::Value, is_error: bool) -> AgentEvent {
+        AgentEvent::ToolCallEnd {
+            id: id.to_owned(),
+            result,
+            is_error,
+            duration_ms: 0,
+            cache_hit: false,
+        }
+    }
+
+    #[test]
+    fn test_r6_successful_code_modifying_call_should_count() {
+        let events = vec![
+            start("a", "write_file"),
+            end("a", serde_json::json!({"ok": true}), false),
+        ];
+        assert_eq!(code_modifying_tools_that_ran(&events), vec!["write_file"]);
+    }
+
+    #[test]
+    fn test_r6_denied_error_result_should_not_count() {
+        let events = vec![
+            start("a", "write_file"),
+            end(
+                "a",
+                serde_json::json!({"error": "denied by user", "reason": "no"}),
+                true,
+            ),
+        ];
+        assert!(code_modifying_tools_that_ran(&events).is_empty());
+    }
+
+    #[test]
+    fn test_r6_skipped_result_should_not_count() {
+        let events = vec![
+            start("a", "edit_file"),
+            end("a", serde_json::json!({"skipped": true}), false),
+        ];
+        assert!(code_modifying_tools_that_ran(&events).is_empty());
+    }
+
+    #[test]
+    fn test_r6_calls_are_matched_by_id_and_only_code_modifying_tools_count() {
+        let events = vec![
+            start("r", "read_file"),
+            start("w1", "write_file"),
+            start("w2", "multi_edit"),
+            end("r", serde_json::json!({"ok": true}), false),
+            end("w2", serde_json::json!({"skipped": true}), false),
+            end("w1", serde_json::json!({"ok": true}), false),
+            end("ghost", serde_json::json!({"ok": true}), false), // no matching start
+        ];
+        assert_eq!(code_modifying_tools_that_ran(&events), vec!["write_file"]);
     }
 }
 
