@@ -677,11 +677,12 @@ impl App {
             let settled = |t: Option<Instant>| {
                 t.is_none_or(|t| now.saturating_duration_since(t) >= MENU_KEY_GUARD)
             };
-            // With text in the input box Enter belongs to the input; only `y` approves.
-            let enter_ok = self.input.buffer.is_empty();
+            // With text in the input box Enter and `a` (approve always) belong
+            // to the input; only `y` approves.
+            let input_empty = self.input.buffer.is_empty();
             let is_menu_key = match key.code {
-                KeyCode::Enter => enter_ok,
-                KeyCode::Esc | KeyCode::Char('y' | 'a' | 'd' | 'n' | 's') => true,
+                KeyCode::Enter | KeyCode::Char('a') => input_empty,
+                KeyCode::Esc | KeyCode::Char('y' | 'd' | 'n' | 's') => true,
                 _ => false,
             };
             menu_ok = is_menu_key
