@@ -45,6 +45,8 @@ pub struct AgentTaskExecutor {
     /// Default per-task budget (`None` = unlimited; can be overridden per
     /// `SubTask.budget_usd`).
     default_budget_usd: Option<f64>,
+    /// Permission policy applied to every spawned agent (`None` = no policy).
+    policy: Option<hone_tools::policy_gate::PolicyConfig>,
 }
 
 impl AgentTaskExecutor {
@@ -67,7 +69,14 @@ impl AgentTaskExecutor {
             pricing,
             working_dir,
             default_budget_usd: None,
+            policy: None,
         }
+    }
+
+    /// Apply a permission policy to every agent this executor spawns.
+    pub fn with_policy(mut self, policy: Option<hone_tools::policy_gate::PolicyConfig>) -> Self {
+        self.policy = policy;
+        self
     }
 
     /// Override the default sandbox (default: platform-detected via `SandboxBuilder::detect()`).
@@ -157,7 +166,7 @@ impl AgentTaskExecutor {
             skills: None,
             mode: AgentMode::Build,
             embedder: None,
-            policy: None,
+            policy: self.policy.clone(),
         })
     }
 }

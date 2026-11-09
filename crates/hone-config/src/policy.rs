@@ -301,6 +301,18 @@ struct CompiledRule {
     id: String,
     decision: Decision,
     matcher: Matcher,
+    /// The pattern matches (nearly) everything: only wildcards, `/` and `.`.
+    catch_all: bool,
+    /// The pattern has no glob metacharacters (`* ? [ {`).
+    literal: bool,
+}
+
+/// True if `pattern` has no literal characters other than `/` and `.`.
+fn pattern_is_catch_all(pattern: &str, is_command: bool) -> bool {
+    if is_command {
+        return pattern == "*";
+    }
+    pattern.chars().all(|c| matches!(c, '*' | '?' | '/' | '.')) && pattern.contains(['*', '?'])
 }
 
 /// A subject prepared once per evaluation (trimmed / normalised).
@@ -347,6 +359,37 @@ impl CompiledPolicy {
         [&self.builtin, &self.user, &self.project]
             .iter()
             .any(|l| l.iter().any(|r| matches!(r.matcher, Matcher::Path { .. })))
+    }
+
+    fn all_rules(&self) -> impl Iterator<Item = &CompiledRule> {
+        self.builtin
+            .iter()
+            .chain(self.user.iter())
+            .chain(self.project.iter())
+    }
+
+    /// True when no layer has any rule.
+    pub fn is_empty(&self) -> bool {
+        self.builtin.is_empty() && self.user.is_empty() && self.project.is_empty()
+    }
+
+    /// True if some rule (explicit or automatic id) has this id. Synthetic ids
+    /// such as `builtin:invalid-host` are not rules and return false.
+    pub fn has_rule_id(&self, id: &str) -> bool {
+        self.all_rules().any(|r| r.id == id)
+    }
+
+    /// True if the rule with this id has a pattern without glob metacharacters
+    /// (`* ? [ {`), so it matches one thing and can be approved by id.
+    /// Unknown ids return false.
+    pub fn is_literal(&self, id: &str) -> bool {
+        self.all_rules().any(|r| r.id == id && r.literal)
+    }
+
+    /// True if the rule with this id matches (nearly) everything, so approving it
+    /// for one subject must not approve all subjects.
+    pub fn is_catch_all(&self, id: &str) -> bool {
+        self.all_rules().any(|r| r.id == id && r.catch_all)
     }
 
     /// True when any layer holds a command rule.
@@ -669,6 +712,8 @@ fn compile_layer(
             id,
             decision: rule.decision,
             matcher,
+            catch_all: pattern_is_catch_all(pattern, command.is_some()),
+            literal: !pattern.contains(['*', '?', '[', '{']),
         });
     }
     Ok(out)

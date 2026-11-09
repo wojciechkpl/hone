@@ -558,6 +558,10 @@ fn parse_line(line: &str, out: &mut Vec<ProviderEvent>, last_text: &mut String) 
 
 #[async_trait]
 impl ModelProvider for ClaudeCliProvider {
+    fn runs_own_tools(&self) -> bool {
+        true
+    }
+
     fn id(&self) -> &str {
         "claude-cli"
     }

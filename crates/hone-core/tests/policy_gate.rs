@@ -33,6 +33,7 @@ use hone_proto::{
 };
 use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
+use hone_tools::policy_gate::approval_key;
 use hone_tools::{
     SubjectContext, Tool, ToolContext, ToolError, ToolInput, ToolOutput, ToolRegistry, ToolSubjects,
 };
@@ -375,14 +376,53 @@ fn test_decide_when_empty_policy_and_unparsed_should_allow() {
 }
 
 #[test]
-fn test_decide_when_ask_rule_session_approved_should_allow() {
+fn test_decide_when_literal_ask_rule_session_approved_by_id_should_allow() {
+    let (_t, dir) = canonical_tmp();
+    let p = policy(&dir, vec![ask_rule("deploy prod", "ask-deploy")], &[]);
+    let (tool, _) = FakeTool::fixed("t", false, vec![cmd("deploy prod")]);
+    let c = call("1", "t", json!({}));
+    assert_eq!(
+        decide_for(&p, &["ask-deploy"], Some(&tool), &c),
+        ("allow", None)
+    );
+}
+
+#[test]
+fn test_decide_when_wildcard_ask_rule_session_approved_by_subject_key_should_allow() {
+    let (_t, dir) = canonical_tmp();
+    let p = policy(&dir, vec![ask_rule("deploy*", "ask-deploy")], &[]);
+    let (tool, _) = FakeTool::fixed("t", false, vec![cmd("deploy prod")]);
+    let c = call("1", "t", json!({}));
+    let key = approval_key("ask-deploy", &cmd("deploy prod"));
+    assert_eq!(
+        decide_for(&p, &[key.as_str()], Some(&tool), &c),
+        ("allow", None)
+    );
+}
+
+#[test]
+fn test_decide_when_wildcard_ask_rule_session_approved_by_bare_id_should_still_ask() {
+    // Spec 7: a wildcard rule is never approved by its bare id.
     let (_t, dir) = canonical_tmp();
     let p = policy(&dir, vec![ask_rule("deploy*", "ask-deploy")], &[]);
     let (tool, _) = FakeTool::fixed("t", false, vec![cmd("deploy prod")]);
     let c = call("1", "t", json!({}));
     assert_eq!(
         decide_for(&p, &["ask-deploy"], Some(&tool), &c),
-        ("allow", None)
+        ("ask", some("ask-deploy"))
+    );
+}
+
+#[test]
+fn test_decide_when_wildcard_ask_rule_approved_for_other_subject_should_still_ask() {
+    let (_t, dir) = canonical_tmp();
+    let p = policy(&dir, vec![ask_rule("deploy*", "ask-deploy")], &[]);
+    let (tool, _) = FakeTool::fixed("t", false, vec![cmd("deploy staging")]);
+    let c = call("1", "t", json!({}));
+    let other = approval_key("ask-deploy", &cmd("deploy prod"));
+    assert_eq!(
+        decide_for(&p, &[other.as_str()], Some(&tool), &c),
+        ("ask", some("ask-deploy"))
     );
 }
 
@@ -1209,9 +1249,28 @@ fn policy_with_home(
 /// Two ask rules in the user layer; automatic ids are `user:1` and `user:2`.
 fn two_ask_rules() -> Vec<PolicyRule> {
     vec![
+        PolicyRule::command("git push origin", Decision::Ask),
+        PolicyRule::path("~/.vault/k", OpFilter::Read, Decision::Ask),
+    ]
+}
+
+/// Wildcard twins of `two_ask_rules` (same automatic ids).
+fn two_wildcard_ask_rules() -> Vec<PolicyRule> {
+    vec![
         PolicyRule::command("git push*", Decision::Ask),
         PolicyRule::path("~/.vault/**", OpFilter::Read, Decision::Ask),
     ]
+}
+
+fn push_subject() -> Subject {
+    cmd("git push origin")
+}
+
+fn vault_subject(home: &Path) -> Subject {
+    Subject::Path {
+        path: home.join(".vault").join("k"),
+        op: PathOp::Read,
+    }
 }
 
 fn push_and_vault_tool(home: &Path) -> FakeTool {
@@ -1247,6 +1306,25 @@ fn test_decide_when_one_of_two_ask_rules_session_approved_should_still_ask_the_o
 }
 
 #[test]
+fn test_decide_when_one_of_two_wildcard_ask_rules_approved_by_key_should_still_ask_the_other() {
+    let (_t, dir) = canonical_tmp();
+    let (_h, home) = canonical_tmp();
+    let p = policy_with_home(&dir, &home, two_wildcard_ask_rules(), &[]);
+    let tool = push_and_vault_tool(&home);
+    let c = call("1", "t", json!({}));
+    let k1 = approval_key("user:1", &push_subject());
+    let k2 = approval_key("user:2", &vault_subject(&home));
+    assert_eq!(
+        decide_for(&p, &[k1.as_str()], Some(&tool), &c),
+        ("ask", some("user:2"))
+    );
+    assert_eq!(
+        decide_for(&p, &[k2.as_str()], Some(&tool), &c),
+        ("ask", some("user:1"))
+    );
+}
+
+#[test]
 fn test_decide_when_one_of_two_ask_rules_pre_approved_should_still_ask_the_other() {
     let (_t, dir) = canonical_tmp();
     let (_h, home) = canonical_tmp();
@@ -1260,7 +1338,7 @@ fn test_decide_when_one_of_two_ask_rules_pre_approved_should_still_ask_the_other
 }
 
 #[test]
-fn test_decide_when_both_ask_rules_approved_should_allow() {
+fn test_decide_when_both_literal_ask_rules_approved_should_allow() {
     let (_t, dir) = canonical_tmp();
     let (_h, home) = canonical_tmp();
     let p = policy_with_home(&dir, &home, two_ask_rules(), &["user:1"]);
@@ -1268,6 +1346,20 @@ fn test_decide_when_both_ask_rules_approved_should_allow() {
     let c = call("1", "t", json!({}));
     assert_eq!(
         decide_for(&p, &["user:2"], Some(&tool), &c),
+        ("allow", None)
+    );
+}
+
+#[test]
+fn test_decide_when_both_wildcard_ask_rules_approved_by_subject_keys_should_allow() {
+    let (_t, dir) = canonical_tmp();
+    let (_h, home) = canonical_tmp();
+    let p = policy_with_home(&dir, &home, two_wildcard_ask_rules(), &["user:1"]);
+    let tool = push_and_vault_tool(&home);
+    let c = call("1", "t", json!({}));
+    let k2 = approval_key("user:2", &vault_subject(&home));
+    assert_eq!(
+        decide_for(&p, &[k2.as_str()], Some(&tool), &c),
         ("allow", None)
     );
 }
@@ -1459,4 +1551,89 @@ async fn test_guard_read_should_use_edit_path_after_hook_mutation() {
     // (a guard that ran on the pre-hook path would have read ok.txt).
     assert_eq!(read_calls.load(Ordering::SeqCst), 0);
     assert_eq!(edit_calls.load(Ordering::SeqCst), 1);
+}
+
+// ---------------------------------------------------------------------------
+// ApproveAlways on a wildcard rule is keyed by subject (spec section 7)
+// ---------------------------------------------------------------------------
+
+fn deploy_target_subjects() -> SubjFn {
+    Arc::new(|input: &ToolInput| ToolSubjects {
+        subjects: input
+            .get_str("target")
+            .map(|t| Subject::Command(format!("deploy {t}")))
+            .into_iter()
+            .collect(),
+        unparsed: false,
+    })
+}
+
+#[tokio::test]
+async fn test_agent_approve_always_on_wildcard_rule_should_not_cover_a_different_subject() {
+    let (_t, dir) = canonical_tmp();
+    let (tool, count) = FakeTool::new("deployer", false, deploy_target_subjects());
+    let p = policy(&dir, vec![ask_rule("deploy*", "ask-deploy")], &[]);
+    let prov = Scripted::calls_then_done(vec![
+        call("c1", "deployer", json!({ "target": "prod" })),
+        call("c2", "deployer", json!({ "target": "staging" })),
+    ]);
+    // Two actions queued: the second subject must prompt again.
+    let (rx, _keep) = step_channel(
+        vec![
+            StepAction::ApproveAlways("deployer".to_owned()),
+            StepAction::Deny("no".to_owned()),
+        ],
+        true,
+    );
+    let mut cfg = config(prov, registry(tool), &dir, Some(p));
+    cfg.step_rx = rx;
+
+    let o = run(cfg).await;
+
+    assert_eq!(
+        paused(&o),
+        2,
+        "approving 'deploy prod' must not approve 'deploy staging'"
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert!(!end_of(&o, "c1").1);
+    assert!(end_of(&o, "c2").1);
+}
+
+#[tokio::test]
+async fn test_agent_approve_always_on_wildcard_rule_should_cover_the_same_subject_again() {
+    let (_t, dir) = canonical_tmp();
+    let (tool, count) = FakeTool::new("deployer", false, deploy_target_subjects());
+    let p = policy(&dir, vec![ask_rule("deploy*", "ask-deploy")], &[]);
+    let prov = Scripted::calls_then_done(vec![
+        call("c1", "deployer", json!({ "target": "prod" })),
+        call("c2", "deployer", json!({ "target": "prod" })),
+    ]);
+    let (rx, _keep) = step_channel(vec![StepAction::ApproveAlways("deployer".to_owned())], true);
+    let mut cfg = config(prov, registry(tool), &dir, Some(p));
+    cfg.step_rx = rx;
+
+    let o = run(cfg).await;
+
+    assert_eq!(paused(&o), 1);
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn test_agent_approve_always_on_literal_rule_should_be_remembered_by_rule_id() {
+    let (_t, dir) = canonical_tmp();
+    let (tool, count) = FakeTool::fixed("deployer", false, vec![cmd("deploy prod")]);
+    let p = policy(&dir, vec![ask_rule("deploy prod", "ask-literal")], &[]);
+    let prov = Scripted::calls_then_done(vec![
+        call("c1", "deployer", json!({})),
+        call("c2", "deployer", json!({})),
+    ]);
+    let (rx, _keep) = step_channel(vec![StepAction::ApproveAlways("deployer".to_owned())], true);
+    let mut cfg = config(prov, registry(tool), &dir, Some(p));
+    cfg.step_rx = rx;
+
+    let o = run(cfg).await;
+
+    assert_eq!(paused(&o), 1);
+    assert_eq!(count.load(Ordering::SeqCst), 2);
 }

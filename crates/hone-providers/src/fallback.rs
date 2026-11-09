@@ -26,6 +26,10 @@ impl FallbackChain {
 
 #[async_trait]
 impl ModelProvider for FallbackChain {
+    fn runs_own_tools(&self) -> bool {
+        self.providers.iter().any(|p| p.runs_own_tools())
+    }
+
     fn id(&self) -> &str {
         "fallback-chain"
     }

@@ -645,6 +645,12 @@ fn env_split_string(words: &[Word]) -> Option<String> {
         if let Some(rest) = t.strip_prefix("--split-string=") {
             return Some(rest.to_string());
         }
+        if !t.starts_with("--")
+            && let Some(rest) = t.strip_prefix("-S")
+            && !rest.is_empty()
+        {
+            return Some(rest.to_string());
+        }
     }
     None
 }

@@ -105,6 +105,15 @@ impl ModelRouter {
         self.registry.get(&self.default_provider_id)
     }
 
+    /// True when any tier provider registered with this router runs its own
+    /// tools (a fallback hop could land on it).
+    fn any_tier_runs_own_tools(&self) -> bool {
+        self.tiers
+            .iter()
+            .filter_map(|t| self.registry.get(&t.provider_id))
+            .any(|p| p.runs_own_tools())
+    }
+
     /// Pick a provider based on the given policy. Returns None when:
     ///
     /// - the tier table is empty, OR
@@ -302,6 +311,10 @@ impl TierFallbackProvider {
 
 #[async_trait]
 impl ModelProvider for TierFallbackProvider {
+    fn runs_own_tools(&self) -> bool {
+        self.primary.runs_own_tools() || self.router.any_tier_runs_own_tools()
+    }
+
     fn id(&self) -> &str {
         self.primary.id()
     }

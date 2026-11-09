@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use hone_proto::ToolCallRequest;
+use hone_tools::policy_gate::{GateDecision, PolicyConfig, decide};
 use hone_tools::{ToolContext, ToolRegistry};
 
 #[allow(unused_imports)]
@@ -48,6 +50,7 @@ pub struct McpServer {
     ctx: ToolContext,
     info: ServerInfo,
     initialized: AtomicBool,
+    policy: Option<PolicyConfig>,
 }
 
 impl McpServer {
@@ -57,7 +60,14 @@ impl McpServer {
             ctx,
             info: ServerInfo::default(),
             initialized: AtomicBool::new(false),
+            policy: None,
         }
+    }
+
+    /// Gate every `tools/call` with the permission policy. There is no
+    /// interactive channel, so an `ask` that is not pre-approved is refused.
+    pub fn with_policy(self, policy: Option<PolicyConfig>) -> Self {
+        Self { policy, ..self }
     }
 
     pub fn with_server_info(self, info: ServerInfo) -> Self {
@@ -72,7 +82,10 @@ impl McpServer {
         // Validate JSON-RPC version. Only respond for requests (id present).
         if req.jsonrpc != "2.0" {
             return req.id.map(|id| {
-                JsonRpcResponse::err(id, JsonRpcError::invalid_request(r#"jsonrpc must be "2.0""#))
+                JsonRpcResponse::err(
+                    id,
+                    JsonRpcError::invalid_request(r#"jsonrpc must be "2.0""#),
+                )
             });
         }
 
@@ -112,7 +125,10 @@ impl McpServer {
                         })
                     })
                     .collect();
-                Some(JsonRpcResponse::ok(id, serde_json::json!({ "tools": tools })))
+                Some(JsonRpcResponse::ok(
+                    id,
+                    serde_json::json!({ "tools": tools }),
+                ))
             }
 
             "tools/call" => {
@@ -139,6 +155,36 @@ impl McpServer {
                     Some(tool) => {
                         use hone_tools::ToolInput;
                         let tool = Arc::clone(tool);
+                        if let Some(policy) = &self.policy {
+                            let call = ToolCallRequest {
+                                id: "mcp".to_owned(),
+                                name: name.clone(),
+                                arguments: arguments.clone(),
+                            };
+                            let refusal = match decide(
+                                policy,
+                                &std::collections::HashSet::new(),
+                                Some(tool.as_ref()),
+                                &call,
+                            ) {
+                                GateDecision::Allow => None,
+                                GateDecision::Deny { rule_id } => {
+                                    Some(format!("denied by policy (rule {rule_id})"))
+                                }
+                                GateDecision::Ask { rule_id } => {
+                                    Some(format!("requires approval (rule {rule_id})"))
+                                }
+                            };
+                            if let Some(text) = refusal {
+                                return Some(JsonRpcResponse::ok(
+                                    id,
+                                    serde_json::json!({
+                                        "content": [{ "type": "text", "text": text }],
+                                        "isError": true
+                                    }),
+                                ));
+                            }
+                        }
                         match tool.call(ToolInput::new(arguments), &self.ctx).await {
                             Ok(output) => {
                                 let text = serde_json::to_string(&output.into_value())
@@ -203,13 +249,23 @@ mod tests {
 
     #[async_trait]
     impl Tool for OkTool {
-        fn name(&self) -> &str { self.name }
-        fn description(&self) -> &str { self.description }
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn description(&self) -> &str {
+            self.description
+        }
         fn schema(&self) -> Value {
             json!({ "type": "object", "properties": { "key": { "type": "string" } } })
         }
-        fn layer(&self) -> ToolLayer { ToolLayer::Native }
-        async fn call(&self, _input: ToolInput, _ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        fn layer(&self) -> ToolLayer {
+            ToolLayer::Native
+        }
+        async fn call(
+            &self,
+            _input: ToolInput,
+            _ctx: &ToolContext,
+        ) -> Result<ToolOutput, ToolError> {
             Ok(ToolOutput::new(json!({ "hello": "world" })))
         }
     }
@@ -218,11 +274,23 @@ mod tests {
 
     #[async_trait]
     impl Tool for ErrTool {
-        fn name(&self) -> &str { "err_tool" }
-        fn description(&self) -> &str { "always fails" }
-        fn schema(&self) -> Value { json!({ "type": "object", "properties": {} }) }
-        fn layer(&self) -> ToolLayer { ToolLayer::Native }
-        async fn call(&self, _input: ToolInput, _ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        fn name(&self) -> &str {
+            "err_tool"
+        }
+        fn description(&self) -> &str {
+            "always fails"
+        }
+        fn schema(&self) -> Value {
+            json!({ "type": "object", "properties": {} })
+        }
+        fn layer(&self) -> ToolLayer {
+            ToolLayer::Native
+        }
+        async fn call(
+            &self,
+            _input: ToolInput,
+            _ctx: &ToolContext,
+        ) -> Result<ToolOutput, ToolError> {
             Err(ToolError::Other("intentional failure".into()))
         }
     }
@@ -241,8 +309,14 @@ mod tests {
 
     fn make_registry_with_mock_tools() -> ToolRegistry {
         ToolRegistry::builder()
-            .register(Box::new(OkTool { name: "mock_a", description: "first mock" }))
-            .register(Box::new(OkTool { name: "mock_b", description: "second mock" }))
+            .register(Box::new(OkTool {
+                name: "mock_a",
+                description: "first mock",
+            }))
+            .register(Box::new(OkTool {
+                name: "mock_b",
+                description: "second mock",
+            }))
             .build()
     }
 
@@ -275,13 +349,20 @@ mod tests {
     #[tokio::test]
     async fn handle_request_initialize_returns_server_info() {
         let server = make_server();
-        let req = request(1, "initialize", Some(json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": { "name": "test-client", "version": "1.0" }
-        })));
+        let req = request(
+            1,
+            "initialize",
+            Some(json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": { "name": "test-client", "version": "1.0" }
+            })),
+        );
 
-        let resp = server.handle_request(req).await.expect("should return response");
+        let resp = server
+            .handle_request(req)
+            .await
+            .expect("should return response");
         let result = resp.result.expect("result must be present");
 
         assert_eq!(result["protocolVersion"], "2024-11-05");
@@ -305,7 +386,10 @@ mod tests {
     async fn handle_request_tools_list_returns_registered_tools() {
         let server = make_server();
         let req = request(2, "tools/list", None);
-        let resp = server.handle_request(req).await.expect("should return response");
+        let resp = server
+            .handle_request(req)
+            .await
+            .expect("should return response");
         let result = resp.result.expect("result must be present");
         let tools = result["tools"].as_array().expect("tools must be an array");
 
@@ -316,7 +400,10 @@ mod tests {
     async fn handle_request_tools_list_uses_inputSchema_key_not_parameters() {
         let server = make_server();
         let req = request(2, "tools/list", None);
-        let resp = server.handle_request(req).await.expect("should return response");
+        let resp = server
+            .handle_request(req)
+            .await
+            .expect("should return response");
         let result = resp.result.expect("result must be present");
         let tools = result["tools"].as_array().expect("tools must be an array");
 
@@ -335,16 +422,25 @@ mod tests {
     #[tokio::test]
     async fn handle_request_tools_call_invokes_tool_and_returns_content() {
         let server = make_server();
-        let req = request(3, "tools/call", Some(json!({
-            "name": "mock_a",
-            "arguments": { "key": "value" }
-        })));
+        let req = request(
+            3,
+            "tools/call",
+            Some(json!({
+                "name": "mock_a",
+                "arguments": { "key": "value" }
+            })),
+        );
 
-        let resp = server.handle_request(req).await.expect("should return response");
+        let resp = server
+            .handle_request(req)
+            .await
+            .expect("should return response");
         let result = resp.result.expect("result must be present");
 
         assert_eq!(result["isError"], false);
-        let content = result["content"].as_array().expect("content must be an array");
+        let content = result["content"]
+            .as_array()
+            .expect("content must be an array");
         assert!(!content.is_empty());
         assert_eq!(content[0]["type"], "text");
 
@@ -358,12 +454,21 @@ mod tests {
         let server = make_server();
         let req = request(4, "tools/call", Some(json!({ "name": "ghost" })));
 
-        let resp = server.handle_request(req).await.expect("should return response");
-        assert!(resp.result.is_none(), "must be an error response, not a result");
+        let resp = server
+            .handle_request(req)
+            .await
+            .expect("should return response");
+        assert!(
+            resp.result.is_none(),
+            "must be an error response, not a result"
+        );
         let err = resp.error.expect("error must be present");
 
         assert_eq!(err.code, JsonRpcError::INVALID_PARAMS);
-        assert!(err.message.contains("ghost"), "error message should mention the tool name");
+        assert!(
+            err.message.contains("ghost"),
+            "error message should mention the tool name"
+        );
     }
 
     #[tokio::test]
@@ -372,20 +477,28 @@ mod tests {
         // Omit "arguments" key — server should default to {} and still dispatch
         let req = request(5, "tools/call", Some(json!({ "name": "mock_a" })));
 
-        let resp = server.handle_request(req).await.expect("should return response");
+        let resp = server
+            .handle_request(req)
+            .await
+            .expect("should return response");
         let result = resp.result.expect("result must be present");
         assert_eq!(result["isError"], false);
     }
 
     #[tokio::test]
     async fn handle_request_tools_call_tool_error_returns_isError_true() {
-        let registry = ToolRegistry::builder()
-            .register(Box::new(ErrTool))
-            .build();
+        let registry = ToolRegistry::builder().register(Box::new(ErrTool)).build();
         let server = McpServer::new(registry, make_ctx());
-        let req = request(6, "tools/call", Some(json!({ "name": "err_tool", "arguments": {} })));
+        let req = request(
+            6,
+            "tools/call",
+            Some(json!({ "name": "err_tool", "arguments": {} })),
+        );
 
-        let resp = server.handle_request(req).await.expect("should return response");
+        let resp = server
+            .handle_request(req)
+            .await
+            .expect("should return response");
         // MCP convention: tool errors are NOT JSON-RPC errors — the call itself
         // succeeded; the tool returned an application-level error.
         assert!(
@@ -394,7 +507,9 @@ mod tests {
         );
         let result = resp.result.expect("result must be present");
         assert_eq!(result["isError"], true);
-        let text = result["content"][0]["text"].as_str().expect("text must be present");
+        let text = result["content"][0]["text"]
+            .as_str()
+            .expect("text must be present");
         assert!(text.contains("intentional failure"));
     }
 
@@ -402,7 +517,10 @@ mod tests {
     async fn handle_request_unknown_method_returns_method_not_found() {
         let server = make_server();
         let req = request(7, "made/up", None);
-        let resp = server.handle_request(req).await.expect("should return response");
+        let resp = server
+            .handle_request(req)
+            .await
+            .expect("should return response");
         let err = resp.error.expect("error must be present");
         assert_eq!(err.code, JsonRpcError::METHOD_NOT_FOUND);
     }
@@ -416,7 +534,10 @@ mod tests {
             method: "tools/list".into(),
             params: None,
         };
-        let resp = server.handle_request(req).await.expect("should return response");
+        let resp = server
+            .handle_request(req)
+            .await
+            .expect("should return response");
         let err = resp.error.expect("error must be present");
         assert_eq!(err.code, JsonRpcError::INVALID_REQUEST);
     }

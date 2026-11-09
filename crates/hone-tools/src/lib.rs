@@ -4,6 +4,7 @@ mod git;
 pub mod handoff;
 pub mod lsp;
 pub mod memory;
+pub mod policy_gate;
 mod registry;
 mod screen;
 mod shell;

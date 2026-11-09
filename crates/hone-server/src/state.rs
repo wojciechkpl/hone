@@ -30,6 +30,12 @@ fn default_workspace_root() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("/"))
 }
 
+/// Home directory used to find the user-level permission policy:
+/// `$HOME` if absolute, else the passwd entry.
+pub fn resolve_policy_home() -> Option<PathBuf> {
+    hone_tools::policy_gate::default_policy_home()
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub sessions: Arc<SessionStorage>,
@@ -78,6 +84,10 @@ pub struct AppState {
     /// instead of the default `~/.config/hone/recipes/`.  Primarily used
     /// by tests to redirect writes away from the real config directory.
     pub recipes_user_dir: Option<PathBuf>,
+    /// Home directory searched for `~/.config/hone/permissions.toml`.
+    /// Resolved once at construction; `with_mock_provider` clears it so a
+    /// developer's own policy never leaks into tests.
+    pub policy_home: Option<PathBuf>,
 }
 
 impl AppState {
@@ -99,6 +109,7 @@ impl AppState {
             provenance_dir: None,
             eval_history: None,
             recipes_user_dir: None,
+            policy_home: resolve_policy_home(),
         }
     }
 
@@ -120,6 +131,7 @@ impl AppState {
             provenance_dir: None,
             eval_history: None,
             recipes_user_dir: None,
+            policy_home: resolve_policy_home(),
         }
     }
 
@@ -144,6 +156,7 @@ impl AppState {
             provenance_dir: None,
             eval_history: None,
             recipes_user_dir: None,
+            policy_home: resolve_policy_home(),
         }
     }
 
@@ -188,6 +201,7 @@ impl AppState {
     /// without a live API key.
     pub fn with_mock_provider(mut self, p: Arc<dyn ModelProvider>) -> Self {
         self.mock_provider = Some(p);
+        self.policy_home = None;
         self
     }
 
