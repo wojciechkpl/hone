@@ -142,6 +142,9 @@ enum PolicyVerdict {
     Cancelled,
 }
 
+/// Tool-result text for calls that never ran because the turn was cancelled.
+const CANCELLED_REASON: &str = "(cancelled): the turn was cancelled before this tool ran";
+
 /// Outcome of waiting for the user's answer on the step channel.
 enum StepWait {
     Answer(StepAction),
@@ -534,6 +537,9 @@ pub struct Agent {
     metrics: Arc<ContextMetrics>,
     /// Per-turn guard state (reset at the top of each `run_turn` call).
     guards: TurnGuards,
+    /// Set when this turn already sent an `AgentEvent::Error`, so the turn
+    /// wrapper does not send a second one for the same failure.
+    error_event_sent: bool,
     /// Whether `AgentEvent::ModelInfo` has already been emitted this session.
     ///
     /// The event is emitted exactly once — on the first successful provider
@@ -589,6 +595,7 @@ impl Agent {
             turn_count: 0,
             metrics,
             guards: TurnGuards::default(),
+            error_event_sent: false,
             model_info_emitted: false,
             base_tools,
             policy_session_approved: HashSet::new(),
@@ -815,10 +822,56 @@ impl Agent {
         }
     }
 
+    /// Record a failed tool call as an error result: egress entry, advisory
+    /// `PostToolUse` (`is_error: true`) and the tool-result message the model
+    /// sees. The caller sends `ToolCallEnd` (the parallel path already has).
+    async fn record_tool_error(
+        &mut self,
+        call: &ToolCallRequest,
+        message: &str,
+        redact: bool,
+        turn_trace: &TraceContext,
+        duration_ms: u64,
+    ) {
+        let err_val = serde_json::json!({ "error": message });
+        if let Some(log) = &self.config.egress_log {
+            let (span_id, parent_span_id) = turn_trace.child_span();
+            let entry = EgressEntry {
+                timestamp: now_rfc3339(),
+                tool: call.name.clone(),
+                arguments: call.arguments.clone(),
+                result_preview: preview(&err_val.to_string(), 200),
+                blocked: false,
+                block_reason: None,
+                injection_risk: None,
+                duration_ms,
+                trace_id: turn_trace.trace_id.clone(),
+                span_id,
+                parent_span_id,
+                span_kind: SpanKind::ToolCall,
+            };
+            log.lock().await.record(entry);
+        }
+        let post_event = HookEvent::PostToolUse {
+            tool_name: call.name.clone(),
+            args: call.arguments.clone(),
+            result: err_val.clone(),
+            is_error: true,
+            duration_ms,
+        };
+        let _ = Self::fire_hooks(self.config.hooks.as_ref(), &post_event).await;
+        self.context.add_message(tool_result_message(
+            redact,
+            call.id.clone(),
+            "",
+            ToolText::Json(err_val),
+        ));
+    }
+
     /// Give every tool call of the latest assistant message that has no tool
     /// result yet a "cancelled" result, so the history never keeps an orphan
     /// `tool_call` after a cancelled turn.
-    fn cancel_pending_calls(&mut self, calls: &[ToolCallRequest], redact: bool) {
+    fn cancel_pending_calls(&mut self, calls: &[ToolCallRequest], redact: bool, reason: &str) {
         let mut answered: HashSet<String> = HashSet::new();
         for m in self.context.messages().iter().rev() {
             if m.role == hone_proto::Role::Assistant {
@@ -834,9 +887,7 @@ impl Agent {
                     redact,
                     c.id.clone(),
                     "",
-                    ToolText::Text(
-                        "(cancelled): the turn was cancelled before this tool ran".to_owned(),
-                    ),
+                    ToolText::Text(reason.to_owned()),
                 ));
             }
         }
@@ -887,6 +938,36 @@ impl Agent {
         turn = tracing::field::Empty
     ))]
     pub async fn run_turn(
+        &mut self,
+        user_input: &str,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Result<TurnResult, AgentError> {
+        self.error_event_sent = false;
+        let result = self.run_turn_body(user_input, events.clone()).await;
+        self.report_turn_error(&result, &events).await;
+        result
+    }
+
+    /// Every failed turn except a cancelled one ends with exactly one
+    /// `AgentEvent::Error`, so a UI or stream consumer always sees it end.
+    async fn report_turn_error(
+        &mut self,
+        result: &Result<TurnResult, AgentError>,
+        events: &mpsc::Sender<AgentEvent>,
+    ) {
+        if let Err(e) = result {
+            if !matches!(e, AgentError::Cancelled) && !self.error_event_sent {
+                self.error_event_sent = true;
+                let _ = events
+                    .send(AgentEvent::Error {
+                        message: e.to_string(),
+                    })
+                    .await;
+            }
+        }
+    }
+
+    async fn run_turn_body(
         &mut self,
         user_input: &str,
         events: mpsc::Sender<AgentEvent>,
@@ -1204,6 +1285,7 @@ impl Agent {
                     }
 
                     ProviderEvent::Error { message } => {
+                        self.error_event_sent = true;
                         let _ = events
                             .send(AgentEvent::Error {
                                 message: message.clone(),
@@ -1398,7 +1480,11 @@ impl Agent {
                                 message,
                             } => Some((result, is_error, message)),
                             PolicyVerdict::Cancelled => {
-                                self.cancel_pending_calls(&pending_tool_calls, redact);
+                                self.cancel_pending_calls(
+                                    &pending_tool_calls,
+                                    redact,
+                                    CANCELLED_REASON,
+                                );
                                 return Err(AgentError::Cancelled);
                             }
                         };
@@ -1460,7 +1546,11 @@ impl Agent {
                                     message,
                                 } => blocked = Some((result, is_error, message)),
                                 PolicyVerdict::Cancelled => {
-                                    self.cancel_pending_calls(&pending_tool_calls, redact);
+                                    self.cancel_pending_calls(
+                                        &pending_tool_calls,
+                                        redact,
+                                        CANCELLED_REASON,
+                                    );
                                     return Err(AgentError::Cancelled);
                                 }
                             }
@@ -1490,7 +1580,7 @@ impl Agent {
                     }
 
                     if events.is_closed() {
-                        self.cancel_pending_calls(&pending_tool_calls, redact);
+                        self.cancel_pending_calls(&pending_tool_calls, redact, CANCELLED_REASON);
                         return Err(AgentError::Cancelled);
                     }
 
@@ -1631,8 +1721,29 @@ impl Agent {
                                     ToolText::Json(err_val),
                                 ));
                             }
-                            // Fatal errors are returned immediately with ownership.
-                            Err(e) => return Err(e),
+                            // A failing tool is a result the model can react to, not
+                            // a turn failure. dispatch_parallel already sent the
+                            // `ToolCallEnd { is_error: true }`.
+                            Err(e @ AgentError::Tool { .. }) => {
+                                self.record_tool_error(
+                                    &call,
+                                    &e.to_string(),
+                                    redact,
+                                    &turn_trace,
+                                    0,
+                                )
+                                .await;
+                            }
+                            // Anything else is fatal, but no call may stay
+                            // without a result in the history.
+                            Err(e) => {
+                                self.cancel_pending_calls(
+                                    &pending_tool_calls,
+                                    redact,
+                                    &format!("(error): {e}"),
+                                );
+                                return Err(e);
+                            }
                         }
                     }
 
@@ -1642,7 +1753,7 @@ impl Agent {
                     // Esc closed the receiver: even calls that need no prompt
                     // (AutoApprove, allow-listed) must not run any more.
                     if events.is_closed() {
-                        self.cancel_pending_calls(&pending_tool_calls, redact);
+                        self.cancel_pending_calls(&pending_tool_calls, redact, CANCELLED_REASON);
                         return Err(AgentError::Cancelled);
                     }
                     tracing::debug!(tool_name = %pending_tool_calls[i].name, "tool dispatched (sequential)");
@@ -1684,7 +1795,11 @@ impl Agent {
                     {
                         PolicyVerdict::Proceed { prompted } => policy_prompted = prompted,
                         PolicyVerdict::Cancelled => {
-                            self.cancel_pending_calls(&pending_tool_calls, redact);
+                            self.cancel_pending_calls(
+                                &pending_tool_calls,
+                                redact,
+                                CANCELLED_REASON,
+                            );
                             return Err(AgentError::Cancelled);
                         }
                         PolicyVerdict::Blocked {
@@ -1767,7 +1882,11 @@ impl Agent {
                                     policy_prompted |= prompted;
                                 }
                                 PolicyVerdict::Cancelled => {
-                                    self.cancel_pending_calls(&pending_tool_calls, redact);
+                                    self.cancel_pending_calls(
+                                        &pending_tool_calls,
+                                        redact,
+                                        CANCELLED_REASON,
+                                    );
                                     return Err(AgentError::Cancelled);
                                 }
                                 PolicyVerdict::Blocked {
@@ -1943,7 +2062,11 @@ impl Agent {
                         };
                         match wait_for_step(&rx, &events, vec![paused]).await {
                             StepWait::EventsClosed => {
-                                self.cancel_pending_calls(&pending_tool_calls, redact);
+                                self.cancel_pending_calls(
+                                    &pending_tool_calls,
+                                    redact,
+                                    CANCELLED_REASON,
+                                );
                                 return Err(AgentError::Cancelled);
                             }
                             StepWait::ChannelClosed => {
@@ -2194,7 +2317,41 @@ impl Agent {
                                 ToolText::Json(err_val),
                             ));
                         }
-                        Err(e) => return Err(e),
+                        // A failing tool is a result the model can react to, not a
+                        // turn failure.
+                        Err(e @ AgentError::Tool { .. }) => {
+                            let message = e.to_string();
+                            let _ = events
+                                .send(AgentEvent::ToolCallEnd {
+                                    id: call.id.clone(),
+                                    result: event_result(
+                                        redact,
+                                        serde_json::json!({ "error": message }),
+                                    ),
+                                    is_error: true,
+                                    duration_ms,
+                                    cache_hit: false,
+                                })
+                                .await;
+                            self.record_tool_error(
+                                call,
+                                &message,
+                                redact,
+                                &turn_trace,
+                                duration_ms,
+                            )
+                            .await;
+                        }
+                        // Anything else is fatal, but no call may stay without a
+                        // result in the history.
+                        Err(e) => {
+                            self.cancel_pending_calls(
+                                &pending_tool_calls,
+                                redact,
+                                &format!("(error): {e}"),
+                            );
+                            return Err(e);
+                        }
                     }
 
                     i += 1;
@@ -2291,6 +2448,17 @@ impl Agent {
     /// skipped (the caller owns the full content), but memory recall and all
     /// other per-turn logic run as normal.
     pub async fn run_turn_content(
+        &mut self,
+        content: Content,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Result<TurnResult, AgentError> {
+        self.error_event_sent = false;
+        let result = self.run_turn_content_body(content, events.clone()).await;
+        self.report_turn_error(&result, &events).await;
+        result
+    }
+
+    async fn run_turn_content_body(
         &mut self,
         content: Content,
         events: mpsc::Sender<AgentEvent>,

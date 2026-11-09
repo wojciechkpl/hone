@@ -1185,6 +1185,7 @@ fn spawn_agent_turn(
         let _guard = AbortOnDrop(turn_task.abort_handle());
 
         let mut tracker = RanTracker::default();
+        let mut terminal_forwarded = false;
 
         loop {
             tokio::select! {
@@ -1200,15 +1201,30 @@ fn spawn_agent_turn(
                         return;
                     }
                     if is_terminal {
+                        terminal_forwarded = true;
                         break;
                     }
                 }
             }
         }
 
-        // Drain the turn task result (errors were already forwarded through
-        // the event channel above).
-        let _ = turn_task.await;
+        // Errors the turn forwarded are already visible. If the stream ended
+        // without a terminal event (turn error, dead actor, panicked task) the
+        // UI must still hear about it, or its spinner never stops.
+        let joined = turn_task.await;
+        if !terminal_forwarded {
+            let reason = match joined {
+                Ok(Err(e)) => e.to_string(),
+                Err(e) => e.to_string(),
+                Ok(Ok(_)) => "the turn ended without a result".to_owned(),
+            };
+            let _ = tx
+                .send(AgentEvent::Error {
+                    message: format!("agent stopped unexpectedly: {reason}"),
+                })
+                .await;
+            return;
+        }
 
         // After the turn completes, run test verification if applicable.
         maybe_run_test_verification(&agent, &tx, &tracker.ran).await;
@@ -1305,13 +1321,17 @@ fn spawn_medium_turn(
         }
 
         // Surface any error that the refine task returned but wasn't forwarded.
-        if let Ok(Err(e)) = refine_task.await {
+        let refine_result = refine_task.await;
+        let failure = match refine_result {
+            Ok(Ok(_)) => None,
+            Ok(Err(e)) => Some(e.to_string()),
+            // The task panicked: the actor is gone and later turns will be
+            // Cancelled, so say so instead of leaving the spinner running.
+            Err(e) => Some(format!("agent stopped unexpectedly: {e}")),
+        };
+        if let Some(message) = failure {
             if !had_error {
-                let _ = tx
-                    .send(AgentEvent::Error {
-                        message: e.to_string(),
-                    })
-                    .await;
+                let _ = tx.send(AgentEvent::Error { message }).await;
             }
             return;
         }
@@ -1590,6 +1610,27 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
 // One-shot mode
 // ---------------------------------------------------------------------------
 
+/// Finish a one-shot turn. A failed turn has already printed its `Error`
+/// event (the printer returns `true`), so exit non-zero without letting
+/// `main` print the same error a second time.
+async fn finish_one_shot(
+    result: Result<hone_core::TurnResult, hone_core::AgentError>,
+    printer: tokio::task::JoinHandle<bool>,
+) -> Result<()> {
+    let error_printed = printer.await.unwrap_or(false);
+    match result {
+        Ok(_) => {
+            println!();
+            Ok(())
+        }
+        Err(_) if error_printed => {
+            println!();
+            std::process::exit(1);
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
 async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 
@@ -1605,18 +1646,16 @@ async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
                 AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     eprintln!("\nerror: {message}");
-                    break;
+                    return true;
                 }
                 _ => {}
             }
         }
+        false
     });
 
-    agent.run_turn(prompt, tx).await?;
-
-    let _ = printer.await;
-    println!();
-    Ok(())
+    let result = agent.run_turn(prompt, tx).await;
+    finish_one_shot(result, printer).await
 }
 
 /// Run a one-shot multimodal turn (text + images) and stream tokens to stdout.
@@ -1634,18 +1673,16 @@ async fn run_one_shot_content(agent: AgentHandle, content: Content) -> Result<()
                 AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     eprintln!("\nerror: {message}");
-                    break;
+                    return true;
                 }
                 _ => {}
             }
         }
+        false
     });
 
-    agent.run_turn_content(content, tx).await?;
-
-    let _ = printer.await;
-    println!();
-    Ok(())
+    let result = agent.run_turn_content(content, tx).await;
+    finish_one_shot(result, printer).await
 }
 
 /// Run a one-shot prompt and output structured JSON.
