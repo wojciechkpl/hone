@@ -612,6 +612,12 @@ impl Agent {
         self.context.total_tokens()
     }
 
+    /// Total token usage of every model call this agent made, including calls
+    /// of turns that were later cancelled or failed.
+    pub fn session_usage(&self) -> TokenUsage {
+        self.cost.total_usage()
+    }
+
     /// Return a clone of all messages in the current context window.
     pub fn messages(&self) -> Vec<Message> {
         self.context.messages()
@@ -885,6 +891,11 @@ impl Agent {
         user_input: &str,
         events: mpsc::Sender<AgentEvent>,
     ) -> Result<TurnResult, AgentError> {
+        // A cancelled request (receiver already closed) must not touch state.
+        if events.is_closed() {
+            return Err(AgentError::Cancelled);
+        }
+
         self.turn_count += 1;
         tracing::Span::current().record("turn", self.turn_count);
         tracing::debug!(turn_number = self.turn_count, "starting turn");
@@ -1448,10 +1459,10 @@ impl Agent {
                                     is_error,
                                     message,
                                 } => blocked = Some((result, is_error, message)),
-                            PolicyVerdict::Cancelled => {
-                                self.cancel_pending_calls(&pending_tool_calls, redact);
-                                return Err(AgentError::Cancelled);
-                            }
+                                PolicyVerdict::Cancelled => {
+                                    self.cancel_pending_calls(&pending_tool_calls, redact);
+                                    return Err(AgentError::Cancelled);
+                                }
                             }
                         }
                         }
@@ -1476,6 +1487,11 @@ impl Agent {
                         }
                         ordered_batch.push((call_item.clone(), None));
                         live_batch.push(call_item);
+                    }
+
+                    if events.is_closed() {
+                        self.cancel_pending_calls(&pending_tool_calls, redact);
+                        return Err(AgentError::Cancelled);
                     }
 
                     let ctx = self.tool_context();
@@ -1623,6 +1639,12 @@ impl Agent {
                     i = j;
                 } else {
                     // Side-effecting call: dispatch sequentially.
+                    // Esc closed the receiver: even calls that need no prompt
+                    // (AutoApprove, allow-listed) must not run any more.
+                    if events.is_closed() {
+                        self.cancel_pending_calls(&pending_tool_calls, redact);
+                        return Err(AgentError::Cancelled);
+                    }
                     tracing::debug!(tool_name = %pending_tool_calls[i].name, "tool dispatched (sequential)");
 
                     // ----------------------------------------------------------
@@ -2273,6 +2295,11 @@ impl Agent {
         content: Content,
         events: mpsc::Sender<AgentEvent>,
     ) -> Result<TurnResult, AgentError> {
+        // A cancelled request (receiver already closed) must not touch state.
+        if events.is_closed() {
+            return Err(AgentError::Cancelled);
+        }
+
         let text_for_memory = content.as_text();
 
         self.turn_count += 1;
@@ -2605,6 +2632,10 @@ enum AgentCommand {
     GetBudgetLimit {
         reply: oneshot::Sender<Option<f64>>,
     },
+    /// Read the session's total token usage and cost.
+    GetSessionSpend {
+        reply: oneshot::Sender<(TokenUsage, f64)>,
+    },
     /// Swap the tool-approval policy (e.g. add an auto-allow rule, switch to
     /// AlwaysAsk). The actor mutates `agent.config.approval_policy` directly.
     SetApprovalPolicy {
@@ -2714,6 +2745,9 @@ impl AgentHandle {
                     }
                     AgentCommand::SetBudgetLimit { limit } => {
                         agent.config.budget_limit = limit;
+                    }
+                    AgentCommand::GetSessionSpend { reply } => {
+                        let _ = reply.send((agent.session_usage(), agent.session_cost()));
                     }
                     AgentCommand::GetBudgetLimit { reply } => {
                         let _ = reply.send(agent.config.budget_limit);
@@ -2897,6 +2931,17 @@ impl AgentHandle {
             .cmd_tx
             .send(AgentCommand::SetBudgetLimit { limit })
             .await;
+    }
+
+    /// Total tokens and USD this agent spent, including turns that were
+    /// cancelled or failed. `(default, 0.0)` if the actor is gone.
+    pub async fn session_spend(&self) -> (TokenUsage, f64) {
+        let (tx, rx) = oneshot::channel();
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::GetSessionSpend { reply: tx })
+            .await;
+        rx.await.unwrap_or((TokenUsage::default(), 0.0))
     }
 
     /// Read the current cost ceiling. Round-trips through the actor.

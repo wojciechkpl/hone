@@ -1074,14 +1074,32 @@ async fn maybe_run_test_verification(
 /// a non-error `ToolCallEnd` whose result is not `{"skipped": true}`, matched
 /// to its `ToolCallStart` by id. Denied, skipped and failed calls do not count,
 /// so a refused write never triggers the automatic test run.
+#[cfg(test)]
 fn code_modifying_tools_that_ran(events: &[AgentEvent]) -> Vec<String> {
-    const CODE_MODIFYING: &[&str] = &["write_file", "edit_file", "multi_edit"];
-    let mut started: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
-    let mut ran = Vec::new();
+    let mut tracker = RanTracker::default();
     for e in events {
-        match e {
-            AgentEvent::ToolCallStart { id, name, .. } => {
-                started.insert(id.as_str(), name.as_str());
+        tracker.observe(e);
+    }
+    tracker.ran
+}
+
+/// Incremental form of [`code_modifying_tools_that_ran`] for the turn
+/// forwarders: it keeps only `(id, name)` of code-modifying starts and the
+/// names that ran, never whole events or tool results.
+#[derive(Default)]
+struct RanTracker {
+    started: std::collections::HashMap<String, String>,
+    ran: Vec<String>,
+}
+
+impl RanTracker {
+    fn observe(&mut self, event: &AgentEvent) {
+        const CODE_MODIFYING: &[&str] = &["write_file", "edit_file", "multi_edit"];
+        match event {
+            AgentEvent::ToolCallStart { id, name, .. }
+                if CODE_MODIFYING.contains(&name.as_str()) =>
+            {
+                self.started.insert(id.clone(), name.clone());
             }
             AgentEvent::ToolCallEnd {
                 id,
@@ -1090,16 +1108,15 @@ fn code_modifying_tools_that_ran(events: &[AgentEvent]) -> Vec<String> {
                 ..
             } => {
                 let skipped = result.get("skipped").and_then(|v| v.as_bool()) == Some(true);
-                if let Some(name) = started.get(id.as_str()) {
-                    if !*is_error && !skipped && CODE_MODIFYING.contains(name) {
-                        ran.push((*name).to_owned());
+                if let Some(name) = self.started.remove(id) {
+                    if !*is_error && !skipped {
+                        self.ran.push(name);
                     }
                 }
             }
             _ => {}
         }
     }
-    ran
 }
 
 /// Aborts a task when dropped (also when the owning task is aborted).
@@ -1167,7 +1184,7 @@ fn spawn_agent_turn(
         // makes the turn cancel, and the guard aborts the request task too.
         let _guard = AbortOnDrop(turn_task.abort_handle());
 
-        let mut seen: Vec<AgentEvent> = Vec::new();
+        let mut tracker = RanTracker::default();
 
         loop {
             tokio::select! {
@@ -1176,12 +1193,7 @@ fn spawn_agent_turn(
                 () = tx.closed() => return,
                 ev = inner_rx.recv() => {
                     let Some(event) = ev else { break };
-                    if matches!(
-                        event,
-                        AgentEvent::ToolCallStart { .. } | AgentEvent::ToolCallEnd { .. }
-                    ) {
-                        seen.push(event.clone());
-                    }
+                    tracker.observe(&event);
                     let is_terminal =
                         matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. });
                     if tx.send(event).await.is_err() {
@@ -1199,8 +1211,7 @@ fn spawn_agent_turn(
         let _ = turn_task.await;
 
         // After the turn completes, run test verification if applicable.
-        let ran = code_modifying_tools_that_ran(&seen);
-        maybe_run_test_verification(&agent, &tx, &ran).await;
+        maybe_run_test_verification(&agent, &tx, &tracker.ran).await;
     })
 }
 
@@ -1227,11 +1238,18 @@ fn spawn_medium_turn(
         });
         let _guard = AbortOnDrop(refine_task.abort_handle());
 
-        let mut seen: Vec<AgentEvent> = Vec::new();
+        let mut tracker = RanTracker::default();
         let mut had_error = false;
         // The refine loop runs several turns on this channel, each ending in
-        // a `Done`. Forward everything else as it arrives and send exactly one
-        // terminal `Done` (usage and cost summed over all rounds) at the end.
+        // a `Done`: round 0 is the answer, then critique and refine rounds
+        // alternate. Forward tool, pause, approval and error events of every
+        // round, but drop critique `Token`s (they are the model talking to
+        // itself) and mark where the revised answer starts. Intermediate
+        // `Done`s are swallowed; exactly one terminal `Done` (usage and cost
+        // summed over all rounds) is sent at the end.
+        const REVISED_SEPARATOR: &str = "\n\n---\n\n*Revised answer:*\n\n";
+        let mut round: usize = 0;
+        let mut separator_sent = false;
         let mut total_usage = hone_proto::TokenUsage::default();
         let mut total_cost = 0.0_f64;
         let mut last_plan = None;
@@ -1252,14 +1270,28 @@ fn spawn_medium_turn(
                                 last_plan = plan;
                             }
                             saw_done = true;
+                            round += 1;
+                            separator_sent = false;
+                        }
+                        AgentEvent::Token { text } => {
+                            let is_critique = round % 2 == 1;
+                            let is_refine = round >= 2 && round % 2 == 0;
+                            if is_critique {
+                                continue;
+                            }
+                            if is_refine && !separator_sent {
+                                separator_sent = true;
+                                let sep = AgentEvent::Token { text: REVISED_SEPARATOR.to_owned() };
+                                if tx.send(sep).await.is_err() {
+                                    return;
+                                }
+                            }
+                            if tx.send(AgentEvent::Token { text }).await.is_err() {
+                                return;
+                            }
                         }
                         other => {
-                            if matches!(
-                                other,
-                                AgentEvent::ToolCallStart { .. } | AgentEvent::ToolCallEnd { .. }
-                            ) {
-                                seen.push(other.clone());
-                            }
+                            tracker.observe(&other);
                             if matches!(other, AgentEvent::Error { .. }) {
                                 had_error = true;
                             }
@@ -1303,8 +1335,7 @@ fn spawn_medium_turn(
         // This replaces the previous unconditional detect_test_cmd call and
         // respects the code-modifying tool guard, so Q&A turns don't trigger
         // an unnecessary test run. Only calls that actually ran count.
-        let ran = code_modifying_tools_that_ran(&seen);
-        maybe_run_test_verification(&agent, &tx, &ran).await;
+        maybe_run_test_verification(&agent, &tx, &tracker.ran).await;
     })
 }
 
@@ -1396,6 +1427,53 @@ async fn dispatch_plan_decompose(
 // Orchestrate mode (blocking, for the --orchestrate one-shot path)
 // ---------------------------------------------------------------------------
 
+/// Print `--orchestrate` progress until the channel closes.
+///
+/// Must keep draining after an `Error`: dropping the receiver would make every
+/// later worker and the merge turn fail with `Cancelled`.
+async fn print_orchestrate_events<O: io::Write, E: io::Write>(
+    mut rx: mpsc::Receiver<AgentEvent>,
+    out: &mut O,
+    err: &mut E,
+) {
+    while let Some(event) = rx.recv().await {
+        match event {
+            AgentEvent::Token { text } => {
+                let _ = write!(out, "{text}");
+                let _ = out.flush();
+            }
+            AgentEvent::PlanCreated {
+                goal,
+                subtask_count,
+            } => {
+                let _ = writeln!(
+                    out,
+                    "\n[orchestrator] plan: {goal} ({subtask_count} subtasks)"
+                );
+            }
+            AgentEvent::WorkerStarted {
+                task_id,
+                agent,
+                description,
+            } => {
+                let _ = writeln!(out, "[{task_id}] starting {agent}: {description}");
+            }
+            AgentEvent::WorkerCompleted {
+                task_id,
+                agent,
+                status,
+                cost_usd,
+            } => {
+                let _ = writeln!(out, "[{task_id}] {agent}: {status} (${cost_usd:.4})");
+            }
+            AgentEvent::Error { message } => {
+                let _ = writeln!(err, "\nerror: {message}");
+            }
+            _ => {}
+        }
+    }
+}
+
 async fn run_orchestrate(
     lead_config: AgentConfig,
     prompt: &str,
@@ -1425,45 +1503,12 @@ async fn run_orchestrate(
         tracing::info!("distributed orchestrator enabled, coordinator at {coordinator_url}");
     }
 
-    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+    let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
     let printer = tokio::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            match event {
-                AgentEvent::Token { text } => {
-                    print!("{text}");
-                    use io::Write;
-                    let _ = io::stdout().flush();
-                }
-                AgentEvent::PlanCreated {
-                    goal,
-                    subtask_count,
-                } => {
-                    println!("\n[orchestrator] plan: {goal} ({subtask_count} subtasks)");
-                }
-                AgentEvent::WorkerStarted {
-                    task_id,
-                    agent,
-                    description,
-                } => {
-                    println!("[{task_id}] starting {agent}: {description}");
-                }
-                AgentEvent::WorkerCompleted {
-                    task_id,
-                    agent,
-                    status,
-                    cost_usd,
-                } => {
-                    println!("[{task_id}] {agent}: {status} (${cost_usd:.4})");
-                }
-                AgentEvent::Done { .. } => {}
-                AgentEvent::Error { message } => {
-                    eprintln!("\nerror: {message}");
-                    break;
-                }
-                _ => {}
-            }
-        }
+        let mut out = io::stdout();
+        let mut err = io::stderr();
+        print_orchestrate_events(rx, &mut out, &mut err).await;
     });
 
     match orchestrator.run(prompt, tx).await {

@@ -395,6 +395,11 @@ impl App {
         }
         self.status.active_tool = None;
         self.state = AppState::Idle;
+        // A menu for the cancelled turn must not outlive it.
+        self.debugger_open = false;
+        self.debugger_paused_id = None;
+        self.debugger_paused_name = None;
+        self.debugger_paused_args = None;
         // Clear stale per-turn tracking so the next turn starts fresh.
         self.pending_tool_start.clear();
         self.current_turn = None;
@@ -672,10 +677,13 @@ impl App {
             let settled = |t: Option<Instant>| {
                 t.is_none_or(|t| now.saturating_duration_since(t) >= MENU_KEY_GUARD)
             };
-            let is_menu_key = matches!(
-                key.code,
-                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('y' | 'a' | 'd' | 'n' | 's')
-            );
+            // With text in the input box Enter belongs to the input; only `y` approves.
+            let enter_ok = self.input.buffer.is_empty();
+            let is_menu_key = match key.code {
+                KeyCode::Enter => enter_ok,
+                KeyCode::Esc | KeyCode::Char('y' | 'a' | 'd' | 'n' | 's') => true,
+                _ => false,
+            };
             menu_ok = is_menu_key
                 && (key.code == KeyCode::Esc
                     || (settled(self.menu_opened_at) && settled(previous)));
@@ -1698,6 +1706,13 @@ impl App {
     /// Insert all characters from a bracketed-paste event, including newlines,
     /// without triggering submission. Called by the event loop on `Event::Paste`.
     pub fn handle_paste(&mut self, text: &str) {
+        self.handle_paste_at(text, Instant::now());
+    }
+
+    /// Like [`App::handle_paste`] with an explicit clock (test seam). A paste
+    /// counts as a keystroke for the approval-menu guard.
+    pub fn handle_paste_at(&mut self, text: &str, now: Instant) {
+        self.last_key_at = Some(now);
         for c in text.chars() {
             self.input.insert_char(c);
         }

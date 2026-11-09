@@ -376,12 +376,13 @@ pub async fn run_handler(
                 if !history.is_empty() {
                     handle.load_history(history).await;
                 }
-                if let Ok(result) = handle.run_turn(prompt, tx).await {
-                    let tokens = u64::from(result.usage.total());
-                    governance
-                        .add_usage(&model_id_str, tokens, result.cost_usd)
-                        .await;
-                }
+                // Whatever the outcome (done, failed, or cancelled because the
+                // client hung up), the model calls already made were paid for.
+                let _ = handle.run_turn(prompt, tx).await;
+                let (usage, cost_usd) = handle.session_spend().await;
+                governance
+                    .add_usage(&model_id_str, u64::from(usage.total()), cost_usd)
+                    .await;
                 handle.shutdown().await;
             });
         }
