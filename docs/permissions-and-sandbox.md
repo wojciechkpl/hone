@@ -18,11 +18,11 @@ explains each one, what is on by default, and where each one stops.
 
 | Guardrail | Default | Turn it on or change it | Covers |
 |---|---|---|---|
-| [Permission rules](#1-permission-rules) | **Off**: no rules ship yet | Write `~/.config/hone/permissions.toml` and/or `<workdir>/.hone/permissions.toml` | File paths, git and shell commands, `web_fetch` hosts |
+| [Permission rules](#1-permission-rules) | **Off** until you write rules; built-in rules are opt-in (`HONE_POLICY_BUILTINS=1`) | Write `~/.config/hone/permissions.toml` and/or `<workdir>/.hone/permissions.toml` | File paths, git and shell commands, `web_fetch` hosts |
 | [Shell command checks](#2-shell-command-checks) | **On**, always | Not configurable | The `shell` tool |
 | [OS sandbox](#3-os-sandbox) on macOS (Seatbelt) | **On** for shell commands | `HONE_SANDBOX_EXTRA_READ` adds read-only roots | Child processes started by the `shell` tool |
 | [OS sandbox](#3-os-sandbox) on Linux (Landlock) | **Off** (opt-in while it is validated) | `HONE_SANDBOX_ENFORCE=1` | Child processes started by the `shell` tool, filesystem only |
-| Approval prompts in the TUI | Intended: write and shell tools ask, read-only tools don't. **Today only orchestrated turns prompt** ([known bug](#known-issue-tui)) | `--step` asks for every tool (orchestrated turns only, today) | Interactive TUI only |
+| Approval prompts in the TUI | **On**: write and shell tools ask, read-only tools don't | `--step` asks for every tool; <kbd>Shift</kbd>+<kbd>Tab</kbd> to AutoApprove stops asking (permission rules still apply) | Interactive TUI only |
 
 > [!IMPORTANT]
 > Built-in rules (credentials, persistence, `git push`, privilege escalation,
@@ -145,11 +145,10 @@ registers:
 
 | Where the run comes from | What an `ask` does |
 |---|---|
-| `hone` TUI, orchestrated turns | Pauses and shows the approval menu: <kbd>y</kbd>/<kbd>Enter</kbd> approve once, <kbd>a</kbd> approve always, <kbd>s</kbd>/<kbd>Esc</kbd> skip, <kbd>d</kbd>/<kbd>n</kbd> deny |
-| `hone` TUI, simple and medium turns (most messages) | Refused with `requires approval (rule <id>)`: [known bug](#known-issue-tui) |
+| `hone` TUI (every turn) | Pauses and shows the approval menu: <kbd>y</kbd>/<kbd>Enter</kbd> approve once, <kbd>a</kbd> approve always, <kbd>s</kbd>/<kbd>Esc</kbd> skip, <kbd>d</kbd>/<kbd>n</kbd> deny. <kbd>Enter</kbd> and <kbd>a</kbd> answer only while the input box is empty |
 | `hone "prompt"`, `--json`, `--recipe`, `--orchestrate`, `--ensemble` | Refused with `requires approval (rule <id>)` |
 | `honed` `POST /run` without a step channel | Refused the same way |
-| `honed` `POST /run` with `request_id` and an `approval_policy` other than `Auto` | Pauses; the client answers through `POST /run/{request_id}/step` |
+| `honed` `POST /run` with `request_id` and an `approval_policy` other than `Auto` | Pauses; the client answers through `POST /run/{request_id}/step`. If the client disconnects, the run is cancelled |
 | `hone-mcp-server` | Refused: the result is an MCP error and the tool is not called |
 
 A `deny` is always refused, everywhere, and no flag turns it into an allow.
@@ -164,17 +163,29 @@ single-pattern path rule with an explicit read or write op, is remembered as a w
 
 <a id="known-issue-tui"></a>
 
+> [!NOTE]
+> **Fixed: TUI prompts on every turn.** Before this fix, the TUI's main agent was created
+> before the approval channel existed, so on simple and medium turns (most messages) write
+> and shell tools ran without prompting, `--step` did nothing, and `ask` rules were refused.
+>
+> How the prompt behaves now:
+>
+> - **Typing can't answer it.** A key counts only if it comes at least 400 ms after the menu
+>   opened and 400 ms after your previous key or paste; faster keys go to the input box. While
+>   the input box has text, only <kbd>y</kbd> approves. <kbd>Esc</kbd> always skips.
+> - **No answer means no.** If the TUI exits while a prompt is open, the call is refused.
+>   <kbd>Esc</kbd> outside the menu cancels the turn before its next tool call, prompt or model
+>   call; calls that didn't run are recorded as cancelled.
+> - **AutoApprove** (<kbd>Shift</kbd>+<kbd>Tab</kbd>) skips the write/shell prompt, including
+>   the one `--step` adds, but never a permission rule: `deny` still refuses and `ask` still
+>   prompts.
+> - With `--step`, <kbd>a</kbd> approves once: `--step` keeps no allow-list.
+> - Orchestrated turns never prompt: the orchestrator's lead and worker agents have no tools.
+
 > [!WARNING]
-> **Known bug (fix planned): TUI prompts only reach orchestrated turns.** The TUI's main
-> agent is created (`bins/hone/src/main.rs:2422`) before the approval policy and the
-> approval channel are set up (lines 2629–2636), and those settings only reach turns the
-> TUI hands to the orchestrator. On simple and medium turns, which are most messages:
->
-> - write and shell tools run **without prompting**, and `--step` has no effect;
-> - every permission `ask` is **refused** with `requires approval (rule <id>)`.
->
-> Until it is fixed, use `deny` for anything that must never run, and `--approve <id>` for
-> `ask` rules you want to allow.
+> After an edit runs (`write_file`, `edit_file`, `multi_edit`: approved, or in AutoApprove), the TUI runs the
+> project's detected test command (`cargo test`, `npm test`, `pytest`, …) **without a prompt
+> and outside the sandbox**. `npm test` and similar run scripts from the repository.
 
 ### Pre-approving rules
 

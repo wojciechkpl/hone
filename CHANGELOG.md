@@ -113,6 +113,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - **Performance:** it runs in linear time.
 - **Reviewed** in five security-review rounds against the real parser and redactor. The remaining known gaps, such as git global options, `find -exec` and `env -C`, are listed in `docs/configuration.md` and assigned to P2.6. Contract: `docs/plans/policy-p2.5-spec.md`.
 
+### Fixed: TUI approval prompts on every turn
+
+- **The bug (since April 2026):** the TUI's main agent was created with `Auto` approvals and no approval channel, before the TUI set them up. Simple and medium turns, which are most messages, run on that agent, so:
+  - write and shell tools ran **without prompting**;
+  - `--step` did nothing;
+  - permission `ask` rules were refused as if the run were headless.
+  (Orchestrated turns never prompted either: their lead and worker agents have no tools.)
+- **The fix:** `AgentHandle::set_step_channel` gives the running agent the approval channel, and `wire_tui_approvals` applies the approval policy and channel to it. The agent is not respawned, so `hone session resume` history is kept.
+- **Pausing safely.** A review found that once the session agent can pause, it could hang or fail open. Fixed in the same change:
+  - **Medium turns** (the default tier) no longer stop reading events at the first answer while the self-refine pass is still running, which would have left its approval prompts unanswered forever. The critique pass's text is no longer shown; a refined answer appears under a "Revised answer" divider. The TUI gets one `Done` with the usage of every pass.
+  - **Esc** now cancels the agent's turn, not just the task watching it. The turn stops before its next tool call, approval prompt or model call; calls that didn't run get a "cancelled" result, so the history stays valid, and the next message runs normally. A cancelled message that hadn't started yet leaves no trace in the history.
+  - **No answer means no.** If the approval channel closes while a prompt is open (for example, the TUI exits), the call is refused instead of run. If approval is needed and no channel exists, the call is refused without showing a prompt.
+  - **Stale answers** left in the channel by a cancelled prompt are discarded before the next prompt opens.
+  - **Typing can't answer a prompt.** A key counts only if pressed at least 400 ms after the menu opened and 400 ms after the previous key; faster keys go to the input box. Esc always skips. Space no longer approves.
+  - **`/permit`** no longer waits on a busy agent, which could freeze the TUI. It applies for the rest of the session, as `/budget` does (both help texts now say so).
+  - **The automatic test run** after an edit happens only when an edit actually ran, not when you denied or skipped it.
+  - "Approve always" allow-lists the tool that was paused, not a name supplied by the UI.
+  - **Typing a follow-up** can't approve: while the input box has text, only <kbd>y</kbd> approves, and a paste counts as typing.
+- **`honed`:** a client that disconnects from a `POST /run` or `/orchestrate` stream now cancels the run at its next tool call, prompt or model call, instead of letting it finish. The spend of a `/run` is recorded in the governance totals however the run ends (finished, failed or cancelled); before, only finished runs were counted.
+- **CLI `--orchestrate`:** a failing worker no longer stops the printer, so the other workers and the merge still run.
+- **AutoApprove mode** (<kbd>Shift</kbd>+<kbd>Tab</kbd>) now does what its name says: it skips the write/shell approval prompt, including the one `--step` adds. It never skips a permission rule: `deny` still refuses and `ask` still prompts.
+- **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
+- Contract: `docs/plans/tui-approval-fix-spec.md`.
+
 ### Memory subsystem overhaul
 
 A multi-PR rewrite of how memories are written, indexed, and recalled. The full design lives in `docs/priv/memory-improvements-plan-2026-04-30.md` (R1–R12); user-visible changes:

@@ -140,7 +140,7 @@ hone --image screenshot.png "what is wrong with this layout?"
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> | session switcher: pick a session, and the TUI exits and prints `hone session resume <name>` |
 | <kbd>F1</kbd> | all keybindings |
 | `/model anthropic:claude-opus-4-5` | change the model from the next turn (same provider) |
-| <kbd>Shift</kbd>+<kbd>Tab</kbd> | cycle Build → Plan (read-only) → AutoApprove |
+| <kbd>Shift</kbd>+<kbd>Tab</kbd> | cycle Build (asks before writes and shell) → Plan (read-only) → AutoApprove (doesn't ask; permission rules still apply) |
 | `/plan <task>` | preview the orchestrator's plan without running workers |
 | `@debugger <task>` | send one message to a built-in persona |
 | `!cargo test` | run a shell command yourself, outside the agent |
@@ -261,9 +261,8 @@ decision = "deny"
 ```
 
 > [!NOTE]
-> `ask` rules work, but in the TUI today they only prompt on orchestrated turns; on other
-> turns, and in every headless run, an `ask` is refused unless you pass
-> `--approve <id>`. See the [known bug](permissions-and-sandbox.md#known-issue-tui).
+> `ask` rules prompt in the TUI. In headless runs (`hone "prompt"`, `--json`, `--recipe`, …)
+> there is no one to ask, so an `ask` is refused unless you pass `--approve <id>`.
 
 > [!WARNING]
 > On Linux, the Landlock sandbox for shell commands is **opt-in** while it is validated on
@@ -360,8 +359,8 @@ Set `HONE_AUTH_TOKEN`, or bind to loopback with `HONE_BIND=127.0.0.1`.
 <details>
 <summary><b><code>requires approval (rule ...)</code></b></summary>
 
-A permission rule said `ask` and the run couldn't prompt: a headless run, or (today) a TUI
-turn that wasn't orchestrated. Re-run with `--approve <rule id>`. See [Permissions and sandbox](permissions-and-sandbox.md#asks-interactive-vs-headless).
+A permission rule said `ask` and the run couldn't prompt: a headless run (`hone "prompt"`,
+`--json`, `--recipe`, …). Re-run with `--approve <rule id>`. See [Permissions and sandbox](permissions-and-sandbox.md#asks-interactive-vs-headless).
 
 </details>
 
