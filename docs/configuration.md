@@ -22,7 +22,6 @@ mkdir -p ~/.config/hone
 cat > ~/.config/hone/config.toml << 'EOF'
 [agent]
 default_model = "anthropic:claude-opus-4-5"
-context_window_tokens = 200000
 
 [memory]
 enabled = true
@@ -36,9 +35,6 @@ EOF
 [agent]
 # Default model to use when no --model flag is provided
 default_model = "anthropic:claude-opus-4-5"
-
-# Total context window size in tokens (model-dependent)
-context_window_tokens = 200000
 
 # Tokens reserved for model output
 reserved_output_tokens = 4000
@@ -192,12 +188,6 @@ gemini_path = "/usr/local/bin/gemini"  # auto-detected if not specified
 [pricing.ollama]
 # Local models are free
 "llama2" = { input_per_mtok = 0.00, output_per_mtok = 0.00 }
-```
-
-Set a budget limit:
-
-```bash
-hone --budget 10.00  # max $10 per session
 ```
 
 ## Sandbox Configuration
@@ -496,6 +486,9 @@ Only list colors you want to override; all others use the theme defaults. Colors
 | `HONE_DISABLE_PERSISTENT_STORES` | Skip SQLite session/memory setup for this run (same effect as `--ephemeral`; set to `1` in CI, demos, or expect scripts) |
 | `HONE_AUDIT_LOG` | Enable JSONL egress audit log (equivalent to `--audit`) |
 | `HONE_CONTEXT_INJECTION` / `HONE_NO_INJECTION` | Force-enable or force-disable proactive context injection |
+| `HONE_CONTEXT_WINDOW` | Override the model's context window in tokens (4096–10000000), e.g. `32768` for a model served with a 32k window. Applies to every agent and model in the process. Hone compacts conversation history at its per-model budget ratio of this value (Qwen: 45%); the system prompt and tool schemas come on top, so windows below about 16k may still overflow. Unset: the window is inferred from the model name. An invalid value is ignored and logged at warn level (visible with `RUST_LOG=warn`). |
+| `HONE_SANDBOX_ENFORCE` | `1` turns on Landlock enforcement for shell commands on Linux (opt-in while it is validated; Seatbelt on macOS is always on) |
+| `HONE_SANDBOX_EXTRA_READ` | Extra read-only roots for the shell sandbox, colon-separated |
 | `HONE_REDUCED_MOTION` | Disable Agent Rail animation |
 | `HONE_ASCII_ONLY` | Force ASCII box drawing and file-op badges |
 | `HONE_NO_BELL` | Disable terminal bell on 10s+ turns |
@@ -503,18 +496,15 @@ Only list colors you want to override; all others use the theme defaults. Colors
 
 ## CLI Flags
 
-Most config options can be overridden via CLI flags:
+A few options can be set per run with CLI flags:
 
 ```bash
-hone --model openai:gpt-4o \
-     --budget 10.00 \
-     --context-limit 32000 \
-     --temperature 0.5 \
-     --max-iterations 20 \
-     --sandbox-enforce
+hone --model openai:gpt-4o --ephemeral --audit "fix the failing test"
 ```
 
-See `hone --help` for all flags.
+Run `hone --help` for the full list. There are no flags for budget, temperature,
+iteration limit, context window or sandbox mode. The context window is set with
+`HONE_CONTEXT_WINDOW`.
 
 ## Example Configs
 
@@ -574,7 +564,6 @@ platform = "landlock"
 ```toml
 [agent]
 default_model = "ollama:llama2"
-context_window_tokens = 4096
 
 [providers.ollama]
 base_url = "http://localhost:11434"

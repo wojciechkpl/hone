@@ -88,7 +88,7 @@ personas, native Windows.
 | `HONE_DISABLE_PERSISTENT_STORES=1` | Exists. | `main.rs:2076` | Used, plus `--ephemeral`. |
 | "Hone's Ollama path has a text tool-call fallback" | True, but irrelevant here. The benchmark uses the OpenAI-compatible adapter (`HONE_OPENAI_BASE_URL`), which needs native tool calls. | `crates/hone-providers/src/adapters/ollama.rs:56` | Both arms depend on the server's tool-call parser (next row). |
 | "vLLM hermes parser" | Qwen3-Coder emits XML-style calls and needs `--tool-call-parser qwen3_coder`. `hermes` is right for Qwen2.5-Coder. | vLLM tool-parser list | `HC_TOOL_PARSER=qwen3_coder`. The smoke test checks it. |
-| "Q4/FP8 fits with headroom, 32k ctx" | **FP8 doesn't fit.** 30.5B parameters at 1 byte ≈ 31 GB of weights on a 32 GB card. 4-bit (≈17–19 GB) fits. **32k breaks Hone.** `ContextConfig::for_model` gives any "qwen" model 128k advertised × 0.45 = **57.6k**, with no override, so Hone sends requests the server rejects before it ever compacts. | `crates/hone-core/src/context.rs:45–62` | Serve **64k** with an fp8 KV cache (≈3 GiB per full sequence) and give Pi the same `contextWindow`. A 32k-native second model needs a `HONE_CONTEXT_WINDOW` override first (P1.3c). |
+| "Q4/FP8 fits with headroom, 32k ctx" | **FP8 doesn't fit.** 30.5B parameters at 1 byte ≈ 31 GB of weights on a 32 GB card. 4-bit (≈17–19 GB) fits. **32k breaks Hone.** `ContextConfig::for_model` gives any "qwen" model 128k advertised × 0.45 = **57.6k**, with no override, so Hone sends requests the server rejects before it ever compacts. | `crates/hone-core/src/context.rs:45–62` | Serve **64k** with an fp8 KV cache (≈3 GiB per full sequence) and give Pi the same `contextWindow`. A 32k-native second model needs a `HONE_CONTEXT_WINDOW` override first (P1.3c, **done 2026-11-08**). |
 | "temp 0, fixed seed, 3 seeds" | At temperature 0, sampling is greedy and the seed does nothing. Repeats vary only because of server batching nondeterminism. | — | Call them **repeats**. Still record the seed. Report the SD across repeats. |
 | "same iteration cap" | Neither harness has one. Hone's agent loop has no turn cap; Pi's CLI has no such flag. | `crates/hone-core/src/agent.rs` (none found) | The **proxy enforces** `max_requests` and `max_total_tokens`, plus a wall-clock timeout, the same for every arm. |
 | "Hone's multi-attempt-with-rollback, separate row" | This lives in the **Python benchmark script**, not in Hone. That script also ran the agent on the macOS host, outside the SWE-bench environment. | `benchmarks/swebench_inference.py:223–330` | Leave it out of this comparison. If kept at all, label it "Hone + harness script". |
@@ -296,7 +296,9 @@ fresh container per run, no session or memory, and the same sampling (forced by 
     `--max-model-len 65536`, `--kv-cache-dtype fp8`, `--max-num-seqs 4`.
 - **Fallback:** llama.cpp `server-cuda` with GGUF Q4_K_M and `--jinja` (`HC_SERVER=llamacpp`).
 - **Second model** (optional): Qwen2.5-Coder-32B with the `hermes` parser. It is 32k
-  native, so it needs P1.3c first.
+  native, so the Hone arms need `HONE_CONTEXT_WINDOW=32768` (P1.3c, done). Hone then
+  compacts at 45% of that, about 14.7k tokens. Pre-register the setting. Leave it unset
+  for the primary 64k run, where Hone's own 57.6k budget is the as-shipped behaviour.
 - **VRAM check (64k context):**
   - weights ≈ 17–19 GB;
   - KV cache = 48 layers × 4 KV heads × 128 dim × 2 (K and V) × 1 byte (fp8) ≈ 48 KiB per
@@ -425,6 +427,7 @@ public timestamp precedes the runs.
 | 1 | P1.0 Plumbing | `scripts/selftest.sh` (optional on the box) | PASS |
 | 2 | P1.5 Smoke | `scripts/04_smoke.sh` | `gate smoke` PASS. If `toolchain-probe` fails for Hone, do P1.3b first. |
 | 2 | P1.3b **done 2026-11-08** | Hone patch: added `/opt` and `/usr/local` to the shell read/exec allowlist; nonexistent paths are skipped; `HONE_SANDBOX_EXTRA_READ` adds more roots. Done TDD-style: 23 tests, passing on macOS and Linux. Also fixed a Linux compile error in `hone-sandbox` (see §8). | `toolchain-probe` passes for Hone on the box |
+| 2 | P1.3c **done 2026-11-08** | Hone patch: `HONE_CONTEXT_WINDOW=<tokens>` replaces the window inferred from the model name; the budget stays window × per-model ratio, and `ModelInfo` reports it. 16 tests, including one that fails if the agent's budget ignores the override. | Only needed for the 32k second model |
 | 2 | P1.6 Pre-register | `scripts/05_preregister.sh 2026-11` → commit, tag, push | tag exists; no placeholders |
 | 3–5 | P1.7 Suite C | `scripts/10_run.sh c 2026-11` | 225 runs (25 × 3 arms × 3), 0 infra errors |
 | 6–10 | P1.8 Suite A | `scripts/10_run.sh a 2026-11` (overnight, resumable) | 360 runs, 0 infra errors (`--retry-errors`) |
