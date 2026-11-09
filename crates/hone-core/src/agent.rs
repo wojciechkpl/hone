@@ -145,6 +145,16 @@ enum PolicyVerdict {
 /// Tool-result text for calls that never ran because the turn was cancelled.
 const CANCELLED_REASON: &str = "(cancelled): the turn was cancelled before this tool ran";
 
+/// Notes the guards attach to one call's own tool result, so the history never
+/// holds a tool message with an id the model did not issue.
+struct GuardNotes {
+    call_id: String,
+    /// The read-before-edit guard's read (SECURITY prefix, guard line, content).
+    read: Option<String>,
+    /// The edit-streak hint.
+    hint: Option<String>,
+}
+
 /// Outcome of waiting for the user's answer on the step channel.
 enum StepWait {
     Answer(StepAction),
@@ -540,10 +550,10 @@ pub struct Agent {
     /// Set when this turn already sent an `AgentEvent::Error`, so the turn
     /// wrapper does not send a second one for the same failure.
     error_event_sent: bool,
-    /// The read-before-edit guard's read for the call being dispatched, as
-    /// `(call id, text)`. It is folded into that call's own tool result by
-    /// [`Agent::add_call_result`], never added as a message of its own.
-    guard_block: Option<(String, String)>,
+    /// Guard notes for the call being dispatched; folded into that call's own
+    /// tool result by [`Agent::add_call_result`], cleared at turn start and on
+    /// cancel.
+    guard_notes: Option<GuardNotes>,
     /// Whether `AgentEvent::ModelInfo` has already been emitted this session.
     ///
     /// The event is emitted exactly once — on the first successful provider
@@ -600,7 +610,7 @@ impl Agent {
             metrics,
             guards: TurnGuards::default(),
             error_event_sent: false,
-            guard_block: None,
+            guard_notes: None,
             model_info_emitted: false,
             base_tools,
             policy_session_approved: HashSet::new(),
@@ -827,17 +837,23 @@ impl Agent {
         }
     }
 
-    /// Add the tool-result message for call `id`. If the read-before-edit guard
-    /// prepared a read for this call it leads the result, so the history only
-    /// ever holds results for ids the model issued.
+    /// Add the tool-result message for call `id`. Guard notes prepared for this
+    /// call follow its own result (own result, then the guard read, then the
+    /// edit-streak hint), so the history only ever holds results for ids the
+    /// model issued and a compressed old result still starts with its outcome.
     fn add_call_result(&mut self, redact: bool, id: String, prefix: &str, body: ToolText) {
         let own = tool_result_message(redact, id.clone(), prefix, body);
-        let message = match self.guard_block.take() {
-            Some((guard_id, block)) if guard_id == id => {
-                Message::tool_result(id, format!("{block}\n\n{}", own.content.as_text()))
+        let message = match self.guard_notes.take() {
+            Some(notes) if notes.call_id == id => {
+                let mut text = own.content.as_text();
+                for part in [notes.read, notes.hint].into_iter().flatten() {
+                    text.push_str("\n\n");
+                    text.push_str(&part);
+                }
+                Message::tool_result(id, text)
             }
             other => {
-                self.guard_block = other;
+                self.guard_notes = other;
                 own
             }
         };
@@ -921,6 +937,9 @@ impl Agent {
     /// result yet a "cancelled" result, so the history never keeps an orphan
     /// `tool_call` after a cancelled turn.
     fn cancel_pending_calls(&mut self, calls: &[ToolCallRequest], redact: bool, reason: &str) {
+        // Notes prepared for a call that never got its result must not leak
+        // onto a later call with the same id.
+        self.guard_notes = None;
         let mut answered: HashSet<String> = HashSet::new();
         for m in self.context.messages().iter().rev() {
             if m.role == hone_proto::Role::Assistant {
@@ -992,6 +1011,7 @@ impl Agent {
         events: mpsc::Sender<AgentEvent>,
     ) -> Result<TurnResult, AgentError> {
         self.error_event_sent = false;
+        self.guard_notes = None;
         let result = self.run_turn_body(user_input, events.clone()).await;
         self.report_turn_error(&result, &events).await;
         result
@@ -1796,9 +1816,10 @@ impl Agent {
 
                     // ----------------------------------------------------------
                     // Guard 3: Max consecutive edits without a read or shell call.
-                    // If the agent has made 3+ consecutive edits, inject a hint
-                    // message before processing this call.
+                    // If the agent has made 3+ consecutive edits, attach a hint
+                    // to this call's own result.
                     // ----------------------------------------------------------
+                    self.guard_notes = None;
                     if is_edit_tool(&pending_tool_calls[i].name) {
                         let streak = self.guards.record_edit();
                         if streak >= 3 {
@@ -1806,17 +1827,15 @@ impl Agent {
                                 streak,
                                 "guard: 3+ consecutive edits without verification"
                             );
-                            let hint_id = format!("guard-edit-streak-{}", uuid::Uuid::now_v7());
-                            self.context.add_message(tool_result_message(
-                                redact,
-                                hint_id,
-                                "",
-                                ToolText::Text(
+                            self.guard_notes = Some(GuardNotes {
+                                call_id: pending_tool_calls[i].id.clone(),
+                                read: None,
+                                hint: Some(
                                     "(guard) You've made 3 edits without verifying. \
                                      Consider reading the file or running tests before continuing."
                                         .to_owned(),
                                 ),
-                            ));
+                            });
                         }
                     } else {
                         // Shell or any other non-edit sequential call resets the streak.
@@ -1853,12 +1872,12 @@ impl Agent {
                                     cache_hit: false,
                                 })
                                 .await;
-                            self.context.add_message(tool_result_message(
+                            self.add_call_result(
                                 redact,
                                 call.id.clone(),
                                 "",
                                 ToolText::Text(message),
-                            ));
+                            );
                             i += 1;
                             continue;
                         }
@@ -1890,12 +1909,12 @@ impl Agent {
                                         cache_hit: false,
                                     })
                                     .await;
-                                self.context.add_message(tool_result_message(
+                                self.add_call_result(
                                     redact,
                                     pending_tool_calls[i].id.clone(),
                                     "",
                                     ToolText::Text(format!("(blocked by hook): {msg}")),
-                                ));
+                                );
                                 denied = true;
                                 break;
                             }
@@ -1940,12 +1959,12 @@ impl Agent {
                                             cache_hit: false,
                                         })
                                         .await;
-                                    self.context.add_message(tool_result_message(
+                                    self.add_call_result(
                                         redact,
                                         call.id.clone(),
                                         "",
                                         ToolText::Text(message),
-                                    ));
+                                    );
                                     i += 1;
                                     continue;
                                 }
@@ -1959,7 +1978,6 @@ impl Agent {
                     // turn, automatically inject a read_file call first and feed
                     // its result back before proceeding with the edit.
                     // ----------------------------------------------------------
-                    self.guard_block = None;
                     if is_edit_tool(&pending_tool_calls[i].name) {
                         if let Some(file_path) = extract_file_path(
                             &pending_tool_calls[i].name,
@@ -2051,10 +2069,18 @@ impl Agent {
                                                 ),
                                                 ToolText::Shown(value, redacted_count),
                                             );
-                                            self.guard_block = Some((
-                                                pending_tool_calls[i].id.clone(),
-                                                block.content.as_text(),
-                                            ));
+                                            let call_id = pending_tool_calls[i].id.clone();
+                                            let read = Some(block.content.as_text());
+                                            match self.guard_notes.as_mut() {
+                                                Some(n) if n.call_id == call_id => n.read = read,
+                                                _ => {
+                                                    self.guard_notes = Some(GuardNotes {
+                                                        call_id,
+                                                        read,
+                                                        hint: None,
+                                                    });
+                                                }
+                                            }
                                         }
                                         Err(err) => {
                                             tracing::debug!(
@@ -2497,6 +2523,7 @@ impl Agent {
         events: mpsc::Sender<AgentEvent>,
     ) -> Result<TurnResult, AgentError> {
         self.error_event_sent = false;
+        self.guard_notes = None;
         let result = self.run_turn_content_body(content, events.clone()).await;
         self.report_turn_error(&result, &events).await;
         result
