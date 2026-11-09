@@ -26,7 +26,7 @@ Agents reason better with structural context. The call graph provides:
 3. **Scoping guidance** — When fixing a bug in `login()`, agent sees it calls `db::connect()` and `crypto::hash_password()`, guiding which files to read
 4. **Test targeting** — Agent knows which functions to test based on what they call
 
-**Benchmark evidence:** CallGraph achieves **100% patch rate** on a 10-task SWE-bench sample, a +30pp improvement over the V1 baseline (70% with no context injection).
+**Evidence so far:** on a 10-task SWE-bench sample, 10/10 tasks produced a patch with CallGraph vs 7/10 with no context injection. That is patch generation, not a graded resolve rate; the resolve-rate effect is being measured in a pre-registered ablation (see [the plan](plans/trust-defaults-daemon-2026-11.md)).
 
 ---
 
@@ -353,10 +353,11 @@ Lower values cap the number of functions included. Higher values allow more deta
 
 ### Supported Strategies
 
-- `call_graph` (default) — Function-level calls. 100% patch rate on SWE-bench sample.
-- `hybrid` — Dependency graph + calls for top-5 files. 90% patch rate.
-- `flat` — Signatures only. 90% patch rate. Fastest generation.
-- `dependency_graph` — Import relationships only. 85% patch rate.
+- `adaptive` (default) — Picks the detail level from repo size; uses the call graph for small repos.
+- `call_graph` — Function-level calls. 10/10 patches on a 10-task sample (ungraded).
+- `hybrid` — Dependency graph + calls for top-5 files. 9/10 patches on the same sample.
+- `flat` — Signatures only. Fastest generation. 9/10 patches on the same sample.
+- `dependency_graph` — Import relationships only.
 
 ---
 

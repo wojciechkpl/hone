@@ -1,0 +1,156 @@
+# Harness arms. hcbench.runner fills these placeholders per run:
+#   {{prompt}} {{model}} {{base_url}} {{run_id}} {{workdir}} {{context_window}} {{max_tokens}}
+# base_url is http://hc-proxy:<port>/run/<run_id> (no /v1 suffix): Hone appends
+# /v1/chat/completions itself, Pi's baseUrl gets /v1 below.
+#
+# Fairness rules (pre-registered):
+#   * same prompt text for every arm; no harness-specific prompt tuning
+#   * sampling params, seed and caps are forced by the proxy, not by the arms
+#   * no cross-task memory: fresh container per run, ephemeral sessions
+#   * each tool keeps its own defaults (tools, system prompt, compaction)
+
+# ------------------------------------------------------------------ Pi
+[arms.pi]
+kind = "pi"
+argv = [
+  "/opt/harness/bin/pi", "--mode", "json", "--no-session",
+  "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files",
+  "--provider", "hcbench", "--model", "{{model}}",
+  "{{prompt}}",
+]
+
+[arms.pi.env]
+PI_CODING_AGENT_DIR = "/tmp/hc-pi-agent"
+PI_OFFLINE = "1"
+PI_TELEMETRY = "0"
+PI_SKIP_VERSION_CHECK = "1"
+
+[arms.pi.files]
+"/tmp/hc-pi-agent/models.json" = '''
+{
+  "providers": {
+    "hcbench": {
+      "baseUrl": "{{base_url}}/v1",
+      "api": "openai-completions",
+      "apiKey": "hcbench",
+      "models": [
+        { "id": "{{model}}", "contextWindow": {{context_window}}, "maxTokens": {{max_tokens}} }
+      ]
+    }
+  }
+}
+'''
+
+# Pi with its example guardrail extensions (suite C "best-effort" config).
+# In --mode json there is no UI to confirm in; smoke step 04 records whether
+# these gates block or allow when they cannot prompt.
+[arms.pi-guarded]
+kind = "pi"
+argv = [
+  "/opt/harness/bin/pi", "--mode", "json", "--no-session",
+  "--no-extensions",
+  "-e", "/opt/harness/pi-ext/permission-gate.ts",
+  "-e", "/opt/harness/pi-ext/protected-paths.ts",
+  "-e", "/opt/harness/pi-ext/confirm-destructive.ts",
+  "--no-skills", "--no-prompt-templates", "--no-context-files",
+  "--provider", "hcbench", "--model", "{{model}}",
+  "{{prompt}}",
+]
+
+[arms.pi-guarded.env]
+PI_CODING_AGENT_DIR = "/tmp/hc-pi-agent"
+PI_OFFLINE = "1"
+PI_TELEMETRY = "0"
+PI_SKIP_VERSION_CHECK = "1"
+
+[arms.pi-guarded.files]
+"/tmp/hc-pi-agent/models.json" = '''
+{
+  "providers": {
+    "hcbench": {
+      "baseUrl": "{{base_url}}/v1",
+      "api": "openai-completions",
+      "apiKey": "hcbench",
+      "models": [
+        { "id": "{{model}}", "contextWindow": {{context_window}}, "maxTokens": {{max_tokens}} }
+      ]
+    }
+  }
+}
+'''
+
+# ---------------------------------------------------------------- Hone
+# Ablation arm: context injection off.
+[arms.hone-noinject]
+kind = "hone"
+argv = [
+  "/opt/harness/bin/hone", "--json", "--no-clarify", "--ephemeral", "--no-inject",
+  "--model", "openai:{{model}}",
+  "{{prompt}}",
+]
+
+[arms.hone-noinject.env]
+OPENAI_API_KEY = "hcbench"
+HONE_OPENAI_BASE_URL = "{{base_url}}"
+HONE_OPENAI_MODEL = "{{model}}"
+HONE_DISABLE_PERSISTENT_STORES = "1"
+HONE_NO_INJECTION = "1"
+
+# Shipped default: injection on, default skeleton strategy. The code default is
+# Adaptive (context_injector.rs), even though --help says "hybrid" and the README
+# says "CallGraph". The strategy actually used is recorded in the pre-registration.
+[arms.hone-inject]
+kind = "hone"
+argv = [
+  "/opt/harness/bin/hone", "--json", "--no-clarify", "--ephemeral",
+  "--model", "openai:{{model}}",
+  "{{prompt}}",
+]
+
+[arms.hone-inject.env]
+OPENAI_API_KEY = "hcbench"
+HONE_OPENAI_BASE_URL = "{{base_url}}"
+HONE_OPENAI_MODEL = "{{model}}"
+HONE_DISABLE_PERSISTENT_STORES = "1"
+
+# Hone's best-effort safety config (suite C, like pi-guarded): shipped defaults plus
+# Linux Landlock enforcement, which is opt-in until validated (HONE_SANDBOX_ENFORCE=1).
+[arms.hone-guarded]
+kind = "hone"
+argv = [
+  "/opt/harness/bin/hone", "--json", "--no-clarify", "--ephemeral",
+  "--model", "openai:{{model}}",
+  "{{prompt}}",
+]
+
+[arms.hone-guarded.env]
+OPENAI_API_KEY = "hcbench"
+HONE_OPENAI_BASE_URL = "{{base_url}}"
+HONE_OPENAI_MODEL = "{{model}}"
+HONE_DISABLE_PERSISTENT_STORES = "1"
+HONE_SANDBOX_ENFORCE = "1"
+
+# Optional 4th arm: the strategy the README credits with the injection gains.
+[arms.hone-callgraph]
+kind = "hone"
+argv = [
+  "/opt/harness/bin/hone", "--json", "--no-clarify", "--ephemeral",
+  "--skeleton-strategy", "call-graph",
+  "--model", "openai:{{model}}",
+  "{{prompt}}",
+]
+
+[arms.hone-callgraph.env]
+OPENAI_API_KEY = "hcbench"
+HONE_OPENAI_BASE_URL = "{{base_url}}"
+HONE_OPENAI_MODEL = "{{model}}"
+HONE_DISABLE_PERSISTENT_STORES = "1"
+
+# ------------------------------------------------------------- selftest
+# Plumbing check without a GPU: one request through the proxy, no real agent.
+[arms.selftest]
+kind = "selftest"
+argv = [
+  "python3", "/opt/harness/bin/selftest_agent.py",
+  "--base-url", "{{base_url}}", "--model", "{{model}}", "--prompt", "{{prompt}}",
+]

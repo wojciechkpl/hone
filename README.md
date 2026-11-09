@@ -79,7 +79,7 @@ brew install asciinema  # or: pip install asciinema
 asciinema play assets/demo.cast
 ```
 
-The `.cast` source is at `assets/demo.cast` — recorded from a real Hone run on DeepSeek V3 via OpenRouter (~$0.001 per task). The embedded `assets/demo.svg` above is regenerated from it with `svg-term --in assets/demo.cast --out assets/demo.svg --window --no-cursor`.
+The embedded `assets/demo.svg` is a **hand-written animation** illustrating a typical session; it is not a screen recording. It replaced an earlier render of a real DeepSeek V3 run (`assets/demo.cast`) whose output showed raw tool-call sentinels. A fresh real recording will replace it.
 </details>
 
 <details>
@@ -115,7 +115,7 @@ cargo run -p hone-desktop
 
 ## Overview
 
-Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rust. It runs locally in your terminal with kernel-enforced sandboxing, supports 7 first-party provider adapters plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL`, and learns patterns across sessions through adaptive memory. Work with your models, on your machine, under your rules.
+Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rust. It runs locally in your terminal with kernel sandboxing (Seatbelt on macOS; Landlock on Linux, currently opt-in), supports 7 first-party provider adapters plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL`, and learns patterns across sessions through adaptive memory. Work with your models, on your machine, under your rules.
 
 ## Why Hone
 
@@ -137,7 +137,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Multi-agent orchestration** — Decompose complex tasks via research-backed patterns (Anthropic, MASAI, CodeR). Orchestrator-worker pipeline with message merging. Features concurrency limiter (`with_max_concurrent(n)` for semaphore-gated dispatch), health monitoring with per-worker timeouts (`with_worker_timeout(secs)`, kills stuck agents), and crash-recovery checkpointing (`CheckpointStore` SQLite, `Orchestrator::resume(run_id)` to continue interrupted runs).
 - **Agent ensemble** — Run N parallel candidates with varied temperatures, rank using MASAI Ranker (+5-8% accuracy improvement).
 - **Adaptive complexity routing** — Auto-classify requests as Simple/Medium/Complex and route to appropriate model with graduated compression.
-- **Adaptive hierarchical skeleton** — Proactive context injection with intelligent strategy selection: auto-detects repository size and auto-selects detail level. 4-level hierarchy: directory → file list → signatures → call graph. CallGraph (default) shows function-level relationships, achieving 100% patch rate on SWE-bench sample (+30pp over V1). Adaptive strategy skips large files (>100KB) and slow parses (>100ms). Progressive budget filling ensures efficient token use. Disable with `--no-inject` or `HONE_NO_INJECTION=1`.
+- **Adaptive hierarchical skeleton** — Proactive context injection with intelligent strategy selection: auto-detects repository size and auto-selects detail level. 4-level hierarchy: directory → file list → signatures → call graph. The default strategy is **Adaptive**; `call-graph`, `hybrid`, `dependency-graph` and `flat` are selectable with `--skeleton-strategy`. Adaptive skips large files (>100KB) and slow parses (>100ms). Progressive budget filling ensures efficient token use. Disable with `--no-inject` or `HONE_NO_INJECTION=1`. Its effect on SWE-bench resolve rate is being measured (see [SWE-bench Results](#swe-bench-results)).
 - **Cross-session learning** — AdaptiveClassifier learns patterns across sessions to improve future request routing and complexity estimation.
 - **Test-verification loop** — AgentCoder pattern that runs tests after each iteration (+40% bugs caught early).
 - **Reviewer agent** — ChatDev pattern where dedicated reviewer catches 30% of bugs before merge.
@@ -156,7 +156,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
   | ACP — `gemini --acp` | Yes | JSON-RPC | Free-tier Gemini with full bidirectional tool dispatch |
   | ACP — custom | Yes | JSON-RPC | Self-hosted ACP servers; see [`docs/api/acp-protocol.md`](docs/api/acp-protocol.md) |
   | Mock | Yes | in-process | Test double only |
-- **Kernel-enforced sandboxing** — Seatbelt on macOS, Landlock on Linux 5.13+, seccomp elsewhere. Hardened with path traversal prevention, command classification, and fail-closed policies.
+- **Kernel sandboxing** — Shell commands run under Seatbelt on macOS (enforced by default). On Linux 5.13+, Landlock enforcement is **opt-in** with `HONE_SANDBOX_ENFORCE=1` while it is validated: before November 2026 a bug meant Landlock was never applied to shell commands. Read allowlist: system and toolchain roots plus `HONE_SANDBOX_EXTRA_READ`. Also: path traversal prevention for file tools and command classification. No sandbox on other platforms.
 - **Memory encryption** — AES-256-GCM with Argon2id for encrypted memory storage. Opt-in at runtime via `--encrypted-memory` plus `HONE_MEMORY_PASSPHRASE`. A wrong or missing passphrase exits the binary non-zero rather than silently degrading. Each store persists its own random 16-byte salt (plus a version marker) as a sentinel memory record, so keys rotate per-vault and cannot be cross-replayed against a hardcoded constant.
 - **Typed memories with index-driven recall** — Memories carry a `kind` (`User`, `Feedback`, `Project`, `Reference`, `Outcome`, `Conversation`) and an optional one-line `description`. The system prompt embeds a budgeted `## Memory index`; the agent fetches bodies on demand via the `memory_read` tool. Recall ordering uses BM25 (k1=1.5, b=0.75) over content + description. Inspect or prune via `hone memory ls | show <id> | forget`.
 - **Layered tool architecture** — Native Rust layer (Layer 2) for zero-cost file/shell/git/LSP. MCP client for 70+ community extensions (Layer 1) with `.hone/mcp.json` config. Skills in markdown (Layer 3). Tool decorators for cost tracking and governance (Layer 4).
@@ -637,36 +637,21 @@ python benchmarks/persona_eval.py --persona debugger --dry-run
 
 ### SWE-bench Results
 
-**Skeleton Strategy Comparison (10-task sample with V4):**
+**Graded results** (official SWE-bench harness):
 
-| Strategy | Patches | Rate | vs V1 |
-|----------|---------|------|-------|
-| **CallGraph (default)** | **10/10** | **100%** | **+30pp** |
-| Hybrid | 9/10 | 90% | +20pp |
-| Flat | 9/10 | 90% | +20pp |
-| V1 (no injection) | 7/10 | 70% | baseline |
+| Run | Dataset | Model | Resolved | Cost |
+|-----|---------|-------|----------|------|
+| v1 (Apr 2026) | SWE-bench Lite, 300 tasks | DeepSeek V3 via OpenRouter | **58/300 (19.3%)** | $8.56 total (~$0.03/task) |
+| v2 (Apr 2026) | SWE-bench Lite, 300 tasks | DeepSeek V3 via OpenRouter | 39/300 (13.0%) | structured prompt; reverted |
 
-**V4 Results with CallGraph Injection Enabled by Default:**
+In v1, 226 of 300 tasks produced a patch; 21 of those hit Docker errors during grading and count as unresolved.
 
-| Version | Injection | Pass Rate | Key Insight |
-|---------|-----------|-----------|-------------|
-| **V4 (CallGraph default)** | **Enabled** | **285/300 (95%)** | Function-level calls, +30pp on sample |
-| V3 (optional injection) | Opt-in | 258/300 (86%) | Dependency graph strategy |
-| V1 (simple prompt) | None | 58/300 (19.3%) | Baseline |
-| V2 (structured + localization) | None | 39/300 (13.0%) | Over-constraining hurts |
+> **Withdrawn (November 2026).** Earlier versions of this README reported 86% (V3) and 95% (V4) figures labelled as SWE-bench pass rates. They were **patch-generation rates** (the share of tasks where the agent produced any non-empty diff) on 50- and 20-task samples, extrapolated to 300 tasks. They were never graded and are not resolve rates. The V4 multi-attempt strategy also lived in the benchmark script, not in Hone. Those figures, and the cost comparisons built on them, are withdrawn. A pre-registered comparison is in progress: same local model, Hone vs [Pi](https://github.com/badlogic/pi-mono), official grader, published trajectories. See the [plan](docs/plans/trust-defaults-daemon-2026-11.md).
 
-**Context Injection Strategy:** Three-tier system with CallGraph enabled by default improves pass rate from 19.3% to 95% (+76pp, +400% absolute improvement):
-- **Tier 1** — Repository skeleton (file tree + function/type signatures) — 800-1500 tokens (always injected)
+**Context injection — what was measured.** On a 10-task sample, patch generation went from 7/10 without injection to 9/10 (Flat, Hybrid) and 10/10 (CallGraph). Whether injection raises the *resolve* rate is what the pre-registered ablation (Hone with vs without injection) measures. The three tiers:
+- **Tier 1** — Repository skeleton (file tree + function/type signatures), 800–1,500 tokens, always injected. Default strategy: Adaptive.
 - **Tier 2** — Confidence-gated BM25-ranked signatures (injected only when score gap > 0.4)
-- **Tier 3** — Exploration budget hint based on retrieval confidence (3-15 tool calls)
-- **V4 addition** — Multi-attempt strategy with injection-guided exploration and rollback on failure
-
-**Competitive Comparison:**
-- Hone v4 (context injection default): 95% pass rate at ~$0.002/task
-- Hone v3 (context injection opt-in): 86% pass rate at ~$0.002/task
-- Hone v1 (simple prompt): 19.3% pass rate at ~$0.002/task
-- SWE-Agent (GPT-4): 18% pass rate at ~$0.10-0.20 per task
-- Hone beats SWE-Agent at **50-100x lower cost** with 5x better pass rate
+- **Tier 3** — Exploration budget hint based on retrieval confidence (3–15 tool calls)
 
 See [docs/benchmarks.md](docs/benchmarks.md) for detailed breakdown and reproduction instructions.
 
@@ -769,7 +754,7 @@ graph TB
     style Sandbox fill:#FF6B6B
 ```
 
-**Layer 2** (native tools) are direct Rust function calls—zero serialization, zero IPC overhead. **Layer 1** (MCP) uses JSON-RPC over stdio. **Layer 0** (providers) use HTTP + streaming. **Layer 3** (skills) are markdown conventions with no runtime cost. **Multi-Agent** orchestration decomposes complex tasks, runs candidates in parallel, verifies with tests, and refines iteratively. All execution is isolated in a **kernel sandbox** with configurable policies.
+**Layer 2** (native tools) are direct Rust function calls—zero serialization, zero IPC overhead. **Layer 1** (MCP) uses JSON-RPC over stdio. **Layer 0** (providers) use HTTP + streaming. **Layer 3** (skills) are markdown conventions with no runtime cost. **Multi-Agent** orchestration decomposes complex tasks, runs candidates in parallel, verifies with tests, and refines iteratively. Shell commands run in a **kernel sandbox** (Seatbelt on macOS; Landlock on Linux with `HONE_SANDBOX_ENFORCE=1`).
 
 ## Installation
 
@@ -812,7 +797,7 @@ cargo run --release --bin hone -- "fix the bug"
 |----------|-------------|--------|
 | macOS | Apple Silicon (arm64) | Fully supported, Seatbelt sandboxing |
 | macOS | Intel (x86_64) | Fully supported |
-| Linux | x86_64 | Fully supported, Landlock sandboxing |
+| Linux | x86_64 | Fully supported; Landlock sandboxing opt-in (`HONE_SANDBOX_ENFORCE=1`) |
 | Linux | arm64 | Supported (cross-compile) |
 | Windows | x86_64 | Not supported (no sandbox backend) |
 
@@ -1323,7 +1308,7 @@ An honest comparison. We list where competitors are better, not just where Hone 
 | **Open source** | MIT/Apache-2.0 | Proprietary | Open (Apache-2.0) | Open (Apache-2.0) | Proprietary | Apache-2.0 |
 | **Terminal-native** | Yes | Yes | Yes | Yes (+ Electron) | No (VS Code only) | Yes |
 | **Multi-agent orchestration** | DAG + ensemble + RALPH | No | No | No | No | No |
-| **Kernel sandboxing** | Seatbelt + Landlock | Container | Container | No | No | No |
+| **Kernel sandboxing** | Seatbelt (macOS); Landlock opt-in (Linux) | Container | Container | No | No | No |
 | **Encrypted memory** | AES-256-GCM | No | No | No | No | No |
 | **MCP extensions** | 70+ via .hone/mcp.json | Yes (native) | No | 70+ | Yes | Yes |
 | **Provider support** | 7+ (any OpenAI-compat) | Claude only | OpenAI only | 30+ | Bedrock only | Gemini only |
@@ -1351,8 +1336,8 @@ An honest comparison. We list where competitors are better, not just where Hone 
 
 | Area | Detail |
 |------|--------|
-| **Cost efficiency** | $0.03/task vs $0.50-$3.00. 50-100x cheaper. |
-| **Privacy** | Kernel sandbox + encrypted memory + no telemetry. Nothing leaves your machine. |
+| **Cost efficiency** | ~$0.03/task (DeepSeek V3) vs $0.50–$3.00 for frontier-model agents: roughly 17–100× cheaper per task, at a lower resolve rate (19.3% vs 72%). |
+| **Privacy** | Kernel sandbox (macOS; Linux opt-in) + encrypted memory + no telemetry. Nothing leaves your machine except calls to your model provider. |
 | **Multi-agent** | Only agent with DAG orchestration, ensemble voting, RALPH loop, reviewer. |
 | **Flexibility** | Works with any OpenAI-compatible model. DeepSeek, Qwen, Ollama (local, $0). |
 | **Observability** | Hierarchical tracing, egress audit, injection detection, cost tracking. |

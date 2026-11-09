@@ -1,10 +1,14 @@
 pub mod validation;
 
+use std::path::{Path, PathBuf};
+use std::sync::Once;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use hone_proto::ToolLayer;
-use hone_sandbox::{SandboxMode, SandboxPolicyBuilder};
+use hone_sandbox::{
+    SandboxError, SandboxMode, SandboxPlatform, SandboxPolicy, SandboxPolicyBuilder,
+};
 use serde_json::{Value, json};
 use tokio::process::Command;
 use tokio::time::timeout;
@@ -16,6 +20,169 @@ use crate::{
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const MAX_TIMEOUT_MS: u64 = 300_000;
+
+/// System directories made readable to shell commands (those that exist).
+///
+/// macOS: only the Homebrew prefix subdirs, never the whole of `/opt` or
+/// `/usr/local` (which hold `var`, `etc`, caches, credentials, ...).
+#[cfg(target_os = "macos")]
+pub const SYSTEM_READ_ROOTS: &[&str] = &[
+    "/bin",
+    "/usr/bin",
+    "/usr/lib",
+    "/usr/share",
+    "/etc",
+    "/usr/local/bin",
+    "/usr/local/lib",
+    "/usr/local/opt",
+    "/usr/local/Cellar",
+    "/usr/local/share",
+    "/usr/local/include",
+    "/opt/homebrew/bin",
+    "/opt/homebrew/lib",
+    "/opt/homebrew/opt",
+    "/opt/homebrew/Cellar",
+    "/opt/homebrew/share",
+    "/opt/homebrew/include",
+    "/opt/homebrew/etc/gitconfig",
+    "/usr/local/etc/gitconfig",
+];
+
+/// System directories made readable to shell commands (those that exist).
+#[cfg(not(target_os = "macos"))]
+pub const SYSTEM_READ_ROOTS: &[&str] = &[
+    "/bin",
+    "/usr/bin",
+    "/usr/lib",
+    "/usr/lib64",
+    "/lib",
+    "/lib64",
+    "/usr/share",
+    "/etc",
+    "/opt",
+    "/usr/local",
+];
+
+/// Paths under `$HOME` made readable when they exist (dirs or files).
+pub const HOME_READ_DIRS: &[&str] = &[
+    ".cache",
+    ".cargo",
+    ".rustup",
+    ".gitconfig",
+    ".config/git/config",
+    ".config/git/ignore",
+    ".config/git/attributes",
+];
+
+/// Device nodes made writable when they exist.
+pub const WRITE_DEVICES: &[&str] = &["/dev/null"];
+
+/// Env var holding extra read-only roots for the shell sandbox, separated by
+/// `:`. Relative and nonexistent entries are ignored, as are `/`, `$HOME` or
+/// its ancestors, and anything under the working dir or `/tmp` (including
+/// symlinks resolving there).
+pub const EXTRA_READ_ENV: &str = "HONE_SANDBOX_EXTRA_READ";
+
+/// Env var that must be exactly `1` to enforce the Landlock sandbox on Linux
+/// (opt-in for now). Other platforms always enforce.
+pub const SANDBOX_ENFORCE_ENV: &str = "HONE_SANDBOX_ENFORCE";
+
+/// Whether the shell tool should install the sandbox on `platform`, given the
+/// value of [`SANDBOX_ENFORCE_ENV`].
+pub fn sandbox_enforced(platform: SandboxPlatform, enforce_env: Option<&str>) -> bool {
+    match platform {
+        SandboxPlatform::Landlock => enforce_env == Some("1"),
+        _ => true,
+    }
+}
+
+/// Parse a `:`-separated list of extra read roots. Entries are trimmed; empty
+/// and relative entries are dropped.
+pub fn parse_extra_read(raw: &str) -> Vec<PathBuf> {
+    raw.split(':')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .collect()
+}
+
+/// The path as written plus its canonical form (when resolvable).
+fn path_forms(p: &Path) -> Vec<PathBuf> {
+    let mut v = vec![p.to_path_buf()];
+    if let Ok(c) = p.canonicalize()
+        && c != p
+    {
+        v.push(c);
+    }
+    v
+}
+
+/// Whether an extra read root is too broad or overlaps writable/home areas.
+fn extra_rejected(extra: &Path, home: &[PathBuf], writable: &[PathBuf]) -> bool {
+    path_forms(extra).iter().any(|f| {
+        f.parent().is_none()
+            || home.iter().any(|h| h.starts_with(f))
+            || writable.iter().any(|w| f.starts_with(w))
+    })
+}
+
+/// Build the shell tool's sandbox policy. Reads no environment variables.
+///
+/// Only existing paths are added (Landlock fails on missing ones), except
+/// `working_dir`, which is always writable. Writes: `working_dir`, `/tmp`,
+/// [`WRITE_DEVICES`]. Reads: system roots, `$HOME` entries (skipped when under
+/// `working_dir`), then filtered `extra_read` entries; duplicates are removed.
+pub fn shell_sandbox_policy(
+    working_dir: &Path,
+    home: Option<&Path>,
+    extra_read: &[PathBuf],
+) -> Result<SandboxPolicy, SandboxError> {
+    let mut builder =
+        SandboxPolicyBuilder::new(SandboxMode::Autonomous).allow_write(working_dir.to_path_buf());
+    let tmp = PathBuf::from("/tmp");
+    if tmp.exists() {
+        builder = builder.allow_write(tmp);
+    }
+    for dev in WRITE_DEVICES {
+        let dev = PathBuf::from(dev);
+        if dev.exists() {
+            builder = builder.allow_write(dev);
+        }
+    }
+
+    // Literal and canonical forms of every writable root / the home dir.
+    let writable: Vec<PathBuf> = path_forms(working_dir)
+        .into_iter()
+        .chain(path_forms(Path::new("/tmp")))
+        .collect();
+    let home_forms: Vec<PathBuf> = home.map(path_forms).unwrap_or_default();
+
+    let home_dirs = home.into_iter().flat_map(|h| {
+        HOME_READ_DIRS
+            .iter()
+            .map(move |d| h.join(d))
+            .filter(|p| !p.starts_with(working_dir))
+    });
+    let extras = extra_read
+        .iter()
+        .filter(|p| p.is_absolute() && !extra_rejected(p, &home_forms, &writable))
+        .cloned();
+    let candidates = SYSTEM_READ_ROOTS
+        .iter()
+        .map(PathBuf::from)
+        .chain(home_dirs)
+        .chain(extras);
+
+    let mut seen: Vec<PathBuf> = Vec::new();
+    for p in candidates {
+        if p.exists() && !seen.contains(&p) {
+            seen.push(p.clone());
+            builder = builder.allow_read(p);
+        }
+    }
+    builder.build()
+}
 
 /// Executes a shell command inside the sandbox and captures stdout/stderr.
 pub struct ShellTool;
@@ -94,60 +261,56 @@ impl Tool for ShellTool {
 
         // Build a concrete policy anchored to the working directory.
         //
-        // Minimum surfaces:
+        // Minimum surfaces (see `shell_sandbox_policy`):
         //   - working_dir: read + write (the agent's project root)
-        //   - /tmp (/private/tmp on macOS): writable temp space
-        //   - /bin, /usr/bin: readable so sh, cat, ls etc. can exec
-        //   - /etc: readable for config files (ssl certs, resolv.conf, …)
-        //   - $HOME/.cache, $HOME/.cargo: readable for toolchain caches,
-        //     only when not already under working_dir
+        //   - /tmp: writable temp space, when present
+        //   - SYSTEM_READ_ROOTS (/bin, /usr/bin, /usr/lib, /usr/share, /usr/local,
+        //     /opt, /etc): readable so interpreters, toolchains (conda under /opt,
+        //     python under /usr/local, Homebrew) and config files work
+        //   - $HOME/{.cache,.cargo,.rustup}: readable toolchain caches, only when
+        //     they exist and are not under working_dir
+        //   - HONE_SANDBOX_EXTRA_READ: operator-supplied extra read roots
         //
         // SandboxMode::Autonomous requires at least one readable path and is
-        // the most restrictive mode available — use it so the builder rejects
-        // a misconfigured policy at build time.
-        let mut builder = SandboxPolicyBuilder::new(SandboxMode::Autonomous)
-            .allow_write(ctx.working_dir.clone()) // implies read
-            .allow_write(std::path::PathBuf::from("/tmp"))
-            .allow_read(std::path::PathBuf::from("/bin"))
-            .allow_read(std::path::PathBuf::from("/usr/bin"))
-            .allow_read(std::path::PathBuf::from("/usr/lib"))
-            .allow_read(std::path::PathBuf::from("/usr/share"))
-            .allow_read(std::path::PathBuf::from("/etc"));
-
-        // Allow user cache dirs only when outside working_dir, so that
-        // toolchain tools (cargo, pip …) can read their caches.
-        if let Ok(home) = std::env::var("HOME") {
-            let home_path = std::path::PathBuf::from(&home);
-            for cache_rel in [".cache", ".cargo", ".rustup"] {
-                let cache_path = home_path.join(cache_rel);
-                if !cache_path.starts_with(&ctx.working_dir) {
-                    builder = builder.allow_read(cache_path);
+        // the most restrictive mode available, so the builder rejects a
+        // misconfigured policy at build time.
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let extra = parse_extra_read(
+            &std::env::var_os(EXTRA_READ_ENV)
+                .map(|v| v.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        );
+        let policy =
+            shell_sandbox_policy(&ctx.working_dir, home.as_deref(), &extra).map_err(|e| {
+                ToolError::SandboxDenied {
+                    tool: "shell".to_string(),
+                    action: format!("policy build failed: {e}"),
                 }
-            }
-        }
-
-        let policy = builder.build().map_err(|e| ToolError::SandboxDenied {
-            tool: "shell".to_string(),
-            action: format!("policy build failed: {e}"),
-        })?;
-
-        ctx.sandbox
-            .restrict_child(&mut std_cmd, &policy)
-            .map_err(|e| ToolError::SandboxDenied {
-                tool: "shell".to_string(),
-                action: e.to_string(),
             })?;
 
-        // Reconstruct a tokio Command from the (possibly rewritten) std Command.
-        // We must read program/args before converting because Into<tokio::Command>
-        // is not available — tokio::process::Command has its own constructor.
-        let program = std_cmd.get_program().to_os_string();
-        let args: Vec<std::ffi::OsString> = std_cmd.get_args().map(|a| a.to_os_string()).collect();
-
-        let mut cmd = Command::new(program);
-        for arg in &args {
-            cmd.arg(arg);
+        let platform = ctx.sandbox.platform();
+        let enforce_env = std::env::var(SANDBOX_ENFORCE_ENV).ok();
+        if sandbox_enforced(platform, enforce_env.as_deref()) {
+            ctx.sandbox
+                .restrict_child(&mut std_cmd, &policy)
+                .map_err(|e| ToolError::SandboxDenied {
+                    tool: "shell".to_string(),
+                    action: e.to_string(),
+                })?;
+        } else {
+            static WARN_ONCE: Once = Once::new();
+            WARN_ONCE.call_once(|| {
+                tracing::warn!(
+                    "Linux shell sandboxing (Landlock) is opt-in: set \
+                     {SANDBOX_ENFORCE_ENV}=1 to enforce it; shell commands currently run \
+                     unsandboxed"
+                );
+            });
         }
+
+        // Convert directly so `pre_exec` hooks and any program/arg rewrite done
+        // by the sandbox (e.g. Seatbelt's sandbox-exec) are preserved.
+        let mut cmd = Command::from(std_cmd);
         cmd.current_dir(&ctx.working_dir)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());

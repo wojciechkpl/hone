@@ -836,12 +836,13 @@ max_tool_calls_per_turn = 10
 # Disable with --no-inject or HONE_NO_INJECTION=1
 enabled = true
 
-# Skeleton strategy: call_graph, hybrid, flat, dependency_graph (default: call_graph)
-# - call_graph: Function-level calls (100% patch rate, +30pp over V1)
-# - hybrid: Dependency graph + calls for top-5 files (90% patch rate)
-# - flat: Signatures only, fastest generation (90% patch rate)
-# - dependency_graph: Import relationships only (85% patch rate)
-skeleton_strategy = "call_graph"
+# Skeleton strategy: adaptive, call_graph, hybrid, flat, dependency_graph (default: adaptive)
+# - adaptive: detail level chosen from repo size (call graph for small repos)
+# - call_graph: function-level calls, capped at 30 functions
+# - hybrid: dependency graph + calls for the top-5 relevant files
+# - flat: signatures only, fastest generation
+# - dependency_graph: import relationships only
+skeleton_strategy = "adaptive"
 
 # BM25 confidence gap threshold for signature injection (default: 0.4)
 # Lower = more aggressive, Higher = conservative

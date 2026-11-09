@@ -103,7 +103,7 @@ Detailed feature matrix across six major coding agents:
 - **Context optimization** — BM25 retrieval, graduated compression, phase detection, model-aware budgets. Lower token usage than competitors.
 - **Lean codebase** — 37K LOC, 15 crates. Fast startup (<10ms), low memory (~8MB).
 - **LSP integration** — Real type information via rust-analyzer, pyright, typescript-language-server, gopls. Not pattern-matching.
-- **Cost efficiency** — 19.3% on SWE-bench Lite at ~$0.03/task using DeepSeek V3 (50-100x cheaper than Claude Code or Cursor).
+- **Cost efficiency** — 19.3% resolved on SWE-bench Lite at ~$0.03/task using DeepSeek V3; roughly 17–100× cheaper per task than frontier-model agents, at a lower resolve rate.
 
 **Gaps:**
 - No desktop GUI (terminal only).
@@ -327,7 +327,7 @@ Rough cost per 20-turn task on SWE-bench Lite (actual costs vary by model choice
 ### Choose Hone if you:
 - Value privacy and security. Kernel sandboxing + encrypted memory.
 - Need multi-agent orchestration. Decompose complex tasks, use ensemble voting, reviewer patterns.
-- Work in cost-conscious environments. 50-100x cheaper per task than competitors.
+- Work in cost-conscious environments. Roughly 17–100× cheaper per task than frontier-model agents (with a lower resolve rate).
 - Deploy to teams. Multi-user sessions, RBAC, audit logging.
 - Use multiple LLM providers. 75+ adapters, mid-session provider swap.
 - Prefer terminal-native workflows.
@@ -411,7 +411,7 @@ Hone bridges stdio JSON-RPC to rust-analyzer, pyright, typescript-language-serve
 `hone-index` uses tree-sitter to parse ASTs for multiple languages, stores symbol embeddings in SQLite vectors, and updates incrementally via a file watcher. Symbol search runs in under 1 microsecond in-memory. This gives the agent structural code understanding that grep-based tools cannot provide.
 
 ### 7. Cost Efficiency at Scale
-Published SWE-bench results demonstrate Hone achieves 19.3% pass rate at $0.03/task using DeepSeek V3. This is 50-100x cheaper than Claude Code or Cursor, while beating SWE-Agent (GPT-4 at $0.10-$0.20/task) at similar accuracy. The cost advantage compounds over thousands of tasks.
+Hone's graded SWE-bench Lite result is 19.3% (58/300) at ~$0.03/task using DeepSeek V3. That is roughly 17–100× cheaper per task than Claude Code or Cursor on frontier models, which resolve far more (e.g. 72% for Claude Code), and roughly comparable to SWE-Agent with GPT-4 (18% at $0.10–$0.20/task) at 3–7× lower cost. The cost advantage compounds over thousands of tasks; a same-model comparison is in progress.
 
 ---
 
