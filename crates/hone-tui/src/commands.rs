@@ -8,13 +8,13 @@ pub enum Command {
     Cost,
     Quit,
     Help,
-    /// Set a per-run budget cap in USD (must be positive).
+    /// Set a budget cap in USD for the rest of the session (must be positive).
     Budget(f64),
     /// Toggle split-pane layout.
     Split,
     /// Toggle bottom tool output panel.
     Panel,
-    /// Pre-approve a named tool for the next run without pausing.
+    /// Pre-approve a named tool for the rest of the session without pausing.
     Permit(String),
     /// Switch theme — argument is the theme name.
     ThemeSwitch(String),
@@ -202,10 +202,10 @@ impl Command {
         // Supplemental descriptions for commands not in PALETTE_COMMANDS.
         const EXTRA: &[(&str, &str)] = &[
             ("q", "Exit hone"),
-            ("budget", "Set per-run USD budget cap (e.g. /budget 0.50)"),
+            ("budget", "Set the USD budget cap for the rest of the session (e.g. /budget 0.50)"),
             (
                 "permit",
-                "Pre-approve a tool for the next run (e.g. /permit shell)",
+                "Pre-approve a tool for the rest of the session (e.g. /permit shell)",
             ),
             ("set", "Set option (e.g. vim/novim)"),
             ("theme-preview", "Preview all theme colors"),

@@ -1070,6 +1070,99 @@ async fn maybe_run_test_verification(
     }
 }
 
+/// Names (in order of completion) of code-modifying calls that actually ran:
+/// a non-error `ToolCallEnd` whose result is not `{"skipped": true}`, matched
+/// to its `ToolCallStart` by id. Denied, skipped and failed calls do not count,
+/// so a refused write never triggers the automatic test run.
+#[cfg(test)]
+fn code_modifying_tools_that_ran(events: &[AgentEvent]) -> Vec<String> {
+    let mut tracker = RanTracker::default();
+    for e in events {
+        tracker.observe(e);
+    }
+    tracker.ran
+}
+
+/// Incremental form of [`code_modifying_tools_that_ran`] for the turn
+/// forwarders: it keeps only `(id, name)` of code-modifying starts and the
+/// names that ran, never whole events or tool results.
+#[derive(Default)]
+struct RanTracker {
+    started: std::collections::HashMap<String, String>,
+    ran: Vec<String>,
+}
+
+impl RanTracker {
+    fn observe(&mut self, event: &AgentEvent) {
+        const CODE_MODIFYING: &[&str] = &["write_file", "edit_file", "multi_edit"];
+        match event {
+            AgentEvent::ToolCallStart { id, name, .. }
+                if CODE_MODIFYING.contains(&name.as_str()) =>
+            {
+                self.started.insert(id.clone(), name.clone());
+            }
+            AgentEvent::ToolCallEnd {
+                id,
+                result,
+                is_error,
+                ..
+            } => {
+                let skipped = result.get("skipped").and_then(|v| v.as_bool()) == Some(true);
+                if let Some(name) = self.started.remove(id) {
+                    if !*is_error && !skipped {
+                        self.ran.push(name);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Aborts a task when dropped (also when the owning task is aborted).
+struct AbortOnDrop(tokio::task::AbortHandle);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Forward `inner_rx` to `outer_tx` for an inline `@agent` turn, then run
+/// `after` (prompt/tool restore) when the inner stream ends normally.
+///
+/// If the wrapper is aborted or dropped, or the outer receiver goes away, the
+/// `inner` turn task is aborted (drop guard) so a pending approval prompt
+/// cannot outlive the UI that could answer it. `after` does not run then.
+fn spawn_inline_turn_wrapper<F>(
+    inner: tokio::task::JoinHandle<()>,
+    mut inner_rx: mpsc::Receiver<AgentEvent>,
+    outer_tx: mpsc::Sender<AgentEvent>,
+    after: F,
+) -> tokio::task::JoinHandle<()>
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(async move {
+        let _guard = AbortOnDrop(inner.abort_handle());
+        loop {
+            tokio::select! {
+                biased;
+                () = outer_tx.closed() => return,
+                ev = inner_rx.recv() => match ev {
+                    Some(ev) => {
+                        if outer_tx.send(ev).await.is_err() {
+                            return;
+                        }
+                    }
+                    None => break,
+                },
+            }
+        }
+        after.await;
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Agent turn dispatch — simple (direct)
 // ---------------------------------------------------------------------------
@@ -1081,23 +1174,35 @@ fn spawn_agent_turn(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Use an intermediate channel so we can observe events before
-        // forwarding them to the caller and track which tools were used.
+        // forwarding them to the caller and track which tools ran.
         let (inner_tx, mut inner_rx) = mpsc::channel::<AgentEvent>(256);
 
         let agent_clone = agent.clone();
         let turn_task =
             tokio::spawn(async move { agent_clone.run_turn(&user_text, inner_tx).await });
+        // Aborting this task (Esc) must release the actor: dropping `inner_rx`
+        // makes the turn cancel, and the guard aborts the request task too.
+        let _guard = AbortOnDrop(turn_task.abort_handle());
 
-        let mut tools_used: Vec<String> = Vec::new();
+        let mut tracker = RanTracker::default();
 
-        while let Some(event) = inner_rx.recv().await {
-            if let AgentEvent::ToolCallStart { ref name, .. } = event {
-                tools_used.push(name.clone());
-            }
-            let is_terminal = matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. });
-            let _ = tx.send(event).await;
-            if is_terminal {
-                break;
+        loop {
+            tokio::select! {
+                biased;
+                // The UI went away: stop forwarding so the actor is released.
+                () = tx.closed() => return,
+                ev = inner_rx.recv() => {
+                    let Some(event) = ev else { break };
+                    tracker.observe(&event);
+                    let is_terminal =
+                        matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. });
+                    if tx.send(event).await.is_err() {
+                        return;
+                    }
+                    if is_terminal {
+                        break;
+                    }
+                }
             }
         }
 
@@ -1106,7 +1211,7 @@ fn spawn_agent_turn(
         let _ = turn_task.await;
 
         // After the turn completes, run test verification if applicable.
-        maybe_run_test_verification(&agent, &tx, &tools_used).await;
+        maybe_run_test_verification(&agent, &tx, &tracker.ran).await;
     })
 }
 
@@ -1131,21 +1236,71 @@ fn spawn_medium_turn(
                 .run_with_handle(&agent_clone, &user_text_clone, inner_tx)
                 .await
         });
+        let _guard = AbortOnDrop(refine_task.abort_handle());
 
-        let mut tools_used: Vec<String> = Vec::new();
+        let mut tracker = RanTracker::default();
         let mut had_error = false;
+        // The refine loop runs several turns on this channel, each ending in
+        // a `Done`: round 0 is the answer, then critique and refine rounds
+        // alternate. Forward tool, pause, approval and error events of every
+        // round, but drop critique `Token`s (they are the model talking to
+        // itself) and mark where the revised answer starts. Intermediate
+        // `Done`s are swallowed; exactly one terminal `Done` (usage and cost
+        // summed over all rounds) is sent at the end.
+        const REVISED_SEPARATOR: &str = "\n\n---\n\n*Revised answer:*\n\n";
+        let mut round: usize = 0;
+        let mut separator_sent = false;
+        let mut total_usage = hone_proto::TokenUsage::default();
+        let mut total_cost = 0.0_f64;
+        let mut last_plan = None;
+        let mut saw_done = false;
 
-        while let Some(event) = inner_rx.recv().await {
-            if let AgentEvent::ToolCallStart { ref name, .. } = event {
-                tools_used.push(name.clone());
-            }
-            let is_terminal = matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. });
-            if matches!(event, AgentEvent::Error { .. }) {
-                had_error = true;
-            }
-            let _ = tx.send(event).await;
-            if is_terminal {
-                break;
+        loop {
+            tokio::select! {
+                biased;
+                // The UI went away: stop forwarding so the actor is released.
+                () = tx.closed() => return,
+                ev = inner_rx.recv() => {
+                    let Some(event) = ev else { break };
+                    match event {
+                        AgentEvent::Done { usage, cost_usd, plan } => {
+                            total_usage = total_usage + usage;
+                            total_cost += cost_usd;
+                            if plan.is_some() {
+                                last_plan = plan;
+                            }
+                            saw_done = true;
+                            round += 1;
+                            separator_sent = false;
+                        }
+                        AgentEvent::Token { text } => {
+                            let is_critique = round % 2 == 1;
+                            let is_refine = round >= 2 && round % 2 == 0;
+                            if is_critique {
+                                continue;
+                            }
+                            if is_refine && !separator_sent {
+                                separator_sent = true;
+                                let sep = AgentEvent::Token { text: REVISED_SEPARATOR.to_owned() };
+                                if tx.send(sep).await.is_err() {
+                                    return;
+                                }
+                            }
+                            if tx.send(AgentEvent::Token { text }).await.is_err() {
+                                return;
+                            }
+                        }
+                        other => {
+                            tracker.observe(&other);
+                            if matches!(other, AgentEvent::Error { .. }) {
+                                had_error = true;
+                            }
+                            if tx.send(other).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1165,11 +1320,22 @@ fn spawn_medium_turn(
             return;
         }
 
+        if saw_done {
+            let done = AgentEvent::Done {
+                usage: total_usage,
+                cost_usd: total_cost,
+                plan: last_plan,
+            };
+            if tx.send(done).await.is_err() {
+                return;
+            }
+        }
+
         // After the self-refine turn completes, run test verification.
         // This replaces the previous unconditional detect_test_cmd call and
         // respects the code-modifying tool guard, so Q&A turns don't trigger
-        // an unnecessary test run.
-        maybe_run_test_verification(&agent, &tx, &tools_used).await;
+        // an unnecessary test run. Only calls that actually ran count.
+        maybe_run_test_verification(&agent, &tx, &tracker.ran).await;
     })
 }
 
@@ -1261,6 +1427,53 @@ async fn dispatch_plan_decompose(
 // Orchestrate mode (blocking, for the --orchestrate one-shot path)
 // ---------------------------------------------------------------------------
 
+/// Print `--orchestrate` progress until the channel closes.
+///
+/// Must keep draining after an `Error`: dropping the receiver would make every
+/// later worker and the merge turn fail with `Cancelled`.
+async fn print_orchestrate_events<O: io::Write, E: io::Write>(
+    mut rx: mpsc::Receiver<AgentEvent>,
+    out: &mut O,
+    err: &mut E,
+) {
+    while let Some(event) = rx.recv().await {
+        match event {
+            AgentEvent::Token { text } => {
+                let _ = write!(out, "{text}");
+                let _ = out.flush();
+            }
+            AgentEvent::PlanCreated {
+                goal,
+                subtask_count,
+            } => {
+                let _ = writeln!(
+                    out,
+                    "\n[orchestrator] plan: {goal} ({subtask_count} subtasks)"
+                );
+            }
+            AgentEvent::WorkerStarted {
+                task_id,
+                agent,
+                description,
+            } => {
+                let _ = writeln!(out, "[{task_id}] starting {agent}: {description}");
+            }
+            AgentEvent::WorkerCompleted {
+                task_id,
+                agent,
+                status,
+                cost_usd,
+            } => {
+                let _ = writeln!(out, "[{task_id}] {agent}: {status} (${cost_usd:.4})");
+            }
+            AgentEvent::Error { message } => {
+                let _ = writeln!(err, "\nerror: {message}");
+            }
+            _ => {}
+        }
+    }
+}
+
 async fn run_orchestrate(
     lead_config: AgentConfig,
     prompt: &str,
@@ -1290,45 +1503,12 @@ async fn run_orchestrate(
         tracing::info!("distributed orchestrator enabled, coordinator at {coordinator_url}");
     }
 
-    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+    let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
     let printer = tokio::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            match event {
-                AgentEvent::Token { text } => {
-                    print!("{text}");
-                    use io::Write;
-                    let _ = io::stdout().flush();
-                }
-                AgentEvent::PlanCreated {
-                    goal,
-                    subtask_count,
-                } => {
-                    println!("\n[orchestrator] plan: {goal} ({subtask_count} subtasks)");
-                }
-                AgentEvent::WorkerStarted {
-                    task_id,
-                    agent,
-                    description,
-                } => {
-                    println!("[{task_id}] starting {agent}: {description}");
-                }
-                AgentEvent::WorkerCompleted {
-                    task_id,
-                    agent,
-                    status,
-                    cost_usd,
-                } => {
-                    println!("[{task_id}] {agent}: {status} (${cost_usd:.4})");
-                }
-                AgentEvent::Done { .. } => {}
-                AgentEvent::Error { message } => {
-                    eprintln!("\nerror: {message}");
-                    break;
-                }
-                _ => {}
-            }
-        }
+        let mut out = io::stdout();
+        let mut err = io::stderr();
+        print_orchestrate_events(rx, &mut out, &mut err).await;
     });
 
     match orchestrator.run(prompt, tx).await {
@@ -2488,6 +2668,30 @@ async fn main() -> Result<()> {
     run_result
 }
 
+/// Wire interactive approvals for the TUI: default policy is AskRisky
+/// (AlwaysAsk with `--step`) plus a step channel, applied to both
+/// `base_config` and the running `agent` (no respawn, history is kept).
+async fn wire_tui_approvals(
+    agent: &AgentHandle,
+    base_config: &mut AgentConfig,
+    step: bool,
+) -> tokio::sync::mpsc::Sender<hone_proto::StepAction> {
+    let (step_tx, step_rx) = tokio::sync::mpsc::channel::<hone_proto::StepAction>(1);
+    let step_rx = std::sync::Arc::new(tokio::sync::Mutex::new(step_rx));
+    let policy = if step {
+        ToolApprovalPolicy::AlwaysAsk
+    } else {
+        ToolApprovalPolicy::AskRisky {
+            always_allowed: Vec::new(),
+        }
+    };
+    base_config.approval_policy = policy.clone();
+    base_config.step_rx = Some(step_rx.clone());
+    agent.set_approval_policy(policy).await;
+    agent.set_step_channel(Some(step_rx)).await;
+    step_tx
+}
+
 /// Dispatch to the appropriate execution mode based on the parsed CLI flags.
 ///
 /// Extracted from `main` so that `mcp_manager.shutdown()` can unconditionally
@@ -2624,23 +2828,10 @@ async fn run_selected_mode(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Always wire the step-mode channel in interactive TUI mode so the
-    // approval menu can surface for risky tool calls. The default policy
-    // is AskRisky (auto-approve read-only, prompt for write/shell) which
-    // matches Claude Code's interactive UX. `--step` upgrades this to
-    // AlwaysAsk (prompt for every tool, including read-only).
-    let (step_tx, step_rx) = tokio::sync::mpsc::channel::<hone_proto::StepAction>(1);
-    let step_rx_arc = std::sync::Arc::new(tokio::sync::Mutex::new(step_rx));
+    // Wire approvals on both the config (used for future agents) and the
+    // already-running agent, which holds any resumed history.
     let mut base_config = base_config;
-    base_config.approval_policy = if cli.step {
-        ToolApprovalPolicy::AlwaysAsk
-    } else {
-        ToolApprovalPolicy::AskRisky {
-            always_allowed: Vec::new(),
-        }
-    };
-    base_config.step_rx = Some(step_rx_arc);
-    let step_tx = Some(step_tx);
+    let step_tx = Some(wire_tui_approvals(&agent, &mut base_config, cli.step).await);
 
     let result = run_tui(
         &mut terminal,
@@ -3049,11 +3240,8 @@ async fn run_tui(
                                     agent.set_budget_limit(pending_gov.budget_usd).await;
                                 }
                                 if !pending_gov.permits.is_empty() {
-                                    let mut policy = agent.approval_policy().await;
-                                    for tool in &pending_gov.permits {
-                                        policy.approve_always(tool);
-                                    }
-                                    agent.set_approval_policy(policy).await;
+                                    // Fire-and-forget: never wait on the actor from the UI loop.
+                                    agent.approve_tools(pending_gov.permits.clone()).await;
                                 }
 
                                 // Spawn the appropriate turn.
@@ -3075,18 +3263,16 @@ async fn run_tui(
                                         tracing::debug!("complexity: Simple — direct agent turn");
                                         if restore_prompt {
                                             let restore_tools = applied_tool_filter;
-                                            tokio::spawn(async move {
+                                            {
                                                 let (tx2, rx2) = mpsc::channel(256);
-                                                spawn_agent_turn(agent_clone.clone(), effective_text_clone, tx2);
-                                                let mut rx2 = rx2;
-                                                while let Some(ev) = rx2.recv().await {
-                                                    let _ = agent_tx_clone.send(ev).await;
-                                                }
-                                                agent_clone.set_system_prompt(original_prompt).await;
-                                                if restore_tools {
-                                                    agent_clone.set_tools(base_tools).await;
-                                                }
-                                            })
+                                                let inner = spawn_agent_turn(agent_clone.clone(), effective_text_clone, tx2);
+                                                spawn_inline_turn_wrapper(inner, rx2, agent_tx_clone, async move {
+                                                    agent_clone.set_system_prompt(original_prompt).await;
+                                                    if restore_tools {
+                                                        agent_clone.set_tools(base_tools).await;
+                                                    }
+                                                })
+                                            }
                                         } else {
                                             spawn_agent_turn(agent.clone(), effective_text, agent_tx.clone())
                                         }
@@ -3095,18 +3281,16 @@ async fn run_tui(
                                         tracing::debug!("complexity: Medium — self-refine turn");
                                         if restore_prompt {
                                             let restore_tools = applied_tool_filter;
-                                            tokio::spawn(async move {
+                                            {
                                                 let (tx2, rx2) = mpsc::channel(256);
-                                                spawn_medium_turn(agent_clone.clone(), effective_text_clone, tx2);
-                                                let mut rx2 = rx2;
-                                                while let Some(ev) = rx2.recv().await {
-                                                    let _ = agent_tx_clone.send(ev).await;
-                                                }
-                                                agent_clone.set_system_prompt(original_prompt).await;
-                                                if restore_tools {
-                                                    agent_clone.set_tools(base_tools).await;
-                                                }
-                                            })
+                                                let inner = spawn_medium_turn(agent_clone.clone(), effective_text_clone, tx2);
+                                                spawn_inline_turn_wrapper(inner, rx2, agent_tx_clone, async move {
+                                                    agent_clone.set_system_prompt(original_prompt).await;
+                                                    if restore_tools {
+                                                        agent_clone.set_tools(base_tools).await;
+                                                    }
+                                                })
+                                            }
                                         } else {
                                             spawn_medium_turn(agent.clone(), effective_text, agent_tx.clone())
                                         }
@@ -3115,20 +3299,16 @@ async fn run_tui(
                                         tracing::debug!("complexity: Complex — orchestrated turn");
                                         if restore_prompt {
                                             let restore_tools = applied_tool_filter;
-                                            tokio::spawn(async move {
+                                            {
                                                 let (tx2, rx2) = mpsc::channel(256);
-                                                // agent_clone.clone() passes ownership into spawn_orchestrated_turn;
-                                                // the original agent_clone is retained for set_system_prompt below.
-                                                spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2, agent_clone.clone());
-                                                let mut rx2 = rx2;
-                                                while let Some(ev) = rx2.recv().await {
-                                                    let _ = agent_tx_clone.send(ev).await;
-                                                }
-                                                agent_clone.set_system_prompt(original_prompt).await;
-                                                if restore_tools {
-                                                    agent_clone.set_tools(base_tools).await;
-                                                }
-                                            })
+                                                let inner = spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2, agent_clone.clone());
+                                                spawn_inline_turn_wrapper(inner, rx2, agent_tx_clone, async move {
+                                                    agent_clone.set_system_prompt(original_prompt).await;
+                                                    if restore_tools {
+                                                        agent_clone.set_tools(base_tools).await;
+                                                    }
+                                                })
+                                            }
                                         } else {
                                             spawn_orchestrated_turn(base_config.clone(), effective_text, agent_tx.clone(), agent.clone())
                                         }
@@ -3561,6 +3741,815 @@ mod tests {
              spawn_orchestrated_turn does not write back to AgentHandle. \
              messages in context: {messages:?}"
         );
+    }
+
+    // ---- TUI approval wiring (docs/plans/tui-approval-fix-spec.md rows 6-8) ----
+
+    /// Call 1: one tool call. Call 2+: text "done". (`MockProvider` repeats its tool
+    /// call on every request, which would loop after a denial, so it is not used here.)
+    struct OneCallThenDone {
+        tool: String,
+        n: std::sync::Mutex<usize>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for OneCallThenDone {
+        fn id(&self) -> &str {
+            "one-call"
+        }
+        fn display_name(&self) -> &str {
+            "One call"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![hone_proto::ModelInfo {
+                id: ModelId::new("mock:test"),
+                display_name: "Test".to_owned(),
+                context_length: 4096,
+                supports_tools: true,
+                supports_streaming: true,
+            }]
+        }
+        async fn complete(
+            &self,
+            _req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let i = {
+                let mut n = self.n.lock().unwrap();
+                let i = *n;
+                *n += 1;
+                i
+            };
+            let events = if i == 0 {
+                vec![
+                    hone_proto::ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
+                        id: "c1".to_owned(),
+                        name: self.tool.clone(),
+                        arguments: serde_json::json!({}),
+                    }),
+                    hone_proto::ProviderEvent::Done,
+                ]
+            } else {
+                vec![
+                    hone_proto::ProviderEvent::Token {
+                        text: "done".to_owned(),
+                    },
+                    hone_proto::ProviderEvent::Done,
+                ]
+            };
+            Ok(Box::pin(futures::stream::iter(events)))
+        }
+        fn estimate_tokens(&self, _m: &[Message]) -> u32 {
+            5
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    /// Marker-file tool; the name is deliberately not one of the code-modifying
+    /// tools that trigger post-turn test verification.
+    struct MarkerTool {
+        name: &'static str,
+        read_only: bool,
+        target: PathBuf,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_tools::Tool for MarkerTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn description(&self) -> &str {
+            "writes a marker file"
+        }
+        fn schema(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+        async fn call(
+            &self,
+            _input: hone_tools::ToolInput,
+            _ctx: &hone_tools::ToolContext,
+        ) -> Result<hone_tools::ToolOutput, hone_tools::ToolError> {
+            std::fs::write(&self.target, b"written").unwrap();
+            Ok(hone_tools::ToolOutput::new(serde_json::json!({ "ok": true })))
+        }
+        fn layer(&self) -> hone_proto::ToolLayer {
+            hone_proto::ToolLayer::Native
+        }
+        fn is_read_only(&self) -> bool {
+            self.read_only
+        }
+    }
+
+    /// An `Auto`, no-channel config exactly like `build_agent_config` produces.
+    fn tui_wiring_config(tool: MarkerTool, dir: &std::path::Path) -> AgentConfig {
+        let name = tool.name.to_owned();
+        AgentConfig {
+            provider: Arc::new(OneCallThenDone {
+                tool: name,
+                n: std::sync::Mutex::new(0),
+            }),
+            tools: ToolRegistry::builder().register(Box::new(tool)).build(),
+            sandbox: Arc::new(hone_sandbox::NullSandbox),
+            sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
+            system_prompt: "test".to_owned(),
+            model: ModelId::new("mock:test"),
+            max_tokens: None,
+            temperature: None,
+            budget_limit: None,
+            pricing: PricingEntry {
+                model: ModelId::new("mock:test"),
+                input_per_million: 0.0,
+                output_per_million: 0.0,
+                cache_read_per_million: None,
+                cache_creation_per_million: None,
+            },
+            working_dir: dir.to_path_buf(),
+            memory_store: None,
+            retry_config: hone_core::RetryConfig::default(),
+            index: None,
+            inject_context: false,
+            skeleton_strategy: Default::default(),
+            egress_log: None,
+            approval_policy: ToolApprovalPolicy::Auto,
+            step_rx: None,
+            hooks: None,
+            skills: None,
+            embedder: None,
+            mode: AgentMode::Build,
+            policy: None,
+        }
+    }
+
+    /// Run a simple turn through `spawn_agent_turn` (what the TUI uses), answering
+    /// each `ToolCallPaused` with the next reply. Returns all events.
+    async fn drive_simple_turn(
+        agent: &AgentHandle,
+        step_tx: &mpsc::Sender<hone_proto::StepAction>,
+        mut replies: Vec<hone_proto::StepAction>,
+    ) -> Vec<AgentEvent> {
+        replies.reverse();
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _task = spawn_agent_turn(agent.clone(), "go".to_owned(), tx);
+        let mut events = Vec::new();
+        let collect = async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    let reply = replies
+                        .pop()
+                        .unwrap_or_else(|| panic!("unexpected extra pause: {events:?}"));
+                    step_tx.send(reply).await.unwrap();
+                }
+                let terminal = matches!(e, AgentEvent::Done { .. } | AgentEvent::Error { .. });
+                events.push(e);
+                if terminal {
+                    break;
+                }
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), collect)
+            .await
+            .expect("turn hung: no pause where one was expected");
+        events
+    }
+
+    fn paused_count(events: &[AgentEvent]) -> usize {
+        events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ToolCallPaused { .. }))
+            .count()
+    }
+
+    // Spec row 6.
+    #[tokio::test]
+    async fn test_wire_tui_approvals_when_not_step_should_set_askrisky_everywhere_and_pause_simple_turn()
+     {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+
+        let step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        assert!(matches!(
+            base_config.approval_policy,
+            ToolApprovalPolicy::AskRisky { ref always_allowed } if always_allowed.is_empty()
+        ));
+        assert!(base_config.step_rx.is_some(), "base_config must carry the channel so clones stay consistent with the running agent");
+        assert!(matches!(
+            agent.approval_policy().await,
+            ToolApprovalPolicy::AskRisky { ref always_allowed } if always_allowed.is_empty()
+        ));
+
+        let events = drive_simple_turn(
+            &agent,
+            &step_tx,
+            vec![hone_proto::StepAction::Deny("nope".to_owned())],
+        )
+        .await;
+
+        assert_eq!(paused_count(&events), 1, "{events:?}");
+        assert!(!target.exists(), "denied write must not happen");
+    }
+
+    // Spec row 7.
+    #[tokio::test]
+    async fn test_wire_tui_approvals_when_step_should_set_alwaysask_and_pause_on_read_only_tool() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_read",
+            read_only: true,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+
+        let step_tx = wire_tui_approvals(&agent, &mut base_config, true).await;
+
+        assert!(matches!(
+            base_config.approval_policy,
+            ToolApprovalPolicy::AlwaysAsk
+        ));
+        assert!(matches!(
+            agent.approval_policy().await,
+            ToolApprovalPolicy::AlwaysAsk
+        ));
+
+        let events = drive_simple_turn(
+            &agent,
+            &step_tx,
+            vec![hone_proto::StepAction::Deny("nope".to_owned())],
+        )
+        .await;
+
+        assert_eq!(paused_count(&events), 1, "read-only tool must pause under --step: {events:?}");
+        assert!(!target.exists());
+    }
+
+    // Spec row 8.
+    #[tokio::test]
+    async fn test_wire_tui_approvals_when_history_loaded_should_keep_history_in_running_agent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: tmp.path().join("out.txt"),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+        agent
+            .load_history(vec![
+                Message::user("remember the blue heron"),
+                Message::assistant("noted"),
+            ])
+            .await;
+
+        let _step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let text: String = agent
+            .get_messages()
+            .await
+            .iter()
+            .map(|m| m.content.as_text())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("remember the blue heron") && text.contains("noted"),
+            "resumed history must survive wiring (no respawn); got: {text:?}"
+        );
+    }
+
+    // ---- Review round 1 (spec section 6): R1, R2c, R6 --------------------------------------
+
+    /// Provider that replays `script[n]` on the n-th `complete()` (the last entry repeats).
+    struct SeqProvider {
+        script: Vec<Vec<hone_proto::ProviderEvent>>,
+        n: std::sync::Mutex<usize>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for SeqProvider {
+        fn id(&self) -> &str {
+            "seq"
+        }
+        fn display_name(&self) -> &str {
+            "Seq"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![hone_proto::ModelInfo {
+                id: ModelId::new("mock:test"),
+                display_name: "Test".to_owned(),
+                context_length: 4096,
+                supports_tools: true,
+                supports_streaming: true,
+            }]
+        }
+        async fn complete(
+            &self,
+            _req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let i = {
+                let mut n = self.n.lock().unwrap();
+                let i = (*n).min(self.script.len() - 1);
+                *n += 1;
+                i
+            };
+            Ok(Box::pin(futures::stream::iter(self.script[i].clone())))
+        }
+        fn estimate_tokens(&self, _m: &[Message]) -> u32 {
+            5
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    fn usage10() -> hone_proto::ProviderEvent {
+        hone_proto::ProviderEvent::Usage(hone_proto::TokenUsage {
+            input: 10,
+            output: 0,
+            cache_read: 0,
+            cache_creation: 0,
+        })
+    }
+
+    fn text_turn(t: &str) -> Vec<hone_proto::ProviderEvent> {
+        vec![
+            hone_proto::ProviderEvent::Token { text: t.to_owned() },
+            usage10(),
+            hone_proto::ProviderEvent::Done,
+        ]
+    }
+
+    /// Wait (bounded) for the first `ToolCallPaused` on `rx`.
+    async fn wait_for_pause(rx: &mut mpsc::Receiver<AgentEvent>) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    return;
+                }
+            }
+            panic!("stream ended before a pause");
+        })
+        .await
+        .expect("never paused");
+    }
+
+    /// A fresh turn on `agent` must finish (not wedge on a dead prompt).
+    async fn assert_agent_still_usable(agent: &AgentHandle) {
+        let (tx, _rx) = mpsc::channel::<AgentEvent>(256);
+        let r = tokio::time::timeout(Duration::from_secs(10), agent.run_turn("again", tx))
+            .await
+            .expect("agent actor is wedged: a second turn never completed");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    // R1: medium turns keep forwarding past the first Done and send exactly one final Done.
+    #[tokio::test]
+    async fn test_r1_medium_turn_should_forward_refine_pause_and_send_single_summed_done() {
+        use hone_proto::ProviderEvent;
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        // 1 USD per input token so cost_usd mirrors input tokens.
+        base_config.pricing.input_per_million = 1_000_000.0;
+        base_config.provider = Arc::new(SeqProvider {
+            script: vec![
+                text_turn("first answer"),
+                text_turn("the answer needs work"), // critique without APPROVED
+                vec![
+                    ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
+                        id: "c1".to_owned(),
+                        name: "mock_write".to_owned(),
+                        arguments: serde_json::json!({}),
+                    }),
+                    usage10(),
+                    ProviderEvent::Done,
+                ],
+                text_turn("refined"),
+            ],
+            n: std::sync::Mutex::new(0),
+        });
+        let agent = AgentHandle::spawn(base_config.clone());
+        let mut base_config = base_config;
+        let step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _task = spawn_medium_turn(agent.clone(), "go".to_owned(), tx);
+
+        let mut events = Vec::new();
+        let collect = async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    step_tx.send(hone_proto::StepAction::Proceed).await.unwrap();
+                }
+                events.push(e);
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(15), collect)
+            .await
+            .expect("medium turn wedged: the refine-round pause never reached the UI");
+
+        assert_eq!(paused_count(&events), 1, "{events:?}");
+        assert!(target.exists(), "approved refine write must run");
+        let dones: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::Done { usage, cost_usd, .. } => Some((*usage, *cost_usd)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dones.len(), 1, "exactly one terminal Done: {events:?}");
+        assert!(
+            matches!(events.last(), Some(AgentEvent::Done { .. })),
+            "Done must be last"
+        );
+        let (usage, cost) = dones[0];
+        assert_eq!(usage.input, 40, "usage summed over all 4 model calls");
+        assert!((cost - 40.0).abs() < 0.01, "cost summed over rounds: {cost}");
+    }
+
+    // R2c: Esc (abort of the forwarder) while paused must not wedge the actor.
+    #[tokio::test]
+    async fn test_r2c_aborting_spawn_agent_turn_while_paused_should_leave_agent_usable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+        let _step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let task = spawn_agent_turn(agent.clone(), "go".to_owned(), tx);
+        wait_for_pause(&mut rx).await;
+        task.abort();
+
+        assert_agent_still_usable(&agent).await;
+        assert!(!target.exists(), "the cancelled write must never run");
+    }
+
+    // R2c: the UI side going away (outer receiver dropped) must also release the actor.
+    #[tokio::test]
+    async fn test_r2c_closed_outer_channel_should_stop_spawn_agent_turn_forwarding_and_free_actor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+        let _step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let task = spawn_agent_turn(agent.clone(), "go".to_owned(), tx);
+        wait_for_pause(&mut rx).await;
+        drop(rx);
+
+        tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .expect("forwarder must stop once the outer channel is closed")
+            .ok();
+        assert_agent_still_usable(&agent).await;
+        assert!(!target.exists());
+    }
+
+    #[tokio::test]
+    async fn test_r2c_closed_outer_channel_should_stop_spawn_medium_turn_forwarding_and_free_actor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+        let _step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let task = spawn_medium_turn(agent.clone(), "go".to_owned(), tx);
+        wait_for_pause(&mut rx).await;
+        drop(rx);
+
+        tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .expect("forwarder must stop once the outer channel is closed")
+            .ok();
+        assert_agent_still_usable(&agent).await;
+        assert!(!target.exists());
+    }
+
+    // R2c, inline `@agent` path. Seam (free fn in main.rs, replaces the inline closures in
+    // `run_tui`):
+    //   fn spawn_inline_turn_wrapper<F>(
+    //       inner: tokio::task::JoinHandle<()>,
+    //       inner_rx: mpsc::Receiver<AgentEvent>,
+    //       outer_tx: mpsc::Sender<AgentEvent>,
+    //       after: F,
+    //   ) -> tokio::task::JoinHandle<()>
+    //   where F: std::future::Future<Output = ()> + Send + 'static
+    // It forwards `inner_rx` to `outer_tx`, runs `after` when the inner stream ends normally,
+    // and aborts `inner` if the wrapper itself is aborted or dropped (drop guard).
+    #[tokio::test]
+    async fn test_r2c_aborting_inline_wrapper_while_paused_should_abort_inner_and_free_actor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+        let _step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx2, rx2) = mpsc::channel::<AgentEvent>(256);
+        let inner = spawn_agent_turn(agent.clone(), "go".to_owned(), tx2);
+        let inner_abort = inner.abort_handle();
+        let (outer_tx, mut outer_rx) = mpsc::channel::<AgentEvent>(256);
+        let wrapper = spawn_inline_turn_wrapper(inner, rx2, outer_tx, async {});
+        wait_for_pause(&mut outer_rx).await;
+
+        wrapper.abort();
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !inner_abort.is_finished() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("aborting the wrapper must abort the inner turn task");
+        assert_agent_still_usable(&agent).await;
+        assert!(!target.exists());
+    }
+
+    #[tokio::test]
+    async fn test_r2c_inline_wrapper_should_run_after_hook_when_turn_ends_normally() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tool = MarkerTool {
+            name: "mock_read",
+            read_only: true,
+            target: tmp.path().join("unused.txt"),
+        };
+        let base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config);
+        let (tx2, rx2) = mpsc::channel::<AgentEvent>(256);
+        // Auto policy: the read-only tool just runs, the turn ends.
+        let inner = spawn_agent_turn(agent.clone(), "go".to_owned(), tx2);
+        let (outer_tx, mut outer_rx) = mpsc::channel::<AgentEvent>(256);
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
+        let wrapper = spawn_inline_turn_wrapper(inner, rx2, outer_tx, async move {
+            let _ = done_tx.send(());
+        });
+
+        let mut saw_done = false;
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while let Some(e) = outer_rx.recv().await {
+                saw_done |= matches!(e, AgentEvent::Done { .. });
+            }
+        })
+        .await
+        .expect("events must be forwarded to completion");
+        tokio::time::timeout(Duration::from_secs(5), done_rx)
+            .await
+            .expect("`after` must run on normal completion")
+            .unwrap();
+        let _ = wrapper.await;
+        assert!(saw_done);
+    }
+
+    // R10. Seam (free fn in main.rs, extracted from the `--orchestrate` printer task):
+    //   async fn print_orchestrate_events<O: std::io::Write, E: std::io::Write>(
+    //       rx: mpsc::Receiver<AgentEvent>, out: &mut O, err: &mut E)
+    // It prints Tokens / plan / worker lines to `out`, `error: <msg>` to `err`, and keeps
+    // draining until `recv()` returns `None`. It must NOT stop at an `Error`: dropping the
+    // receiver makes every later worker and the merge fail with `Cancelled`.
+    #[tokio::test]
+    async fn test_r10_orchestrate_printer_should_keep_draining_after_an_error_event() {
+        let (tx, rx) = mpsc::channel::<AgentEvent>(8);
+        let mut out: Vec<u8> = Vec::new();
+        let mut err: Vec<u8> = Vec::new();
+
+        let producer = async move {
+            tx.send(AgentEvent::Token { text: "before ".to_owned() })
+                .await
+                .unwrap();
+            tx.send(AgentEvent::Error { message: "worker 1 failed".to_owned() })
+                .await
+                .unwrap();
+            // The orchestrator is still running: later sends must still be accepted.
+            let later = tx
+                .send(AgentEvent::Token { text: "after-error".to_owned() })
+                .await;
+            assert!(later.is_ok(), "printer dropped the receiver at the first Error");
+            tx.send(AgentEvent::WorkerCompleted {
+                task_id: "t2".to_owned(),
+                agent: "coder".to_owned(),
+                status: "ok".to_owned(),
+                cost_usd: 0.0,
+            })
+            .await
+            .unwrap();
+        };
+        tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(producer, print_orchestrate_events(rx, &mut out, &mut err));
+        })
+        .await
+        .expect("printer hung or producer blocked");
+
+        let out = String::from_utf8(out).unwrap();
+        let err = String::from_utf8(err).unwrap();
+        assert!(out.contains("before "), "{out}");
+        assert!(out.contains("after-error"), "events after the Error were dropped: {out}");
+        assert!(out.contains("t2"), "{out}");
+        assert!(err.contains("worker 1 failed"), "{err}");
+    }
+
+    // R11: critique text and "APPROVED" never reach the user; a refine round's text follows
+    // exactly one separator; tool/pause events of every round still arrive.
+    const REVISED_SEP: &str = "\n\n---\n\n*Revised answer:*\n\n";
+
+    async fn collect_medium(
+        script: Vec<Vec<hone_proto::ProviderEvent>>,
+    ) -> (Vec<AgentEvent>, std::path::PathBuf, tempfile::TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        base_config.provider = Arc::new(SeqProvider {
+            script,
+            n: std::sync::Mutex::new(0),
+        });
+        let agent = AgentHandle::spawn(base_config.clone());
+        let mut base_config = base_config;
+        let step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _task = spawn_medium_turn(agent.clone(), "go".to_owned(), tx);
+        let mut events = Vec::new();
+        let collect = async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    step_tx.send(hone_proto::StepAction::Proceed).await.unwrap();
+                }
+                events.push(e);
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(15), collect)
+            .await
+            .expect("medium turn wedged");
+        (events, target, tmp)
+    }
+
+    fn shown_text(events: &[AgentEvent]) -> String {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::Token { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_r11_medium_turn_should_hide_critique_and_separate_refined_answer() {
+        use hone_proto::ProviderEvent;
+        let (events, target, _tmp) = collect_medium(vec![
+            text_turn("first answer"),
+            text_turn("the answer needs work"), // critique, not APPROVED
+            vec![
+                ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
+                    id: "c1".to_owned(),
+                    name: "mock_write".to_owned(),
+                    arguments: serde_json::json!({}),
+                }),
+                usage10(),
+                ProviderEvent::Done,
+            ],
+            text_turn("refined"),
+        ])
+        .await;
+
+        let shown = shown_text(&events);
+        assert!(!shown.contains("needs work"), "critique leaked: {shown:?}");
+        assert!(!shown.contains("APPROVED"), "{shown:?}");
+        assert_eq!(
+            shown,
+            format!("first answer{REVISED_SEP}refined"),
+            "answer, exactly one separator, then the refined text"
+        );
+        // Tool/pause events of the refine round still arrive and the write ran.
+        assert_eq!(paused_count(&events), 1, "{events:?}");
+        assert!(events.iter().any(|e| matches!(e, AgentEvent::ToolCallEnd { .. })));
+        assert!(target.exists());
+    }
+
+    #[tokio::test]
+    async fn test_r11_medium_turn_when_critique_approves_should_show_only_the_answer() {
+        let (events, _target, _tmp) = collect_medium(vec![
+            text_turn("the answer"),
+            text_turn("APPROVED"),
+        ])
+        .await;
+
+        let shown = shown_text(&events);
+        assert_eq!(shown, "the answer", "no critique, no APPROVED, no separator");
+    }
+
+    // R6. Seam (pure fn in main.rs):
+    //   fn code_modifying_tools_that_ran(events: &[AgentEvent]) -> Vec<String>
+    // Names (in order of completion) of write_file/edit_file/multi_edit calls whose
+    // `ToolCallEnd` is a non-error result other than `{"skipped": true}`, matched to their
+    // `ToolCallStart` by id. `maybe_run_test_verification` must be fed from this, not from
+    // `ToolCallStart`.
+    fn start(id: &str, name: &str) -> AgentEvent {
+        AgentEvent::ToolCallStart {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            args: serde_json::json!({}),
+        }
+    }
+
+    fn end(id: &str, result: serde_json::Value, is_error: bool) -> AgentEvent {
+        AgentEvent::ToolCallEnd {
+            id: id.to_owned(),
+            result,
+            is_error,
+            duration_ms: 0,
+            cache_hit: false,
+        }
+    }
+
+    #[test]
+    fn test_r6_successful_code_modifying_call_should_count() {
+        let events = vec![
+            start("a", "write_file"),
+            end("a", serde_json::json!({"ok": true}), false),
+        ];
+        assert_eq!(code_modifying_tools_that_ran(&events), vec!["write_file"]);
+    }
+
+    #[test]
+    fn test_r6_denied_error_result_should_not_count() {
+        let events = vec![
+            start("a", "write_file"),
+            end(
+                "a",
+                serde_json::json!({"error": "denied by user", "reason": "no"}),
+                true,
+            ),
+        ];
+        assert!(code_modifying_tools_that_ran(&events).is_empty());
+    }
+
+    #[test]
+    fn test_r6_skipped_result_should_not_count() {
+        let events = vec![
+            start("a", "edit_file"),
+            end("a", serde_json::json!({"skipped": true}), false),
+        ];
+        assert!(code_modifying_tools_that_ran(&events).is_empty());
+    }
+
+    #[test]
+    fn test_r6_calls_are_matched_by_id_and_only_code_modifying_tools_count() {
+        let events = vec![
+            start("r", "read_file"),
+            start("w1", "write_file"),
+            start("w2", "multi_edit"),
+            end("r", serde_json::json!({"ok": true}), false),
+            end("w2", serde_json::json!({"skipped": true}), false),
+            end("w1", serde_json::json!({"ok": true}), false),
+            end("ghost", serde_json::json!({"ok": true}), false), // no matching start
+        ];
+        assert_eq!(code_modifying_tools_that_ran(&events), vec!["write_file"]);
     }
 }
 

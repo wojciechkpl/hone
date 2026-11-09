@@ -85,7 +85,7 @@ pub fn render_debugger(app: &App, frame: &mut Frame, area: Rect) {
     // Footer with keybinding hints.
     let footer_style = Style::default().fg(theme.text_muted);
     lines.push(Line::from(Span::styled(
-        "  Space/Enter proceed  s skip (inject stub)  Esc skip",
+        "  y/Enter proceed  s skip (inject stub)  Esc skip",
         footer_style,
     )));
 
@@ -111,9 +111,9 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    /// Space sends Proceed and closes the debugger.
+    /// Space no longer approves (typing a space must not answer the menu).
     #[tokio::test]
-    async fn debugger_space_sends_proceed_and_closes() {
+    async fn debugger_space_does_not_send_proceed() {
         let mut app = App::new();
         app.debugger_open = true;
 
@@ -122,9 +122,8 @@ mod tests {
 
         app.handle_key_debugger(make_key(KeyCode::Char(' ')));
 
-        assert!(!app.debugger_open, "debugger should be closed after Space");
-        let action = rx.try_recv().expect("should have sent a StepAction");
-        assert_eq!(action, StepAction::Proceed);
+        assert!(app.debugger_open, "Space must leave the menu open");
+        assert!(rx.try_recv().is_err(), "Space must not answer the menu");
     }
 
     /// Enter also sends Proceed and closes the debugger.

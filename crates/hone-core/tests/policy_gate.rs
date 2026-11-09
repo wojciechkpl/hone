@@ -539,13 +539,84 @@ fn step_channel(
     keep_open: bool,
 ) -> (StepRx, Option<mpsc::Sender<StepAction>>) {
     let (tx, rx) = mpsc::channel(16);
-    for a in actions {
-        tx.try_send(a).unwrap();
+    if keep_open || !actions.is_empty() {
+        install_feeder(&tx, actions, !keep_open);
     }
     (
         Some(Arc::new(tokio::sync::Mutex::new(rx))),
         if keep_open { Some(tx) } else { None },
     )
+}
+
+// The agent drops answers buffered before a prompt (stale-answer guard), so
+// scripted answers are delivered when the matching `ToolCallPaused` appears.
+thread_local! {
+    static FEEDER: std::cell::RefCell<Option<Feeder>> = const { std::cell::RefCell::new(None) };
+}
+
+struct Feeder {
+    queue: std::collections::VecDeque<StepAction>,
+    /// `Some` = held strongly (dropped after the last answer to close the channel);
+    /// otherwise only a weak handle, so the test's own sender controls closing.
+    strong: Option<mpsc::Sender<StepAction>>,
+    weak: mpsc::WeakSender<StepAction>,
+}
+
+fn install_feeder(tx: &mpsc::Sender<StepAction>, actions: Vec<StepAction>, hold: bool) {
+    FEEDER.with(|f| {
+        *f.borrow_mut() = Some(Feeder {
+            queue: actions.into(),
+            strong: hold.then(|| tx.clone()),
+            weak: tx.downgrade(),
+        });
+    });
+}
+
+fn feed_on_prompt(e: &AgentEvent) {
+    if !matches!(e, AgentEvent::ToolCallPaused { .. }) {
+        return;
+    }
+    FEEDER.with(|f| {
+        let mut f = f.borrow_mut();
+        let Some(fd) = f.as_mut() else { return };
+        if let Some(a) = fd.queue.pop_front() {
+            if let Some(t) = fd.weak.upgrade() {
+                let _ = t.try_send(a);
+            }
+        }
+        if fd.queue.is_empty() && fd.strong.is_some() {
+            fd.strong = None;
+        }
+    });
+}
+
+/// Drive `agent.run_turn`, answering prompts from the feeder; bounded by a timeout.
+async fn run_turn_feeding(agent: &mut Agent) -> Vec<AgentEvent> {
+    let (tx, mut rx) = mpsc::channel(256);
+    let mut events = Vec::new();
+    {
+        let turn = agent.run_turn("go", tx);
+        tokio::pin!(turn);
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                tokio::select! {
+                    biased;
+                    Some(e) = rx.recv() => {
+                        feed_on_prompt(&e);
+                        events.push(e);
+                    }
+                    r = &mut turn => break r,
+                }
+            }
+        })
+        .await
+        .expect("turn hung (unexpected approval prompt?)")
+        .expect("turn should succeed");
+    }
+    while let Ok(e) = rx.try_recv() {
+        events.push(e);
+    }
+    events
 }
 
 struct Outcome {
@@ -558,15 +629,7 @@ struct Outcome {
 /// the open step channel forever).
 async fn run(cfg: AgentConfig) -> Outcome {
     let mut agent = Agent::new(cfg);
-    let (tx, mut rx) = mpsc::channel(256);
-    tokio::time::timeout(Duration::from_secs(10), agent.run_turn("go", tx))
-        .await
-        .expect("turn hung (unexpected approval prompt?)")
-        .expect("turn should succeed");
-    let mut events = Vec::new();
-    while let Ok(e) = rx.try_recv() {
-        events.push(e);
-    }
+    let events = run_turn_feeding(&mut agent).await;
     let transcript = agent
         .messages()
         .iter()

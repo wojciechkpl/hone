@@ -166,7 +166,7 @@ flowchart LR
 | Hooks | `hone-core/src/hooks.rs` | `UserPromptSubmit` and `PreToolUse` hook points exist; no binary loads hooks yet |
 | Permission gate | `hone-tools/src/policy_gate.rs` | One `decide` shared by the agent, `honed` and `hone-mcp-server` |
 | Read-before-edit | `hone-core/src/agent.rs` | An edit to a file the model hasn't read this turn gets a `read_file` first |
-| Approval policy | `hone-proto/src/step_action.rs` | `Auto` for headless runs. The TUI sets `AskRisky` (or `AlwaysAsk` with `--step`), but today that only reaches orchestrated turns: the main TUI agent is built with `Auto` and no approval channel ([known bug](permissions-and-sandbox.md#known-issue-tui)) |
+| Approval policy | `hone-proto/src/step_action.rs` | `Auto` for headless runs. The TUI sets `AskRisky` (or `AlwaysAsk` with `--step`) and an approval channel on the running session agent (`wire_tui_approvals` in `bins/hone/src/main.rs`). A closed or missing channel refuses the call; a closed event stream cancels the turn. `AgentMode::AutoApprove` skips this pause, never the permission policy. Orchestrator lead and worker agents have no tools, so they never pause |
 | Shell checks, sandbox | `hone-tools/src/shell/` | See [Permissions and sandbox](permissions-and-sandbox.md) |
 | Injection scan | `hone-core/src/injection_detector.rs` | Flagged results are prefixed with a warning telling the model to treat them as data |
 | Egress log | `hone-core/src/egress_log.rs` | JSONL at `.hone/audit.jsonl`; read with `hone trace` |

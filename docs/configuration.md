@@ -250,9 +250,7 @@ flowchart LR
 
 **Asks.**
 
-- Interactive runs pause and prompt. **In the TUI that currently happens only on
-  orchestrated turns**; on simple and medium turns (most messages) an `ask` is refused
-  ([known bug](permissions-and-sandbox.md#known-issue-tui), fix planned). Approving "always" on a rule with a
+- Interactive runs (the TUI) pause and prompt. Approving "always" on a rule with a
   wildcard (any `*`, `?`, `[` or `{`, e.g. `*.example`, `{workdir}/**`, `git push*`)
   approves only that host, path or command, so approving one doesn't approve the others.
   Approving "always" on a host rule without a wildcard, or on a single-pattern path rule
@@ -762,7 +760,7 @@ hone [OPTIONS] [PROMPT] [COMMAND]
 | `--audit` | Write the egress audit log to `.hone/audit.jsonl` |
 | `--no-inject`, `--skeleton-strategy <S>` | Turn off context injection, or choose the skeleton strategy |
 | `--no-clarify` | Don't print clarifying questions for ambiguous one-shot prompts |
-| `--step` | TUI: ask before every tool call. Today this only reaches orchestrated turns ([known bug](permissions-and-sandbox.md#known-issue-tui)) |
+| `--step` | TUI: ask before every tool call, including read-only ones. Not covered: the read-before-edit guard's own `read_file` and the automatic test run after an edit |
 | `--vim` | TUI: vim-style keybindings |
 | `--agent <NAME>` | Parsed but not applied yet; use `@agent-name` in the TUI |
 
