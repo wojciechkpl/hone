@@ -137,6 +137,20 @@ impl Default for ServerConfig {
     }
 }
 
+/// The `[provider]` table `hone configure` writes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct WizardProviderConfig {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+}
+
 // ── Config ────────────────────────────────────────────────────────────────────
 
 /// Top-level Hone configuration.
@@ -151,9 +165,10 @@ pub struct Config {
     #[serde(default)]
     pub default_model: Option<ModelId>,
 
-    /// Sandbox policy settings.
+    /// Sandbox policy settings. Parsed but not applied (see `resolve`); an
+    /// `Option` so a file that restates the defaults still gets the warning.
     #[serde(default)]
-    pub sandbox: SandboxConfig,
+    pub sandbox: Option<SandboxConfig>,
 
     /// Model routing rules (ordered; first match wins).
     #[serde(default)]
@@ -163,9 +178,13 @@ pub struct Config {
     #[serde(default)]
     pub budget: Option<BudgetConfig>,
 
-    /// Daemon/server settings.
+    /// Daemon/server settings. Parsed but not applied (see `resolve`).
     #[serde(default)]
-    pub server: ServerConfig,
+    pub server: Option<ServerConfig>,
+
+    /// The `[provider]` table written by `hone configure`.
+    #[serde(default)]
+    pub provider: Option<WizardProviderConfig>,
 }
 
 impl Config {

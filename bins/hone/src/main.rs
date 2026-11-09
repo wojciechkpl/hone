@@ -7,6 +7,7 @@ mod policy_load;
 mod report;
 mod reports_cmd;
 mod session;
+mod settings;
 mod spec_cmd;
 mod system_prompt;
 mod tools;
@@ -30,7 +31,8 @@ use crossterm::{
 };
 use futures::StreamExt;
 use hone_cache::{SqliteBackend, ToolResultCache};
-use hone_config::{Config, HoneMd, McpConfig};
+use hone_config::resolve::{Effective, ModelChoice, ModelSource};
+use hone_config::{HoneMd, McpConfig};
 use hone_core::{
     AdaptiveClassifier, AgentConfig, AgentEnsemble, AgentHandle, AgentMode, AgentRegistry,
     ClarificationDetector, ComplexityClassifier, ComplexityTier, Orchestrator, OutcomeRecord,
@@ -455,35 +457,117 @@ async fn binary_on_path(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProvider {
+fn anthropic_provider(eff: &Effective, key: String) -> AnthropicProvider {
+    match &eff.anthropic.base_url {
+        Some(url) => AnthropicProvider::with_base_url(key, url.clone()),
+        None => AnthropicProvider::new(key),
+    }
+}
+
+fn openai_provider(eff: &Effective, key: String) -> OpenAiProvider {
+    match &eff.openai.base_url {
+        Some(url) => OpenAiProvider::with_base_url(key, url.clone()),
+        None => OpenAiProvider::new(key),
+    }
+}
+
+fn ollama_base_url(eff: &Effective) -> String {
+    eff.ollama
+        .base_url
+        .as_deref()
+        .unwrap_or("http://localhost:11434")
+        .trim_end_matches('/')
+        .to_owned()
+}
+
+/// Build the provider an explicit model choice names (all five prefixes).
+///
+/// A choice that cannot be built (no key) is an error naming where the choice
+/// came from and how to supply the key; it never falls back to detection.
+fn build_explicit_provider(
+    choice: &ModelChoice,
+    eff: &Effective,
+) -> Result<DetectedProvider, String> {
+    let m = choice.model.as_str();
+    let source = match &choice.source {
+        ModelSource::Cli => "--model".to_owned(),
+        ModelSource::DefaultModel { path } => format!("default_model in {}", path.display()),
+        ModelSource::Wizard { path } => format!("[provider] in {}", path.display()),
+    };
+    let missing_key = |settings: &hone_config::resolve::ProviderSettings| {
+        let var = settings.api_key_env.as_deref().unwrap_or("the API key variable");
+        format!(
+            "model '{m}' (from {source}) needs an API key: set {var} \
+             (or run `hone configure`)"
+        )
+    };
+    let detected = |provider: Arc<dyn ModelProvider>, supports_tools: bool| DetectedProvider {
+        provider,
+        model_id: choice.model.clone(),
+        supports_tools,
+    };
+
+    if m.starts_with("ollama:") {
+        tracing::info!("explicit ollama: model — using the Ollama provider directly");
+        Ok(detected(
+            Arc::new(OllamaProvider::new(ollama_base_url(eff))),
+            true,
+        ))
+    } else if m.starts_with("anthropic:") {
+        let key = eff
+            .anthropic
+            .api_key
+            .clone()
+            .ok_or_else(|| missing_key(&eff.anthropic))?;
+        Ok(detected(Arc::new(anthropic_provider(eff, key)), true))
+    } else if m.starts_with("openai:") {
+        let key = eff
+            .openai
+            .api_key
+            .clone()
+            .ok_or_else(|| missing_key(&eff.openai))?;
+        Ok(detected(Arc::new(openai_provider(eff, key)), true))
+    } else if m.starts_with("claude-cli:") {
+        Ok(detected(Arc::new(ClaudeCliProvider::new()), false))
+    } else if m.starts_with("gemini-cli:") {
+        Ok(detected(Arc::new(GeminiCliProvider::new()), false))
+    } else {
+        Err(format!("invalid model ID '{m}' (from {source})"))
+    }
+}
+
+/// The API provider `hone eval` / `hone spec` use: Anthropic, else OpenAI, from
+/// the resolved settings.
+fn api_provider_from_settings(eff: &Effective, command: &str) -> Result<Arc<dyn ModelProvider>> {
+    if let Some(key) = eff.anthropic.api_key.clone() {
+        Ok(Arc::new(anthropic_provider(eff, key)))
+    } else if let Some(key) = eff.openai.api_key.clone() {
+        Ok(Arc::new(openai_provider(eff, key)))
+    } else {
+        anyhow::bail!(
+            "{command} requires a provider: set {} or {}",
+            eff.anthropic.api_key_env.as_deref().unwrap_or("ANTHROPIC_API_KEY"),
+            eff.openai.api_key_env.as_deref().unwrap_or("OPENAI_API_KEY"),
+        )
+    }
+}
+
+async fn detect_provider(eff: &Effective) -> DetectedProvider {
     // Prefer direct Anthropic API — supports tool calling.
-    // Check env var first, then wizard config as fallback.
-    if let Some(api_key) = std::env::var("ANTHROPIC_API_KEY")
-        .ok()
-        .or_else(|| wizard_cfg.anthropic_api_key.clone())
-    {
+    if let Some(api_key) = eff.anthropic.api_key.clone() {
+        let var = eff.anthropic.api_key_env.as_deref().unwrap_or("ANTHROPIC_API_KEY");
         if api_key.trim().is_empty() {
             eprintln!(
-                "{} ANTHROPIC_API_KEY is set but empty. Skipping Anthropic provider.",
+                "{} {var} is set but empty. Skipping Anthropic provider.",
                 warn_style("Warning:")
             );
-        } else if !api_key.starts_with("sk-ant-") {
-            eprintln!(
-                "{} ANTHROPIC_API_KEY doesn't start with 'sk-ant-'. Is this correct?",
-                warn_style("Warning:")
-            );
-            tracing::info!(
-                provider = "anthropic",
-                api = "http",
-                tools = true,
-                "provider detected (non-standard key format)"
-            );
-            return DetectedProvider {
-                provider: Arc::new(AnthropicProvider::new(api_key)),
-                model_id: ModelId::new("anthropic:claude-sonnet-4-5"),
-                supports_tools: true,
-            };
         } else {
+            if !api_key.starts_with("sk-ant-") {
+                eprintln!(
+                    "{} {var} doesn't start with 'sk-ant-'. Is this correct?",
+                    warn_style("Warning:")
+                );
+            }
             tracing::info!(
                 provider = "anthropic",
                 api = "http",
@@ -491,47 +575,26 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
                 "provider detected"
             );
             return DetectedProvider {
-                provider: Arc::new(AnthropicProvider::new(api_key)),
-                model_id: ModelId::new("anthropic:claude-sonnet-4-5"),
+                provider: Arc::new(anthropic_provider(eff, api_key)),
+                model_id: ModelId::new(format!("anthropic:{}", eff.anthropic.default_model)),
                 supports_tools: true,
             };
         }
     }
 
     // OpenAI API (or any OpenAI-compatible endpoint) — supports tool calling.
-    // Set HONE_OPENAI_BASE_URL to point at DeepSeek, Qwen, Kimi, OpenRouter, etc.
-    // Set HONE_OPENAI_MODEL to override the default model name for that endpoint.
-    if let Some(api_key) = std::env::var("OPENAI_API_KEY")
-        .ok()
-        .or_else(|| wizard_cfg.openai_api_key.clone())
-    {
-        let provider = if let Some(base_url) = std::env::var("HONE_OPENAI_BASE_URL")
-            .ok()
-            .or_else(|| wizard_cfg.openai_base_url.clone())
-        {
-            tracing::info!(
-                provider = "openai-compat",
-                base_url = %base_url,
-                tools = true,
-                "provider detected (custom endpoint)"
-            );
-            OpenAiProvider::with_base_url(api_key, base_url)
-        } else {
-            tracing::info!(
-                provider = "openai",
-                api = "http",
-                tools = true,
-                "provider detected"
-            );
-            OpenAiProvider::new(api_key)
-        };
-        let model_name = std::env::var("HONE_OPENAI_MODEL")
-            .ok()
-            .or_else(|| wizard_cfg.openai_model.clone())
-            .unwrap_or_else(|| "gpt-4o".into());
+    // Set HONE_OPENAI_BASE_URL (or [providers.openai].base_url in the user
+    // config) to point at DeepSeek, Qwen, Kimi, OpenRouter, etc.
+    if let Some(api_key) = eff.openai.api_key.clone() {
+        tracing::info!(
+            provider = "openai",
+            base_url = ?eff.openai.base_url,
+            tools = true,
+            "provider detected"
+        );
         return DetectedProvider {
-            provider: Arc::new(provider),
-            model_id: ModelId::new(&format!("openai:{model_name}")),
+            provider: Arc::new(openai_provider(eff, api_key)),
+            model_id: ModelId::new(format!("openai:{}", eff.openai.default_model)),
             supports_tools: true,
         };
     }
@@ -576,21 +639,22 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
     }
 
     // Check if Ollama is running locally (no tool use, but real local inference).
+    let ollama_url = ollama_base_url(eff);
     if reqwest::Client::new()
-        .get("http://localhost:11434/api/tags")
+        .get(format!("{ollama_url}/api/tags"))
         .timeout(Duration::from_secs(2))
         .send()
         .await
         .is_ok()
     {
-        const OLLAMA_DEFAULT_MODEL: &str = "llama3.2";
+        let ollama_model = eff.ollama.default_model.as_str();
 
         // Verify that the default model is actually pulled before committing
         // to Ollama as the provider. A 200 from /api/show means the model
         // exists; any other response (404, connection error) means it is absent.
         let model_present = reqwest::Client::new()
-            .post("http://localhost:11434/api/show")
-            .json(&serde_json::json!({ "name": OLLAMA_DEFAULT_MODEL }))
+            .post(format!("{ollama_url}/api/show"))
+            .json(&serde_json::json!({ "name": ollama_model }))
             .timeout(Duration::from_secs(3))
             .send()
             .await
@@ -601,9 +665,9 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
             eprintln!(
                 "{} Ollama is running but model '{}' is not installed.",
                 warn_style("Note:"),
-                OLLAMA_DEFAULT_MODEL
+                ollama_model
             );
-            eprintln!("Run:  ollama pull {OLLAMA_DEFAULT_MODEL}");
+            eprintln!("Run:  ollama pull {ollama_model}");
             eprintln!("Then re-run hone.\n");
             // Fall through to the "no provider" error below.
         } else {
@@ -614,8 +678,8 @@ async fn detect_provider(wizard_cfg: &configure::ResolvedConfig) -> DetectedProv
                 "provider detected (tool calling enabled since Ollama v0.3.0)"
             );
             return DetectedProvider {
-                provider: Arc::new(OllamaProvider::new("http://localhost:11434")),
-                model_id: ModelId::new(&format!("ollama:{OLLAMA_DEFAULT_MODEL}")),
+                provider: Arc::new(OllamaProvider::new(ollama_url.clone())),
+                model_id: ModelId::new(format!("ollama:{ollama_model}")),
                 supports_tools: true,
             };
         }
@@ -782,43 +846,17 @@ fn build_tool_registry(
 // Config and HONE.md loading
 // ---------------------------------------------------------------------------
 
-/// Load user-level and project-level config, plus HONE.md from the current
-/// directory.
+/// Load HONE.md sections from the current directory upwards.
 ///
-/// Priority: project `.hone/config.toml` > `~/.config/hone/config.toml` >
-/// built-in defaults.  Errors at any layer are logged and silently skipped so
-/// that a missing or malformed config never prevents the binary from starting.
-async fn load_project_config() -> (Option<Config>, Option<HoneMd>) {
-    let user_config_path: Option<PathBuf> = std::env::var("HOME")
-        .ok()
-        .map(|home| PathBuf::from(home).join(".config/hone/config.toml"));
-
-    let project_config_path = PathBuf::from(".hone/config.toml");
-
-    let config = Config::load(
-        user_config_path.as_deref(),
-        if project_config_path.exists() {
-            Some(project_config_path.as_path())
-        } else {
-            None
-        },
-    )
-    .map_err(|e| {
-        tracing::warn!("Failed to load config: {e}");
-    })
-    .ok();
-
+/// `config.toml` is read separately by [`settings::load_effective_or_exit`].
+fn load_hone_md() -> Option<HoneMd> {
     let cwd = std::env::current_dir().unwrap_or_default();
-    let hone_md = {
-        let merged = HoneMd::load_hierarchical(&cwd);
-        if merged.sections.is_empty() {
-            None
-        } else {
-            Some(merged)
-        }
-    };
-
-    (config, hone_md)
+    let merged = HoneMd::load_hierarchical(&cwd);
+    if merged.sections.is_empty() {
+        None
+    } else {
+        Some(merged)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -894,6 +932,7 @@ fn build_agent_config(
     no_inject_flag: bool,
     skeleton_strategy_arg: Option<&str>,
     audit_flag: bool,
+    session_limit_usd: Option<f64>,
 ) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
@@ -956,7 +995,7 @@ fn build_agent_config(
         model: model_id.clone(),
         max_tokens: None,
         temperature: None,
-        budget_limit: None,
+        budget_limit: session_limit_usd,
         pricing: PricingEntry {
             model: model_id.clone(),
             input_per_million: 3.0,
@@ -1913,13 +1952,13 @@ async fn cmd_session_delete(name: &str) -> Result<()> {
 
 /// Run evaluation tasks from a TOML file and write report.json + report.md.
 ///
-/// Provider support in v1: Anthropic (ANTHROPIC_API_KEY) and OpenAI
-/// (OPENAI_API_KEY / HONE_OPENAI_BASE_URL / HONE_OPENAI_MODEL). Other
+/// Provider support in v1: Anthropic and OpenAI(-compatible), built from the
+/// resolved settings (environment, user `config.toml`, wizard key). Other
 /// providers (Ollama, CLI pass-throughs) are a follow-up.
 async fn cmd_eval(
     tasks_path: &std::path::Path,
     output_dir: Option<PathBuf>,
-    wizard_cfg: &configure::ResolvedConfig,
+    eff: &Effective,
 ) -> Result<()> {
     use std::path::Path;
 
@@ -1936,40 +1975,11 @@ async fn cmd_eval(
     std::fs::create_dir_all(&out_dir)
         .map_err(|e| anyhow::anyhow!("cannot create output dir {}: {e}", out_dir.display()))?;
 
-    // Snapshot wizard config fields needed inside the closure (must be 'static).
-    let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
-        .ok()
-        .or_else(|| wizard_cfg.anthropic_api_key.clone());
-    let openai_key = std::env::var("OPENAI_API_KEY")
-        .ok()
-        .or_else(|| wizard_cfg.openai_api_key.clone());
-    let openai_base_url = std::env::var("HONE_OPENAI_BASE_URL")
-        .ok()
-        .or_else(|| wizard_cfg.openai_base_url.clone());
-    let openai_model = std::env::var("HONE_OPENAI_MODEL")
-        .ok()
-        .or_else(|| wizard_cfg.openai_model.clone())
-        .unwrap_or_else(|| "gpt-4o".into());
-    let _ = &openai_model; // referenced by the OpenAI closure branch below
-
+    // The factory must be 'static: build one provider from the resolved
+    // settings and hand out clones of the Arc.
+    let provider = api_provider_from_settings(eff, "eval")?;
     let provider_factory: Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync> =
-        if let Some(key) = anthropic_key {
-            Box::new(move || Arc::new(AnthropicProvider::new(key.clone())) as Arc<dyn ModelProvider>)
-        } else if let Some(key) = openai_key {
-            let base_url = openai_base_url.clone();
-            Box::new(move || {
-                let provider = if let Some(ref url) = base_url {
-                    OpenAiProvider::with_base_url(key.clone(), url.clone())
-                } else {
-                    OpenAiProvider::new(key.clone())
-                };
-                Arc::new(provider) as Arc<dyn ModelProvider>
-            })
-        } else {
-            anyhow::bail!(
-                "eval requires a provider: set ANTHROPIC_API_KEY or OPENAI_API_KEY"
-            );
-        };
+        Box::new(move || Arc::clone(&provider));
 
     let outcomes = EvalRunner::new(config, base_dir, provider_factory)
         .run_all()
@@ -2002,7 +2012,7 @@ async fn cmd_eval(
 async fn cmd_spec_run(
     goal: &str,
     cwd: Option<PathBuf>,
-    wizard_cfg: &configure::ResolvedConfig,
+    eff: &Effective,
 ) -> Result<()> {
     use spec_cmd::{SpecCommandError, SpecGeneratorImpl, cmd_spec};
 
@@ -2011,34 +2021,9 @@ async fn cmd_spec_run(
         None => std::env::current_dir()?,
     };
 
-    let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
-        .ok()
-        .or_else(|| wizard_cfg.anthropic_api_key.clone());
-    let openai_key = std::env::var("OPENAI_API_KEY")
-        .ok()
-        .or_else(|| wizard_cfg.openai_api_key.clone());
-    let openai_base_url = std::env::var("HONE_OPENAI_BASE_URL")
-        .ok()
-        .or_else(|| wizard_cfg.openai_base_url.clone());
-    let openai_model = std::env::var("HONE_OPENAI_MODEL")
-        .ok()
-        .or_else(|| wizard_cfg.openai_model.clone())
-        .unwrap_or_else(|| "gpt-4o".into());
-
-    let provider: Arc<dyn ModelProvider> = if let Some(key) = anthropic_key {
-        Arc::new(AnthropicProvider::new(key))
-    } else if let Some(key) = openai_key {
-        if let Some(url) = openai_base_url {
-            Arc::new(OpenAiProvider::with_base_url(key, url))
-        } else {
-            Arc::new(OpenAiProvider::new(key))
-        }
-    } else {
-        anyhow::bail!("spec requires a provider: set ANTHROPIC_API_KEY or OPENAI_API_KEY");
-    };
+    let provider = api_provider_from_settings(eff, "spec")?;
 
     let model = hone_proto::ModelId::new("anthropic:claude-3-5-sonnet-20241022");
-    let _ = &openai_model; // used when openai path is taken above
     let generator = SpecGeneratorImpl::new(provider, model);
 
     match cmd_spec(goal, &project_root, &generator).await {
@@ -2254,9 +2239,6 @@ async fn index_directory_bg(index: &SqliteIndex, root: &std::path::Path) -> Resu
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Load wizard config (no env mutation — returns a struct instead).
-    let wizard_cfg = configure::load_wizard_config();
-
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(io::stderr)
@@ -2334,11 +2316,13 @@ async fn main() -> Result<()> {
                 // so we can take ownership of the MemoryCmd variant.
             }
             HoneCmd::Eval { tasks, output } => {
-                cmd_eval(tasks, output.clone(), &wizard_cfg).await?;
+                let eff = settings::load_effective_or_exit(cli.model.as_deref());
+                cmd_eval(tasks, output.clone(), &eff).await?;
                 return Ok(());
             }
             HoneCmd::Spec { goal, cwd } => {
-                cmd_spec_run(goal, cwd.clone(), &wizard_cfg).await?;
+                let eff = settings::load_effective_or_exit(cli.model.as_deref());
+                cmd_spec_run(goal, cwd.clone(), &eff).await?;
                 return Ok(());
             }
         }
@@ -2364,11 +2348,10 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let (config, hone_md) = load_project_config().await;
-
-    if config.is_some() {
-        tracing::info!("config loaded successfully");
-    }
+    // Read config.toml (user + project) once. A broken file stops here with
+    // exit 2; warnings go to stderr once.
+    let eff = settings::load_effective_or_exit(cli.model.as_deref());
+    let hone_md = load_hone_md();
 
     // Initialise SQLite persistence (non-blocking; errors are warnings only).
     // The returned handles keep the memory store and file watcher alive for
@@ -2478,69 +2461,11 @@ async fn main() -> Result<()> {
         "system prompt ready"
     );
 
-    // When --model explicitly specifies a provider, skip auto-detection and
-    // create the provider directly. This avoids issues where Claude CLI is
-    // detected first even though the user wants Ollama.
-    let mut detected = if let Some(ref m) = cli.model {
-        if m.starts_with("ollama:") {
-            tracing::info!("--model ollama: — using Ollama provider directly");
-            DetectedProvider {
-                provider: Arc::new(OllamaProvider::new("http://localhost:11434")),
-                model_id: ModelId::new(m),
-                supports_tools: true,
-            }
-        } else if m.starts_with("anthropic:") {
-            if let Some(key) = std::env::var("ANTHROPIC_API_KEY")
-                .ok()
-                .or(wizard_cfg.anthropic_api_key.clone())
-            {
-                DetectedProvider {
-                    provider: Arc::new(AnthropicProvider::new(key)),
-                    model_id: ModelId::new(m),
-                    supports_tools: true,
-                }
-            } else {
-                detect_provider(&wizard_cfg).await
-            }
-        } else if m.starts_with("openai:") {
-            if let Some(key) = std::env::var("OPENAI_API_KEY")
-                .ok()
-                .or(wizard_cfg.openai_api_key.clone())
-            {
-                let provider = if let Some(url) = std::env::var("HONE_OPENAI_BASE_URL")
-                    .ok()
-                    .or(wizard_cfg.openai_base_url.clone())
-                {
-                    OpenAiProvider::with_base_url(key, url)
-                } else {
-                    OpenAiProvider::new(key)
-                };
-                DetectedProvider {
-                    provider: Arc::new(provider),
-                    model_id: ModelId::new(m),
-                    supports_tools: true,
-                }
-            } else {
-                detect_provider(&wizard_cfg).await
-            }
-        } else {
-            detect_provider(&wizard_cfg).await
-        }
-    } else {
-        detect_provider(&wizard_cfg).await
-    };
-
-    // Opt-in local response cache: set HONE_CACHE=1 (or any value) to wrap
-    // the inner provider with an LRU cache. Useful for development/testing
-    // and retry scenarios where the exact same request may repeat.
-    if std::env::var("HONE_CACHE").is_ok() {
-        tracing::info!("local response cache enabled (HONE_CACHE set)");
-        detected.provider = Arc::new(hone_providers::CachingProvider::new(detected.provider, 100));
-    }
-
-    // Validate --model and override provider when the prefix doesn't match
-    // the auto-detected provider (e.g., --model ollama:... when Claude CLI was detected).
-    let model_id: ModelId = if let Some(ref m) = cli.model {
+    // An explicit model (--model, default_model, or the wizard's implied model)
+    // builds the provider its prefix names; it never falls back to
+    // auto-detection with a mismatched id.
+    if let Some(choice) = &eff.model {
+        let m = choice.model.as_str();
         let known_prefixes = [
             "anthropic:",
             "openai:",
@@ -2561,35 +2486,28 @@ async fn main() -> Result<()> {
             eprintln!("  gemini-cli:gemini-2.5-pro");
             std::process::exit(1);
         }
-
-        // Override the detected provider when --model specifies a different one.
-        if m.starts_with("ollama:") && detected.provider.id() != "ollama" {
-            tracing::info!("--model overrides provider to Ollama");
-            detected.provider = Arc::new(OllamaProvider::new("http://localhost:11434"));
-            detected.supports_tools = true;
-        } else if m.starts_with("openai:") && detected.provider.id() != "openai" {
-            if let Some(key) = std::env::var("OPENAI_API_KEY")
-                .ok()
-                .or(wizard_cfg.openai_api_key.clone())
-            {
-                tracing::info!("--model overrides provider to OpenAI");
-                let provider = if let Some(url) = std::env::var("HONE_OPENAI_BASE_URL")
-                    .ok()
-                    .or(wizard_cfg.openai_base_url.clone())
-                {
-                    OpenAiProvider::with_base_url(key, url)
-                } else {
-                    OpenAiProvider::new(key)
-                };
-                detected.provider = Arc::new(provider);
-                detected.supports_tools = true;
+    }
+    let mut detected = if let Some(choice) = &eff.model {
+        match build_explicit_provider(choice, &eff) {
+            Ok(d) => d,
+            Err(msg) => {
+                eprintln!("{} {msg}", error_style("Error:"));
+                std::process::exit(1);
             }
         }
-
-        ModelId::new(m)
     } else {
-        detected.model_id.clone()
+        detect_provider(&eff).await
     };
+
+    // Opt-in local response cache: set HONE_CACHE=1 (or any value) to wrap
+    // the inner provider with an LRU cache. Useful for development/testing
+    // and retry scenarios where the exact same request may repeat.
+    if std::env::var("HONE_CACHE").is_ok() {
+        tracing::info!("local response cache enabled (HONE_CACHE set)");
+        detected.provider = Arc::new(hone_providers::CachingProvider::new(detected.provider, 100));
+    }
+
+    let model_id: ModelId = detected.model_id.clone();
 
     // Provider capability warnings: --orchestrate and --ensemble require tool
     // calling. Warn (but do not abort) when used with a CLI/Ollama provider
@@ -2658,6 +2576,7 @@ async fn main() -> Result<()> {
         cli.no_inject,
         cli.skeleton_strategy.as_deref(),
         cli.audit,
+        eff.session_limit_usd,
     );
     apply_policy_flags(&mut base_config, &cli.approve);
 
