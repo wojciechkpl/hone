@@ -144,3 +144,19 @@ approved edit is **not prompted and not sandboxed** (follow-up: route it through
 Out of scope, recorded as follow-ups: call-id correlation in `StepAction`; a real cancellation
 token for `RunTurn`; restoring the inline `@agent` prompt/tools when its turn is cancelled; gating
 the automatic test run.
+
+## 7. Spend of cancelled runs (R9)
+
+Cancelling a turn when its event receiver closes (R2b) means a `honed` `POST /run` client can
+disconnect mid-run. `execution.rs` records spend with `governance.add_usage` only when
+`run_turn` returns `Ok`, so a cancelled (or failed) run's partial spend was never counted: a
+client could keep spending while staying under the governance totals. The agent already
+accumulates every model call in `CostAccumulator`, whatever the outcome.
+
+| # | Requirement | Test |
+|---|---|---|
+| R9a | `hone-core`: `Agent::session_usage() -> TokenUsage` and `AgentHandle::session_spend() -> (TokenUsage, f64)` (one actor round-trip; `(default, 0.0)` if the actor is gone). Totals include model calls of turns that were later cancelled or failed | A turn cancelled at an approval prompt (event receiver dropped) after one model call → `session_spend()` reports that call's tokens and cost |
+| R9b | `honed` `/run`: after `run_turn` returns, **whatever the result**, record `session_spend()` with `add_usage` (the handle is fresh per run, so session totals are this run's spend). Extract the spawned run body into a testable fn if needed | `/run` (or the extracted fn) with a scripted provider whose client stream is dropped mid-run → governance usage includes the tokens and cost spent before the cancel; an `Ok` run is still recorded exactly once |
+
+Out of scope: `honed` `/orchestrate` never records spend in governance (pre-existing, any
+outcome). Follow-up.
