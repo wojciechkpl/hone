@@ -160,3 +160,28 @@ accumulates every model call in `CostAccumulator`, whatever the outcome.
 
 Out of scope: `honed` `/orchestrate` never records spend in governance (pre-existing, any
 outcome). Follow-up.
+
+## 8. Review round 2: required changes (contract for round 3)
+
+Round 2 was approved except for the items below. R9 (§7) also lands in round 3.
+
+| # | Finding | Requirement | Test |
+|---|---|---|---|
+| R10 | **B1** CLI `--orchestrate` printer `break`s on the first `Error`, dropping the receiver, so every later worker and the merge return `Cancelled` ("Merge failed: Cancelled") | The printer prints the error and keeps draining until `recv()` returns `None` | Scripted provider fails one worker, others succeed → merged answer printed / returned, not "Merge failed" |
+| R11 | **B2** medium turns now show critique text and "APPROVED" glued to the answer | `spawn_medium_turn` counts rounds (each `Done` ends one). Rounds: 1 = answer, then critique / refine alternating. Forward tool, pause, approval and error events from **every** round; drop `Token`s from critique rounds; before the first `Token` of a refine round forward one separator `Token` (`"\n\n---\n\n*Revised answer:*\n\n"`) | Extend the R1 script: assistant text reaching `tx` contains no critique text and no "APPROVED"; a refine round's text follows the separator; the R1 pause still reaches `tx` |
+| R12 | Calls that need no prompt still run after Esc (AutoApprove, `always_allowed`, read-only batches) | Check `events.is_closed()` before each sequential call and before a parallel batch dispatch: if closed, `cancel_pending_calls` and return `Cancelled` | AutoApprove batch of 3 write calls; close the receiver after the first `ToolCallEnd` → calls 2 and 3 never run and get "cancelled" results |
+| R13 | A cancelled `RunTurn` (queued while the actor was busy, or Esc before the first model call) still adds its user message to history | Check `events.is_closed()` at the very top of `run_turn` / `run_turn_content`, before any state change: return `Cancelled` with history unchanged | Closed receiver → `run_turn` returns `Cancelled` and `messages()` is unchanged |
+| R14 | Keystroke-guard gaps | (a) `handle_paste` updates `last_key_at`; (b) while the input buffer is non-empty, only `y` approves (Enter goes to the input); (c) `cancel_turn` closes an open menu | Paste then Enter at once → no `Proceed`; buffer `"fix it"` + 500 ms + Enter → no `Proceed`, `y` → `Proceed`; `cancel_turn` with menu open → menu closed |
+
+Also: `/budget` help text says "per-run" but the limit persists on the actor (make the text say
+"for the rest of the session"); store `(id, name)` / `(id, ok)` instead of whole `ToolCallEnd`
+results in `code_modifying_tools_that_ran`; fix the new rustfmt diff in the hook-mutated
+`Cancelled` arm. Docs: Esc stops the turn at the next call, prompt or model call; `honed`
+`/run` and `/orchestrate` disconnects cancel the run; the test-run warning covers AutoApprove
+edits.
+
+Follow-ups (not this PR): a failed tool call that returns `Err` (e.g. `edit_file` "old_string not
+found", `agent.rs` `Err(e) => return Err(e)`) aborts the turn with orphan `tool_call`s and, on the
+simple path, no terminal event, so the TUI spinner never stops; test-verification fix turns can't
+be cancelled with Esc; the TUI status bar misses spend of cancelled turns; share the step-feeder
+test helper via `tests/common`.
