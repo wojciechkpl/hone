@@ -1157,7 +1157,6 @@ Hone uses a three-level config hierarchy:
 ```toml
 [agent]
 default_model = "gpt-4o"
-context_window_tokens = 16000
 max_iterations = 20
 
 [memory]

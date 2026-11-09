@@ -7,6 +7,48 @@ use tiktoken_rs::CoreBPE;
 
 use crate::metrics::ContextMetrics;
 
+/// Environment variable that overrides the advertised context window.
+pub const CONTEXT_WINDOW_ENV: &str = "HONE_CONTEXT_WINDOW";
+/// Smallest accepted context-window override (tokens).
+pub const MIN_CONTEXT_WINDOW: u32 = 4_096;
+/// Largest accepted context-window override (tokens).
+pub const MAX_CONTEXT_WINDOW: u32 = 10_000_000;
+
+/// Parse a context-window override: trimmed plain decimal digits within
+/// `MIN_CONTEXT_WINDOW..=MAX_CONTEXT_WINDOW`. Anything else yields `None`.
+pub fn parse_context_window(raw: &str) -> Option<u32> {
+    let s = raw.trim();
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse::<u32>()
+        .ok()
+        .filter(|n| (MIN_CONTEXT_WINDOW..=MAX_CONTEXT_WINDOW).contains(n))
+}
+
+/// Interpret a raw `HONE_CONTEXT_WINDOW` value. Unset, empty and
+/// whitespace-only values mean "no override" silently; any other unparsable
+/// value (including non-UTF-8) is ignored with a warning, emitted at most once
+/// per process.
+pub(crate) fn resolve_context_window_override(raw: Option<std::ffi::OsString>) -> Option<u32> {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    let raw = raw?;
+    let text = raw.to_str();
+    if text.is_some_and(|t| t.trim().is_empty()) {
+        return None;
+    }
+    let parsed = text.and_then(parse_context_window);
+    if parsed.is_none() {
+        WARNED.call_once(|| {
+            tracing::warn!(
+                "ignoring invalid {CONTEXT_WINDOW_ENV}={raw:?}: expected an integer between \
+                 {MIN_CONTEXT_WINDOW} and {MAX_CONTEXT_WINDOW}"
+            );
+        });
+    }
+    parsed
+}
+
 // ---------------------------------------------------------------------------
 // ContextConfig — model-aware budget and window configuration
 // ---------------------------------------------------------------------------
@@ -70,6 +112,23 @@ impl ContextConfig {
             tool_oneliner_age_offset: 5,
             reorder_middle_zone: reorder,
         }
+    }
+
+    /// Replace only the advertised context length; `None` leaves it unchanged.
+    #[must_use]
+    pub fn with_context_window(mut self, window: Option<u32>) -> Self {
+        if let Some(w) = window {
+            self.advertised_context_length = w;
+        }
+        self
+    }
+
+    /// Like [`for_model`](Self::for_model), then apply the `HONE_CONTEXT_WINDOW`
+    /// override read through `get_env`. An unparsable value is warned about
+    /// and ignored.
+    pub fn for_model_with_env(model_name: &str, get_env: impl Fn(&str) -> Option<String>) -> Self {
+        let ov = resolve_context_window_override(get_env(CONTEXT_WINDOW_ENV).map(Into::into));
+        Self::for_model(model_name).with_context_window(ov)
     }
 
     /// Effective token budget (advertised * ratio).

@@ -49,7 +49,10 @@ pub use checkpoint::{CheckpointError, CheckpointStore, OrchestrationCheckpoint};
 pub use clarify::ClarificationDetector;
 pub use code_mode::{CodeModeOutput, CodeModeRunner};
 pub use complexity::{ComplexityClassifier, ComplexityTier};
-pub use context::{ContextConfig, ContextManager, TaskPhase};
+pub use context::{
+    CONTEXT_WINDOW_ENV, ContextConfig, ContextManager, MAX_CONTEXT_WINDOW, MIN_CONTEXT_WINDOW,
+    TaskPhase, parse_context_window,
+};
 pub use context_injector::{
     ContextInjector, InjectionResult, RetrievalConfidence, SkeletonStrategy,
 };

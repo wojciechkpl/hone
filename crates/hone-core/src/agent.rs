@@ -223,12 +223,29 @@ pub struct Agent {
     /// `Plan` back to `Build` / `AutoApprove`, and to compute the read-only
     /// subset when transitioning to `Plan`.
     base_tools: ToolRegistry,
+    /// Valid `HONE_CONTEXT_WINDOW` override, read once at construction.
+    context_window_override: Option<u32>,
 }
 
 impl Agent {
     pub fn new(mut config: AgentConfig) -> Self {
         let metrics = Arc::new(ContextMetrics::new());
-        let context_config = crate::context::ContextConfig::for_model(config.model.model_name());
+        let context_window_override = crate::context::resolve_context_window_override(
+            std::env::var_os(crate::context::CONTEXT_WINDOW_ENV),
+        );
+        let context_config = crate::context::ContextConfig::for_model(config.model.model_name())
+            .with_context_window(context_window_override);
+        if let Some(w) = context_window_override {
+            static INFO_ONCE: std::sync::Once = std::sync::Once::new();
+            INFO_ONCE.call_once(|| {
+                tracing::info!(
+                    context_window = w,
+                    effective_budget = context_config.effective_budget(),
+                    "{} override active",
+                    crate::context::CONTEXT_WINDOW_ENV
+                );
+            });
+        }
         let context =
             ContextManager::with_config(context_config).with_metrics(Arc::clone(&metrics));
 
@@ -249,6 +266,7 @@ impl Agent {
             guards: TurnGuards::default(),
             model_info_emitted: false,
             base_tools,
+            context_window_override,
         }
     }
 
@@ -273,7 +291,8 @@ impl Agent {
         self.context.messages()
     }
 
-    /// The configured maximum context token budget for this agent.
+    /// The configured maximum output tokens (`max_tokens`), defaulting to
+    /// 128_000 when unset. This is the output cap, not the context window.
     pub fn context_token_limit(&self) -> u32 {
         self.config.max_tokens.unwrap_or(128_000)
     }
@@ -756,7 +775,9 @@ impl Agent {
                         // real context-window size for this model.
                         if !self.model_info_emitted {
                             self.model_info_emitted = true;
-                            let cw = ContextWindowTable::default_table().get(&self.config.model);
+                            let cw = self.context_window_override.unwrap_or_else(|| {
+                                ContextWindowTable::default_table().get(&self.config.model)
+                            });
                             let _ = events
                                 .send(AgentEvent::ModelInfo { context_window: cw })
                                 .await;
