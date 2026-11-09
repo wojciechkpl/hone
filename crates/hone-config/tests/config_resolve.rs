@@ -71,12 +71,12 @@ fn project(raw: &str) -> ConfigLayer {
     layer(PROJECT_PATH, raw)
 }
 
-fn env_of(pairs: &[(&str, String)]) -> impl Fn(&str) -> Option<String> {
+fn env_of(pairs: &[(&str, String)]) -> impl Fn(&str) -> Option<String> + use<> {
     let map: HashMap<String, String> = pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect();
     move |k: &str| map.get(k).cloned()
 }
 
-fn no_env() -> impl Fn(&str) -> Option<String> {
+fn no_env() -> impl Fn(&str) -> Option<String> + use<> {
     |_: &str| None
 }
 

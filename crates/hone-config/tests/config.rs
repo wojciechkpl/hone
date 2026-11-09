@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-use hone_config::{Config, ConfigError, HoneMd, SandboxMode};
+use hone_config::{Config, ConfigError, HoneMd, SandboxConfig, SandboxMode, ServerConfig};
 use std::path::PathBuf;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -9,22 +9,35 @@ fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
+/// `[server]` / `[sandbox]` are `Option` in `Config` (absent table = `None`, so the binary can
+/// warn about tables it does not apply). These read them with the schema defaults filled in.
+fn server(cfg: &Config) -> ServerConfig {
+    cfg.server.clone().unwrap_or_default()
+}
+
+fn sandbox(cfg: &Config) -> SandboxConfig {
+    cfg.sandbox.clone().unwrap_or_default()
+}
+
 // ── Config::default() ────────────────────────────────────────────────────────
 
 #[test]
 fn test_default_config_is_valid() {
     let cfg = Config::default();
 
+    // Absent tables are None; their defaults still read as before.
+    assert!(cfg.server.is_none() && cfg.sandbox.is_none());
+
     // Server defaults
-    assert_eq!(cfg.server.host, "127.0.0.1");
-    assert_eq!(cfg.server.port, 3117);
-    assert!(cfg.server.auth_token.is_none());
+    assert_eq!(server(&cfg).host, "127.0.0.1");
+    assert_eq!(server(&cfg).port, 3117);
+    assert!(server(&cfg).auth_token.is_none());
 
     // Sandbox defaults
-    assert!(matches!(cfg.sandbox.mode, SandboxMode::Manual));
-    assert!(cfg.sandbox.allowed_commands.is_empty());
-    assert!(cfg.sandbox.allowed_network_domains.is_empty());
-    assert!(cfg.sandbox.protected_paths.is_empty());
+    assert!(matches!(sandbox(&cfg).mode, SandboxMode::Manual));
+    assert!(sandbox(&cfg).allowed_commands.is_empty());
+    assert!(sandbox(&cfg).allowed_network_domains.is_empty());
+    assert!(sandbox(&cfg).protected_paths.is_empty());
 
     // No default model or budget
     assert!(cfg.default_model.is_none());
@@ -46,8 +59,10 @@ fn test_parse_minimal_toml() {
     "#;
 
     let cfg = Config::from_toml_str(toml).expect("minimal toml should parse");
-    assert_eq!(cfg.server.host, "127.0.0.1");
-    assert_eq!(cfg.server.port, 3117);
+    assert!(cfg.server.is_some(), "a present [server] table is Some");
+    assert!(cfg.sandbox.is_none(), "an absent [sandbox] table is None");
+    assert_eq!(server(&cfg).host, "127.0.0.1");
+    assert_eq!(server(&cfg).port, 3117);
     assert!(cfg.default_model.is_none());
 }
 
@@ -84,14 +99,15 @@ fn test_parse_sandbox_config() {
     "#;
 
     let cfg = Config::from_toml_str(toml).expect("sandbox toml should parse");
-    assert!(matches!(cfg.sandbox.mode, SandboxMode::Supervised));
-    assert_eq!(cfg.sandbox.allowed_commands, vec!["ls", "cat", "grep"]);
+    assert!(cfg.sandbox.is_some(), "a present [sandbox] table is Some");
+    assert!(matches!(sandbox(&cfg).mode, SandboxMode::Supervised));
+    assert_eq!(sandbox(&cfg).allowed_commands, vec!["ls", "cat", "grep"]);
     assert_eq!(
-        cfg.sandbox.allowed_network_domains,
+        sandbox(&cfg).allowed_network_domains,
         vec!["api.anthropic.com"]
     );
     assert_eq!(
-        cfg.sandbox.protected_paths,
+        sandbox(&cfg).protected_paths,
         vec![PathBuf::from("/etc"), PathBuf::from("/usr")]
     );
 }
@@ -137,8 +153,8 @@ fn test_parse_minimal_fixture() {
     let path = fixtures_dir().join("minimal.toml");
     let toml = std::fs::read_to_string(&path).unwrap();
     let cfg = Config::from_toml_str(&toml).expect("minimal fixture should parse");
-    assert_eq!(cfg.server.host, "127.0.0.1");
-    assert_eq!(cfg.server.port, 3117);
+    assert_eq!(server(&cfg).host, "127.0.0.1");
+    assert_eq!(server(&cfg).port, 3117);
 }
 
 #[test]
@@ -152,10 +168,10 @@ fn test_parse_full_fixture() {
         Some("anthropic:claude-opus-4-5")
     );
     assert_eq!(cfg.providers.len(), 2);
-    assert!(matches!(cfg.sandbox.mode, SandboxMode::Supervised));
+    assert!(matches!(sandbox(&cfg).mode, SandboxMode::Supervised));
     assert_eq!(cfg.routing.len(), 2);
     assert!(cfg.budget.is_some());
-    assert_eq!(cfg.server.auth_token.as_deref(), Some("super-secret-token"));
+    assert_eq!(server(&cfg).auth_token.as_deref(), Some("super-secret-token"));
 }
 
 // ── Config layered merging ────────────────────────────────────────────────────
@@ -188,10 +204,10 @@ fn test_merge_project_over_global() {
         Some("anthropic:claude-opus-4-5")
     );
     // project overrides sandbox mode
-    assert!(matches!(cfg.sandbox.mode, SandboxMode::Supervised));
+    assert!(matches!(sandbox(&cfg).mode, SandboxMode::Supervised));
     // global server settings survive
-    assert_eq!(cfg.server.host, "127.0.0.1");
-    assert_eq!(cfg.server.port, 3117);
+    assert_eq!(server(&cfg).host, "127.0.0.1");
+    assert_eq!(server(&cfg).port, 3117);
 }
 
 // ── Unknown fields ────────────────────────────────────────────────────────────
@@ -329,15 +345,15 @@ fn test_load_from_paths() {
         Config::load(Some(&global_path), Some(&project_path)).expect("should load from file paths");
 
     // project overrides port, global sets host
-    assert_eq!(cfg.server.port, 4000);
-    assert_eq!(cfg.server.host, "0.0.0.0");
+    assert_eq!(server(&cfg).port, 4000);
+    assert_eq!(server(&cfg).host, "0.0.0.0");
 }
 
 #[test]
 fn test_load_with_no_files_returns_defaults() {
     let cfg = Config::load(None, None).expect("load with no files should return defaults");
-    assert_eq!(cfg.server.host, "127.0.0.1");
-    assert_eq!(cfg.server.port, 3117);
+    assert_eq!(server(&cfg).host, "127.0.0.1");
+    assert_eq!(server(&cfg).port, 3117);
 }
 
 #[test]
