@@ -59,3 +59,18 @@ error result; a policy deny / user deny / skip already produces a result.
   `Cancelled`). T5 makes the failure visible; restarting the actor is a follow-up.
 - `hone --json` reports `cost_usd: 0.0` for a failed turn (it reads `TurnResult`); could use
   `session_spend()` — follow-up.
+
+## 5. Review round 1: required changes
+
+| # | Finding | Requirement | Test |
+|---|---|---|---|
+| U1 | **B1a** error results skip redaction in the egress preview and the `PostToolUse` payload (git stderr can carry credentialed remote URLs; `--audit` + `HONE_POLICY_BUILTINS=1` would write them in clear) | `record_tool_error` redacts once, as the `Ok` path does, and uses that value for the egress preview, the hook payload and the history message | Error-result versions of `policy_p25_agent.rs` `egress_log_previews_are_redacted_when_builtins_are_on` and `post_tool_use_hook_payload_is_redacted…`: a tool `Err` whose message contains a secret → neither the egress preview nor the hook payload contains it |
+| U2 | **B1b** error results skip the injection scan (MCP servers control their error text) | Same `InjectionDetector::scan_tool_result`, metric, egress `injection_risk` label and SECURITY prefix as the `Ok` path | A tool `Err` with injection-like text → the history message starts with the SECURITY prefix and the egress entry carries the risk label |
+| U3 | A failed parallel `read_file` now counts as a read for the read-before-edit guard | Record the read only on `Ok` in the parallel result loop | Parallel `read_file` that fails, then `edit_file` of the same path → the guard still injects its read |
+| U4 | `hone --json` reports `usage: null` and `cost_usd: 0` for a failed turn, so the benchmark records 0 tokens for failed Hone runs | `run_json_mode` fills `usage` and `cost_usd` from `AgentHandle::session_spend()` (one fresh agent per run, so session = run) whatever the result | Seam: a pure fn building the JSON from (turn result, collected events, session spend) — failed turn after one model call → `usage.input/output` non-zero, `cost_usd > 0`, `success: false` |
+| U5 | Nits | Parallel error egress entries use the measured `duration_ms`; the medium forwarder reports a dead actor as "agent stopped unexpectedly: …" like the simple one; one-shot / `--json` failures exit 1 through a typed "already reported" error mapped in `main`, so `mcp_manager.shutdown()` still runs | Medium dead-actor message; others by review |
+
+Notes (no change here): request-level failures inside the orchestrator now also emit `Error`, so
+the TUI and `honed` `/orchestrate` may show a worker's error next to "orchestration failed: …";
+the desktop app marks the run finished on any `error` event but its relay keeps reading, so it
+does not disconnect or cancel. Follow-up: pair `--json` `tool_calls` names by id, not arrival order.
