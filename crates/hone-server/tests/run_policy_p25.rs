@@ -152,6 +152,53 @@ async fn post_run(
     (status, String::from_utf8_lossy(&bytes).into_owned())
 }
 
+// -- SSE inspection ------------------------------------------------------------------------------
+
+/// Find the object holding `result` for call `id` anywhere inside an event's JSON.
+fn find_result(v: &Value, id: &str) -> Option<Value> {
+    match v {
+        Value::Object(m) => {
+            if m.get("id").and_then(Value::as_str) == Some(id) && m.contains_key("result") {
+                return m.get("result").cloned();
+            }
+            m.values().find_map(|c| find_result(c, id))
+        }
+        Value::Array(a) => a.iter().find_map(|c| find_result(c, id)),
+        _ => None,
+    }
+}
+
+/// The `result` of the `tool_call_end` event for call `t1`, if the stream has one.
+fn tool_end_result(body: &str) -> Option<Value> {
+    body.lines()
+        .filter_map(|l| l.strip_prefix("data:"))
+        .filter_map(|d| serde_json::from_str::<Value>(d.trim()).ok())
+        .find_map(|v| find_result(&v, "t1"))
+}
+
+/// True for the permission-policy gate's own refusal: `{"error":"requires approval","rule":..}`
+/// (ask) or `{"error":"denied by policy","rule":..}` (deny) -- see `apply_policy` in hone-core.
+/// The shell tool's own sandbox refusal ("command blocked (requires approval): ...") has a
+/// different `error` text and no `rule`, so it does not match.
+fn is_gate_result(result: &Value) -> bool {
+    result.get("rule").is_some()
+        && matches!(
+            result.get("error").and_then(Value::as_str),
+            Some("requires approval" | "denied by policy")
+        )
+}
+
+/// The call was dispatched past the gate: its `tool_call_end` exists and is not a gate result.
+fn assert_got_past_the_gate(body: &str) {
+    let result = tool_end_result(body)
+        .unwrap_or_else(|| panic!("no tool_call_end for the shell call: {body}"));
+    assert!(
+        !is_gate_result(&result),
+        "the permission gate blocked the call: {result}"
+    );
+    assert!(!body.contains("builtin:git-push"), "{body}");
+}
+
 // -- the state flag ---------------------------------------------------------------------------
 
 #[test]
@@ -186,8 +233,7 @@ async fn without_builtins_the_same_run_is_not_blocked_by_the_gate() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(!body.contains("requires approval"), "{body}");
-    assert!(!body.contains("builtin:git-push"), "{body}");
+    assert_got_past_the_gate(&body);
 }
 
 #[tokio::test]
@@ -201,7 +247,7 @@ async fn approve_of_a_builtin_id_is_valid_with_no_files_and_lets_the_call_past_t
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(!body.contains("requires approval"), "{body}");
+    assert_got_past_the_gate(&body);
 }
 
 #[tokio::test]

@@ -1185,6 +1185,7 @@ fn spawn_agent_turn(
         let _guard = AbortOnDrop(turn_task.abort_handle());
 
         let mut tracker = RanTracker::default();
+        let mut terminal_forwarded = false;
 
         loop {
             tokio::select! {
@@ -1200,15 +1201,30 @@ fn spawn_agent_turn(
                         return;
                     }
                     if is_terminal {
+                        terminal_forwarded = true;
                         break;
                     }
                 }
             }
         }
 
-        // Drain the turn task result (errors were already forwarded through
-        // the event channel above).
-        let _ = turn_task.await;
+        // Errors the turn forwarded are already visible. If the stream ended
+        // without a terminal event (turn error, dead actor, panicked task) the
+        // UI must still hear about it, or its spinner never stops.
+        let joined = turn_task.await;
+        if !terminal_forwarded {
+            let reason = match joined {
+                Ok(Err(e)) => e.to_string(),
+                Err(e) => e.to_string(),
+                Ok(Ok(_)) => "the turn ended without a result".to_owned(),
+            };
+            let _ = tx
+                .send(AgentEvent::Error {
+                    message: format!("agent stopped unexpectedly: {reason}"),
+                })
+                .await;
+            return;
+        }
 
         // After the turn completes, run test verification if applicable.
         maybe_run_test_verification(&agent, &tx, &tracker.ran).await;
@@ -1305,13 +1321,18 @@ fn spawn_medium_turn(
         }
 
         // Surface any error that the refine task returned but wasn't forwarded.
-        if let Ok(Err(e)) = refine_task.await {
+        let refine_result = refine_task.await;
+        let failure = match refine_result {
+            Ok(Ok(_)) => None,
+            // No Error event was forwarded, so the actor died under this turn.
+            Ok(Err(e)) => Some(format!("agent stopped unexpectedly: {e}")),
+            // The task panicked: the actor is gone and later turns will be
+            // Cancelled, so say so instead of leaving the spinner running.
+            Err(e) => Some(format!("agent stopped unexpectedly: {e}")),
+        };
+        if let Some(message) = failure {
             if !had_error {
-                let _ = tx
-                    .send(AgentEvent::Error {
-                        message: e.to_string(),
-                    })
-                    .await;
+                let _ = tx.send(AgentEvent::Error { message }).await;
             }
             return;
         }
@@ -1590,6 +1611,27 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
 // One-shot mode
 // ---------------------------------------------------------------------------
 
+/// Finish a one-shot turn. A failed turn has already printed its `Error`
+/// event (the printer returns `true`), so exit non-zero without letting
+/// `main` print the same error a second time.
+async fn finish_one_shot(
+    result: Result<hone_core::TurnResult, hone_core::AgentError>,
+    printer: tokio::task::JoinHandle<bool>,
+) -> Result<()> {
+    let error_printed = printer.await.unwrap_or(false);
+    match result {
+        Ok(_) => {
+            println!();
+            Ok(())
+        }
+        Err(_) if error_printed => {
+            println!();
+            Err(AlreadyReported.into())
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
 async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 
@@ -1605,18 +1647,16 @@ async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
                 AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     eprintln!("\nerror: {message}");
-                    break;
+                    return true;
                 }
                 _ => {}
             }
         }
+        false
     });
 
-    agent.run_turn(prompt, tx).await?;
-
-    let _ = printer.await;
-    println!();
-    Ok(())
+    let result = agent.run_turn(prompt, tx).await;
+    finish_one_shot(result, printer).await
 }
 
 /// Run a one-shot multimodal turn (text + images) and stream tokens to stdout.
@@ -1634,18 +1674,16 @@ async fn run_one_shot_content(agent: AgentHandle, content: Content) -> Result<()
                 AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     eprintln!("\nerror: {message}");
-                    break;
+                    return true;
                 }
                 _ => {}
             }
         }
+        false
     });
 
-    agent.run_turn_content(content, tx).await?;
-
-    let _ = printer.await;
-    println!();
-    Ok(())
+    let result = agent.run_turn_content(content, tx).await;
+    finish_one_shot(result, printer).await
 }
 
 /// Run a one-shot prompt and output structured JSON.
@@ -1668,7 +1706,6 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
     let collector = tokio::spawn(async move {
         let mut response = String::new();
         let mut tool_calls: Vec<serde_json::Value> = Vec::new();
-        let mut usage = serde_json::json!(null);
         let mut error: Option<String> = None;
         let mut current_tool: Option<String> = None;
 
@@ -1690,14 +1727,7 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
                         "is_error": is_error,
                     }));
                 }
-                AgentEvent::Done { usage: u, .. } => {
-                    usage = serde_json::json!({
-                        "input": u.input,
-                        "output": u.output,
-                        "cache_read": u.cache_read,
-                    });
-                    break;
-                }
+                AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     error = Some(message);
                     break;
@@ -1706,37 +1736,63 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
             }
         }
 
-        (response, tool_calls, usage, error)
+        (response, tool_calls, error)
     });
 
     let turn_result = agent.run_turn(prompt, tx).await;
-    let (response, tool_calls, usage, error) = collector.await.unwrap_or_default();
+    let (response, tool_calls, error) = collector.await.unwrap_or_default();
+    // One fresh agent per run, so the session's spend is this run's spend,
+    // including model calls of a turn that failed or was cancelled.
+    let spend = agent.session_spend().await;
 
-    let success = turn_result.is_ok() && error.is_none();
-    let cost_usd = if let Ok(ref t) = turn_result {
-        t.cost_usd
-    } else {
-        0.0
-    };
-
-    let output = serde_json::json!({
-        "response": response,
-        "tool_calls": tool_calls,
-        "usage": usage,
-        "cost_usd": cost_usd,
-        "model": model_id,
-        "success": success,
-        "error": error,
-    });
-
+    let output = json_mode_output(&turn_result, response, tool_calls, error, spend, model_id);
     println!("{}", serde_json::to_string_pretty(&output)?);
 
-    if !success {
-        std::process::exit(1);
+    if output["success"] != true {
+        return Err(AlreadyReported.into());
     }
 
     Ok(())
 }
+
+/// Build the `--json` report. `usage` and `cost_usd` come from the session
+/// spend whatever the outcome, so a failed run still reports what it cost.
+fn json_mode_output(
+    turn: &Result<hone_core::TurnResult, hone_core::AgentError>,
+    response: String,
+    tool_calls: Vec<serde_json::Value>,
+    error: Option<String>,
+    spend: (hone_proto::TokenUsage, f64),
+    model_id: &str,
+) -> serde_json::Value {
+    let (usage, cost_usd) = spend;
+    serde_json::json!({
+        "response": response,
+        "tool_calls": tool_calls,
+        "usage": {
+            "input": usage.input,
+            "output": usage.output,
+            "cache_read": usage.cache_read,
+        },
+        "cost_usd": cost_usd,
+        "model": model_id,
+        "success": turn.is_ok() && error.is_none(),
+        "error": error,
+    })
+}
+
+/// The failure was already reported to the user (printed error event or JSON
+/// report). `main` maps it to exit code 1 after MCP servers shut down.
+#[derive(Debug)]
+struct AlreadyReported;
+
+impl std::fmt::Display for AlreadyReported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("failure already reported")
+    }
+}
+
+impl std::error::Error for AlreadyReported {}
 
 // ---------------------------------------------------------------------------
 // Session auto-save
@@ -2664,6 +2720,12 @@ async fn main() -> Result<()> {
 
     // Graceful MCP server shutdown — always runs, even on error.
     mcp_manager.shutdown().await;
+
+    if let Err(e) = &run_result {
+        if e.downcast_ref::<AlreadyReported>().is_some() {
+            std::process::exit(1);
+        }
+    }
 
     run_result
 }
@@ -4481,6 +4543,185 @@ mod tests {
 
         let shown = shown_text(&events);
         assert_eq!(shown, "the answer", "no critique, no APPROVED, no separator");
+    }
+
+    // T5 (docs/plans/tool-error-turn-spec.md): the TUI forwarders must always end the turn.
+    // A provider whose `complete()` panics kills the agent actor; the forwarder then sees a
+    // dead actor / failed turn without any Done or Error, and must send one Error itself.
+    struct PanickingProvider;
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for PanickingProvider {
+        fn id(&self) -> &str {
+            "panicking"
+        }
+        fn display_name(&self) -> &str {
+            "Panicking"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![hone_proto::ModelInfo {
+                id: ModelId::new("mock:test"),
+                display_name: "Test".to_owned(),
+                context_length: 4096,
+                supports_tools: true,
+                supports_streaming: true,
+            }]
+        }
+        async fn complete(
+            &self,
+            _req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            panic!("provider exploded (test)");
+        }
+        fn estimate_tokens(&self, _m: &[Message]) -> u32 {
+            5
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    async fn forwarder_events_for_panicking_provider(medium: bool) -> Vec<AgentEvent> {
+        let tmp = tempfile::tempdir().unwrap();
+        let tool = MarkerTool {
+            name: "mock_read",
+            read_only: true,
+            target: tmp.path().join("unused.txt"),
+        };
+        let mut config = tui_wiring_config(tool, tmp.path());
+        config.provider = Arc::new(PanickingProvider);
+        let agent = AgentHandle::spawn(config);
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _task = if medium {
+            spawn_medium_turn(agent.clone(), "go".to_owned(), tx)
+        } else {
+            spawn_agent_turn(agent.clone(), "go".to_owned(), tx)
+        };
+        let mut events = Vec::new();
+        // The forwarder finishes (drops tx) either way; a hang here is the bug.
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while let Some(e) = rx.recv().await {
+                events.push(e);
+            }
+        })
+        .await
+        .expect("forwarder never finished");
+        events
+    }
+
+    #[tokio::test]
+    async fn test_t5_spawn_agent_turn_should_send_error_when_turn_dies_without_terminal_event() {
+        let events = forwarder_events_for_panicking_provider(false).await;
+        let errors = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .count();
+        assert_eq!(errors, 1, "the spinner needs exactly one terminal Error: {events:?}");
+    }
+
+    #[tokio::test]
+    async fn test_t5_spawn_medium_turn_should_send_error_when_turn_dies_without_terminal_event() {
+        let events = forwarder_events_for_panicking_provider(true).await;
+        let errors = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .count();
+        assert_eq!(errors, 1, "the spinner needs exactly one terminal Error: {events:?}");
+    }
+
+    // U5: the medium forwarder words a dead actor like the simple one.
+    #[tokio::test]
+    async fn test_u5_dead_actor_error_message_should_start_with_agent_stopped_unexpectedly() {
+        for medium in [false, true] {
+            let events = forwarder_events_for_panicking_provider(medium).await;
+            let msg = events
+                .iter()
+                .find_map(|e| match e {
+                    AgentEvent::Error { message } => Some(message.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("(medium={medium}) no Error event: {events:?}"));
+            assert!(
+                msg.starts_with("agent stopped unexpectedly"),
+                "(medium={medium}) got {msg:?}"
+            );
+        }
+    }
+
+    // U4. Seam (pure fn in main.rs; `run_json_mode` prints its result):
+    //   fn json_mode_output(
+    //       turn: &Result<hone_core::TurnResult, hone_core::AgentError>,
+    //       response: String,
+    //       tool_calls: Vec<serde_json::Value>,
+    //       error: Option<String>,
+    //       spend: (hone_proto::TokenUsage, f64),
+    //       model_id: &str,
+    //   ) -> serde_json::Value
+    // `usage` ({input, output, cache_read}) and `cost_usd` come from `spend`
+    // (`AgentHandle::session_spend()`), whatever the result;
+    // `success == turn.is_ok() && error.is_none()`.
+    fn spend_100_50() -> (hone_proto::TokenUsage, f64) {
+        (
+            hone_proto::TokenUsage {
+                input: 100,
+                output: 50,
+                cache_read: 7,
+                cache_creation: 0,
+            },
+            0.001,
+        )
+    }
+
+    #[test]
+    fn test_u4_json_output_for_failed_turn_should_report_spend_and_failure() {
+        let turn: Result<hone_core::TurnResult, hone_core::AgentError> =
+            Err(hone_core::AgentError::Cancelled);
+        let v = json_mode_output(
+            &turn,
+            "partial".to_owned(),
+            vec![],
+            Some("provider exploded".to_owned()),
+            spend_100_50(),
+            "mock:test",
+        );
+        assert_eq!(v["usage"]["input"], 100, "{v}");
+        assert_eq!(v["usage"]["output"], 50, "{v}");
+        assert_eq!(v["usage"]["cache_read"], 7, "{v}");
+        assert!(v["cost_usd"].as_f64().unwrap() > 0.0, "{v}");
+        assert_eq!(v["success"], false);
+        assert_eq!(v["error"], "provider exploded");
+        assert_eq!(v["model"], "mock:test");
+        assert_eq!(v["response"], "partial");
+    }
+
+    #[test]
+    fn test_u4_json_output_for_failed_turn_without_error_event_should_still_be_unsuccessful() {
+        let turn: Result<hone_core::TurnResult, hone_core::AgentError> =
+            Err(hone_core::AgentError::Cancelled);
+        let v = json_mode_output(&turn, String::new(), vec![], None, spend_100_50(), "m");
+        assert_eq!(v["success"], false, "{v}");
+        assert_eq!(v["usage"]["input"], 100, "{v}");
+    }
+
+    #[test]
+    fn test_u4_json_output_for_ok_turn_should_take_usage_and_cost_from_spend() {
+        let turn: Result<hone_core::TurnResult, hone_core::AgentError> =
+            Ok(hone_core::TurnResult {
+                response: "done".to_owned(),
+                usage: hone_proto::TokenUsage::default(),
+                cost_usd: 0.0,
+                tool_calls_count: 0,
+            });
+        let v = json_mode_output(&turn, "done".to_owned(), vec![], None, spend_100_50(), "m");
+        assert_eq!(v["success"], true, "{v}");
+        assert_eq!(v["usage"]["input"], 100, "{v}");
+        assert_eq!(v["usage"]["output"], 50, "{v}");
+        assert!((v["cost_usd"].as_f64().unwrap() - 0.001).abs() < 1e-12, "{v}");
+        assert!(v["error"].is_null());
     }
 
     // R6. Seam (pure fn in main.rs):
