@@ -14,7 +14,7 @@ pub enum Command {
     Split,
     /// Toggle bottom tool output panel.
     Panel,
-    /// Pre-approve a named tool for the next run without pausing.
+    /// Pre-approve a named tool for the rest of the session without pausing.
     Permit(String),
     /// Switch theme — argument is the theme name.
     ThemeSwitch(String),
@@ -205,7 +205,7 @@ impl Command {
             ("budget", "Set per-run USD budget cap (e.g. /budget 0.50)"),
             (
                 "permit",
-                "Pre-approve a tool for the next run (e.g. /permit shell)",
+                "Pre-approve a tool for the rest of the session (e.g. /permit shell)",
             ),
             ("set", "Set option (e.g. vim/novim)"),
             ("theme-preview", "Preview all theme colors"),

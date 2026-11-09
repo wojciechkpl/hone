@@ -1070,6 +1070,82 @@ async fn maybe_run_test_verification(
     }
 }
 
+/// Names (in order of completion) of code-modifying calls that actually ran:
+/// a non-error `ToolCallEnd` whose result is not `{"skipped": true}`, matched
+/// to its `ToolCallStart` by id. Denied, skipped and failed calls do not count,
+/// so a refused write never triggers the automatic test run.
+fn code_modifying_tools_that_ran(events: &[AgentEvent]) -> Vec<String> {
+    const CODE_MODIFYING: &[&str] = &["write_file", "edit_file", "multi_edit"];
+    let mut started: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    let mut ran = Vec::new();
+    for e in events {
+        match e {
+            AgentEvent::ToolCallStart { id, name, .. } => {
+                started.insert(id.as_str(), name.as_str());
+            }
+            AgentEvent::ToolCallEnd {
+                id,
+                result,
+                is_error,
+                ..
+            } => {
+                let skipped = result.get("skipped").and_then(|v| v.as_bool()) == Some(true);
+                if let Some(name) = started.get(id.as_str()) {
+                    if !*is_error && !skipped && CODE_MODIFYING.contains(name) {
+                        ran.push((*name).to_owned());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    ran
+}
+
+/// Aborts a task when dropped (also when the owning task is aborted).
+struct AbortOnDrop(tokio::task::AbortHandle);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Forward `inner_rx` to `outer_tx` for an inline `@agent` turn, then run
+/// `after` (prompt/tool restore) when the inner stream ends normally.
+///
+/// If the wrapper is aborted or dropped, or the outer receiver goes away, the
+/// `inner` turn task is aborted (drop guard) so a pending approval prompt
+/// cannot outlive the UI that could answer it. `after` does not run then.
+fn spawn_inline_turn_wrapper<F>(
+    inner: tokio::task::JoinHandle<()>,
+    mut inner_rx: mpsc::Receiver<AgentEvent>,
+    outer_tx: mpsc::Sender<AgentEvent>,
+    after: F,
+) -> tokio::task::JoinHandle<()>
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(async move {
+        let _guard = AbortOnDrop(inner.abort_handle());
+        loop {
+            tokio::select! {
+                biased;
+                () = outer_tx.closed() => return,
+                ev = inner_rx.recv() => match ev {
+                    Some(ev) => {
+                        if outer_tx.send(ev).await.is_err() {
+                            return;
+                        }
+                    }
+                    None => break,
+                },
+            }
+        }
+        after.await;
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Agent turn dispatch — simple (direct)
 // ---------------------------------------------------------------------------
@@ -1081,23 +1157,40 @@ fn spawn_agent_turn(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Use an intermediate channel so we can observe events before
-        // forwarding them to the caller and track which tools were used.
+        // forwarding them to the caller and track which tools ran.
         let (inner_tx, mut inner_rx) = mpsc::channel::<AgentEvent>(256);
 
         let agent_clone = agent.clone();
         let turn_task =
             tokio::spawn(async move { agent_clone.run_turn(&user_text, inner_tx).await });
+        // Aborting this task (Esc) must release the actor: dropping `inner_rx`
+        // makes the turn cancel, and the guard aborts the request task too.
+        let _guard = AbortOnDrop(turn_task.abort_handle());
 
-        let mut tools_used: Vec<String> = Vec::new();
+        let mut seen: Vec<AgentEvent> = Vec::new();
 
-        while let Some(event) = inner_rx.recv().await {
-            if let AgentEvent::ToolCallStart { ref name, .. } = event {
-                tools_used.push(name.clone());
-            }
-            let is_terminal = matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. });
-            let _ = tx.send(event).await;
-            if is_terminal {
-                break;
+        loop {
+            tokio::select! {
+                biased;
+                // The UI went away: stop forwarding so the actor is released.
+                () = tx.closed() => return,
+                ev = inner_rx.recv() => {
+                    let Some(event) = ev else { break };
+                    if matches!(
+                        event,
+                        AgentEvent::ToolCallStart { .. } | AgentEvent::ToolCallEnd { .. }
+                    ) {
+                        seen.push(event.clone());
+                    }
+                    let is_terminal =
+                        matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. });
+                    if tx.send(event).await.is_err() {
+                        return;
+                    }
+                    if is_terminal {
+                        break;
+                    }
+                }
             }
         }
 
@@ -1106,7 +1199,8 @@ fn spawn_agent_turn(
         let _ = turn_task.await;
 
         // After the turn completes, run test verification if applicable.
-        maybe_run_test_verification(&agent, &tx, &tools_used).await;
+        let ran = code_modifying_tools_that_ran(&seen);
+        maybe_run_test_verification(&agent, &tx, &ran).await;
     })
 }
 
@@ -1131,21 +1225,50 @@ fn spawn_medium_turn(
                 .run_with_handle(&agent_clone, &user_text_clone, inner_tx)
                 .await
         });
+        let _guard = AbortOnDrop(refine_task.abort_handle());
 
-        let mut tools_used: Vec<String> = Vec::new();
+        let mut seen: Vec<AgentEvent> = Vec::new();
         let mut had_error = false;
+        // The refine loop runs several turns on this channel, each ending in
+        // a `Done`. Forward everything else as it arrives and send exactly one
+        // terminal `Done` (usage and cost summed over all rounds) at the end.
+        let mut total_usage = hone_proto::TokenUsage::default();
+        let mut total_cost = 0.0_f64;
+        let mut last_plan = None;
+        let mut saw_done = false;
 
-        while let Some(event) = inner_rx.recv().await {
-            if let AgentEvent::ToolCallStart { ref name, .. } = event {
-                tools_used.push(name.clone());
-            }
-            let is_terminal = matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. });
-            if matches!(event, AgentEvent::Error { .. }) {
-                had_error = true;
-            }
-            let _ = tx.send(event).await;
-            if is_terminal {
-                break;
+        loop {
+            tokio::select! {
+                biased;
+                // The UI went away: stop forwarding so the actor is released.
+                () = tx.closed() => return,
+                ev = inner_rx.recv() => {
+                    let Some(event) = ev else { break };
+                    match event {
+                        AgentEvent::Done { usage, cost_usd, plan } => {
+                            total_usage = total_usage + usage;
+                            total_cost += cost_usd;
+                            if plan.is_some() {
+                                last_plan = plan;
+                            }
+                            saw_done = true;
+                        }
+                        other => {
+                            if matches!(
+                                other,
+                                AgentEvent::ToolCallStart { .. } | AgentEvent::ToolCallEnd { .. }
+                            ) {
+                                seen.push(other.clone());
+                            }
+                            if matches!(other, AgentEvent::Error { .. }) {
+                                had_error = true;
+                            }
+                            if tx.send(other).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1165,11 +1288,23 @@ fn spawn_medium_turn(
             return;
         }
 
+        if saw_done {
+            let done = AgentEvent::Done {
+                usage: total_usage,
+                cost_usd: total_cost,
+                plan: last_plan,
+            };
+            if tx.send(done).await.is_err() {
+                return;
+            }
+        }
+
         // After the self-refine turn completes, run test verification.
         // This replaces the previous unconditional detect_test_cmd call and
         // respects the code-modifying tool guard, so Q&A turns don't trigger
-        // an unnecessary test run.
-        maybe_run_test_verification(&agent, &tx, &tools_used).await;
+        // an unnecessary test run. Only calls that actually ran count.
+        let ran = code_modifying_tools_that_ran(&seen);
+        maybe_run_test_verification(&agent, &tx, &ran).await;
     })
 }
 
@@ -3060,11 +3195,8 @@ async fn run_tui(
                                     agent.set_budget_limit(pending_gov.budget_usd).await;
                                 }
                                 if !pending_gov.permits.is_empty() {
-                                    let mut policy = agent.approval_policy().await;
-                                    for tool in &pending_gov.permits {
-                                        policy.approve_always(tool);
-                                    }
-                                    agent.set_approval_policy(policy).await;
+                                    // Fire-and-forget: never wait on the actor from the UI loop.
+                                    agent.approve_tools(pending_gov.permits.clone()).await;
                                 }
 
                                 // Spawn the appropriate turn.
@@ -3086,18 +3218,16 @@ async fn run_tui(
                                         tracing::debug!("complexity: Simple — direct agent turn");
                                         if restore_prompt {
                                             let restore_tools = applied_tool_filter;
-                                            tokio::spawn(async move {
+                                            {
                                                 let (tx2, rx2) = mpsc::channel(256);
-                                                spawn_agent_turn(agent_clone.clone(), effective_text_clone, tx2);
-                                                let mut rx2 = rx2;
-                                                while let Some(ev) = rx2.recv().await {
-                                                    let _ = agent_tx_clone.send(ev).await;
-                                                }
-                                                agent_clone.set_system_prompt(original_prompt).await;
-                                                if restore_tools {
-                                                    agent_clone.set_tools(base_tools).await;
-                                                }
-                                            })
+                                                let inner = spawn_agent_turn(agent_clone.clone(), effective_text_clone, tx2);
+                                                spawn_inline_turn_wrapper(inner, rx2, agent_tx_clone, async move {
+                                                    agent_clone.set_system_prompt(original_prompt).await;
+                                                    if restore_tools {
+                                                        agent_clone.set_tools(base_tools).await;
+                                                    }
+                                                })
+                                            }
                                         } else {
                                             spawn_agent_turn(agent.clone(), effective_text, agent_tx.clone())
                                         }
@@ -3106,18 +3236,16 @@ async fn run_tui(
                                         tracing::debug!("complexity: Medium — self-refine turn");
                                         if restore_prompt {
                                             let restore_tools = applied_tool_filter;
-                                            tokio::spawn(async move {
+                                            {
                                                 let (tx2, rx2) = mpsc::channel(256);
-                                                spawn_medium_turn(agent_clone.clone(), effective_text_clone, tx2);
-                                                let mut rx2 = rx2;
-                                                while let Some(ev) = rx2.recv().await {
-                                                    let _ = agent_tx_clone.send(ev).await;
-                                                }
-                                                agent_clone.set_system_prompt(original_prompt).await;
-                                                if restore_tools {
-                                                    agent_clone.set_tools(base_tools).await;
-                                                }
-                                            })
+                                                let inner = spawn_medium_turn(agent_clone.clone(), effective_text_clone, tx2);
+                                                spawn_inline_turn_wrapper(inner, rx2, agent_tx_clone, async move {
+                                                    agent_clone.set_system_prompt(original_prompt).await;
+                                                    if restore_tools {
+                                                        agent_clone.set_tools(base_tools).await;
+                                                    }
+                                                })
+                                            }
                                         } else {
                                             spawn_medium_turn(agent.clone(), effective_text, agent_tx.clone())
                                         }
@@ -3126,20 +3254,16 @@ async fn run_tui(
                                         tracing::debug!("complexity: Complex — orchestrated turn");
                                         if restore_prompt {
                                             let restore_tools = applied_tool_filter;
-                                            tokio::spawn(async move {
+                                            {
                                                 let (tx2, rx2) = mpsc::channel(256);
-                                                // agent_clone.clone() passes ownership into spawn_orchestrated_turn;
-                                                // the original agent_clone is retained for set_system_prompt below.
-                                                spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2, agent_clone.clone());
-                                                let mut rx2 = rx2;
-                                                while let Some(ev) = rx2.recv().await {
-                                                    let _ = agent_tx_clone.send(ev).await;
-                                                }
-                                                agent_clone.set_system_prompt(original_prompt).await;
-                                                if restore_tools {
-                                                    agent_clone.set_tools(base_tools).await;
-                                                }
-                                            })
+                                                let inner = spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2, agent_clone.clone());
+                                                spawn_inline_turn_wrapper(inner, rx2, agent_tx_clone, async move {
+                                                    agent_clone.set_system_prompt(original_prompt).await;
+                                                    if restore_tools {
+                                                        agent_clone.set_tools(base_tools).await;
+                                                    }
+                                                })
+                                            }
                                         } else {
                                             spawn_orchestrated_turn(base_config.clone(), effective_text, agent_tx.clone(), agent.clone())
                                         }

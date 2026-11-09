@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+/// Minimum quiet time before a keystroke may answer the approval menu.
+const MENU_KEY_GUARD: Duration = Duration::from_millis(400);
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hone_proto::AgentEvent;
 use tokio::sync::mpsc;
@@ -169,6 +172,10 @@ pub struct App {
     pub(crate) debugger_paused_args: Option<serde_json::Value>,
     pub(crate) debugger_paused_id: Option<String>,
     pub(crate) step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
+    /// When the approval menu last opened (see [`MENU_KEY_GUARD`]).
+    pub(crate) menu_opened_at: Option<Instant>,
+    /// Time of the previous keystroke (see [`MENU_KEY_GUARD`]).
+    pub(crate) last_key_at: Option<Instant>,
 
     /// Wall-clock start of the current agent turn; used to ring the bell when a
     /// turn completes after more than 10 seconds.
@@ -287,6 +294,8 @@ impl App {
             debugger_paused_args: None,
             debugger_paused_id: None,
             step_tx: None,
+            menu_opened_at: None,
+            last_key_at: None,
             turn_start: None,
             sessions_open: false,
             sessions_list: Vec::new(),
@@ -646,6 +655,35 @@ impl App {
 
     /// Process a terminal key event and update state accordingly.
     pub fn handle_key(&mut self, key: KeyEvent) {
+        self.handle_key_at(key, Instant::now());
+    }
+
+    /// Like [`App::handle_key`] with an explicit clock (test seam).
+    ///
+    /// While the approval menu is open a menu key counts only if it was
+    /// pressed at least [`MENU_KEY_GUARD`] after the menu opened and after the
+    /// previous keystroke, so text being typed when the menu pops up cannot
+    /// answer it. A key failing the guard (or not a menu key) goes to the
+    /// normal handlers. Esc always means Skip.
+    pub fn handle_key_at(&mut self, key: KeyEvent, now: Instant) {
+        let previous = self.last_key_at.replace(now);
+        let mut menu_ok = false;
+        if self.debugger_open && !self.sessions_open {
+            let settled = |t: Option<Instant>| {
+                t.is_none_or(|t| now.saturating_duration_since(t) >= MENU_KEY_GUARD)
+            };
+            let is_menu_key = matches!(
+                key.code,
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('y' | 'a' | 'd' | 'n' | 's')
+            );
+            menu_ok = is_menu_key
+                && (key.code == KeyCode::Esc
+                    || (settled(self.menu_opened_at) && settled(previous)));
+        }
+        self.route_key(key, menu_ok);
+    }
+
+    fn route_key(&mut self, key: KeyEvent, menu_ok: bool) {
         // Session-switcher overlay captures all keys while open.
         if self.sessions_open {
             self.handle_key_sessions(key);
@@ -653,7 +691,7 @@ impl App {
         }
 
         // Debugger overlay takes highest priority.
-        if self.debugger_open {
+        if menu_ok {
             self.handle_key_debugger(key);
             return;
         }
@@ -1198,7 +1236,7 @@ impl App {
     // -----------------------------------------------------------------------
     pub fn handle_key_debugger(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Char(' ') | KeyCode::Enter | KeyCode::Char('y') => {
+            KeyCode::Enter | KeyCode::Char('y') => {
                 if let Some(tx) = &self.step_tx {
                     let _ = tx.try_send(hone_proto::StepAction::Proceed);
                 }
@@ -2203,6 +2241,19 @@ impl App {
 
     /// Consume an event from the agent loop and update the display state.
     pub fn handle_agent_event(&mut self, event: AgentEvent) {
+        self.handle_agent_event_at(event, Instant::now());
+    }
+
+    /// Like [`App::handle_agent_event`] with an explicit clock (test seam);
+    /// `now` is recorded as the approval-menu open time.
+    pub fn handle_agent_event_at(&mut self, event: AgentEvent, now: Instant) {
+        if matches!(event, AgentEvent::ToolCallPaused { .. }) {
+            self.menu_opened_at = Some(now);
+        }
+        self.apply_agent_event(event);
+    }
+
+    fn apply_agent_event(&mut self, event: AgentEvent) {
         match event {
             AgentEvent::Token { text } => {
                 // Append to the last message if it is a streaming assistant message;

@@ -138,6 +138,50 @@ enum PolicyVerdict {
         is_error: bool,
         message: String,
     },
+    /// The turn's event receiver closed while waiting for an answer.
+    Cancelled,
+}
+
+/// Outcome of waiting for the user's answer on the step channel.
+enum StepWait {
+    Answer(StepAction),
+    /// The sender side was dropped: nobody will ever answer (deny).
+    ChannelClosed,
+    /// The turn's event receiver closed: cancel the turn.
+    EventsClosed,
+}
+
+/// Wait for one answer on the step channel. Shared by the policy `ask` prompt
+/// and the approval gate.
+///
+/// Both the lock and the wait race `events.closed()` (biased, first), so a
+/// turn whose UI went away can never wedge the actor. Stale answers buffered
+/// from an earlier, cancelled prompt are drained after taking the lock and
+/// before `prompts` are emitted, so they cannot answer this prompt.
+async fn wait_for_step(
+    rx: &Arc<tokio::sync::Mutex<mpsc::Receiver<StepAction>>>,
+    events: &mpsc::Sender<AgentEvent>,
+    prompts: Vec<AgentEvent>,
+) -> StepWait {
+    let mut guard = tokio::select! {
+        biased;
+        () = events.closed() => return StepWait::EventsClosed,
+        g = rx.lock() => g,
+    };
+    while guard.try_recv().is_ok() {}
+    for prompt in prompts {
+        if events.send(prompt).await.is_err() {
+            return StepWait::EventsClosed;
+        }
+    }
+    tokio::select! {
+        biased;
+        () = events.closed() => StepWait::EventsClosed,
+        a = guard.recv() => match a {
+            Some(a) => StepWait::Answer(a),
+            None => StepWait::ChannelClosed,
+        },
+    }
 }
 
 /// Record a policy-blocked call in the egress log (no-op without a log).
@@ -229,6 +273,7 @@ async fn apply_policy(
                 asked.push(rule_id);
             }
             AskOutcome::Blocked(v) => return v,
+            AskOutcome::Cancelled => return PolicyVerdict::Cancelled,
         }
     }
 }
@@ -236,6 +281,8 @@ async fn apply_policy(
 enum AskOutcome {
     Once,
     Always,
+    /// The turn's event receiver closed: nobody can answer, cancel the turn.
+    Cancelled,
     Blocked(PolicyVerdict),
 }
 
@@ -270,21 +317,24 @@ async fn ask_user(
         return AskOutcome::Blocked(requires_approval(&rule_id));
     };
 
-    let _ = events
-        .send(AgentEvent::ApprovalRequired {
+    let prompts = vec![
+        AgentEvent::ApprovalRequired {
             action: call.name.clone(),
             description: format!("policy rule {rule_id} requires approval"),
-        })
-        .await;
-    let _ = events
-        .send(AgentEvent::ToolCallPaused {
+        },
+        AgentEvent::ToolCallPaused {
             id: call.id.clone(),
             name: call.name.clone(),
             args: call.arguments.clone(),
-        })
-        .await;
+        },
+    ];
 
-    match rx.lock().await.recv().await {
+    let answer = match wait_for_step(rx, events, prompts).await {
+        StepWait::EventsClosed => return AskOutcome::Cancelled,
+        StepWait::ChannelClosed => None,
+        StepWait::Answer(a) => Some(a),
+    };
+    match answer {
         Some(StepAction::Proceed) => AskOutcome::Once,
         Some(StepAction::ApproveAlways(_)) => {
             approved.extend(session_approval_entries(policy, tool, call, &rule_id));
@@ -759,6 +809,33 @@ impl Agent {
         }
     }
 
+    /// Give every tool call of the latest assistant message that has no tool
+    /// result yet a "cancelled" result, so the history never keeps an orphan
+    /// `tool_call` after a cancelled turn.
+    fn cancel_pending_calls(&mut self, calls: &[ToolCallRequest], redact: bool) {
+        let mut answered: HashSet<String> = HashSet::new();
+        for m in self.context.messages().iter().rev() {
+            if m.role == hone_proto::Role::Assistant {
+                break;
+            }
+            if let Some(id) = &m.tool_call_id {
+                answered.insert(id.clone());
+            }
+        }
+        for c in calls {
+            if !answered.contains(&c.id) {
+                self.context.add_message(tool_result_message(
+                    redact,
+                    c.id.clone(),
+                    "",
+                    ToolText::Text(
+                        "(cancelled): the turn was cancelled before this tool ran".to_owned(),
+                    ),
+                ));
+            }
+        }
+    }
+
     /// Run `call` through the permission policy (no policy: always proceed).
     async fn gate_call(
         &mut self,
@@ -794,8 +871,11 @@ impl Agent {
     /// Run a single conversation turn: stream tokens, dispatch any tool calls,
     /// and return a `TurnResult`.
     ///
-    /// Events are sent on `events` as they arrive; the caller may drop the
-    /// receiver at any time without causing this function to fail.
+    /// Events are sent on `events` as they arrive. If the receiver is dropped
+    /// the turn is cancelled (nobody can answer an approval prompt): unanswered
+    /// tool calls get a "cancelled" result and `AgentError::Cancelled` is
+    /// returned. Callers that must run without a listener should keep the
+    /// receiver alive and drain it.
     #[tracing::instrument(skip(self, events), fields(
         model = %self.config.model,
         turn = tracing::field::Empty
@@ -940,6 +1020,11 @@ impl Agent {
         // We loop so that tool call → model follow-up cycles are handled
         // transparently.
         loop {
+            // Nobody is listening any more: stop before spending another model call.
+            if events.is_closed() {
+                return Err(AgentError::Cancelled);
+            }
+
             // --- Pre-LLM safety checks ----------------------------------
             // 1. Graceful context-budget abort: when usage passes 95% of the
             //    effective budget, disable tools and inject a "summarise what
@@ -1301,6 +1386,10 @@ impl Agent {
                                 is_error,
                                 message,
                             } => Some((result, is_error, message)),
+                            PolicyVerdict::Cancelled => {
+                                self.cancel_pending_calls(&pending_tool_calls, redact);
+                                return Err(AgentError::Cancelled);
+                            }
                         };
                         if blocked.is_none() {
                         let hook_event = HookEvent::PreToolUse {
@@ -1352,13 +1441,17 @@ impl Agent {
                             hook_outcomes.iter().find_map(|o| o.mutated_input.as_ref())
                         {
                             call_item.arguments = mutated.clone();
-                            if let PolicyVerdict::Blocked {
-                                result,
-                                is_error,
-                                message,
-                            } = self.gate_call(&call_item, &turn_trace, &events).await
-                            {
-                                blocked = Some((result, is_error, message));
+                            match self.gate_call(&call_item, &turn_trace, &events).await {
+                                PolicyVerdict::Proceed { .. } => {}
+                                PolicyVerdict::Blocked {
+                                    result,
+                                    is_error,
+                                    message,
+                                } => blocked = Some((result, is_error, message)),
+                            PolicyVerdict::Cancelled => {
+                                self.cancel_pending_calls(&pending_tool_calls, redact);
+                                return Err(AgentError::Cancelled);
+                            }
                             }
                         }
                         }
@@ -1568,6 +1661,10 @@ impl Agent {
                         .await
                     {
                         PolicyVerdict::Proceed { prompted } => policy_prompted = prompted,
+                        PolicyVerdict::Cancelled => {
+                            self.cancel_pending_calls(&pending_tool_calls, redact);
+                            return Err(AgentError::Cancelled);
+                        }
                         PolicyVerdict::Blocked {
                             result,
                             is_error,
@@ -1646,6 +1743,10 @@ impl Agent {
                             {
                                 PolicyVerdict::Proceed { prompted } => {
                                     policy_prompted |= prompted;
+                                }
+                                PolicyVerdict::Cancelled => {
+                                    self.cancel_pending_calls(&pending_tool_calls, redact);
+                                    return Err(AgentError::Cancelled);
                                 }
                                 PolicyVerdict::Blocked {
                                     result,
@@ -1789,62 +1890,110 @@ impl Agent {
                             .approval_policy
                             .requires_approval(&call.name, is_ro)
                     {
-                        let _ = events
-                            .send(AgentEvent::ToolCallPaused {
-                                id: call.id.clone(),
-                                name: call.name.clone(),
-                                args: call.arguments.clone(),
-                            })
-                            .await;
-
-                        if let Some(rx) = &self.config.step_rx {
-                            match rx.lock().await.recv().await {
-                                Some(StepAction::Skip) => {
-                                    let stub = serde_json::json!({"skipped": true});
-                                    let _ = events
-                                        .send(AgentEvent::ToolCallEnd {
-                                            id: call.id.clone(),
-                                            result: stub,
-                                            is_error: false,
-                                            duration_ms: 0,
-                                            cache_hit: false,
-                                        })
-                                        .await;
-                                    self.context.add_message(tool_result_message(
-                                        redact,
-                                        call.id.clone(),
-                                        "",
-                                        ToolText::Text("(skipped by debugger)".to_string()),
-                                    ));
-                                    i += 1;
-                                    continue;
-                                }
-                                Some(StepAction::ApproveAlways(tool_name)) => {
-                                    self.config.approval_policy.approve_always(&tool_name);
-                                    // Fall through to dispatch.
-                                }
-                                Some(StepAction::Deny(reason)) => {
-                                    let err_val = serde_json::json!({"error": "denied by user", "reason": reason});
-                                    let _ = events
-                                        .send(AgentEvent::ToolCallEnd {
-                                            id: call.id.clone(),
-                                            result: err_val,
-                                            is_error: true,
-                                            duration_ms: 0,
-                                            cache_hit: false,
-                                        })
-                                        .await;
-                                    self.context.add_message(tool_result_message(
-                                        redact,
-                                        call.id.clone(),
-                                        "",
-                                        ToolText::Text(format!("(denied by user): {reason}")),
-                                    ));
-                                    i += 1;
-                                    continue;
-                                }
-                                _ => {} // Proceed or channel closed — execute normally.
+                        let Some(rx) = self.config.step_rx.clone() else {
+                            // Approval is required but nobody can answer: deny,
+                            // and do not show a menu that cannot be answered.
+                            let err_val = serde_json::json!({
+                                "error": "denied: no approval channel",
+                            });
+                            let _ = events
+                                .send(AgentEvent::ToolCallEnd {
+                                    id: call.id.clone(),
+                                    result: err_val,
+                                    is_error: true,
+                                    duration_ms: 0,
+                                    cache_hit: false,
+                                })
+                                .await;
+                            self.context.add_message(tool_result_message(
+                                redact,
+                                call.id.clone(),
+                                "",
+                                ToolText::Text("(denied: no approval channel)".to_string()),
+                            ));
+                            i += 1;
+                            continue;
+                        };
+                        let paused = AgentEvent::ToolCallPaused {
+                            id: call.id.clone(),
+                            name: call.name.clone(),
+                            args: call.arguments.clone(),
+                        };
+                        match wait_for_step(&rx, &events, vec![paused]).await {
+                            StepWait::EventsClosed => {
+                                self.cancel_pending_calls(&pending_tool_calls, redact);
+                                return Err(AgentError::Cancelled);
                             }
+                            StepWait::ChannelClosed => {
+                                // Fail closed: the UI went away without answering.
+                                let err_val = serde_json::json!({
+                                    "error": "denied: approval channel closed",
+                                });
+                                let _ = events
+                                    .send(AgentEvent::ToolCallEnd {
+                                        id: call.id.clone(),
+                                        result: err_val,
+                                        is_error: true,
+                                        duration_ms: 0,
+                                        cache_hit: false,
+                                    })
+                                    .await;
+                                self.context.add_message(tool_result_message(
+                                    redact,
+                                    call.id.clone(),
+                                    "",
+                                    ToolText::Text("(denied: approval channel closed)".to_string()),
+                                ));
+                                i += 1;
+                                continue;
+                            }
+                            StepWait::Answer(StepAction::Skip) => {
+                                let stub = serde_json::json!({"skipped": true});
+                                let _ = events
+                                    .send(AgentEvent::ToolCallEnd {
+                                        id: call.id.clone(),
+                                        result: stub,
+                                        is_error: false,
+                                        duration_ms: 0,
+                                        cache_hit: false,
+                                    })
+                                    .await;
+                                self.context.add_message(tool_result_message(
+                                    redact,
+                                    call.id.clone(),
+                                    "",
+                                    ToolText::Text("(skipped by debugger)".to_string()),
+                                ));
+                                i += 1;
+                                continue;
+                            }
+                            StepWait::Answer(StepAction::ApproveAlways(_)) => {
+                                // The gate trusts the paused call, not the name
+                                // the UI sent.
+                                self.config.approval_policy.approve_always(&call.name);
+                                // Fall through to dispatch.
+                            }
+                            StepWait::Answer(StepAction::Deny(reason)) => {
+                                let err_val = serde_json::json!({"error": "denied by user", "reason": reason});
+                                let _ = events
+                                    .send(AgentEvent::ToolCallEnd {
+                                        id: call.id.clone(),
+                                        result: err_val,
+                                        is_error: true,
+                                        duration_ms: 0,
+                                        cache_hit: false,
+                                    })
+                                    .await;
+                                self.context.add_message(tool_result_message(
+                                    redact,
+                                    call.id.clone(),
+                                    "",
+                                    ToolText::Text(format!("(denied by user): {reason}")),
+                                ));
+                                i += 1;
+                                continue;
+                            }
+                            StepWait::Answer(StepAction::Proceed) => {}
                         }
                     }
 
@@ -1871,6 +2020,13 @@ impl Agent {
                     match result {
                         Ok(output) => {
                             let tool_cache_hit = output.cache_hit;
+                            // A read that ran on the sequential path (e.g. under
+                            // `AlwaysAsk`) counts for the read-before-edit guard.
+                            if call.name == "read_file" {
+                                if let Some(path) = extract_file_path(&call.name, &call.arguments) {
+                                    self.guards.record_read(&path);
+                                }
+                            }
                             // Redacted once; the event, the egress preview, the hook payload
                             // and the context message all use this value.
                             let (value, redacted_count) = if redact {
@@ -2461,6 +2617,10 @@ enum AgentCommand {
     SetStepChannel {
         rx: Option<Arc<tokio::sync::Mutex<mpsc::Receiver<StepAction>>>>,
     },
+    /// Add tools to the approval policy's allow-list (fire-and-forget).
+    ApproveTools {
+        names: Vec<String>,
+    },
     /// Read the current approval policy.
     GetApprovalPolicy {
         reply: oneshot::Sender<ToolApprovalPolicy>,
@@ -2563,6 +2723,11 @@ impl AgentHandle {
                     }
                     AgentCommand::SetStepChannel { rx } => {
                         agent.config.step_rx = rx;
+                    }
+                    AgentCommand::ApproveTools { names } => {
+                        for n in &names {
+                            agent.config.approval_policy.approve_always(n);
+                        }
                     }
                     AgentCommand::GetApprovalPolicy { reply } => {
                         let _ = reply.send(agent.config.approval_policy.clone());
@@ -2750,6 +2915,12 @@ impl AgentHandle {
             .cmd_tx
             .send(AgentCommand::SetApprovalPolicy { policy })
             .await;
+    }
+
+    /// Allow-list tools for the rest of the session. Fire-and-forget: never
+    /// waits for the actor, so it is safe to call while a turn is paused.
+    pub async fn approve_tools(&self, names: Vec<String>) {
+        let _ = self.cmd_tx.send(AgentCommand::ApproveTools { names }).await;
     }
 
     /// Install or clear the step-mode channel on the running agent.
