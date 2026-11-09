@@ -186,6 +186,7 @@ async fn pre_tool_use_hook_deny_prevents_shell_invocation() {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     };
 
     let mut agent = Agent::new(config);
@@ -351,6 +352,7 @@ async fn no_hooks_no_overhead() {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     };
 
     let mut agent = Agent::new(config);

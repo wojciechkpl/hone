@@ -14,6 +14,10 @@ pub struct GlobTool;
 
 #[async_trait]
 impl Tool for GlobTool {
+    fn subjects(&self, input: &crate::ToolInput, sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::search_root(input.get_str("path"), sctx)
+    }
+
     fn name(&self) -> &str {
         "glob"
     }

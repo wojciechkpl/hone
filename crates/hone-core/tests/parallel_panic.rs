@@ -212,6 +212,7 @@ fn make_config() -> AgentConfig {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     }
 }
 

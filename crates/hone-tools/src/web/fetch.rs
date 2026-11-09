@@ -95,11 +95,27 @@ fn re_excess_blanks() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\n{3,}").unwrap_or_else(|_| unreachable!()))
 }
 
+/// Follow redirects only while they stay on the same host (and up to `max` hops);
+/// otherwise stop so the caller can surface the 3xx response.
+fn same_host_redirects(max: usize) -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(move |attempt| {
+        let same_host = attempt
+            .previous()
+            .last()
+            .is_some_and(|prev| prev.host_str() == attempt.url().host_str());
+        if same_host && attempt.previous().len() < max {
+            attempt.follow()
+        } else {
+            attempt.stop()
+        }
+    })
+}
+
 impl WebFetchTool {
     pub fn new() -> Self {
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
-            .redirect(reqwest::redirect::Policy::limited(5))
+            .redirect(same_host_redirects(5))
             .user_agent(concat!("hone/", env!("CARGO_PKG_VERSION")))
             .build()
             .unwrap_or_default();
@@ -213,6 +229,10 @@ impl Default for WebFetchTool {
 
 #[async_trait]
 impl Tool for WebFetchTool {
+    fn subjects(&self, input: &crate::ToolInput, _sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        input.get_str("url").map(crate::ToolSubjects::host_of_url).unwrap_or_default()
+    }
+
     fn name(&self) -> &str {
         "web_fetch"
     }
@@ -262,6 +282,24 @@ impl Tool for WebFetchTool {
             .map_err(|e| ToolError::Other(e.to_string()))?;
 
         let status = response.status().as_u16();
+        if response.status().is_redirection() {
+            let location = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            if let Some(location) = location {
+                return Ok(ToolOutput::new(json!({
+                    "url": url,
+                    "title": null,
+                    "content_markdown": format!(
+                        "Redirect ({status}) to {location} was not followed (different host or too many redirects). Fetch it explicitly if you want it."
+                    ),
+                    "status": status,
+                    "location": location,
+                })));
+            }
+        }
         let html = response
             .text()
             .await

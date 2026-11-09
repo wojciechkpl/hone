@@ -13,6 +13,10 @@ pub struct GitStatusTool;
 
 #[async_trait]
 impl Tool for GitStatusTool {
+    fn subjects(&self, _input: &crate::ToolInput, _sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::git(self.name(), None)
+    }
+
     fn name(&self) -> &str {
         "git_status"
     }

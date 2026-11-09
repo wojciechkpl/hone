@@ -27,6 +27,10 @@ impl LspDiagnosticsTool {
 
 #[async_trait]
 impl Tool for LspDiagnosticsTool {
+    fn subjects(&self, input: &crate::ToolInput, sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::paths(input.get_str("file"), &[hone_config::policy::PathOp::Read], sctx)
+    }
+
     fn name(&self) -> &str {
         "lsp_diagnostics"
     }
@@ -89,6 +93,10 @@ impl LspHoverTool {
 
 #[async_trait]
 impl Tool for LspHoverTool {
+    fn subjects(&self, input: &crate::ToolInput, sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::paths(input.get_str("file"), &[hone_config::policy::PathOp::Read], sctx)
+    }
+
     fn name(&self) -> &str {
         "lsp_hover"
     }
@@ -168,6 +176,10 @@ impl LspCodeActionTool {
 
 #[async_trait]
 impl Tool for LspCodeActionTool {
+    fn subjects(&self, input: &crate::ToolInput, sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::paths(input.get_str("file"), &[hone_config::policy::PathOp::Read], sctx)
+    }
+
     fn name(&self) -> &str {
         "lsp_code_actions"
     }

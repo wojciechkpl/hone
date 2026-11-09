@@ -42,6 +42,7 @@ fn make_config_with_skills(registry: SkillRegistry) -> AgentConfig {
         skills: Some(Arc::new(registry)),
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     }
 }
 
@@ -92,6 +93,7 @@ async fn always_skill_injected_into_provider_messages() {
         skills: Some(Arc::new(registry)),
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     };
 
     let mut agent = Agent::new(config);
@@ -146,6 +148,7 @@ async fn no_skills_no_extra_system_message() {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     };
 
     let mut agent = Agent::new(config);
@@ -186,6 +189,7 @@ async fn non_matching_skill_not_injected() {
 
     let config2 = AgentConfig {
         provider: provider as Arc<dyn hone_providers::ModelProvider>,
+        policy: None,
         ..config
     };
 

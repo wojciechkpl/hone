@@ -28,6 +28,7 @@ use crate::memory_format::format_memory_body;
 use crate::memory_worthy::{MemoryCandidate, classify_turn};
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
+use crate::policy_gate::{GateDecision, PolicyConfig, decide, is_synthetic_rule};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
 use crate::skills::SkillRegistry;
@@ -114,6 +115,163 @@ pub struct AgentConfig {
     /// era: embeddings are never computed, and recall is BM25-only.  There is
     /// zero performance overhead in the `None` branch.
     pub embedder: Option<Arc<dyn hone_memory::Embedder>>,
+    /// Permission policy. `None` (the default) bypasses the policy gate
+    /// entirely. Session approvals are per `Agent` and never shared.
+    pub policy: Option<PolicyConfig>,
+}
+
+// ---------------------------------------------------------------------------
+// Permission policy gate
+// ---------------------------------------------------------------------------
+
+/// Result of running a tool call through the permission policy.
+enum PolicyVerdict {
+    /// The call may run. `prompted` is true when the user approved it at a
+    /// policy prompt, in which case `ToolApprovalPolicy` must not pause again.
+    Proceed { prompted: bool },
+    /// The call must not run; the caller reports `result` / `message`.
+    Blocked {
+        result: Value,
+        is_error: bool,
+        message: String,
+    },
+}
+
+/// Record a policy-blocked call in the egress log (no-op without a log).
+async fn record_policy_block(
+    egress: Option<&Arc<tokio::sync::Mutex<EgressLog>>>,
+    turn_trace: &TraceContext,
+    call: &ToolCallRequest,
+    reason: String,
+) {
+    let Some(log) = egress else { return };
+    let (span_id, parent_span_id) = turn_trace.child_span();
+    log.lock().await.record(EgressEntry {
+        timestamp: now_rfc3339(),
+        tool: call.name.clone(),
+        arguments: call.arguments.clone(),
+        result_preview: preview(&reason, 200),
+        blocked: true,
+        block_reason: Some(reason),
+        injection_risk: None,
+        duration_ms: 0,
+        trace_id: turn_trace.trace_id.clone(),
+        span_id,
+        parent_span_id,
+        span_kind: SpanKind::ToolCall,
+    });
+}
+
+/// Evaluate `call` against the policy, prompting the user for `ask` decisions
+/// when a step channel exists and failing closed otherwise.
+#[allow(clippy::too_many_arguments)]
+async fn apply_policy(
+    policy: &PolicyConfig,
+    approved: &mut HashSet<String>,
+    tool: Option<&dyn Tool>,
+    step_rx: Option<&Arc<tokio::sync::Mutex<mpsc::Receiver<StepAction>>>>,
+    egress: Option<&Arc<tokio::sync::Mutex<EgressLog>>>,
+    turn_trace: &TraceContext,
+    call: &ToolCallRequest,
+    events: &mpsc::Sender<AgentEvent>,
+) -> PolicyVerdict {
+    let rule_id = match decide(policy, approved, tool, call) {
+        GateDecision::Allow => return PolicyVerdict::Proceed { prompted: false },
+        GateDecision::Deny { rule_id } => {
+            record_policy_block(
+                egress,
+                turn_trace,
+                call,
+                format!("policy: deny (rule {rule_id})"),
+            )
+            .await;
+            return PolicyVerdict::Blocked {
+                result: serde_json::json!({ "error": "denied by policy", "rule": rule_id }),
+                is_error: true,
+                message: format!("(denied by policy: rule {rule_id})"),
+            };
+        }
+        GateDecision::Ask { rule_id } => rule_id,
+    };
+
+    let requires_approval = |rule_id: &str| PolicyVerdict::Blocked {
+        result: serde_json::json!({ "error": "requires approval", "rule": rule_id }),
+        is_error: true,
+        message: format!("(requires approval: rule {rule_id})"),
+    };
+
+    let Some(rx) = step_rx else {
+        record_policy_block(
+            egress,
+            turn_trace,
+            call,
+            format!("policy: requires approval (rule {rule_id})"),
+        )
+        .await;
+        return requires_approval(&rule_id);
+    };
+
+    let _ = events
+        .send(AgentEvent::ApprovalRequired {
+            action: call.name.clone(),
+            description: format!("policy rule {rule_id} requires approval"),
+        })
+        .await;
+    let _ = events
+        .send(AgentEvent::ToolCallPaused {
+            id: call.id.clone(),
+            name: call.name.clone(),
+            args: call.arguments.clone(),
+        })
+        .await;
+
+    match rx.lock().await.recv().await {
+        Some(StepAction::Proceed) => PolicyVerdict::Proceed { prompted: true },
+        Some(StepAction::ApproveAlways(_)) => {
+            if !is_synthetic_rule(&rule_id) {
+                approved.insert(rule_id);
+            }
+            PolicyVerdict::Proceed { prompted: true }
+        }
+        Some(StepAction::Skip) => {
+            record_policy_block(
+                egress,
+                turn_trace,
+                call,
+                format!("policy: skipped by user (rule {rule_id})"),
+            )
+            .await;
+            PolicyVerdict::Blocked {
+                result: serde_json::json!({ "skipped": true }),
+                is_error: false,
+                message: "(skipped by debugger)".to_owned(),
+            }
+        }
+        Some(StepAction::Deny(reason)) => {
+            record_policy_block(
+                egress,
+                turn_trace,
+                call,
+                format!("policy: denied by user (rule {rule_id})"),
+            )
+            .await;
+            PolicyVerdict::Blocked {
+                result: serde_json::json!({ "error": "denied by user", "reason": reason }),
+                is_error: true,
+                message: format!("(denied by user): {reason}"),
+            }
+        }
+        None => {
+            record_policy_block(
+                egress,
+                turn_trace,
+                call,
+                format!("policy: requires approval (rule {rule_id})"),
+            )
+            .await;
+            requires_approval(&rule_id)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +381,8 @@ pub struct Agent {
     /// `Plan` back to `Build` / `AutoApprove`, and to compute the read-only
     /// subset when transitioning to `Plan`.
     base_tools: ToolRegistry,
+    /// Policy rule ids the user approved with `ApproveAlways` this session.
+    policy_session_approved: HashSet<String>,
     /// Valid `HONE_CONTEXT_WINDOW` override, read once at construction.
     context_window_override: Option<u32>,
 }
@@ -266,6 +426,7 @@ impl Agent {
             guards: TurnGuards::default(),
             model_info_emitted: false,
             base_tools,
+            policy_session_approved: HashSet::new(),
             context_window_override,
         }
     }
@@ -958,6 +1119,9 @@ impl Agent {
                         Option<Result<Value, AgentError>>,
                     )> = Vec::with_capacity(raw_batch.len());
                     let mut live_batch: Vec<hone_proto::ToolCallRequest> = Vec::new();
+                    // Ids of calls the permission policy blocked in the pre-pass;
+                    // they count as neither tool calls nor guard reads.
+                    let mut policy_blocked: HashSet<String> = HashSet::new();
 
                     for mut call_item in raw_batch {
                         let hook_event = HookEvent::PreToolUse {
@@ -1006,6 +1170,46 @@ impl Agent {
                             {
                                 call_item.arguments = mutated.clone();
                             }
+                            let verdict = match self.config.policy.as_ref() {
+                                None => PolicyVerdict::Proceed { prompted: false },
+                                Some(policy) => {
+                                    apply_policy(
+                                        policy,
+                                        &mut self.policy_session_approved,
+                                        self.config.tools.get(&call_item.name).map(|t| &**t),
+                                        self.config.step_rx.as_ref(),
+                                        self.config.egress_log.as_ref(),
+                                        &turn_trace,
+                                        &call_item,
+                                        &events,
+                                    )
+                                    .await
+                                }
+                            };
+                            if let PolicyVerdict::Blocked {
+                                result,
+                                is_error,
+                                message,
+                            } = verdict
+                            {
+                                // The result loop below adds the tool-result
+                                // message from the pre-filled error.
+                                let _ = events
+                                    .send(AgentEvent::ToolCallEnd {
+                                        id: call_item.id.clone(),
+                                        result,
+                                        is_error,
+                                        duration_ms: 0,
+                                        cache_hit: false,
+                                    })
+                                    .await;
+                                policy_blocked.insert(call_item.id.clone());
+                                ordered_batch.push((
+                                    call_item,
+                                    Some(Err(AgentError::Internal { detail: message })),
+                                ));
+                                continue;
+                            }
                             ordered_batch.push((call_item.clone(), None));
                             live_batch.push(call_item);
                         }
@@ -1030,19 +1234,21 @@ impl Agent {
 
                     // Consume both vecs by value to avoid needing Clone on AgentError.
                     for (call, result) in batch.into_iter().zip(batch_results.into_iter()) {
-                        tool_calls_count += 1;
-                        tracing::debug!(tool_name = %call.name, "tool dispatched (parallel)");
+                        if !policy_blocked.contains(&call.id) {
+                            tool_calls_count += 1;
+                            tracing::debug!(tool_name = %call.name, "tool dispatched (parallel)");
 
-                        // Guard: record read_file calls so we know which files
-                        // have been read before any subsequent edit.
-                        if call.name == "read_file" {
-                            if let Some(path) = extract_file_path(&call.name, &call.arguments) {
-                                self.guards.record_read(&path);
+                            // Guard: record read_file calls so we know which files
+                            // have been read before any subsequent edit.
+                            if call.name == "read_file" {
+                                if let Some(path) = extract_file_path(&call.name, &call.arguments) {
+                                    self.guards.record_read(&path);
+                                }
                             }
+                            // Any read or shell call in the parallel path resets the
+                            // consecutive-edit counter.
+                            self.guards.break_edit_streak();
                         }
-                        // Any read or shell call in the parallel path resets the
-                        // consecutive-edit counter.
-                        self.guards.break_edit_streak();
 
                         match result {
                             Ok(value) => {
@@ -1150,63 +1356,6 @@ impl Agent {
                     tracing::debug!(tool_name = %pending_tool_calls[i].name, "tool dispatched (sequential)");
 
                     // ----------------------------------------------------------
-                    // Guard 1: Must-read-before-edit
-                    // If the agent tries to edit a file it hasn't read yet this
-                    // turn, automatically inject a read_file call first and feed
-                    // its result back before proceeding with the edit.
-                    // ----------------------------------------------------------
-                    if is_edit_tool(&pending_tool_calls[i].name) {
-                        if let Some(file_path) = extract_file_path(
-                            &pending_tool_calls[i].name,
-                            &pending_tool_calls[i].arguments,
-                        ) {
-                            if self.guards.needs_read_before_edit(&file_path) {
-                                tracing::debug!(
-                                    file = %file_path,
-                                    edit_tool = %pending_tool_calls[i].name,
-                                    "guard: injecting read_file before edit on unread file"
-                                );
-
-                                // Synthesise a read_file call.
-                                let read_args = serde_json::json!({ "path": file_path });
-                                let read_input = ToolInput::new(read_args);
-
-                                if let Some(read_tool) =
-                                    self.config.tools.get("read_file").map(Arc::clone)
-                                {
-                                    match read_tool.call(read_input, &ctx).await {
-                                        Ok(read_output) => {
-                                            // Record the read so the guard doesn't fire again.
-                                            self.guards.record_read(&file_path);
-                                            // Inject the read result into context as a synthetic
-                                            // tool result so the model has the file content.
-                                            let read_val = read_output.into_value();
-                                            let synthetic_id =
-                                                format!("guard-read-{}", uuid::Uuid::now_v7());
-                                            self.context.add_message(Message::tool_result(
-                                                synthetic_id,
-                                                format!(
-                                                    "(guard: auto-read '{}' before edit)\n{}",
-                                                    file_path,
-                                                    serde_json::to_string(&read_val)
-                                                        .unwrap_or_default()
-                                                ),
-                                            ));
-                                        }
-                                        Err(err) => {
-                                            tracing::debug!(
-                                                file = %file_path,
-                                                error = %err,
-                                                "guard: read_file injection failed; proceeding with edit"
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ----------------------------------------------------------
                     // Guard 3: Max consecutive edits without a read or shell call.
                     // If the agent has made 3+ consecutive edits, inject a hint
                     // message before processing this call.
@@ -1276,6 +1425,132 @@ impl Agent {
                             pending_tool_calls[i].arguments = mutated.clone();
                         }
                     }
+                    // Permission policy gate (after hooks and their input mutation,
+                    // before ToolCallStart).
+                    let mut policy_prompted = false;
+                    if let Some(policy) = self.config.policy.as_ref() {
+                        let call = &pending_tool_calls[i];
+                        match apply_policy(
+                            policy,
+                            &mut self.policy_session_approved,
+                            self.config.tools.get(&call.name).map(|t| &**t),
+                            self.config.step_rx.as_ref(),
+                            self.config.egress_log.as_ref(),
+                            &turn_trace,
+                            call,
+                            &events,
+                        )
+                        .await
+                        {
+                            PolicyVerdict::Proceed { prompted } => policy_prompted = prompted,
+                            PolicyVerdict::Blocked {
+                                result,
+                                is_error,
+                                message,
+                            } => {
+                                let _ = events
+                                    .send(AgentEvent::ToolCallEnd {
+                                        id: call.id.clone(),
+                                        result,
+                                        is_error,
+                                        duration_ms: 0,
+                                        cache_hit: false,
+                                    })
+                                    .await;
+                                self.context
+                                    .add_message(Message::tool_result(call.id.clone(), message));
+                                i += 1;
+                                continue;
+                            }
+                        }
+                    }
+                    // ----------------------------------------------------------
+                    // Guard 1: Must-read-before-edit (runs after hooks and the
+                    // policy gate so it sees the final, mutated path)
+                    // If the agent tries to edit a file it hasn't read yet this
+                    // turn, automatically inject a read_file call first and feed
+                    // its result back before proceeding with the edit.
+                    // ----------------------------------------------------------
+                    if is_edit_tool(&pending_tool_calls[i].name) {
+                        if let Some(file_path) = extract_file_path(
+                            &pending_tool_calls[i].name,
+                            &pending_tool_calls[i].arguments,
+                        ) {
+                            if self.guards.needs_read_before_edit(&file_path) {
+                                tracing::debug!(
+                                    file = %file_path,
+                                    edit_tool = %pending_tool_calls[i].name,
+                                    "guard: injecting read_file before edit on unread file"
+                                );
+
+                                // Synthesise a read_file call.
+                                let read_input_args = serde_json::json!({ "path": file_path });
+                                let read_input = ToolInput::new(read_input_args.clone());
+
+                                let read_allowed = match (
+                                    self.config.policy.as_ref(),
+                                    self.config.tools.get("read_file"),
+                                ) {
+                                    (Some(policy), Some(t)) => matches!(
+                                        decide(
+                                            policy,
+                                            &self.policy_session_approved,
+                                            Some(&**t),
+                                            &ToolCallRequest {
+                                                id: String::new(),
+                                                name: "read_file".to_owned(),
+                                                arguments: read_input_args.clone(),
+                                            },
+                                        ),
+                                        GateDecision::Allow
+                                    ),
+                                    _ => true,
+                                };
+                                if !read_allowed {
+                                    tracing::debug!(
+                                        file = %file_path,
+                                        "guard: policy does not allow a read; skipping injection"
+                                    );
+                                }
+                                if let Some(read_tool) = self
+                                    .config
+                                    .tools
+                                    .get("read_file")
+                                    .filter(|_| read_allowed)
+                                    .map(Arc::clone)
+                                {
+                                    match read_tool.call(read_input, &ctx).await {
+                                        Ok(read_output) => {
+                                            // Record the read so the guard doesn't fire again.
+                                            self.guards.record_read(&file_path);
+                                            // Inject the read result into context as a synthetic
+                                            // tool result so the model has the file content.
+                                            let read_val = read_output.into_value();
+                                            let synthetic_id =
+                                                format!("guard-read-{}", uuid::Uuid::now_v7());
+                                            self.context.add_message(Message::tool_result(
+                                                synthetic_id,
+                                                format!(
+                                                    "(guard: auto-read '{}' before edit)\n{}",
+                                                    file_path,
+                                                    serde_json::to_string(&read_val)
+                                                        .unwrap_or_default()
+                                                ),
+                                            ));
+                                        }
+                                        Err(err) => {
+                                            tracing::debug!(
+                                                file = %file_path,
+                                                error = %err,
+                                                "guard: read_file injection failed; proceeding with edit"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let call = &pending_tool_calls[i];
 
                     let _ = events
@@ -1295,10 +1570,11 @@ impl Agent {
                         .map(|t| t.is_read_only())
                         .unwrap_or(false);
 
-                    if self
-                        .config
-                        .approval_policy
-                        .requires_approval(&call.name, is_ro)
+                    if !policy_prompted
+                        && self
+                            .config
+                            .approval_policy
+                            .requires_approval(&call.name, is_ro)
                     {
                         let _ = events
                             .send(AgentEvent::ToolCallPaused {

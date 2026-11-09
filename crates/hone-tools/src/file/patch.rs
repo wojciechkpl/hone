@@ -339,6 +339,10 @@ pub struct PatchTool;
 
 #[async_trait]
 impl Tool for PatchTool {
+    fn subjects(&self, input: &crate::ToolInput, sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::patch(input.get_str("diff"), sctx)
+    }
+
     fn name(&self) -> &str {
         "apply_patch"
     }

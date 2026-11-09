@@ -13,6 +13,10 @@ pub struct WriteFileTool;
 
 #[async_trait]
 impl Tool for WriteFileTool {
+    fn subjects(&self, input: &crate::ToolInput, sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::paths(input.get_str("path"), &[hone_config::policy::PathOp::Write], sctx)
+    }
+
     fn name(&self) -> &str {
         "write_file"
     }

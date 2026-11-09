@@ -31,6 +31,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Rules that could never match are rejected at load time.
   - Each layer is capped at 1000 rules.
 
+### Permission policy in the agent loop (P2.2)
+
+- **Every tool call is checked.** A new decision point runs after PreToolUse hooks (and their input rewrites) and before dispatch, on both the sequential path and the parallel read-only path. The guard's automatic read before an edit is checked too. `crates/hone-core/src/policy_gate.rs`, `crates/hone-core/src/agent.rs`.
+- **What gets checked.** `Tool::subjects()` says what a call touches:
+  - file tools give their paths;
+  - `web_fetch` gives the host;
+  - `git_*` tools give a `git …` command;
+  - `shell` gives every command plus the paths in its arguments and redirects.
+
+  The shell parser handles quoting, wrappers (`env`, `sudo`, `timeout`, …), `sh -c`/`eval`, reserved words, substitutions, heredocs, globs, braces and `cd`. A command it can't parse asks whenever command or path rules exist. The parser is a speed bump; the sandbox is the boundary. `crates/hone-tools/src/subjects.rs`.
+- **Outcomes.**
+  - **Deny:** the call fails with the rule id.
+  - **Ask, terminal UI:** Hone pauses. "Always" approves that rule for the session, but never the synthetic `builtin:*` ids.
+  - **Ask, headless** (`--json`, one-shot): the call fails closed with "requires approval (rule …)". One approved rule never covers a different rule in the same call.
+  - **Egress log:** when the audit log is on, blocked calls are recorded.
+- **Paths are canonicalised** before matching: symlinks, dangling symlinks, on-disk case. Path rules ignore case on macOS and Windows.
+- **The CLI loads** `~/.config/hone/permissions.toml` and `.hone/permissions.toml`. If neither file exists, nothing changes. A broken file stops startup with exit code 2.
+- **Fixes found along the way.**
+  - `write_file` could escape the working directory through a dangling symlink.
+  - `web_fetch` followed redirects to other hosts; it now stops and returns the `Location`.
+  - Esc on an approval prompt in the TUI used to approve the call; it now skips it.
+  - The tool cache wrapper now forwards `is_read_only()`.
+- **Deferred,** with owners in `docs/plans/policy-p2.2-spec.md` §9: the `claude` CLI provider and `hone-mcp-server` run tools outside the gate (P2.3); `computer_control`, and `grep`/`glob` walks into protected files (P2.5).
+
 ### Memory subsystem overhaul
 
 A multi-PR rewrite of how memories are written, indexed, and recalled. The full design lives in `docs/priv/memory-improvements-plan-2026-04-30.md` (R1–R12); user-visible changes:

@@ -85,7 +85,7 @@ pub fn render_debugger(app: &App, frame: &mut Frame, area: Rect) {
     // Footer with keybinding hints.
     let footer_style = Style::default().fg(theme.text_muted);
     lines.push(Line::from(Span::styled(
-        "  Space/Enter proceed  s skip (inject stub)  Esc proceed",
+        "  Space/Enter proceed  s skip (inject stub)  Esc skip",
         footer_style,
     )));
 
@@ -159,9 +159,10 @@ mod tests {
         assert_eq!(action, StepAction::Skip);
     }
 
-    /// Esc sends Proceed (don't leave agent stuck) and closes the debugger.
+    /// Esc sends Skip (dismissing an approval prompt never runs the call, and the
+    /// agent is not left stuck) and closes the debugger.
     #[tokio::test]
-    async fn debugger_esc_sends_proceed_and_closes() {
+    async fn debugger_esc_sends_skip_and_closes() {
         let mut app = App::new();
         app.debugger_open = true;
 
@@ -172,7 +173,7 @@ mod tests {
 
         assert!(!app.debugger_open, "debugger should be closed after Esc");
         let action = rx.try_recv().expect("should have sent a StepAction");
-        assert_eq!(action, StepAction::Proceed);
+        assert_eq!(action, StepAction::Skip);
     }
 
     // -----------------------------------------------------------------------

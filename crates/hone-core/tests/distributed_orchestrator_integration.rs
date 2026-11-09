@@ -61,6 +61,7 @@ fn base_config() -> AgentConfig {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     }
 }
 

@@ -13,6 +13,10 @@ pub struct GitCheckoutTool;
 
 #[async_trait]
 impl Tool for GitCheckoutTool {
+    fn subjects(&self, input: &crate::ToolInput, _sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::git(self.name(), input.get_str("branch").or_else(|| input.get_str("name")))
+    }
+
     fn name(&self) -> &str {
         "git_checkout"
     }

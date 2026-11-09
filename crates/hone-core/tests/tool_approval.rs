@@ -188,6 +188,7 @@ fn make_config(
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     }
 }
 

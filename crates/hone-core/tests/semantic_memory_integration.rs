@@ -90,6 +90,7 @@ fn build_test_agent(
         // the implementation adds `pub embedder: Option<Arc<dyn Embedder>>` to
         // `AgentConfig`. That is the intended red-phase failure.
         embedder,
+        policy: None,
     };
 
     (Agent::new(config), store)
@@ -148,6 +149,7 @@ fn build_minimal_agent_config() -> AgentConfig {
         skills: None,
         mode: AgentMode::Build,
         embedder: None,
+        policy: None,
     }
 }
 

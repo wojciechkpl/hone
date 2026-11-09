@@ -93,6 +93,7 @@ impl ReviewerAgent {
             skills: None,
         embedder: None,
             mode: crate::plan_mode::AgentMode::Build,
+            policy: None,
         };
 
         Self { agent_config }
@@ -133,6 +134,7 @@ impl ReviewerAgent {
             skills: None,
         embedder: None,
             mode: crate::plan_mode::AgentMode::Build,
+            policy: None,
         });
 
         let turn = agent.run_turn(context, events).await?;

@@ -51,6 +51,7 @@ fn base_config(provider: Arc<MockProvider>) -> AgentConfig {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     }
 }
 
@@ -433,6 +434,7 @@ fn panic_agent_config() -> AgentConfig {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     }
 }
 

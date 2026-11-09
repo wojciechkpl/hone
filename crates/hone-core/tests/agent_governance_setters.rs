@@ -72,6 +72,7 @@ fn base_config(provider: Arc<MockProvider>) -> AgentConfig {
         skills: None,
         embedder: None,
         mode: hone_core::AgentMode::Build,
+        policy: None,
     }
 }
 

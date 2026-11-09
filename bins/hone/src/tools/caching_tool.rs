@@ -13,7 +13,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use hone_cache::{CacheError, CacheKey, InvalidationTag, ToolResultCache};
 use hone_proto::ToolLayer;
-use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput};
+use hone_tools::{
+    SubjectContext, Tool, ToolContext, ToolError, ToolInput, ToolOutput, ToolSubjects,
+};
 use serde_json::Value;
 
 /// Wraps a `Tool` with a transparent cache layer.
@@ -284,6 +286,14 @@ impl Tool for CachingToolWrapper {
 
     fn layer(&self) -> ToolLayer {
         self.inner.layer()
+    }
+
+    fn is_read_only(&self) -> bool {
+        self.inner.is_read_only()
+    }
+
+    fn subjects(&self, input: &ToolInput, sctx: &SubjectContext) -> ToolSubjects {
+        self.inner.subjects(input, sctx)
     }
 }
 
