@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 470" width="960" height="470" role="img" aria-labelledby="title desc">
+  <title id="title">Hone at a glance</title>
+  <desc id="desc">Four ways in (TUI, one-shot CLI, the honed daemon, the MCP server) share one agent loop. The loop talks to model providers, calls tools through the permission gate, and keeps memory and sessions in local SQLite files.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a1220"/>
+      <stop offset="1" stop-color="#22101a"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #e6edf3; }
+    .h { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; fill: #8b949e; }
+    .t { font-size: 14px; font-weight: 600; }
+    .s { font-size: 12px; fill: #8b949e; }
+    .m { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; fill: #f0b3bd; }
+    .box { fill: #161b22; stroke: #30363d; stroke-width: 1.2; }
+    .chip { fill: #21262d; stroke: #30363d; stroke-width: 1; }
+    .accent { fill: #e8445a; }
+    .line { stroke: #8b949e; stroke-width: 1.4; fill: none; }
+  </style>
+
+  <rect x="0" y="0" width="960" height="470" rx="14" fill="url(#bg)"/>
+
+  <!-- Title strip -->
+  <polygon points="28,30 58,38 28,46" class="accent"/>
+  <text x="68" y="44" class="t" style="font-size:18px">Hone at a glance</text>
+  <text x="932" y="44" class="s" text-anchor="end">one runtime, four ways in</text>
+
+  <!-- Column headers -->
+  <text x="40" y="86" class="h">WAYS IN</text>
+  <text x="340" y="86" class="h">AGENT LOOP (hone-core)</text>
+  <text x="700" y="86" class="h">MODELS</text>
+
+  <!-- Ways in -->
+  <rect x="28" y="98" width="240" height="56" rx="10" class="box"/>
+  <text x="44" y="122" class="t">hone (TUI)</text>
+  <text x="44" y="141" class="s">interactive terminal UI</text>
+
+  <rect x="28" y="164" width="240" height="56" rx="10" class="box"/>
+  <text x="44" y="188" class="t">hone "prompt" / --json</text>
+  <text x="44" y="207" class="s">one-shot and scripted runs</text>
+
+  <rect x="28" y="230" width="240" height="56" rx="10" class="box"/>
+  <text x="44" y="254" class="t">honed</text>
+  <text x="44" y="273" class="s">HTTP + SSE daemon, web UI at /ui</text>
+
+  <rect x="28" y="296" width="240" height="56" rx="10" class="box"/>
+  <text x="44" y="320" class="t">hone-mcp-server</text>
+  <text x="44" y="339" class="s">5 read-only tools, no model</text>
+
+  <!-- Core -->
+  <rect x="318" y="98" width="330" height="254" rx="12" fill="url(#core)" stroke="#e8445a" stroke-width="1.5"/>
+  <text x="338" y="126" class="t">context</text>
+  <text x="338" y="144" class="s">HONE.md, memory index, repo skeleton</text>
+
+  <rect x="338" y="158" width="290" height="1" fill="#5a2a35"/>
+  <text x="338" y="182" class="t">model call (streaming)</text>
+  <text x="338" y="200" class="s">retries, cost estimate, budget check</text>
+
+  <rect x="338" y="214" width="290" height="1" fill="#5a2a35"/>
+  <text x="338" y="238" class="t">tool calls</text>
+  <text x="338" y="256" class="s">permission gate, then the tool runs</text>
+  <rect x="338" y="268" width="92" height="24" rx="12" class="chip"/>
+  <text x="384" y="284" class="m" text-anchor="middle">allow</text>
+  <rect x="438" y="268" width="92" height="24" rx="12" class="chip"/>
+  <text x="484" y="284" class="m" text-anchor="middle">ask</text>
+  <rect x="538" y="268" width="90" height="24" rx="12" class="chip"/>
+  <text x="583" y="284" class="m" text-anchor="middle">deny</text>
+  <text x="338" y="330" class="s">loops until the model stops calling tools</text>
+
+  <!-- Models -->
+  <rect x="690" y="98" width="242" height="254" rx="12" class="box"/>
+  <text x="708" y="126" class="t">Anthropic API</text>
+  <text x="708" y="144" class="s">ANTHROPIC_API_KEY</text>
+  <text x="708" y="174" class="t">OpenAI-compatible</text>
+  <text x="708" y="192" class="s">OpenAI, DeepSeek, OpenRouter, vLLM</text>
+  <text x="708" y="222" class="t">Claude CLI · Gemini CLI</text>
+  <text x="708" y="240" class="s">pass-through, run their own tools</text>
+  <text x="708" y="270" class="t">Ollama (local)</text>
+  <text x="708" y="288" class="s">localhost:11434, model llama3.2</text>
+  <text x="708" y="330" class="s">auto-detected in this order</text>
+
+  <!-- Arrows: ways in -> core -->
+  <path d="M268,126 L316,160" class="line" marker-end="url(#arrow)"/>
+  <path d="M268,192 L316,200" class="line" marker-end="url(#arrow)"/>
+  <path d="M268,258 L316,240" class="line" marker-end="url(#arrow)"/>
+  <path d="M268,324 L316,280" class="line" marker-end="url(#arrow)"/>
+  <!-- core <-> models -->
+  <path d="M650,190 L688,190" class="line" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+
+  <!-- Bottom row: tools and storage -->
+  <text x="40" y="392" class="h">TOOLS</text>
+  <text x="40" y="420" class="m">read_file · write_file · edit_file · multi_edit · glob · grep</text>
+  <text x="40" y="440" class="m">shell · git_* · lsp_* · web_fetch · memory_read · MCP tools</text>
+
+  <text x="560" y="392" class="h">LOCAL STATE (~/.local/share/hone)</text>
+  <text x="560" y="420" class="m">memory.db · sessions.db</text>
+  <text x="560" y="440" class="m">index.db · tool-cache.db</text>
+
+  <path d="M483,352 L483,372" class="line" marker-end="url(#arrow)"/>
+</svg>

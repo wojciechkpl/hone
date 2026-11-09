@@ -1,1058 +1,330 @@
-# Hone — Architecture Document
+# Architecture
 
-**Version:** 1.0  
-**Date:** 2026-04-04  
-**Status:** Working Draft
+<p align="center">
+  <img alt="crates" src="https://img.shields.io/badge/workspace-19%20crates%20%2B%203%20binaries-orange">
+  <img alt="edition" src="https://img.shields.io/badge/Rust-edition%202024-orange">
+  <img alt="runtime" src="https://img.shields.io/badge/async-tokio-informational">
+  <img alt="storage" src="https://img.shields.io/badge/local%20state-SQLite-003b57">
+</p>
 
----
+This page describes Hone as the code stands on `main`: which crate does what, how one
+agent turn runs, where state lives, and how the daemon and the multi-agent features fit
+in. Every diagram was drawn from the source, not from a design plan.
 
-## Table of Contents
+<p align="center">
+  <img src="assets/hone-overview.svg" alt="Hone at a glance: four ways in, one agent loop, model providers, tools and local state" width="900">
+</p>
 
-1. [Guiding Principles](#1-guiding-principles)
-2. [Workspace & Crate Structure](#2-workspace--crate-structure)
-3. [Layer Architecture](#3-layer-architecture)
-4. [Core Trait Definitions](#4-core-trait-definitions)
-5. [Data Flow Diagrams](#5-data-flow-diagrams)
-6. [Crate Dependency Graph](#6-crate-dependency-graph)
-7. [Error Handling Strategy](#7-error-handling-strategy)
-8. [Async Runtime & Patterns](#8-async-runtime--patterns)
-9. [Storage Architecture](#9-storage-architecture)
-10. [Context Optimization](#10-context-optimization)
-11. [Memory Encryption](#11-memory-encryption)
-12. [Security Model](#12-security-model)
-13. [Key Design Decisions](#13-key-design-decisions)
-
----
-
-## 1. Guiding Principles
-
-- **Zero-cost at the hot path.** Layer 2 native tools are direct Rust function calls — no IPC, no serialization.
-- **Fail-closed security.** Sandbox setup failure aborts the operation, never silently degrades.
-- **Trait-boundary isolation.** Every external integration (model provider, LSP, MCP server) is behind a `dyn Trait` so it can be mocked in tests.
-- **Single writer, many readers.** SQLite (sessions, memory) uses WAL mode; only the daemon writes, clients read via the HTTP API. PostgreSQL + pgvector (semantic index) handles concurrent reads/writes from multiple indexer workers.
-- **Privacy by default.** Network access requires explicit user opt-in; telemetry is opt-in and off by default.
-
----
-
-## 2. Workspace & Crate Structure
-
-The repository uses a Cargo workspace. The root `Cargo.toml` declares the workspace; each subdirectory under `crates/` is an independent crate with a minimal, well-defined API surface.
-
-```
-hone/
-├── Cargo.toml                  # workspace root
-├── Cargo.lock
-├── HONE.md                     # project constitution (Layer 3 skills)
-├── deny.toml                   # cargo-deny: license + advisory policy
-├── clippy.toml
-├── rustfmt.toml
-├── .github/
-│   └── workflows/
-├── crates/
-│   ├── hone-core/              # agent loop, session state, orchestration
-│   ├── hone-providers/         # model provider abstraction + all adapters
-│   ├── hone-tools/             # Layer 2 native tools (file, shell, git, LSP bridge)
-│   ├── hone-mcp/               # Layer 1 MCP client (JSON-RPC, lazy schema loading)
-│   ├── hone-sandbox/           # kernel sandboxing (Seatbelt / Landlock / seccomp)
-│   ├── hone-index/             # semantic indexer (tree-sitter AST + SQLite vectors)
-│   ├── hone-memory/            # adaptive memory (encrypted SQLite, pattern learning)
-│   ├── hone-server/            # honed daemon (HTTP/2 + SSE API)
-│   ├── hone-tui/               # Ratatui terminal UI
-│   ├── hone-recipes/           # YAML recipe runner
-│   ├── hone-config/            # TOML + HONE.md config parsing
-│   └── hone-proto/             # shared types, DTOs, serialization
-├── bins/
-│   ├── hone/                   # CLI entry point (thin shell over hone-core / hone-tui)
-│   └── honed/                  # daemon entry point (thin shell over hone-server)
-├── docs/
-├── tests/                      # workspace-level integration tests
-└── benches/                    # workspace-level benchmarks (criterion)
-```
-
-### Crate responsibilities
-
-| Crate | Responsibility | Public surface |
-|---|---|---|
-| `hone-proto` | Shared DTOs, error types, serialization (serde) | Structs + enums only |
-| `hone-config` | Parse `~/.config/hone/config.toml` and `HONE.md` | `Config`, `HoneMd` structs |
-| `hone-providers` | `ModelProvider` trait + 75+ adapters | `ModelProvider`, `ProviderRegistry` |
-| `hone-sandbox` | Kernel sandbox setup and enforcement | `Sandbox` trait, `SandboxBuilder` |
-| `hone-tools` | Layer 2 native tools | `Tool` trait, tool registry |
-| `hone-mcp` | MCP client, JSON-RPC transport, lazy schema | `McpClient`, `McpTool` |
-| `hone-index` | AST parsing, embedding, vector search (PostgreSQL + pgvector) | `SemanticIndex`, `IndexBuilder` |
-| `hone-memory` | Encrypted SQLite adaptive memory | `MemoryStore`, `Pattern` |
-| `hone-core` | Agent loop, session, context window management | `Agent`, `Session`, `ContextManager` |
-| `hone-recipes` | YAML recipe parsing and execution | `Recipe`, `RecipeRunner` |
-| `hone-server` | `honed` HTTP/2+SSE daemon | `Server`, REST handlers |
-| `hone-tui` | Ratatui UI, input handling | `App`, `Ui` |
-
----
-
-## 3. Layer Architecture
+## 1. System context
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  U(["You"])
+  EXT(["MCP clients<br/>(editors, desktop apps)"])
+  WEB(["Browser, desktop app,<br/>scripts"])
+  subgraph host["Your machine"]
+    CLI["hone<br/>TUI and CLI"]
+    D["honed<br/>HTTP + SSE daemon"]
+    MS["hone-mcp-server<br/>stdio"]
+    FS[("Working dir<br/>and ~/.local/share/hone")]
+    SB["OS sandbox<br/>Seatbelt / Landlock"]
+  end
+  LLM(["Model providers<br/>Anthropic, OpenAI-compatible,<br/>Ollama, Claude CLI, Gemini CLI"])
+  MCPS(["MCP servers<br/>GitHub, databases, ..."])
+  U --> CLI
+  WEB --> D
+  EXT --> MS
+  CLI --> LLM
+  D --> LLM
+  CLI --> MCPS
+  CLI --> FS
+  D --> FS
+  MS --> FS
+  CLI -. "shell commands" .-> SB
+  D -. "shell commands" .-> SB
+```
+
+## 2. Workspace map
+
+The repository is one Cargo workspace (`resolver = "3"`, edition 2024, Rust 1.85+).
+
+| Group | Crate | What it does |
+|---|---|---|
+| **Binaries** | `hone-cli` → `hone` | CLI, TUI, provider detection, subcommands (`bins/hone`) |
+| | `honed` | Daemon: HTTP + SSE server, coordinator and worker roles (`bins/honed`) |
+| | `hone-mcp-server-bin` → `hone-mcp-server` | Exposes five read-only tools over MCP stdio (`bins/hone-mcp-server`) |
+| **Runtime** | `hone-core` | Agent loop, context manager, orchestrator, ensemble, self-refine, test loop, agent registry, memory index, egress log |
+| | `hone-providers` | `ModelProvider` trait; Anthropic, OpenAI, Ollama, Claude CLI, Gemini CLI and ACP adapters; caching, fallback and tier-routing wrappers |
+| | `hone-proto` | Shared types: messages, events, tool calls, model ids, pricing |
+| | `hone-config` | `config.toml` schema, `HONE.md` merge, `mcp.json`, permission policy compiler |
+| **Tools** | `hone-tools` | Native tools (files, shell, git, LSP, web, screen), subject extraction, the permission gate |
+| | `hone-sandbox` | `Sandbox` trait with Seatbelt (macOS), Landlock (Linux) and null backends |
+| | `hone-mcp` | MCP client: spawns servers, lists tools, wraps them as native tools |
+| | `hone-mcp-server` | MCP server library with the policy check on `tools/call` |
+| | `hone-acp-server` | Agent Client Protocol server library (stdio JSON-RPC) |
+| **State** | `hone-memory` | Memory store trait; SQLite, in-memory and AES-256-GCM encrypted stores; BM25 recall |
+| | `hone-index` | Tree-sitter symbol extraction into SQLite, with a file watcher |
+| | `hone-cache` | Tool-result cache (SQLite or in-memory backends) |
+| | `hone-provenance` | Tamper-evident SHA-256 hash chain over run events |
+| **Surfaces** | `hone-tui` | Ratatui UI: Agent Rail, command palette, session switcher, plan preview, review mode |
+| | `hone-server` | Axum routes, auth, rate limiting, sessions, `/run`, orchestration, distributed queue, web UI assets |
+| | `hone-desktop` | Tauri 2 shell around `honed` and the web UI (`apps/hone-desktop`) |
+| **Workflows** | `hone-recipes` | YAML recipes with steps, conditions and variables |
+| | `hone-spec` | `hone spec`: requirements, design and task documents from a goal |
+| | `hone-eval` | `hone eval`: deterministic task runner and report |
+| | `hone-finetune` | Builds JSONL fine-tuning datasets from session outputs |
+
+<details>
+<summary><b>Internal dependency graph</b></summary>
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart BT
+  proto["hone-proto"]
+  config["hone-config"] --> proto
+  sandbox["hone-sandbox"] --> proto
+  providers["hone-providers"] --> proto
+  memory["hone-memory"] --> proto
+  index["hone-index"] --> proto
+  tools["hone-tools"] --> config & memory & sandbox
+  mcp["hone-mcp"] --> config & tools
+  core["hone-core"] --> providers & tools & mcp & index & memory & sandbox
+  recipes["hone-recipes"] --> core
+  eval["hone-eval"] --> core
+  spec["hone-spec"] --> core
+  tui["hone-tui"] --> core
+  mcpserver["hone-mcp-server"] --> tools
+  server["hone-server"] --> core & recipes & eval & mcp
+  cli["hone (bin)"] --> tui & recipes & spec & eval
+  daemon["honed (bin)"] --> server
+  mcpbin["hone-mcp-server (bin)"] --> mcpserver
+```
+
+Arrows point from a crate to what it depends on. `hone-proto` is the only crate everything
+shares; `hone-providers` doesn't depend on `hone-tools`, so a provider can't call Hone's
+tools behind the gate's back. (The Claude CLI, Gemini CLI and ACP providers run their own
+tools instead; see [section 4](#4-providers).)
+
+</details>
+
+## 3. One agent turn
+
+`Agent::run_turn` (`crates/hone-core/src/agent.rs`) is the heart of Hone. Every surface,
+from the TUI to `honed` workers, drives the same function, usually through `AgentHandle`,
+an actor that owns the agent and takes commands over a channel.
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+sequenceDiagram
+  participant S as Surface (TUI, CLI, honed)
+  participant A as Agent
+  participant M as Memory store
+  participant P as Provider
+  participant G as Permission gate
+  participant T as Tool
+  S->>A: run_turn(input, events)
+  A->>A: budget check
+  A->>M: recall (BM25, top 5)
+  A->>A: first turn: context injection<br/>(repo skeleton + signatures)
+  loop until the model stops calling tools
+    A->>A: context over 95%? disable tools, ask for a summary<br/>repeating tool calls? add a corrective note
+    A->>P: system prompt + memories + history + tool schemas
+    P-->>A: streamed tokens and tool calls (with retries)
+    A-->>S: Token events
+    A->>G: decide(tool, arguments)
+    alt deny, or ask with no approval
+      G-->>A: refused, synthetic error result
+    else allow
+      A-->>S: ToolCallStart event
+      A->>T: call (read-only calls run in parallel)
+      T-->>A: result
+      A->>A: scan result for prompt injection,<br/>record to the egress log
+    end
+    A-->>S: ToolCallEnd event
+  end
+  A->>M: record, if the turn looks worth remembering
+  A-->>S: Done (usage, cost)
+```
+
+### Per-call pipeline
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  H["PreToolUse hooks<br/>(library hook point)"] --> PG["Permission gate<br/>allow / ask / deny"]
+  PG --> RB["Read-before-edit guard<br/>(injects a read_file)"]
+  RB --> AP["Approval policy<br/>Auto / AskRisky / AlwaysAsk"]
+  AP --> EX["Tool call"]
+  EX --> SC["Shell checks +<br/>OS sandbox (shell only)"]
+  SC --> PI["Prompt-injection scan<br/>of the result"]
+  PI --> EG["Egress audit log<br/>(--audit)"]
+```
+
+| Stage | Where | Notes |
+|---|---|---|
+| Hooks | `hone-core/src/hooks.rs` | `UserPromptSubmit` and `PreToolUse` hook points exist; no binary loads hooks yet |
+| Permission gate | `hone-tools/src/policy_gate.rs` | One `decide` shared by the agent, `honed` and `hone-mcp-server` |
+| Read-before-edit | `hone-core/src/agent.rs` | An edit to a file the model hasn't read this turn gets a `read_file` first |
+| Approval policy | `hone-proto/src/step_action.rs` | `Auto` for headless runs. The TUI sets `AskRisky` (or `AlwaysAsk` with `--step`), but today that only reaches orchestrated turns: the main TUI agent is built with `Auto` and no approval channel ([known bug](permissions-and-sandbox.md#known-issue-tui)) |
+| Shell checks, sandbox | `hone-tools/src/shell/` | See [Permissions and sandbox](permissions-and-sandbox.md) |
+| Injection scan | `hone-core/src/injection_detector.rs` | Flagged results are prefixed with a warning telling the model to treat them as data |
+| Egress log | `hone-core/src/egress_log.rs` | JSONL at `.hone/audit.jsonl`; read with `hone trace` |
+
+### Context management
+
+- **Budget.** `ContextConfig::for_model` uses a fraction of the advertised window, by model
+  family: Claude 60% of 200k, GPT-4/o-series 55% of 128k, Gemini 50% of 1M, DeepSeek, Qwen
+  and Kimi 45% of 128k, Llama 40% of 128k, anything else 50% of 128k.
+  `HONE_CONTEXT_WINDOW` replaces the advertised window.
+- **Compaction.** Old tool results are shortened first. When the history is still over
+  budget, the oldest messages are dropped, the first user message is kept, and a
+  `[session history: …]` note tells the model what was removed. Moving from exploration
+  to editing compresses exploration results harder.
+- **Injection.** On the first turn, the context injector adds a repository skeleton and the
+  most relevant signatures. Strategies: `adaptive` (default), `call-graph`, `hybrid`,
+  `dependency-graph`, `flat`. See [Context injection](context-injection.md).
+- **Stable prefix.** The system prompt comes first and memories and skills follow as
+  separate system messages, so the prompt prefix stays cache-friendly.
+
+## 4. Providers
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
 flowchart TB
-    subgraph L3["Layer 3 — Skills (HONE.md)"]
-        direction LR
-        HM["HONE.md\nMarkdown conventions\nzero runtime tokens"]
-    end
-
-    subgraph L2["Layer 2 — Native Tools (Rust hot path)"]
-        direction LR
-        FIO["File I/O"]
-        SH["Shell exec"]
-        GIT["Git ops"]
-        LSP["LSP bridge"]
-        IDX["Semantic index"]
-    end
-
-    subgraph L1["Layer 1 — MCP (External integrations)"]
-        direction LR
-        GH["GitHub MCP"]
-        JI["Jira MCP"]
-        SL["Slack MCP"]
-        DB["DB MCP"]
-        CM["Custom MCP"]
-    end
-
-    subgraph L0["Layer 0 — Code Mode (Orchestration)"]
-        direction LR
-        CM0["Agent-generated\nTS/Python calling\nnative + MCP via SDK"]
-    end
-
-    subgraph AGENT["hone-core: Agent Loop"]
-        AL["Agent Loop\n(orchestration)"]
-        CTX["Context Manager\n(window + compaction)"]
-        SESS["Session State"]
-    end
-
-    subgraph PROVIDERS["hone-providers"]
-        PR["Provider Registry\n(hot-swap, routing, fallback)"]
-        ANT["Anthropic"] & OAI["OpenAI"] & OLL["Ollama"] & OTH["75+ others"]
-    end
-
-    L3 -->|parsed at startup| AL
-    L2 -->|direct fn calls <1ms| AL
-    L1 -->|JSON-RPC lazy-loaded| AL
-    L0 -->|spawned subprocess| AL
-    AL <-->|streaming tokens| PR
-    PR --> ANT & OAI & OLL & OTH
-    AL <--> CTX
-    AL <--> SESS
+  T["trait ModelProvider<br/>complete() returns a stream of ProviderEvent<br/>runs_own_tools()"]
+  subgraph http["HTTP adapters: Hone runs the tools"]
+    AN["Anthropic"]
+    OA["OpenAI and compatible<br/>(base URL override)"]
+    OL["Ollama"]
+  end
+  subgraph pass["Pass-through: the agent runs its own tools"]
+    CC["Claude CLI"]
+    GC["Gemini CLI"]
+    ACP["ACP agents<br/>(library)"]
+  end
+  subgraph wrap["Wrappers"]
+    CA["CachingProvider<br/>(HONE_CACHE)"]
+    FB["FallbackChain"]
+    TR["TierFallbackProvider"]
+  end
+  T --- http
+  T --- pass
+  T --- wrap
 ```
 
----
+- Pass-through providers report `runs_own_tools() == true`. Wrappers forward it, and a
+  chain is "ungated" if any member is. Under a non-empty permission policy, Hone refuses
+  ungated providers unless `HONE_ALLOW_UNGATED_PROVIDER=1`.
+- Transient errors (timeouts, 429, 502/503) get up to 3 attempts (2 retries) with
+  exponential backoff starting at 500 ms.
+- The CLI's cost line is an estimate. `hone` applies one rate ($3 input / $15 output per
+  million tokens) to every model; `honed` looks models up in a pricing table.
 
-## 4. Core Trait Definitions
+## 5. Local state
 
-These trait definitions are the primary abstraction boundaries. All cross-crate interactions happen through these interfaces. Concrete types are hidden behind trait objects or generics with bounds.
+| Store | Crate | File | Written when |
+|---|---|---|---|
+| Memory | `hone-memory` | `~/.local/share/hone/memory.db` | After turns the classifier keeps |
+| Symbol index | `hone-index` | `~/.local/share/hone/index.db` | Background scan of `.rs` and `.py` files at startup, then a file watcher |
+| CLI sessions | `bins/hone` | `~/.local/share/hone/sessions.db` | After one-shot and `--plan` runs (the TUI writes a report to `.hone/reports/` instead) |
+| Tool cache | `hone-cache` | `~/.local/share/hone/tool-cache.db` | Read-only tool calls (`read_file`, `glob`, `grep`, `git_status`, `git_diff`, LSP tools, `symbol_search`, `symbol_at`); web tools are not cached; written even with `--ephemeral` |
+| Daemon sessions | `hone-server` | `~/.local/share/hone/sessions.db` or `HONE_SESSION_DB` | `POST /sessions`; purged after 30 days |
+| Distributed queue | `hone-server` | `HONE_DISTRIBUTED_DB` | Coordinator mode only |
+| Provenance | `hone-provenance` | `HONE_PROVENANCE_DIR/*.jsonl` | Each `honed` `/run`, when the directory is set |
+| Audit log | `hone-core` | `<cwd>/.hone/audit.jsonl` | Every tool call, with `--audit` |
 
-### 4.1 `ModelProvider` — `hone-providers`
+Everything is SQLite or JSONL on local disk. There is no Postgres dependency: a
+PostgreSQL + pgvector index was planned early on and is deferred.
 
-```rust
-/// A streaming response item from a model.
-pub enum ProviderEvent {
-    Token(String),
-    ToolCall(ToolCallRequest),
-    Usage(TokenUsage),
-    /// Stream ended prematurely because the provider hit its output-token
-    /// limit. `lost_tool_calls` lists tool names that were partially
-    /// emitted and dropped; the agent loop uses these to build a retry hint.
-    /// Anthropic emits this on `stop_reason == "max_tokens"`;
-    /// OpenAI on `finish_reason == "length"`.
-    Truncated { lost_tool_calls: Vec<String> },
-    Done,
-    Error(ProviderError),
-}
-
-/// Everything a provider needs to generate a response.
-pub struct CompletionRequest {
-    pub model: ModelId,
-    pub messages: Vec<Message>,
-    pub tools: Vec<ToolSchema>,
-    pub temperature: Option<f32>,
-    pub max_tokens: Option<u32>,
-    pub stop: Vec<String>,
-}
-
-#[async_trait]
-pub trait ModelProvider: Send + Sync + 'static {
-    fn id(&self) -> &str;
-    fn display_name(&self) -> &str;
-    fn supported_models(&self) -> Vec<ModelInfo>;
-
-    async fn complete(
-        &self,
-        request: CompletionRequest,
-    ) -> Result<BoxStream<'static, ProviderEvent>, ProviderError>;
-
-    /// Estimate token count without a network round-trip (best-effort).
-    fn estimate_tokens(&self, messages: &[Message]) -> u32;
-
-    /// Health check — used by the fallback chain.
-    async fn health(&self) -> ProviderHealth;
-}
-```
-
-### 4.2 `Tool` — `hone-tools`
-
-```rust
-pub struct ToolInput(serde_json::Value);
-pub struct ToolOutput(serde_json::Value);
-
-#[async_trait]
-pub trait Tool: Send + Sync + 'static {
-    fn name(&self) -> &str;
-    fn description(&self) -> &str;
-    fn schema(&self) -> serde_json::Value;      // JSON Schema for the model
-
-    async fn call(
-        &self,
-        input: ToolInput,
-        ctx: &ToolContext,
-    ) -> Result<ToolOutput, ToolError>;
-
-    /// Layer hint: L2 (native) or L1 (MCP).
-    fn layer(&self) -> ToolLayer;
-}
-
-pub struct ToolContext {
-    pub sandbox: Arc<dyn Sandbox>,
-    pub working_dir: PathBuf,
-    pub session_id: SessionId,
-}
-```
-
-### 4.3 `Sandbox` — `hone-sandbox`
-
-```rust
-pub struct SandboxPolicy {
-    pub allow_read: Vec<PathBuf>,
-    pub allow_write: Vec<PathBuf>,
-    pub allow_exec: Vec<PathBuf>,
-    pub allow_network: bool,
-    pub allow_env: Vec<String>,
-}
-
-#[async_trait]
-pub trait Sandbox: Send + Sync + 'static {
-    /// Apply the sandbox to the current process or a subprocess.
-    /// Returns Err if the policy cannot be enforced — NEVER silently degrades.
-    fn apply(&self, policy: &SandboxPolicy) -> Result<SandboxHandle, SandboxError>;
-
-    /// Restrict an already-running child process.
-    fn restrict_child(&self, child: &mut Command, policy: &SandboxPolicy)
-        -> Result<(), SandboxError>;
-
-    fn platform(&self) -> SandboxPlatform;
-}
-```
-
-### 4.4 `MemoryStore` — `hone-memory`
-
-```rust
-#[async_trait]
-pub trait MemoryStore: Send + Sync + 'static {
-    async fn record(&self, event: MemoryEvent) -> Result<(), MemoryError>;
-    async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError>;
-    async fn decay(&self) -> Result<DecayReport, MemoryError>;
-    async fn forget(&self, filter: &MemoryFilter) -> Result<u64, MemoryError>;
-    async fn export(&self, path: &Path) -> Result<(), MemoryError>;
-}
-```
-
-### 4.5 `SemanticIndex` — `hone-index`
-
-```rust
-#[async_trait]
-pub trait SemanticIndex: Send + Sync + 'static {
-    async fn index_path(&self, root: &Path) -> Result<IndexStats, IndexError>;
-    async fn search(&self, query: &str, limit: usize) -> Result<Vec<IndexResult>, IndexError>;
-    async fn symbol_at(&self, file: &Path, line: u32, col: u32)
-        -> Result<Option<Symbol>, IndexError>;
-    async fn invalidate(&self, paths: &[PathBuf]) -> Result<(), IndexError>;
-}
-```
-
-### 4.6 `McpClient` — `hone-mcp`
-
-```rust
-#[async_trait]
-pub trait McpClient: Send + Sync + 'static {
-    async fn connect(&mut self) -> Result<McpServerInfo, McpError>;
-    async fn list_tools(&self) -> Result<Vec<McpToolDef>, McpError>;
-    async fn call_tool(
-        &self,
-        name: &str,
-        args: serde_json::Value,
-    ) -> Result<serde_json::Value, McpError>;
-    fn tools_as_native(&self) -> Vec<Box<dyn Tool>>;
-}
-```
-
-### 4.7 `Agent` — `hone-core`
-
-```rust
-pub struct AgentConfig {
-    pub provider: Arc<dyn ModelProvider>,
-    pub tools: Vec<Box<dyn Tool>>,
-    pub sandbox: Arc<dyn Sandbox>,
-    pub memory: Arc<dyn MemoryStore>,
-    pub index: Arc<dyn SemanticIndex>,
-    pub session: Session,
-}
-
-pub struct Agent {
-    config: AgentConfig,
-    context: ContextManager,
-}
-
-impl Agent {
-    pub fn new(config: AgentConfig) -> Self { ... }
-
-    /// Run one user turn, streaming events back through the channel.
-    pub async fn run_turn(
-        &mut self,
-        user_input: &str,
-        events: mpsc::Sender<AgentEvent>,
-    ) -> Result<TurnResult, AgentError>;
-
-    /// Hot-swap the provider without resetting session state.
-    pub fn swap_provider(&mut self, provider: Arc<dyn ModelProvider>);
-}
-```
-
-#### Per-iteration safety checks
-
-Before each provider request within `run_turn`, the agent runs three
-pre-LLM checks. Each latches a one-shot flag so it fires at most once
-per turn:
-
-1. **Context-budget guard** — `ContextManager::is_over_ratio(0.95, extra)`
-   where `extra` is the system prompt + memories token estimate. When
-   tripped, the agent latches `context_emergency = true`, strips tools
-   from the next `CompletionRequest`, and injects a synthetic user
-   message telling the model to wrap up now without tool calls. This
-   prevents the loop from running into a mid-tool-call truncation.
-2. **Doom-loop detector** — `doom_loop::check_for_doom_loop(messages)`
-   scans the last 30 messages for 3+ identical consecutive tool calls
-   or a repeating 2–5 step pattern (see `crates/hone-core/src/doom_loop.rs`).
-   Injects a corrective user message telling the model to stop repeating
-   the failing approach. Gated on `!context_emergency` so the two
-   signals never stack in the same iteration.
-3. **Output-truncation retry** — fires *after* the stream completes, not
-   before. If the provider emits `ProviderEvent::Truncated { lost_tool_calls }`
-   (triggered by Anthropic `stop_reason = "max_tokens"` or OpenAI
-   `finish_reason = "length"`), the agent commits the partial assistant
-   text (or a `"[response truncated at output token limit]"` placeholder
-   when nothing streamed) to preserve role alternation, then injects a
-   synthetic user message naming the dropped tool calls so the model
-   retries with smaller content.
-
-All three are tested end-to-end in `crates/hone-core/tests/agent_turn.rs`.
-
----
-
-## 5. Data Flow Diagrams
-
-### 5.1 Single Agent Turn
+### Memory flow
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant TUI as hone-tui / CLI
-    participant Core as hone-core (Agent)
-    participant Ctx as ContextManager
-    participant Provider as ModelProvider
-    participant Tools as ToolRegistry (L2 + L1)
-    participant Sandbox as Sandbox
-    participant Memory as MemoryStore
-
-    User->>TUI: types prompt
-    TUI->>Core: run_turn(input)
-    Core->>Memory: recall(context_query)
-    Memory-->>Core: relevant memories
-    Core->>Ctx: build_messages(input, memories, history)
-    Ctx-->>Core: messages (within token budget)
-    Core->>Provider: complete(request) → Stream
-    Provider-->>Core: Token events (streaming)
-    Core-->>TUI: AgentEvent::Token (streamed)
-
-    loop Tool calls
-        Provider-->>Core: ToolCall event
-        Core->>Sandbox: verify policy allows tool
-        Sandbox-->>Core: Ok / Err (fail-closed)
-        Core->>Tools: call(tool_name, args)
-        Tools-->>Core: ToolOutput
-        Core->>Provider: append tool result, continue stream
-    end
-
-    Provider-->>Core: Done + Usage
-    Core->>Memory: record(turn_summary, patterns)
-    Core-->>TUI: AgentEvent::Done(TurnResult)
-    TUI-->>User: final response rendered
-```
-
-### 5.2 Provider Hot-Swap
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Core as Agent
-    participant Reg as ProviderRegistry
-    participant Old as OldProvider
-    participant New as NewProvider
-
-    User->>Core: /model switch anthropic:claude-opus-4-5
-    Core->>Reg: get("anthropic:claude-opus-4-5")
-    Reg-->>Core: Arc<dyn ModelProvider>
-    Core->>Old: (no teardown needed — stateless)
-    Core->>Core: swap_provider(new)
-    Note over Core: session history preserved
-    Note over Core: context window re-evaluated for new model limits
-    Core-->>User: "Switched to claude-opus-4-5 (200K ctx)"
-    Core->>New: next complete() call uses new provider
-```
-
-### 5.3 Kernel Sandbox Lifecycle
-
-```mermaid
-sequenceDiagram
-    participant Core as Agent
-    participant SB as SandboxBuilder
-    participant OS as OS Kernel
-
-    Core->>SB: build(policy)
-    SB->>SB: detect platform (macOS / Linux / container)
-    alt macOS
-        SB->>OS: sandbox_init (Seatbelt profile)
-    else Linux bare-metal
-        SB->>OS: landlock_create_ruleset + seccomp-BPF filter
-    else container / fallback
-        SB->>OS: setrlimit + no-new-privs
-    end
-
-    alt Sandbox applied successfully
-        OS-->>SB: Ok
-        SB-->>Core: SandboxHandle
-    else Sandbox failed
-        OS-->>SB: Err
-        SB-->>Core: Err(SandboxError::Unavailable)
-        Note over Core: FAIL-CLOSED: abort operation
-    end
-```
-
-### 5.4 Daemon Client-Server Flow
-
-```mermaid
-sequenceDiagram
-    participant CLI as hone CLI
-    participant Web as Web PWA
-    participant Daemon as honed (HTTP/2+SSE)
-    participant Core as Agent (per-session)
-    participant SQLite as SQLite (sessions, memory)
-    participant PG as PostgreSQL + pgvector (index)
-
-    CLI->>Daemon: POST /sessions {model, tools}
-    Daemon->>Core: spawn Agent for session_id
-    Daemon-->>CLI: {session_id, sse_url}
-
-    CLI->>Daemon: POST /sessions/{id}/turns {input}
-    Daemon->>Core: run_turn(input)
-    Core->>PG: semantic search for context
-    PG-->>Core: relevant symbols + embeddings
-    Core-->>Daemon: AgentEvent stream
-    Daemon-->>CLI: SSE: data: {event} \n\n
-
-    Web->>Daemon: GET /sessions/{id}/events (SSE)
-    Note over Daemon,Web: Web UI observes same session
-    Daemon-->>Web: SSE replay from session start
-
-    Core->>SQLite: persist turn (WAL write)
-    SQLite-->>Core: Ok
-```
-
----
-
-## 6. Crate Dependency Graph
-
-```mermaid
-graph TD
-    PROTO[hone-proto]
-    CFG[hone-config]
-    SB[hone-sandbox]
-    PROV[hone-providers]
-    TOOLS[hone-tools]
-    MCP[hone-mcp]
-    IDX[hone-index]
-    MEM[hone-memory]
-    CORE[hone-core]
-    RECIPES[hone-recipes]
-    SERVER[hone-server]
-    TUI[hone-tui]
-    BIN_CLI[bin: hone]
-    BIN_DAEMON[bin: honed]
-
-    PROTO --> CFG
-    PROTO --> SB
-    PROTO --> PROV
-    PROTO --> TOOLS
-    PROTO --> MCP
-    PROTO --> IDX
-    PROTO --> MEM
-    CFG --> CORE
-    SB --> TOOLS
-    SB --> CORE
-    PROV --> CORE
-    TOOLS --> CORE
-    MCP --> TOOLS
-    MCP --> CORE
-    IDX --> CORE
-    MEM --> CORE
-    CORE --> RECIPES
-    CORE --> SERVER
-    CORE --> TUI
-    TUI --> BIN_CLI
-    SERVER --> BIN_DAEMON
-    RECIPES --> BIN_CLI
-    RECIPES --> BIN_DAEMON
-```
-
-**Rules enforced by `cargo-deny`:**
-- `hone-proto` must have zero non-`serde` external dependencies.
-- `hone-sandbox` must not depend on `hone-providers` or `hone-mcp` (avoids pulling network code into the sandbox enforcement path).
-- `hone-tui` must not depend on `hone-server` (clean TUI/daemon separation).
-
----
-
-## 7. Error Handling Strategy
-
-### Per-crate errors with `thiserror`
-
-Each crate defines its own error enum using `thiserror`. Cross-crate propagation uses the `#[from]` conversion where natural, otherwise explicit mapping. Library crates never use `anyhow`.
-
-```rust
-// hone-providers/src/error.rs
-#[derive(Debug, thiserror::Error)]
-pub enum ProviderError {
-    #[error("provider '{provider}' returned HTTP {status}: {body}")]
-    Http { provider: String, status: u16, body: String },
-
-    #[error("provider '{provider}' stream interrupted: {source}")]
-    Stream { provider: String, #[source] source: std::io::Error },
-
-    #[error("rate limit exceeded for '{provider}', retry after {retry_after_secs}s")]
-    RateLimit { provider: String, retry_after_secs: u64 },
-
-    #[error("model '{model}' not found in provider '{provider}'")]
-    ModelNotFound { model: String, provider: String },
-
-    #[error("request serialization failed: {0}")]
-    Serialization(#[from] serde_json::Error),
-}
-```
-
-### Application binaries use `anyhow`
-
-`bins/hone/main.rs` and `bins/honed/main.rs` return `anyhow::Result<()>` and use `context()` / `with_context()` to add user-visible detail to errors before display.
-
-### Panic policy
-
-- `unwrap()` and `expect()` are banned in all `crates/` code via a `clippy` rule.
-- The only permitted `expect()` calls are in `build.rs` scripts and test code, with a comment explaining the invariant.
-- Panics in async tasks are caught at the `tokio::spawn` boundary and converted to errors.
-
-### Error propagation map
-
-```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
 flowchart LR
-    PE[ProviderError] -->|Into| AE[AgentError]
-    TE[ToolError] -->|Into| AE
-    SE[SandboxError] -->|Into| AE
-    ME[MemoryError] -->|context| AE
-    IE[IndexError] -->|context| AE
-    AE -->|anyhow::Error| CLI[CLI: display to user]
-    AE -->|JSON response| Server[Server: HTTP 4xx/5xx]
+  START["Session start"] --> IDX["Memory index in the system prompt<br/>(ids + one-line descriptions, by kind)"]
+  TURN["Each turn"] --> REC["BM25 recall of the top 5<br/>for the user's message"]
+  REC --> MSG["'Relevant Memories' system message"]
+  IDX --> READ["Model calls memory_read(id)<br/>for a full body"]
+  DONE["Turn finished"] --> CLS{"classify_turn:<br/>correction, preference,<br/>project fact, reference?"}
+  CLS -->|yes| WR["record (kind: feedback,<br/>user, project, reference)"]
+  CLS -->|no| SKIP["write nothing"]
 ```
 
----
-
-## 8. Async Runtime & Patterns
-
-### Runtime: `tokio` (multi-thread scheduler)
-
-- Both the CLI and daemon use `#[tokio::main]` with the multi-thread scheduler.
-- CPU-bound work (AST parsing, embedding generation, sandbox setup) is dispatched to `tokio::task::spawn_blocking`.
-- The TUI runs its event loop in a dedicated blocking thread communicating via `mpsc` channels.
-
-### Concurrency patterns
-
-```rust
-// Concurrent provider health checks — JoinSet
-let mut set = JoinSet::new();
-for provider in registry.all() {
-    set.spawn(async move { (provider.id(), provider.health().await) });
-}
-while let Some(Ok((id, health))) = set.join_next().await {
-    results.insert(id, health);
-}
-
-// Racing a stream against a timeout — select!
-tokio::select! {
-    event = stream.next() => handle_event(event),
-    _ = tokio::time::sleep(STREAM_TIMEOUT) => bail!("stream timeout"),
-    _ = cancel_token.cancelled() => return Ok(()),
-}
-
-// Structured cancellation propagated through all tasks
-let token = CancellationToken::new();
-tokio::spawn(agent_loop(token.child_token()));
-// Clean shutdown: token.cancel()
-```
-
-### Backpressure
-
-All inter-component communication uses bounded `tokio::sync::mpsc` channels. The TUI rendering loop consumes `AgentEvent` tokens; if the TUI falls behind, the provider stream is paused (backpressure propagates via the bounded channel).
-
-### Streaming architecture
+## 6. The daemon
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
 flowchart LR
-    P[Provider\nasync_stream] -->|BoxStream| AL[Agent Loop\nselect!]
-    AL -->|mpsc::Sender bounded| TUI[TUI Event Loop]
-    AL -->|mpsc::Sender bounded| SSE[SSE encoder\nhone-server]
-    TUI -->|render| Terminal
-    SSE -->|HTTP/2 push| Client
+  REQ["HTTP request"] --> RL["Rate limit<br/>(100 per minute)"]
+  RL --> PUB{"Public route?"}
+  PUB -->|"/health, /openapi.json, /ui"| H["Handler"]
+  PUB -->|no| AUTH["Bearer token check<br/>(when HONE_AUTH_TOKEN is set)"]
+  AUTH --> H
+  H --> RUN["/run, /run/{id}/step<br/>stateless agent + SSE"]
+  H --> ORC["/orchestrate"]
+  H --> SES["/sessions, collaboration"]
+  H --> DIST["/distributed/*<br/>queue, leases, results"]
+  H --> OBS["/memory, /provenance,<br/>/evals, /files, /team"]
 ```
 
----
+One binary plays up to three roles, chosen by environment variables:
 
-## 9. Storage Architecture
-
-Hone uses a **dual-database strategy**:
-- **SQLite** for local session/memory data (single-user, zero-ops, optionally encrypted)
-- **PostgreSQL + pgvector** for semantic index (vector similarity search, concurrent access)
-
-This separation ensures the CLI works offline without external dependencies, while allowing production deployments to leverage PostgreSQL's scalability and vector search capabilities.
-
-### 9.1 SQLite — Sessions & Adaptive Memory
-
-Local-first, single-file storage for data that benefits from zero configuration and offline access.
-
-```
-~/.local/share/hone/
-├── hone.db               # sessions, turns, tool calls, memories (WAL mode)
-├── hone.db-wal
-└── hone.db-shm
-```
-
-```mermaid
-erDiagram
-    SESSIONS {
-        text id PK
-        text title
-        text model_id
-        integer created_at
-        integer updated_at
-    }
-    TURNS {
-        text id PK
-        text session_id FK
-        text role
-        text content
-        integer tokens_in
-        integer tokens_out
-        real cost_usd
-        integer created_at
-    }
-    MEMORIES {
-        text id PK
-        text kind
-        text content
-        text tags_json
-        real weight
-        integer last_accessed
-        integer decay_at
-    }
-    TOOL_CALLS {
-        text id PK
-        text turn_id FK
-        text tool_name
-        text input_json
-        text output_json
-        integer duration_ms
-        integer created_at
-    }
-
-    SESSIONS ||--o{ TURNS : contains
-    TURNS ||--o{ TOOL_CALLS : has
-```
-
-SQLite is accessed via `sqlx` with WAL mode. Migration files live in `crates/hone-memory/migrations/` and run automatically on startup via `sqlx::migrate!`.
-
-#### Memory encryption
-
-`hone-memory` wraps SQLite via `sqlcipher` (behind a feature flag `encrypted-memory`). The encryption key is derived from a user passphrase using Argon2id and stored in the system keychain (via `keyring` crate).
-
-### 9.2 PostgreSQL + pgvector — Semantic Index
-
-The semantic index uses PostgreSQL with the `pgvector` extension for approximate nearest-neighbor (ANN) vector search over code embeddings.
-
-**Why PostgreSQL + pgvector instead of SQLite:**
-- **ANN indexing**: pgvector provides `ivfflat` and `hnsw` index types for sub-linear similarity search. SQLite has no native vector index support — a custom extension would be needed.
-- **Scalability**: Large monorepos can produce millions of symbols with embeddings. PostgreSQL handles this without WAL checkpoint pressure.
-- **Concurrent access**: Multiple `honed` daemon instances or background indexer workers can read/write concurrently without SQLite's single-writer bottleneck.
-- **Ecosystem**: pgvector is production-proven, actively maintained, and integrates naturally with embedding pipelines.
-
-#### Connection strategy
-
-```
-Development:  postgres://localhost:5432/hone_index  (local Docker or system install)
-Server mode:  Configurable via DATABASE_URL in config.toml or env var
-```
-
-The connection URL is configured in `[index]` section of `config.toml`:
-
-```toml
-[index]
-database_url = "postgres://localhost:5432/hone_index"
-embedding_dimensions = 384
-index_type = "hnsw"  # or "ivfflat"
-```
-
-#### Schema
-
-```mermaid
-erDiagram
-    INDEX_FILES {
-        text id PK "uuid v7"
-        text file_path "unique"
-        text content_hash "sha256"
-        integer indexed_at
-    }
-    INDEX_SYMBOLS {
-        text id PK "uuid v7"
-        text file_id FK
-        text name
-        text kind "function, struct, class, etc."
-        integer line
-        integer col
-        vector embedding "vector(384)"
-        integer indexed_at
-    }
-
-    INDEX_FILES ||--o{ INDEX_SYMBOLS : contains
-```
-
-```sql
--- pgvector extension
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- Symbols table with vector column
-CREATE TABLE index_symbols (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    file_id     UUID NOT NULL REFERENCES index_files(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    kind        TEXT NOT NULL,
-    line        INTEGER NOT NULL,
-    col         INTEGER NOT NULL,
-    embedding   vector(384),
-    indexed_at  BIGINT NOT NULL
-);
-
--- HNSW index for fast ANN search
-CREATE INDEX idx_symbols_embedding ON index_symbols
-    USING hnsw (embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
-
--- B-tree for file lookups and invalidation
-CREATE INDEX idx_symbols_file_id ON index_symbols (file_id);
-CREATE INDEX idx_symbols_name ON index_symbols (name);
-```
-
-#### Fallback for offline/local-only use
-
-When no PostgreSQL connection is available, `hone-index` falls back to the current in-memory `SemanticIndex` with regex-based symbol extraction and substring matching. This ensures the CLI works without any external dependencies — pgvector is only required for embedding-powered semantic search.
-
-```mermaid
-flowchart TD
-    START([Index query]) --> CHECK{PostgreSQL\navailable?}
-    CHECK -- Yes --> PG[pgvector ANN search\ncosine similarity]
-    CHECK -- No --> MEM[In-memory fallback\nsubstring matching]
-    PG --> RESULTS([SearchResult])
-    MEM --> RESULTS
-```
-
----
-
-## 10. Context Optimization
-
-### Problem
-
-Model context windows are finite and expensive. A 200K context window costs millions of tokens at scale. Hone minimizes token usage while preserving code comprehension through four techniques:
-
-1. **Model-aware token budgets** — Each model family has a learned budget profile based on task complexity.
-2. **BM25 reordering** — Given a set of candidate context (memories, file snippets, search results), BM25 ranking brings the most relevant items to the front.
-3. **Graduated compression** — Context is progressively summarized (code comments → summaries → hashes) to preserve key information with fewer tokens.
-4. **Phase detection** — Hone identifies conversation phases (exploration, implementation, testing, refactoring) and adjusts context strategy accordingly.
-
-### Token Budget Calculation
-
-```rust
-pub struct TokenBudget {
-    pub context_window_size: u32,          // e.g., 200_000 for claude-opus-4-5
-    pub reserved_for_output: u32,          // e.g., 4_000
-    pub reserved_for_system_prompt: u32,   // e.g., 2_000
-    pub safety_margin: f32,                // e.g., 0.1 (10% buffer)
-}
-
-impl TokenBudget {
-    pub fn available_for_context(&self) -> u32 {
-        let usable = self.context_window_size - self.reserved_for_output - self.reserved_for_system_prompt;
-        ((usable as f32) * (1.0 - self.safety_margin)) as u32
-    }
-}
-```
-
-**Example:** claude-opus-4-5 (200K context):
-- Context window: 200,000 tokens
-- Reserved for output: 4,000 tokens
-- Reserved for system prompt: 2,000 tokens
-- Safety margin: 10%
-- Available for context: ~177,400 tokens
-
-### BM25 Reordering
-
-When the agent has multiple pieces of context (memories, code snippets, search results), BM25 ranking reorders them by relevance to the current query:
-
-```rust
-pub trait ContextRanker {
-    fn rank(&self, query: &str, candidates: Vec<ContextItem>) -> Vec<RankedItem>;
-}
-
-pub struct BM25Ranker { /* implements TF-IDF with length normalization */ }
-```
-
-**Example workflow:**
-1. Agent receives: `"Add error handling to the auth module"`
-2. Retrieves 50 candidate context items (memories, code snippets, LSP results)
-3. BM25 ranks them: items matching "error", "handling", "auth" bubble to top
-4. Only top-K items (e.g., 30) are included in the context window
-5. Result: 60% fewer tokens, same coverage
-
-### Graduated Compression
-
-As context items age or become less relevant, they are progressively compressed:
-
-```
-Phase 1: Full code (e.g., 100 tokens per function)
-Phase 2: Code + summary (50 tokens code, 20 tokens summary = 70 total)
-Phase 3: Summary only (20 tokens)
-Phase 4: Compressed reference (5 tokens: hash + title)
-```
-
-Example:
-```rust
-// Phase 1: Full code
-fn validate_email(email: &str) -> Result<(), EmailError> {
-    if email.len() < 3 { return Err(EmailError::TooShort); }
-    if !email.contains('@') { return Err(EmailError::InvalidFormat); }
-    let parts: Vec<&str> = email.split('@').collect();
-    if parts.len() != 2 { return Err(EmailError::InvalidFormat); }
-    if parts[1].len() < 3 { return Err(EmailError::InvalidDomain); }
-    Ok(())
-}
-
-// Phase 2: Code + summary
-fn validate_email(email: &str) -> Result<(), EmailError> { /* ... 40 lines ... */ }
-// Validates email: checks length, presence of @, domain validity.
-
-// Phase 3: Summary only
-// Function: validate_email. Validates email: length >= 3, has @, domain valid.
-
-// Phase 4: Reference
-// ref:email_validation (hash_abc123)
-```
-
-### Phase Detection
-
-Hone detects conversation phases and adjusts context strategy:
-
-| Phase | Characteristics | Context Strategy |
-|-------|-----------------|------------------|
-| **Exploration** | Questions, analysis, no code changes | Keep search results, memories; drop old code |
-| **Implementation** | Writing new code, modifying files | Keep implementation context; compress exploration results |
-| **Testing** | Running tests, debugging failures | Keep test failures and logs; compress implementation details |
-| **Refactoring** | Improving existing code | Keep full code for area being refactored; compress unrelated context |
-
-Example:
-```
-Turn 1-3: "What's in this repo?" → Exploration phase
-         Context: recent memories, file structure, no code
-Turn 4-8: "Implement auth module" → Implementation phase
-         Context: auth spec, test template, security patterns
-Turn 9-12: "Tests failing" → Testing phase
-         Context: test failures, error logs, relevant code
-Turn 13+: "Refactor X for performance" → Refactoring phase
-         Context: full X implementation, performance patterns, benchmarks
-```
-
----
-
-## 11. Memory Encryption
-
-Hone optionally encrypts session data using **AES-256-GCM** with **Argon2id** key derivation:
-
-```bash
-# Build with encryption support
-cargo build --features encrypted-memory
-
-# Initialize encryption (stores key in system keychain)
-hone --init-encryption
-# Enter passphrase: ****
-# Keychain updated. Encryption enabled.
-```
-
-### Encryption Details
-
-- **Cipher:** AES-256-GCM (authenticated encryption, prevents tampering)
-- **Key derivation:** Argon2id with user passphrase
-  - Time cost: 3 iterations
-  - Memory cost: 64 MB
-  - Parallelism: 4 threads
-  - Salt: 16 random bytes (unique per user)
-- **Key storage:** System keychain (keyring crate)
-  - macOS: Keychain Services API
-  - Linux: Secret Service or pass
-  - Windows: DPAPI (future)
-- **Scope:** SQLite database (`~/.local/share/hone/memory.db`)
-  - Encrypted at rest via SQLCipher
-  - Per-record nonces prevent replay attacks
-
-### Threat Model
-
-Encrypted memory protects against:
-- **Disk theft:** If the computer is stolen, session memories cannot be read without the passphrase.
-- **Malware with filesystem access:** Cannot extract plaintext memories without keychain access.
-- **Accidental exposure:** If the database file is copied to shared storage, it remains encrypted.
-
-**Does NOT protect against:**
-- **Keyloggers or screen recording:** If attacker has real-time access to your computer.
-- **Compromised keychain:** If the system keychain is breached or the passphrase is weak.
-- **Memory-resident attacks:** Decrypted data in RAM can be extracted by privileged processes.
-
-### Ephemeral Mode
-
-For sensitive queries, use ephemeral mode to disable all persistence:
-
-```bash
-hone --ephemeral -i "Analyze this sensitive document"
-```
-
-In ephemeral mode:
-- No session data is persisted
-- No memories are recorded
-- Cost tracking is not saved
-- All data is discarded when the session ends
-
----
-
-## 12. Security Model
-
-### Sandbox platform matrix
-
-| Platform | Primary mechanism | Fallback |
+| Role | Enabled by | Does |
 |---|---|---|
-| macOS | Seatbelt (`sandbox_init`) | `setrlimit` + `no-new-privs` |
-| Linux bare-metal | Landlock + seccomp-BPF | `setrlimit` + `no-new-privs` |
-| Container (Docker/K8s) | `seccomp` profile + `no-new-privs` | `setrlimit` |
-| Windows (future) | Job Objects + AppContainer | Restricted token |
+| Server | always | HTTP API, SSE, web UI, sessions |
+| Coordinator | `HONE_DISTRIBUTED_DB` | Holds the task queue; a reaper re-queues expired leases (every 15 s, 3 attempts) |
+| Worker | `HONE_WORKER_COORDINATOR` | Polls the coordinator, claims subtasks, runs them through an agent, posts results |
 
-**Fail-closed invariant:** if the desired sandbox tier is unavailable and the policy requires it, the operation is aborted with `SandboxError::PolicyNotMet`. There is no silent downgrade.
+`POST /run` builds a fresh agent per request with the Anthropic provider
+(`ANTHROPIC_API_KEY`), the file tools and `shell`, after checking that `working_dir`
+resolves inside the workspace root (the daemon's working directory). Full reference:
+`GET /openapi.json`; the older [HTTP API](api/http-api.md) and [SSE events](api/sse-events.md)
+pages may be out of date.
 
-### Network policy
-
-- Default: network access denied for all tool calls.
-- User enables per-domain allow-listing in `config.toml`.
-- MCP servers requiring network are declared in config and subject to their own policy.
-
-### Threat model summary
+## 7. Multi-agent features
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
 flowchart TD
-    A[Malicious prompt\ninjection] -->|mitigated by| SB[Sandbox: no arbitrary exec\nwithout allowlist]
-    B[Supply chain attack\non MCP server] -->|mitigated by| HASH[Content-addressable MCP\nserver hashes in config]
-    C[Model exfiltrating data] -->|mitigated by| NET[Network deny-by-default]
-    D[Runaway disk write] -->|mitigated by| RL[rlimit FSIZE per operation]
-    E[Secret leakage via\nenv vars] -->|mitigated by| ENV[Explicit env allowlist\nin SandboxPolicy]
+  P["Prompt"] --> DEC["Lead agent: decompose<br/>JSON plan of subtasks<br/>(agent, depends_on, budget)"]
+  DEC --> W1["Worker: rust-expert"]
+  DEC --> W2["Worker: code-reviewer"]
+  DEC --> W3["Worker: ..."]
+  W1 --> MER["Lead agent: merge results"]
+  W2 --> MER
+  W3 --> MER
+  MER --> OUT["Merged answer<br/>+ .hone/plan.md"]
+  DEC -. "--distributed URL" .-> Q[("honed coordinator queue")]
+  Q -. "claimed by" .-> RW["Remote honed workers"]
+  RW -. results .-> MER
 ```
 
-### Security Hardening (Phase 2 Complete)
+| Feature | Entry point | How it works |
+|---|---|---|
+| Orchestrator | `--orchestrate`, TUI complex tier, `/plan` preview, `honed /orchestrate` | Decompose, run subtasks with agents from the registry (up to 4 at a time, dependencies first, 5-minute timeout each), merge |
+| Distributed | `--orchestrate --distributed URL` | Subtasks go through a `honed` coordinator to remote workers |
+| Ensemble | `--ensemble N` | N candidates at different temperatures, then a ranker run; candidates run headless |
+| Complexity routing | TUI | Each message is classified as simple (one turn), medium (self-refine, 2 rounds) or complex (orchestrator). An adaptive classifier learns from past outcomes stored in memory. |
+| Test loop | TUI | After a turn that used `write_file`, `edit_file` or `multi_edit`, runs the detected test command and feeds failures back, up to 3 times |
+| Personas | `@name` in the TUI, orchestrator workers | 12 built-in agents plus your own `.md` files |
 
-Recent security improvements include:
+## 8. Design choices
 
-**Access Control & Path Safety:**
-- **Path traversal prevention:** All file tools use `resolve_within_working_dir()` to canonicalize paths and reject `..` escapes. Symlink targets validated to be in allowlist at execution time (prevents TOCTOU exploits).
-- **Shell command classification:** Intent classifier detects compound shell operators (`;`, `&&`, `||`, `|`, `$()`, backticks) and escalates `Destructive` commands to require explicit user approval. Prevents shell injection via model-generated code.
-- **Binary validation:** `check_binary_available()` now validates binary names with metacharacter denylist instead of dangerous `sh -c` execution.
+| Choice | Why |
+|---|---|
+| One workspace, many small crates | Clear boundaries (providers can't reach tools), faster incremental builds, crates usable on their own |
+| Trait objects at every edge (`ModelProvider`, `Tool`, `Sandbox`, `MemoryStore`) | Every integration can be mocked; tests run without network or kernel features. Providers can't reach Hone's tools (pass-through providers run their own) |
+| One permission gate for every entry point | The CLI, daemon, workers and MCP server can't drift apart |
+| SQLite for all local state | Zero setup, single user, easy to delete; the server can point at its own files |
+| Actor (`AgentHandle`) around the agent | The TUI, orchestrator and server share an agent without locks across `await` |
+| `thiserror` in libraries, `anyhow` in binaries | Typed errors at crate boundaries, readable messages at the top |
+| Sandbox around child processes only | Hone's own process keeps its network and file access for providers and stores; risky work happens in `sh -c` children |
 
-**Kernel Sandboxing:**
-- **Real Seatbelt sandboxing (macOS):** `sandbox_init(3)` FFI fully functional. Path canonicalization handles macOS symlinks (`/tmp` → `/private/tmp`). Dyld compatibility via global `file-read*` rules. Process fork/exec support for child sandboxing.
-- **Landlock on Linux (fully implemented):** Landlock LSM (Linux 5.13+) enforces fine-grained filesystem access via `landlock_create_ruleset()`. Seccomp-BPF fallback for older kernels. No silent degradation—fail-closed on unavailability.
+## Further reading
 
-**Credential Protection:**
-- **CLI stdin prompts:** Sensitive input (API keys, prompts in one-shot mode) piped via stdin instead of CLI args to avoid exposure in `ps` output.
-- **Env var allowlisting:** Explicit environment variable whitelist per tool. API keys not passed to untrusted tools.
-
-**Infrastructure:**
-- **Rate limiter using peer IP:** Server-side rate limiting uses actual peer socket address, not spoofable `X-Forwarded-For` header.
-- **RwLock poison recovery:** Provider registry uses `unwrap_or_else(|e| e.into_inner())` to recover state after panic.
-- **Memory IDs with UUID v7:** Session and memory IDs use sortable UUID v7 instead of truncated timestamps.
-- **Cache keys with blake3:** Tool result cache uses blake3 (cryptographic hash) instead of non-cryptographic `DefaultHasher`.
-- **Git SHA via libgit2:** HEAD resolution uses pure `git2` crate (in-process I/O) instead of subprocess spawning.
-
----
-
-## 13. Key Design Decisions
-
-### D1: Workspace over monolith
-
-**Decision:** Multi-crate Cargo workspace rather than a single `src/` tree.
-
-**Rationale:** Enables parallel compilation, enforces API boundaries (a crate cannot accidentally access another crate's private types), and allows publishing individual crates (e.g., `hone-providers` as a standalone library).
-
-**Trade-off:** Slightly higher initial setup cost; longer cold compile times on a clean build. Mitigated by `sccache` in CI.
-
-### D2: `async-trait` for object-safe async traits
-
-**Decision:** Use `async-trait` (or the stabilized `async fn in traits` on edition 2024) for all cross-crate traits.
-
-**Rationale:** `dyn Trait` is required for runtime polymorphism over providers and tools. Without `async-trait`, async methods cannot appear in object-safe traits.
-
-**Edition 2024 note:** With Rust edition 2024 and the stabilized RPITIT feature, `async fn` in traits that return `impl Future` are object-safe when combined with the `#[async_trait]` shim for `dyn` dispatch. We default to using the `async_trait` crate until the edition 2024 `dyn*` feature is stable.
-
-### D3: `BoxStream` for provider responses
-
-**Decision:** `ModelProvider::complete` returns `BoxStream<'static, ProviderEvent>` rather than a concrete type.
-
-**Rationale:** Each provider has a different underlying stream type. Erasing to `BoxStream` avoids the monomorphisation explosion that would occur if `Agent` were generic over `P: ModelProvider`.
-
-### D4: PostgreSQL + pgvector for semantic index, SQLite for everything else
-
-**Decision:** The semantic index uses PostgreSQL with pgvector for vector storage and ANN search. Sessions, memories, and tool call logs remain in local SQLite.
-
-**Rationale:** Embedding-based code search requires approximate nearest-neighbor queries over high-dimensional vectors. pgvector provides production-grade HNSW and IVFFlat indexes with sub-linear query time, which SQLite cannot match without a custom extension. PostgreSQL also handles concurrent writes from background indexer workers without SQLite's single-writer constraint. Sessions and memories stay in SQLite because they are inherently single-user, benefit from zero-ops local storage, and do not need vector search.
-
-**Trade-off:** PostgreSQL is a runtime dependency for full semantic search. Mitigated by an in-memory fallback that provides regex-based symbol search when no database connection is available, so the CLI works offline with no external dependencies.
-
-### D5: Recipes as YAML, not Rust macros
-
-**Decision:** The recipe system uses YAML definitions rather than a Rust DSL.
-
-**Rationale:** Recipes must be shareable between users without recompilation. YAML files can be distributed via the marketplace and loaded at runtime. The trade-off is loss of compile-time verification, mitigated by JSON Schema validation of recipe files on load.
-
-### D6: LSP bridge in Layer 2, not Layer 1
-
-**Decision:** The LSP bridge is a native Rust tool (Layer 2), not an MCP server (Layer 1).
-
-**Rationale:** LSP round-trips must complete in <500ms. The JSON-RPC + subprocess overhead of MCP would add ~50–100ms per call. The native bridge speaks LSP directly over stdin/stdout to the language server process, keeping the path entirely in-process.
+- [Permissions and sandbox](permissions-and-sandbox.md)
+- [Configuration](configuration.md)
+- [Core concepts](onboarding/concepts.md)
+- [Multi-agent coordination and memory](architecture/multi-agent-and-memory.md) and [Memory layers](architecture/memory.md) (older deep dives; may be out of date)
+- [Workspace structure](workspace-structure.md) (older; may be out of date)

@@ -1,298 +1,86 @@
-# Getting Started with Hone
+# Getting started with Hone
 
-This comprehensive guide walks you through installing Hone, configuring your first AI provider, and running your first agent session. Whether you're a developer fixing bugs or architecting features, you'll be productive in minutes.
+<p align="center">
+  <img src="assets/logo.png" alt="Hone" width="360">
+</p>
 
-## Table of Contents
+<p align="center">
+  <img alt="Rust 1.85+" src="https://img.shields.io/badge/rust-1.85%2B-orange">
+  <img alt="macOS and Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-informational">
+  <img alt="providers" src="https://img.shields.io/badge/providers-Anthropic%20%7C%20OpenAI--compatible%20%7C%20Ollama%20%7C%20CLI%20pass--through-6e40c9">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue">
+</p>
 
-1. [Prerequisites](#1-prerequisites)
-2. [Installation](#2-installation)
-   - From crates.io
-   - From source
-   - **Enable the GUI** — web UI + desktop app
-3. [First-Time Setup](#3-first-time-setup-hone-configure)
-4. [Provider Setup](#4-provider-setup)
-   - Anthropic (Recommended)
-   - OpenAI
-   - DeepSeek
-   - OpenRouter
-   - Ollama (with Tool Calling)
-   - Claude CLI
-   - Gemini CLI
-5. [Configuration Reference](#5-configuration-reference)
-6. [Your First Task](#6-your-first-task)
-7. [Session Management](#7-session-management)
-8. [Modes of Operation](#8-modes-of-operation)
-   - Shell Commands
-   - Vim Keybindings
-   - TDD Workflow
-   - One-Shot Mode
-   - Interactive Mode
-   - Orchestrate Mode
-   - Ensemble Mode
-   - Recipe Mode
-   - RALPH Loop Mode
-   - Agent Persona Mode
-9. [Scope Clarification Mode](#9-scope-clarification-mode)
-10. [Inline Agent Dispatch](#10-inline-agent-dispatch)
-11. [MCP Extensions](#11-mcp-extensions)
-12. [Theme Customization](#12-theme-customization)
-13. [Session Switcher & Notification Bell](#13-session-switcher--notification-bell)
-14. [Remote Access (honed)](#14-remote-access-honed)
-   - Web UI
-   - Stateless Execution Endpoint
-15. [Next Steps](#15-next-steps)
-16. [Troubleshooting](#16-troubleshooting)
+Hone is an agent runtime for the terminal, written in Rust. You give it a task in plain
+language; it reads, edits, runs commands, fetches pages and calls MCP tools until the task
+is done. It is strongest on code, but nothing in the loop is code-specific. This guide
+takes you from install to a first run, then to guardrails and the daemon.
 
----
-
-## 1. Prerequisites
-
-Ensure your system has the following installed:
-
-- **Rust 1.85+**: Check with `rustc --version`. If not installed, download from [rustup.rs](https://rustup.rs).
-- **Cargo**: Comes bundled with Rust. Verify with `cargo --version`.
-- **Git**: Required for cloning the repository and integration features. Verify with `git --version`.
-- **macOS or Linux**: Hone is tested on macOS 12+ and Linux (Ubuntu 20.04+). Windows support is in progress.
-
-### Platform-Specific Dependencies
-
-**macOS:**
-```bash
-xcode-select --install
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  I["1 · Install"] --> P["2 · Pick a provider"] --> R["3 · First run"] --> M["4 · Choose a mode"] --> G["5 · Add guardrails"] --> D["6 · Go remote<br/>(optional)"]
 ```
 
-**Linux (Ubuntu/Debian):**
-```bash
-sudo apt-get update
-sudo apt-get install build-essential pkg-config libssl-dev
-```
+<details>
+<summary><b>Contents</b></summary>
 
-**Optional:**
-- **Docker** (for running SWE-bench or containerized workloads)
-- **Node.js 18+** (for MCP JavaScript extensions)
+1. [Install](#1-install)
+2. [Pick a provider](#2-pick-a-provider)
+3. [First run](#3-first-run)
+4. [Choose a mode](#4-choose-a-mode)
+5. [Sessions and memory](#5-sessions-and-memory)
+6. [Make it yours](#6-make-it-yours)
+7. [Add guardrails](#7-add-guardrails)
+8. [Run the daemon](#8-run-the-daemon-honed)
+9. [Troubleshooting](#9-troubleshooting)
 
----
+</details>
 
-## 2. Installation
+## 1. Install
 
-### Install from crates.io (recommended)
-
-The fastest way to install Hone:
-
-```bash
-cargo install hone-cli honed
-```
-
-This installs both the `hone` CLI and the `honed` server daemon to `~/.cargo/bin/`.
-
-### Install via Homebrew
-
-For macOS and Linux users who already use Homebrew:
-
-```bash
-# From a checkout — works today, no tap required.
-brew install --build-from-source ./packaging/homebrew/Formula/hone.rb
-
-# From the tap (once published — see packaging/README.md).
-brew tap wojciechkpl/hone
-brew install hone
-
-# Always-latest from main branch.
-brew install --HEAD wojciechkpl/hone/hone
-```
-
-The formula installs both `hone` (CLI/TUI) and `honed` (daemon),
-plus builds the embedded SolidJS web UI when `npm` is available so
-`http://127.0.0.1:3117/ui` works out of the box.
-
-### Install via pip
-
-For Python-heavy teams (ML, data, science) who want one consistent
-install path alongside their existing `pip` workflow:
-
-```bash
-# From a checkout — works today; requires Rust 1.85+ at install time.
-git clone https://github.com/wojciechkpl/hone.git
-cd hone
-pip install ./packaging/python
-
-# From PyPI (once per-platform wheels are published — see packaging/README.md).
-pip install hone-cli
-```
-
-The wheel ships both `hone` and `honed` binaries via `[project.scripts]`.
-After install, both are on your `PATH` (under `~/.local/bin/` or
-wherever pip installed scripts to). Once installed, the binaries run
-without any Python or Rust toolchain present.
-
-### Build from Source
-
-For the latest development version:
-
-```bash
-git clone https://github.com/wojciechkpl/hone.git
-cd hone
-cargo build --release
-sudo cp target/release/hone target/release/honed /usr/local/bin/
-```
-
-### Verify Installation
-
-```bash
-hone --version    # hone-cli 0.1.0
-honed --version   # honed 0.1.0
-```
-
-### Enable the GUI
-
-Hone ships two graphical surfaces in addition to the TUI: a **web UI**
-(SolidJS, served by `honed` at `/ui`) and a **desktop app** (Tauri 2
-shell, native window, system tray, optional managed-daemon mode).
-Both are off by default — pick whichever fits.
-
-#### Web UI (recommended)
-
-The web UI is compiled into the `honed` binary via `rust-embed`, so
-enabling it is a two-step build: build the SPA, then rebuild `honed`
-so it picks up the bundle.
-
-Prerequisites:
-- **Node.js 18+** (the SPA toolchain — Vite, UnoCSS, Shiki).
-
-From the workspace root:
-
-```bash
-# 1. Build the SolidJS app to apps/webui/dist/.
-make webui
-
-# 2. Rebuild honed so rust-embed picks up the new bundle.
-cargo build --release -p honed
-sudo cp target/release/honed /usr/local/bin/
-
-# 3. Start the daemon and open the UI.
-ANTHROPIC_API_KEY=sk-ant-... honed
-open http://127.0.0.1:3117/ui
-```
-
-If you skip step 1, the daemon's `build.rs` writes a stub
-`apps/webui/dist/index.html` that explains how to populate the real
-bundle. The daemon still starts and the TUI/CLI keep working — the
-`/ui` route just serves the stub page.
-
-For iterative web UI development, run the Vite dev server in a second
-terminal — it proxies API + SSE requests to the locally-running
-`honed` at `:3117`:
-
-```bash
-make webui-dev
-# Hot-reload at http://127.0.0.1:5174
-```
-
-What you get out of the box: streaming chat, theme picker (4 themes),
-session list with IndexedDB persistence, file preview pane with
-syntax highlighting, side-by-side diff renderer, worker progress
-panel, plan-preview gate (`/plan`), settings drawer, tunnel start/stop,
-team usage panel, collaborative session participants, workflows
-drawer (`/workflows`). PWA-installable.
-
-See [§ 14 Remote Access](#14-remote-access-honed) for the full feature
-list and [`apps/webui/README.md`](../apps/webui/README.md) for the
-phase-by-phase changelog.
-
-#### Desktop app (Tauri 2)
-
-The desktop app is a native window that wraps the same `honed` daemon
-+ web UI plus a system tray and command palette. It can either spawn
-its own managed `honed` sidecar or connect to a remote daemon.
-
-Prerequisites:
-- **Rust 1.85+** (already required).
-- A C toolchain (Xcode CLT on macOS, MSVC build tools on Windows, gcc on Linux).
-- Linux only: `webkit2gtk-4.1` and `libayatana-appindicator3` dev packages.
-- Optional: `cargo install tauri-cli@^2` for the `cargo tauri` subcommand.
-
-To run the dev build straight from source:
-
-```bash
-# Make sure honed is on PATH first (managed-sidecar mode needs it).
-cargo build --release -p honed
-sudo cp target/release/honed /usr/local/bin/
-
-# Run the desktop app.
-cargo run -p hone-desktop
-```
-
-On first launch a wizard asks you to pick one of two daemon-discovery
-modes:
-
-- **Managed sidecar** (default) — the app spawns `honed` on a free
-  local port and supervises it. Cleans up on exit.
-- **External daemon** — the app speaks HTTP to a `honed` you run
-  elsewhere (e.g. a Linux dev VM, a remote tunnel). You provide the
-  URL + bearer token.
-
-For distributable binaries (`.dmg`, `.msi`, `.AppImage`), use the
-Tauri CLI:
-
-```bash
-cd apps/hone-desktop/src-tauri
-cargo tauri dev    # hot-reload dev shell
-cargo tauri build  # produce platform installer
-```
-
-See [`apps/hone-desktop/README.md`](../apps/hone-desktop/README.md)
-for layout details and [`apps/hone-desktop/RELEASE.md`](../apps/hone-desktop/RELEASE.md)
-for the signing/updater pipeline.
-
-#### Which one should I install?
-
-| If you... | Pick |
+| You need | Check |
 |---|---|
-| Live in `tmux` and want a browser-tab UI alongside | **Web UI** |
-| Want a native window with menu bar + system tray | **Desktop** |
-| Need to share the UI across a team via a remote daemon | **Web UI** + tunnel |
-| Are integrating Hone into another desktop workflow (Raycast, Alfred, etc.) | **Desktop** (with managed sidecar) |
-| Just want the TUI | Skip both — `cargo install hone-cli` is enough |
+| Rust 1.85 or newer | `rustc --version` ([rustup.rs](https://rustup.rs)) |
+| A C toolchain and OpenSSL headers (tree-sitter grammars are C; `git2` links OpenSSL on Linux) | macOS: `xcode-select --install` · Debian/Ubuntu: `build-essential pkg-config libssl-dev` |
+| macOS or Linux | Windows is not supported yet |
+| Optional: Node.js 18+ | for MCP servers launched with `npx`, and to build the web UI |
 
-### Crates Published
+| Channel | Command | Status |
+|---|---|---|
+| crates.io | `cargo install hone-cli honed` | published; may lag `main` |
+| From source | `git clone https://github.com/wojciechkpl/hone && cd hone && make install` | always current |
+| Homebrew | `brew install --build-from-source ./packaging/homebrew/Formula/hone.rb` | from a checkout; tap not published yet |
+| pip | `pip install ./packaging/python` | from a checkout; wheels not published yet |
 
-Hone is published as 15 crates on [crates.io](https://crates.io):
+`make install` runs `cargo install --path bins/hone` and `cargo install --path bins/honed`.
+Check the install:
 
-| Crate | Purpose |
-|-------|---------|
-| `hone-cli` | The `hone` terminal command (binary) |
-| `honed` | The HTTP/2 server daemon (binary) |
-| `hone-core` | Agent loop, orchestration, context management |
-| `hone-tools` | File, shell, git, LSP, screen capture tools |
-| `hone-providers` | Anthropic, OpenAI, Ollama, CLI adapters |
-| `hone-proto` | Shared types and serialization |
-| `hone-tui` | Terminal UI (ratatui) |
-| `hone-mcp` | MCP client for 70+ extensions |
-| `hone-sandbox` | Kernel sandboxing (Seatbelt/Landlock) |
-| `hone-memory` | Encrypted SQLite memory store |
-| `hone-index` | Tree-sitter symbol index |
-| `hone-cache` | Tool result cache |
-| `hone-config` | Configuration loading |
-| `hone-server` | HTTP server, SSE, sessions |
-| `hone-recipes` | YAML recipe engine |
+```bash
+hone --version
+honed --version
+```
 
----
+## 2. Pick a provider
 
-## 3. First-Time Setup (hone configure)
+Hone detects a provider at startup. Set **one** of these and you're done:
 
-Before running your first session, complete the interactive configuration wizard:
+| Option | Set this | Tool calling | Cost |
+|---|---|---|---|
+| Anthropic | `export ANTHROPIC_API_KEY=sk-ant-...` | yes | paid API |
+| OpenAI | `export OPENAI_API_KEY=sk-...` | yes | paid API |
+| DeepSeek, OpenRouter, Qwen, vLLM, ... | `OPENAI_API_KEY` + `HONE_OPENAI_BASE_URL` + `HONE_OPENAI_MODEL` | yes | varies |
+| Ollama (local) | `ollama serve` and `ollama pull llama3.2` | yes | free, on your machine |
+| Claude CLI | have `claude` on `PATH` | Claude's own tools, not Hone's | your Claude plan |
+| Gemini CLI | have `gemini` on `PATH` | Gemini's own tools, not Hone's | your Gemini plan |
+
+Or run the wizard, which writes `~/.config/hone/config.toml`:
 
 ```bash
 hone configure
 ```
 
-This command guides you through provider selection, API key entry, and model selection, writing everything to `~/.config/hone/config.toml`.
-
-### Step-by-Step Walkthrough
-
-Here's what the wizard looks like:
-
-```
+```text
 Welcome to the Hone configuration wizard.
 
 Step 1: Select a provider
@@ -303,2029 +91,315 @@ Step 1: Select a provider
   4. OpenRouter
   5. Ollama (local)
   6. Claude CLI (claude binary)
-
-Enter your choice (1-6): 1
 ```
 
-After selecting Anthropic (option 1):
+> [!NOTE]
+> At startup Hone only reads the wizard's Anthropic key and its OpenAI, DeepSeek and
+> OpenRouter settings (key, base URL, model). Choosing Ollama or Claude CLI, or picking an
+> Anthropic model, currently has no effect: Ollama and `claude` are found by auto-detection,
+> and you pick an Anthropic model with `--model`.
 
-```
-Step 2: Enter your API key
+> [!TIP]
+> Environment variables always win over the wizard's file. The detection order, the
+> `--model` prefixes and the full provider table are in
+> [Configuration → Choosing a provider](configuration.md#choosing-a-provider-and-model).
 
-Note: Your key is read from stdin and not echoed. It will be stored
-securely in ~/.config/hone/config.toml.
-
-Hint: sk-ant-...
-API key: [hidden input]
-
-Step 3: Select a default model
-
-  1. claude-sonnet-4-5
-  2. claude-opus-4-5
-  3. claude-haiku-4-5
-  4. claude-3-7-sonnet-latest
-
-Enter your choice (1-4): 2
-```
-
-After model selection:
-
-```
-Configuration written to ~/.config/hone/config.toml
-Provider: Anthropic
-Model: claude-opus-4-5
-
-Ready to use hone! Start with:
-  hone
-```
-
-### What Gets Written to config.toml
-
-After completing the wizard, your configuration file at `~/.config/hone/config.toml` looks like:
-
-```toml
-[agent]
-default_model = "anthropic:claude-opus-4-5"
-context_window_tokens = 200000
-max_iterations = 50
-temperature = 0.3
-
-[memory]
-enabled = true
-encrypted = false
-
-[providers.anthropic]
-api_key = "sk-ant-..."
-base_url = "https://api.anthropic.com"
-timeout_secs = 30
-
-[sandbox]
-enforce = true
-platform = "auto"
-```
-
-### Configuration Hierarchy (Priority Order)
-
-Hone applies configuration in this order (top wins):
-
-1. **CLI Flags**: `hone --model openai:gpt-4o --budget 10.00`
-2. **Environment Variables**: `export ANTHROPIC_API_KEY=sk-ant-...`
-3. **Config File**: `~/.config/hone/config.toml`
-4. **Defaults**: Built-in defaults
-
-Example: If both a CLI flag and env var are set, the CLI flag takes precedence.
-
----
-
-## 4. Provider Setup
-
-Hone supports multiple providers. Choose based on your needs: capability, cost, and privacy.
-
-### Provider Comparison
-
-| Provider | Tool Calling | Cost | Best For | Setup Time |
-|----------|-------------|------|----------|------------|
-| **Anthropic (Claude)** | Yes | $$ | Production, full features | 2 min |
-| **OpenAI** | Yes | $ | Budget teams | 2 min |
-| **DeepSeek** | Yes | $ | Cheap alternatives | 2 min |
-| **OpenRouter** | Yes | $ | Multi-model access | 2 min |
-| **Ollama** | Yes | Free | Local/offline work with tools | 5 min |
-| **Claude CLI** | No | Varies | Existing users | 1 min |
-| **Gemini CLI** | No | Free tier | No setup needed | 1 min |
-
-### Provider Auto-Detection Order
-
-If no provider is explicitly specified, Hone checks in this order:
-
-1. `ANTHROPIC_API_KEY` environment variable → Anthropic
-2. `OPENAI_API_KEY` environment variable → OpenAI
-3. `claude` command in PATH → Claude CLI
-4. `gemini` command in PATH → Gemini CLI
-5. `OLLAMA_HOST` environment variable → Ollama
-6. Fallback → Mock provider (testing only)
-
----
-
-### Anthropic (Recommended)
-
-Full feature set including advanced tool calling and the 200K context window.
-
-**Get your API key:**
-
-1. Visit https://console.anthropic.com
-2. Click "API Keys" → "Create Key"
-3. Copy the key (starts with `sk-ant-`)
-
-**Configure:**
+Example: DeepSeek through its OpenAI-compatible API.
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-abc123def456ghi789"
-hone "hello"
-```
-
-Or using the configure wizard:
-
-```bash
-hone configure
-# Choose: 1 (Anthropic)
-# Paste API key when prompted
-# Choose model: 2 (claude-opus-4-5)
-```
-
-**Verify it works:**
-
-```bash
-hone "What is 2 + 2?"
-```
-
-Expected output:
-```
-[Model: anthropic:claude-opus-4-5]
-2 + 2 equals 4.
-
-Usage: 34 input tokens, 12 output tokens
-Cost: $0.001 USD
-```
-
-**Available models:**
-
-- `claude-opus-4-5` — 200K context, best for complex reasoning
-- `claude-sonnet-4` — 200K context, fast, balanced
-- `claude-haiku-4-5` — 200K context, cheapest
-
-**Pricing (per million tokens):**
-
-- Opus 4-5: $3 input / $15 output
-- Sonnet 4: $3 input / $15 output
-- Haiku 4-5: $0.80 input / $4 output
-
----
-
-### OpenAI
-
-Cost-effective alternative with gpt-4o and gpt-4-turbo.
-
-**Get your API key:**
-
-1. Visit https://platform.openai.com
-2. Go to "API Keys" → "Create new secret key"
-3. Copy the key (starts with `sk-`)
-
-**Configure:**
-
-```bash
-export OPENAI_API_KEY="sk-proj-abc123..."
-hone --model openai:gpt-4o "hello"
-```
-
-Or via configure wizard:
-
-```bash
-hone configure
-# Choose: 2 (OpenAI)
-# Paste API key
-# Choose model: 1 (gpt-4o)
-```
-
-**Available models:**
-
-- `gpt-4o` — Latest, most capable
-- `gpt-4o-mini` — Fast and cheap
-- `gpt-4-turbo` — Previous generation
-- `gpt-3.5-turbo` — Budget option
-
----
-
-### DeepSeek (Cheapest)
-
-Great for development and cost-conscious teams. ~90% cheaper than Anthropic.
-
-**Get your API key:**
-
-1. Visit https://platform.deepseek.com
-2. Create API key
-
-**Configure:**
-
-```bash
-export OPENAI_API_KEY="sk-..."
-export HONE_OPENAI_BASE_URL="https://api.deepseek.com"
-export HONE_OPENAI_MODEL="deepseek-chat"
-hone "hello"
-```
-
-Or in config file:
-
-```toml
-[providers.openai]
-api_key = "sk-..."
-base_url = "https://api.deepseek.com"
-model_override = "deepseek-chat"
-```
-
-**Available models:**
-
-- `deepseek-chat` — General-purpose
-- `deepseek-coder` — Code generation and analysis
-- `deepseek-reasoner` — Extended reasoning
-
-**Pricing:** ~$0.14 input / $0.28 output per million tokens (vs $3/$15 for Claude)
-
----
-
-### OpenRouter (Multi-Model, Single Key)
-
-Access 100+ models from a single API key. Great for comparing models.
-
-**Get your API key:**
-
-1. Visit https://openrouter.ai
-2. Sign up and copy your API key
-
-**Configure:**
-
-```bash
-export OPENAI_API_KEY="sk-or-abc123..."
-export HONE_OPENAI_BASE_URL="https://openrouter.ai/api/v1"
-export HONE_OPENAI_MODEL="anthropic/claude-opus-4-5"
-hone "hello"
-```
-
-**Available models (examples):**
-
-```
-anthropic/claude-opus-4-5
-openai/gpt-4o
-google/gemini-2.5-pro
-meta-llama/llama-3.3-70b-instruct
-mistralai/mistral-large
-```
-
-See the full list at https://openrouter.ai/models
-
----
-
-### Ollama (Free, Local)
-
-Run open-source models locally with full tool-calling support. No internet, no API key, completely free. Requires Ollama v0.3.0+ for tool calling.
-
-**Install and start Ollama:**
-
-```bash
-# Download from https://ollama.ai
-
-# Start the server (runs on localhost:11434)
-ollama serve
-```
-
-In another terminal, pull a model with tool support:
-
-```bash
-ollama pull qwen2.5-coder:7b  # recommended for tool calling
-```
-
-**Configure Hone:**
-
-```bash
-hone --model ollama:qwen2.5-coder:7b "fix the bug"
-```
-
-Or add to config:
-
-```toml
-[providers.ollama]
-base_url = "http://localhost:11434"
-timeout_secs = 300
-```
-
-**Available models with tool support:**
-
-- `qwen2.5-coder:7b` — Code-specialized, 128K context (recommended)
-- `qwen2.5-coder:14b` — Larger variant
-- `llama3.2` — Multi-modal, 8B+
-- `llama3.3` — Latest release
-- `mistral` — Fast, 7B
-- `deepseek-coder` — Code generation
-
-**List installed models:**
-
-```bash
-ollama list
-```
-
-**Pros:**
-
-- Completely free
-- Runs locally (privacy)
-- No API key needed
-- Works offline
-
-**Tool Calling Support:**
-
-Hone now supports full tool calling with Ollama-compatible models. The following models are recommended:
-
-- `qwen2.5-coder:14b` — **Recommended for code generation** with tool calling support
-- `llama2` — Limited tool support
-- `mistral` — Limited tool support
-
-To use Ollama with tools:
-
-```bash
-ollama pull qwen2.5-coder:14b
-hone --model ollama:qwen2.5-coder:14b "fix the bug in main.rs"
-```
-
-**Pros:**
-
-- Completely free
-- Runs locally (privacy)
-- No API key needed
-- Works offline
-- Full tool calling support (new)
-
-**Cons:**
-
-- Slower than cloud (depends on your GPU/CPU)
-- Less capable than Claude Opus
-- Model quality varies (test locally before relying on production)
-
----
-
-### Claude CLI (Pass-Through)
-
-Use your existing Claude CLI binary if you have it installed.
-
-**Install Claude CLI first:**
-
-```bash
-# macOS (Homebrew)
-brew install anthropic/brew/claude-cli
-
-# Or download from https://github.com/anthropics/anthropic-sdk-python
-```
-
-**Verify Claude CLI is on PATH:**
-
-```bash
-claude --version
-```
-
-**Configure Hone:**
-
-```bash
-hone --model claude-cli:claude-opus "hello"
-```
-
-Or via configure wizard:
-
-```bash
-hone configure
-# Choose: 6 (Claude CLI)
-```
-
-**Pros:**
-
-- Uses your existing Claude CLI credentials
-- No extra API key setup
-
-**Cons:**
-
-- No tool calling support
-- Generation 1 models only
-- Slower than API calls
-
----
-
-### Gemini CLI (Pass-Through)
-
-Use Google's Gemini CLI if you have it installed.
-
-**Install Gemini CLI:**
-
-```bash
-# macOS
-brew install google-cloud-sdk
-gcloud init
-
-# Or download: https://cloud.google.com/sdk/docs/install
-```
-
-**Verify installation:**
-
-```bash
-gemini --version
-```
-
-**Configure Hone:**
-
-```bash
-hone --model gemini-cli:gemini-pro "hello"
-```
-
-**Pros:**
-
-- Free tier available
-- No paid API setup needed
-
-**Cons:**
-
-- No tool calling support
-- Less capable than Claude
-
----
-
-### Provider Detection Flow
-
-Hone automatically selects a provider unless you override it. Here's the decision tree:
-
-```
-┌─ Start hone session
-│
-├─ Is --model flag set?
-│  ├─ YES → Use that provider
-│  └─ NO → Check config.toml
-│
-├─ Is default_model in config.toml?
-│  ├─ YES → Use that provider
-│  └─ NO → Auto-detect
-│
-├─ Auto-detect flow:
-│  ├─ Check ANTHROPIC_API_KEY env var?
-│  │  ├─ YES → Use Anthropic
-│  │  └─ NO → Continue
-│  │
-│  ├─ Check OPENAI_API_KEY env var?
-│  │  ├─ YES → Use OpenAI
-│  │  └─ NO → Continue
-│  │
-│  ├─ Check 'claude' command exists?
-│  │  ├─ YES → Use Claude CLI
-│  │  └─ NO → Continue
-│  │
-│  ├─ Check 'gemini' command exists?
-│  │  ├─ YES → Use Gemini CLI
-│  │  └─ NO → Continue
-│  │
-│  ├─ Check OLLAMA_HOST env var?
-│  │  ├─ YES → Use Ollama
-│  │  └─ NO → Fallback
-│  │
-│  └─ Fallback → Mock provider (testing)
-│
-└─ Session starts with selected provider
-```
-
----
-
-## 5. Configuration Reference
-
-### Environment Variables
-
-All environment variables in one place. CLI flags and config file override these.
-
-| Variable | Purpose | Example |
-|----------|---------|---------|
-| `ANTHROPIC_API_KEY` | Anthropic API authentication | `sk-ant-abc123...` |
-| `OPENAI_API_KEY` | OpenAI/compatible endpoint key | `sk-proj-abc123...` |
-| `HONE_OPENAI_BASE_URL` | Override OpenAI endpoint | `https://api.deepseek.com` |
-| `HONE_OPENAI_MODEL` | Override OpenAI model name | `deepseek-chat` |
-| `OLLAMA_HOST` | Ollama server URL | `http://localhost:11434` |
-| `RUST_LOG` | Logging verbosity | `debug`, `info`, `warn`, `error` |
-| `HONE_CONFIG` | Override config file path | `~/.config/hone/config.toml` |
-| `HONE_NO_INJECTION` | Disable context injection for this run | `1` |
-| `HONE_SKELETON_STRATEGY` | Skeleton strategy for context injection (adaptive by default) | `call_graph`, `hybrid`, `flat`, `dependency_graph` |
-| `HONE_INJECT_CONTEXT` | Explicitly enable context injection (already default) | `1` |
-| `HONE_OPENAI_BASE_URL` | Override OpenAI endpoint for DeepSeek, Qwen, OpenRouter | `https://api.deepseek.com` |
-| `HONE_OPENAI_MODEL` | Override model name for custom OpenAI-compatible endpoints | `deepseek-chat`, `qwen-max` |
-
-### Config File Format
-
-Full annotated example at `~/.config/hone/config.toml`:
-
-```toml
-# ── Agent settings ────────────────────────────────────────────────────────
-
-[agent]
-# Default model to use when no --model flag is provided
-default_model = "anthropic:claude-opus-4-5"
-
-# Total context window in tokens (model-dependent)
-context_window_tokens = 200000
-
-# Tokens reserved for model output
-reserved_output_tokens = 4000
-
-# Tokens reserved for system prompt
-reserved_system_prompt_tokens = 2000
-
-# Temperature (0.0 = deterministic, 1.0 = creative)
-temperature = 0.3
-
-# Maximum iterations per session (prevents infinite loops)
-max_iterations = 50
-
-# Maximum tool calls per turn
-max_tool_calls_per_turn = 10
-
-
-# ── Context injection (enabled by default) ────────────────────────────────
-
-[context_injection]
-# Enable proactive context injection (default: true)
-# Injects repo skeleton, high-confidence signatures, and exploration budgets
-# Disable with --no-inject or HONE_NO_INJECTION=1
-enabled = true
-
-# Skeleton strategy: adaptive, call_graph, hybrid, flat, dependency_graph (default: adaptive)
-# - adaptive: detail level chosen from repo size (call graph for small repos)
-# - call_graph: function-level calls, capped at 30 functions
-# - hybrid: dependency graph + calls for the top-5 relevant files
-# - flat: signatures only, fastest generation
-# - dependency_graph: import relationships only
-skeleton_strategy = "adaptive"
-
-# BM25 confidence gap threshold for signature injection (default: 0.4)
-# Lower = more aggressive, Higher = conservative
-confidence_gap_threshold = 0.4
-
-# Token budget for repository skeleton (default: 1500)
-context_skeleton_budget = 1500
-
-# Number of signatures to inject from top matches (default: 3)
-signature_count = 3
-
-# Enable exploration budget hints (default: true)
-budget_hints_enabled = true
-
-
-# ── Provider configuration ────────────────────────────────────────────────
-
-[providers.anthropic]
-api_key = "${ANTHROPIC_API_KEY}"  # or hardcoded: "sk-ant-..."
-base_url = "https://api.anthropic.com"
-timeout_secs = 30
-
-[providers.openai]
-api_key = "${OPENAI_API_KEY}"
-base_url = "https://api.openai.com/v1"
-timeout_secs = 30
-
-[providers.ollama]
-base_url = "http://localhost:11434"
-timeout_secs = 300  # local models may be slow
-
-
-# ── Memory and session persistence ────────────────────────────────────────
-
-[memory]
-enabled = true
-db_path = "~/.local/share/hone/memory.db"
-encrypted = false
-decay_days = 90
-max_items = 10000
-
-
-# ── Sandbox security ──────────────────────────────────────────────────────
-
-[sandbox]
-enforce = true
-platform = "auto"  # "seatbelt" (macOS), "landlock" (Linux), "seccomp"
-
-[sandbox.defaults]
-allow_read = ["{project_root}"]
-allow_write = ["/tmp"]
-allow_network = false
-
-[sandbox.tools.shell]
-allow_read = ["{project_root}", "/usr/lib"]
-allow_write = ["/tmp", "{project_root}/target"]
-allow_exec = ["/bin", "/usr/bin", "/usr/local/bin"]
-```
-
-### HONE.md Project Config
-
-Create a `HONE.md` file in your project root to configure Hone per-project:
-
-```yaml
-# HONE.md
-project_name: my-app
-default_model: anthropic:claude-opus-4-5
-context_window_tokens: 150000
-
-# Tools to enable/disable
-tools:
-  shell: true
-  git: true
-  file: true
-  lsp: true
-
-# Sandbox policy
-sandbox:
-  enforce: true
-  allow_read:
-    - src/
-    - tests/
-    - Cargo.toml
-  allow_write:
-    - src/
-    - tests/
-    - target/
-
-# Agent-specific instructions
-agent_instructions: |
-  You are a senior Rust engineer.
-  - Always use 2-space indentation
-  - Write tests alongside implementation
-  - Check clippy warnings
-
-# Cost budget for this project
-budget_usd: 50.0
-```
-
-Place this in your repository root. Hone reads it on session start.
-
----
-
-## 6. Your First Task
-
-Now let's run Hone on a real task. We'll fix a simple bug and add a feature.
-
-### Example 1: One-Shot (Quick Question)
-
-Ask Hone a one-shot question without starting interactive mode:
-
-```bash
-hone "What files are in the current directory?"
-```
-
-**Output:**
-
-```
-I'll list the files in the current directory.
-
-[Tool: shell]
-Input: ls -la
-Output:
-total 32
-drwxr-xr-x   8 user  staff   256 Apr  9 10:30 .
-drwxr-xr-x   5 user  staff   160 Apr  9 10:30 ..
--rw-r--r--   1 user  staff  1234 Apr  9 10:30 Cargo.toml
--rw-r--r--   1 user  staff   567 Apr  9 10:30 README.md
-drwxr-xr-x  10 user  staff   320 Apr  9 10:30 src
-
-Found 5 entries: Cargo.toml, README.md, src directory, and 2 others.
-
-Usage: 245 input tokens, 89 output tokens
-Cost: $0.004 USD
-```
-
-### Example 2: Interactive Session (Multi-Turn)
-
-Start an interactive session to work on a multi-step task:
-
-```bash
-hone --session my-project
-```
-
-**Terminal demo:**
-
-```
-Hone Session: my-project
-Type prompts and press Enter. Type /help for commands.
-
-You: Show me the main.rs file
-Assistant: I'll read the main.rs file for you.
-
-[Tool: read_file]
-Input: {"path": "src/main.rs"}
-Output: (file contents shown)
-
-You: Add error handling to the parse function
-Assistant: I'll add error handling to the parse function.
-
-[Tool: edit_file]
-Input: {"path": "src/main.rs", "old_text": "fn parse(s: &str) {", "new_text": "fn parse(s: &str) -> Result<()> {"}
-Output: Edit successful
-
-Usage: 1523 input tokens, 412 output tokens
-Cost: $0.028 USD
-Session total: $0.032 USD
-Budget remaining: $9.97 / $10.00
-
-You: /quit
-Session my-project saved.
-```
-
-### What Happens Behind the Scenes
-
-1. **Token Count**: Every turn shows input and output tokens
-2. **Cost Tracking**: Real USD cost based on your provider's pricing
-3. **Tool Calls**: File reads, edits, shell execution, git operations
-4. **Context Optimization**: Hone automatically keeps relevant code in context
-5. **Session Memory**: Previous turns are remembered and compressed when context gets large
-
-### Observability After Your First Turn
-
-After completing your first interactive turn, you can inspect what the agent did:
-
-- **Press `Ctrl+R`** to toggle the **Agent Rail** sidebar (requires ≥100 terminal columns). Shows files touched, injected context, and memory recalls for the current turn in real-time.
-- **Type `/quit`** to end the session. A detailed **session report** is auto-generated to `.hone/reports/<timestamp>-<session>.md`, including cost, token usage, file stats, and tool timelines.
-- **View reports** with `hone reports list`, `hone reports show <id>`, or `hone reports diff <a> <b>`.
-
-See [docs/observability.md](../observability.md) and [docs/session-reports.md](../session-reports.md) for details on accessibility flags, retention, and JSON export.
-
----
-
-## 7. Session Management
-
-Sessions are named conversations that persist across runs. Start a named session once, resume it later—context is preserved.
-
-### Create and List Sessions
-
-```bash
-# Start a new named session
-hone --session debug-auth
-
-# List all saved sessions
-hone session list
-```
-
-**Output of `session list`:**
-
-```
-ID                              Created              Updated              Name              Messages
-──────────────────────────────  ──────────────────  ──────────────────  ──────────────    ────────
-550e8400-e29b-41d4-a716-4467   2026-04-09 15:22   2026-04-09 15:45    debug-auth        42
-550e8400-e29b-41d4-a716-4468   2026-04-09 14:10   2026-04-09 14:10    my-project        5
-550e8400-e29b-41d4-a716-4469   2026-04-08 18:30   2026-04-08 18:30    refactor-api      18
-```
-
-### Resume a Session
-
-Pick up where you left off:
-
-```bash
-hone session resume debug-auth
-```
-
-All prior messages and context are restored. New turns are added to the session.
-
-### Rename and Delete
-
-```bash
-# Rename a session
-hone session rename debug-auth debug-authentication
-
-# Delete a session (permanent)
-hone session delete old-session
-```
-
-### Ephemeral Mode (No Persistence)
-
-For sensitive work or testing, skip auto-save:
-
-```bash
-hone --ephemeral
-```
-
-The session runs but isn't saved after it exits. Useful for:
-
-- Sensitive code review
-- One-off debugging
-- Cost-limited testing
-
-### Session Workflow Example
-
-```bash
-# Day 1: Start a feature branch
-hone --session feature/user-auth
-# Conversation happens, auto-saved after each turn
-
-# Day 2: Resume work
-hone session list
-# Find feature/user-auth in the list
-
-hone session resume feature/user-auth
-# Pick up right where you left off, full context restored
-
-# Done, rename it
-hone session rename feature/user-auth feature/user-auth-complete
-```
-
----
-
-## 8. Modes of Operation
-
-Hone supports multiple modes. Choose the right one for your task.
-
-### Shell Commands
-
-Run native shell commands directly from Hone without exiting the TUI.
-
-```bash
-!ls                 # List files, output shown inline
-!git status         # Check git status
-!cargo test         # Run tests
-!cd src             # Change directory (confined to project)
-!nvim file.rs       # Open editor, suspend TUI, restore on exit
-```
-
-**Full Example:**
-
-```
-> !cargo test
-  running 12 tests
-  test test_add ... ok
-  test test_subtract ... ok
-  12 passed, 0 failed
-
-  claude-sonnet │ $0.00 │ ▓▓▓░░░░░░░ 28% ctx │ !shell
-```
-
-**Features:**
-
-- All standard shell commands supported
-- Output captured and displayed inline
-- Directory changes persist for the session
-- `!cd` confined to project root (security)
-- `!nvim`, `!vim`, `!vi`, or any `$EDITOR` suspend TUI and restore after exit
-
----
-
-### Vim Keybindings
-
-Enable vim-style keybindings for navigating and editing within Hone.
-
-**Start vim mode:**
-
-```bash
-hone --vim
-```
-
-Or toggle in interactive mode:
-
-```
-:set vim      # Enable vim mode
-:set novim    # Disable vim mode
-```
-
-**Normal Mode:**
-
-```
-j         Move down
-k         Move up
-h         Move left
-l         Move right
-gg        Jump to top
-G         Jump to bottom
-w         Jump to next word
-b         Jump to previous word
-i         Enter insert mode (before cursor)
-a         Enter insert mode (after cursor)
-o         Insert new line below
-O         Insert new line above
-d         Delete (dd = delete line)
-y         Yank/copy (yy = copy line)
-p         Paste
-u         Undo
-Ctrl-r    Redo
-:q        Quit to previous view
-:wq       Save and quit
-```
-
-**Insert Mode:**
-
-```
-Type normally to edit text
-Esc       Return to normal mode
-```
-
-**Full Example:**
-
-```
-> :set vim
-Vim mode enabled.
-
-> gg              # Jump to top of input
-> i               # Enter insert mode
-> (type new prompt)
-> Esc             # Return to normal mode
-> :q              # Submit
-```
-
----
-
-### TDD Workflow
-
-Watch source files and automatically run tests on change. Perfect for test-driven development.
-
-**Start TDD mode:**
-
-```
-:tdd cargo test
-```
-
-Hone will now:
-1. Watch all source files (300ms debounce)
-2. Run `cargo test` when files change
-3. Display PASS/FAIL inline
-4. Repeat until you stop
-
-**Stop TDD mode:**
-
-```
-:tdd off
-```
-
-**Full Example:**
-
-```
-> :tdd cargo test
-  [TDD] watching for changes, running: cargo test
-
-  ... (waiting for edits) ...
-
-  [TDD] change detected: src/lib.rs — running tests...
-  [TDD] tests PASSED
-    12 passed in 0.4s
-
-  [TDD] change detected: src/main.rs — running tests...
-  [TDD] tests FAILED
-    test test_parse ... FAILED (expected Ok, got Err)
-
-  [TDD] change detected: src/main.rs — running tests...
-  [TDD] tests PASSED
-    12 passed in 0.5s
-```
-
-**Use Cases:**
-
-- Red-Green-Refactor workflow
-- Continuous verification while implementing
-- Early detection of regressions
-- Works with any test command: `cargo test`, `pytest`, `npm test`, etc.
-
----
-
-### One-Shot Mode (Fast)
-
-Run a single prompt and exit. No interactive TUI.
-
-```bash
-hone "List all Python files in src/"
-```
-
-**Use when:**
-
-- Quick questions
-- Scripting (output to stdout)
-- Quick file exploration
-
-**Output goes to stdout**, suitable for piping:
-
-```bash
-hone "Analyze error in this log" < error.log > analysis.txt
-```
-
----
-
-### Interactive Mode (Default)
-
-Start a conversational session with the TUI.
-
-```bash
+export OPENAI_API_KEY=sk-...
+export HONE_OPENAI_BASE_URL=https://api.deepseek.com
+export HONE_OPENAI_MODEL=deepseek-chat
 hone
 ```
 
-or
+## 3. First run
 
 ```bash
-hone --session my-project
+cd your-project
+hone                                   # interactive TUI
+hone "why does test_parse_date fail?"   # one-shot: answer, then exit
+hone --json "list the TODOs in src/"    # structured output for scripts and CI
+hone --image screenshot.png "what is wrong with this layout?"
 ```
 
-**Use when:**
+<p align="center">
+  <img src="assets/agent-rail-demo.gif" alt="The Agent Rail in the Hone TUI, showing each tool call of a turn as it runs" width="820">
+  <br><sub>The Agent Rail (<kbd>Ctrl</kbd>+<kbd>R</kbd>) shows each tool call of the turn as it runs.</sub>
+</p>
 
-- Multi-step tasks (exploration → implementation → testing)
-- Iterative development
-- Real-time feedback
+<a id="81-plan-preview-gate-plan"></a>
 
-**TUI features:**
+**TUI essentials**
 
-- Type prompts freely
-- Press `?` for help
-- Type `/cmd` for commands
-- Streaming tokens in real-time
-- Cost tracking on each turn
+| Key / input | Does |
+|---|---|
+| <kbd>Enter</kbd> · <kbd>Shift</kbd>+<kbd>Enter</kbd> | send · new line |
+| <kbd>Esc</kbd> | mid-turn: cancel the turn · while typing: clear input |
+| <kbd>Ctrl</kbd>+<kbd>K</kbd> | command palette |
+| <kbd>Ctrl</kbd>+<kbd>O</kbd> | session switcher: pick a session, and the TUI exits and prints `hone session resume <name>` |
+| <kbd>F1</kbd> | all keybindings |
+| `/model anthropic:claude-opus-4-5` | change the model from the next turn (same provider) |
+| <kbd>Shift</kbd>+<kbd>Tab</kbd> | cycle Build → Plan (read-only) → AutoApprove |
+| `/plan <task>` | preview the orchestrator's plan without running workers |
+| `@debugger <task>` | send one message to a built-in persona |
+| `!cargo test` | run a shell command yourself, outside the agent |
 
-**Commands in interactive mode:**
+The full list is in the [cheatsheet](onboarding/cheatsheet.md).
 
-```
-/help                       — Show all commands
-/model <provider:model>     — Switch models mid-session
-/configure [provider|model] — Edit live configuration
-/cost                       — Show running spend + tokens
-/quit  (or /q)              — Exit
+### What happens in one turn
 
-/plan <prompt>              — Preview an orchestrated plan + cost
-                              before any worker runs (see below)
-/budget <usd>               — Cap the next run's cost ceiling
-                              (e.g. /budget 0.50 — must be > 0)
-/permit <tool>              — Pre-approve a tool for the next run
-                              (e.g. /permit shell, /permit shell.run)
-
-/theme <name>               — Switch theme: crimson, chalk, neon, minimal
-/theme-preview              — Render every theme color
-/set vim | novim            — Toggle vim-style keybindings
-/split | /panel             — Toggle split-pane / bottom panel layouts
-/review                     — Show a diff of all session changes
-/clarify [prompt]           — Ask clarifying questions before next turn
-/tdd [<cmd> | off]          — Toggle TDD watch mode
-/undo  /  /redo             — Step the conversation cursor
-```
-
-`/plan`, `/budget`, and `/permit` are **per-run governance** — they
-apply only to the next turn and then drain. They never persist to
-config. See [§ 8.1 Plan-Preview Gate](#81-plan-preview-gate-plan)
-below.
-
-### 8.1 Plan-Preview Gate (`/plan`)
-
-`/plan <prompt>` runs the orchestrator's *decompose* step in-process
-and shows you the resulting `TaskPlan` + cost estimate **before any
-worker spawns**. You then pick what happens next:
-
-- **r / Enter** — run the plan as-is (replays the prompt through the
-  normal turn dispatch).
-- **e** — restore the prompt to the input bar so you can tweak it.
-- **c / Esc** — cancel.
-
-The cost line shows two numbers:
-
-- **paid** — the real lead-LLM cost you just spent on the decompose
-  call.
-- **projected** — `paid + N × 0.05 USD`, where N is the subtask count
-  and the per-worker constant comes from
-  `hone_core::DEFAULT_WORKER_COST_USD`. Override the ceiling with
-  `/budget <usd>` before clicking Run.
-
-Example flow:
-
-```
-> /budget 0.20
-> /permit shell
-> /plan refactor the auth module to extract session state
-
-  ╭──────────────────── Plan Preview ────────────────────╮
-  │   goal  Refactor the auth module                     │
-  │   cost  paid $0.0120  ·  projected ~$0.1620         │
-  │                                                      │
-  │   subtasks (3)                                       │
-  │   · rust-expert     [1] Extract session state struct │
-  │   · code-reviewer   [2] Audit for race conditions    │
-  │   · test-architect  [3] Add integration tests        │
-  │                                                      │
-  │   r/Enter run    e edit    c/Esc cancel              │
-  ╰──────────────────────────────────────────────────────╯
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+sequenceDiagram
+  participant You
+  participant Hone as Hone agent
+  participant Model
+  participant Tools
+  You->>Hone: "fix the failing date test"
+  Hone->>Hone: add HONE.md, memory index,<br/>repo skeleton (first turn)
+  Hone->>Model: messages + tool schemas
+  Model-->>Hone: tool call: read_file tests/date.rs
+  Hone->>Tools: permission check, then run
+  Tools-->>Hone: file contents
+  Hone->>Model: tool result
+  Model-->>Hone: tool call: edit_file src/date.rs
+  Hone->>Tools: permission check, then run
+  Model-->>Hone: final answer
+  Hone-->>You: answer, cost estimate
+  Note over Hone,Tools: In the TUI, after a turn that edited files,<br/>Hone runs the detected test command<br/>(cargo test, npm test, make test, pytest)<br/>and loops on failures up to 3 times.
 ```
 
-`/plan` is also available in the web UI at `/ui` — same protocol
-(`POST /orchestrate?dry_run=true`), same overlay, same Run/Edit/Cancel
-buttons. See [§ 14 Remote Access](#14-remote-access-honed).
+## 4. Choose a mode
 
----
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart TD
+  Q{"What do you need?"} -->|"a conversation"| TUI["hone<br/>(TUI)"]
+  Q -->|"one answer, then exit"| ONE["hone 'prompt'"]
+  Q -->|"machine-readable output"| JSON["hone --json 'prompt'"]
+  Q -->|"a big task split<br/>across agents"| ORCH["hone --orchestrate 'prompt'"]
+  Q -->|"several attempts,<br/>keep the best"| ENS["hone --ensemble 3 'prompt'"]
+  Q -->|"a repeatable workflow"| REC["hone --recipe bug-fix"]
+  Q -->|"a written plan first"| SPEC["hone spec 'goal'"]
+  Q -->|"an HTTP API or web UI"| D["honed"]
+```
 
-### Orchestrate Mode (Complex Tasks)
+| Mode | Command | Good for |
+|---|---|---|
+| TUI | `hone` | Day-to-day work. Each message is classified as simple (one agent turn), medium (a self-refine pass) or complex (the orchestrator). |
+| One-shot | `hone "…"` | Quick questions and small fixes. Ambiguous prompts print clarifying questions to stderr (turn off with `--no-clarify`). |
+| JSON | `hone --json "…"` | CI and scripts: response, tool calls, usage, cost and exit status. |
+| Orchestrate | `hone --orchestrate "…"` | Large tasks: a lead model writes a plan, worker agents run the subtasks (up to 4 at a time, in dependency order), and the results are merged. Progress goes to `.hone/plan.md`. |
+| Ensemble | `hone --ensemble N "…"` | Hard one-off answers: N candidates (2–10) at different temperatures, then a ranker picks one. |
+| Recipe | `hone --recipe <name> [--var k=v]` | Built-in multi-step workflows: `tdd-feature`, `bug-fix`, `code-review`, `refactor`, `security-audit`, `performance`, `migration`, `documentation`, `onboarding`. |
+| Spec | `hone spec "goal"` | Writes requirements, design and tasks to `.hone/specs/<slug>/`. |
+| Daemon | `honed` | HTTP + SSE API, web UI, remote and distributed runs. See [§8](#8-run-the-daemon-honed). |
 
-Decompose complex tasks into parallel subtasks, executed by worker agents, then merged.
+> [!NOTE]
+> `--orchestrate` and `--ensemble` need a provider with tool calling (Anthropic,
+> OpenAI-compatible or Ollama). With the Claude or Gemini CLI, Hone warns that results may
+> be degraded.
 
-**Recommended for:** Features with multiple concerns (API + CLI + tests), complex refactors.
-
-> **Tip — preview before you pay.** Inside the TUI, type
-> `/plan <prompt>` (instead of running `--orchestrate` headlessly) to
-> see the decomposed plan + cost estimate **before** any worker
-> spawns. Pick Run / Edit / Cancel from the overlay. Backs onto the
-> same daemon endpoint (`POST /orchestrate?dry_run=true`) so the web
-> UI gets it for free. See [§ 8.1 Plan-Preview Gate](#81-plan-preview-gate-plan).
+## 5. Sessions and memory
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-hone --orchestrate "Add comprehensive email validation: write tests, implement validation logic, build CLI interface, document API"
+hone --session auth-refactor "map the auth module"   # one-shot, saved as auth-refactor
+hone session list                                    # all saved sessions
+hone session resume auth-refactor                    # load it into the TUI
+hone reports list                                    # TUI session reports
+hone memory ls --kind feedback                       # what Hone remembered
+hone --ephemeral                                     # no memory, index or session writes
 ```
 
-**What happens:**
+- One-shot runs are saved to `sessions.db` (under a generated name unless you pass
+  `--session`). The TUI doesn't save sessions yet; on exit it writes a session report to
+  `.hone/reports/`.
+- Memory is a local SQLite file. After a turn, a heuristic keeps only what looks worth
+  remembering: corrections, stated preferences, project facts and references. Each new
+  session starts with an index of those memories, each turn recalls the closest matches,
+  and the model reads full entries with the `memory_read` tool.
+- `--encrypted-memory` with `HONE_MEMORY_PASSPHRASE` encrypts memory content with
+  AES-256-GCM, using a key derived with Argon2id.
 
-```
-1. Orchestrator decomposes: test_suite, validation_impl, cli_build, api_docs
-2. 4 workers execute in parallel
-3. Results merged into coherent output
-4. Final response shows all changes
-```
+More in [Core concepts → Memory](onboarding/concepts.md#5-memory).
 
-**Output example:**
+## 6. Make it yours
 
-```
-[Orchestrator] Decomposing task...
+| Want to | Do this |
+|---|---|
+| Teach project conventions | Add `HONE.md` with `##` sections at the repo root |
+| Connect GitHub, a database, ... | Add MCP servers to `.hone/mcp.json` (same format as Claude Code) |
+| Add a persona | Drop a Markdown file into `.hone/agents/` and call it with `@name` |
+| Add a slash command | Drop a Markdown file into `.hone/commands/` |
+| Change colours | `HONE_THEME=neon`, or keys in `~/.config/hone/theme.toml` |
 
-[PlanCreated]
-Subtask 1: write_test_suite (worker 0)
-Subtask 2: implement_validation (worker 1)
-Subtask 3: build_cli_interface (worker 2)
-Subtask 4: document_api (worker 3)
+Formats and locations: [Configuration](configuration.md).
 
-[WorkerStarted] Worker 0: write_test_suite
-[WorkerStarted] Worker 1: implement_validation
-[WorkerStarted] Worker 2: build_cli_interface
-[WorkerStarted] Worker 3: document_api
+## 7. Add guardrails
 
-[WorkerCompleted] Worker 0: test_suite.rs (450 tokens)
-[WorkerCompleted] Worker 1: validation.rs (1200 tokens)
-[WorkerCompleted] Worker 2: cli.rs (890 tokens)
-[WorkerCompleted] Worker 3: docs.md (340 tokens)
+Hone runs three independent checks on tool calls. The shell checks are always on; the
+Seatbelt sandbox is on by default on macOS (Landlock on Linux is opt-in):
 
-[MergingResults]
-Combining all outputs...
+<p align="center">
+  <img src="assets/guardrails.svg" alt="Guardrails: permission rules, shell command checks, OS sandbox" width="820">
+</p>
 
-[Final Output]
-Complete email validation system with tests, logic, CLI, and docs.
-
-Total tokens: 4521 input, 892 output
-Total cost: $0.084 USD
-```
-
----
-
-### Ensemble Mode (Ranking Best Response)
-
-Run N parallel candidates with varied temperatures and automatically rank the best.
-
-```bash
-hone --ensemble 3 "Implement a binary search function"
-```
-
-**What happens:**
-
-```
-1. Run 3 workers with T=0.1, T=0.5, T=0.8
-2. Each produces a different response
-3. Ranker evaluates all 3
-4. Returns the best one
-```
-
-**Use when:**
-
-- You want the best result, not just any result
-- Task quality matters more than speed
-- Budget allows 3x API calls
-
----
-
-### Recipe Mode (Structured Workflows)
-
-Run a pre-defined workflow (TDD, bug-fix, code-review, refactor).
-
-```bash
-hone --recipe tdd-feature
-```
-
-**Built-in recipes:**
-
-- `tdd-feature` — Write tests first, then implementation
-- `bug-fix` — Root cause analysis, fix, test
-- `code-review` — Systematic code review with checklist
-- `refactor` — Analyze, plan, implement, verify
-
-Each recipe is a YAML workflow defining the steps, prompts, and validation rules.
-
----
-
-### RALPH Loop Mode (Iterative Feedback Cycle)
-
-Run the RALPH (Review, Analyze, Learn, Plan, Heal) loop for structured iterative improvement with adversarial review.
-
-```bash
-hone --ralph "implement a secure authentication module"
-```
-
-**How it works:**
-
-1. **Review** — Adversarial reviewer critiques the solution and identifies issues
-2. **Analyze** — Agent analyzes root causes of each issue
-3. **Learn** — Extract patterns to prevent similar bugs in the future
-4. **Plan** — Create targeted fix plans for each issue
-5. **Heal** — Apply fixes, verify, and check for regressions
-6. **Loop** — Repeat until reviewer approves or max iterations reached
-
-**Configuration:**
-
-```bash
-# Control max iterations (default 3)
-hone --ralph "prompt" --ralph-max-iterations 5
-
-# Enable test verification after each Heal step
-hone --ralph "prompt" --ralph-verify-tests "cargo test"
-
-# Record learned patterns for future sessions
-hone --ralph "prompt" --ralph-learn
-```
-
-**Use when:**
-
-- Task quality is critical (security, architecture, complex logic)
-- You want to capture learnings for future similar tasks
-- You prefer iterative refinement to single-shot generation
-- You need detailed issue tracking and resolution history
-
-**Example output:**
-
-```
-[RALPH iteration 1/3]
-[Review] Found 2 issues: missing input validation, SQL injection risk
-[Analyze] Root cause 1: no validation on user input. Root cause 2: dynamic query construction
-[Learn] Pattern: Always validate inputs before database operations
-[Plan] Fix 1: Add validation layer. Fix 2: Use parameterized queries
-[Heal] Applied both fixes, re-reading modified code...
-[RALPH] Approved after 1 iterations (2 issues found, 0 blocking)
-```
-
----
-
-### Agent Persona Mode
-
-Switch to a specialized agent persona.
-
-```bash
-hone --agent debugger "There's a segfault in main"
-hone --agent security-auditor "Review this authentication module"
-hone --agent code-reviewer "Review the PR changes"
-```
-
-**Available personas:**
-
-- `code-reviewer` — Code quality, style, testing
-- `debugger` — Debugging, root cause analysis
-- `security-auditor` — Security issues, vulnerabilities
-- `test-architect` — Test design and coverage
-- `ml-recommendations-expert` — ML/AI algorithm design
-- `ai-researcher` — Research, papers, novel ideas
-- `python-expert` — Python-specific improvements
-- `rust-expert` — Rust idioms and performance
-
----
-
-### Decision Guide: Which Mode for Which Task?
-
-| Task | Mode | Command |
-|------|------|---------|
-| Quick Q&A | One-shot | `hone "What is..."` |
-| Multi-turn debugging | Interactive | `hone --session debug` |
-| Complex feature (API + tests + CLI) | Orchestrate | `hone --orchestrate "..."` |
-| Choose best of 3 solutions | Ensemble | `hone --ensemble 3 "..."` |
-| TDD workflow | Recipe | `hone --recipe tdd-feature` |
-| Iterative improvement with review | RALPH Loop | `hone --ralph "..."` |
-| Code review focus | Agent | `hone --agent code-reviewer` |
-| Complex reasoning problem | Agent | `hone --agent ai-researcher` |
-
----
-
-## 9. Scope Clarification Mode
-
-Hone automatically detects ambiguous requests and asks clarifying questions before proceeding. This prevents wasted time on misunderstandings.
-
-### What Gets Clarified?
-
-Hone uses 4 heuristics to detect ambiguity:
-
-1. **Missing file context** — Request mentions code but doesn't specify which file(s)
-   - Example: "Fix the typo in the login function"
-   - Clarification: "There are multiple login functions. Which file?"
-
-2. **Unclear scope** — Request is vague about what needs to change
-   - Example: "Make the API faster"
-   - Clarification: "Faster for which endpoint? Users? Database?"
-
-3. **Vague terminology** — Request uses terms without specifics
-   - Example: "Refactor the authentication module"
-   - Clarification: "Change the API interface, internal structure, or both?"
-
-4. **Contradictory hints** — Request seems to contradict itself
-   - Example: "Add a new feature but don't modify any existing code"
-   - Clarification: "Do you want to add files, or modify existing ones?"
-
-### Enable/Disable
-
-**Enable (default):**
-
-Clarification is on by default. Hone automatically detects ambiguous requests:
-
-```bash
-hone "fix the bug in the parse function"
-# If ambiguous, asks: "Which parse function? There are 3 in the codebase."
-```
-
-**Disable for CI/scripting:**
-
-```bash
-hone --no-clarify "fix the bug in the parse function"
-```
-
-Or in config.toml:
+Turn on the third, your own permission rules, with one file:
 
 ```toml
-[agent]
-scope_clarification = false
+# ~/.config/hone/permissions.toml
+[[rules]]
+id = "no-push"
+command = "git push*"
+decision = "deny"
+
+[[rules]]
+id = "no-env"
+path = "**/.env"
+decision = "deny"
 ```
 
-### Manual Clarification
+> [!NOTE]
+> `ask` rules work, but in the TUI today they only prompt on orchestrated turns; on other
+> turns, and in every headless run, an `ask` is refused unless you pass
+> `--approve <id>`. See the [known bug](permissions-and-sandbox.md#known-issue-tui).
 
-In interactive mode, manually trigger clarification:
+> [!WARNING]
+> On Linux, the Landlock sandbox for shell commands is **opt-in** while it is validated on
+> a Landlock kernel. Set `HONE_SANDBOX_ENFORCE=1` to enable it. On macOS, Seatbelt is on
+> by default.
 
-```
-You: fix the import error
-Assistant: That request seems ambiguous. Let me ask some questions...
+The full guide: [Permissions and sandbox](permissions-and-sandbox.md).
 
-1. Which file has the import error?
-   a) src/main.rs
-   b) src/models.rs
-   c) src/utils.rs
+<a id="12-remote-access-honed"></a><a id="14-remote-access-honed"></a>
 
-You: (a) src/main.rs
-Assistant: Which import specifically? I see: datetime, json, requests...
-```
+## 8. Run the daemon (`honed`)
 
-Or use the command:
-
-```
-:clarify
-> your ambiguous request
-```
-
----
-
-## 10. Inline Agent Dispatch
-
-Dynamically swap to a specialized agent for a single turn using `@agent-name` syntax.
-
-### 12 Built-In Agents
-
-| Agent | Specialty | Example |
-|-------|-----------|---------|
-| `@code-reviewer` | Code quality, security, performance | `@code-reviewer "review this function"` |
-| `@debugger` | Systematic debugging with scientific method | `@debugger "why is this test failing?"` |
-| `@security-auditor` | Vulnerability scanning, OWASP review | `@security-auditor "audit this code"` |
-| `@performance-optimizer` | Database, API, memory optimization | `@performance-optimizer "make this faster"` |
-| `@documentation-agent` | API docs, READMEs, architecture diagrams | `@documentation-agent "document this API"` |
-| `@api-designer` | REST, GraphQL, gRPC design | `@api-designer "design the auth endpoint"` |
-| `@tdd-workflow` | Test-Driven Development | `@tdd-workflow "add user signup feature"` |
-| `@rust-expert` | Rust idioms, ownership, async/await | `@rust-expert "fix the lifetime issue"` |
-| `@python-expert` | PEP 484 typing, pytest, FastAPI | `@python-expert "optimize the data pipeline"` |
-| `@researcher` | Literature review, experiment design | `@researcher "research ML approaches"` |
-| `@ml-engineer` | Model training, evaluation, MLOps | `@ml-engineer "train a classifier"` |
-| `@data-engineer` | ETL pipelines, schemas, data quality | `@data-engineer "design the data pipeline"` |
-
-### Usage in Interactive Mode
+`honed` serves the same agent over HTTP with Server-Sent Events, plus a web UI.
 
 ```bash
-hone --session my-session
+export ANTHROPIC_API_KEY=sk-ant-...      # POST /run uses the Anthropic API
+
+# Loopback only: no token needed
+HONE_BIND=127.0.0.1 honed               # http://127.0.0.1:3117
+
+# Reachable from other machines: a token is required
+HONE_AUTH_TOKEN="$(openssl rand -hex 32)" honed 3117
 ```
 
-Then in the session:
-
-```
-You: I have a security concern
-Assistant: I can help. What's the concern?
-
-You: @security-auditor check if this code is vulnerable to SQL injection
-
-[Security Auditor mode enabled]
-Assistant: I'll perform a security audit focused on SQL injection vulnerabilities...
-[audits the code]
-
-[Returning to default agent]
-
-You: Next question...
-```
-
-### Usage in One-Shot Mode
+> [!IMPORTANT]
+> `honed` binds `0.0.0.0` by default and **refuses to start** (exit code 2) without
+> `HONE_AUTH_TOKEN` unless you bind to loopback (`HONE_BIND=127.0.0.1`) or set
+> `HONE_ALLOW_UNAUTH=1`. The check runs before any role is chosen, so it applies to
+> coordinators and workers too.
 
 ```bash
-hone '@debugger "why does this test fail?"'
-hone '@code-reviewer "review the auth module for quality"'
-hone '@security-auditor "look for secrets in this code"'
+curl -N -X POST http://127.0.0.1:3117/run \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt": "list the TODOs in src/"}'
 ```
 
-### How It Works
-
-When you use `@agent-name`:
-
-1. The system prompt swaps to the specified agent's specialized persona
-2. Agent-specific tools and instructions load (e.g., `@debugger` uses scientific method)
-3. Agent runs for one turn
-4. System prompt returns to your default agent
-5. Context and session history are preserved
-
-This allows you to **temporarily bring in expertise** for focused tasks without leaving your session.
-
-### Custom Agents
-
-You can define custom agents in `.hone/agents/my-agent.md`:
-
-```markdown
----
-name: my-agent
-description: My specialized agent
-tools: [read, write, shell, grep]
-model: claude-sonnet-4
----
-
-You are an expert in [your specialty].
-Your role is to [specific task].
-Always [principles].
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+sequenceDiagram
+  participant C as Client (curl, web UI, desktop)
+  participant D as honed
+  participant A as Agent
+  C->>D: POST /run {prompt, history, working_dir}
+  D->>D: auth, rate limit, working_dir inside workspace root,<br/>load permission policy
+  D->>A: fresh agent per request
+  loop SSE stream
+    A-->>D: tokens, tool calls, results
+    D-->>C: event: ...
+  end
+  A-->>D: done (usage, cost)
+  D-->>C: final event, stream closes
 ```
 
-Then use it:
+<a id="enable-the-gui"></a>
 
-```
-@my-agent "your task here"
-```
+| Surface | How |
+|---|---|
+| Web UI | `make webui`, rebuild `honed`, then open `http://127.0.0.1:3117/ui` |
+| Web UI development | `make webui-dev`: Vite dev server with hot reload at `http://127.0.0.1:5174`, proxying to `honed` on `:3117` |
+| Desktop app (Tauri 2) | `cargo run -p hone-desktop` with `honed` on `PATH`; it can supervise its own `honed` or connect to a remote one. Linux packages, `cargo tauri dev` / `cargo tauri build`: [apps/hone-desktop/README.md](../apps/hone-desktop/README.md) |
+| Distributed orchestration | Every command needs the same token: coordinator `HONE_AUTH_TOKEN=… HONE_DISTRIBUTED_DB=queue.db honed`, workers `HONE_AUTH_TOKEN=… HONE_WORKER_COORDINATOR=http://host:3117 honed`, client `HONE_AUTH_TOKEN=… hone --orchestrate --distributed http://host:3117 "…"` |
+| API reference | `GET /openapi.json` (generated from the code); [HTTP API](api/http-api.md) and [SSE events](api/sse-events.md) (written earlier; may be out of date) |
 
----
+Daemon variables are listed in [Configuration](configuration.md#environment-variables).
+Older tutorials with more detail (they may be out of date; the reference pages win):
+[Server and remote](tutorials/server-and-remote.md), [HTTP API](api/http-api.md).
 
-## 11. MCP Extensions
+## 9. Troubleshooting
 
-Model Context Protocol (MCP) servers extend Hone with external tools: GitHub, Slack, databases, custom integrations.
+<details>
+<summary><b>"No AI provider detected"</b></summary>
 
-### What is MCP?
+None of Anthropic, OpenAI, `claude`, `gemini` or Ollama was available. Set an API key, or
+start Ollama and pull `llama3.2`. Ollama is detected only on `localhost:11434` and only
+when `llama3.2` is installed; for another model use `--model ollama:<name>`.
 
-MCP is a protocol for AI agents to call external services. Instead of hardcoding GitHub, Slack, and database tools into Hone, we use MCP servers as plugins.
+</details>
 
-**Example:** With the GitHub MCP server, Hone can:
+<details>
+<summary><b>"ANTHROPIC_API_KEY doesn't start with 'sk-ant-'"</b></summary>
 
-- List open PRs
-- Create issues
-- Add comments
-- Merge PRs
-- Query workflows
+A warning only; Hone still uses the key. Check for a stray quote or a key from another
+provider.
 
----
+</details>
 
-### Quick Setup
+<details>
+<summary><b><code>honed: refusing to start: no HONE_AUTH_TOKEN set</code></b></summary>
 
-Create `.hone/mcp.json` in your project:
+Set `HONE_AUTH_TOKEN`, or bind to loopback with `HONE_BIND=127.0.0.1`.
 
-```json
-{
-  "mcp_servers": [
-    {
-      "name": "github",
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
-      }
-    },
-    {
-      "name": "slack",
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-slack"],
-      "env": {
-        "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}"
-      }
-    }
-  ]
-}
-```
+</details>
 
-Set environment variables:
+<details>
+<summary><b><code>requires approval (rule ...)</code></b></summary>
 
-```bash
-export GITHUB_TOKEN="ghp_..."
-export SLACK_BOT_TOKEN="xoxb-..."
-hone
-```
+A permission rule said `ask` and the run couldn't prompt: a headless run, or (today) a TUI
+turn that wasn't orchestrated. Re-run with `--approve <rule id>`. See [Permissions and sandbox](permissions-and-sandbox.md#asks-interactive-vs-headless).
 
-Hone now has GitHub and Slack available as tools.
+</details>
 
----
+<details>
+<summary><b><code>command blocked (requires approval): ...</code></b></summary>
 
-### Available MCP Servers
+The shell tool refuses destructive, network and chained commands (`;`, `&&`, `$(…)`,
+and `|` except into a read-only filter such as `head`, `grep` or `wc`). Split the command,
+or use `read_file`, `grep`, `git_*` or `web_fetch`. (`sudo` and friends give
+`command blocked: privilege escalation …` instead.)
 
-See the [MCP Extensions Guide](tutorials/mcp-extensions.md) for a complete list and setup instructions.
+</details>
 
----
+<details>
+<summary><b>The model forgets things or the context overflows on a local model</b></summary>
 
-## 12. Theme Customization
+Hone infers the context window from the model name. If your server uses a smaller window,
+set it: `HONE_CONTEXT_WINDOW=32768`.
 
-Hone ships with built-in themes (default: dark theme), and you can override any color with a simple TOML file.
+</details>
 
-### Override Theme Colors
+<details>
+<summary><b>Memory or session database errors</b></summary>
 
-Create `~/.config/hone/theme.toml`:
+Run with `--ephemeral` to skip the stores, or move `~/.local/share/hone/memory.db` aside.
+`hone memory forget --before 2026-01-01T00:00:00Z` prunes old entries.
 
-```toml
-# Override specific colors (24-bit RGB)
-accent-hot = "#FF1744"
-accent-muted = "#FFB74D"
-bg-normal = "#0d1117"
-text-normal = "#E6E1E8"
-text-muted = "#8B8B8B"
-success = "#27AE60"
-error = "#E74C3C"
-```
+</details>
 
-Only list the colors you want to override. All others use the theme defaults. When Hone starts, it merges these overrides with the selected theme.
+## Next steps
 
-### Available Color Keys
-
-Common keys you can override:
-
-| Key | Purpose | Example |
-|-----|---------|---------|
-| `accent-hot` | Active/highlight color (cursor, focus) | `#FF1744` |
-| `accent-muted` | Secondary accent (disabled, dimmed) | `#FFB74D` |
-| `bg-normal` | Main background | `#0d1117` |
-| `bg-secondary` | Secondary background (panels, rail) | `#1C1C24` |
-| `text-normal` | Primary text | `#E6E1E8` |
-| `text-muted` | Dimmed text (hints, timestamps) | `#8B8B8B` |
-| `success` | Success states (PASS, green) | `#27AE60` |
-| `error` | Error states (FAIL, red) | `#E74C3C` |
-| `warning` | Warnings (yellow) | `#F39C12` |
-| `info` | Info messages (blue) | `#3498DB` |
-
-For a complete list, see your selected theme in the Hone source code or run `/configure theme` in an interactive session.
-
-### Example Themes
-
-**Light Theme Override:**
-```toml
-bg-normal = "#FFFFFF"
-bg-secondary = "#F5F5F5"
-text-normal = "#1A1A1A"
-text-muted = "#666666"
-accent-hot = "#0066CC"
-```
-
-**High Contrast:**
-```toml
-bg-normal = "#000000"
-bg-secondary = "#111111"
-text-normal = "#FFFFFF"
-text-muted = "#CCCCCC"
-accent-hot = "#00FF00"
-error = "#FF0000"
-```
-
----
-
-## 13. Session Switcher & Notification Bell
-
-### Session Switcher (Ctrl+O)
-
-Press **Ctrl+O** during an interactive session to open the session switcher overlay. This allows you to quickly browse and switch between all saved sessions.
-
-**Features:**
-- Full-screen overlay showing session names, last-updated relative times (e.g., "2 hours ago"), and message counts
-- Navigate with j/k (or arrow keys), Enter to switch, q to close
-- Sorted by most recent first
-- Useful for resuming past work without typing session names
-
-**Example:**
-```
-┌─ Sessions (10 total) ────────────────────────┐
-│ > auth-refactor          5 mins ago  18 msgs  │
-│   api-design             2 hours ago 42 msgs  │
-│   docs-update            3 days ago  12 msgs  │
-│   bugfix-cache           1 week ago  5 msgs   │
-└──────────────────────────────────────────────┘
-```
-
-### Notification Bell
-
-When a turn takes **10 or more seconds**, Hone rings the terminal bell (`\x07`). This useful for long-running tasks when your attention is elsewhere.
-
-**Disable the bell:**
-```bash
-export HONE_NO_BELL=1
-hone
-```
-
----
-
-## 14. Remote Access (honed)
-
-Run Hone as a persistent daemon server accessible over the network with HTTP/2 + SSE for remote access, team collaboration, and web-based chat.
-
-### Start the Daemon
-
-```bash
-honed --config ~/.config/hone/config.toml
-# or: hone serve
-```
-
-**Default address:** `http://0.0.0.0:8080`
-
-**Daemon output:**
-
-```
-honed 0.1.0
-
-Listening on http://0.0.0.0:8080
-Auth enabled: false
-Session storage: SQLite at /Users/user/.local/share/hone/sessions.db
-```
-
-### Web UI
-
-Once the daemon is running, open your browser to **`http://localhost:8080`**.
-
-The embedded single-page chat interface includes:
-
-- **Model selector** — Switch models without restarting
-- **Working directory input** — Set project context
-- **Streaming display** — Tokens appear as they're generated
-- **Tool-call cards** — Collapsible JSON previews of tool arguments and results
-- **Markdown rendering** — Bold, lists, and code blocks
-- **Themes** — `crimson`, `chalk`, `neon`, `minimal` (Settings drawer or `/theme`)
-
-**Slash commands in the web chat input:**
-
-- `/plan <prompt>` — preview an orchestrated plan + cost estimate
-  before any worker runs. The reply is rendered as a `DryRunCard` with
-  Run / Edit / Cancel buttons.
-- `/workflows` — open the **Workflows drawer** (also reachable from
-  the topbar `workflows` button). Lists every recipe under
-  `~/.config/hone/recipes/` (and the project / built-in layers) as
-  cards. Click a card to fill in any `{{var}}` template fields and
-  click **Run** to dispatch the composed prompt.
-- **`+ New`** in the Workflows drawer — single-step recipe authoring.
-  Posts to `POST /recipes` and writes
-  `~/.config/hone/recipes/<name>.yaml`.
-- `/theme <name>`, `/settings`, `/clear`, `/help` — same as the TUI
-  where applicable.
-
-**Example usage:**
-
-1. Start `hone serve` or `honed`
-2. Navigate to `http://localhost:8080`
-3. Type a prompt and press Enter
-4. Watch the response stream in real-time
-
-No API key needed on the client—the server reads `ANTHROPIC_API_KEY` from its environment.
-
-### Stateless Execution Endpoint (POST /run)
-
-For programmatic one-off tasks, use the `/run` endpoint:
-
-```bash
-curl -X POST http://localhost:8080/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Fix the divide-by-zero error in calculator.py",
-    "model": "anthropic:claude-sonnet-4-5",
-    "working_dir": "/path/to/project"
-  }' \
-  --no-buffer
-```
-
-The server streams `AgentEvent`s as Server-Sent Events (SSE):
-
-```
-event: ProviderEvent
-data: {"model_info":{"provider":"anthropic","model":"claude-sonnet-4-5",...}}
-
-event: AgentEvent
-data: {"type":"ReadFile","path":"calculator.py",...}
-
-event: AgentEvent
-data: {"type":"ToolCallStart","tool":"edit_file",...}
-
-...
-```
-
-**Request fields:**
-
-| Field | Type | Required | Default |
-|-------|------|----------|---------|
-| `prompt` | string | Yes | — |
-| `model` | string | No | From config |
-| `working_dir` | string | No | Current dir |
-| `history` | array | No | Empty |
-
-**Perfect for:**
-- CI/CD integration
-- Embedded UIs
-- Scripting
-- One-shot task execution
-
-### Persistent Sessions (POST /sessions)
-
-For multi-turn conversations, use the full session API:
-
-```bash
-# Create a session
-SESSION_ID=$(curl -X POST http://localhost:8080/sessions \
-  -H "Content-Type: application/json" \
-  -d '{}' | jq -r '.session_id')
-
-# Send a turn
-curl -X POST http://localhost:8080/sessions/$SESSION_ID/turns \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Your task here",
-    "model": "anthropic:claude-sonnet-4-5"
-  }' \
-  --no-buffer
-```
-
-See [API Reference](api/http-api.md) for full endpoint documentation.
-
-### Connect from Another Machine
-
-```bash
-curl -H "Authorization: Bearer sk-hone-abc123..." \
-  https://remote-hone-server.example.com:8080/health
-```
-
-Configure auth in `~/.config/hone/config.toml`:
-
-```toml
-[server.auth]
-enabled = true
-
-[[server.auth.tokens]]
-token = "sk-hone-abc123def456..."
-user = "alice@example.com"
-```
-
-### TLS/SSL Configuration
-
-For production, use TLS:
-
-```toml
-[server]
-host = "0.0.0.0"
-port = 8443
-tls_cert = "/etc/hone/cert.pem"
-tls_key = "/etc/hone/key.pem"
-```
-
-Then connect with:
-
-```bash
-curl https://hone.example.com:8443/health \
-  --cacert /path/to/ca.pem \
-  -H "Authorization: Bearer sk-hone-..."
-```
-
----
-
-## 15. Next Steps
-
-You've completed the Getting Started guide. Here's where to go next:
-
-### Learn More
-
-- **[Providers Guide](tutorials/providers.md)** — Hot-swap providers, fallback chains, pricing tables, custom endpoints
-- **[Configuration Reference](configuration.md)** — All config options, environment variables, TOML format
-- **[Architecture Guide](architecture.md)** — How Hone works: context optimization, memory, sandbox, multi-agent orchestration
-- **[Tools & MCP Guide](tutorials/tools-and-mcp.md)** — Available tools, integrations, MCP extensions
-- **[Security Guide](tutorials/security.md)** — Sandbox policies, audit logging, memory encryption
-- **[Server & Remote Guide](tutorials/server-and-remote.md)** — Running honed daemon, team setup, RBAC
-- **[Recipes Guide](tutorials/recipes.md)** — Pre-built workflows for common tasks
-
-### Use Cases
-
-- **Fix a bug:** `hone --agent debugger "The error is..."`
-- **Add a feature:** `hone --orchestrate "Add feature X with tests"`
-- **Review code:** `hone --agent code-reviewer --session pr-review`
-- **Understand codebase:** `hone --session architecture "How does X work?"`
-- **Write tests:** `hone --recipe tdd-feature`
-
-### Community
-
-- Bug reports: https://github.com/wojciechkpl/hone/issues
-- Discussions: https://github.com/wojciechkpl/hone/discussions
-- Documentation: https://wojciechkpl.github.io/hone/
-
----
-
-## 16. Troubleshooting
-
-### API Key Not Found
-
-**Error:**
-
-```
-error: ANTHROPIC_API_KEY not set
-```
-
-**Solution:**
-
-Set the environment variable:
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-hone
-```
-
-Or add to `~/.config/hone/config.toml`:
-
-```toml
-[providers.anthropic]
-api_key = "sk-ant-..."
-```
-
-Verify:
-
-```bash
-echo $ANTHROPIC_API_KEY
-```
-
----
-
-### Model Not Found
-
-**Error:**
-
-```
-error: model 'anthropic:claude-unknown' not supported
-```
-
-**Solution:**
-
-List available models:
-
-```bash
-hone --list-models
-```
-
-Use a valid model name:
-
-```bash
-hone --model anthropic:claude-opus-4-5 "hello"
-```
-
----
-
-### Network Error or Timeout
-
-**Error:**
-
-```
-error: failed to connect to Anthropic API (timeout after 30s)
-```
-
-**Solutions:**
-
-1. Check internet connection:
-   ```bash
-   curl https://api.anthropic.com
-   ```
-
-2. Check firewall/proxy:
-   ```toml
-   [http]
-   proxy = "http://proxy.example.com:8080"
-   ```
-
-3. Increase timeout:
-   ```bash
-   hone --timeout 60
-   ```
-
-4. Check API status: https://status.anthropic.com
-
----
-
-### Sandbox Policy Violation
-
-**Error:**
-
-```
-error: sandbox policy denied access to /secret/data
-```
-
-**Explanation:**
-
-Hone's sandbox prevents unauthorized file access for security. The file path isn't in the allowlist.
-
-**Solution:**
-
-Add the path to `~/.config/hone/config.toml`:
-
-```toml
-[sandbox.defaults]
-allow_read = ["{project_root}", "/secret/data"]
-```
-
----
-
-### Out of Memory / Context Exceeded
-
-**Error:**
-
-```
-error: context window exceeded (64k > 200k limit)
-```
-
-**Solution:**
-
-Clear the session history:
-
-```
-/clear
-```
-
-Or reduce context limit:
-
-```bash
-hone --context-limit 32000
-```
-
----
-
-### Configuration File Not Found
-
-**Error:**
-
-```
-error: config file not found at ~/.config/hone/config.toml
-```
-
-**Solution:**
-
-Create the directory and file:
-
-```bash
-mkdir -p ~/.config/hone
-hone configure
-```
-
----
-
-### Ollama Connection Failed
-
-**Error:**
-
-```
-error: failed to connect to Ollama at http://localhost:11434
-```
-
-**Solutions:**
-
-1. Start Ollama server:
-   ```bash
-   ollama serve
-   ```
-
-2. Check it's running:
-   ```bash
-   curl http://localhost:11434/api/tags
-   ```
-
-3. Verify models are installed:
-   ```bash
-   ollama list
-   ```
-
-4. If using custom host:
-   ```bash
-   export OLLAMA_HOST="http://192.168.1.10:11434"
-   hone --model ollama:llama3.2
-   ```
-
----
-
-### Sessions Database Issues
-
-**Error:**
-
-```
-error: failed to open sessions database
-```
-
-**Solutions:**
-
-1. Ensure directory exists:
-   ```bash
-   mkdir -p ~/.local/share/hone
-   ```
-
-2. Check permissions:
-   ```bash
-   ls -la ~/.local/share/hone/
-   ```
-
-3. Repair database:
-   ```bash
-   rm ~/.local/share/hone/sessions.db
-   hone session list  # Creates fresh database
-   ```
-
----
-
-### Still Need Help?
-
-- Check the [Architecture Guide](architecture.md) for deep dives
-- Search [GitHub Issues](https://github.com/wojciechkpl/hone/issues)
-- Ask in [GitHub Discussions](https://github.com/wojciechkpl/hone/discussions)
-- Read [Security Guide](tutorials/security.md) for security-related questions
+| Read | For |
+|---|---|
+| [Core concepts](onboarding/concepts.md) | How the loop, tools, memory and agents fit together |
+| [Cheatsheet](onboarding/cheatsheet.md) | Every flag, key and slash command on one page |
+| [Configuration](configuration.md) | Files and environment variables |
+| [Permissions and sandbox](permissions-and-sandbox.md) | Guardrails in depth |
+| [Architecture](architecture.md) | Crates and data flow |
+| [Migration guides](onboarding/README.md) | Coming from Claude Code, Aider, Goose, Codex CLI or OpenCode |
+| [TUI keybindings and themes](tutorials/tui-keybindings-and-themes.md) | More on the TUI (older tutorial; may be out of date) |
+| [Observability](observability.md), [Session reports](session-reports.md) | Audit log, traces and the reports the TUI writes on exit |

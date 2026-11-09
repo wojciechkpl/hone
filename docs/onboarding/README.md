@@ -1,122 +1,136 @@
-# Hone Onboarding Hub
+# Onboarding hub
 
-Welcome to Hone. Whether you're new to AI coding agents or migrating from another tool, this hub will guide you through setup and best practices.
+<p align="center">
+  <img src="../assets/logo.png" alt="Hone" width="300">
+</p>
 
-## Quick Navigation
+<p align="center">
+  <img alt="guides" src="https://img.shields.io/badge/migration%20guides-5-6e40c9">
+  <img alt="walkthrough" src="https://img.shields.io/badge/new%20to%20agents%3F-start%20here-2ea043">
+  <img alt="cheatsheet" src="https://img.shields.io/badge/cheatsheet-one%20page-1f6feb">
+</p>
 
-### I'm Coming From Another Tool
+Welcome. Pick the path that matches where you're coming from. Every path ends in the same
+place: Hone running in your own project, with guardrails you chose.
 
-Choose your current tool to see what maps to what in Hone:
+## Which guide is for me?
 
-| Your Tool | Read This |
-|-----------|-----------|
-| Claude Code (Anthropic) | [from-claude-code.md](from-claude-code.md) |
-| Goose (Block/Square) | [from-goose.md](from-goose.md) |
-| Aider | [from-aider.md](from-aider.md) |
-| Codex CLI | [from-codex-cli.md](from-codex-cli.md) |
-| OpenCode | [from-opencode.md](from-opencode.md) |
-
-### I'm New to AI Coding Agents
-
-Start here: [new-user-walkthrough.md](new-user-walkthrough.md)
-
-This guide assumes zero prior experience and covers:
-- What an AI coding agent actually is
-- Installing Hone
-- Your first real-world session
-- Key concepts explained simply
-- Common workflows and patterns
-- Effective prompting tips
-
-## Decision Tree: Which Guide Is For Me?
-
-```
-Are you completely new to AI coding agents?
-├─ YES → Read: new-user-walkthrough.md
-└─ NO
-   Have you used an AI coding tool before?
-   ├─ NO → Read: new-user-walkthrough.md (covers fundamentals)
-   └─ YES
-      Which tool?
-      ├─ Claude Code → from-claude-code.md
-      ├─ Goose → from-goose.md
-      ├─ Aider → from-aider.md
-      ├─ Codex CLI → from-codex-cli.md
-      ├─ OpenCode → from-opencode.md
-      └─ Something else → new-user-walkthrough.md (general intro)
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart TD
+  START{"Used an AI agent<br/>in a terminal before?"} -->|no| NEW["New-user walkthrough"]
+  START -->|yes| WHICH{"Which one?"}
+  WHICH -->|Claude Code| CC["From Claude Code"]
+  WHICH -->|Aider| AI["From Aider"]
+  WHICH -->|Goose| GO["From Goose"]
+  WHICH -->|Codex CLI| CX["From Codex CLI"]
+  WHICH -->|OpenCode| OC["From OpenCode"]
+  WHICH -->|something else| NEW
+  NEW --> GS["Getting started"]
+  CC --> GS
+  AI --> GS
+  GO --> GS
+  CX --> GS
+  OC --> GS
+  GS --> CON["Core concepts"]
+  CON --> SHEET["Cheatsheet"]
 ```
 
-## What Makes Hone Different?
+| Coming from | Guide | You'll find |
+|---|---|---|
+| Nothing yet | [New-user walkthrough](new-user-walkthrough.md) | What an agent is, a first session, prompting tips |
+| Claude Code | [from-claude-code.md](from-claude-code.md) | `CLAUDE.md` → `HONE.md`, the same `mcp.json` format, agents as Markdown files |
+| Aider | [from-aider.md](from-aider.md) | Git-centric workflows, repo context, the symbol index |
+| Goose | [from-goose.md](from-goose.md) | MCP extensions, recipes, provider setup |
+| Codex CLI | [from-codex-cli.md](from-codex-cli.md) | Approvals, sandboxing, permission rules |
+| OpenCode | [from-opencode.md](from-opencode.md) | Providers, LSP, the client/server split |
 
-At a high level, Hone brings together ideas from all competing tools:
+> [!NOTE]
+> The migration guides were written earlier than this hub. Where a guide and the
+> [Configuration reference](../configuration.md) disagree about a flag, file or setting,
+> the reference is correct: it is checked against the code.
 
-**From Claude Code:** Extended thinking, agent loops, memory, user-defined conventions (HONE.md)
+## The ten-minute path
 
-**From Goose:** MCP-native architecture, YAML recipes, provider abstraction
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  A["Install<br/>cargo install hone-cli honed"] --> B["Provider<br/>export ANTHROPIC_API_KEY=..."]
+  B --> C["Run<br/>hone"]
+  C --> D["Conventions<br/>HONE.md"]
+  D --> E["Guardrails<br/>permissions.toml"]
+```
 
-**From Aider:** Git-centric workflows, repo context, semantic indexing
+Details for each step are in [Getting started](../getting-started.md).
 
-**From Codex CLI:** Kernel sandboxing, approval workflows, cost tracking
+## What makes Hone different
 
-**From OpenCode:** 75+ provider support, LSP integration, client-server architecture
+| | Hone |
+|---|---|
+| **Runtime** | Native Rust binaries (`hone`, `honed`, `hone-mcp-server`), no interpreter needed. The same agent loop serves the TUI, scripts (`--json`) and the HTTP daemon. |
+| **Scope** | General-purpose: files, shell, git, LSP, web pages and MCP tools. Strongest on code, not limited to it. |
+| **Models** | Anthropic, any OpenAI-compatible API, local Ollama, or pass-through to the Claude and Gemini CLIs. |
+| **Guardrails** | allow / ask / deny rules in TOML on every entry point; shell checks that are always on; Seatbelt on macOS and opt-in Landlock on Linux for shell commands. [Details](../permissions-and-sandbox.md). |
+| **Memory** | Typed memories (feedback, user, project, reference) in local SQLite, with optional encryption. |
+| **Multi-agent** | Orchestrator with 12 built-in personas, distributed workers, ensembles, recipes. |
 
-But Hone goes further:
-- **Kernel-enforced security** — Seatbelt on macOS, Landlock on Linux
-- **Adaptive memory** — Learns what works across sessions
-- **Universal provider support** — No vendor lock-in
-- **Layered tools** — Native Rust for speed, MCP for extensibility
-- **Collaborative workflows** — Remote daemon with team governance
+## Common questions
 
-## Common Questions
+<details>
+<summary><b>Do I need an API key?</b></summary>
 
-### Do I need an API key?
+No. Run a local model with [Ollama](https://ollama.com) (`ollama pull llama3.2`), or let
+Hone drive the `claude` or `gemini` CLI you already use. API keys unlock Anthropic, OpenAI
+and any OpenAI-compatible endpoint.
 
-No, but it helps. Hone supports:
-- **Free local models** via Ollama (run on your machine)
-- **Your existing CLI** via Claude/Gemini pass-through
-- **Any API provider** (Anthropic, OpenAI, etc.)
+</details>
 
-See [Getting Started](../tutorials/getting-started.md) for setup.
+<details>
+<summary><b>Is my code private?</b></summary>
 
-### Is my code private?
+Hone itself sends no telemetry and keeps its state in local SQLite files. Your prompts and
+the code the agent reads go to the model provider you chose, so a local Ollama model keeps
+everything on your machine. `--ephemeral` writes no memory, index or session data.
 
-Yes. Hone:
-- Runs locally (no telemetry)
-- Stores memory in encrypted SQLite on your machine
-- Sandboxes code execution at the kernel level
-- Never phones home
+</details>
 
-See [Security Guide](../security.md) for details.
+<details>
+<summary><b>Can a team use it?</b></summary>
 
-### Can I use Hone in a team?
+Yes, through `honed`: an HTTP + SSE daemon with a bearer token, a web UI, shared sessions
+with participants, and distributed workers. There is one shared token today, not per-user
+roles. See [Getting started → daemon](../getting-started.md#8-run-the-daemon-honed), and the
+older [Server and remote](../tutorials/server-and-remote.md) tutorial (may be out of date).
 
-Yes. Run the `honed` daemon and connect multiple users with role-based access control (RBAC). See [Server and Remote](../tutorials/server-and-remote.md).
+</details>
 
-### How much does Hone cost?
+<details>
+<summary><b>What does it cost?</b></summary>
 
-Hone is free. You pay for model APIs (if you use them). Costs are transparent and tracked in real USD. Local models cost nothing.
+Hone is free and open source (MIT or Apache 2.0). You pay your model provider, if any. The
+cost line in the CLI is an estimate; set a cap for the session with `/budget <usd>` in the
+TUI.
 
-### What if I switch providers?
+</details>
 
-Easy. Use `/model <provider:model>` to hot-swap mid-session without losing history. See [Providers Guide](../tutorials/providers.md).
+<details>
+<summary><b>Can I switch models?</b></summary>
 
-## Next Steps After Onboarding
+Pick any model at startup with `--model provider:name`. Inside the TUI, `/model` changes the
+model for the next turn, within the same provider.
 
-Once you've picked your migration guide and completed setup:
+</details>
 
-1. **Try the first example** in the migration guide (copy-paste commands)
-2. **Run a real-world task** in your own codebase
-3. **Explore recipes** in [Recipes Guide](../tutorials/recipes.md) for automation
-4. **Review [Tools and MCP](../tutorials/tools-and-mcp.md)** to extend capabilities
-5. **Check [Architecture](../architecture.md)** for deep dives into how Hone works
+## Next steps
 
-## Getting Help
+| Step | Read |
+|---|---|
+| 1 | [Getting started](../getting-started.md): install, first run, modes |
+| 2 | [Core concepts](concepts.md): the loop, tools, memory, agents |
+| 3 | [Cheatsheet](cheatsheet.md): flags, keys and commands |
+| 4 | [Permissions and sandbox](../permissions-and-sandbox.md): decide what the agent may do |
+| 5 | [Recipes](../tutorials/recipes.md) and [Tools and MCP](../tutorials/tools-and-mcp.md) (older tutorials; may be out of date) |
+| 6 | [FAQ](faq.md) |
 
-- **Setup issues?** See the "Troubleshooting" section in [Getting Started](../tutorials/getting-started.md)
-- **Questions about concepts?** See [Architecture](../architecture.md)
-- **Want to extend Hone?** See [Contributing](../contributing.md)
-- **Found a bug?** Report it on GitHub
-
----
-
-Have a migration guide question we missed? Open an issue on GitHub with the "docs" label.
+Found a gap? Open an issue on [GitHub](https://github.com/wojciechkpl/hone/issues) with the
+`docs` label.
