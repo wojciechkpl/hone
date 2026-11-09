@@ -11,6 +11,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The README, docs and earlier changelog entries reported 86% and 95% SWE-bench "pass rates". These were patch-generation rates (any non-empty diff) on 50- and 20-task samples, extrapolated to 300 tasks, and were never graded. They are withdrawn, along with the cost comparisons built on them. The only graded result is **58/300 (19.3%)** on SWE-bench Lite (DeepSeek V3, April 2026, official harness). A pre-registered, harness-controlled comparison is in progress (`docs/plans/trust-defaults-daemon-2026-11.md`, `benchmarks/harness-compare/`).
 - Docs now name the actual default skeleton strategy, **Adaptive**. `--help` previously said "hybrid" and the README said "CallGraph".
 
+### Permission policy v2 (P2.1; no callers yet)
+
+- **`hone_config::policy`.** A new policy model for Phase 2, where the policy is on by default.
+  - **Subjects:** a rule matches a shell command, a file path (read or write) or a network host.
+  - **Layers:** built-in rules, then user rules (`~/.config/hone/permissions.toml`), then project rules (`.hone/permissions.toml`). Each rule has an id. User rules replace built-in verdicts. Project rules, which come from an untrusted directory, can only make a verdict stricter.
+  - **Formats:** v1 files (`match = …`) still load.
+  - The contract is `docs/plans/policy-v2-spec.md`, and the agent loop doesn't call it yet; that is P2.2. `crates/hone-config/src/policy.rs`.
+- **Hardened before any caller exists, after a security review.**
+  - Workdir and home paths are glob-escaped, including `\`, before they are put into patterns.
+  - Untrusted policy files are read with care:
+    - only regular files are accepted, so a FIFO can't hang the loader;
+    - at most 64 KiB is read;
+    - a project file that is a symlink is refused;
+    - TOML errors never echo file text, because a symlinked "policy" could otherwise leak a secret into logs, and an ordinary file could inject terminal escapes or text addressed to the model.
+    - Every error message escapes control characters, and control characters in patterns and ids are rejected.
+  - The user file is read from `~/.config/hone` on macOS too, not `~/Library/Application Support`, and there is no relative fallback.
+  - Host subjects are normalised: userinfo, ports, brackets, IPv4-mapped IPv6 and trailing dots. Hosts may contain only an allow-list of characters. A malformed host is never allowed: it asks, or is denied if an explicit rule denies it.
+  - Rules that could never match are rejected at load time.
+  - Each layer is capped at 1000 rules.
+
 ### Memory subsystem overhaul
 
 A multi-PR rewrite of how memories are written, indexed, and recalled. The full design lives in `docs/priv/memory-improvements-plan-2026-04-30.md` (R1–R12); user-visible changes:
