@@ -146,6 +146,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     }
 }
 
@@ -1209,6 +1210,7 @@ async fn test_dynamic_read_only_tool_dispatched_in_parallel() {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     };
 
     let mut agent = Agent::new(config);

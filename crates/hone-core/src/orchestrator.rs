@@ -791,6 +791,7 @@ impl Orchestrator {
             skills: None,
             embedder: None,
             mode: crate::plan_mode::AgentMode::Build,
+            policy: self.lead_config.policy.clone(),
         }
     }
 
@@ -848,6 +849,7 @@ impl Orchestrator {
             skills: None,
             embedder: None,
             mode: crate::plan_mode::AgentMode::Build,
+            policy: self.lead_config.policy.clone(),
         }
     }
 }

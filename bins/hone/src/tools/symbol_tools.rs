@@ -8,7 +8,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use hone_index::SqliteIndex;
 use hone_proto::ToolLayer;
-use hone_tools::{Tool, ToolContext, ToolError, ToolInput, ToolOutput};
+use hone_tools::{
+    SubjectContext, Tool, ToolContext, ToolError, ToolInput, ToolOutput, ToolSubjects, subject_path,
+};
 use serde_json::{Value, json};
 
 /// Tool that queries the persistent symbol index for symbols matching a name.
@@ -111,6 +113,20 @@ impl SymbolAtTool {
 
 #[async_trait]
 impl Tool for SymbolAtTool {
+    fn subjects(&self, input: &ToolInput, sctx: &SubjectContext) -> ToolSubjects {
+        ToolSubjects {
+            subjects: input
+                .get_str("file")
+                .map(|f| hone_config::policy::Subject::Path {
+                    path: subject_path(f, sctx),
+                    op: hone_config::policy::PathOp::Read,
+                })
+                .into_iter()
+                .collect(),
+            unparsed: false,
+        }
+    }
+
     fn name(&self) -> &str {
         "symbol_at"
     }

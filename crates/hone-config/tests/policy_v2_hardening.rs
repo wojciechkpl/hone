@@ -23,6 +23,7 @@ fn ctx_at(workdir: &str, home: Option<&str>) -> PolicyContext {
     PolicyContext {
         workdir: PathBuf::from(workdir),
         home: home.map(PathBuf::from),
+        case_insensitive_paths: false,
     }
 }
 
@@ -559,6 +560,7 @@ fn load_hierarchical_reads_home_config_and_workdir_hone_dir() {
     let c = PolicyContext {
         workdir: work.path().to_path_buf(),
         home: Some(home.path().to_path_buf()),
+        case_insensitive_paths: false,
     };
     let p = CompiledPolicy::load_hierarchical(&c, &[PolicyRule::command("rm *", Deny)]).unwrap();
     assert_verdict(
@@ -581,6 +583,7 @@ fn load_hierarchical_with_no_files_is_builtin_only() {
     let c = PolicyContext {
         workdir: work.path().to_path_buf(),
         home: Some(home.path().to_path_buf()),
+        case_insensitive_paths: false,
     };
     let p = CompiledPolicy::load_hierarchical(&c, &[PolicyRule::command("rm *", Deny)]).unwrap();
     assert_verdict(
@@ -597,6 +600,7 @@ fn load_hierarchical_without_home_is_invalid_context() {
     let c = PolicyContext {
         workdir: work.path().to_path_buf(),
         home: None,
+        case_insensitive_paths: false,
     };
     let r = CompiledPolicy::load_hierarchical(&c, &[]);
     assert!(matches!(r, Err(PermissionError::InvalidContext(_))));
@@ -610,6 +614,7 @@ fn load_hierarchical_propagates_broken_project_file() {
     let c = PolicyContext {
         workdir: work.path().to_path_buf(),
         home: Some(home.path().to_path_buf()),
+        case_insensitive_paths: false,
     };
     assert!(matches!(
         CompiledPolicy::load_hierarchical(&c, &[]),
@@ -631,6 +636,7 @@ fn load_hierarchical_hone_dir_symlink_is_unsafe_file() {
     let c = PolicyContext {
         workdir: work.path().to_path_buf(),
         home: Some(home.path().to_path_buf()),
+        case_insensitive_paths: false,
     };
     assert!(is_unsafe_file(&CompiledPolicy::load_hierarchical(&c, &[])));
 }
@@ -649,6 +655,7 @@ fn load_hierarchical_project_file_symlink_is_unsafe_file() {
     let c = PolicyContext {
         workdir: work.path().to_path_buf(),
         home: Some(home.path().to_path_buf()),
+        case_insensitive_paths: false,
     };
     assert!(is_unsafe_file(&CompiledPolicy::load_hierarchical(&c, &[])));
 }
@@ -1188,6 +1195,7 @@ fn project_setup(body: &str) -> (tempfile::TempDir, tempfile::TempDir, PolicyCon
     let c = PolicyContext {
         workdir: work.path().to_path_buf(),
         home: Some(home.path().to_path_buf()),
+        case_insensitive_paths: false,
     };
     (home, work, c)
 }
@@ -1405,6 +1413,7 @@ fn project_path_under_symlinked_hone_dir_is_unsafe_file_via_with_paths() {
     let c = PolicyContext {
         workdir: work.path().to_path_buf(),
         home: Some(home.path().to_path_buf()),
+        case_insensitive_paths: false,
     };
     let user = home.path().join("none.toml");
     let project = work.path().join(".hone").join("permissions.toml");
@@ -1424,6 +1433,7 @@ fn project_path_under_deeper_symlinked_ancestor_is_unsafe_file() {
     let c = PolicyContext {
         workdir: work.path().to_path_buf(),
         home: Some(home.path().to_path_buf()),
+        case_insensitive_paths: false,
     };
     let project = work.path().join("sub/.hone/permissions.toml");
     let r = CompiledPolicy::load_hierarchical_with_paths(

@@ -157,6 +157,7 @@ impl AgentTaskExecutor {
             skills: None,
             mode: AgentMode::Build,
             embedder: None,
+            policy: None,
         })
     }
 }

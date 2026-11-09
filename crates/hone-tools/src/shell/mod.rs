@@ -189,6 +189,13 @@ pub struct ShellTool;
 
 #[async_trait]
 impl Tool for ShellTool {
+    fn subjects(&self, input: &crate::ToolInput, sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        input
+            .get_str("command")
+            .map(|c| crate::parse_shell(c, sctx).into_subjects())
+            .unwrap_or_default()
+    }
+
     fn name(&self) -> &str {
         "shell"
     }

@@ -25,6 +25,10 @@ pub struct MultiEditTool;
 
 #[async_trait]
 impl Tool for MultiEditTool {
+    fn subjects(&self, input: &crate::ToolInput, sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::multi_edit(&input.0, sctx)
+    }
+
     fn name(&self) -> &str {
         "multi_edit"
     }

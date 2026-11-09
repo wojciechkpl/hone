@@ -7,6 +7,7 @@ use hone_sandbox::Sandbox;
 use serde_json::Value;
 
 use crate::error::ToolError;
+use crate::subjects::{SubjectContext, ToolSubjects};
 
 /// Wrapper around raw JSON input passed to a tool.
 #[derive(Debug, Clone)]
@@ -109,6 +110,12 @@ pub trait Tool: Send + Sync + 'static {
     /// any unknown dynamic tools are conservatively assumed to be stateful.
     fn is_read_only(&self) -> bool {
         false
+    }
+
+    /// What this call would touch, for the permission policy. The default is
+    /// no subjects.
+    fn subjects(&self, _input: &ToolInput, _sctx: &SubjectContext) -> ToolSubjects {
+        ToolSubjects::default()
     }
 }
 

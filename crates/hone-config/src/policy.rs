@@ -79,6 +79,19 @@ pub struct PolicyContext {
     pub workdir: PathBuf,
     /// Home directory; `None` makes `~` patterns unmatchable.
     pub home: Option<PathBuf>,
+    /// Match path rules case-insensitively (macOS/Windows filesystems).
+    pub case_insensitive_paths: bool,
+}
+
+impl PolicyContext {
+    /// Context with `case_insensitive_paths` set per target OS (true on macOS and Windows).
+    pub fn for_platform(workdir: PathBuf, home: Option<PathBuf>) -> Self {
+        PolicyContext {
+            workdir,
+            home,
+            case_insensitive_paths: cfg!(any(target_os = "macos", target_os = "windows")),
+        }
+    }
 }
 
 /// Outcome of evaluating a subject.
@@ -328,6 +341,22 @@ pub struct CompiledPolicy {
     project: Vec<CompiledRule>,
 }
 
+impl CompiledPolicy {
+    /// True when any layer holds a path rule.
+    pub fn has_path_rules(&self) -> bool {
+        [&self.builtin, &self.user, &self.project]
+            .iter()
+            .any(|l| l.iter().any(|r| matches!(r.matcher, Matcher::Path { .. })))
+    }
+
+    /// True when any layer holds a command rule.
+    pub fn has_command_rules(&self) -> bool {
+        [&self.builtin, &self.user, &self.project]
+            .iter()
+            .any(|l| l.iter().any(|r| matches!(r.matcher, Matcher::Command(_))))
+    }
+}
+
 fn strictness(d: Decision) -> u8 {
     match d {
         Decision::Allow => 0,
@@ -440,7 +469,20 @@ impl CompiledPolicy {
         user: &Path,
         project: &Path,
     ) -> Result<Self, PermissionError> {
-        let user_rules = load_policy_file(user)?;
+        Self::load_layers(ctx, builtin, Some(user), project)
+    }
+
+    /// Like [`Self::load_hierarchical_with_paths`], but the user layer is optional.
+    pub fn load_layers(
+        ctx: &PolicyContext,
+        builtin: &[PolicyRule],
+        user: Option<&Path>,
+        project: &Path,
+    ) -> Result<Self, PermissionError> {
+        let user_rules = match user {
+            Some(u) => load_policy_file(u)?,
+            None => Vec::new(),
+        };
         for ancestor in project.ancestors() {
             let inside = ancestor != ctx.workdir && ancestor.starts_with(&ctx.workdir);
             if ancestor != project && !inside {
@@ -492,6 +534,7 @@ struct ExpansionEnv {
     workdir: PathBuf,
     workdir_escaped: String,
     home_escaped: Option<String>,
+    case_insensitive: bool,
 }
 
 impl ExpansionEnv {
@@ -523,6 +566,7 @@ impl ExpansionEnv {
             workdir,
             workdir_escaped,
             home_escaped,
+            case_insensitive: ctx.case_insensitive_paths,
         })
     }
 }
@@ -845,6 +889,7 @@ fn compile_path(env: &ExpansionEnv, raw: &str) -> Result<Vec<GlobMatcher>, PathP
         build_glob(
             GlobBuilder::new(p)
                 .literal_separator(true)
+                .case_insensitive(env.case_insensitive)
                 .backslash_escape(true)
                 .build(),
             p,

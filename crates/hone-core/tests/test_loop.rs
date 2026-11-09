@@ -46,6 +46,7 @@ fn base_config(provider: Arc<dyn hone_providers::ModelProvider>) -> AgentConfig 
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     }
 }
 

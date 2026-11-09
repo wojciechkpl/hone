@@ -1223,9 +1223,10 @@ impl App {
                 }
                 self.debugger_open = false;
             }
+            // Esc dismisses the prompt without running the call.
             KeyCode::Esc => {
                 if let Some(tx) = &self.step_tx {
-                    let _ = tx.try_send(hone_proto::StepAction::Proceed);
+                    let _ = tx.try_send(hone_proto::StepAction::Skip);
                 }
                 self.debugger_open = false;
             }

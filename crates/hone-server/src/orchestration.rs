@@ -180,6 +180,7 @@ fn build_lead_agent_config(
         skills: None,
         embedder: None,
         mode: AgentMode::Plan,
+        policy: None,
     }
 }
 

@@ -46,6 +46,7 @@ fn make_plan_config(working_dir: std::path::PathBuf) -> AgentConfig {
         skills: None,
         embedder: None,
         mode: AgentMode::Plan,
+        policy: None,
     }
 }
 
@@ -177,6 +178,7 @@ async fn build_mode_agent_does_not_save_plan() {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     };
 
     let agent = AgentHandle::spawn(config);

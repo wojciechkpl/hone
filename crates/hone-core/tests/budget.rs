@@ -60,6 +60,7 @@ async fn test_budget_cap_blocks_new_turn() {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     };
 
     let mut agent = Agent::new(config);

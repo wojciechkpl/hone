@@ -24,6 +24,7 @@ fn ctx() -> PolicyContext {
     PolicyContext {
         workdir: PathBuf::from("/work/proj"),
         home: Some(PathBuf::from("/home/tester")),
+        case_insensitive_paths: false,
     }
 }
 
@@ -31,6 +32,7 @@ fn ctx_no_home() -> PolicyContext {
     PolicyContext {
         workdir: PathBuf::from("/work/proj"),
         home: None,
+        case_insensitive_paths: false,
     }
 }
 

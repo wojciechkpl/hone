@@ -104,6 +104,7 @@ fn base_config_with_cli(binary: &str) -> AgentConfig {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     }
 }
 

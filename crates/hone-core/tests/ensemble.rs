@@ -42,6 +42,7 @@ fn make_config(tokens: Vec<String>) -> AgentConfig {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     }
 }
 
@@ -190,6 +191,7 @@ async fn test_ensemble_handles_candidate_failure() {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     };
 
     let ensemble = AgentEnsemble::new(failing_config, vec![0.0, 0.3]);

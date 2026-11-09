@@ -140,6 +140,7 @@ async fn memory_recalled_event_uses_friendly_key_not_uuid() {
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy: None,
     };
 
     let mut agent = Agent::new(config);

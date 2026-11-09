@@ -2,6 +2,7 @@ mod configure;
 mod image_input;
 mod memory_cmd;
 mod memory_init;
+mod policy_load;
 mod report;
 mod reports_cmd;
 mod session;
@@ -818,6 +819,24 @@ async fn load_project_config() -> (Option<Config>, Option<HoneMd>) {
 // Agent construction
 // ---------------------------------------------------------------------------
 
+/// Load the permission policy (user + project layers) for agent runs.
+///
+/// A broken policy file is fatal: print the (already sanitised) error and
+/// exit with code 2 rather than run without the rules the user wrote.
+fn load_permission_policy(working_dir: &std::path::Path) -> Option<hone_core::PolicyConfig> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|h| h.is_absolute())
+        .or_else(dirs_next::home_dir);
+    match policy_load::resolve_permission_policy(working_dir, home) {
+        Ok(policy) => policy,
+        Err(e) => {
+            eprintln!("hone: permission policy error: {e}");
+            std::process::exit(2);
+        }
+    }
+}
+
 /// Build an `AgentConfig` from the detected provider + model + system prompt.
 ///
 /// The returned config is `Clone`; callers may clone it freely to spawn
@@ -883,6 +902,10 @@ fn build_agent_config(
         None
     };
 
+    // One source of truth for the directory: tools and policy share it.
+    let agent_working_dir = std::env::current_dir().unwrap_or_default();
+    let policy = load_permission_policy(&agent_working_dir);
+
     AgentConfig {
         provider: Arc::clone(&detected.provider),
         tools,
@@ -900,7 +923,7 @@ fn build_agent_config(
             cache_read_per_million: None,
             cache_creation_per_million: None,
         },
-        working_dir: std::env::current_dir().unwrap_or_default(),
+        working_dir: agent_working_dir,
         memory_store,
         retry_config: hone_core::RetryConfig::default(),
         index: index.map(|idx| Arc::clone(&idx)),
@@ -913,6 +936,7 @@ fn build_agent_config(
         skills: None,
         embedder: None,
         mode: AgentMode::Build,
+        policy,
     }
 }
 
@@ -3451,6 +3475,7 @@ mod tests {
             skills: None,
         embedder: None,
             mode: AgentMode::Build,
+            policy: None,
         };
 
         // Spawn the persistent agent that should accumulate context.
@@ -3493,6 +3518,117 @@ mod tests {
             "persistent agent context is missing the assistant response; \
              spawn_orchestrated_turn does not write back to AgentHandle. \
              messages in context: {messages:?}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests: CachingToolWrapper must forward `subjects()` and `is_read_only()`
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod caching_wrapper_forwarding_tests {
+    use super::*;
+    use hone_cache::InMemoryBackend;
+    use hone_config::policy::{PathOp, Subject};
+    use hone_tools::{SubjectContext, ToolInput};
+
+    fn registry(cache_on: bool) -> ToolRegistry {
+        let lsp: Arc<dyn LspBridge> = Arc::new(MockLspBridge::builder().build());
+        let cache =
+            cache_on.then(|| Arc::new(ToolResultCache::new(Arc::new(InMemoryBackend::new()))));
+        build_tool_registry(lsp, None, None, cache, Vec::new())
+    }
+
+    fn sctx(wd: &std::path::Path) -> SubjectContext {
+        SubjectContext {
+            workdir: wd.to_path_buf(),
+            home: None,
+            case_insensitive: false,
+        }
+    }
+
+    /// One input carrying every argument name the CLI tools read, so each
+    /// tool extracts whatever it understands.
+    fn union_input() -> ToolInput {
+        ToolInput::new(serde_json::json!({
+            "path": "notes.txt",
+            "file": "src/lib.rs",
+            "url": "http://127.0.0.1/x",
+            "pattern": "*.rs",
+            "query": "q",
+            "command": "ls",
+            "name": "main",
+        }))
+    }
+
+    #[test]
+    fn wrapper_forwards_subjects_and_read_only_for_every_cli_tool() {
+        let wd = tempfile::tempdir().unwrap();
+        let wd = std::fs::canonicalize(wd.path()).unwrap();
+        let cached = registry(true);
+        let plain = registry(false);
+        let ctx = sctx(&wd);
+        let input = union_input();
+
+        let mut names: Vec<&str> = cached.names();
+        names.sort_unstable();
+        assert!(!names.is_empty());
+        let mut plain_names: Vec<&str> = plain.names();
+        plain_names.sort_unstable();
+        assert_eq!(plain_names, names, "cache on/off must register the same tools");
+
+        for name in names {
+            let w = cached.get(name).unwrap();
+            let p = plain.get(name).unwrap();
+            assert_eq!(
+                w.is_read_only(),
+                p.is_read_only(),
+                "is_read_only not forwarded for {name}"
+            );
+            let ws = w.subjects(&input, &ctx);
+            let ps = p.subjects(&input, &ctx);
+            assert_eq!(ws.subjects, ps.subjects, "subjects not forwarded for {name}");
+            assert_eq!(ws.unparsed, ps.unparsed, "unparsed not forwarded for {name}");
+        }
+    }
+
+    #[test]
+    fn wrapped_read_file_yields_path_read_of_workdir_relative_file() {
+        let wd = tempfile::tempdir().unwrap();
+        let wd = std::fs::canonicalize(wd.path()).unwrap();
+        let reg = registry(true);
+        let tool = reg.get("read_file").expect("read_file registered");
+
+        let s = tool.subjects(
+            &ToolInput::new(serde_json::json!({ "path": "notes.txt" })),
+            &sctx(&wd),
+        );
+
+        assert_eq!(
+            s.subjects,
+            vec![Subject::Path {
+                path: wd.join("notes.txt"),
+                op: PathOp::Read,
+            }]
+        );
+        assert!(tool.is_read_only());
+    }
+
+    #[test]
+    fn wrapped_web_fetch_yields_host_subject() {
+        let wd = tempfile::tempdir().unwrap();
+        let wd = std::fs::canonicalize(wd.path()).unwrap();
+        let reg = registry(true);
+        let tool = reg.get("web_fetch").expect("web_fetch registered");
+        let s = tool.subjects(
+            &ToolInput::new(serde_json::json!({ "url": "http://127.0.0.1/x" })),
+            &sctx(&wd),
+        );
+        assert!(
+            s.subjects.iter().any(|x| matches!(x, Subject::Host(_))),
+            "{:?}",
+            s.subjects
         );
     }
 }

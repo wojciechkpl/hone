@@ -23,6 +23,10 @@ pub struct GrepTool;
 
 #[async_trait]
 impl Tool for GrepTool {
+    fn subjects(&self, input: &crate::ToolInput, sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::search_root(input.get_str("path"), sctx)
+    }
+
     fn name(&self) -> &str {
         "grep"
     }

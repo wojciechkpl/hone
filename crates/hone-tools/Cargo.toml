@@ -11,6 +11,7 @@ categories.workspace = true
 description = "Layer 2 native tools for Hone (file, shell, git, LSP)"
 
 [dependencies]
+hone-config = { workspace = true }
 hone-memory = { workspace = true }
 hone-proto = { workspace = true }
 hone-sandbox = { workspace = true }

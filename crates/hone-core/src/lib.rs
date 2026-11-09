@@ -28,6 +28,7 @@ pub mod metrics;
 pub mod orchestrator;
 pub mod plan_mode;
 pub mod plan_store;
+mod policy_gate;
 pub mod queue_client;
 pub mod ralph_loop;
 pub mod rbac;
@@ -69,6 +70,7 @@ pub use metrics::{ContextMetrics, MetricsSnapshot};
 pub use orchestrator::Orchestrator;
 pub use plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
 pub use plan_store::PlanStore;
+pub use policy_gate::{GateDecision, PolicyConfig, decide};
 pub use queue_client::{
     ClaimedTaskWire, CompletionRequestBody, PlanEvent, PlanStatusSnapshot, QueueClient,
     QueueClientError, WorkerResultWire,

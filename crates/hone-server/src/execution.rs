@@ -306,6 +306,7 @@ pub async fn run_handler(
                 skills: None,
                 embedder: None,
                 mode: AgentMode::Build,
+                policy: None,
             };
 
             let history: Vec<Message> = req

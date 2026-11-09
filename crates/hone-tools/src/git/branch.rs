@@ -13,6 +13,10 @@ pub struct GitBranchTool;
 
 #[async_trait]
 impl Tool for GitBranchTool {
+    fn subjects(&self, input: &crate::ToolInput, _sctx: &crate::SubjectContext) -> crate::ToolSubjects {
+        crate::ToolSubjects::git(self.name(), input.get_str("name"))
+    }
+
     fn name(&self) -> &str {
         "git_branch"
     }
