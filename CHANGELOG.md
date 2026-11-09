@@ -137,6 +137,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: a failing tool no longer kills the turn
+
+- **The bug:** a tool that returned an error, such as `edit_file` with an `old_string` that isn't in the file, aborted the whole turn:
+  - the model never saw the error, and the rest of the batch never ran;
+  - the history kept the call without a result, so the **next** request was rejected by the provider (HTTP 400);
+  - no `Error` event was sent, so the TUI spinner ran forever on simple turns and `honed` streams ended with no terminal event. The same silence followed an exceeded budget or a provider request that failed after retries.
+- **The fix:**
+  - A tool error becomes an error result (`is_error: true`, `{"error": "…"}`) that the model sees, so it can recover (for example, re-read the file and retry the edit). The `ToolCallEnd` event, egress log and `PostToolUse` hook report it as an error. Error text goes through the same secret redaction and prompt-injection scan as other results (git errors can contain credentialed URLs; MCP servers control their error text).
+  - Every failed turn sends exactly one `Error` event, and the TUI always ends the turn, even if the agent stops unexpectedly.
+  - One-shot and `--json` modes print a failure once and exit 1.
+- **Benchmark note:** `hone --json` runs (the harness-compare arms) now recover from failed edits instead of stopping, which changes Hone's results. A failed run now reports its real `usage` and `cost_usd` (it reported no usage and $0 before, which the harness counted as 0 tokens). Both land before any pre-registered run.
+- Contract: `docs/plans/tool-error-turn-spec.md`.
+
 ### Memory subsystem overhaul
 
 A multi-PR rewrite of how memories are written, indexed, and recalled. The full design lives in `docs/priv/memory-improvements-plan-2026-04-30.md` (R1–R12); user-visible changes:
