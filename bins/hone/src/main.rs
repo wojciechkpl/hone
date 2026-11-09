@@ -1324,7 +1324,8 @@ fn spawn_medium_turn(
         let refine_result = refine_task.await;
         let failure = match refine_result {
             Ok(Ok(_)) => None,
-            Ok(Err(e)) => Some(e.to_string()),
+            // No Error event was forwarded, so the actor died under this turn.
+            Ok(Err(e)) => Some(format!("agent stopped unexpectedly: {e}")),
             // The task panicked: the actor is gone and later turns will be
             // Cancelled, so say so instead of leaving the spinner running.
             Err(e) => Some(format!("agent stopped unexpectedly: {e}")),
@@ -1625,7 +1626,7 @@ async fn finish_one_shot(
         }
         Err(_) if error_printed => {
             println!();
-            std::process::exit(1);
+            Err(AlreadyReported.into())
         }
         Err(e) => Err(e.into()),
     }
@@ -1705,7 +1706,6 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
     let collector = tokio::spawn(async move {
         let mut response = String::new();
         let mut tool_calls: Vec<serde_json::Value> = Vec::new();
-        let mut usage = serde_json::json!(null);
         let mut error: Option<String> = None;
         let mut current_tool: Option<String> = None;
 
@@ -1727,14 +1727,7 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
                         "is_error": is_error,
                     }));
                 }
-                AgentEvent::Done { usage: u, .. } => {
-                    usage = serde_json::json!({
-                        "input": u.input,
-                        "output": u.output,
-                        "cache_read": u.cache_read,
-                    });
-                    break;
-                }
+                AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     error = Some(message);
                     break;
@@ -1743,37 +1736,63 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
             }
         }
 
-        (response, tool_calls, usage, error)
+        (response, tool_calls, error)
     });
 
     let turn_result = agent.run_turn(prompt, tx).await;
-    let (response, tool_calls, usage, error) = collector.await.unwrap_or_default();
+    let (response, tool_calls, error) = collector.await.unwrap_or_default();
+    // One fresh agent per run, so the session's spend is this run's spend,
+    // including model calls of a turn that failed or was cancelled.
+    let spend = agent.session_spend().await;
 
-    let success = turn_result.is_ok() && error.is_none();
-    let cost_usd = if let Ok(ref t) = turn_result {
-        t.cost_usd
-    } else {
-        0.0
-    };
-
-    let output = serde_json::json!({
-        "response": response,
-        "tool_calls": tool_calls,
-        "usage": usage,
-        "cost_usd": cost_usd,
-        "model": model_id,
-        "success": success,
-        "error": error,
-    });
-
+    let output = json_mode_output(&turn_result, response, tool_calls, error, spend, model_id);
     println!("{}", serde_json::to_string_pretty(&output)?);
 
-    if !success {
-        std::process::exit(1);
+    if output["success"] != true {
+        return Err(AlreadyReported.into());
     }
 
     Ok(())
 }
+
+/// Build the `--json` report. `usage` and `cost_usd` come from the session
+/// spend whatever the outcome, so a failed run still reports what it cost.
+fn json_mode_output(
+    turn: &Result<hone_core::TurnResult, hone_core::AgentError>,
+    response: String,
+    tool_calls: Vec<serde_json::Value>,
+    error: Option<String>,
+    spend: (hone_proto::TokenUsage, f64),
+    model_id: &str,
+) -> serde_json::Value {
+    let (usage, cost_usd) = spend;
+    serde_json::json!({
+        "response": response,
+        "tool_calls": tool_calls,
+        "usage": {
+            "input": usage.input,
+            "output": usage.output,
+            "cache_read": usage.cache_read,
+        },
+        "cost_usd": cost_usd,
+        "model": model_id,
+        "success": turn.is_ok() && error.is_none(),
+        "error": error,
+    })
+}
+
+/// The failure was already reported to the user (printed error event or JSON
+/// report). `main` maps it to exit code 1 after MCP servers shut down.
+#[derive(Debug)]
+struct AlreadyReported;
+
+impl std::fmt::Display for AlreadyReported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("failure already reported")
+    }
+}
+
+impl std::error::Error for AlreadyReported {}
 
 // ---------------------------------------------------------------------------
 // Session auto-save
@@ -2701,6 +2720,12 @@ async fn main() -> Result<()> {
 
     // Graceful MCP server shutdown — always runs, even on error.
     mcp_manager.shutdown().await;
+
+    if let Err(e) = &run_result {
+        if e.downcast_ref::<AlreadyReported>().is_some() {
+            std::process::exit(1);
+        }
+    }
 
     run_result
 }
