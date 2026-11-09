@@ -204,3 +204,32 @@ fn test_r14c_cancel_turn_should_close_an_open_approval_menu() {
 
     assert!(!app.debugger_open, "a stale menu must not outlive the turn");
 }
+
+// -- R14b: with text in the input box only `y` approves (not `a` either) -----------------------
+
+#[test]
+fn test_r14b_a_with_non_empty_input_after_pause_should_be_typed_not_answered() {
+    let (mut app, mut rx) = app();
+    let t0 = Instant::now();
+    app.type_text("fix it");
+    app.handle_agent_event_at(paused_event(), t0);
+
+    app.handle_key_at(key(KeyCode::Char('a')), ms(t0, 500));
+
+    assert!(
+        rx.try_recv().is_err(),
+        "neither ApproveAlways nor Proceed may be sent while the input has text"
+    );
+    assert_eq!(app.input().buffer, "fix ita", "the `a` must reach the input");
+}
+
+#[test]
+fn test_r14b_a_with_empty_input_after_pause_should_approve_always() {
+    let (mut app, mut rx) = app();
+    let t0 = Instant::now();
+    app.handle_agent_event_at(paused_event(), t0);
+
+    app.handle_key_at(key(KeyCode::Char('a')), ms(t0, 500));
+
+    assert!(matches!(rx.try_recv(), Ok(StepAction::ApproveAlways(_))));
+}
