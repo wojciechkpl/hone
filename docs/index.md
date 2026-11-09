@@ -110,7 +110,7 @@ Read the [architecture](architecture.md) for the crate map and data flow.
 | Tools | Files, shell, git, LSP, `web_fetch`, screen capture, MCP client | ![shipped](https://img.shields.io/badge/-shipped-2ea043) |
 | | `web_search` (Tavily, Brave, Exa) | ![planned](https://img.shields.io/badge/-stub%2C%20not%20live-8b949e) |
 | Guardrails | Permission rules: allow / ask / deny, `--approve`, every entry point gated | ![shipped](https://img.shields.io/badge/-shipped%20(P2.3)-2ea043) |
-| | Built-in default rules | ![planned](https://img.shields.io/badge/-planned-8b949e) |
+| | Built-in rules and secret redaction (`HONE_POLICY_BUILTINS=1`) | ![opt-in](https://img.shields.io/badge/-opt--in%20(P2.5)-d29922) |
 | | Shell command checks | ![on](https://img.shields.io/badge/-always%20on-2ea043) |
 | | Seatbelt sandbox for shell commands (macOS) | ![on](https://img.shields.io/badge/-on%20by%20default-2ea043) |
 | | Landlock sandbox for shell commands (Linux) | ![opt-in](https://img.shields.io/badge/-opt--in-d29922) |

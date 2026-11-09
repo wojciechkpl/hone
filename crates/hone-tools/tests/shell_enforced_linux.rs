@@ -41,6 +41,7 @@ async fn test_shell_when_enforced_should_allow_dev_null_and_deny_reading_home_se
         sandbox: Arc::new(LandlockSandbox),
         sandbox_policy: Arc::new(SandboxPolicy::permissive()),
         working_dir: work.path().to_path_buf(),
+        read_filter: None,
     };
 
     let out = ShellTool

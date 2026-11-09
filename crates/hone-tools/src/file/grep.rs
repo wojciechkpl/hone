@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use crate::{
     error::ToolError,
     file::resolve_within_working_dir,
+    policy_gate::ReadAccess,
     traits::{Tool, ToolContext, ToolInput, ToolOutput},
 };
 
@@ -120,13 +121,15 @@ impl Tool for GrepTool {
         // File traversal is synchronous; run it on the blocking thread pool so we
         // don't stall the async runtime.
         let search_root_clone = search_root.clone();
-        let matches = tokio::task::spawn_blocking(move || -> Result<Vec<Value>, ToolError> {
+        let read_filter = ctx.read_filter.clone();
+        let (matches, skipped) = tokio::task::spawn_blocking(move || -> Result<(Vec<Value>, usize), ToolError> {
             let walker = WalkBuilder::new(&search_root_clone)
                 .standard_filters(true) // respects .gitignore, .ignore, hidden files
                 .build();
 
             let mut results: Vec<Value> = Vec::new();
             let mut files_scanned: usize = 0;
+            let mut skipped: usize = 0;
 
             'outer: for entry in walker {
                 if results.len() >= max_results || files_scanned >= DEFAULT_MAX_FILES {
@@ -143,6 +146,14 @@ impl Tool for GrepTool {
                 // Apply optional include filter.
                 if let Some(matcher) = &include_matcher {
                     if matcher.matched(path, false).is_ignore() {
+                        continue;
+                    }
+                }
+
+                // Files the permission policy denies or wants approved are not read.
+                if let Some(f) = &read_filter {
+                    if !matches!(f(path), ReadAccess::Allowed) {
+                        skipped += 1;
                         continue;
                     }
                 }
@@ -177,19 +188,25 @@ impl Tool for GrepTool {
                 }
             }
 
-            Ok(results)
+            Ok((results, skipped))
         })
         .await
         .map_err(|e| ToolError::Other(format!("grep task panicked: {e}")))??;
 
         let truncated = matches.len() >= max_results;
 
-        Ok(ToolOutput::new(json!({
+        let mut value = json!({
             "pattern": pattern_str,
             "count": matches.len(),
             "truncated": truncated,
             "matches": matches,
-        })))
+        });
+        if skipped > 0 {
+            value["note"] = json!(format!(
+                "({skipped} file(s) skipped by permission policy)"
+            ));
+        }
+        Ok(ToolOutput::new(value))
     }
 
     fn layer(&self) -> ToolLayer {

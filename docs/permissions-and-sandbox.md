@@ -2,7 +2,7 @@
 
 <p align="center">
   <img alt="Permission rules: shipped through P2.3" src="https://img.shields.io/badge/permission%20rules-shipped%20(P2.3)-2ea043">
-  <img alt="Built-in default rules: planned" src="https://img.shields.io/badge/built--in%20default%20rules-planned-d29922">
+  <img alt="Built-in rules and redaction: opt-in" src="https://img.shields.io/badge/built--in%20rules%20%2B%20redaction-opt--in%20(P2.5)-d29922">
   <img alt="macOS Seatbelt: on" src="https://img.shields.io/badge/macOS%20Seatbelt-on%20for%20shell-2ea043">
   <img alt="Linux Landlock: opt-in" src="https://img.shields.io/badge/Linux%20Landlock-opt--in-d29922">
 </p>
@@ -25,9 +25,11 @@ explains each one, what is on by default, and where each one stops.
 | Approval prompts in the TUI | Intended: write and shell tools ask, read-only tools don't. **Today only orchestrated turns prompt** ([known bug](#known-issue-tui)) | `--step` asks for every tool (orchestrated turns only, today) | Interactive TUI only |
 
 > [!IMPORTANT]
-> Built-in default rules are **planned, not shipped**. With no permission files, Hone
-> behaves exactly as it did before the policy engine existed. Write a
-> `permissions.toml` if you want `allow`/`ask`/`deny` rules today.
+> Built-in rules (credentials, persistence, `git push`, privilege escalation,
+> pipe-to-shell, new hosts) and secret redaction ship **opt-in**: they apply only with
+> `HONE_POLICY_BUILTINS=1` until the benchmark gate passes. Without that variable and
+> with no permission files, Hone behaves exactly as it did before the policy engine
+> existed. The rule table is in [configuration.md](configuration.md#built-in-rules).
 
 ## How a tool call is checked
 
@@ -61,7 +63,7 @@ flowchart TD
 
 | Layer | Path | Trust | Notes |
 |---|---|---|---|
-| Built-in | compiled into Hone | — | Empty today. Planned. |
+| Built-in | compiled into Hone | — | 39 rules, loaded only with `HONE_POLICY_BUILTINS=1` (opt-in) |
 | User | `~/.config/hone/permissions.toml` | You own the machine, so user rules **replace** the built-in verdict | `$HOME` must be absolute; otherwise the passwd entry is used |
 | Project | `<workdir>/.hone/permissions.toml` | A repo is untrusted, so project rules can only **tighten** | Only the working directory itself is checked. Running from `repo/src` does not pick up `repo/.hone/`. |
 
@@ -154,12 +156,11 @@ A `deny` is always refused, everywhere, and no flag turns it into an allow.
 
 **"Approve always"** on a rule that contains a wildcard (`*`, `?`, `[` or `{`) approves only
 that one host, path or command for the session. Approving `*.example` for `good.example`
-does not approve `evil.example`. On a rule without a wildcard, "always" remembers the
-whole rule.
-
-> [!WARNING]
-> A literal command rule is a prefix match, so approving `git push` "always" also covers
-> `git push --force …`. Write a narrower rule if that matters.
+does not approve `evil.example`. On a **command** rule, "always" covers exactly that
+command line, with the same leading assignments, wrappers and working directory, so
+approving `git push origin main` does not cover `git push --force origin main` or
+`GIT_SSH_COMMAND=… git push origin main`. Only a literal host rule, or a literal
+single-pattern path rule with an explicit read or write op, is remembered as a whole rule.
 
 <a id="known-issue-tui"></a>
 

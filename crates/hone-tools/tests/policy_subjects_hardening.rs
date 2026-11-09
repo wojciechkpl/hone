@@ -94,6 +94,7 @@ fn make_ctx(dir: &Path) -> ToolContext {
         sandbox: Arc::new(NullSandbox),
         sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: dir.to_path_buf(),
+        read_filter: None,
     }
 }
 
@@ -982,7 +983,6 @@ fn shells_reading_commands_from_stdin_are_unparsed() {
     let e = env();
     for src in [
         "echo 'git push' | sh",
-        "bash <<< 'git push'",
         "sh -s",
         "zsh",
         "dash",

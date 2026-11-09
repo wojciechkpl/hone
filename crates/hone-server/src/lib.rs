@@ -65,5 +65,5 @@ pub use routes::router;
 pub use run_registry::{DuplicateRunId, RunGuard, RunRegistry, StepResult};
 pub use session_storage::SessionStorage;
 pub use sqlite_session::SqliteSessionStore;
-pub use state::{AppState, resolve_policy_home};
+pub use state::{AppState, resolve_policy_builtins, resolve_policy_home};
 pub use tunnel::{MockTunnelManager, TunnelManager};

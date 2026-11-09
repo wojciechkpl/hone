@@ -5,6 +5,7 @@ pub mod handoff;
 pub mod lsp;
 pub mod memory;
 pub mod policy_gate;
+pub mod redact;
 mod registry;
 mod screen;
 mod shell;
@@ -33,6 +34,8 @@ pub use shell::{
     EXTRA_READ_ENV, HOME_READ_DIRS, SANDBOX_ENFORCE_ENV, SYSTEM_READ_ROOTS, WRITE_DEVICES,
     parse_extra_read, sandbox_enforced, shell_sandbox_policy,
 };
-pub use subjects::{ShellParse, SubjectContext, ToolSubjects, parse_shell, subject_path};
+pub use subjects::{
+    ShellParse, SubjectContext, ToolSubjects, lexical_subject_path, parse_shell, subject_path,
+};
 pub use traits::{Tool, ToolContext, ToolInput, ToolOutput};
 pub use web::{SearchResult, WebFetchTool, WebSearchTool};

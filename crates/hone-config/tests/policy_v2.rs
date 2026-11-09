@@ -311,14 +311,14 @@ fn project_ask_does_not_loosen_builtin_deny() {
 #[test]
 fn project_rule_equal_to_base_keeps_base_rule_id_and_layer() {
     let p = compile(
-        &[PolicyRule::command("git push*", Ask).with_id("base-ask")],
+        &[PolicyRule::command("git push*", Ask).with_id("builtin:base-ask")],
         &[],
         &[PolicyRule::command("git push*", Ask)],
     );
     assert_verdict(
         &p.evaluate(&cmd("git push")),
         Ask,
-        Some("base-ask"),
+        Some("builtin:base-ask"),
         Some(Layer::Builtin),
     );
 }
@@ -935,8 +935,8 @@ fn valid_explicit_ids_are_accepted() {
 #[test]
 fn duplicate_explicit_id_across_layers_is_rejected() {
     let e = compile_err(
-        &[PolicyRule::command("a", Deny).with_id("same")],
         &[],
+        &[PolicyRule::command("a", Deny).with_id("same")],
         &[PolicyRule::command("b", Deny).with_id("same")],
     );
     match e {

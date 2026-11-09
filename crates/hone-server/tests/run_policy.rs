@@ -249,7 +249,8 @@ async fn test_run_when_approve_names_the_ask_rule_should_let_the_call_through() 
 }
 
 #[tokio::test]
-async fn test_run_when_approve_names_a_deny_rule_should_still_deny() {
+async fn test_run_when_approve_names_a_deny_rule_should_return_400() {
+    // P2.5 section 14.11: --approve only lifts ask rules; a deny id is rejected up front.
     let env = env_with_policy(Some(DENY_BLOCKED));
     let (status, body) = post_run_authed(
         &env,
@@ -257,9 +258,10 @@ async fn test_run_when_approve_names_a_deny_rule_should_still_deny() {
         json!({ "approve": ["no-blocked"] }),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.contains("always denies"), "{body}");
+    assert!(body.contains("no-blocked"), "{body}");
     assert!(!env.root.join("blocked.txt").exists());
-    assert!(body.contains("denied by policy"), "{body}");
 }
 
 #[tokio::test]

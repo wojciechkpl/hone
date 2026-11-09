@@ -21,11 +21,13 @@ pub enum PolicyLoadError {
 
 /// Load the policy for `working_dir`. `approve` is the raw `HONE_APPROVE` value:
 /// comma-separated rule ids, trimmed, empty items ignored. Returns `Ok(None)` when
-/// there are no policy files and nothing to approve.
+/// there are no policy files, built-ins are off and nothing to approve.
+/// `builtins` is the parsed `HONE_POLICY_BUILTINS` switch.
 pub fn load_policy(
     working_dir: &Path,
     home: Option<PathBuf>,
     approve: Option<&str>,
+    builtins: bool,
 ) -> Result<Option<PolicyConfig>, PolicyLoadError> {
     let ids: Vec<String> = approve
         .unwrap_or("")
@@ -34,7 +36,7 @@ pub fn load_policy(
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
         .collect();
-    let policy = resolve_permission_policy(working_dir, home)?;
+    let policy = resolve_permission_policy(working_dir, home, builtins)?;
     let Some(mut policy) = policy else {
         return if ids.is_empty() {
             Ok(None)

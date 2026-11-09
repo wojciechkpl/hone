@@ -49,11 +49,11 @@ fn is_empty_false_for_each_rule_kind() {
 #[test]
 fn has_rule_id_finds_explicit_ids_in_every_layer() {
     let p = compile(
-        &[PolicyRule::command("a", Allow).with_id("b-rule")],
+        &[PolicyRule::command("a", Allow).with_id("builtin:b-rule")],
         &[PolicyRule::command("b", Allow).with_id("u-rule")],
         &[PolicyRule::command("c", Allow).with_id("p-rule")],
     );
-    for id in ["b-rule", "u-rule", "p-rule"] {
+    for id in ["builtin:b-rule", "u-rule", "p-rule"] {
         assert!(p.has_rule_id(id), "{id}");
     }
 }

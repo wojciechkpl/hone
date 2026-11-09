@@ -149,6 +149,7 @@ mod tests {
             sandbox: Arc::new(NullSandbox),
             sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
             working_dir: PathBuf::from("/tmp"),
+            read_filter: None,
         }
     }
 

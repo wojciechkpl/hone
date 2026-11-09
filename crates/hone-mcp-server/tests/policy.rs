@@ -7,7 +7,7 @@
 //!   Pre-approved ids travel in `PolicyConfig::pre_approved`; there is no interactive
 //!   channel, so the session-approved set is always empty.
 //! - `hone_mcp_server::load_policy(working_dir: &Path, home: Option<PathBuf>,
-//!   approve: Option<&str>) -> Result<Option<PolicyConfig>, E>` with `E: Display + Debug`.
+//!   approve: Option<&str>, builtins: bool) -> Result<Option<PolicyConfig>, E>` with `E: Display + Debug`.
 //!   `approve` is the raw `HONE_APPROVE` value (comma-separated, items trimmed, empty
 //!   items ignored). The binary calls it at startup and exits 2 on `Err`.
 //!   - no files and no approve -> `Ok(None)`
@@ -64,6 +64,7 @@ impl Tool for FixedTool {
         ToolSubjects {
             subjects: self.subjects.clone(),
             unparsed: self.unparsed,
+            ..Default::default()
         }
     }
 }
@@ -73,6 +74,7 @@ fn ctx(dir: &Path) -> ToolContext {
         sandbox: Arc::new(NullSandbox),
         sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: dir.to_path_buf(),
+        read_filter: None,
     }
 }
 
@@ -98,6 +100,7 @@ fn policy(dir: &Path, rules: Vec<PolicyRule>, pre: &[&str]) -> PolicyConfig {
         compiled: Arc::new(compiled),
         context,
         pre_approved: pre.iter().map(|s| (*s).to_owned()).collect(),
+        builtins: false,
     }
 }
 
@@ -347,9 +350,9 @@ fn project_dir() -> (tempfile::TempDir, tempfile::TempDir) {
 fn load_policy_without_files_is_none() {
     let wd = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
-    let r = load_policy(wd.path(), Some(home.path().to_path_buf()), None);
+    let r = load_policy(wd.path(), Some(home.path().to_path_buf()), None, false);
     assert!(matches!(r, Ok(None)), "{r:?}");
-    let r = load_policy(wd.path(), Some(home.path().to_path_buf()), Some(""));
+    let r = load_policy(wd.path(), Some(home.path().to_path_buf()), Some(""), false);
     assert!(
         matches!(r, Ok(None)),
         "empty HONE_APPROVE is no approval: {r:?}"
@@ -359,7 +362,7 @@ fn load_policy_without_files_is_none() {
 #[test]
 fn load_policy_with_files_loads_rules() {
     let (wd, home) = project_dir();
-    let p = load_policy(wd.path(), Some(home.path().to_path_buf()), None)
+    let p = load_policy(wd.path(), Some(home.path().to_path_buf()), None, false)
         .unwrap()
         .unwrap();
     assert!(p.pre_approved.is_empty());
@@ -374,6 +377,7 @@ fn load_policy_parses_comma_separated_approvals_with_trimming() {
         wd.path(),
         Some(home.path().to_path_buf()),
         Some(" ask-deploy , project:3 ,, builtin:unparsed-command,builtin:invalid-host "),
+        false,
     )
     .unwrap()
     .unwrap();
@@ -396,6 +400,7 @@ fn load_policy_unknown_approve_id_is_an_error_naming_the_id() {
         wd.path(),
         Some(home.path().to_path_buf()),
         Some("ask-deploy,nope-x"),
+        false,
     )
     .unwrap_err();
     assert!(e.to_string().contains("nope-x"), "{e}");
@@ -405,7 +410,12 @@ fn load_policy_unknown_approve_id_is_an_error_naming_the_id() {
 fn load_policy_approve_without_any_policy_is_an_error() {
     let wd = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
-    let r = load_policy(wd.path(), Some(home.path().to_path_buf()), Some("user:1"));
+    let r = load_policy(
+        wd.path(),
+        Some(home.path().to_path_buf()),
+        Some("user:1"),
+        false,
+    );
     assert!(r.is_err());
 }
 
@@ -416,7 +426,7 @@ fn load_policy_broken_file_is_an_error() {
         &wd.path().join(".hone/permissions.toml"),
         "this is [[ not toml",
     );
-    assert!(load_policy(wd.path(), None, None).is_err());
+    assert!(load_policy(wd.path(), None, None, false).is_err());
 }
 
 #[test]
@@ -426,6 +436,7 @@ fn load_policy_unknown_id_error_escapes_control_characters() {
         wd.path(),
         Some(home.path().to_path_buf()),
         Some("a\u{1b}]52;x\u{7}b"),
+        false,
     )
     .unwrap_err();
     assert!(!e.to_string().chars().any(|c| c.is_control()), "{e:?}");
@@ -439,6 +450,7 @@ async fn approved_ids_from_load_policy_flow_into_the_gate() {
         wd.path(),
         Some(home.path().to_path_buf()),
         Some("ask-deploy"),
+        false,
     )
     .unwrap()
     .unwrap();
@@ -456,7 +468,7 @@ async fn approved_ids_from_load_policy_flow_into_the_gate() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 
     // Same policy without the approval asks.
-    let p2 = load_policy(wd.path(), Some(home.path().to_path_buf()), None)
+    let p2 = load_policy(wd.path(), Some(home.path().to_path_buf()), None, false)
         .unwrap()
         .unwrap();
     let calls2 = Arc::new(AtomicUsize::new(0));

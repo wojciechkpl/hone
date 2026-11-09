@@ -30,6 +30,15 @@ fn default_workspace_root() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("/"))
 }
 
+/// Whether `HONE_POLICY_BUILTINS` is exactly `1` (read from the environment).
+pub fn resolve_policy_builtins() -> bool {
+    let value = std::env::var(hone_tools::policy_gate::POLICY_BUILTINS_ENV).ok();
+    if let Some(w) = hone_tools::policy_gate::builtins_env_warning(value.as_deref()) {
+        tracing::warn!("{w}");
+    }
+    hone_tools::policy_gate::builtins_enabled(value.as_deref())
+}
+
 /// Home directory used to find the user-level permission policy:
 /// `$HOME` if absolute, else the passwd entry.
 pub fn resolve_policy_home() -> Option<PathBuf> {
@@ -88,6 +97,9 @@ pub struct AppState {
     /// Resolved once at construction; `with_mock_provider` clears it so a
     /// developer's own policy never leaks into tests.
     pub policy_home: Option<PathBuf>,
+    /// Load the built-in permission rules (`HONE_POLICY_BUILTINS=1`). Read once
+    /// when the state is built; `with_mock_provider` turns it off.
+    pub policy_builtins: bool,
 }
 
 impl AppState {
@@ -110,6 +122,7 @@ impl AppState {
             eval_history: None,
             recipes_user_dir: None,
             policy_home: resolve_policy_home(),
+            policy_builtins: resolve_policy_builtins(),
         }
     }
 
@@ -132,6 +145,7 @@ impl AppState {
             eval_history: None,
             recipes_user_dir: None,
             policy_home: resolve_policy_home(),
+            policy_builtins: resolve_policy_builtins(),
         }
     }
 
@@ -157,6 +171,7 @@ impl AppState {
             eval_history: None,
             recipes_user_dir: None,
             policy_home: resolve_policy_home(),
+            policy_builtins: resolve_policy_builtins(),
         }
     }
 
@@ -202,6 +217,7 @@ impl AppState {
     pub fn with_mock_provider(mut self, p: Arc<dyn ModelProvider>) -> Self {
         self.mock_provider = Some(p);
         self.policy_home = None;
+        self.policy_builtins = false;
         self
     }
 

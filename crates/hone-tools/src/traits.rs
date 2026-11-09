@@ -7,6 +7,7 @@ use hone_sandbox::Sandbox;
 use serde_json::Value;
 
 use crate::error::ToolError;
+use crate::policy_gate::ReadFilter;
 use crate::subjects::{SubjectContext, ToolSubjects};
 
 /// Wrapper around raw JSON input passed to a tool.
@@ -80,6 +81,9 @@ pub struct ToolContext {
     pub sandbox_policy: Arc<hone_sandbox::SandboxPolicy>,
     /// The working directory from which relative paths are resolved.
     pub working_dir: PathBuf,
+    /// Permission-policy filter for tools that walk directories (`grep`, `glob`).
+    /// `None` means no filtering.
+    pub read_filter: Option<ReadFilter>,
 }
 
 /// A native Layer-2 tool that the agent can call directly.
@@ -117,6 +121,12 @@ pub trait Tool: Send + Sync + 'static {
     fn subjects(&self, _input: &ToolInput, _sctx: &SubjectContext) -> ToolSubjects {
         ToolSubjects::default()
     }
+
+    /// Id of a built-in policy rule that makes every call to this tool ask, when
+    /// the built-in rules are on. The default is `None`.
+    fn builtin_ask(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -133,6 +143,7 @@ mod tests {
             sandbox: Arc::new(NullSandbox),
             sandbox_policy: Arc::new(policy),
             working_dir: PathBuf::from("/tmp"),
+            read_filter: None,
         };
         assert_eq!(ctx.sandbox_policy.mode, expected_mode);
         assert_eq!(ctx.sandbox_policy.mode, SandboxMode::Manual);

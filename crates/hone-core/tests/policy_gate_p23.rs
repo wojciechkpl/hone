@@ -1,9 +1,5 @@
 //! P2.3 single-implementation and ensemble tests
 //! (`docs/plans/policy-p2.3-spec.md` sections 2 and 8).
-//!
-//! `ToolDispatcher` removal is a compile-level fact that cannot be tested from here:
-//! the implementer must delete `crates/hone-core/tests/tool_dispatch.rs` together with
-//! `src/dispatcher.rs` (this agent does not delete files outside the test it writes).
 
 use std::collections::HashSet;
 use std::pin::Pin;
@@ -86,6 +82,7 @@ impl Tool for AskTool {
         ToolSubjects {
             subjects: vec![Subject::Command("deploy prod".into())],
             unparsed: false,
+            ..Default::default()
         }
     }
 }
@@ -206,6 +203,7 @@ async fn ensemble_candidates_fail_closed_instead_of_prompting_on_a_shared_channe
             compiled: Arc::new(compiled),
             context,
             pre_approved: vec![],
+            builtins: false,
         }),
     };
 

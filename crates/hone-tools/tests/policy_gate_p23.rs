@@ -6,7 +6,7 @@
 //! - `hone_tools::policy_gate` exports `PolicyConfig { compiled, context, pre_approved }`,
 //!   `GateDecision { Allow, Deny { rule_id }, Ask { rule_id } }`, `decide` (same signature
 //!   the hone-core version had) and
-//!   `resolve_permission_policy(&Path, Option<PathBuf>) -> Result<Option<PolicyConfig>, PermissionError>`.
+//!   `resolve_permission_policy(&Path, Option<PathBuf>, bool) -> Result<Option<PolicyConfig>, PermissionError>`.
 //! - Session-approval key for a catch-all rule is produced by the exported helper
 //!   `policy_gate::approval_key(rule_id: &str, subject: &Subject) -> String`. Tests only
 //!   treat it as opaque: it differs from the bare rule id, differs per subject, is stable
@@ -73,6 +73,7 @@ impl Tool for FakeTool {
         ToolSubjects {
             subjects: self.subjects.clone(),
             unparsed: self.unparsed,
+            ..Default::default()
         }
     }
 }
@@ -98,6 +99,7 @@ fn policy(workdir: &Path, rules: Vec<PolicyRule>, pre_approved: &[&str]) -> Poli
         compiled: Arc::new(compiled),
         context,
         pre_approved: pre_approved.iter().map(|s| (*s).to_owned()).collect(),
+        builtins: false,
     }
 }
 
@@ -268,7 +270,11 @@ fn decide_when_ask_rule_session_approved_should_allow() {
     );
     let t = FakeTool::fixed(vec![cmd("deploy prod")]);
     assert_eq!(
-        run(&p, &set(&["ask-deploy".to_owned()]), Some(&t)),
+        run(
+            &p,
+            &set(&[approval_key("ask-deploy", &cmd("deploy prod"))]),
+            Some(&t)
+        ),
         ("allow", None)
     );
 }
@@ -407,7 +413,24 @@ fn catch_all_pre_approved_by_rule_id_allows_every_subject() {
 }
 
 #[test]
-fn literal_rule_approved_by_id_allows_every_matching_subject() {
+fn literal_host_rule_approved_by_id_allows_every_matching_subject() {
+    // P2.5 section 7: command rules are never approved by bare id (a command rule is a
+    // prefix match); host and path rules without wildcards still are.
+    let (_t, d) = canonical_tmp();
+    let p = policy(
+        &d,
+        vec![PolicyRule::host("example.com", Decision::Ask).with_id("ask-host")],
+        &[],
+    );
+    let approved = set(&["ask-host".to_owned()]);
+    for h in ["example.com", "EXAMPLE.com:8080", "example.com."] {
+        let t = FakeTool::fixed(vec![host(h)]);
+        assert_eq!(run(&p, &approved, Some(&t)), ("allow", None), "{h}");
+    }
+}
+
+#[test]
+fn literal_command_rule_is_not_approved_by_bare_id() {
     let (_t, d) = canonical_tmp();
     let p = policy(
         &d,
@@ -417,7 +440,11 @@ fn literal_rule_approved_by_id_allows_every_matching_subject() {
     let approved = set(&["ask-push".to_owned()]);
     for c in ["git push", "git push origin main", "git push origin dev"] {
         let t = FakeTool::fixed(vec![cmd(c)]);
-        assert_eq!(run(&p, &approved, Some(&t)), ("allow", None), "{c}");
+        assert_eq!(
+            run(&p, &approved, Some(&t)),
+            ("ask", some("ask-push")),
+            "{c}"
+        );
     }
 }
 
@@ -428,7 +455,7 @@ fn literal_host_and_path_rules_are_approved_by_id() {
         &d,
         vec![
             PolicyRule::host("example.com", Decision::Ask).with_id("ask-host"),
-            PolicyRule::path("/etc/hosts", OpFilter::Any, Decision::Ask).with_id("ask-path"),
+            PolicyRule::path("/etc/hosts", OpFilter::Write, Decision::Ask).with_id("ask-path"),
         ],
         &[],
     );
@@ -564,14 +591,15 @@ fn question_mark_and_class_and_brace_patterns_are_per_subject_too() {
 }
 
 #[test]
-fn session_approval_entries_for_a_literal_rule_is_the_bare_id() {
+fn session_approval_entries_for_a_literal_host_rule_is_the_bare_id() {
+    // P2.5 section 7: a literal *command* rule is keyed by subject instead.
     let (_t, d) = canonical_tmp();
     let p = policy(
         &d,
-        vec![PolicyRule::command("make deploy", Decision::Ask).with_id("lit")],
+        vec![PolicyRule::host("example.com", Decision::Ask).with_id("lit")],
         &[],
     );
-    let t = FakeTool::fixed(vec![cmd("make deploy")]);
+    let t = FakeTool::fixed(vec![host("example.com")]);
     let entries = session_approval_entries(&p, Some(&t as &dyn Tool), &call(), "lit");
     assert_eq!(entries, vec!["lit".to_owned()]);
 }
@@ -733,10 +761,10 @@ fn verdict(p: &PolicyConfig, command: &str) -> (Decision, Option<String>) {
 fn resolve_when_no_files_should_return_none() {
     let wd = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
-    let r = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()));
+    let r = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()), false);
     assert!(matches!(r, Ok(None)), "{r:?}");
     assert!(matches!(
-        resolve_permission_policy(wd.path(), None),
+        resolve_permission_policy(wd.path(), None, false),
         Ok(None)
     ));
 }
@@ -745,7 +773,7 @@ fn resolve_when_no_files_should_return_none() {
 fn resolve_when_only_project_file_should_use_project_rules() {
     let wd = tempfile::tempdir().unwrap();
     write(&wd.path().join(".hone/permissions.toml"), PROJECT_DENY);
-    let p = resolve_permission_policy(wd.path(), None).unwrap().unwrap();
+    let p = resolve_permission_policy(wd.path(), None, false).unwrap().unwrap();
     assert_eq!(
         verdict(&p, "git push origin"),
         (Decision::Deny, some("proj-no-push"))
@@ -759,7 +787,7 @@ fn resolve_when_only_user_file_should_return_some_with_user_rules() {
     let wd = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     write(&home.path().join(".config/hone/permissions.toml"), USER_ASK);
-    let p = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()))
+    let p = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()), false)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -774,7 +802,7 @@ fn resolve_when_both_files_should_merge_layers() {
     let home = tempfile::tempdir().unwrap();
     write(&home.path().join(".config/hone/permissions.toml"), USER_ASK);
     write(&wd.path().join(".hone/permissions.toml"), PROJECT_DENY);
-    let p = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()))
+    let p = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()), false)
         .unwrap()
         .unwrap();
     assert_eq!(verdict(&p, "deploy prod").0, Decision::Ask);
@@ -786,11 +814,11 @@ fn resolve_when_home_is_relative_should_treat_it_as_none() {
     let wd = tempfile::tempdir().unwrap();
     let rel = Some(PathBuf::from("relative/home"));
     assert!(matches!(
-        resolve_permission_policy(wd.path(), rel.clone()),
+        resolve_permission_policy(wd.path(), rel.clone(), false),
         Ok(None)
     ));
     write(&wd.path().join(".hone/permissions.toml"), PROJECT_DENY);
-    let p = resolve_permission_policy(wd.path(), rel).unwrap().unwrap();
+    let p = resolve_permission_policy(wd.path(), rel, false).unwrap().unwrap();
     assert!(p.context.home.is_none());
 }
 
@@ -801,30 +829,30 @@ fn resolve_when_a_file_is_broken_should_return_err() {
         &wd.path().join(".hone/permissions.toml"),
         "this is [[ not toml",
     );
-    assert!(resolve_permission_policy(wd.path(), None).is_err());
+    assert!(resolve_permission_policy(wd.path(), None, false).is_err());
     let wd = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     write(
         &home.path().join(".config/hone/permissions.toml"),
         "decision = = =",
     );
-    assert!(resolve_permission_policy(wd.path(), Some(home.path().to_path_buf())).is_err());
+    assert!(resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()), false).is_err());
 }
 
 #[test]
 fn resolve_when_workdir_missing_should_be_none_without_files_and_err_with_a_user_file() {
     let base = tempfile::tempdir().unwrap();
     let gone = base.path().join("does/not/exist");
-    assert!(matches!(resolve_permission_policy(&gone, None), Ok(None)));
+    assert!(matches!(resolve_permission_policy(&gone, None, false), Ok(None)));
     let home = tempfile::tempdir().unwrap();
     write(&home.path().join(".config/hone/permissions.toml"), USER_ASK);
-    assert!(resolve_permission_policy(&gone, Some(home.path().to_path_buf())).is_err());
+    assert!(resolve_permission_policy(&gone, Some(home.path().to_path_buf()), false).is_err());
 }
 
 #[test]
 fn resolve_should_canonicalise_workdir_in_context() {
     let wd = tempfile::tempdir().unwrap();
     write(&wd.path().join(".hone/permissions.toml"), PROJECT_DENY);
-    let p = resolve_permission_policy(wd.path(), None).unwrap().unwrap();
+    let p = resolve_permission_policy(wd.path(), None, false).unwrap().unwrap();
     assert_eq!(p.context.workdir, std::fs::canonicalize(wd.path()).unwrap());
 }

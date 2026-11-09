@@ -767,6 +767,7 @@ mod tests {
             sandbox: Arc::new(NullSandbox),
             sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
             working_dir: dir.path().to_path_buf(),
+            read_filter: None,
         }
     }
 

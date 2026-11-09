@@ -24,9 +24,43 @@ pub struct ToolSubjects {
     pub subjects: Vec<Subject>,
     /// True when a shell command could not be parsed.
     pub unparsed: bool,
+    /// True when a non-first pipeline stage runs a shell or interpreter that reads
+    /// its program from standard input (`curl … | sh`).
+    pub pipe_to_interpreter: bool,
+    /// Per subject, extra context a remembered approval must match (leading
+    /// assignments, wrapper words, working directory). May be shorter than
+    /// `subjects`; a missing entry means no context.
+    pub contexts: Vec<String>,
+    /// True when a path-position argument holds a parameter expansion or a command
+    /// substitution, so the real path is unknown.
+    pub var_path: bool,
+    /// The same paths as written (symlinks not resolved), where that differs from
+    /// the canonical path in `subjects`. Evaluated after `subjects`.
+    pub alt_subjects: Vec<Subject>,
+    /// True when the call runs a nested command string, a heredoc script or `source`:
+    /// no remembered approval may match it, and it cannot be remembered.
+    pub no_remember: bool,
 }
 
 impl ToolSubjects {
+    /// Context string of subject `i` (empty when none).
+    pub fn context_of(&self, i: usize) -> &str {
+        self.contexts.get(i).map_or("", String::as_str)
+    }
+
+    /// Add the canonical path for `raw` and, when it differs, the path as written.
+    pub(crate) fn add_raw_path(&mut self, op: PathOp, raw: &str, sctx: &SubjectContext) {
+        let canonical = subject_path(raw, sctx);
+        let lexical = lexical_subject_path(raw, sctx);
+        self.add_path(op, canonical.clone());
+        if lexical != canonical {
+            let s = Subject::Path { path: lexical, op };
+            if !self.alt_subjects.contains(&s) {
+                self.alt_subjects.push(s);
+            }
+        }
+    }
+
     /// Add a path subject unless an identical one is already present.
     pub(crate) fn add_path(&mut self, op: PathOp, path: PathBuf) {
         let s = Subject::Path { path, op };
@@ -39,9 +73,8 @@ impl ToolSubjects {
     pub(crate) fn paths(raw: Option<&str>, ops: &[PathOp], sctx: &SubjectContext) -> Self {
         let mut ts = ToolSubjects::default();
         if let Some(raw) = raw {
-            let p = subject_path(raw, sctx);
             for op in ops {
-                ts.add_path(*op, p.clone());
+                ts.add_raw_path(*op, raw, sctx);
             }
         }
         ts
@@ -49,12 +82,11 @@ impl ToolSubjects {
 
     /// Read of a search root (`grep`/`glob`); defaults to the workdir.
     pub(crate) fn search_root(path: Option<&str>, sctx: &SubjectContext) -> Self {
-        let p = match path {
-            Some(p) => subject_path(p, sctx),
-            None => sctx.workdir.clone(),
-        };
         let mut ts = ToolSubjects::default();
-        ts.add_path(PathOp::Read, p);
+        match path {
+            Some(p) => ts.add_raw_path(PathOp::Read, p, sctx),
+            None => ts.add_path(PathOp::Read, sctx.workdir.clone()),
+        }
         ts
     }
 
@@ -67,9 +99,8 @@ impl ToolSubjects {
             .flatten()
             .filter_map(|e| e.get("path")?.as_str())
         {
-            let p = subject_path(path, sctx);
-            ts.add_path(PathOp::Read, p.clone());
-            ts.add_path(PathOp::Write, p);
+            ts.add_raw_path(PathOp::Read, path, sctx);
+            ts.add_raw_path(PathOp::Write, path, sctx);
         }
         ts
     }
@@ -82,9 +113,9 @@ impl ToolSubjects {
         };
         for f in files {
             for path in [f.source_path, f.target_path].into_iter().flatten() {
-                let p = subject_path(&path.to_string_lossy(), sctx);
-                ts.add_path(PathOp::Read, p.clone());
-                ts.add_path(PathOp::Write, p);
+                let raw = path.to_string_lossy();
+                ts.add_raw_path(PathOp::Read, &raw, sctx);
+                ts.add_raw_path(PathOp::Write, &raw, sctx);
             }
         }
         ts
@@ -99,7 +130,7 @@ impl ToolSubjects {
         };
         ToolSubjects {
             subjects: vec![Subject::Command(cmd)],
-            unparsed: false,
+            ..Default::default()
         }
     }
 
@@ -111,7 +142,7 @@ impl ToolSubjects {
             .unwrap_or_else(|| url.to_string());
         ToolSubjects {
             subjects: vec![Subject::Host(host)],
-            unparsed: false,
+            ..Default::default()
         }
     }
 }
@@ -136,6 +167,16 @@ pub struct ShellParse {
     pub paths: Vec<(PathOp, PathBuf)>,
     /// True when the input could not be fully parsed.
     pub unparsed: bool,
+    /// See [`ToolSubjects::pipe_to_interpreter`].
+    pub pipe_to_interpreter: bool,
+    /// Context per entry of `commands`; see [`ToolSubjects::contexts`].
+    pub contexts: Vec<String>,
+    /// See [`ToolSubjects::var_path`].
+    pub var_path: bool,
+    /// Paths as written, in source order; see [`ToolSubjects::alt_subjects`].
+    pub alt_paths: Vec<(PathOp, PathBuf)>,
+    /// See [`ToolSubjects::no_remember`].
+    pub no_remember: bool,
 }
 
 impl ShellParse {
@@ -154,6 +195,15 @@ impl ShellParse {
         ToolSubjects {
             subjects,
             unparsed: self.unparsed,
+            pipe_to_interpreter: self.pipe_to_interpreter,
+            contexts: self.contexts,
+            var_path: self.var_path,
+            alt_subjects: self
+                .alt_paths
+                .into_iter()
+                .map(|(op, path)| Subject::Path { path, op })
+                .collect(),
+            no_remember: self.no_remember,
         }
     }
 }
@@ -178,6 +228,82 @@ pub fn subject_path(raw: &str, sctx: &SubjectContext) -> PathBuf {
         sctx.workdir.join(expanded)
     };
     resolve_path(&abs)
+}
+
+/// The path as written: `~` expanded, relative paths joined onto the workdir, `.`
+/// and `..` folded lexically. Symlinks are not resolved.
+pub fn lexical_subject_path(raw: &str, sctx: &SubjectContext) -> PathBuf {
+    lexical_in(&sctx.workdir, raw, sctx)
+}
+
+/// True if `src` looks like it defines a function in any form: `name()`, `name ()`,
+/// `function name`. Conservative (a false positive only makes loop variables unknown).
+fn has_function_def(src: &str) -> bool {
+    let b = src.as_bytes();
+    let is_word = |c: u8| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.' | b':');
+    for (i, &c) in b.iter().enumerate() {
+        if c == b'(' {
+            // `(` + optional blanks + `)` right after a name.
+            let mut j = i + 1;
+            while j < b.len() && matches!(b[j], b' ' | b'\t') {
+                j += 1;
+            }
+            if b.get(j) == Some(&b')') {
+                let mut k = i;
+                while k > 0 && matches!(b[k - 1], b' ' | b'\t') {
+                    k -= 1;
+                }
+                if k > 0 && is_word(b[k - 1]) {
+                    return true;
+                }
+            }
+        }
+    }
+    // The `function` keyword as a word.
+    src.match_indices("function").any(|(i, _)| {
+        let before_ok = i == 0 || !is_word(b[i - 1]);
+        let after = b.get(i + "function".len());
+        before_ok && after.is_some_and(|a| matches!(a, b' ' | b'\t'))
+    })
+}
+
+/// Fold `.` and `..` lexically in an absolute path.
+fn fold_lexical(abs: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in abs.components() {
+        match c {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+fn lexical_in(base: &Path, raw: &str, sctx: &SubjectContext) -> PathBuf {
+    let expanded = match &sctx.home {
+        Some(h) if raw == "~" => h.clone(),
+        Some(h) if raw.starts_with("~/") => h.join(&raw[2..]),
+        _ => PathBuf::from(raw),
+    };
+    let abs = if expanded.is_absolute() {
+        expanded
+    } else {
+        base.join(expanded)
+    };
+    let mut out = PathBuf::new();
+    for c in abs.components() {
+        match c {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// Maximum symlink hops followed while resolving a path.
@@ -272,13 +398,43 @@ enum Term {
 
 type Lit = (char, bool);
 
+/// A `for` variable bound over literal words or the matches of a literal glob.
+struct BoundVar {
+    name: String,
+    values: Vec<String>,
+    valid: bool,
+    /// Function nesting when the loop was entered; function bodies see no outer bindings.
+    fn_level: usize,
+}
+
+/// Most combinations of bound values substituted into one word.
+const MAX_COMBINATIONS: usize = 32;
+
+/// Result of substituting bound `for` variables into a word.
+enum Subst {
+    /// The word does not (only) refer to bound variables.
+    NotBound,
+    /// More than [`MAX_COMBINATIONS`] combinations.
+    TooMany,
+    /// One word per combination.
+    Words(Vec<Word>),
+}
+
+/// Text fed to a command's stdin by a heredoc or here-string.
+struct StdinText {
+    text: String,
+    /// Unknown before it runs: an unquoted body with a substitution, or a here-string
+    /// with an expansion.
+    denied: bool,
+}
+
 /// Maximum words produced by brace expansion, and glob matches per word.
 const MAX_BRACE_WORDS: usize = 64;
 const MAX_GLOB_MATCHES: usize = 256;
 const MAX_DIR_ENTRIES: usize = 4096;
 const MAX_BASES: usize = 16;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Word {
     text: String,
     /// Per char of `text`: true if it was quoted or escaped (a literal).
@@ -295,6 +451,8 @@ struct Word {
     /// Chars of a leading `$HOME` / `${HOME}` at the start of `text`.
     home_chars: usize,
     start: usize,
+    /// A process substitution `<(…)` used as an argument.
+    procsub: bool,
 }
 
 impl Word {
@@ -315,6 +473,8 @@ impl Word {
 #[derive(Default)]
 struct Cmd {
     words: Vec<Word>,
+    /// This command is a later stage of a pipeline (`a | THIS`).
+    piped: bool,
 }
 
 struct Parser<'a> {
@@ -323,7 +483,42 @@ struct Parser<'a> {
     sctx: &'a SubjectContext,
     commands: Vec<Vec<String>>,
     paths: Vec<(usize, PathOp, PathBuf)>,
+    /// Lexical (as-written) alternatives of `paths`.
+    alt_paths: Vec<(usize, PathOp, PathBuf)>,
+    /// Lexical forms found while expanding the current word.
+    alt_buf: std::cell::RefCell<Vec<PathBuf>>,
     unparsed: bool,
+    pipe_to_interpreter: bool,
+    /// Context per entry of `commands`.
+    contexts: Vec<String>,
+    var_path: bool,
+    /// The command being parsed has a here-string with a substitution.
+    here_subst: bool,
+    /// Heredoc or here-string text fed to the command being parsed.
+    stdin_text: Option<StdinText>,
+    /// Where the next heredoc body starts (after the previous one on this line).
+    heredoc_scan: Option<usize>,
+    /// The first command of a nested parse is a later pipeline stage.
+    inherit_piped: bool,
+    /// A nested string, heredoc script or `source` was seen.
+    no_remember: bool,
+    /// Variables exported earlier (`export`, `declare -x`, `set -a`, subshell assignments).
+    exports: Vec<String>,
+    auto_export: bool,
+    subshell: usize,
+    /// Active `for` loops, innermost last (`None` for loops that bind nothing).
+    loops: Vec<Option<BoundVar>>,
+    /// The `for` header seen, waiting for its `do`.
+    pending_for: Option<BoundVar>,
+    /// After `cd` to a target that isn't literal, relative paths are unknown (sticky).
+    cwd_unknown: bool,
+    /// The line defines a function somewhere: no `for` binding is trusted.
+    line_has_function: bool,
+    /// `{` nesting, the brace depths at which function bodies started, and whether
+    /// the next `{` opens a function body.
+    brace_depth: usize,
+    func_brace: Vec<usize>,
+    func_pending: bool,
     in_backtick: bool,
     /// Inside `$((…))` / `((…))`: `<` and `>` are operators, not redirects.
     arith: bool,
@@ -351,10 +546,17 @@ pub fn parse_shell(cmd: &str, sctx: &SubjectContext) -> ShellParse {
     p.unparsed |= p.glob_overflow.get();
     let mut paths = p.paths;
     paths.sort_by_key(|(pos, _, _)| *pos);
+    let mut alt_paths = p.alt_paths;
+    alt_paths.sort_by_key(|(pos, _, _)| *pos);
     ShellParse {
+        alt_paths: alt_paths.into_iter().map(|(_, op, path)| (op, path)).collect(),
         commands: p.commands,
         paths: paths.into_iter().map(|(_, op, path)| (op, path)).collect(),
         unparsed: p.unparsed,
+        pipe_to_interpreter: p.pipe_to_interpreter,
+        contexts: p.contexts,
+        var_path: p.var_path,
+        no_remember: p.no_remember,
     }
 }
 
@@ -408,7 +610,26 @@ fn wrapper_skip(words: &[Word], name: &str) -> Option<usize> {
         "time" => (&["-f", "-o", "--format", "--output"], false, 0),
         "arch" => (&["-c"], false, 0),
         "caffeinate" => (&["-t", "-w"], false, 0),
-        "setsid" | "coproc" => (&[], false, 0),
+        "setsid" | "coproc" | "busybox" | "toybox" => (&[], false, 0),
+        "ionice" => (&["-c", "-n", "-p"], false, 0),
+        "unbuffer" => (&[], false, 0),
+        "flock" => (&["-w", "-E", "--timeout", "--conflict-exit-code"], false, 1),
+        "chroot" => (&["--userspec", "--groups"], false, 1),
+        "script" => {
+            // `script -c CMD FILE` (util-linux) has a command string; BSD
+            // `script [-q] FILE CMD...` runs the command that follows the file.
+            if words
+                .iter()
+                .skip(1)
+                .any(|w| is_c_bundle(&w.text) || w.text.starts_with("--command"))
+            {
+                return None;
+            }
+            (&[], false, 1)
+        }
+        "taskset" => (&["-c"], false, 1),
+        "strace" => (&["-e", "-o", "-p", "-s", "-u", "-E", "-S", "-a"], false, 0),
+        "ltrace" => (&["-e", "-o", "-p", "-s", "-u", "-n"], false, 0),
         "xargs" => (
             &["-I", "-n", "-P", "-s", "-d", "-E", "-L", "-a", "-J"],
             false,
@@ -431,6 +652,15 @@ fn wrapper_skip(words: &[Word], name: &str) -> Option<usize> {
             break;
         }
     }
+    let extra = if name == "taskset"
+        && words[1..i.min(words.len())]
+            .iter()
+            .any(|w| matches!(w.text.as_str(), "-c" | "--cpu-list"))
+    {
+        0
+    } else {
+        extra
+    };
     Some(i + extra)
 }
 
@@ -443,6 +673,280 @@ fn is_sed_in_place(t: &str) -> bool {
         return false;
     }
     t.starts_with("-i") || (t[1..].chars().all(|c| c.is_ascii_alphabetic()) && t.contains('i'))
+}
+
+/// Commands whose path arguments are read or written (spec §15.4).
+const FILE_CMDS: &[&str] = &[
+    "cat", "less", "more", "head", "tail", "cp", "mv", "rm", "ln", "tee", "truncate", "touch",
+    "base64", "xxd", "od", "strings", "hexdump", "file", "source", ".", "chmod", "chown", "zip",
+    "unzip", "scp", "rsync", "install",
+];
+
+/// Options of `cmd` that take a value (the value is not a path).
+fn value_options(cmd: &str) -> &'static [&'static str] {
+    match cmd {
+        "head" | "tail" => &["-n", "-c"],
+        "truncate" => &["-s"],
+        "od" => &["-N", "-j", "-t", "-A"],
+        "xxd" => &["-l", "-s", "-c", "-g"],
+        "strings" => &["-n"],
+        "hexdump" => &["-n", "-s"],
+        "install" => &["-m", "-o", "-g"],
+        "rsync" => &["-e"],
+        "scp" => &["-P", "-o", "-F"],
+        "file" => &["-m"],
+        _ => &[],
+    }
+}
+
+/// Indices (into `inner`) of the words that are path arguments of a file-consuming
+/// command, or the script argument of a shell or interpreter.
+fn file_arg_indices(
+    argv0: &str,
+    inner: &[Word],
+    sed_in_place: bool,
+    script_idx: Option<usize>,
+) -> Vec<usize> {
+    let mut out = Vec::new();
+    match argv0 {
+        "dd" => {
+            for (i, w) in inner.iter().enumerate().skip(1) {
+                if w.text.starts_with("if=") || w.text.starts_with("of=") {
+                    out.push(i);
+                }
+            }
+        }
+        "tar" => {
+            for (i, w) in inner.iter().enumerate().skip(1) {
+                let t = w.text.as_str();
+                let prev = inner.get(i - 1).map_or("", |p| p.text.as_str());
+                let after_flag = matches!(prev, "-f" | "-C" | "--file" | "--directory")
+                    || (prev.starts_with('-')
+                        && !prev.starts_with("--")
+                        && (prev.ends_with('f') || prev.ends_with('C')));
+                let attached = t.starts_with("--file=")
+                    || t.starts_with("--directory=")
+                    || (t.starts_with("-f") && t.len() > 2)
+                    || (t.starts_with("-C") && t.len() > 2);
+                if (after_flag && i > 1) || attached {
+                    out.push(i);
+                }
+            }
+        }
+        "sed" if sed_in_place => {
+            let mut script_seen = inner
+                .iter()
+                .skip(1)
+                .any(|w| w.text == "-e" || w.text == "-f" || w.text.starts_with("--expression"));
+            for (i, w) in inner.iter().enumerate().skip(1) {
+                if w.text.starts_with('-') {
+                    continue;
+                }
+                if !script_seen {
+                    script_seen = true;
+                    continue;
+                }
+                out.push(i);
+            }
+        }
+        a if FILE_CMDS.contains(&a) => {
+            let values = value_options(a);
+            let mut skip_next = false;
+            let mut first = true;
+            for (i, w) in inner.iter().enumerate().skip(1) {
+                if skip_next {
+                    skip_next = false;
+                    continue;
+                }
+                let t = w.text.as_str();
+                if t.starts_with('-') && t.len() > 1 {
+                    skip_next = values.contains(&t);
+                    continue;
+                }
+                if first && matches!(a, "chmod" | "chown") {
+                    first = false;
+                    continue;
+                }
+                first = false;
+                out.push(i);
+            }
+        }
+        _ => {
+            if let Some(i) = script_idx {
+                out.push(i);
+            }
+        }
+    }
+    out
+}
+
+/// Where a shell or interpreter reads its program from.
+#[derive(Clone, Copy, PartialEq)]
+enum Program {
+    /// Standard input (no script, `-`, `/dev/stdin`, `/dev/fd/N`).
+    Stdin,
+    /// A process substitution `<(…)`.
+    Procsub,
+    /// A script file or inline code.
+    Other,
+}
+
+fn is_stdin_path(t: &str) -> bool {
+    t == "-"
+        || t == "/dev/stdin"
+        || t.starts_with("/dev/fd/")
+        || t.starts_with("/proc/self/fd/")
+        || (t.starts_with("/proc/") && t.contains("/fd/"))
+}
+
+fn program_of_word(w: &Word) -> Program {
+    if w.procsub {
+        Program::Procsub
+    } else if is_stdin_path(&w.text) {
+        Program::Stdin
+    } else {
+        Program::Other
+    }
+}
+
+/// The program named by the first non-option argument; none means stdin.
+fn first_positional(args: &[Word]) -> Program {
+    match args.iter().find(|w| w.procsub || !w.text.starts_with('-') || w.text == "-") {
+        Some(w) => program_of_word(w),
+        None => Program::Stdin,
+    }
+}
+
+/// Option tables of the interpreters whose program can come from a stream.
+struct InterpSpec {
+    /// Short flags that mean inline code or a module (the program is not stdin).
+    code: &'static str,
+    /// Short flags that take a value (attached or the next argument).
+    valued: &'static str,
+    /// Long flags that mean inline code.
+    long_code: &'static [&'static str],
+    /// Long flags that take the next argument.
+    long_valued: &'static [&'static str],
+    /// With no program argument the interpreter reads stdin.
+    stdin_default: bool,
+}
+
+/// The program an interpreter runs and, when it is a script argument, that
+/// argument's index in `args`. `kind` is the lowercase name without a version suffix.
+fn interpreter_program(kind: &str, args: &[Word]) -> Option<(Program, Option<usize>)> {
+    let spec = match kind {
+        "python" => {
+            InterpSpec { code: "cm", valued: "WXQ", long_code: &[], long_valued: &[], stdin_default: true }
+        }
+        "perl" => InterpSpec { code: "eE", valued: "IMm", long_code: &[], long_valued: &[], stdin_default: true },
+        "ruby" => InterpSpec { code: "e", valued: "IrCE", long_code: &[], long_valued: &[], stdin_default: true },
+        "node" => InterpSpec {
+            code: "ep",
+            valued: "r",
+            long_code: &["--eval", "--print"],
+            long_valued: &["--require"],
+            stdin_default: true,
+        },
+        "php" => InterpSpec { code: "rf", valued: "dcz", long_code: &[], long_valued: &[], stdin_default: true },
+        "lua" | "luajit" => InterpSpec { code: "e", valued: "l", long_code: &[], long_valued: &[], stdin_default: true },
+        "tclsh" => InterpSpec { code: "", valued: "", long_code: &[], long_valued: &[], stdin_default: true },
+        "osascript" => InterpSpec { code: "e", valued: "l", long_code: &[], long_valued: &[], stdin_default: true },
+        "rscript" => InterpSpec { code: "e", valued: "", long_code: &[], long_valued: &[], stdin_default: false },
+        "pwsh" | "powershell" => return Some((powershell_program(args), None)),
+        "deno" | "bun" => return Some((runner_program(args), None)),
+        "awk" | "gawk" | "mawk" => return Some((awk_program(args), None)),
+        _ => return None,
+    };
+    let mut i = 0;
+    while let Some(w) = args.get(i) {
+        let t = w.text.as_str();
+        if w.procsub {
+            return Some((Program::Procsub, None));
+        }
+        if t == "-" || (!t.starts_with('-') && is_stdin_path(t)) {
+            return Some((Program::Stdin, None));
+        }
+        if !t.starts_with('-') {
+            return Some((Program::Other, Some(i)));
+        }
+        if t.starts_with("--") {
+            let name = t.split('=').next().unwrap_or(t);
+            if spec.long_code.contains(&name) {
+                return Some((Program::Other, None));
+            }
+            i += if spec.long_valued.contains(&t) { 2 } else { 1 };
+            continue;
+        }
+        let flags = &t[1..];
+        let mut consumed_next = false;
+        for (k, c) in flags.char_indices() {
+            if spec.code.contains(c) {
+                return Some((Program::Other, None));
+            }
+            if spec.valued.contains(c) {
+                consumed_next = k + c.len_utf8() == flags.len();
+                break;
+            }
+        }
+        i += if consumed_next { 2 } else { 1 };
+    }
+    Some((
+        if spec.stdin_default {
+            Program::Stdin
+        } else {
+            Program::Other
+        },
+        None,
+    ))
+}
+
+fn powershell_program(args: &[Word]) -> Program {
+    for (i, w) in args.iter().enumerate() {
+        let t = w.text.to_ascii_lowercase();
+        if matches!(t.as_str(), "-c" | "-command") && args.get(i + 1).is_some_and(|n| n.text == "-")
+        {
+            return Program::Stdin;
+        }
+        if w.procsub {
+            return Program::Procsub;
+        }
+        if t == "-" {
+            return Program::Stdin;
+        }
+        if matches!(
+            t.as_str(),
+            "-c" | "-command" | "-f" | "-file" | "-e" | "-ec" | "-encodedcommand"
+        ) {
+            return Program::Other;
+        }
+        if !t.starts_with('-') {
+            return program_of_word(w);
+        }
+    }
+    Program::Stdin
+}
+
+/// `deno run -`, `bun run -`: only the `run` subcommand reads a script argument.
+fn runner_program(args: &[Word]) -> Program {
+    if args.first().map(|w| w.text.as_str()) != Some("run") {
+        return Program::Other;
+    }
+    for w in &args[1..] {
+        if w.procsub || w.text == "-" || !w.text.starts_with('-') {
+            return program_of_word(w);
+        }
+    }
+    Program::Other
+}
+
+/// `awk -f FILE`: stdin only when FILE is a stdin path.
+fn awk_program(args: &[Word]) -> Program {
+    for (i, w) in args.iter().enumerate() {
+        if w.text == "-f" {
+            return args.get(i + 1).map_or(Program::Other, program_of_word);
+        }
+    }
+    Program::Other
 }
 
 /// True for `-c`, `-lc`, `-ec` and similar option bundles.
@@ -663,7 +1167,27 @@ impl<'a> Parser<'a> {
             sctx,
             commands: Vec::new(),
             paths: Vec::new(),
+            alt_paths: Vec::new(),
+            alt_buf: std::cell::RefCell::new(Vec::new()),
             unparsed: false,
+            pipe_to_interpreter: false,
+            contexts: Vec::new(),
+            var_path: false,
+            here_subst: false,
+            stdin_text: None,
+            heredoc_scan: None,
+            inherit_piped: false,
+            no_remember: false,
+            exports: Vec::new(),
+            auto_export: false,
+            subshell: 0,
+            loops: Vec::new(),
+            pending_for: None,
+            cwd_unknown: false,
+            line_has_function: has_function_def(src),
+            brace_depth: 0,
+            func_brace: Vec::new(),
+            func_pending: false,
             in_backtick: false,
             arith: false,
             bases,
@@ -712,7 +1236,10 @@ impl<'a> Parser<'a> {
     /// Parse a command list until `term`.
     fn parse_list(&mut self, term: Term, depth: usize) -> Res<()> {
         let saved_depth = std::mem::replace(&mut self.depth, depth);
-        let mut cmd = Cmd::default();
+        let mut cmd = Cmd {
+            piped: std::mem::take(&mut self.inherit_piped),
+            ..Cmd::default()
+        };
         let r = self.parse_list_inner(&mut cmd, term, depth);
         if r.is_err() {
             self.end_cmd(&mut cmd);
@@ -723,6 +1250,8 @@ impl<'a> Parser<'a> {
 
     fn parse_list_inner(&mut self, cmd: &mut Cmd, term: Term, depth: usize) -> Res<()> {
         let mut parens = 0usize;
+        // Directory state to restore when a `( … )` subshell ends.
+        let mut saved_dirs: Vec<(Vec<PathBuf>, bool)> = Vec::new();
         loop {
             self.check_caps()?;
             self.skip_blanks();
@@ -739,7 +1268,18 @@ impl<'a> Parser<'a> {
                     self.end_cmd(cmd);
                     self.skip_heredoc_bodies()?;
                 }
-                ';' | '|' => {
+                '|' => {
+                    // `||` is a list operator; `|` and `|&` pipe into the next command.
+                    let list_op = self.peek_at(1) == Some('|');
+                    self.pos += if list_op || self.peek_at(1) == Some('&') {
+                        2
+                    } else {
+                        1
+                    };
+                    self.end_cmd(cmd);
+                    cmd.piped = !list_op;
+                }
+                ';' => {
                     self.pos += 1;
                     self.end_cmd(cmd);
                 }
@@ -751,14 +1291,30 @@ impl<'a> Parser<'a> {
                 '(' => {
                     if cmd.words.is_empty() && self.peek_at(1) == Some('(') {
                         // `((expr))` arithmetic command.
+                        let from = self.pos + 2;
                         self.pos += 2;
                         self.substitute(Term::Arith, depth)?;
+                        // `((f=1))` and friends reassign variables.
+                        let text: String = self
+                            .chars
+                            .get(from..self.pos.saturating_sub(2).max(from))
+                            .unwrap_or(&[])
+                            .iter()
+                            .collect();
+                        for name in text
+                            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                            .filter(|n| !n.is_empty())
+                        {
+                            self.invalidate(name);
+                        }
                     } else if self.function_def_ahead(cmd) {
                         cmd.words.clear();
                     } else {
                         self.pos += 1;
                         parens += 1;
+                        self.subshell += 1;
                         self.end_cmd(cmd);
+                        saved_dirs.push((self.bases.clone(), self.cwd_unknown));
                     }
                 }
                 ')' => {
@@ -775,6 +1331,12 @@ impl<'a> Parser<'a> {
                     self.end_cmd(cmd);
                     if parens > 0 {
                         parens -= 1;
+                        self.subshell = self.subshell.saturating_sub(1);
+                        // A `cd` in a subshell never changes the outer directory state.
+                        if let Some((bases, unknown)) = saved_dirs.pop() {
+                            self.bases = bases;
+                            self.cwd_unknown = unknown;
+                        }
                     } else if term == Term::Paren {
                         return Ok(());
                     }
@@ -789,6 +1351,22 @@ impl<'a> Parser<'a> {
                         self.pos += 1;
                     }
                 }
+                '<' if !self.arith && self.peek_at(1) == Some('(') => {
+                    // Process substitution `<(…)`: its commands are parsed, and the
+                    // result is an argument of the current command.
+                    let at = self.pos;
+                    self.pos += 2;
+                    self.substitute(Term::Paren, depth)?;
+                    let mut w = Word::default();
+                    for ch in "<(…)".chars() {
+                        w.push(ch, true);
+                    }
+                    w.var = true;
+                    w.procsub = true;
+                    w.quoted = true;
+                    w.start = at;
+                    cmd.words.push(w);
+                }
                 '>' | '<' if !self.arith => self.redirect(depth)?,
                 c if !self.arith && c.is_ascii_digit() && self.fd_redirect_ahead() => {
                     self.redirect(depth)?
@@ -796,6 +1374,47 @@ impl<'a> Parser<'a> {
                 _ => {
                     let w = self.read_word(depth)?;
                     if w.started {
+                        // Loop bodies are scoped at token time, so redirections on the
+                        // same command already see the binding.
+                        let fn_header = cmd.words.len() == 2
+                            && cmd.words[0].text == "function"
+                            && !cmd.words[0].quoted;
+                        if (cmd.words.is_empty() || fn_header) && !w.quoted && w.text == "{" {
+                            self.brace_depth += 1;
+                            if self.func_pending || fn_header {
+                                self.func_brace.push(self.brace_depth);
+                                self.func_pending = false;
+                            }
+                        }
+                        if cmd.words.is_empty() && !w.quoted && w.text == "}" {
+                            if self.func_brace.last() == Some(&self.brace_depth) {
+                                self.func_brace.pop();
+                            }
+                            self.brace_depth = self.brace_depth.saturating_sub(1);
+                        }
+                        if cmd.words.is_empty() && !w.quoted && !w.var {
+                            match w.text.as_str() {
+                                "do" => {
+                                    let mut b = self.pending_for.take();
+                                    if let Some(nb) = b.as_mut() {
+                                        nb.fn_level = self.func_brace.len();
+                                        // bash keeps the inner value after the inner loop:
+                                        // the outer binding is not restored.
+                                        let name = nb.name.clone();
+                                        for old in self.loops.iter_mut().flatten() {
+                                            if old.name == name {
+                                                old.valid = false;
+                                            }
+                                        }
+                                    }
+                                    self.loops.push(b);
+                                }
+                                "done" => {
+                                    self.loops.pop();
+                                }
+                                _ => {}
+                            }
+                        }
                         cmd.words.push(w);
                     }
                 }
@@ -805,7 +1424,13 @@ impl<'a> Parser<'a> {
 
     /// At `(`: is this `NAME()` or `function NAME()`? If so, consume `()`.
     fn function_def_ahead(&mut self, cmd: &Cmd) -> bool {
-        let named = match cmd.words.as_slice() {
+        // Leading reserved words (`do`, `then`, `{`, …) belong to the enclosing construct.
+        let lead = cmd
+            .words
+            .iter()
+            .take_while(|w| !w.quoted && !w.var && RESERVED.contains(&w.text.as_str()))
+            .count();
+        let named = match &cmd.words[lead..] {
             [w] => !w.quoted && !w.var,
             [f, n] => f.text == "function" && !f.quoted && !n.var,
             _ => false,
@@ -819,6 +1444,7 @@ impl<'a> Parser<'a> {
         }
         if self.chars.get(i) == Some(&')') {
             self.pos = i + 1;
+            self.func_pending = true;
             true
         } else {
             false
@@ -884,19 +1510,40 @@ impl<'a> Parser<'a> {
             && (w.text == "-"
                 || (!w.text.is_empty() && w.text.bytes().all(|b| b.is_ascii_digit())));
         if w.started && !is_fd {
+            if w.var && !w.procsub {
+                match self.substitute_word(&w) {
+                    Subst::Words(ws) => {
+                        for nw in ws {
+                            for (p, prefix) in self.word_paths(&nw) {
+                                self.push_path(start, if prefix { PathOp::Read } else { op }, p);
+                            }
+                            self.flush_alts(start, &[op]);
+                        }
+                        return Ok(());
+                    }
+                    _ => self.var_path = true,
+                }
+            } else if self.cwd_unknown && Self::is_relative_word(&w) {
+                self.var_path = true;
+            }
             for (p, prefix) in self.word_paths(&w) {
                 self.push_path(start, if prefix { PathOp::Read } else { op }, p);
             }
+            self.flush_alts(start, &[op]);
         }
         Ok(())
     }
 
     fn heredoc_or_herestring(&mut self, depth: usize) -> Res<()> {
         if self.peek() == Some('<') {
-            // here-string: the word is data, not a path.
+            // here-string: the word is data, and a program when fed to a shell.
             self.pos += 1;
             self.skip_blanks();
-            self.read_word(depth)?;
+            let w = self.read_word(depth)?;
+            self.stdin_text = Some(StdinText {
+                text: w.text.clone(),
+                denied: w.var,
+            });
             return Ok(());
         }
         let strip = self.peek() == Some('-');
@@ -908,8 +1555,99 @@ impl<'a> Parser<'a> {
         if !w.started || w.text.is_empty() {
             return Err(Fail);
         }
-        self.heredocs.push((w.text.chars().collect(), strip));
+        let delim: Vec<char> = w.text.chars().collect();
+        let (body, next) = self.heredoc_body(&delim, strip)?;
+        self.heredoc_scan = Some(next);
+        // `$name`, `${…}`, `$(…)` and backticks: the outer shell splices the value into
+        // the script text before the inner shell parses it.
+        let substituting = body.contains('`')
+            || body.char_indices().any(|(i, c)| {
+                c == '$'
+                    && body[i + 1..].chars().next().is_some_and(|n| {
+                        n.is_ascii_alphanumeric() || matches!(n, '_' | '{' | '(' | '@' | '*' | '#' | '?' | '!' | '$' | '-')
+                    })
+            });
+        self.stdin_text = Some(StdinText {
+            text: body,
+            denied: !w.quoted && substituting,
+        });
+        self.heredocs.push((delim, strip));
         Ok(())
+    }
+
+    /// The values a `for` list binds: literal words (with `~`/`$HOME` resolved) and the
+    /// matches of literal globs.
+    fn for_values(&self, list: &[Word]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for w in list {
+            if w.glob {
+                let found: Vec<(PathBuf, bool)> = self.word_paths(w);
+                let alts = std::mem::take(&mut *self.alt_buf.borrow_mut());
+                for (p, prefix) in found {
+                    if !prefix {
+                        out.push(p.to_string_lossy().into_owned());
+                    }
+                }
+                for p in alts {
+                    out.push(p.to_string_lossy().into_owned());
+                }
+                continue;
+            }
+            let home = self.sctx.home.as_ref().map(|h| h.to_string_lossy().into_owned());
+            let text = if w.home_chars > 0 {
+                match &home {
+                    Some(h) => format!("{h}{}", &w.text[w.home_chars..]),
+                    None => w.text.clone(),
+                }
+            } else if w.tilde && (w.text == "~" || w.text.starts_with("~/")) {
+                match &home {
+                    Some(h) => format!("{h}{}", &w.text[1..]),
+                    None => w.text.clone(),
+                }
+            } else {
+                w.text.clone()
+            };
+            out.push(text);
+        }
+        out.dedup();
+        out
+    }
+
+    /// Look ahead for the body of a heredoc whose delimiter was just read: the text
+    /// from the next line (or after the previous heredoc on this line) up to the
+    /// delimiter line, and the offset after that line.
+    fn heredoc_body(&self, delim: &[char], strip: bool) -> Res<(String, usize)> {
+        let mut p = match self.heredoc_scan {
+            Some(p) => p,
+            None => {
+                let mut i = self.pos;
+                while self.chars.get(i).is_some_and(|c| *c != '\n') {
+                    i += 1;
+                }
+                i + 1
+            }
+        };
+        let start = p;
+        loop {
+            if p >= self.chars.len() {
+                return Err(Fail);
+            }
+            let mut eol = p;
+            while self.chars.get(eol).is_some_and(|c| *c != '\n') {
+                eol += 1;
+            }
+            let mut line = &self.chars[p..eol];
+            if strip {
+                while let ['\t', rest @ ..] = line {
+                    line = rest;
+                }
+            }
+            if line == delim {
+                let body: String = self.chars[start..p].iter().collect();
+                return Ok((body, (eol + 1).min(self.chars.len())));
+            }
+            p = eol + 1;
+        }
     }
 
     /// Skip the bodies of pending heredocs, starting at the current position
@@ -938,6 +1676,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        self.heredoc_scan = None;
         Ok(())
     }
 
@@ -1023,7 +1762,11 @@ impl<'a> Parser<'a> {
         let saved_arith = self.arith;
         self.in_backtick = term == Term::Backtick;
         self.arith = term == Term::Arith;
+        // A `cd` inside `$( … )`, backticks or `<( … )` runs in a subshell.
+        let saved_dirs = (self.bases.clone(), self.cwd_unknown);
         let r = self.parse_list(term, depth + 1);
+        self.bases = saved_dirs.0;
+        self.cwd_unknown = saved_dirs.1;
         self.in_backtick = saved_bt;
         self.arith = saved_arith;
         r
@@ -1235,6 +1978,228 @@ impl<'a> Parser<'a> {
         out
     }
 
+    /// Like [`Self::candidates`] but folded lexically (symlinks not resolved).
+    fn lexical_candidates(&self, raw: &str) -> Vec<PathBuf> {
+        let absolute = raw.starts_with('/') || raw == "~" || raw.starts_with("~/");
+        let bases: &[PathBuf] = if absolute {
+            &self.bases[..1.min(self.bases.len())]
+        } else {
+            &self.bases
+        };
+        let mut out: Vec<PathBuf> = Vec::new();
+        for b in bases {
+            let p = lexical_in(b, raw, self.sctx);
+            if !out.contains(&p) {
+                out.push(p);
+            }
+        }
+        out
+    }
+
+    /// Record the as-written forms collected by [`Self::word_paths`] as alternatives
+    /// of a path at `pos`.
+    fn flush_alts(&mut self, pos: usize, ops: &[PathOp]) {
+        let alts = std::mem::take(&mut *self.alt_buf.borrow_mut());
+        for p in alts {
+            for op in ops {
+                if self.alt_paths.len() < MAX_PATHS {
+                    self.alt_paths.push((pos, *op, p.clone()));
+                }
+            }
+        }
+    }
+
+    /// Does `w` hold an expansion whose value is unknown? `$HOME` and `~` are resolved,
+    /// and so are plain references to bound `for` variables (they are substituted).
+    fn is_varish(&self, w: &Word) -> bool {
+        w.var && !w.procsub && !matches!(self.substitute_word(w), Subst::Words(_))
+    }
+
+    /// A relative path word (after a `cd` to an unknown directory it is unknown).
+    fn is_relative_word(w: &Word) -> bool {
+        !w.text.is_empty()
+            && !w.text.starts_with('/')
+            && !w.text.starts_with('~')
+            && w.home_chars == 0
+            && !w.procsub
+    }
+
+    /// Variable-derived path check for a path position.
+    fn flag_unknown_path(&mut self, w: &Word) {
+        if self.is_varish(w) || (self.cwd_unknown && Self::is_relative_word(w)) {
+            self.var_path = true;
+        }
+    }
+
+    fn lookup(&self, name: &str) -> Option<&BoundVar> {
+        let found = self.loops.iter().rev().flatten().find(|b| b.name == name)?;
+        (found.valid && found.fn_level == self.func_brace.len() && !self.line_has_function)
+            .then_some(found)
+    }
+
+    /// Stop trusting every binding (`eval`, `source`, namerefs).
+    fn invalidate_all(&mut self) {
+        for b in self.loops.iter_mut().flatten().chain(self.pending_for.iter_mut()) {
+            b.valid = false;
+        }
+    }
+
+    /// Stop trusting the binding of `name` (it was reassigned).
+    fn invalidate(&mut self, name: &str) {
+        for b in self.loops.iter_mut().flatten().chain(self.pending_for.iter_mut()) {
+            if b.name == name {
+                b.valid = false;
+            }
+        }
+    }
+
+    /// Expand plain `$name` / `${name}` references to bound `for` variables by
+    /// substituting each combination of their values.
+    fn substitute_word(&self, w: &Word) -> Subst {
+        if !w.var || w.procsub || self.loops.is_empty() {
+            return Subst::NotBound;
+        }
+        let chars: Vec<char> = w.text.chars().collect();
+        let mut refs: Vec<(usize, usize, String)> = Vec::new();
+        let mut i = w.home_chars; // a leading $HOME is resolved elsewhere
+        while i < chars.len() {
+            if chars[i] != '$' {
+                i += 1;
+                continue;
+            }
+            let braced = chars.get(i + 1) == Some(&'{');
+            let mut j = i + 1 + usize::from(braced);
+            let name_start = j;
+            while chars
+                .get(j)
+                .is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_')
+            {
+                j += 1;
+            }
+            let name: String = chars[name_start..j].iter().collect();
+            if name.is_empty() || self.lookup(&name).is_none() {
+                return Subst::NotBound;
+            }
+            if braced {
+                if chars.get(j) != Some(&'}') {
+                    return Subst::NotBound;
+                }
+                j += 1;
+            }
+            refs.push((i, j, name));
+            i = j;
+        }
+        if refs.is_empty() {
+            return Subst::NotBound;
+        }
+        let mut names: Vec<&str> = refs.iter().map(|r| r.2.as_str()).collect();
+        names.sort_unstable();
+        names.dedup();
+        let mut combos = 1usize;
+        for n in &names {
+            let len = self.lookup(n).map_or(0, |b| b.values.len());
+            combos = combos.saturating_mul(len);
+        }
+        if combos > MAX_COMBINATIONS {
+            return Subst::TooMany;
+        }
+        let mut out = Vec::with_capacity(combos);
+        for idx in 0..combos {
+            // Mixed-radix choice of one value per distinct name.
+            let mut rem = idx;
+            let mut choice: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+            for n in &names {
+                let vals = self.lookup(n).map(|b| &b.values[..]).unwrap_or(&[]);
+                choice.insert(n, vals[rem % vals.len()].as_str());
+                rem /= vals.len();
+            }
+            let mut nw = Word {
+                started: true,
+                glob: w.glob,
+                start: w.start,
+                quoted: w.quoted,
+                home_chars: w.home_chars,
+                tilde: w.tilde && refs.first().is_none_or(|r| r.0 > 0),
+                ..Word::default()
+            };
+            let mut at = 0usize;
+            for (rs, re, name) in &refs {
+                for (k, c) in chars.iter().enumerate().take(*rs).skip(at) {
+                    nw.text.push(*c);
+                    nw.lit.push(w.lit.get(k).copied().unwrap_or(true));
+                }
+                for c in choice.get(name.as_str()).copied().unwrap_or("").chars() {
+                    nw.text.push(c);
+                    nw.lit.push(true);
+                }
+                at = *re;
+            }
+            for (k, c) in chars.iter().enumerate().skip(at) {
+                nw.text.push(*c);
+                nw.lit.push(w.lit.get(k).copied().unwrap_or(true));
+            }
+            out.push(nw);
+        }
+        Subst::Words(out)
+    }
+
+    /// Emit the read (and, for writers, write) subjects of an already expanded word.
+    fn emit_word_paths(&mut self, w: &Word, writer: bool) {
+        for (p, prefix) in self.word_paths(w) {
+            self.push_path(w.start, PathOp::Read, p.clone());
+            if writer && !prefix {
+                self.push_path(w.start, PathOp::Write, p);
+            }
+        }
+        if writer {
+            self.flush_alts(w.start, &[PathOp::Read, PathOp::Write]);
+        } else {
+            self.flush_alts(w.start, &[PathOp::Read]);
+        }
+    }
+
+    /// A shell, `source` or similar reads its program from stdin.
+    fn stdin_program(&mut self, text: Option<StdinText>, piped: bool, pos: usize, merge: bool) {
+        match text {
+            Some(t) if !piped && !t.denied => {
+                // The heredoc or here-string is the script: gate it like a `-c` string.
+                self.parse_nested(&t.text, pos, false, merge);
+            }
+            Some(_) => {
+                self.unparsed = true;
+                self.pipe_to_interpreter = true;
+            }
+            None => {
+                self.unparsed = true;
+                self.pipe_to_interpreter |= piped;
+            }
+        }
+    }
+
+    fn handle_program(
+        &mut self,
+        prog: Program,
+        text: Option<StdinText>,
+        piped: bool,
+        pos: usize,
+        merge: bool,
+    ) {
+        match prog {
+            Program::Procsub => self.pipe_to_interpreter = true,
+            Program::Stdin => self.stdin_program(text, piped, pos, merge),
+            Program::Other => {}
+        }
+    }
+
+    /// Record the effect of a program source on `pipe_to_interpreter`.
+    fn note_program(&mut self, prog: Program, fed: bool) {
+        match prog {
+            Program::Procsub => self.pipe_to_interpreter = true,
+            Program::Stdin if fed => self.pipe_to_interpreter = true,
+            _ => {}
+        }
+    }
+
     /// Paths a word names, as `(path, is_directory_prefix)`.
     fn word_paths(&self, w: &Word) -> Vec<(PathBuf, bool)> {
         let mut out = Vec::new();
@@ -1286,6 +2251,12 @@ impl<'a> Parser<'a> {
             let s: String = chars.iter().map(|(c, _)| *c).collect();
             for p in self.candidates(&s) {
                 out.push((p, false));
+            }
+            // The path as written, in case a component is a symlink.
+            for p in self.lexical_candidates(&s) {
+                if !out.iter().any(|(q, _)| *q == p) {
+                    self.alt_buf.borrow_mut().push(p);
+                }
             }
             return;
         }
@@ -1384,7 +2355,12 @@ impl<'a> Parser<'a> {
             }
         }
         for p in cur {
-            out.push((resolve_path(&p), false));
+            let resolved = resolve_path(&p);
+            let written = fold_lexical(&p);
+            if written != resolved {
+                self.alt_buf.borrow_mut().push(written);
+            }
+            out.push((resolved, false));
         }
     }
 
@@ -1410,26 +2386,40 @@ impl<'a> Parser<'a> {
 
     /// Parse `src` (a command string) recursively; its commands and paths are
     /// merged into this parse.
-    fn parse_nested(&mut self, src: &str, pos: usize) {
+    fn parse_nested(&mut self, src: &str, pos: usize, piped: bool, merge_cwd: bool) {
         let depth = self.depth + 1;
+        self.no_remember = true;
         if depth > MAX_DEPTH || src.len() > MAX_INPUT_BYTES {
             self.unparsed = true;
             return;
         }
         let mut child = Parser::new(src, self.sctx, self.bases.clone());
+        child.inherit_piped = piped;
         if child.parse_list(Term::Eof, depth).is_err() {
             child.unparsed = true;
         }
         self.unparsed |= child.unparsed | child.glob_overflow.get();
-        for argv in child.commands {
+        self.pipe_to_interpreter |= child.pipe_to_interpreter;
+        self.var_path |= child.var_path;
+        self.no_remember |= child.no_remember;
+        if merge_cwd {
+            // `eval` and `source` run in this shell: their `cd`s are ours.
+            self.bases = child.bases;
+            self.cwd_unknown |= child.cwd_unknown;
+        }
+        for (argv, ctx) in child.commands.into_iter().zip(child.contexts) {
             if self.commands.len() >= MAX_COMMANDS {
                 self.unparsed = true;
                 break;
             }
             self.commands.push(argv);
+            self.contexts.push(ctx);
         }
         for (_, op, p) in child.paths {
             self.push_path(pos, op, p);
+        }
+        for (_, op, p) in child.alt_paths {
+            self.alt_paths.push((pos, op, p));
         }
     }
 
@@ -1440,6 +2430,16 @@ impl<'a> Parser<'a> {
             return;
         }
         let mut words = std::mem::take(&mut cmd.words);
+        // A pipe applies to the next command that has words (it survives `a |\n b`).
+        let (mut piped, stdin_text) = if words.is_empty() {
+            (false, None)
+        } else {
+            (
+                std::mem::take(&mut cmd.piped),
+                self.stdin_text.take(),
+            )
+        };
+        self.here_subst = false;
         // Settings that change how later words expand cannot be modelled.
         if words.iter().any(|w| {
             w.text
@@ -1473,8 +2473,31 @@ impl<'a> Parser<'a> {
                 _ => break,
             }
         }
+        // Leading `f=…` / `f+=…` reassign `f`.
+        for w in &words[..(skip + 1).min(words.len())] {
+            if let Some((name, _)) = w.text.split_once('=') {
+                let name = name.strip_suffix('+').unwrap_or(name);
+                // `name[0]=…` assigns an element of `name`.
+                let name = name.split('[').next().unwrap_or(name);
+                if name.chars().next().is_some_and(is_name_start)
+                    && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                {
+                    self.invalidate(name);
+                }
+            }
+        }
+        let assigns: Vec<String> = words[..skip.min(words.len())]
+            .iter()
+            .filter(|w| is_assignment(&w.text))
+            .map(|w| w.text.clone())
+            .collect();
         words.drain(..skip.min(words.len()));
         if words.is_empty() {
+            // Assignment-only command: inside a subshell, or after `set -a`, it
+            // changes the environment of what follows.
+            if !assigns.is_empty() && (self.auto_export || self.subshell > 0) {
+                self.exports.extend(assigns);
+            }
             return;
         }
         if self.commands.len() >= MAX_COMMANDS {
@@ -1497,12 +2520,38 @@ impl<'a> Parser<'a> {
                 self.unparsed = true;
                 return;
             }
+            // What a remembered approval must also match: leading assignments, the
+            // wrapper words in front of this command, and the directory.
+            let mut parts: Vec<String> = Vec::new();
+            if !assigns.is_empty() {
+                parts.push(format!("a:{}", assigns.join(" ")));
+            }
+            if start > 0 {
+                let wrappers: Vec<&str> = words[..start].iter().map(|w| w.text.as_str()).collect();
+                parts.push(format!("w:{}", wrappers.join(" ")));
+            }
+            if !self.exports.is_empty() {
+                parts.push(format!("e:{}", self.exports.join(" ")));
+            }
+            if self.bases.len() > 1 || self.bases.first() != Some(&self.sctx.workdir) {
+                let dirs: Vec<String> = self
+                    .bases
+                    .iter()
+                    .map(|b| b.to_string_lossy().into_owned())
+                    .collect();
+                parts.push(format!("d:{}", dirs.join(":")));
+            }
             self.commands.push(argv);
+            self.contexts.push(parts.join("\u{1}"));
+            if name == "xargs" {
+                // xargs gives its child no pipe on stdin.
+                piped = false;
+            }
             let skip = wrapper_skip(&words[start..], &name);
             if let (Some(n), "env") = (skip, name.as_str())
                 && let Some(src) = env_split_string(&words[start..(start + n).min(words.len())])
             {
-                self.parse_nested(&src, words[start].start);
+                self.parse_nested(&src, words[start].start, piped, false);
             }
             match skip {
                 Some(n) if start + n < words.len() => start += n,
@@ -1539,8 +2588,19 @@ impl<'a> Parser<'a> {
         }
 
         // Command strings.
+        let fed = piped || stdin_text.as_ref().is_some_and(|t| t.denied);
+        let base_name = argv0
+            .trim_end_matches(|c: char| c.is_ascii_digit() || c == '.')
+            .to_ascii_lowercase();
+        let kind = base_name.as_str();
         let mut string_idx: Option<usize> = None;
-        if matches!(argv0.as_str(), "sh" | "bash" | "zsh" | "dash" | "ksh") {
+        let mut script_idx: Option<usize> = None;
+        let pos0 = inner[0].start;
+        if matches!(
+            kind,
+            "sh" | "bash" | "zsh" | "dash" | "ksh" | "ash" | "mksh" | "yash" | "tcsh" | "csh"
+                | "elvish" | "nu" | "xonsh"
+        ) {
             let mut i = 1;
             let mut script_arg = false;
             let mut stdin_flag = false;
@@ -1557,6 +2617,10 @@ impl<'a> Parser<'a> {
                     script_arg = true;
                     break;
                 }
+                if matches!(t, "--rcfile" | "--init-file") {
+                    i += 2;
+                    continue;
+                }
                 let short_bundle = (t.starts_with('-') || t.starts_with('+'))
                     && !t.starts_with("--")
                     && t.len() > 1
@@ -1571,18 +2635,38 @@ impl<'a> Parser<'a> {
                     i += 1;
                 } else {
                     script_arg = true;
+                    script_idx = Some(i);
                     break;
                 }
             }
-            if string_idx.is_none() && (stdin_flag || !script_arg) {
-                // Commands come from stdin: nothing to inspect.
-                self.unparsed = true;
+            let script_prog = script_idx.map(|i| program_of_word(&inner[i]));
+            if string_idx.is_none() {
+                if stdin_flag || !script_arg || script_prog == Some(Program::Stdin) {
+                    self.stdin_program(stdin_text, piped, pos0, false);
+                } else if script_prog == Some(Program::Procsub) {
+                    self.pipe_to_interpreter = true;
+                }
             }
             if let Some(i) = string_idx {
                 let src = inner[i].text.clone();
-                self.parse_nested(&src, inner[i].start);
+                self.parse_nested(&src, inner[i].start, fed, false);
             }
-        } else if argv0 == "su" {
+        } else if kind == "fish" {
+            let code = inner[1..]
+                .iter()
+                .any(|w| is_c_bundle(&w.text) || w.text.starts_with("--command"));
+            if !code {
+                let prog = first_positional(&inner[1..]);
+                self.handle_program(prog, stdin_text, piped, pos0, false);
+            }
+        } else if argv0 == "source" || argv0 == "." {
+            self.no_remember = true;
+            let prog = first_positional(&inner[1..]);
+            self.handle_program(prog, stdin_text, piped, pos0, true);
+        } else if let Some((prog, idx)) = interpreter_program(kind, &inner[1..]) {
+            script_idx = idx.map(|i| i + 1);
+            self.note_program(prog, fed);
+        } else if matches!(kind, "script" | "su" | "sg") {
             let found = inner.iter().enumerate().find_map(|(i, w)| {
                 let t = w.text.as_str();
                 if is_c_bundle(t) || t == "--command" {
@@ -1593,7 +2677,7 @@ impl<'a> Parser<'a> {
             });
             if let Some((i, src)) = found {
                 string_idx = Some(i);
-                self.parse_nested(&src, inner[i].start);
+                self.parse_nested(&src, inner[i].start, piped, false);
             }
         } else if argv0 == "eval" && inner.len() > 1 {
             let src = inner[1..]
@@ -1601,11 +2685,88 @@ impl<'a> Parser<'a> {
                 .map(|w| w.text.as_str())
                 .collect::<Vec<_>>()
                 .join(" ");
-            self.parse_nested(&src, inner[1].start);
+            // An expansion in the eval string means the directory it names is unknown.
+            if inner[1..].iter().any(|w| w.var) {
+                self.cwd_unknown = true;
+            }
+            self.parse_nested(&src, inner[1].start, piped, true);
+        } else if matches!(kind, "parallel" | "expect") {
+            // They run commands built from their input: nothing to inspect.
+            self.unparsed = true;
+        }
+
+        // Environment changes that later commands inherit.
+        match argv0.as_str() {
+            "export" => self.exports.extend(
+                inner[1..]
+                    .iter()
+                    .filter(|w| is_assignment(&w.text))
+                    .map(|w| w.text.clone()),
+            ),
+            "declare" | "typeset"
+                if inner[1..].iter().any(|w| {
+                    w.text.starts_with('-') && !w.text.starts_with("--") && w.text.contains('x')
+                }) =>
+            {
+                self.exports.extend(
+                    inner[1..]
+                        .iter()
+                        .filter(|w| is_assignment(&w.text))
+                        .map(|w| w.text.clone()),
+                );
+            }
+            "set" if inner[1..].iter().any(|w| w.text == "-a") => self.auto_export = true,
+            // `for NAME in WORDS`: NAME is bound to literal words or glob matches.
+            "for" if inner.len() >= 4
+                && inner[2].text == "in"
+                && inner[3..].iter().all(|w| !w.var) =>
+            {
+                let values = self.for_values(&inner[3..]);
+                self.pending_for = Some(BoundVar {
+                    name: inner[1].text.clone(),
+                    values,
+                    valid: true,
+                    fn_level: self.func_brace.len(),
+                });
+            }
+            _ => {}
         }
 
         let sed_in_place = argv0 == "sed" && inner[1..].iter().any(|w| is_sed_in_place(&w.text));
         let writer = WRITERS.contains(&argv0.as_str()) || sed_in_place;
+        // Commands that assign to the variables they name.
+        if matches!(
+            argv0.as_str(),
+            "read" | "mapfile" | "readarray" | "declare" | "local" | "typeset" | "export"
+                | "readonly" | "unset" | "getopts" | "printf" | "let"
+        ) {
+            // A nameref can write any variable.
+            if matches!(argv0.as_str(), "declare" | "local" | "typeset")
+                && inner[1..].iter().any(|w| {
+                    w.text.starts_with('-')
+                        && !w.text.starts_with("--")
+                        && w.text[1..].contains('n')
+                })
+            {
+                self.invalidate_all();
+            }
+            let names: Vec<String> = inner[1..]
+                .iter()
+                .filter(|w| !w.text.starts_with('-'))
+                .map(|w| w.text.split('=').next().unwrap_or("").to_owned())
+                .collect();
+            for n in names {
+                self.invalidate(&n);
+            }
+        }
+        if matches!(argv0.as_str(), "eval" | "source" | ".") {
+            self.invalidate_all();
+        }
+        let file_args = file_arg_indices(&argv0, inner, sed_in_place, script_idx);
+        // The `for` header only binds; its words are not path subjects.
+        if argv0 == "for" {
+            return;
+        }
 
         for (i, w) in inner.iter().enumerate().skip(1) {
             if self.paths.len() >= MAX_PATHS {
@@ -1616,30 +2777,62 @@ impl<'a> Parser<'a> {
                 continue;
             }
             if argv0 == "dd" {
-                let (op, rest) = if let Some(r) = w.text.strip_prefix("of=") {
-                    (PathOp::Write, r)
-                } else if let Some(r) = w.text.strip_prefix("if=") {
-                    (PathOp::Read, r)
+                // `if=`/`of=` operands; a bound `for` variable is substituted.
+                let variants: Vec<Word> = if w.var {
+                    match self.substitute_word(w) {
+                        Subst::Words(ws) => ws,
+                        _ => {
+                            if file_args.contains(&i) {
+                                self.var_path = true;
+                            }
+                            continue;
+                        }
+                    }
                 } else {
-                    continue;
+                    vec![w.clone()]
                 };
-                if w.var || w.glob || rest.is_empty() {
-                    continue;
-                }
-                for p in self.candidates(rest) {
-                    self.push_path(w.start, op, p);
+                for v in variants {
+                    let (op, rest) = if let Some(r) = v.text.strip_prefix("of=") {
+                        (PathOp::Write, r)
+                    } else if let Some(r) = v.text.strip_prefix("if=") {
+                        (PathOp::Read, r)
+                    } else {
+                        continue;
+                    };
+                    if v.glob || rest.is_empty() {
+                        continue;
+                    }
+                    if self.cwd_unknown && !rest.starts_with('/') && !rest.starts_with('~') {
+                        self.var_path = true;
+                    }
+                    let canonical = self.candidates(rest);
+                    for p in self.lexical_candidates(rest) {
+                        if !canonical.contains(&p) {
+                            self.alt_paths.push((v.start, op, p));
+                        }
+                    }
+                    for p in canonical {
+                        self.push_path(v.start, op, p);
+                    }
                 }
                 continue;
+            }
+            if file_args.contains(&i) {
+                match self.substitute_word(w) {
+                    Subst::Words(ws) => {
+                        // A bound `for` variable: each value is a path, with the real op.
+                        for nw in ws {
+                            self.emit_word_paths(&nw, writer);
+                        }
+                        continue;
+                    }
+                    _ => self.flag_unknown_path(w),
+                }
             }
             if w.text.starts_with('-') {
                 continue;
             }
-            for (p, prefix) in self.word_paths(w) {
-                self.push_path(w.start, PathOp::Read, p.clone());
-                if writer && !prefix {
-                    self.push_path(w.start, PathOp::Write, p);
-                }
-            }
+            self.emit_word_paths(w, writer);
         }
 
         // `cd` tracking: later relative paths also resolve against the new directory.
@@ -1649,7 +2842,18 @@ impl<'a> Parser<'a> {
                 .find(|w| !w.text.starts_with('-') || w.text == "-");
             let news: Vec<PathBuf> = match target {
                 None => self.sctx.home.iter().cloned().collect(),
-                Some(w) if w.var || w.glob || w.text == "-" || w.text.is_empty() => Vec::new(),
+                Some(w) if w.text == "-" || w.glob => {
+                    self.cwd_unknown = true;
+                    Vec::new()
+                }
+                Some(w) if w.text.is_empty() => Vec::new(),
+                Some(w) if w.var => match self.substitute_word(w) {
+                    Subst::Words(ws) => ws.iter().flat_map(|nw| self.candidates(&nw.text)).collect(),
+                    _ => {
+                        self.cwd_unknown = true;
+                        Vec::new()
+                    }
+                },
                 Some(w) => {
                     let raw = if w.home_chars > 0 {
                         format!("~{}", &w.text[w.home_chars..])

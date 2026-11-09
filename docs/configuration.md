@@ -227,18 +227,18 @@ op = "read"
 decision = "ask"
 ```
 
-**Precedence.** Built-in rules come first (none ship yet; a default set is planned), then
-the user file, then the project file. User rules replace the built-in verdict. Project
-rules can only tighten: a project file cannot allow what the user file asks about or
-denies. A broken permission file stops the run (exit code 2 for the CLI, HTTP 400 for
-honed).
+**Precedence.** Built-in rules come first (they ship, but are opt-in; see
+[Built-in rules](#built-in-rules)), then the user file, then the project file. User rules
+replace the built-in verdict. Project rules can only tighten: a project file cannot allow
+what the user file asks about or denies. A broken permission file stops the run (exit
+code 2 for the CLI, HTTP 400 for honed).
 
 ```mermaid
 %%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
 flowchart LR
   S["Subject"] --> U{"First matching<br/>user rule?"}
   U -->|yes| BASE["base = user verdict"]
-  U -->|no| BI{"Built-in rule?<br/>(none yet)"}
+  U -->|no| BI{"Built-in rule?<br/>(only with HONE_POLICY_BUILTINS=1)"}
   BI -->|no| ALLOW["base = allow"]
   BI -->|yes| BASE2["base = built-in verdict"]
   BASE --> P{"Project rule<br/>stricter than base?"}
@@ -255,16 +255,21 @@ flowchart LR
   ([known bug](permissions-and-sandbox.md#known-issue-tui), fix planned). Approving "always" on a rule with a
   wildcard (any `*`, `?`, `[` or `{`, e.g. `*.example`, `{workdir}/**`, `git push*`)
   approves only that host, path or command, so approving one doesn't approve the others.
-  Approving "always" on a rule without a wildcard remembers the whole rule for the
-  session. A command rule without a wildcard matches the command **with any arguments**,
-  so approving `git push` also covers `git push --force …`. Write a narrower rule if
-  that matters.
+  Approving "always" on a host rule without a wildcard, or on a single-pattern path rule
+  without a wildcard and with an explicit `op = "read"` or `"write"`, remembers the whole
+  rule for the session; every other path rule is remembered per path and op. Approving "always" on a **command** rule, even one without a wildcard,
+  covers one command line: approving `git push origin main` does not cover
+  `git push --force origin main`. (A command rule without a wildcard matches the command
+  with any arguments, which is why it is remembered per command line, not per rule.)
 - Headless runs (one-shot, `--json`, honed without a step channel) cannot prompt, so an
   `ask` is refused with `requires approval (rule <id>)`. A `deny` is always refused.
 
 **`--approve <RULE_ID>`** pre-approves the `ask` decisions of a rule for one run. It is
-repeatable and takes rule ids from your permission files (explicit or automatic), or
-`builtin:unparsed-command` and `builtin:invalid-host`. An unknown id, or `--approve`
+repeatable and takes rule ids from your permission files (explicit or automatic), the
+built-in ids when `HONE_POLICY_BUILTINS=1`, or `builtin:unparsed-command` and
+`builtin:invalid-host`. `--approve` covers every command line of the rule, unlike
+"always". With built-ins on it is valid with no permission files, e.g.
+`--approve builtin:git-push`. An unknown id, or `--approve`
 with no permission files, exits with code 2. It never turns a `deny` into an allow.
 
 ```bash
@@ -290,6 +295,215 @@ Gemini CLI adapter) execute tools themselves, so the policy cannot check them. U
 non-empty policy Hone refuses to use such a provider (exit code 2 / HTTP 400) unless
 `HONE_ALLOW_UNGATED_PROVIDER=1` is set, in which case it prints a warning and continues.
 With no policy or an empty one there is no refusal.
+
+### Built-in rules
+
+Set `HONE_POLICY_BUILTINS=1` (exactly `1`) to load a built-in rule set as the first
+layer. It is **opt-in** until the benchmark gate passes, the same way as
+`HONE_SANDBOX_ENFORCE`. Without it, and without permission files, behaviour doesn't
+change. Every entry point reads the variable once at startup: the CLI, honed
+(including orchestration and the distributed worker) and `hone-mcp-server`.
+
+With built-ins on the policy is never empty, so providers that run their own tools are
+refused unless `HONE_ALLOW_UNGATED_PROVIDER=1`. Rules are checked in this order, and
+within the layer the first match wins:
+
+| Id | Covers | Decision |
+|----|--------|----------|
+| `builtin:env-template` | `.env.example`, `.env.sample`, `.env.template` under the working directory | allow |
+| `builtin:env-file` | `.env`, `.env.*`, `*.env` and `.envrc` (any directory) | ask |
+| `builtin:ssh` | the `.ssh` directory in your home | ask |
+| `builtin:cloud-credentials` | `~/.aws`, `~/.config/gcloud`, `~/.azure`, `~/.kube`, `~/.docker/config.json`, `~/.vault-token`, the Terraform credentials file | ask |
+| `builtin:git-credentials` | `~/.git-credentials`, `~/.config/git/credentials`, `~/.netrc`, `~/.config/gh/hosts.yml` | ask |
+| `builtin:package-credentials` | `.npmrc` and `.pypirc` (any directory), `~/.cargo/credentials*`, `~/.gem/credentials` | ask |
+| `builtin:gnupg` | `~/.gnupg/**` | ask |
+| `builtin:shell-history` | `~/.bash_history`, `~/.zsh_history`, the fish, python, psql and mysql history files | ask |
+| `builtin:hone-config` | writes to `~/.config/hone/**` and to any `.hone` directory (permissions, hooks, MCP servers, skills, agents) | ask |
+| `builtin:shell-startup` | writes to `~/.bashrc`, `~/.zshrc`, `~/.profile` and the other shell startup and logout files, `~/.config/fish/**` | ask |
+| `builtin:git-hooks` | writes to any `.git` directory or anything under it (hooks, config, `commondir`, modules, nested repos) | ask |
+| `builtin:git-config` | writes to `~/.gitconfig` and `~/.config/git/**` | ask |
+| `builtin:autostart` | writes to `~/.config/systemd`, `~/.config/autostart`, `~/Library/LaunchAgents` | ask |
+| `builtin:user-bin` | writes to `~/.local/bin`, `~/bin` and `~/.cargo/bin` | ask |
+| `builtin:toolchain-config` | writes to `~/.cargo/config.toml` and `~/.cargo/config` | ask |
+| `builtin:workdir-write` | writes under the working directory | allow |
+| `builtin:temp-write` | writes to `/tmp`, `/var/tmp` (also under `/private`), the per-user `T/` directory under `/var/folders` and `/private/var/folders` (both spellings of `$TMPDIR`), `/dev/null` and a few other devices | allow |
+| `builtin:outside-workdir` | any other write | ask |
+| `builtin:git-push` | `git push` with any arguments | ask |
+| `builtin:chmod-777` | `chmod` with `777` in the arguments | ask |
+| `builtin:git-config-get`, `builtin:git-config-list`, `builtin:git-config-list-long` | `git config --get…`, `-l…`, `--list…` | allow |
+| `builtin:git-config-cmd`, `builtin:git-inline-config` | any other `git config`, and `git -c …` | ask |
+| `builtin:git-remote-set-url`, `builtin:git-remote-add` | changing a remote | ask |
+| `builtin:sudo`, `builtin:sudoedit`, `builtin:su`, `builtin:doas`, `builtin:pkexec`, `builtin:run0` | privilege escalation | deny |
+| `builtin:crontab-list` | `crontab -l` | allow |
+| `builtin:crontab`, `builtin:at`, `builtin:systemd-run`, `builtin:launchctl` | scheduling and service managers | ask |
+| `builtin:new-host` | any network host | ask |
+
+Reads are allowed unless a rule above says otherwise. Path rules for `~` don't match
+when no home directory is known. Paths are matched case-insensitively on macOS.
+
+**Loosening a built-in.** The user file replaces a built-in verdict for the subjects its
+rules match, so you can allow one host without touching the rest:
+
+```toml
+version = 2
+
+[[rules]]
+id = "pypi"
+host = "pypi.org"
+decision = "allow"
+```
+
+The project file can only tighten, so a project `host = "*"` allow does not lift
+`builtin:new-host`. User and project rule ids can't contain `:`, so they can't collide
+with `builtin:` ids.
+
+**Pipe-to-shell.** With built-ins on, a command that runs code read from a stream is
+denied with `builtin:pipe-to-shell`. That covers:
+
+- a later pipeline stage that reads its program from standard input: a shell
+  (`curl … | sh`, `wget -qO- … | bash -s`), an interpreter (`cat x | python3`,
+  `curl … | python3 -`, also `perl`, `ruby`, `node`, `php`, `lua`, `pwsh`, `tclsh`,
+  `osascript`, `deno run -`, `bun run -`, `Rscript -`, `awk -f /dev/stdin`), a script
+  argument of `-`, `/dev/stdin`, `/dev/fd/N` or `/proc/self/fd/N`, and `source`/`.` with
+  those paths;
+- a process substitution used as the script, in any position: `bash <(curl …)`,
+  `source <(curl …)`, `python3 <(curl …)`;
+- a heredoc or here-string fed to `source`/`.` or to a shell reading stdin. A literal body
+  (a quoted delimiter such as `<<'EOF'`, or a here-string without expansions) is the
+  script: it is parsed like a `-c` string and checked against the rules, so
+  `bash <<'EOF'` with `sudo id` inside is denied by `builtin:sudo`. An unquoted heredoc whose
+  body has `$(…)` or backticks, or a here-string with an expansion, cannot be known before
+  it runs and is denied by `builtin:pipe-to-shell`. A stdin path as the script
+  (`bash /dev/stdin`) with no heredoc, here-string or pipe asks through
+  `builtin:unparsed-command`.
+
+Wrappers are looked through (`env`, `sudo`, `nice`, `busybox`, `ionice`, `strace`, `exec`,
+`command`, `unbuffer`, `flock FILE`, `chroot DIR`, and `script`/`sg -c CMD`), more shells
+are covered (`ash`, `mksh`, `ksh93`, `yash`, `tcsh`, `csh`, `elvish`, `nu`, `xonsh`),
+versioned names such as `python3.12`, `php8.2` and `node22` are matched, and options that take a value consume it
+(`bash --rcfile F`, `python3 -X dev`, `perl -I lib`). `xargs` children are not flagged:
+xargs gives its child no pipe on stdin. No approval lifts the deny, and
+`--approve builtin:pipe-to-shell` is rejected. `curl … | jq .`, `… | python3 -m json.tool`,
+`git ls-files | xargs python3` and `bash script.sh` are not affected. `sh -c "$(curl …)"`
+asks (through `builtin:unparsed-command`) rather than denies, as do `parallel` and `expect`.
+
+**Tool-level asks.** With built-ins on, `computer_control` (`builtin:computer-control`) and
+`screen_capture` (`builtin:screen-capture`, since a screenshot can carry anything on
+screen to the provider) ask before every call. Approving "always" remembers the id for
+the session, and `--approve builtin:computer-control` is valid only with built-ins on.
+
+**Redaction.** With built-ins on, tool output is scanned before it enters the model
+context or a `ToolCallEnd` event, and secret-shaped values become `[REDACTED:<kind>]`:
+key blocks (including PGP), AWS, GitHub, GitLab, Slack (and webhook URLs), Stripe,
+Anthropic, OpenAI, Google, npm, Hugging Face and SendGrid keys, JWTs, `Authorization:`
+credentials, Docker `auth` values, kubeconfig `*-key-data`, netrc passwords, the password
+in `scheme://user:password@host` (the user may be empty), and the value of a
+`KEY=value` / `"key": "value"` assignment whose key names a secret (`token`,
+`password`, `api_key`, ...). An assignment value is redacted only if it looks like a
+literal secret: at least 8 characters, not a plain number, not an identifier or field
+name without a digit (`api_key`, `args.password`), and containing a digit or at least 20
+characters. So `Client(api_key=api_key)` and `password = args.password` are left alone,
+while `API_KEY=abc123xyz789` is redacted. When something was redacted, the tool result ends with
+`[hone: redacted N secret-shaped value(s) from this output]`. `hone-mcp-server` redacts
+the text of `tools/call` results the same way. The egress audit log's result previews,
+`PostToolUse` hook payloads and context-injection text are redacted too. Each result is
+scanned once, in time linear in its size. Tool arguments, model messages and user
+messages are not redacted. **Known limit:** redaction is pattern-based, so an encoded
+or unusually shaped secret still reaches the model, and a key such as
+`TOKEN_LIMIT=unlimited` is redacted by mistake.
+
+**`grep` and `glob`.** When a loaded policy has path rules, the native `grep` skips
+files the policy denies or wants approved, and ends its output with
+`(N file(s) skipped by permission policy)`. `glob` drops denied paths but keeps paths
+that only ask, since a name isn't the content and reading the file still goes through
+the gate. The tool-result cache never serves or stores a `grep` or `glob` result when the
+filter is active.
+
+**Shell commands and paths.** Literal and glob paths in shell commands (`cat ~/.netrc`,
+`cat ~/.ss*/id_*`, redirections, `cp`, `tee`) are gated like the file tools. Each path is
+checked both as written and as resolved through symlinks, and the stricter verdict wins
+(on a tie the resolved path's rule id is reported), so a symlinked shell startup file
+that points into the working directory still asks (globs and `dd if=`/`of=` included).
+If the working directory itself is a symlink, `{workdir}` in a rule matches both the
+resolved and the logical spelling. A path built from a variable or a substitution cannot be
+resolved, so with built-ins on it asks through `builtin:unparsed-command`, but only where
+a path is read or written: a redirection target or source, a path argument of a
+file-consuming command (`cat`, `head`, `tail`, `cp`, `mv`, `rm`, `ln`, `tee`, `dd`,
+`touch`, `chmod`, `tar -f`, `sed -i`, `source`, …) and the script argument of a shell or
+interpreter (`f=…; cat "$f"`, `cat "$(printf …)"`, `echo x > "$OUT"`). Option values
+(`-m "$MSG"`), `sed`/`grep`/`awk`/`jq` scripts, non-file commands (`kill`, `sleep`,
+`git checkout`, `echo`) and `$(cat <<'EOF' … EOF)` do not ask. `$HOME`, `${HOME}` and `~`
+are resolved, not unknown.
+
+A `for` variable over literal words or a literal glob is substituted: each value (or glob
+match), up to 32 combinations per word, becomes a path subject with the command's real
+read or write op, exactly as if written out (`for f in ~/.bashrc; do cp evil "$f"; done`
+asks `builtin:shell-startup`). The binding holds only inside the loop body and is dropped
+when the variable is reassigned (`f=`, `f+=`, `read`, `printf -v`, `mapfile`, `declare`,
+`export f=…`, `getopts`, `((f=…))`, `unset`, `f[0]=…`), when an inner loop rebinds the same
+name, after any `eval`, `source` or `.`, after `declare -n`/`local -n`/`typeset -n`, and inside
+function bodies, and on any line that defines a function (in any form); past 32 combinations, or for a non-literal
+list, the variable counts as unknown. After `cd`/`pushd` to a target that isn't literal
+(an expansion, a substitution, `-`, `$OLDPWD`), later relative path arguments and
+redirects on the same line count as unknown too, and no later `cd` makes it known again
+(it may not run); a `cd` inside `( … )` or `$( … )` never changes the outer line's directory,
+while `eval` and `source` strings do; absolute paths and non-file commands
+(`cd "$DIR" && cargo test`) are unaffected.
+
+An unquoted heredoc fed to a shell or `source` is denied by `builtin:pipe-to-shell` when
+its body has any parameter expansion (`$X`, `${…}`) as well as `$(…)` or backticks: the
+outer shell splices the value into the script before the inner shell parses it. A
+quoted heredoc (`<<'EOF'`) is parsed and gated.
+
+**Known gaps.**
+
+- **Shell startup-file variables** can still run code from a stream with no Deny:
+  `… | BASH_ENV=/dev/stdin bash -c true`, `ENV=…`, `bash --rcfile /dev/stdin -i`, and
+  `PS4='$(…)' bash -x`. This is the first item planned for P2.6.
+- **Loop variables are not tracked** through aliases (`expand_aliases`), or through
+  functions or aliases defined in a sourced file or in `BASH_ENV`.
+- **Directory changes are not followed** through `env -C DIR cmd`, a sourced script, or
+  `trap '…'` strings. `trap '…'` strings can also reassign variables.
+- **False positive:** an array assignment like `a[0]=/usr/bin/sudo` can be read as a
+  command named by the value's basename. Not seen by the path checks (the sandbox is the boundary): aliases, hard
+links, `python -c "open(…)"`, reads by data flow (`xargs cat`, `find -exec cat`) and by
+copying a parent directory (`cp -a ~ /tmp/h`, `rsync -a ~/`). Not yet handled: the logical
+working directory from `$PWD` in the CLI, `hone-mcp-server` and the worker; git's global
+options (`git -C dir push`, `git -C . config …`); command runners (`find -exec`, `tmux new`,
+`screen -dm`, `ssh host cmd`, `watch`, `make -f /dev/stdin`); `export NAME` without `=`,
+function bodies and `expand_aliases` in the approval context; and a few redaction misses
+(short passphrases and URL passwords, `JWT_SECRET=word`) and false positives
+(`Basic base64(user:pass)` placeholders, `public-key-data:`).
+
+**What an approval covers.** Answering a prompt "once" approves only the rule that was
+asked, for that call. If the same call also hits another ask rule, you are prompted again
+for that one (for example `git push … && echo x >> ~/.bashrc` asks for `builtin:git-push`,
+then `builtin:shell-startup`). Headless runs fail on the first ask. "Always" on a command
+rule is remembered for the exact command line **and** the same leading assignments,
+wrapper words and working directory: after approving `git push origin main`,
+`GIT_SSH_COMMAND=… git push origin main`, `env X=1 git push origin main` and
+`cd /tmp/o && git push origin main` all ask again, as do variables exported earlier on the
+line (`export X=…`, `declare -x`, `set -a`) and assignments made inside a subshell. A nested
+command string (`sh -c`, `bash -c`, `eval`), a heredoc script and a line that runs `source`
+or `.` never match a remembered approval, and "always" there is not remembered. Only a literal host rule, or a literal
+single-pattern path rule with an explicit `read` or `write` op, is remembered by its id;
+every other rule is remembered per subject, and path keys include the op, so approving a
+read never approves a write.
+
+**Switch and messages.** A `HONE_POLICY_BUILTINS` value other than exactly `1` (for
+example `true`, `yes`, `on`) leaves built-ins off and prints one warning line (honed logs
+it at warn level). When the policy is non-empty only because of built-ins, the refusal for
+a provider that runs its own tools tells you to unset `HONE_POLICY_BUILTINS`, use another
+provider, or set `HONE_ALLOW_UNGATED_PROVIDER=1`; with that override set, tool output from
+that provider is not redacted, and the warning says so. `--approve` (and honed `approve`,
+and `HONE_APPROVE`) rejects an id whose rule always denies (the privilege rules,
+`builtin:pipe-to-shell` and any user or project `deny` rule) with
+`--approve: rule '<id>' always denies; --approve only lifts ask rules` (exit code 2; 400
+for honed).
+
+**Order of checks.** The permission gate runs before `PreToolUse` hooks, so a denied or
+unapproved call never reaches a hook. If a hook rewrites the input, the gate runs again
+on the rewritten input.
 
 **Limits.** Command rules match the command text after parsing, which is a speed bump
 rather than a security boundary: shell aliases, interpreters (`python -c ...`), paths
@@ -481,6 +695,7 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 | Variable | Purpose |
 |---|---|
 | `HONE_ALLOW_UNGATED_PROVIDER` | `1` lets a provider that runs its own tools be used under a non-empty permission policy (see [Permissions](#permissions)) |
+| `HONE_POLICY_BUILTINS` | `1` loads the built-in permission rules and turns on pipe-to-shell denial, tool-level asks and secret redaction (opt-in; see [Built-in rules](#built-in-rules)) |
 | `HONE_APPROVE` | Comma-separated permission rule ids pre-approved for `hone-mcp-server` |
 | `HONE_SANDBOX_ENFORCE` | `1` turns on Landlock enforcement for shell commands on Linux (opt-in while it is validated; Seatbelt on macOS is always on) |
 | `HONE_SANDBOX_EXTRA_READ` | Extra read-only roots for the shell sandbox, colon-separated |

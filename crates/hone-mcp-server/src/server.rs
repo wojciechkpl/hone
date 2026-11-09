@@ -185,9 +185,24 @@ impl McpServer {
                                 ));
                             }
                         }
-                        match tool.call(ToolInput::new(arguments), &self.ctx).await {
+                        let redact = self.policy.as_ref().is_some_and(|p| p.builtins);
+                        let mut ctx = self.ctx.clone();
+                        if let Some(policy) = self.policy.as_ref().filter(|p| p.compiled.has_path_rules()) {
+                            // No interactive channel: nothing is approved at runtime.
+                            ctx.read_filter = Some(hone_tools::policy_gate::read_filter(
+                                policy,
+                                &std::collections::HashSet::new(),
+                            ));
+                        }
+                        match tool.call(ToolInput::new(arguments), &ctx).await {
                             Ok(output) => {
-                                let text = serde_json::to_string(&output.into_value())
+                                let value = output.into_value();
+                                let value = if redact {
+                                    hone_tools::redact::redact_json(&value).0
+                                } else {
+                                    value
+                                };
+                                let text = serde_json::to_string(&value)
                                     .unwrap_or_else(|_| "<serialization error>".into());
                                 Some(JsonRpcResponse::ok(
                                     id,
@@ -200,7 +215,11 @@ impl McpServer {
                             Err(e) => Some(JsonRpcResponse::ok(
                                 id,
                                 serde_json::json!({
-                                    "content": [{ "type": "text", "text": e.to_string() }],
+                                    "content": [{ "type": "text", "text": if redact {
+                                        hone_tools::redact::redact_secrets(&e.to_string()).text.into_owned()
+                                    } else {
+                                        e.to_string()
+                                    } }],
                                     "isError": true
                                 }),
                             )),
@@ -304,6 +323,7 @@ mod tests {
             sandbox: Arc::new(NullSandbox),
             sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
             working_dir: PathBuf::from("/tmp"),
+            read_filter: None,
         }
     }
 

@@ -102,8 +102,12 @@ pub(crate) fn load_run_policy(
         return Err("approve requires an authenticated server".to_owned());
     }
 
-    let mut policy = resolve_permission_policy(working_dir, state.policy_home.clone())
-        .map_err(|e| format!("permission policy error: {e}"))?;
+    let mut policy = resolve_permission_policy(
+        working_dir,
+        state.policy_home.clone(),
+        state.policy_builtins,
+    )
+    .map_err(|e| format!("permission policy error: {e}"))?;
     let ids = validate_approvals(policy.as_ref(), approve.unwrap_or(&[]))?;
     if let Some(p) = policy.as_mut() {
         p.pre_approved = ids;

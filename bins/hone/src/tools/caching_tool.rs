@@ -243,7 +243,9 @@ impl Tool for CachingToolWrapper {
     async fn call(&self, input: ToolInput, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let tool_name = self.inner.name();
 
-        if !Self::is_cacheable(tool_name) {
+        // A filtered call must see the filter's view: nothing is served from or
+        // stored in the cache (a cached unfiltered listing would bypass the policy).
+        if !Self::is_cacheable(tool_name) || ctx.read_filter.is_some() {
             return self.inner.call(input, ctx).await;
         }
 
@@ -295,6 +297,10 @@ impl Tool for CachingToolWrapper {
     fn subjects(&self, input: &ToolInput, sctx: &SubjectContext) -> ToolSubjects {
         self.inner.subjects(input, sctx)
     }
+
+    fn builtin_ask(&self) -> Option<&'static str> {
+        self.inner.builtin_ask()
+    }
 }
 
 #[cfg(test)]
@@ -309,6 +315,7 @@ mod tests {
             sandbox: Arc::new(hone_sandbox::NullSandbox),
             sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
             working_dir: std::env::current_dir().unwrap(),
+            read_filter: None,
         }
     }
 
@@ -458,3 +465,7 @@ mod tests {
         assert_eq!(out1.value, out2.value, "cached result must match original");
     }
 }
+
+#[cfg(test)]
+#[path = "caching_tool_readfilter_tests.rs"]
+mod readfilter_tests;
