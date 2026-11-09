@@ -381,40 +381,75 @@ mod tests {
         assert!(toml.contains("ollama"));
     }
 
-    #[test]
-    fn wizard_config_parse_anthropic() {
-        let raw = r#"
-[provider]
-name = "anthropic"
-api_key = "sk-ant-test"
-model = "claude-sonnet-4-5"
-"#;
-        let cfg = WizardConfig::parse(raw).unwrap();
-        assert_eq!(cfg.provider_name.as_deref(), Some("anthropic"));
-        assert_eq!(cfg.api_key.as_deref(), Some("sk-ant-test"));
-        assert_eq!(cfg.model.as_deref(), Some("claude-sonnet-4-5"));
-        assert!(cfg.base_url.is_none());
+    // ---- build_toml output is read by the strict loader / resolver (C15) --------------
+    //
+    // These replace the `WizardConfig::parse` / `unquote` tests: the line parser is removed
+    // and `hone_config::resolve` is the only reader.
+
+    use hone_config::resolve::{ConfigLayer, ModelSource, resolve};
+
+    fn resolve_user(raw: &str) -> hone_config::resolve::Effective {
+        let layer = ConfigLayer::from_toml("/home/u/.config/hone/config.toml", raw)
+            .unwrap_or_else(|e| panic!("wizard output must load: {e}\n{raw}"));
+        resolve(Some(&layer), None, None, &|_: &str| None)
+            .unwrap_or_else(|e| panic!("wizard output must resolve: {e}\n{raw}"))
     }
 
     #[test]
-    fn wizard_config_parse_deepseek() {
-        let raw = r#"
-[provider]
-name = "deepseek"
-api_key = "sk-ds"
-model = "deepseek-chat"
-base_url = "https://api.deepseek.com"
-"#;
-        let cfg = WizardConfig::parse(raw).unwrap();
-        assert_eq!(cfg.provider_name.as_deref(), Some("deepseek"));
-        assert_eq!(cfg.base_url.as_deref(), Some("https://api.deepseek.com"));
+    fn wizard_output_for_every_provider_loads_without_warnings_and_implies_its_model() {
+        let key = format!("sk-{}", "fixture0123456789");
+        for (p, expected_prefix) in PROVIDERS.iter().zip([
+            "anthropic:",
+            "openai:",
+            "openai:",
+            "openai:",
+            "ollama:",
+            "claude-cli:",
+        ]) {
+            let model = p.models[0];
+            let key_opt = p.needs_key.then_some(key.as_str());
+            let raw = build_toml(p, key_opt, model);
+            let e = resolve_user(&raw);
+            assert!(e.warnings.is_empty(), "{}: {:?}", p.name, e.warnings);
+            let choice = e.model.as_ref().unwrap_or_else(|| panic!("{}: implied model", p.name));
+            assert_eq!(choice.model.as_str(), format!("{expected_prefix}{model}"), "{}", p.name);
+            assert!(matches!(choice.source, ModelSource::Wizard { .. }), "{}", p.name);
+        }
     }
 
     #[test]
-    fn unquote_strips_quotes() {
-        assert_eq!(unquote(r#""hello""#), Some("hello".into()));
-        assert_eq!(unquote(r#""""#), Some("".into()));
-        assert_eq!(unquote("noquotes"), None);
-        assert_eq!(unquote(r#""only_open"#), None);
+    fn wizard_anthropic_output_fills_the_anthropic_key_and_model() {
+        let key = format!("sk-ant-{}", "fixture0123456789");
+        let e = resolve_user(&build_toml(&PROVIDERS[0], Some(&key), "claude-sonnet-4-5"));
+        assert_eq!(e.anthropic.api_key.as_deref(), Some(key.as_str()));
+        assert_eq!(e.anthropic.default_model, "claude-sonnet-4-5");
+        assert_eq!(e.openai.api_key, None);
+        assert_eq!(e.anthropic.base_url, None);
+    }
+
+    #[test]
+    fn wizard_deepseek_output_fills_the_openai_slot_with_the_deepseek_endpoint() {
+        let key = format!("sk-{}", "fixture0123456789");
+        let e = resolve_user(&build_toml(&PROVIDERS[2], Some(&key), "deepseek-chat"));
+        assert_eq!(e.openai.api_key.as_deref(), Some(key.as_str()));
+        assert_eq!(e.openai.base_url.as_deref(), Some("https://api.deepseek.com"));
+        assert_eq!(e.openai.default_model, "deepseek-chat");
+    }
+
+    #[test]
+    fn wizard_ollama_output_sets_the_ollama_model_and_url_without_a_key() {
+        let e = resolve_user(&build_toml(&PROVIDERS[4], None, "qwen2.5-coder"));
+        assert_eq!(e.ollama.default_model, "qwen2.5-coder");
+        assert_eq!(e.ollama.base_url.as_deref(), Some("http://localhost:11434"));
+        assert_eq!(e.anthropic.api_key, None);
+        assert_eq!(e.openai.api_key, None);
+    }
+
+    #[test]
+    fn wizard_output_with_a_quote_in_the_key_still_round_trips() {
+        // The old line parser could not read escaped quotes; the TOML reader can.
+        let key = format!("sk-{}\"quoted", "fixture");
+        let e = resolve_user(&build_toml(&PROVIDERS[1], Some(&key), "gpt-4o"));
+        assert_eq!(e.openai.api_key.as_deref(), Some(key.as_str()));
     }
 }
