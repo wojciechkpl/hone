@@ -4483,6 +4483,94 @@ mod tests {
         assert_eq!(shown, "the answer", "no critique, no APPROVED, no separator");
     }
 
+    // T5 (docs/plans/tool-error-turn-spec.md): the TUI forwarders must always end the turn.
+    // A provider whose `complete()` panics kills the agent actor; the forwarder then sees a
+    // dead actor / failed turn without any Done or Error, and must send one Error itself.
+    struct PanickingProvider;
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for PanickingProvider {
+        fn id(&self) -> &str {
+            "panicking"
+        }
+        fn display_name(&self) -> &str {
+            "Panicking"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![hone_proto::ModelInfo {
+                id: ModelId::new("mock:test"),
+                display_name: "Test".to_owned(),
+                context_length: 4096,
+                supports_tools: true,
+                supports_streaming: true,
+            }]
+        }
+        async fn complete(
+            &self,
+            _req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            panic!("provider exploded (test)");
+        }
+        fn estimate_tokens(&self, _m: &[Message]) -> u32 {
+            5
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    async fn forwarder_events_for_panicking_provider(medium: bool) -> Vec<AgentEvent> {
+        let tmp = tempfile::tempdir().unwrap();
+        let tool = MarkerTool {
+            name: "mock_read",
+            read_only: true,
+            target: tmp.path().join("unused.txt"),
+        };
+        let mut config = tui_wiring_config(tool, tmp.path());
+        config.provider = Arc::new(PanickingProvider);
+        let agent = AgentHandle::spawn(config);
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _task = if medium {
+            spawn_medium_turn(agent.clone(), "go".to_owned(), tx)
+        } else {
+            spawn_agent_turn(agent.clone(), "go".to_owned(), tx)
+        };
+        let mut events = Vec::new();
+        // The forwarder finishes (drops tx) either way; a hang here is the bug.
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while let Some(e) = rx.recv().await {
+                events.push(e);
+            }
+        })
+        .await
+        .expect("forwarder never finished");
+        events
+    }
+
+    #[tokio::test]
+    async fn test_t5_spawn_agent_turn_should_send_error_when_turn_dies_without_terminal_event() {
+        let events = forwarder_events_for_panicking_provider(false).await;
+        let errors = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .count();
+        assert_eq!(errors, 1, "the spinner needs exactly one terminal Error: {events:?}");
+    }
+
+    #[tokio::test]
+    async fn test_t5_spawn_medium_turn_should_send_error_when_turn_dies_without_terminal_event() {
+        let events = forwarder_events_for_panicking_provider(true).await;
+        let errors = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .count();
+        assert_eq!(errors, 1, "the spinner needs exactly one terminal Error: {events:?}");
+    }
+
     // R6. Seam (pure fn in main.rs):
     //   fn code_modifying_tools_that_ran(events: &[AgentEvent]) -> Vec<String>
     // Names (in order of completion) of write_file/edit_file/multi_edit calls whose
