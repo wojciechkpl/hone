@@ -540,6 +540,10 @@ pub struct Agent {
     /// Set when this turn already sent an `AgentEvent::Error`, so the turn
     /// wrapper does not send a second one for the same failure.
     error_event_sent: bool,
+    /// The read-before-edit guard's read for the call being dispatched, as
+    /// `(call id, text)`. It is folded into that call's own tool result by
+    /// [`Agent::add_call_result`], never added as a message of its own.
+    guard_block: Option<(String, String)>,
     /// Whether `AgentEvent::ModelInfo` has already been emitted this session.
     ///
     /// The event is emitted exactly once — on the first successful provider
@@ -596,6 +600,7 @@ impl Agent {
             metrics,
             guards: TurnGuards::default(),
             error_event_sent: false,
+            guard_block: None,
             model_info_emitted: false,
             base_tools,
             policy_session_approved: HashSet::new(),
@@ -822,6 +827,23 @@ impl Agent {
         }
     }
 
+    /// Add the tool-result message for call `id`. If the read-before-edit guard
+    /// prepared a read for this call it leads the result, so the history only
+    /// ever holds results for ids the model issued.
+    fn add_call_result(&mut self, redact: bool, id: String, prefix: &str, body: ToolText) {
+        let own = tool_result_message(redact, id.clone(), prefix, body);
+        let message = match self.guard_block.take() {
+            Some((guard_id, block)) if guard_id == id => {
+                Message::tool_result(id, format!("{block}\n\n{}", own.content.as_text()))
+            }
+            other => {
+                self.guard_block = other;
+                own
+            }
+        };
+        self.context.add_message(message);
+    }
+
     /// Scan a tool result for prompt injection. Returns the egress risk label
     /// and the SECURITY prefix for the history message (empty when clean).
     /// Shared by every path that turns a tool outcome into a result.
@@ -887,12 +909,12 @@ impl Agent {
             duration_ms,
         };
         let _ = Self::fire_hooks(self.config.hooks.as_ref(), &post_event).await;
-        self.context.add_message(tool_result_message(
+        self.add_call_result(
             redact,
             call.id.clone(),
             prefix,
             ToolText::Shown(value, redacted_count),
-        ));
+        );
     }
 
     /// Give every tool call of the latest assistant message that has no tool
@@ -1937,6 +1959,7 @@ impl Agent {
                     // turn, automatically inject a read_file call first and feed
                     // its result back before proceeding with the edit.
                     // ----------------------------------------------------------
+                    self.guard_block = None;
                     if is_edit_tool(&pending_tool_calls[i].name) {
                         if let Some(file_path) = extract_file_path(
                             &pending_tool_calls[i].name,
@@ -1986,22 +2009,51 @@ impl Agent {
                                     .map(Arc::clone)
                                 {
                                     let ctx = self.tool_context();
+                                    let guard_start = std::time::Instant::now();
                                     match read_tool.call(read_input, &ctx).await {
                                         Ok(read_output) => {
                                             // Record the read so the guard doesn't fire again.
                                             self.guards.record_read(&file_path);
-                                            // Inject the read result into context as a synthetic
-                                            // tool result so the model has the file content.
-                                            let read_val = read_output.into_value();
-                                            let synthetic_id =
-                                                format!("guard-read-{}", uuid::Uuid::now_v7());
-                                            self.context.add_message(tool_result_message(
+                                            let guard_ms = guard_start.elapsed().as_millis() as u64;
+                                            // Same pipeline as any read result: redacted once,
+                                            // injection-scanned, audited. It reaches the model
+                                            // inside the edit call's own result.
+                                            let raw = read_output.into_value();
+                                            let (value, redacted_count) =
+                                                if redact { redact_json(&raw) } else { (raw, 0) };
+                                            let result_str =
+                                                serde_json::to_string(&value).unwrap_or_default();
+                                            let (label, security) =
+                                                self.scan_for_injection("read_file", &result_str);
+                                            if let Some(log) = &self.config.egress_log {
+                                                let (span_id, parent_span_id) =
+                                                    turn_trace.child_span();
+                                                log.lock().await.record(EgressEntry {
+                                                    timestamp: now_rfc3339(),
+                                                    tool: "read_file".to_owned(),
+                                                    arguments: read_input_args.clone(),
+                                                    result_preview: preview(&result_str, 200),
+                                                    blocked: false,
+                                                    block_reason: None,
+                                                    injection_risk: label,
+                                                    duration_ms: guard_ms,
+                                                    trace_id: turn_trace.trace_id.clone(),
+                                                    span_id,
+                                                    parent_span_id,
+                                                    span_kind: SpanKind::ToolCall,
+                                                });
+                                            }
+                                            let block = tool_result_message(
                                                 redact,
-                                                synthetic_id,
+                                                String::new(),
                                                 &format!(
-                                                    "(guard: auto-read '{file_path}' before edit)\n"
+                                                    "{security}(guard: auto-read '{file_path}' before edit)\n"
                                                 ),
-                                                ToolText::Json(read_val),
+                                                ToolText::Shown(value, redacted_count),
+                                            );
+                                            self.guard_block = Some((
+                                                pending_tool_calls[i].id.clone(),
+                                                block.content.as_text(),
                                             ));
                                         }
                                         Err(err) => {
@@ -2060,12 +2112,12 @@ impl Agent {
                                     cache_hit: false,
                                 })
                                 .await;
-                            self.context.add_message(tool_result_message(
+                            self.add_call_result(
                                 redact,
                                 call.id.clone(),
                                 "",
                                 ToolText::Text("(denied: no approval channel)".to_string()),
-                            ));
+                            );
                             i += 1;
                             continue;
                         };
@@ -2097,12 +2149,12 @@ impl Agent {
                                         cache_hit: false,
                                     })
                                     .await;
-                                self.context.add_message(tool_result_message(
+                                self.add_call_result(
                                     redact,
                                     call.id.clone(),
                                     "",
                                     ToolText::Text("(denied: approval channel closed)".to_string()),
-                                ));
+                                );
                                 i += 1;
                                 continue;
                             }
@@ -2117,12 +2169,12 @@ impl Agent {
                                         cache_hit: false,
                                     })
                                     .await;
-                                self.context.add_message(tool_result_message(
+                                self.add_call_result(
                                     redact,
                                     call.id.clone(),
                                     "",
                                     ToolText::Text("(skipped by debugger)".to_string()),
-                                ));
+                                );
                                 i += 1;
                                 continue;
                             }
@@ -2143,12 +2195,12 @@ impl Agent {
                                         cache_hit: false,
                                     })
                                     .await;
-                                self.context.add_message(tool_result_message(
+                                self.add_call_result(
                                     redact,
                                     call.id.clone(),
                                     "",
                                     ToolText::Text(format!("(denied by user): {reason}")),
-                                ));
+                                );
                                 i += 1;
                                 continue;
                             }
@@ -2282,12 +2334,12 @@ impl Agent {
                                 }
                             }
 
-                            self.context.add_message(tool_result_message(
+                            self.add_call_result(
                                 redact,
                                 call.id.clone(),
                                 prefix,
                                 ToolText::Shown(augmented_value, redacted_count),
-                            ));
+                            );
                         }
                         Err(AgentError::ToolNotFound { name }) => {
                             let err_val = serde_json::json!({
@@ -2302,12 +2354,12 @@ impl Agent {
                                     cache_hit: false,
                                 })
                                 .await;
-                            self.context.add_message(tool_result_message(
+                            self.add_call_result(
                                 redact,
                                 call.id.clone(),
                                 "",
                                 ToolText::Json(err_val),
-                            ));
+                            );
                         }
                         // A failing tool is a result the model can react to, not a
                         // turn failure.
