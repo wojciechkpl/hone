@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .ids import NAME_RE
 
-KINDS = frozenset({"pi", "hone", "selftest"})
+KINDS = frozenset({"pi", "hone", "hermes", "selftest"})
 PLACEHOLDER_RE = re.compile(r"\{\{([a-z_][a-z0-9_]*)\}\}")
 
 

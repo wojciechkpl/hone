@@ -66,6 +66,23 @@ def paired_bootstrap(
     return {"diff": diff, "lo": lo, "hi": hi, "n_tasks": len(keys)}
 
 
+def bootstrap_pvalue(
+    a: Mapping[str, float], b: Mapping[str, float], iters: int = 10000, seed: int = 0
+) -> float:
+    """Two-sided paired-bootstrap p-value: min(1, 2 * min(share(mean* <= 0), share(mean* >= 0)))
+    over resampled per-task differences (a - b)."""
+    keys = sorted(set(a) & set(b))
+    if not keys:
+        raise ValueError("no shared tasks between the two arms")
+    diffs = [a[k] - b[k] for k in keys]
+    rng = random.Random(seed)
+    n = len(diffs)
+    boots = [sum(rng.choices(diffs, k=n)) / n for _ in range(iters)]
+    le = sum(1 for m in boots if m <= 0) / iters
+    ge = sum(1 for m in boots if m >= 0) / iters
+    return min(1.0, 2 * min(le, ge))
+
+
 def mcnemar_exact(b: int, c: int) -> float:
     n = b + c
     if n == 0:

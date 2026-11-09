@@ -39,7 +39,7 @@ ENV_KEYS = [
     "HC_MAX_NUM_SEQS", "HC_GPU_MEM_UTIL", "HC_TEMPERATURE", "HC_TOP_P", "HC_MAX_TOKENS",
     "HC_MAX_REQUESTS", "HC_MAX_TOTAL_TOKENS", "HC_TIMEOUT_S", "HC_CPUS", "HC_MEMORY",
     "HC_REPEATS", "HC_ARMS_MAIN", "HC_ARMS_REDTEAM", "HC_PRICE_IN_PER_M", "HC_PRICE_OUT_PER_M",
-    "HC_PI_VERSION", "HC_NODE_VERSION", "HC_HONE_REF",
+    "HC_PI_VERSION", "HC_NODE_VERSION", "HC_HONE_REF", "HC_HERMES_REF", "HC_HERMES_SHA",
 ]  # fmt: skip
 
 
@@ -75,6 +75,28 @@ def dump_toml(data: dict, prefix: str = "") -> str:
     return out
 
 
+def check_hermes_bundle(env: dict[str, str], manifest_path: Path) -> None:
+    """Refuse (even with --draft) when a Hermes arm is listed but the bundle is not the
+    pre-registered Hermes build."""
+    arms = [a.strip() for k in ("HC_ARMS_MAIN", "HC_ARMS_REDTEAM") for a in env[k].split(",")]
+    if not any(a.startswith("hermes") for a in arms):
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        manifest = {}
+    sha = manifest.get("hermes_sha") or ""
+    if not sha:
+        raise SystemExit(f"hermes arms are listed but {manifest_path} has no hermes_sha")
+    if manifest.get("hermes_ref") != env["HC_HERMES_REF"]:
+        raise SystemExit(
+            f"bundle hermes_ref {manifest.get('hermes_ref')!r} != HC_HERMES_REF "
+            f"{env['HC_HERMES_REF']!r}"
+        )
+    if sha != env["HC_HERMES_SHA"]:
+        raise SystemExit(f"bundle hermes_sha {sha} != HC_HERMES_SHA {env['HC_HERMES_SHA']!r}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--selection", type=Path, required=True)
@@ -91,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
 
     selection = json.loads(args.selection.read_text())
     bundle_manifest = Path(os.environ.get("HC_BUNDLE_DIR", ROOT / ".bundle")) / "manifest.json"
+    check_hermes_bundle(env, bundle_manifest)
     files = {
         "arms_toml": ROOT / "config" / "arms.toml",
         "prompt_swebench": ROOT / "config" / "prompts" / "swebench.md",

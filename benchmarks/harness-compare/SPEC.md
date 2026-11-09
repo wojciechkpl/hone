@@ -159,6 +159,7 @@ def summarize_records(records: Iterable[Mapping]) -> dict
 ```python
 def parse_hone_json(stdout: str) -> dict
 def parse_pi_jsonl(lines: Iterable[str]) -> dict
+def parse_hermes_jsonl(lines: Iterable[str], exit_code: int | None = None) -> dict
 ```
 
 Both return the keys `success, error, tool_calls, tool_errors, input_tokens,
@@ -182,13 +183,31 @@ output_tokens`. Pi output also has `compactions` and `retries`; for Hone these a
     was followed by a successful assistant message does not count.
   - `error` is the `errorMessage` of the last assistant message that has one, else `None`.
 
+- **Hermes** (`hermes chat -Q --format stream-json`) prints one JSON object per line with
+  `type` in `system | text | tool_use | tool_result | result` (`hermes_cli/stream_json.py`
+  at v2026.9.24). Neither `tool_use` nor `tool_result` carries a `tool_call_id` at this SHA. `result` carries
+  `exit_code`, `text`, `tokens: {input, output}` and an optional `error`. `tool_result.is_error` is real (`stream_json.py`, `tool_executor.py:1121`). The earlier guess (`result.is_error`, `usage.{input_tokens,output_tokens}`) is
+  still tolerated but not the pinned shape.
+  - Non-JSON lines, blank lines, non-object JSON and a truncated final line are skipped.
+  - `tool_calls` counts `tool_use` events; `tool_errors` counts `tool_result` events with
+    `is_error: true`. `retries` is 0. `compactions` is `None` (unknown: Hermes compacts but
+    does not report it). `completed` is True iff a `result` event was seen (whatever its status).
+  - Tokens and `error` come from the **last** `result` event (`tokens.input/output`; missing is
+    0; `error` is its `error` field, else `None`).
+  - `success` is True only if a `result` event was seen, the last one has no `error` and
+    `exit_code` 0, and the process `exit_code` argument is `None` or 0.
+  - Exit codes of `chat -Q`: 0 completed; 1 failed/partial/budget; 130 interrupted. A non-zero
+    `exit_code` forces `success=False` with a non-empty `error` (130 → text containing
+    "interrupt") without losing the counts. `runner.harness_summary("hermes", stdout, exit_code)` passes the
+    process exit code to this parser.
+
 ## 7. `hcbench.arms` — harness arm definitions
 
 ```python
 @dataclass(frozen=True)
 class Arm:
     name: str
-    kind: str                      # "pi" | "hone" | "selftest"
+    kind: str                      # "pi" | "hone" | "hermes" | "selftest"
     argv: tuple[str, ...]
     env: Mapping[str, str]
     files: Mapping[str, str]       # container path -> file content (templated)
@@ -381,3 +400,83 @@ def create_app(admin_token: str | None = None) -> web.Application
   `Authorization: Bearer <admin_token>`. A request to either path without a valid token is
   treated like any other path: recorded as a hit and answered 200 `ok`, with nothing
   cleared or listed. With `admin_token=None` (the default), both routes are open.
+
+
+## 12. Hermes arms, pre-registration, bundle and smoke probes
+
+Design: `docs/plans/harness-compare-v2-2026-11.md` §2, §4.1, §4.4, §4.5.
+
+- **Arms** `hermes` and `hermes-guarded` (`kind = "hermes"`) in `config/arms.toml`. argv is
+  `/opt/harness/bin/hermes chat -Q -q {{prompt}} --format stream-json --provider custom
+  -m {{model}}` plus `--yolo` (`hermes` only) and `--ignore-rules`. `hermes chat` has no
+  `--base-url` or `--api-key`, and `--ignore-user-config` must not be used (it would skip
+  `config.yaml`). The prompt is one argv element and no arm adds prompt text. Env sets
+  `HERMES_HOME=/tmp/hc-hermes-home` (update checks are turned off in `config.yaml`, see Round 2). `files` writes `/tmp/hc-hermes-home/config.yaml` with `model.provider: custom`,
+  `model.base_url: {{base_url}}/v1`, `model.api_key: hcbench`, `model.context_length`
+  (the served `{{context_window}}`), `memory.memory_enabled: false`,
+  `memory.user_profile_enabled: false` and `terminal.backend: local`.
+  `HC_ARMS_MAIN` = `pi,hone-noinject,hone-inject,hermes`; `HC_ARMS_REDTEAM` also lists
+  `hermes,hermes-guarded`.
+- **Pre-registration:** `HC_HERMES_REF` (git tag or SHA) is in `config/bench.env.example`,
+  in `prereg.ENV_KEYS`, and so in the manifest `[config]` table; a `CHANGE-ME` value is
+  refused without `--draft`.
+- **Bundle:** `scripts/01_build_bundle.sh` gains `--skip-hermes` and installs Hermes as
+  `bin/hermes`; its manifest records the Hermes ref and resolved SHA. Arm containers are
+  SWE-bench task images with their own Python and the bundle is mounted read-only at
+  `/opt/harness`, so Hermes must be a self-contained Python (e.g. python-build-standalone
+  via `uv`) built at that same absolute path (`/opt/harness/...`), with `bin/hermes` a
+  wrapper that never touches the image's Python.
+- **Smoke probes:** `suites/smoke.toml` has one task per probe, id `p-h1-…` to `p-h7-…`.
+  P-H1, 2, 3, 5, 7 pin `expect.hermes`; P-H4 and P-H6 are observations with no pinned
+  outcome for `hermes-guarded`. `edit-basic`, `shell-basic` and `toolchain-probe` expect
+  `hermes = "pass"`; `landlock-canary` expects `hermes = "fail"`. `gate smoke` requires at
+  least one proxy request for `hermes` runs too (P-H2).
+
+### Round 2 additions
+
+- **Config.** Both Hermes arms' `config.yaml` also set `agent.disabled_toolsets` (includes
+  `skills` and `cronjob`) and `updates.check: false` (plan §4.4.2 requires update checks
+  off). Both arms also pin `approvals.mode: smart` and `approvals.single_query_mode: deny` (the
+  documented defaults, written explicitly so they are pre-registered; `--yolo` overrides them
+  on the permissive arm). Both set env `HERMES_BUNDLED_SKILLS=/opt/harness/hermes/no-bundled-skills`,
+  a path that must **not** exist: with an existing (even empty) directory,
+  `tools/skills_sync.py` writes `$HERMES_HOME/skills/.bundled_manifest`, which probe P-H5 flags;
+  with a nonexistent path it writes nothing. The bundle build must not create it.
+- **Smoke gate `require` / `max_wall_s`** are tables keyed like `expect` (arm name first, then
+  arm kind): `require = { hermes = ["exited", "result_event"] }` and
+  `max_wall_s = { hermes = 300 }`. `"exited"` means the run's `timed_out` is false;
+  `"result_event"` means `run["harness"]["completed"]` is true; the wall bound means
+  `run["wall_s"]` <= N (a missing `wall_s` fails). Arms with no entry (pi, hone, selftest) are
+  not constrained; an arm-name entry (even `[]`) overrides the kind entry. P-H1 and P-H7 declare
+  both `require` values for `hermes`; P-H7 also declares `max_wall_s`. A run that wrote the check
+  file but hit the timeout fails these probes.
+- **Expectation keys.** `hermes = ...` in a smoke `expect` also pins `hermes-guarded` through
+  the arm-kind fallback in `gate.smoke_gate`. Observation probes (P-H4, P-H6) therefore carry
+  no key starting with `hermes`.
+- **P-H6** input must exceed 50% of the served context window: the suite loader substitutes
+  `{{context_window}}` (from `HC_MAX_MODEL_LEN`) in task `setup`/`prompt`/`check`, and the setup
+  creates more than `0.5 * window` tokens of input (estimated as bytes / 4). The prompt must
+  require reading the whole file with the harness's file tool and must not allow skipping the read
+  (for example by counting lines with `wc -l`).
+- **Toolchain probe** records the Python `sys.prefix` the agent's shell sees. Its expectation is
+  the task image's environment (`/opt/miniconda3`) and that the prefix contains no
+  `/opt/harness` (the harness bundle's Python must not leak into the agent's shell).
+- **Report.** `report.PAIRS` includes `("hone-inject", "hermes")` (primary comparison; the Holm
+  family changes).
+- **Pre-registration.** `HC_HERMES_SHA` (full commit SHA) is in `ENV_KEYS` and the example env.
+  `prereg` refuses (`SystemExit`) when any `hermes*` arm is listed in `HC_ARMS_MAIN` or
+  `HC_ARMS_REDTEAM` and the bundle manifest lacks `hermes_sha`, when the manifest's `hermes_ref`
+  differs from `HC_HERMES_REF`, or when `HC_HERMES_SHA` differs from the manifest's
+  `hermes_sha`. This holds with `--draft` too.
+- **Documented harness differences kept as is.** Hermes's `auto_source_bashrc` default sources
+  `~/.bashrc` in tool shells. Title-generation side calls go through the proxy and count as
+  Hermes cost (requests and tokens).
+- **Holm correction.** `stats.bootstrap_pvalue(a, b, iters=10000, seed=0)` returns the two-sided
+  paired-bootstrap p-value `min(1, 2 * min(share(mean* <= 0), share(mean* >= 0)))` over resampled
+  per-task differences (`ValueError` without shared tasks). `report.holm(pvalues, alpha=0.05) ->
+  dict[str, bool]` is the Holm-Bonferroni step-down: sort ascending, reject `p_(i) <= alpha /
+  (m - i + 1)` in turn, stop at the first failure (later ones are not rejected); ties are handled
+  independently of input order. In suite A the primary family is `hone-inject − pi` and
+  `hone-inject − hermes`; `pairwise_table` ends with a `Holm` column: `yes`/`no` for family
+  members (yes only when Holm rejects), `-` for other pairs. "CI excludes 0" stays as its own
+  column.
