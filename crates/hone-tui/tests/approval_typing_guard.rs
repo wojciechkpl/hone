@@ -133,3 +133,74 @@ fn test_r4_enter_after_a_pause_should_proceed() {
 
     assert!(matches!(rx.try_recv(), Ok(StepAction::Proceed)));
 }
+
+// -- Round 3 (R14) ----------------------------------------------------------------------------
+//
+// Extra seam assumed: `App::handle_paste_at(&mut self, text: &str, now: Instant)`;
+// `handle_paste(text)` delegates with `Instant::now()` and, like a key, updates `last_key_at`.
+
+#[test]
+fn test_r14a_paste_then_immediate_y_should_not_approve() {
+    let (mut app, mut rx) = app();
+    let t0 = Instant::now();
+    app.handle_agent_event_at(paused_event(), t0);
+
+    app.handle_paste_at("some pasted text", ms(t0, 600));
+    app.handle_key_at(key(KeyCode::Char('y')), ms(t0, 620));
+
+    assert!(
+        rx.try_recv().is_err(),
+        "a paste counts as a keystroke for the guard"
+    );
+}
+
+#[test]
+fn test_r14a_paste_then_immediate_enter_should_not_approve() {
+    let (mut app, mut rx) = app();
+    let t0 = Instant::now();
+    app.handle_agent_event_at(paused_event(), t0);
+
+    app.handle_paste_at("line one\n", ms(t0, 600));
+    app.handle_key_at(key(KeyCode::Enter), ms(t0, 610));
+
+    assert!(!matches!(rx.try_recv(), Ok(StepAction::Proceed)));
+}
+
+#[test]
+fn test_r14b_enter_with_non_empty_input_should_not_approve() {
+    let (mut app, mut rx) = app();
+    let t0 = Instant::now();
+    app.type_text("fix it");
+    app.handle_agent_event_at(paused_event(), t0);
+
+    app.handle_key_at(key(KeyCode::Enter), ms(t0, 500));
+
+    assert!(
+        !matches!(rx.try_recv(), Ok(StepAction::Proceed)),
+        "with text in the input box Enter belongs to the input"
+    );
+}
+
+#[test]
+fn test_r14b_y_with_non_empty_input_after_pause_should_approve() {
+    let (mut app, mut rx) = app();
+    let t0 = Instant::now();
+    app.type_text("fix it");
+    app.handle_agent_event_at(paused_event(), t0);
+
+    app.handle_key_at(key(KeyCode::Char('y')), ms(t0, 500));
+
+    assert!(matches!(rx.try_recv(), Ok(StepAction::Proceed)));
+}
+
+#[test]
+fn test_r14c_cancel_turn_should_close_an_open_approval_menu() {
+    let (mut app, _rx) = app();
+    let t0 = Instant::now();
+    app.handle_agent_event_at(paused_event(), t0);
+    assert!(app.debugger_open, "precondition: menu open");
+
+    app.cancel_turn();
+
+    assert!(!app.debugger_open, "a stale menu must not outlive the turn");
+}

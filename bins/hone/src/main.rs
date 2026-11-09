@@ -4296,6 +4296,148 @@ mod tests {
         assert!(saw_done);
     }
 
+    // R10. Seam (free fn in main.rs, extracted from the `--orchestrate` printer task):
+    //   async fn print_orchestrate_events<O: std::io::Write, E: std::io::Write>(
+    //       rx: mpsc::Receiver<AgentEvent>, out: &mut O, err: &mut E)
+    // It prints Tokens / plan / worker lines to `out`, `error: <msg>` to `err`, and keeps
+    // draining until `recv()` returns `None`. It must NOT stop at an `Error`: dropping the
+    // receiver makes every later worker and the merge fail with `Cancelled`.
+    #[tokio::test]
+    async fn test_r10_orchestrate_printer_should_keep_draining_after_an_error_event() {
+        let (tx, rx) = mpsc::channel::<AgentEvent>(8);
+        let mut out: Vec<u8> = Vec::new();
+        let mut err: Vec<u8> = Vec::new();
+
+        let producer = async move {
+            tx.send(AgentEvent::Token { text: "before ".to_owned() })
+                .await
+                .unwrap();
+            tx.send(AgentEvent::Error { message: "worker 1 failed".to_owned() })
+                .await
+                .unwrap();
+            // The orchestrator is still running: later sends must still be accepted.
+            let later = tx
+                .send(AgentEvent::Token { text: "after-error".to_owned() })
+                .await;
+            assert!(later.is_ok(), "printer dropped the receiver at the first Error");
+            tx.send(AgentEvent::WorkerCompleted {
+                task_id: "t2".to_owned(),
+                agent: "coder".to_owned(),
+                status: "ok".to_owned(),
+                cost_usd: 0.0,
+            })
+            .await
+            .unwrap();
+        };
+        tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(producer, print_orchestrate_events(rx, &mut out, &mut err));
+        })
+        .await
+        .expect("printer hung or producer blocked");
+
+        let out = String::from_utf8(out).unwrap();
+        let err = String::from_utf8(err).unwrap();
+        assert!(out.contains("before "), "{out}");
+        assert!(out.contains("after-error"), "events after the Error were dropped: {out}");
+        assert!(out.contains("t2"), "{out}");
+        assert!(err.contains("worker 1 failed"), "{err}");
+    }
+
+    // R11: critique text and "APPROVED" never reach the user; a refine round's text follows
+    // exactly one separator; tool/pause events of every round still arrive.
+    const REVISED_SEP: &str = "\n\n---\n\n*Revised answer:*\n\n";
+
+    async fn collect_medium(
+        script: Vec<Vec<hone_proto::ProviderEvent>>,
+    ) -> (Vec<AgentEvent>, std::path::PathBuf, tempfile::TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        base_config.provider = Arc::new(SeqProvider {
+            script,
+            n: std::sync::Mutex::new(0),
+        });
+        let agent = AgentHandle::spawn(base_config.clone());
+        let mut base_config = base_config;
+        let step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _task = spawn_medium_turn(agent.clone(), "go".to_owned(), tx);
+        let mut events = Vec::new();
+        let collect = async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    step_tx.send(hone_proto::StepAction::Proceed).await.unwrap();
+                }
+                events.push(e);
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(15), collect)
+            .await
+            .expect("medium turn wedged");
+        (events, target, tmp)
+    }
+
+    fn shown_text(events: &[AgentEvent]) -> String {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::Token { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_r11_medium_turn_should_hide_critique_and_separate_refined_answer() {
+        use hone_proto::ProviderEvent;
+        let (events, target, _tmp) = collect_medium(vec![
+            text_turn("first answer"),
+            text_turn("the answer needs work"), // critique, not APPROVED
+            vec![
+                ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
+                    id: "c1".to_owned(),
+                    name: "mock_write".to_owned(),
+                    arguments: serde_json::json!({}),
+                }),
+                usage10(),
+                ProviderEvent::Done,
+            ],
+            text_turn("refined"),
+        ])
+        .await;
+
+        let shown = shown_text(&events);
+        assert!(!shown.contains("needs work"), "critique leaked: {shown:?}");
+        assert!(!shown.contains("APPROVED"), "{shown:?}");
+        assert_eq!(
+            shown,
+            format!("first answer{REVISED_SEP}refined"),
+            "answer, exactly one separator, then the refined text"
+        );
+        // Tool/pause events of the refine round still arrive and the write ran.
+        assert_eq!(paused_count(&events), 1, "{events:?}");
+        assert!(events.iter().any(|e| matches!(e, AgentEvent::ToolCallEnd { .. })));
+        assert!(target.exists());
+    }
+
+    #[tokio::test]
+    async fn test_r11_medium_turn_when_critique_approves_should_show_only_the_answer() {
+        let (events, _target, _tmp) = collect_medium(vec![
+            text_turn("the answer"),
+            text_turn("APPROVED"),
+        ])
+        .await;
+
+        let shown = shown_text(&events);
+        assert_eq!(shown, "the answer", "no critique, no APPROVED, no separator");
+    }
+
     // R6. Seam (pure fn in main.rs):
     //   fn code_modifying_tools_that_ran(events: &[AgentEvent]) -> Vec<String>
     // Names (in order of completion) of write_file/edit_file/multi_edit calls whose
