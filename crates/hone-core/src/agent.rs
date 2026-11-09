@@ -1249,13 +1249,22 @@ impl Agent {
             // calls are always dispatched sequentially to preserve safety.
             let redact = self.redacting();
 
+            // A read-only call joins the parallel batch only if the approval
+            // policy would not pause it; otherwise (e.g. `AlwaysAsk`/--step) it
+            // takes the sequential path, which owns the approval gate.
+            let parallel_ok = |agent: &Self, name: &str| {
+                tool_is_read_only(&agent.config.tools, name)
+                    && (agent.config.mode == AgentMode::AutoApprove
+                        || !agent.config.approval_policy.requires_approval(name, true))
+            };
+
             let mut i = 0;
             while i < pending_tool_calls.len() {
-                if tool_is_read_only(&self.config.tools, &pending_tool_calls[i].name) {
+                if parallel_ok(self, &pending_tool_calls[i].name) {
                     // Find the end of the consecutive read-only run.
                     let mut j = i;
                     while j < pending_tool_calls.len()
-                        && tool_is_read_only(&self.config.tools, &pending_tool_calls[j].name)
+                        && parallel_ok(self, &pending_tool_calls[j].name)
                     {
                         j += 1;
                     }
@@ -1771,7 +1780,10 @@ impl Agent {
                         .map(|t| t.is_read_only())
                         .unwrap_or(false);
 
+                    // AutoApprove skips the approval pause only; the permission
+                    // policy gate above still applies deny/ask rules.
                     if !policy_prompted
+                        && self.config.mode != AgentMode::AutoApprove
                         && self
                             .config
                             .approval_policy
@@ -2442,6 +2454,13 @@ enum AgentCommand {
     SetApprovalPolicy {
         policy: ToolApprovalPolicy,
     },
+    /// Install (or clear) the step-mode channel used by the approval gate.
+    /// The actor mutates `agent.config.step_rx` directly, so an
+    /// already-running agent (with loaded history) can be wired for
+    /// interactive approvals without a respawn.
+    SetStepChannel {
+        rx: Option<Arc<tokio::sync::Mutex<mpsc::Receiver<StepAction>>>>,
+    },
     /// Read the current approval policy.
     GetApprovalPolicy {
         reply: oneshot::Sender<ToolApprovalPolicy>,
@@ -2541,6 +2560,9 @@ impl AgentHandle {
                     }
                     AgentCommand::SetApprovalPolicy { policy } => {
                         agent.config.approval_policy = policy;
+                    }
+                    AgentCommand::SetStepChannel { rx } => {
+                        agent.config.step_rx = rx;
                     }
                     AgentCommand::GetApprovalPolicy { reply } => {
                         let _ = reply.send(agent.config.approval_policy.clone());
@@ -2728,6 +2750,15 @@ impl AgentHandle {
             .cmd_tx
             .send(AgentCommand::SetApprovalPolicy { policy })
             .await;
+    }
+
+    /// Install or clear the step-mode channel on the running agent.
+    /// Fire-and-forget.
+    pub async fn set_step_channel(
+        &self,
+        rx: Option<Arc<tokio::sync::Mutex<mpsc::Receiver<StepAction>>>>,
+    ) {
+        let _ = self.cmd_tx.send(AgentCommand::SetStepChannel { rx }).await;
     }
 
     /// Read the current approval policy. Falls back to `default()` if the

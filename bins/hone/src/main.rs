@@ -2488,6 +2488,30 @@ async fn main() -> Result<()> {
     run_result
 }
 
+/// Wire interactive approvals for the TUI: default policy is AskRisky
+/// (AlwaysAsk with `--step`) plus a step channel, applied to both
+/// `base_config` and the running `agent` (no respawn, history is kept).
+async fn wire_tui_approvals(
+    agent: &AgentHandle,
+    base_config: &mut AgentConfig,
+    step: bool,
+) -> tokio::sync::mpsc::Sender<hone_proto::StepAction> {
+    let (step_tx, step_rx) = tokio::sync::mpsc::channel::<hone_proto::StepAction>(1);
+    let step_rx = std::sync::Arc::new(tokio::sync::Mutex::new(step_rx));
+    let policy = if step {
+        ToolApprovalPolicy::AlwaysAsk
+    } else {
+        ToolApprovalPolicy::AskRisky {
+            always_allowed: Vec::new(),
+        }
+    };
+    base_config.approval_policy = policy.clone();
+    base_config.step_rx = Some(step_rx.clone());
+    agent.set_approval_policy(policy).await;
+    agent.set_step_channel(Some(step_rx)).await;
+    step_tx
+}
+
 /// Dispatch to the appropriate execution mode based on the parsed CLI flags.
 ///
 /// Extracted from `main` so that `mcp_manager.shutdown()` can unconditionally
@@ -2624,23 +2648,10 @@ async fn run_selected_mode(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Always wire the step-mode channel in interactive TUI mode so the
-    // approval menu can surface for risky tool calls. The default policy
-    // is AskRisky (auto-approve read-only, prompt for write/shell) which
-    // matches Claude Code's interactive UX. `--step` upgrades this to
-    // AlwaysAsk (prompt for every tool, including read-only).
-    let (step_tx, step_rx) = tokio::sync::mpsc::channel::<hone_proto::StepAction>(1);
-    let step_rx_arc = std::sync::Arc::new(tokio::sync::Mutex::new(step_rx));
+    // Wire approvals on both the config (used for future agents) and the
+    // already-running agent, which holds any resumed history.
     let mut base_config = base_config;
-    base_config.approval_policy = if cli.step {
-        ToolApprovalPolicy::AlwaysAsk
-    } else {
-        ToolApprovalPolicy::AskRisky {
-            always_allowed: Vec::new(),
-        }
-    };
-    base_config.step_rx = Some(step_rx_arc);
-    let step_tx = Some(step_tx);
+    let step_tx = Some(wire_tui_approvals(&agent, &mut base_config, cli.step).await);
 
     let result = run_tui(
         &mut terminal,
