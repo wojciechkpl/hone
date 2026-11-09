@@ -24,7 +24,7 @@ tool-result message with a **made-up id** (`guard-read-<uuid>`). Then the edit r
 flowchart LR
   A["assistant: tool_call edit_file (id c1)"] --> G["guard reads the file"]
   G -->|today| X["tool msg id guard-read-uuid<br/>(no matching call; unscanned)"]
-  G -->|fix| Y["edit c1's own result:<br/>scanned + redacted read, then edit result"]
+  G -->|fix| Y["edit c1's own result:<br/>edit outcome, then scanned + redacted read"]
 ```
 
 ## 2. Contract
