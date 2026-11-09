@@ -86,6 +86,15 @@ flowchart LR
 | C14 | Warnings (C3, C4, C6 in a project file; C8) go to **stderr** as `hone: warning: <path>: <message>`, once per start, never to stdout (so `--json` output stays clean) |
 | C15 | The line parser `configure::load_wizard_config` / `WizardConfig` is removed; the strict loader is the only reader. A file written by `build_toml` loads without error or warning |
 
+### Decisions from the red phase
+
+- `[sandbox]` and `[server]` become `Option` in `Config`, so a file that restates the
+  defaults still gets the C8 warning.
+- C4 + C6: when the user file names a key variable that is unset, no key comes from the
+  environment; the wizard `api_key` (if its provider maps) still applies.
+- C9 is decided in the binary, not the resolver. The resolver takes `--model` as an input
+  (`cli_model`) so the model choice carries its source.
+
 ## 4. Out of scope (follow-ups)
 
 - Applying `[sandbox]`, `[[routing]]`, `daily_limit_usd` (needs spend persisted across
