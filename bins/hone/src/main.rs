@@ -831,7 +831,13 @@ async fn load_project_config() -> (Option<Config>, Option<HoneMd>) {
 /// exit with code 2 rather than run without the rules the user wrote.
 fn load_permission_policy(working_dir: &std::path::Path) -> Option<hone_core::PolicyConfig> {
     let home = hone_tools::policy_gate::default_policy_home();
-    match policy_load::resolve_permission_policy(working_dir, home) {
+    // Read once at startup: the built-in rules are opt-in.
+    let env_value = std::env::var(hone_tools::policy_gate::POLICY_BUILTINS_ENV).ok();
+    if let Some(w) = hone_tools::policy_gate::builtins_env_warning(env_value.as_deref()) {
+        eprintln!("hone: warning: {w}");
+    }
+    let builtins = hone_tools::policy_gate::builtins_enabled(env_value.as_deref());
+    match policy_load::resolve_permission_policy(working_dir, home, builtins) {
         Ok(policy) => policy,
         Err(e) => {
             eprintln!("hone: permission policy error: {e}");

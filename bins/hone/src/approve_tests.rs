@@ -36,6 +36,7 @@ fn policy_with(rules: Vec<PolicyRule>) -> PolicyConfig {
         compiled: Arc::new(compiled),
         context,
         pre_approved: vec![],
+        builtins: false,
     }
 }
 

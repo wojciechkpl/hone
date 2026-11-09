@@ -148,6 +148,7 @@ async fn test_mcp_tool_call_delegates_to_client() {
         sandbox: Arc::new(sandbox),
         sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: PathBuf::from("/tmp"),
+        read_filter: None,
     };
 
     let output = tool

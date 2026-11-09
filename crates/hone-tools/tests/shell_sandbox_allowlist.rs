@@ -618,6 +618,7 @@ mod call_wiring {
             sandbox: Arc::new(HookSandbox(platform)),
             sandbox_policy: Arc::new(SandboxPolicy::permissive()),
             working_dir: dir.path().to_path_buf(),
+            read_filter: None,
         }
     }
 

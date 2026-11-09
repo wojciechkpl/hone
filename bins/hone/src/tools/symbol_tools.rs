@@ -114,16 +114,29 @@ impl SymbolAtTool {
 #[async_trait]
 impl Tool for SymbolAtTool {
     fn subjects(&self, input: &ToolInput, sctx: &SubjectContext) -> ToolSubjects {
+        use hone_config::policy::{PathOp, Subject};
+        // The canonical path and the path as written (a symlinked dotfile).
+        let mut subjects = Vec::new();
+        if let Some(f) = input.get_str("file") {
+            let canonical = subject_path(f, sctx);
+            let written = hone_tools::lexical_subject_path(f, sctx);
+            if written != canonical {
+                subjects.push(Subject::Path {
+                    path: written,
+                    op: PathOp::Read,
+                });
+            }
+            subjects.insert(
+                0,
+                Subject::Path {
+                    path: canonical,
+                    op: PathOp::Read,
+                },
+            );
+        }
         ToolSubjects {
-            subjects: input
-                .get_str("file")
-                .map(|f| hone_config::policy::Subject::Path {
-                    path: subject_path(f, sctx),
-                    op: hone_config::policy::PathOp::Read,
-                })
-                .into_iter()
-                .collect(),
-            unparsed: false,
+            subjects,
+            ..Default::default()
         }
     }
 
@@ -205,3 +218,7 @@ impl Tool for SymbolAtTool {
         ToolLayer::Native
     }
 }
+
+#[cfg(test)]
+#[path = "symbol_tools_aswritten_tests.rs"]
+mod aswritten_tests;

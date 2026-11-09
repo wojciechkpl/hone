@@ -16,6 +16,7 @@ fn make_ctx() -> ToolContext {
         sandbox: Arc::new(NullSandbox),
         sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: PathBuf::from("/"),
+        read_filter: None,
     }
 }
 

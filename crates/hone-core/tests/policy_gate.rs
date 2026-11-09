@@ -79,6 +79,7 @@ impl FakeTool {
             Arc::new(move |_| ToolSubjects {
                 subjects: subjects.clone(),
                 unparsed: false,
+                ..Default::default()
             }),
         )
     }
@@ -91,6 +92,7 @@ impl FakeTool {
             Arc::new(|_| ToolSubjects {
                 subjects: vec![],
                 unparsed: true,
+                ..Default::default()
             }),
         )
     }
@@ -209,6 +211,7 @@ fn policy(workdir: &Path, rules: Vec<PolicyRule>, pre_approved: &[&str]) -> Poli
         compiled: Arc::new(compiled),
         context,
         pre_approved: pre_approved.iter().map(|s| (*s).to_owned()).collect(),
+        builtins: false,
     }
 }
 
@@ -376,13 +379,33 @@ fn test_decide_when_empty_policy_and_unparsed_should_allow() {
 }
 
 #[test]
-fn test_decide_when_literal_ask_rule_session_approved_by_id_should_allow() {
+fn test_decide_when_literal_host_ask_rule_session_approved_by_id_should_allow() {
+    // P2.5 section 7: only host and path rules are approved by bare id.
+    let (_t, dir) = canonical_tmp();
+    let rule = PolicyRule::host("example.com", Decision::Ask).with_id("ask-host");
+    let p = policy(&dir, vec![rule], &[]);
+    let (tool, _) = FakeTool::fixed("t", false, vec![Subject::Host("example.com".to_owned())]);
+    let c = call("1", "t", json!({}));
+    assert_eq!(
+        decide_for(&p, &["ask-host"], Some(&tool), &c),
+        ("allow", None)
+    );
+}
+
+#[test]
+fn test_decide_when_literal_command_ask_rule_session_approved_by_id_should_still_ask() {
+    // P2.5 section 7: a command rule is a prefix match, so a bare id never approves it.
     let (_t, dir) = canonical_tmp();
     let p = policy(&dir, vec![ask_rule("deploy prod", "ask-deploy")], &[]);
     let (tool, _) = FakeTool::fixed("t", false, vec![cmd("deploy prod")]);
     let c = call("1", "t", json!({}));
     assert_eq!(
         decide_for(&p, &["ask-deploy"], Some(&tool), &c),
+        ("ask", some("ask-deploy"))
+    );
+    let key = approval_key("ask-deploy", &cmd("deploy prod"));
+    assert_eq!(
+        decide_for(&p, &[key.as_str()], Some(&tool), &c),
         ("allow", None)
     );
 }
@@ -1017,6 +1040,7 @@ async fn test_agent_policy_when_hook_mutates_input_should_evaluate_mutated_input
                 .into_iter()
                 .collect(),
             unparsed: false,
+            ..Default::default()
         }),
     );
     let rule =
@@ -1243,6 +1267,7 @@ fn policy_with_home(
         compiled: Arc::new(compiled),
         context,
         pre_approved: pre_approved.iter().map(|s| (*s).to_owned()).collect(),
+        builtins: false,
     }
 }
 
@@ -1295,8 +1320,10 @@ fn test_decide_when_one_of_two_ask_rules_session_approved_should_still_ask_the_o
     let p = policy_with_home(&dir, &home, two_ask_rules(), &[]);
     let tool = push_and_vault_tool(&home);
     let c = call("1", "t", json!({}));
+    // user:1 is a command rule: approved per (rule, subject), not by bare id (P2.5 section 7)
+    let k1 = approval_key("user:1", &push_subject());
     assert_eq!(
-        decide_for(&p, &["user:1"], Some(&tool), &c),
+        decide_for(&p, &[k1.as_str()], Some(&tool), &c),
         ("ask", some("user:2"))
     );
     assert_eq!(
@@ -1371,6 +1398,7 @@ fn unparsed_with(subjects: Vec<Subject>) -> FakeTool {
         Arc::new(move |_| ToolSubjects {
             subjects: subjects.clone(),
             unparsed: true,
+            ..Default::default()
         }),
     )
     .0
@@ -1505,6 +1533,7 @@ fn path_arg_subjects(op: PathOp) -> SubjFn {
             .into_iter()
             .collect(),
         unparsed: false,
+        ..Default::default()
     })
 }
 
@@ -1565,6 +1594,7 @@ fn deploy_target_subjects() -> SubjFn {
             .into_iter()
             .collect(),
         unparsed: false,
+        ..Default::default()
     })
 }
 
@@ -1620,7 +1650,7 @@ async fn test_agent_approve_always_on_wildcard_rule_should_cover_the_same_subjec
 }
 
 #[tokio::test]
-async fn test_agent_approve_always_on_literal_rule_should_be_remembered_by_rule_id() {
+async fn test_agent_approve_always_on_literal_command_rule_should_cover_the_same_command_line_again() {
     let (_t, dir) = canonical_tmp();
     let (tool, count) = FakeTool::fixed("deployer", false, vec![cmd("deploy prod")]);
     let p = policy(&dir, vec![ask_rule("deploy prod", "ask-literal")], &[]);

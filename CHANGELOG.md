@@ -69,6 +69,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - `env -S'cmd'` is parsed.
   - `docs/configuration.md` has a Permissions section.
 
+### Built-in permission rules and secret redaction (P2.5, opt-in)
+
+- **`HONE_POLICY_BUILTINS=1`** turns on a built-in rule set and output redaction. Without it, and without policy files, nothing changes. They stay opt-in until the Phase 2 benchmark gate passes.
+  - Any value other than exactly `1` leaves them off and prints a one-line warning.
+  - With built-ins on, the policy counts as non-empty, so providers that run their own tools are refused unless `HONE_ALLOW_UNGATED_PROVIDER=1`, and `--approve builtin:…` works with no policy files.
+- **Built-in rules** (39 rules, ids `builtin:…`, listed in `docs/configuration.md`):
+  - Reading or writing these asks: `.env` files, `~/.ssh`, cloud, git and package credentials, `~/.gnupg`, and shell history.
+  - Writing these asks:
+    - shell startup files;
+    - anything under any `.git` or `.hone`;
+    - `~/.gitconfig`;
+    - autostart folders;
+    - user `bin` folders and `~/.cargo/bin`;
+    - anything outside the workdir except temp directories.
+  - These commands ask: `git push`, `git config` changes, `git -c`, `git remote add`/`set-url`, `chmod 777`, `crontab`, `at`, `systemd-run`, `launchctl`.
+  - These are denied: `sudo`, `sudoedit`, `su`, `doas`, `pkexec` and `run0`.
+  - Any host the agent fetches from asks.
+  - User rules can still replace a built-in verdict; project rules can only tighten it.
+- **Running code from a stream is denied (`builtin:pipe-to-shell`).** That covers:
+  - `curl … | sh` and the same into Python, Perl, Ruby, Node, PHP or PowerShell;
+  - `bash <(curl …)` and `source <(…)`;
+  - stdin script paths;
+  - unquoted heredocs with expansions fed to a shell.
+
+  The pattern is still caught behind wrappers such as `env`, `nice`, `busybox`, `flock` and `script`, and under versioned interpreter names.
+- **`computer_control` and `screen_capture` ask** (`builtin:computer-control`, `builtin:screen-capture`).
+- **Shell parsing.**
+  - **Variable-derived paths ask**, but only in real file positions. Examples: `cat "$f"`, `> "$out"`, or a relative path after `cd "$dir"`.
+  - **`for` loops over literal words or globs** are substituted and checked as if written out. The substitution is not trusted after reassignment, `eval`/`source`, namerefs, or on a line that defines a function.
+  - **Heredoc and here-string bodies** fed to a shell or `source` are parsed and gated.
+  - **Paths** are checked both as written and resolved, so a symlinked dotfile can't escape its rule. A symlinked workdir matches in both forms.
+- **"Always" approvals are narrower.**
+  - "Always" on a command covers only that exact command line, including its leading assignments, wrappers and `cd`. It never covers a line with `sh -c`, `eval` or `source`.
+  - "Approve once" covers only the rule it was asked about. Any other ask in the same call prompts too.
+  - `--approve`, honed `approve` and `HONE_APPROVE` reject ids whose rule always denies.
+- **`grep` and `glob` skip files the policy protects.** `grep` reports how many it skipped. The tool cache never serves a result that skipped the filter.
+- **The gate runs before `PreToolUse` hooks**, and again if a hook rewrites the input.
+- **Redaction (P2.5b).**
+  - **What is redacted:** tool output that reaches the model, `ToolCallEnd` events, `hone-mcp-server` results, the egress-log preview, `PostToolUse` payloads and injected context.
+  - **What it catches:** private keys (PEM, PGP and wrapped base64), cloud and API tokens, auth headers, docker auth, kube key data, URL and netrc passwords, and secret-named assignments with secret-looking values.
+  - **Each match** is replaced with `[REDACTED:<kind>]`, followed by a one-line note. Templates, identifiers, prose, URLs and paths are left alone, so code the model reads back stays intact.
+  - **Performance:** it runs in linear time.
+- **Reviewed** in five security-review rounds against the real parser and redactor. The remaining known gaps, such as git global options, `find -exec` and `env -C`, are listed in `docs/configuration.md` and assigned to P2.6. Contract: `docs/plans/policy-p2.5-spec.md`.
+
 ### Memory subsystem overhaul
 
 A multi-PR rewrite of how memories are written, indexed, and recalled. The full design lives in `docs/priv/memory-improvements-plan-2026-04-30.md` (R1–R12); user-visible changes:

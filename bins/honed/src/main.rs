@@ -423,6 +423,7 @@ async fn main() -> Result<()> {
                     let policy = match hone_tools::policy_gate::resolve_permission_policy(
                         &working_dir,
                         hone_server::resolve_policy_home(),
+                        hone_server::resolve_policy_builtins(),
                     ) {
                         Ok(p) => p,
                         Err(e) => {

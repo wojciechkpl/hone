@@ -17,6 +17,7 @@ fn make_ctx(dir: &TempDir) -> ToolContext {
         sandbox: Arc::new(NullSandbox),
         sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: dir.path().to_path_buf(),
+        read_filter: None,
     }
 }
 
@@ -77,6 +78,7 @@ async fn test_shell_macos_write_to_etc_hosts_denied() {
         sandbox: Arc::new(SeatbeltSandbox),
         sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
         working_dir: dir.path().to_path_buf(),
+        read_filter: None,
     };
 
     let tool = ShellTool;

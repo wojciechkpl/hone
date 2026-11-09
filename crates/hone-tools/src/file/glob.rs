@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use crate::{
     error::ToolError,
     file::resolve_within_working_dir,
+    policy_gate::ReadAccess,
     traits::{Tool, ToolContext, ToolInput, ToolOutput},
 };
 
@@ -73,6 +74,8 @@ impl Tool for GlobTool {
             })?
         };
 
+        let read_filter = ctx.read_filter.clone();
+
         // Run the directory walk on a blocking thread to avoid blocking the async runtime.
         let files: Vec<String> = tokio::task::spawn_blocking(move || {
             let mut matches = Vec::new();
@@ -84,6 +87,13 @@ impl Tool for GlobTool {
                     let rel = path.strip_prefix(&search_root).unwrap_or(path);
 
                     if glob_matcher.is_match(rel) {
+                        // A name is not the content: only Denied entries are dropped.
+                        if read_filter
+                            .as_ref()
+                            .is_some_and(|f| matches!(f(path), ReadAccess::Denied))
+                        {
+                            continue;
+                        }
                         matches.push(path.to_string_lossy().into_owned());
                     }
                 }

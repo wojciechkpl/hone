@@ -19,6 +19,11 @@ pub struct ScreenCaptureTool;
 
 #[async_trait]
 impl Tool for ScreenCaptureTool {
+    fn builtin_ask(&self) -> Option<&'static str> {
+        // A screenshot can carry anything on screen to the model provider.
+        Some("builtin:screen-capture")
+    }
+
     fn name(&self) -> &str {
         "screen_capture"
     }
@@ -95,6 +100,10 @@ pub struct ComputerControlTool;
 
 #[async_trait]
 impl Tool for ComputerControlTool {
+    fn builtin_ask(&self) -> Option<&'static str> {
+        Some("builtin:computer-control")
+    }
+
     fn name(&self) -> &str {
         "computer_control"
     }

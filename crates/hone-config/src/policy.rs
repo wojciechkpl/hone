@@ -132,6 +132,10 @@ pub struct PolicyRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     op: Option<OpFilter>,
     decision: Decision,
+    /// Additional path patterns of the same rule (built-in rules only; never
+    /// read from or written to a file).
+    #[serde(skip)]
+    extra_paths: Vec<String>,
 }
 
 impl PolicyRule {
@@ -144,6 +148,7 @@ impl PolicyRule {
             host: None,
             op: None,
             decision,
+            extra_paths: Vec::new(),
         }
     }
 
@@ -172,7 +177,15 @@ impl PolicyRule {
         }
     }
 
-    /// Set an explicit id (must match `[A-Za-z0-9._-]{1,64}`).
+    /// Add another path pattern to a path rule; the rule matches if any pattern does.
+    /// Not available from policy files.
+    pub fn or_path(mut self, pattern: impl Into<String>) -> Self {
+        self.extra_paths.push(pattern.into());
+        self
+    }
+
+    /// Set an explicit id (must match `[A-Za-z0-9._-]{1,64}`; in the built-in
+    /// layer `builtin:[a-z0-9-]{1,48}`).
     pub fn with_id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self
@@ -182,6 +195,220 @@ impl PolicyRule {
 impl From<&Rule> for PolicyRule {
     fn from(rule: &Rule) -> Self {
         PolicyRule::command(rule.r#match.clone(), rule.decision)
+    }
+}
+
+// -- built-in rules ------------------------------------------------------------
+
+/// Ids the gate uses for decisions that aren't rules; built-in rules never use them.
+const RESERVED_BUILTIN_IDS: [&str; 5] = [
+    "builtin:unparsed-command",
+    "builtin:invalid-host",
+    "builtin:pipe-to-shell",
+    "builtin:computer-control",
+    "builtin:screen-capture",
+];
+
+/// The built-in rule set (`docs/plans/policy-p2.5-spec.md` section 3), in
+/// evaluation order. Compile it as the Builtin layer.
+pub fn builtin_rules() -> Vec<PolicyRule> {
+    use Decision::{Allow, Ask, Deny};
+    use OpFilter::{Any, Write};
+
+    let path = |id: &str, patterns: &[&str], op: OpFilter, d: Decision| {
+        let mut it = patterns.iter();
+        let first = it.next().copied().unwrap_or("/");
+        let mut r = PolicyRule::path(first, op, d).with_id(id);
+        for p in it {
+            r = r.or_path(*p);
+        }
+        r
+    };
+    let cmd = |id: &str, pattern: &str, d: Decision| PolicyRule::command(pattern, d).with_id(id);
+
+    vec![
+        path(
+            "builtin:env-template",
+            &[
+                "{workdir}/**/.env.example",
+                "{workdir}/**/.env.sample",
+                "{workdir}/**/.env.template",
+            ],
+            Any,
+            Allow,
+        ),
+        path(
+            "builtin:env-file",
+            &["**/.env", "**/.env.*", "**/*.env", "**/.envrc"],
+            Any,
+            Ask,
+        ),
+        path("builtin:ssh", &["~/.ssh/**"], Any, Ask),
+        path(
+            "builtin:cloud-credentials",
+            &[
+                "~/.aws/**",
+                "~/.config/gcloud/**",
+                "~/.azure/**",
+                "~/.kube/**",
+                "~/.docker/config.json",
+                "~/.vault-token",
+                "~/.terraform.d/credentials.tfrc.json",
+            ],
+            Any,
+            Ask,
+        ),
+        path(
+            "builtin:git-credentials",
+            &[
+                "~/.git-credentials",
+                "~/.config/git/credentials",
+                "~/.netrc",
+                "~/.config/gh/hosts.yml",
+            ],
+            Any,
+            Ask,
+        ),
+        path(
+            "builtin:package-credentials",
+            &[
+                "**/.npmrc",
+                "**/.pypirc",
+                "~/.cargo/credentials",
+                "~/.cargo/credentials.toml",
+                "~/.gem/credentials",
+            ],
+            Any,
+            Ask,
+        ),
+        path("builtin:gnupg", &["~/.gnupg/**"], Any, Ask),
+        path(
+            "builtin:shell-history",
+            &[
+                "~/.bash_history",
+                "~/.zsh_history",
+                "~/.local/share/fish/fish_history",
+                "~/.python_history",
+                "~/.psql_history",
+                "~/.mysql_history",
+            ],
+            Any,
+            Ask,
+        ),
+        path(
+            "builtin:hone-config",
+            &["~/.config/hone/**", "**/.hone/**"],
+            Write,
+            Ask,
+        ),
+        path(
+            "builtin:shell-startup",
+            &[
+                "~/.bashrc",
+                "~/.bash_profile",
+                "~/.bash_login",
+                "~/.bash_logout",
+                "~/.profile",
+                "~/.zshrc",
+                "~/.zprofile",
+                "~/.zshenv",
+                "~/.zlogin",
+                "~/.zlogout",
+                "~/.config/fish/**",
+            ],
+            Write,
+            Ask,
+        ),
+        path("builtin:git-hooks", &["**/.git", "**/.git/**"], Write, Ask),
+        path(
+            "builtin:git-config",
+            &["~/.gitconfig", "~/.config/git/**"],
+            Write,
+            Ask,
+        ),
+        path(
+            "builtin:autostart",
+            &[
+                "~/.config/systemd/**",
+                "~/.config/autostart/**",
+                "~/Library/LaunchAgents/**",
+            ],
+            Write,
+            Ask,
+        ),
+        path(
+            "builtin:user-bin",
+            &["~/.local/bin/**", "~/bin/**", "~/.cargo/bin/**"],
+            Write,
+            Ask,
+        ),
+        path(
+            "builtin:toolchain-config",
+            &["~/.cargo/config.toml", "~/.cargo/config"],
+            Write,
+            Ask,
+        ),
+        path("builtin:workdir-write", &["{workdir}/**"], Write, Allow),
+        path(
+            "builtin:temp-write",
+            &[
+                "/tmp/**",
+                "/private/tmp/**",
+                "/var/tmp/**",
+                "/private/var/tmp/**",
+                "/var/folders/*/*/T/**",
+                "/private/var/folders/*/*/T/**",
+                "/dev/null",
+                "/dev/stdout",
+                "/dev/stderr",
+                "/dev/tty",
+                "/dev/fd/**",
+            ],
+            Write,
+            Allow,
+        ),
+        path("builtin:outside-workdir", &["/**"], Write, Ask),
+        cmd("builtin:git-push", "git push", Ask),
+        cmd("builtin:chmod-777", "chmod *777*", Ask),
+        cmd("builtin:git-config-get", "git config --get*", Allow),
+        cmd("builtin:git-config-list", "git config -l*", Allow),
+        cmd("builtin:git-config-list-long", "git config --list*", Allow),
+        cmd("builtin:git-config-cmd", "git config", Ask),
+        cmd("builtin:git-inline-config", "git -c *", Ask),
+        cmd("builtin:git-remote-set-url", "git remote set-url", Ask),
+        cmd("builtin:git-remote-add", "git remote add", Ask),
+        cmd("builtin:sudo", "sudo", Deny),
+        cmd("builtin:sudoedit", "sudoedit", Deny),
+        cmd("builtin:su", "su", Deny),
+        cmd("builtin:doas", "doas", Deny),
+        cmd("builtin:pkexec", "pkexec", Deny),
+        cmd("builtin:run0", "run0", Deny),
+        cmd("builtin:crontab-list", "crontab -l", Allow),
+        cmd("builtin:crontab", "crontab", Ask),
+        cmd("builtin:at", "at", Ask),
+        cmd("builtin:systemd-run", "systemd-run", Ask),
+        cmd("builtin:launchctl", "launchctl", Ask),
+        PolicyRule::host("*", Ask).with_id("builtin:new-host"),
+    ]
+}
+
+/// Explicit-id check per layer: built-in ids are `builtin:[a-z0-9-]{1,48}` (and not
+/// reserved); user and project ids keep `[A-Za-z0-9._-]{1,64}`, which has no `:`.
+fn explicit_id_ok(layer: Layer, id: &str) -> bool {
+    match layer {
+        Layer::Builtin => id.strip_prefix("builtin:").is_some_and(|name| {
+            (1..=48).contains(&name.len())
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                && !RESERVED_BUILTIN_IDS.contains(&id)
+        }),
+        Layer::User | Layer::Project => {
+            (1..=64).contains(&id.len())
+                && id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        }
     }
 }
 
@@ -305,6 +532,9 @@ struct CompiledRule {
     catch_all: bool,
     /// The pattern has no glob metacharacters (`* ? [ {`).
     literal: bool,
+    /// Approving the rule remembers its bare id: a literal host rule, or a literal
+    /// path rule with one pattern and an explicit `read`/`write` op.
+    by_id: bool,
 }
 
 /// True if `pattern` has no literal characters other than `/` and `.`.
@@ -386,10 +616,30 @@ impl CompiledPolicy {
         self.all_rules().any(|r| r.id == id && r.literal)
     }
 
+    /// True if approving the rule with this id remembers the bare id: the rule is
+    /// literal and not a command rule (command rules are prefix matches, so they
+    /// are approved per command line). Unknown ids return false.
+    pub fn approves_by_id(&self, id: &str) -> bool {
+        self.all_rules()
+            .any(|r| r.id == id && r.by_id)
+    }
+
     /// True if the rule with this id matches (nearly) everything, so approving it
     /// for one subject must not approve all subjects.
     pub fn is_catch_all(&self, id: &str) -> bool {
         self.all_rules().any(|r| r.id == id && r.catch_all)
+    }
+
+    /// The decision of the rule with this id (explicit or automatic); `None` for an
+    /// unknown id.
+    pub fn rule_decision(&self, id: &str) -> Option<Decision> {
+        self.all_rules().find(|r| r.id == id).map(|r| r.decision)
+    }
+
+    /// True when the user or project layer holds a rule (policy files exist and
+    /// have rules), as opposed to only the built-in layer.
+    pub fn has_file_rules(&self) -> bool {
+        !self.user.is_empty() || !self.project.is_empty()
     }
 
     /// True when any layer holds a command rule.
@@ -424,7 +674,20 @@ impl CompiledPolicy {
         user: &[PolicyRule],
         project: &[PolicyRule],
     ) -> Result<Self, PermissionError> {
-        let env = ExpansionEnv::new(ctx)?;
+        Self::compile_logical(ctx, None, builtin, user, project)
+    }
+
+    /// Like [`Self::compile`], with the working directory as the caller passed it
+    /// (absolute, unresolved). `{workdir}` then expands to both that path and
+    /// `ctx.workdir`, and a pattern matches if either form matches.
+    pub fn compile_logical(
+        ctx: &PolicyContext,
+        logical_workdir: Option<&Path>,
+        builtin: &[PolicyRule],
+        user: &[PolicyRule],
+        project: &[PolicyRule],
+    ) -> Result<Self, PermissionError> {
+        let env = ExpansionEnv::new(ctx, logical_workdir)?;
         let mut seen = HashSet::new();
         let builtin = compile_layer(&env, Layer::Builtin, builtin, &mut seen)?;
         let user = compile_layer(&env, Layer::User, user, &mut seen)?;
@@ -522,6 +785,18 @@ impl CompiledPolicy {
         user: Option<&Path>,
         project: &Path,
     ) -> Result<Self, PermissionError> {
+        Self::load_layers_logical(ctx, None, builtin, user, project)
+    }
+
+    /// Like [`Self::load_layers`], with a logical working directory
+    /// (see [`Self::compile_logical`]).
+    pub fn load_layers_logical(
+        ctx: &PolicyContext,
+        logical_workdir: Option<&Path>,
+        builtin: &[PolicyRule],
+        user: Option<&Path>,
+        project: &Path,
+    ) -> Result<Self, PermissionError> {
         let user_rules = match user {
             Some(u) => load_policy_file(u)?,
             None => Vec::new(),
@@ -539,7 +814,7 @@ impl CompiledPolicy {
             }
         }
         let project_rules = load_policy_file(project)?;
-        Self::compile(ctx, builtin, &user_rules, &project_rules)
+        Self::compile_logical(ctx, logical_workdir, builtin, &user_rules, &project_rules)
     }
 
     /// Load `<home>/.config/hone/permissions.toml` and
@@ -575,13 +850,15 @@ fn first_match(rules: &[CompiledRule], layer: Layer, s: &Prepared<'_>) -> Option
 /// Normalised, glob-escaped workdir/home used when expanding path patterns.
 struct ExpansionEnv {
     workdir: PathBuf,
-    workdir_escaped: String,
+    /// Glob-escaped working directories: the canonical one first, then the logical
+    /// one when it differs.
+    workdir_variants: Vec<String>,
     home_escaped: Option<String>,
     case_insensitive: bool,
 }
 
 impl ExpansionEnv {
-    fn new(ctx: &PolicyContext) -> Result<Self, PermissionError> {
+    fn new(ctx: &PolicyContext, logical: Option<&Path>) -> Result<Self, PermissionError> {
         let ctx_err = |m: &str| PermissionError::InvalidContext(m.to_string());
         if !ctx.workdir.is_absolute() {
             return Err(ctx_err("workdir must be an absolute path"));
@@ -592,6 +869,15 @@ impl ExpansionEnv {
                 .to_str()
                 .ok_or_else(|| ctx_err("workdir must be valid UTF-8"))?,
         );
+        let mut workdir_variants = vec![workdir_escaped];
+        if let Some(l) = logical.filter(|l| l.is_absolute()) {
+            let l = normalise_path(l);
+            if l != workdir {
+                if let Some(text) = l.to_str() {
+                    workdir_variants.push(escape_glob(text));
+                }
+            }
+        }
         let home_escaped = match &ctx.home {
             None => None,
             Some(h) => {
@@ -607,7 +893,7 @@ impl ExpansionEnv {
         };
         Ok(ExpansionEnv {
             workdir,
-            workdir_escaped,
+            workdir_variants,
             home_escaped,
             case_insensitive: ctx.case_insensitive_paths,
         })
@@ -637,12 +923,11 @@ fn compile_layer(
         };
 
         if let Some(id) = &rule.id {
-            let ok = (1..=64).contains(&id.len())
-                && id
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
-            if !ok {
-                return Err(invalid("rule id must match [A-Za-z0-9._-]{1,64}"));
+            if !explicit_id_ok(layer, id) {
+                return Err(invalid(match layer {
+                    Layer::Builtin => "built-in rule id must match builtin:[a-z0-9-]{1,48}",
+                    _ => "rule id must match [A-Za-z0-9._-]{1,64}",
+                }));
             }
         }
 
@@ -681,10 +966,13 @@ fn compile_layer(
             }
             Matcher::Command(compile_command(p)?)
         } else if let Some(p) = &rule.path {
-            let globs = compile_path(env, p).map_err(|e| match e {
-                PathPatternError::Invalid(r) => invalid(&r),
-                PathPatternError::Glob(e) => e,
-            })?;
+            let mut globs = Vec::new();
+            for pat in std::iter::once(p).chain(rule.extra_paths.iter()) {
+                globs.extend(compile_path(env, pat).map_err(|e| match e {
+                    PathPatternError::Invalid(r) => invalid(&r),
+                    PathPatternError::Glob(e) => e,
+                })?);
+            }
             if globs.is_empty() {
                 tracing::warn!(layer = %layer, index, "rule uses `~` but no home directory is known; it can never match");
             }
@@ -713,7 +1001,16 @@ fn compile_layer(
             decision: rule.decision,
             matcher,
             catch_all: pattern_is_catch_all(pattern, command.is_some()),
-            literal: !pattern.contains(['*', '?', '[', '{']),
+            literal: !std::iter::once(pattern)
+                .chain(rule.extra_paths.iter().map(String::as_str))
+                .any(|p| p.contains(['*', '?', '[', '{'])),
+            by_id: !std::iter::once(pattern)
+                .chain(rule.extra_paths.iter().map(String::as_str))
+                .any(|p| p.contains(['*', '?', '[', '{']))
+                && (rule.host.is_some()
+                    || (rule.path.is_some()
+                        && rule.extra_paths.is_empty()
+                        && matches!(rule.op, Some(OpFilter::Read | OpFilter::Write)))),
         });
     }
     Ok(out)
@@ -883,6 +1180,25 @@ fn segment_has_double_star(seg: &str) -> bool {
 }
 
 fn compile_path(env: &ExpansionEnv, raw: &str) -> Result<Vec<GlobMatcher>, PathPatternError> {
+    let uses_workdir = raw.contains("{workdir}")
+        || !(raw == "~" || raw.starts_with("~/") || raw.starts_with('/') || raw.starts_with("**"));
+    let variants: &[String] = if uses_workdir {
+        &env.workdir_variants
+    } else {
+        &env.workdir_variants[..1]
+    };
+    let mut out = Vec::new();
+    for wd in variants {
+        out.extend(compile_path_with(env, raw, wd)?);
+    }
+    Ok(out)
+}
+
+fn compile_path_with(
+    env: &ExpansionEnv,
+    raw: &str,
+    workdir_escaped: &str,
+) -> Result<Vec<GlobMatcher>, PathPatternError> {
     let invalid = |m: &str| PathPatternError::Invalid(m.to_string());
 
     let expanded = if raw == "~" || raw.starts_with("~/") {
@@ -891,15 +1207,15 @@ fn compile_path(env: &ExpansionEnv, raw: &str) -> Result<Vec<GlobMatcher>, PathP
         };
         format!(
             "{home}{}",
-            raw[1..].replace("{workdir}", &env.workdir_escaped)
+            raw[1..].replace("{workdir}", workdir_escaped)
         )
     } else {
-        raw.replace("{workdir}", &env.workdir_escaped)
+        raw.replace("{workdir}", workdir_escaped)
     };
     let anchored = if expanded.starts_with('/') || expanded.starts_with("**") {
         expanded
     } else {
-        format!("{}/{expanded}", env.workdir_escaped)
+        format!("{workdir_escaped}/{expanded}")
     };
 
     // Lexical normalisation over segments, tracking which are literal.

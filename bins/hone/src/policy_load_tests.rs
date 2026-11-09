@@ -48,14 +48,14 @@ fn verdict(p: &hone_core::PolicyConfig, command: &str) -> (Decision, Option<Stri
 fn test_resolve_when_no_files_should_return_none() {
     let wd = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
-    let r = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()));
+    let r = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()), false);
     assert!(matches!(r, Ok(None)), "{r:?}");
 }
 
 #[test]
 fn test_resolve_when_no_files_and_no_home_should_return_none() {
     let wd = tempfile::tempdir().unwrap();
-    let r = resolve_permission_policy(wd.path(), None);
+    let r = resolve_permission_policy(wd.path(), None, false);
     assert!(matches!(r, Ok(None)), "{r:?}");
 }
 
@@ -64,7 +64,7 @@ fn test_resolve_when_home_none_and_project_file_should_use_project_rules_only() 
     let wd = tempfile::tempdir().unwrap();
     write(&project_file(wd.path()), PROJECT_DENY);
 
-    let p = resolve_permission_policy(wd.path(), None)
+    let p = resolve_permission_policy(wd.path(), None, false)
         .expect("loads")
         .expect("project file present => Some");
 
@@ -83,12 +83,12 @@ fn test_resolve_when_home_is_relative_should_treat_it_as_none() {
     let rel = Some(PathBuf::from("relative/home"));
 
     // No project file: nothing to load, and a relative home must not be an error.
-    let r = resolve_permission_policy(wd.path(), rel.clone());
+    let r = resolve_permission_policy(wd.path(), rel.clone(), false);
     assert!(matches!(r, Ok(None)), "{r:?}");
 
     // With a project file: loads, and the context carries no home.
     write(&project_file(wd.path()), PROJECT_DENY);
-    let p = resolve_permission_policy(wd.path(), rel)
+    let p = resolve_permission_policy(wd.path(), rel, false)
         .expect("relative home must not fail the load")
         .expect("Some");
     assert!(p.context.home.is_none());
@@ -100,7 +100,7 @@ fn test_resolve_when_only_user_file_should_return_some_with_user_rules() {
     let home = tempfile::tempdir().unwrap();
     write(&user_file(home.path()), USER_ASK);
 
-    let p = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()))
+    let p = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()), false)
         .expect("loads")
         .expect("user file present => Some");
 
@@ -118,7 +118,7 @@ fn test_resolve_when_both_files_should_merge_layers() {
     write(&user_file(home.path()), USER_ASK);
     write(&project_file(wd.path()), PROJECT_DENY);
 
-    let p = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()))
+    let p = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()), false)
         .unwrap()
         .unwrap();
 
@@ -130,7 +130,7 @@ fn test_resolve_when_both_files_should_merge_layers() {
 fn test_resolve_when_project_file_is_broken_should_return_err() {
     let wd = tempfile::tempdir().unwrap();
     write(&project_file(wd.path()), "this is [[ not toml");
-    let r = resolve_permission_policy(wd.path(), None);
+    let r = resolve_permission_policy(wd.path(), None, false);
     assert!(r.is_err(), "{r:?}");
 }
 
@@ -139,7 +139,7 @@ fn test_resolve_when_user_file_is_broken_should_return_err() {
     let wd = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     write(&user_file(home.path()), "decision = = =");
-    let r = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()));
+    let r = resolve_permission_policy(wd.path(), Some(home.path().to_path_buf()), false);
     assert!(r.is_err(), "{r:?}");
 }
 
@@ -148,7 +148,7 @@ fn test_resolve_when_workdir_missing_and_no_files_should_return_none() {
     let base = tempfile::tempdir().unwrap();
     let gone = base.path().join("does/not/exist");
     assert!(gone.is_absolute());
-    let r = resolve_permission_policy(&gone, None);
+    let r = resolve_permission_policy(&gone, None, false);
     assert!(matches!(r, Ok(None)), "{r:?}");
 }
 
@@ -158,7 +158,7 @@ fn test_resolve_when_workdir_missing_but_user_file_exists_should_return_err() {
     let gone = base.path().join("does/not/exist");
     let home = tempfile::tempdir().unwrap();
     write(&user_file(home.path()), USER_ASK);
-    let r = resolve_permission_policy(&gone, Some(home.path().to_path_buf()));
+    let r = resolve_permission_policy(&gone, Some(home.path().to_path_buf()), false);
     assert!(r.is_err(), "{r:?}");
 }
 
@@ -166,6 +166,6 @@ fn test_resolve_when_workdir_missing_but_user_file_exists_should_return_err() {
 fn test_resolve_should_canonicalise_workdir_in_context() {
     let wd = tempfile::tempdir().unwrap();
     write(&project_file(wd.path()), PROJECT_DENY);
-    let p = resolve_permission_policy(wd.path(), None).unwrap().unwrap();
+    let p = resolve_permission_policy(wd.path(), None, false).unwrap().unwrap();
     assert_eq!(p.context.workdir, std::fs::canonicalize(wd.path()).unwrap());
 }
