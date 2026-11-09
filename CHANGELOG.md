@@ -137,6 +137,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: guard messages under tool ids the model never issued
+
+- Two edit guards added their output to the history as separate tool messages under ids the model never issued:
+  - **the read-before-edit guard** (`guard-read-<uuid>`): when the model edits a file it hasn't read this turn, Hone reads it first. That read also **skipped the prompt-injection scan** and the egress (audit) log, although repository files can be attacker-written. Read tracking resets every turn, so it fired often in multi-turn sessions;
+  - **the edit-streak guard** (`guard-edit-streak-<uuid>`): a hint after the third consecutive edit in a turn.
+- The Anthropic and OpenAI APIs document that every tool result must answer a tool call in the previous assistant message, so the next request was likely rejected when either guard fired (unverified live; local vLLM doesn't check ids).
+- Now both are delivered inside the edit call's own result, after the call's own outcome (so history compression, which keeps the start of old tool results, keeps the outcome). The guard's read is scanned for injection (SECURITY prefix when flagged), redacted, and recorded in the egress log. Guard state from a cancelled turn can't attach to a later call.
+- Contract: `docs/plans/guard-read-spec.md`.
+
 ### Fixed: a failing tool no longer kills the turn
 
 - **The bug:** a tool that returned an error, such as `edit_file` with an `old_string` that isn't in the file, aborted the whole turn:
