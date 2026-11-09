@@ -28,7 +28,7 @@ use crate::memory_format::format_memory_body;
 use crate::memory_worthy::{MemoryCandidate, classify_turn};
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
-use crate::policy_gate::{GateDecision, PolicyConfig, decide, is_synthetic_rule};
+use hone_tools::policy_gate::{GateDecision, PolicyConfig, decide, session_approval_entries};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
 use crate::skills::SkillRegistry;
@@ -228,9 +228,7 @@ async fn apply_policy(
     match rx.lock().await.recv().await {
         Some(StepAction::Proceed) => PolicyVerdict::Proceed { prompted: true },
         Some(StepAction::ApproveAlways(_)) => {
-            if !is_synthetic_rule(&rule_id) {
-                approved.insert(rule_id);
-            }
+            approved.extend(session_approval_entries(policy, tool, call, &rule_id));
             PolicyVerdict::Proceed { prompted: true }
         }
         Some(StepAction::Skip) => {

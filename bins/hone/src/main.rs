@@ -1,3 +1,4 @@
+mod approve;
 mod configure;
 mod image_input;
 mod memory_cmd;
@@ -203,6 +204,11 @@ struct Cli {
     /// Format: KEY=VALUE (e.g. --var feature_name=my_feature --var test_command="cargo test")
     #[arg(long = "var", value_name = "KEY=VALUE")]
     vars: Vec<String>,
+
+    /// Pre-approve a permission rule by id so its `ask` decisions run without
+    /// a prompt (repeatable). Never overrides a `deny`.
+    #[arg(long, value_name = "RULE_ID")]
+    approve: Vec<String>,
 
     /// Enable the egress audit log (writes to .hone/audit.jsonl).
     /// Also enabled by setting HONE_AUDIT_LOG=1.
@@ -824,15 +830,44 @@ async fn load_project_config() -> (Option<Config>, Option<HoneMd>) {
 /// A broken policy file is fatal: print the (already sanitised) error and
 /// exit with code 2 rather than run without the rules the user wrote.
 fn load_permission_policy(working_dir: &std::path::Path) -> Option<hone_core::PolicyConfig> {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .filter(|h| h.is_absolute())
-        .or_else(dirs_next::home_dir);
+    let home = hone_tools::policy_gate::default_policy_home();
     match policy_load::resolve_permission_policy(working_dir, home) {
         Ok(policy) => policy,
         Err(e) => {
             eprintln!("hone: permission policy error: {e}");
             std::process::exit(2);
+        }
+    }
+}
+
+/// Apply `--approve` ids and the provider-gating check to the loaded policy.
+///
+/// Exits with code 2 on an unknown id, `--approve` without a policy, or a
+/// provider that runs its own tools under a non-empty policy.
+fn apply_policy_flags(config: &mut AgentConfig, approve: &[String]) {
+    let fail = |msg: String| -> ! {
+        eprintln!("hone: {msg}");
+        std::process::exit(2);
+    };
+    match approve::validate_approvals(config.policy.as_ref(), approve) {
+        Ok(ids) => {
+            if let Some(policy) = config.policy.as_mut() {
+                policy.pre_approved = ids;
+            }
+        }
+        Err(msg) => fail(msg),
+    }
+    let allow = std::env::var("HONE_ALLOW_UNGATED_PROVIDER").ok();
+    match approve::check_provider_gating(
+        config.policy.as_ref(),
+        config.provider.runs_own_tools(),
+        allow.as_deref(),
+    ) {
+        Ok(Some(warning)) => eprintln!("hone: warning: {warning}"),
+        Ok(None) => {}
+        Err(msg) => {
+            let id = config.provider.id();
+            fail(msg.replacen("this provider ", &format!("this provider ({id}) "), 1));
         }
     }
 }
@@ -2369,7 +2404,7 @@ async fn main() -> Result<()> {
     );
 
     // Build a single clonable config; share it across all code paths.
-    let base_config = build_agent_config(
+    let mut base_config = build_agent_config(
         &detected,
         model_id.clone(),
         system_prompt.clone(),
@@ -2382,6 +2417,7 @@ async fn main() -> Result<()> {
         cli.skeleton_strategy.as_deref(),
         cli.audit,
     );
+    apply_policy_flags(&mut base_config, &cli.approve);
 
     let agent = AgentHandle::spawn(base_config.clone());
 
@@ -3630,5 +3666,40 @@ mod caching_wrapper_forwarding_tests {
             "{:?}",
             s.subjects
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests: `--approve <RULE_ID>` (P2.3 spec section 3)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod approve_flag_tests {
+    use super::*;
+
+    // Assumes `Cli` gains `approve: Vec<String>` (`#[arg(long, value_name = "RULE_ID")]`).
+
+    #[test]
+    fn approve_flag_when_repeated_should_collect_all_values_in_order() {
+        let cli = Cli::try_parse_from(["hone", "--approve", "a", "--approve", "b", "do it"])
+            .expect("parses");
+        assert_eq!(cli.approve, vec!["a".to_owned(), "b".to_owned()]);
+    }
+
+    #[test]
+    fn approve_flag_when_absent_should_be_empty() {
+        let cli = Cli::try_parse_from(["hone", "do it"]).expect("parses");
+        assert!(cli.approve.is_empty());
+    }
+
+    #[test]
+    fn approve_flag_when_value_has_colon_should_parse_verbatim() {
+        let cli = Cli::try_parse_from(["hone", "--approve", "user:3", "do it"]).expect("parses");
+        assert_eq!(cli.approve, vec!["user:3".to_owned()]);
+    }
+
+    #[test]
+    fn approve_flag_when_missing_value_should_fail_to_parse() {
+        assert!(Cli::try_parse_from(["hone", "--approve"]).is_err());
     }
 }

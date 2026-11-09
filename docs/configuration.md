@@ -471,6 +471,90 @@ info = "#3498DB"
 
 Only list colors you want to override; all others use the theme defaults. Colors are merged with the selected theme, not replacing it entirely.
 
+## Permissions
+
+Permission rules decide which tool calls run, ask first, or are refused. With no
+permission files, Hone behaves as before.
+
+**Files**
+
+- User: `~/.config/hone/permissions.toml`
+- Project: `<working dir>/.hone/permissions.toml`. Only the working directory itself is
+  checked: running from a subdirectory does not pick up a parent's `.hone/`.
+
+**Rules.** Each rule has one matcher (`command`, `path` or `host`), a `decision`
+(`allow`, `ask` or `deny`), an optional `id`, and for path rules an `op` filter
+(`read`, `write` or `any`). Rules without an `id` get an automatic one such as
+`user:2` or `project:1`. The full format is in
+[`docs/plans/policy-v2-spec.md`](plans/policy-v2-spec.md).
+
+```toml
+version = 2
+
+[[rules]]
+id = "no-push"
+command = "git push*"
+decision = "deny"
+
+[[rules]]
+id = "ask-secrets"
+path = "secrets/**"
+op = "read"
+decision = "ask"
+```
+
+**Precedence.** Built-in rules come first (none ship yet), then the user file, then the
+project file. User rules replace the built-in verdict. Project rules can only tighten:
+a project file cannot allow what the user file asks about or denies. A broken
+permission file stops the run (exit code 2 for the CLI, HTTP 400 for honed).
+
+**Asks.**
+
+- Interactive runs (the TUI) pause and prompt. Approving "always" on a rule with a
+  wildcard (any `*`, `?`, `[` or `{`, e.g. `*.example`, `{workdir}/**`, `git push*`)
+  approves only that host, path or command, so approving one doesn't approve the others.
+  Approving "always" on a rule without a wildcard remembers the whole rule for the
+  session. A command rule without a wildcard matches the command **with any arguments**,
+  so approving `git push` also covers `git push --force …`. Write a narrower rule if
+  that matters.
+- Headless runs (one-shot, `--json`, honed without a step channel) cannot prompt, so an
+  `ask` is refused with `requires approval (rule <id>)`. A `deny` is always refused.
+
+**`--approve <RULE_ID>`** pre-approves the `ask` decisions of a rule for one run. It is
+repeatable and takes rule ids from your permission files (explicit or automatic), or
+`builtin:unparsed-command` and `builtin:invalid-host`. An unknown id, or `--approve`
+with no permission files, exits with code 2. It never turns a `deny` into an allow.
+
+```bash
+hone --approve ask-secrets "summarise the notes under secrets/"
+```
+
+**honed.** `POST /run` loads the policy for the run's working directory (the user file
+comes from the daemon's `$HOME`) and accepts `"approve": ["rule-id", ...]` in the
+request body. A broken policy file, an unknown id, or `approve` with no policy gives
+400. A non-empty `approve` also needs an authenticated honed (an auth token set);
+without one the request gets 400 `approve requires an authenticated server`.
+Orchestration runs apply the policy but do not take `approve`. The distributed worker
+loads the policy once at startup, from its own working directory, and exits with code 2
+if a permission file is broken.
+
+**`hone-mcp-server`** applies the policy to every `tools/call`: a `deny` or an `ask`
+returns an error result and the tool is not called. There is no prompt, so use
+`HONE_APPROVE=id1,id2` to pre-approve rules. An unknown id, or a broken policy file,
+makes the server exit with code 2.
+
+**Providers that run their own tools** (the `claude` CLI adapter, ACP agents and the
+Gemini CLI adapter)
+execute tools themselves, so the policy cannot check them. Under a non-empty policy Hone
+refuses to use such a provider (exit code 2 / HTTP 400) unless
+`HONE_ALLOW_UNGATED_PROVIDER=1` is set, in which case it prints a warning and continues.
+With no policy or an empty one there is no refusal.
+
+**Limits.** Command rules match the command text after parsing, which is a speed bump
+rather than a security boundary: shell aliases, interpreters (`python -c ...`), paths
+inside tool options and similar indirections are not seen. The sandbox is the boundary;
+see [Sandbox Configuration](#sandbox-configuration).
+
 ## Environment Variables
 
 | Variable | Purpose |
@@ -487,6 +571,8 @@ Only list colors you want to override; all others use the theme defaults. Colors
 | `HONE_AUDIT_LOG` | Enable JSONL egress audit log (equivalent to `--audit`) |
 | `HONE_CONTEXT_INJECTION` / `HONE_NO_INJECTION` | Force-enable or force-disable proactive context injection |
 | `HONE_CONTEXT_WINDOW` | Override the model's context window in tokens (4096–10000000), e.g. `32768` for a model served with a 32k window. Applies to every agent and model in the process. Hone compacts conversation history at its per-model budget ratio of this value (Qwen: 45%); the system prompt and tool schemas come on top, so windows below about 16k may still overflow. Unset: the window is inferred from the model name. An invalid value is ignored and logged at warn level (visible with `RUST_LOG=warn`). |
+| `HONE_ALLOW_UNGATED_PROVIDER` | `1` lets a provider that runs its own tools be used under a non-empty permission policy (see [Permissions](#permissions)) |
+| `HONE_APPROVE` | Comma-separated permission rule ids pre-approved for `hone-mcp-server` |
 | `HONE_SANDBOX_ENFORCE` | `1` turns on Landlock enforcement for shell commands on Linux (opt-in while it is validated; Seatbelt on macOS is always on) |
 | `HONE_SANDBOX_EXTRA_READ` | Extra read-only roots for the shell sandbox, colon-separated |
 | `HONE_REDUCED_MOTION` | Disable Agent Rail animation |

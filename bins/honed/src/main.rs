@@ -420,9 +420,22 @@ async fn main() -> Result<()> {
                     };
                     let working_dir = std::env::current_dir().unwrap_or_default();
 
-                    let executor = Arc::new(hone_server::AgentTaskExecutor::new(
-                        registry, base_tools, provider, model, pricing, working_dir,
-                    ));
+                    let policy = match hone_tools::policy_gate::resolve_permission_policy(
+                        &working_dir,
+                        hone_server::resolve_policy_home(),
+                    ) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("honed: permission policy error: {e}");
+                            std::process::exit(2);
+                        }
+                    };
+                    let executor = Arc::new(
+                        hone_server::AgentTaskExecutor::new(
+                            registry, base_tools, provider, model, pricing, working_dir,
+                        )
+                        .with_policy(policy),
+                    );
                     let client = Arc::new(hone_core::queue_client::QueueClient::new(
                         coordinator_url.clone(),
                         token,

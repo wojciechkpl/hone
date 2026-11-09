@@ -79,6 +79,45 @@ pub struct RunRequest {
     /// backwards compatibility.
     #[serde(default)]
     pub approval_policy: Option<ToolApprovalPolicy>,
+    /// Permission-policy rule ids to pre-approve for this run (like the CLI's
+    /// `--approve`). Unknown ids, or ids with no policy loaded, give 400.
+    #[serde(default)]
+    pub approve: Option<Vec<String>>,
+}
+
+/// Load the permission policy for a run and apply `approve` and the provider
+/// check. The error text is safe to return to the client.
+pub(crate) fn load_run_policy(
+    state: &AppState,
+    working_dir: &std::path::Path,
+    approve: Option<&[String]>,
+    provider: &dyn hone_providers::ModelProvider,
+) -> Result<Option<hone_tools::policy_gate::PolicyConfig>, String> {
+    use hone_tools::policy_gate::{
+        check_provider_gating, resolve_permission_policy, validate_approvals,
+    };
+
+    // Without authentication any local process could lift the user's ask rules.
+    if approve.is_some_and(|a| !a.is_empty()) && state.auth_token.is_none() {
+        return Err("approve requires an authenticated server".to_owned());
+    }
+
+    let mut policy = resolve_permission_policy(working_dir, state.policy_home.clone())
+        .map_err(|e| format!("permission policy error: {e}"))?;
+    let ids = validate_approvals(policy.as_ref(), approve.unwrap_or(&[]))?;
+    if let Some(p) = policy.as_mut() {
+        p.pre_approved = ids;
+    }
+    let allow = std::env::var("HONE_ALLOW_UNGATED_PROVIDER").ok();
+    match check_provider_gating(policy.as_ref(), provider.runs_own_tools(), allow.as_deref()) {
+        Ok(Some(warning)) => tracing::warn!("{warning}"),
+        Ok(None) => {}
+        Err(msg) => {
+            let id = provider.id();
+            return Err(msg.replacen("this provider ", &format!("this provider ({id}) "), 1));
+        }
+    }
+    Ok(policy)
 }
 
 fn event_type(event: &AgentEvent) -> &'static str {
@@ -233,6 +272,9 @@ pub async fn run_handler(
             // tx dropped → rx drains the one error event then closes.
         }
         Some(provider) => {
+            let policy = load_run_policy(&state, &working_dir, req.approve.as_deref(), &*provider)
+                .map_err(|msg| (StatusCode::BAD_REQUEST, msg))?;
+
             let tools = ToolRegistry::builder()
                 .register(Box::new(ReadFileTool))
                 .register(Box::new(WriteFileTool))
@@ -306,7 +348,7 @@ pub async fn run_handler(
                 skills: None,
                 embedder: None,
                 mode: AgentMode::Build,
-                policy: None,
+                policy,
             };
 
             let history: Vec<Message> = req

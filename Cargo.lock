@@ -2802,11 +2802,13 @@ name = "hone-mcp-server"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "hone-config",
  "hone-proto",
  "hone-sandbox",
  "hone-tools",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -2984,6 +2986,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
+ "dirs-next",
  "futures",
  "git2",
  "globset",

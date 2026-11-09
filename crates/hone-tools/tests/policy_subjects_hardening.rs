@@ -1181,5 +1181,30 @@ fn env_split_string_is_parsed_recursively() {
     }
 }
 
+// -- P2.3: env -S with the string attached ---------------------------------------------
+
+#[test]
+fn env_split_string_attached_to_dash_s_is_parsed_recursively() {
+    let e = env();
+    for src in [
+        "env -S'git push'",
+        "env -S\"git push\"",
+        "env -i -S'git push'",
+        "env -Sgit\\ push",
+        "env --split-string='git push'",
+    ] {
+        let p = parse(src, &e);
+        assert!(has_cmd(&p, &["git", "push"]), "{src}: {:?}", p.commands);
+        assert!(!p.unparsed, "{src}");
+    }
+}
+
+#[test]
+fn env_dash_s_attached_keeps_the_wrapper_subject() {
+    let e = env();
+    let p = parse("env -S'git push'", &e);
+    assert!(p.commands.iter().any(|c| c[0] == "env"), "{:?}", p.commands);
+}
+
 #[allow(dead_code)]
 fn _unused(_: PathBuf) {}

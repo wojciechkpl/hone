@@ -185,6 +185,10 @@ fn hash_request(req: &CompletionRequest) -> u64 {
 
 #[async_trait]
 impl ModelProvider for CachingProvider {
+    fn runs_own_tools(&self) -> bool {
+        self.inner.runs_own_tools()
+    }
+
     fn id(&self) -> &str {
         "caching" // Wrapper ID; inner.id() returns the real provider
     }

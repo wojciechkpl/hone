@@ -136,6 +136,7 @@ fn build_lead_agent_config(
     provider: Arc<dyn ModelProvider>,
     model_id: ModelId,
     working_dir: std::path::PathBuf,
+    policy: Option<hone_tools::policy_gate::PolicyConfig>,
 ) -> AgentConfig {
     let tools = ToolRegistry::builder()
         .register(Box::new(ReadFileTool))
@@ -180,7 +181,7 @@ fn build_lead_agent_config(
         skills: None,
         embedder: None,
         mode: AgentMode::Plan,
-        policy: None,
+        policy,
     }
 }
 
@@ -242,7 +243,10 @@ pub async fn orchestrate_handler(
             let total_budget = req.total_budget_usd;
             let prompt = req.prompt;
 
-            let lead_config = build_lead_agent_config(provider, model_id, working_dir.clone());
+            let policy = crate::execution::load_run_policy(&state, &working_dir, None, &*provider)
+                .map_err(|msg| (StatusCode::BAD_REQUEST, msg))?;
+            let lead_config =
+                build_lead_agent_config(provider, model_id, working_dir.clone(), policy);
 
             // The agent registry is loaded hierarchically (built-ins, user-level,
             // project-level overrides). For an unknown working_dir this falls

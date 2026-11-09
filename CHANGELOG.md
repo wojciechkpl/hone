@@ -55,6 +55,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - The tool cache wrapper now forwards `is_read_only()`.
 - **Deferred,** with owners in `docs/plans/policy-p2.2-spec.md` §9: the `claude` CLI provider and `hone-mcp-server` run tools outside the gate (P2.3); `computer_control`, and `grep`/`glob` walks into protected files (P2.5).
 
+### Permission policy at every entry point (P2.3)
+
+- **One gate.** `decide`, `PolicyConfig`, `resolve_permission_policy` and the approval helpers now live in `hone_tools::policy_gate`. `hone_core` re-exports the same items. The CLI, honed and `hone-mcp-server` all call this one implementation.
+- **`--approve <RULE_ID>`** (repeatable) pre-approves an ask rule for a headless run. It is validated against the loaded policy: an unknown id, or an id given with no policy loaded, exits 2. It never lifts a deny.
+- **honed** loads the policy for each run's working directory. `POST /run` accepts `approve: [..]`, but only on a server with an auth token; without one, a non-empty `approve` returns 400. A policy that won't load, an unknown approval or a refused provider each return 400. Orchestration and the worker pool get the policy too.
+- **`hone-mcp-server`** gates every `tools/call`. A deny returns `denied by policy (rule …)` and an ask returns `requires approval (rule …)`, both as `isError` results. `HONE_APPROVE` (comma-separated) pre-approves rules.
+- **Providers that run their own tools** (`claude` CLI, ACP, and Gemini CLI as a fail-closed choice) are refused while a non-empty policy is loaded, because the gate can't see their tool calls. Router and fallback wrappers report this if any provider they hold does. `HONE_ALLOW_UNGATED_PROVIDER=1` overrides this, with a warning.
+- **Wildcard rules.** "Always" on any rule with a wildcard (`*.example`, `{workdir}/**`, `git push*`) approves only the subject it was asked about. A literal rule is still approved for the whole session. `--approve` still covers every subject of the rule it names.
+- **Smaller changes.**
+  - Removed the unused `ToolDispatcher`, which bypassed the gate.
+  - Ensemble candidates run headless, so they never share an approval channel.
+  - `env -S'cmd'` is parsed.
+  - `docs/configuration.md` has a Permissions section.
+
 ### Memory subsystem overhaul
 
 A multi-PR rewrite of how memories are written, indexed, and recalled. The full design lives in `docs/priv/memory-improvements-plan-2026-04-30.md` (R1–R12); user-visible changes:

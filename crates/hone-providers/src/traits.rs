@@ -161,4 +161,11 @@ pub trait ModelProvider: Send + Sync + 'static {
 
     /// Current health of this provider.
     async fn health(&self) -> ProviderHealth;
+
+    /// True when the backend executes tools itself (for example the `claude`
+    /// CLI or an ACP agent) and Hone only observes them. The permission policy
+    /// can't gate such tool calls. Wrappers must forward this.
+    fn runs_own_tools(&self) -> bool {
+        false
+    }
 }

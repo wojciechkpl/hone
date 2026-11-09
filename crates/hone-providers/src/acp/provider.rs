@@ -160,6 +160,10 @@ impl AcpProvider {
 
 #[async_trait]
 impl ModelProvider for AcpProvider {
+    fn runs_own_tools(&self) -> bool {
+        true
+    }
+
     fn id(&self) -> &str {
         &self.provider_id
     }

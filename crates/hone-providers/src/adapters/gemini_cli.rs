@@ -43,6 +43,11 @@ impl Default for GeminiCliProvider {
 
 #[async_trait]
 impl ModelProvider for GeminiCliProvider {
+    fn runs_own_tools(&self) -> bool {
+        // Gemini CLI has built-in file, search and web tools; fail closed.
+        true
+    }
+
     fn id(&self) -> &str {
         "gemini-cli"
     }

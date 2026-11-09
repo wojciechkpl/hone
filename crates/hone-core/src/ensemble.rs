@@ -83,6 +83,9 @@ impl AgentEnsemble {
         for (i, &temp) in self.temperatures.iter().enumerate() {
             let mut config = self.prototype.clone();
             config.temperature = Some(temp);
+            // Candidates are headless: asks fail closed instead of racing on one
+            // shared approval channel.
+            config.step_rx = None;
             let prompt_owned = prompt.to_owned();
             let fwd_tx = events.clone();
 
@@ -147,6 +150,7 @@ impl AgentEnsemble {
         // ----------------------------------------------------------------
         let mut ranker_config = self.prototype.clone();
         ranker_config.temperature = Some(0.0);
+        ranker_config.step_rx = None;
 
         let mut ranker = Agent::new(ranker_config);
         let (ranker_tx, mut ranker_rx) = mpsc::channel(256);
