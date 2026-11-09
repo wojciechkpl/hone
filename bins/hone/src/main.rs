@@ -4608,6 +4608,97 @@ mod tests {
         assert_eq!(errors, 1, "the spinner needs exactly one terminal Error: {events:?}");
     }
 
+    // U5: the medium forwarder words a dead actor like the simple one.
+    #[tokio::test]
+    async fn test_u5_dead_actor_error_message_should_start_with_agent_stopped_unexpectedly() {
+        for medium in [false, true] {
+            let events = forwarder_events_for_panicking_provider(medium).await;
+            let msg = events
+                .iter()
+                .find_map(|e| match e {
+                    AgentEvent::Error { message } => Some(message.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("(medium={medium}) no Error event: {events:?}"));
+            assert!(
+                msg.starts_with("agent stopped unexpectedly"),
+                "(medium={medium}) got {msg:?}"
+            );
+        }
+    }
+
+    // U4. Seam (pure fn in main.rs; `run_json_mode` prints its result):
+    //   fn json_mode_output(
+    //       turn: &Result<hone_core::TurnResult, hone_core::AgentError>,
+    //       response: String,
+    //       tool_calls: Vec<serde_json::Value>,
+    //       error: Option<String>,
+    //       spend: (hone_proto::TokenUsage, f64),
+    //       model_id: &str,
+    //   ) -> serde_json::Value
+    // `usage` ({input, output, cache_read}) and `cost_usd` come from `spend`
+    // (`AgentHandle::session_spend()`), whatever the result;
+    // `success == turn.is_ok() && error.is_none()`.
+    fn spend_100_50() -> (hone_proto::TokenUsage, f64) {
+        (
+            hone_proto::TokenUsage {
+                input: 100,
+                output: 50,
+                cache_read: 7,
+                cache_creation: 0,
+            },
+            0.001,
+        )
+    }
+
+    #[test]
+    fn test_u4_json_output_for_failed_turn_should_report_spend_and_failure() {
+        let turn: Result<hone_core::TurnResult, hone_core::AgentError> =
+            Err(hone_core::AgentError::Cancelled);
+        let v = json_mode_output(
+            &turn,
+            "partial".to_owned(),
+            vec![],
+            Some("provider exploded".to_owned()),
+            spend_100_50(),
+            "mock:test",
+        );
+        assert_eq!(v["usage"]["input"], 100, "{v}");
+        assert_eq!(v["usage"]["output"], 50, "{v}");
+        assert_eq!(v["usage"]["cache_read"], 7, "{v}");
+        assert!(v["cost_usd"].as_f64().unwrap() > 0.0, "{v}");
+        assert_eq!(v["success"], false);
+        assert_eq!(v["error"], "provider exploded");
+        assert_eq!(v["model"], "mock:test");
+        assert_eq!(v["response"], "partial");
+    }
+
+    #[test]
+    fn test_u4_json_output_for_failed_turn_without_error_event_should_still_be_unsuccessful() {
+        let turn: Result<hone_core::TurnResult, hone_core::AgentError> =
+            Err(hone_core::AgentError::Cancelled);
+        let v = json_mode_output(&turn, String::new(), vec![], None, spend_100_50(), "m");
+        assert_eq!(v["success"], false, "{v}");
+        assert_eq!(v["usage"]["input"], 100, "{v}");
+    }
+
+    #[test]
+    fn test_u4_json_output_for_ok_turn_should_take_usage_and_cost_from_spend() {
+        let turn: Result<hone_core::TurnResult, hone_core::AgentError> =
+            Ok(hone_core::TurnResult {
+                response: "done".to_owned(),
+                usage: hone_proto::TokenUsage::default(),
+                cost_usd: 0.0,
+                tool_calls_count: 0,
+            });
+        let v = json_mode_output(&turn, "done".to_owned(), vec![], None, spend_100_50(), "m");
+        assert_eq!(v["success"], true, "{v}");
+        assert_eq!(v["usage"]["input"], 100, "{v}");
+        assert_eq!(v["usage"]["output"], 50, "{v}");
+        assert!((v["cost_usd"].as_f64().unwrap() - 0.001).abs() < 1e-12, "{v}");
+        assert!(v["error"].is_null());
+    }
+
     // R6. Seam (pure fn in main.rs):
     //   fn code_modifying_tools_that_ran(events: &[AgentEvent]) -> Vec<String>
     // Names (in order of completion) of write_file/edit_file/multi_edit calls whose
