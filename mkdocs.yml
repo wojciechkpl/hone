@@ -60,6 +60,7 @@ nav:
   - Getting Started:
     - Installation: getting-started.md
     - Configuration: configuration.md
+    - Permissions & Sandbox: permissions-and-sandbox.md
     - Providers: tutorials/providers.md
   - Features:
     - Architecture: architecture.md

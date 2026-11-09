@@ -1,480 +1,204 @@
-# Configuration Reference
+# Configuration reference
 
-Hone uses a three-level configuration hierarchy:
+<p align="center">
+  <img alt="config files" src="https://img.shields.io/badge/config-TOML%20%2B%20Markdown%20%2B%20JSON-6e40c9">
+  <img alt="env vars" src="https://img.shields.io/badge/env%20vars-40%2B-1f6feb">
+  <img alt="permissions" src="https://img.shields.io/badge/permissions-allow%20%7C%20ask%20%7C%20deny-e8445a">
+</p>
 
-1. **CLI flags** (highest priority)
-2. **TOML file** (`~/.config/hone/config.toml`)
-3. **Environment variables**
-4. **Defaults** (lowest priority)
+Hone has no single settings file. Each file below is read by one part of Hone, and most
+behaviour is controlled by environment variables and CLI flags. This page lists every file
+and variable that the code reads today, and says plainly where a setting is parsed but not
+applied yet.
 
-This guide covers all configurable options.
+## At a glance
 
-## Config File Location
-
-```bash
-~/.config/hone/config.toml
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  subgraph inputs["What you write"]
+    ENV["Environment variables"]
+    FLAGS["CLI flags"]
+    CFG["config.toml"]
+    PERM["permissions.toml"]
+    MCPJ["mcp.json"]
+    MD["HONE.md"]
+    AG["agents/*.md<br/>commands/*.md"]
+    TH["theme.toml"]
+  end
+  subgraph hone["What reads it"]
+    DET["Provider detection"]
+    STRICT["Strict Config schema<br/>(validated, not applied yet)"]
+    GATE["Permission gate"]
+    MGR["MCP manager"]
+    SYS["System prompt"]
+    REG["Agent registry,<br/>TUI slash commands"]
+    TUI["TUI theme"]
+  end
+  ENV --> DET
+  FLAGS --> DET
+  CFG -->|"[provider] table"| DET
+  CFG --> STRICT
+  PERM --> GATE
+  MCPJ --> MGR
+  MD --> SYS
+  AG --> REG
+  TH --> TUI
 ```
 
-Create the file if it doesn't exist:
+## Files
 
-```bash
-mkdir -p ~/.config/hone
-cat > ~/.config/hone/config.toml << 'EOF'
-[agent]
-default_model = "anthropic:claude-opus-4-5"
+| File | Read by | Format | Applied? |
+|---|---|---|---|
+| `~/.config/hone/config.toml`, `<cwd>/.hone/config.toml` | `hone` | TOML | The `[provider]` table: **yes**. The strict schema: validated only ([details](#configtoml)) |
+| `~/.config/hone/permissions.toml`, `<cwd>/.hone/permissions.toml` | `hone`, `honed`, `hone-mcp-server` | TOML | **yes** ([Permissions](#permissions)) |
+| `~/.config/hone/mcp.json`, `<cwd>/.hone/mcp.json` | `hone` | JSON (Claude Code compatible) | **yes** ([MCP servers](#mcp-servers)) |
+| `~/.config/hone/HONE.md`, `<project root>/HONE.md`, `<cwd>/HONE.md` | `hone` | Markdown | **yes** ([HONE.md](#honemd)) |
+| `~/.config/hone/agents/*.md`, `<project root>/.hone/agents/*.md` | `hone`, `honed` | Markdown + YAML front matter | **yes** ([Agents and commands](#custom-agents-and-slash-commands)) |
+| `~/.config/hone/commands/*.md`, `<project root>/.hone/commands/*.md` | `hone` TUI | Markdown | **yes** |
+| `~/.config/hone/theme.toml` | `hone` TUI | flat `key = "#rrggbb"` lines | **yes** ([Theme](#theme)) |
 
-[memory]
-enabled = true
-encrypted = true
-EOF
+`<project root>` is the nearest ancestor of the working directory that contains `.git`,
+`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod` or `pom.xml`. `<cwd>` is the
+working directory itself: those files are **not** looked up in parent directories.
+
+---
+
+## Choosing a provider and model
+
+Provider settings come from environment variables first, then from the `[provider]` table
+that `hone configure` writes. With no `--model` flag, Hone takes the first provider that
+is available, in this order:
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart TD
+  A{"ANTHROPIC_API_KEY<br/>(or wizard key)"} -->|set| A1["anthropic:claude-sonnet-4-5"]
+  A -->|unset| B{"OPENAI_API_KEY<br/>(or wizard key)"}
+  B -->|set| B1["openai:gpt-4o<br/>HONE_OPENAI_BASE_URL / HONE_OPENAI_MODEL override"]
+  B -->|unset| C{"claude on PATH?"}
+  C -->|yes| C1["claude-cli:claude-sonnet-4-5<br/>(no Hone tools)"]
+  C -->|no| D{"gemini on PATH?"}
+  D -->|yes| D1["gemini-cli:gemini-2.5-pro<br/>(no Hone tools)"]
+  D -->|no| E{"Ollama answers on<br/>localhost:11434 and has llama3.2?"}
+  E -->|yes| E1["ollama:llama3.2"]
+  E -->|no| X["Exit 1 with setup hints"]
 ```
 
-## Agent Configuration
+`--model <provider>:<name>` picks the model explicitly. The accepted prefixes are
+`anthropic:`, `openai:`, `ollama:`, `claude-cli:` and `gemini-cli:`; anything else exits
+with an error. `anthropic:` and `openai:` still need their API key; `ollama:` always
+connects to `http://localhost:11434`.
+
+| Provider | How to enable | Hone's tools | Notes |
+|---|---|---|---|
+| Anthropic | `ANTHROPIC_API_KEY=sk-ant-...` | yes | Default model `claude-sonnet-4-5` |
+| OpenAI | `OPENAI_API_KEY=...` | yes | Default model `gpt-4o` |
+| OpenAI-compatible | `OPENAI_API_KEY` + `HONE_OPENAI_BASE_URL` (+ `HONE_OPENAI_MODEL`) | yes | DeepSeek `https://api.deepseek.com`, OpenRouter `https://openrouter.ai/api/v1`, vLLM `http://localhost:8000/v1`, ... |
+| Ollama | `ollama serve` + `ollama pull llama3.2` | yes | Fixed URL `http://localhost:11434` |
+| Claude CLI | `claude` on `PATH` | no: runs its own tools | Permission mode `acceptEdits` unless `HONE_CLAUDE_PERMISSION_MODE` is set |
+| Gemini CLI | `gemini` on `PATH` | no: runs its own tools | |
+
+> [!NOTE]
+> The Claude CLI and Gemini CLI adapters run their own tools, which Hone's permission
+> rules can't see. With a non-empty permission policy, Hone refuses them unless you set
+> `HONE_ALLOW_UNGATED_PROVIDER=1`. See [Permissions and sandbox](permissions-and-sandbox.md#providers-that-run-their-own-tools).
+
+### What `hone configure` writes
+
+The wizard asks for a provider (Anthropic, OpenAI, DeepSeek, OpenRouter, Ollama or
+Claude CLI), an API key when one is needed, and a model, then writes
+`~/.config/hone/config.toml`:
 
 ```toml
-[agent]
-# Default model to use when no --model flag is provided
-default_model = "anthropic:claude-opus-4-5"
+[provider]
+name = "deepseek"
+api_key = "sk-..."
+model = "deepseek-chat"
 
-# Tokens reserved for model output
-reserved_output_tokens = 4000
-
-# Tokens reserved for system prompt
-reserved_system_prompt_tokens = 2000
-
-# Safety margin (prevent hitting exact limit)
-context_safety_margin = 0.1  # 10%
-
-# Maximum iterations per session
-max_iterations = 50
-
-# Default temperature for non-ensemble turns
-temperature = 0.3
-
-# Maximum number of tool calls per turn
-max_tool_calls_per_turn = 10
-
-# Timeout for tool execution (seconds)
-tool_timeout_secs = 30
-```
-
-## Memory Configuration
-
-```toml
-[memory]
-# Enable memory persistence across sessions
-enabled = true
-
-# SQLite database path
-db_path = "~/.local/share/hone/memory.db"
-
-# Enable encryption for sensitive data
-encrypted = false  # change to true to enable
-
-# Encryption cipher (if encrypted = true)
-cipher = "aes256-gcm"
-
-# Memory decay: forget items after N days
-decay_days = 90
-
-# Maximum memory items to retain
-max_items = 10000
-```
-
-### Memory Encryption
-
-To enable encryption:
-
-```bash
-cargo build --features encrypted-memory
-hone --init-encryption
-# Enter passphrase: ****
-```
-
-This stores the encryption key in your system keychain:
-- **macOS:** Keychain Services
-- **Linux:** Secret Service or pass
-- **Windows:** DPAPI (future)
-
-Configuration:
-
-```toml
-[memory]
-enabled = true
-encrypted = true
-cipher = "aes256-gcm"
-keychain_service = "hone"
-```
-
-## Provider Configuration
-
-### Anthropic
-
-```toml
-[providers.anthropic]
-api_key = "${ANTHROPIC_API_KEY}"  # or hardcoded
-base_url = "https://api.anthropic.com"
-timeout_secs = 30
-```
-
-### OpenAI (and Compatible Endpoints)
-
-```toml
-[providers.openai]
-api_key = "${OPENAI_API_KEY}"
-base_url = "https://api.openai.com/v1"
-timeout_secs = 30
-```
-
-**For custom OpenAI-compatible endpoints:**
-
-```bash
-export OPENAI_API_KEY="your-api-key"
-export HONE_OPENAI_BASE_URL="https://api.deepseek.com"
-export HONE_OPENAI_MODEL="deepseek-coder"
-hone
-```
-
-Or in config:
-
-```toml
-[providers.openai]
-api_key = "${OPENAI_API_KEY}"
 base_url = "https://api.deepseek.com"
-model_override = "deepseek-coder"
 ```
 
-**Supported endpoints:**
-- DeepSeek: `https://api.deepseek.com`
-- Qwen: `https://dashscope.aliyuncs.com/compatible-mode/v1`
-- OpenRouter: `https://openrouter.ai/api/v1`
-- vLLM: `http://localhost:8000/v1`
+At startup Hone uses these values only where the matching environment variable is unset:
+`anthropic` fills `ANTHROPIC_API_KEY`; `openai`, `deepseek` and `openrouter` fill
+`OPENAI_API_KEY`, `HONE_OPENAI_BASE_URL` and `HONE_OPENAI_MODEL`. Nothing else is read:
+choosing Ollama or Claude CLI, or picking an Anthropic model, currently has no effect. The key is stored in
+plain text, and the wizard does not mask it while you type.
 
-### Ollama
+---
 
-```toml
-[providers.ollama]
-base_url = "http://localhost:11434"
-timeout_secs = 300  # local models may be slow
-```
+## config.toml
 
-### Claude CLI
+`~/.config/hone/config.toml` and `<cwd>/.hone/config.toml` are also loaded through a
+**strict** schema (`hone_config::Config`, `deny_unknown_fields`). The project file wins
+over the user file, key by key.
 
-```toml
-[providers.claude_cli]
-claude_path = "/usr/local/bin/claude"  # auto-detected if not specified
-```
+> [!WARNING]
+> **The strict schema is validated but not applied yet.** `hone` loads it and logs
+> "config loaded successfully", but no code reads `default_model`, `[sandbox]`,
+> `[[routing]]`, `[budget]` or `[server]` today. Use `--model`, the environment variables
+> and the TUI's `/budget` command instead. A file that fails validation is skipped with a
+> warning (visible with `RUST_LOG=warn`); it never stops Hone from starting.
 
-### Gemini CLI
+> [!CAUTION]
+> The wizard's `[provider]` table is not part of the strict schema, so a wizard-written file
+> always logs `unknown field 'provider'` at warn level. That warning is harmless: the
+> `[provider]` table is still read by the provider reader above. Tables such as `[agent]`,
+> `[memory]` and `[pricing]` were never part of either reader and are rejected.
 
-```toml
-[providers.gemini_cli]
-gemini_path = "/usr/local/bin/gemini"  # auto-detected if not specified
-```
+### Schema
 
-## Pricing and Cost Tracking
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `default_model` | string `provider:model` | none | Model to use when no routing rule matches |
+| `[providers.<name>]` | table | empty | `api_key_env` (name of the env var holding the key), `base_url`, `model`. No other keys. |
+| `[sandbox]` | table | `mode = "Manual"` | `mode` = `"Manual"`, `"Supervised"` or `"Autonomous"` (capitalised); `allowed_commands`, `allowed_network_domains`, `protected_paths` (lists) |
+| `[[routing]]` | array of tables | empty | `task` (for example `"file_read"`) and `model`; first match wins |
+| `[budget]` | table | none | `daily_limit_usd`, `session_limit_usd` (floats) |
+| `[server]` | table | `127.0.0.1`, `3117` | `host`, `port`, `auth_token` |
 
-```toml
-[pricing.anthropic]
-"claude-opus-4-5" = { input_per_mtok = 3.00, output_per_mtok = 15.00 }
-"claude-sonnet-4" = { input_per_mtok = 3.00, output_per_mtok = 15.00 }
-"claude-haiku-3-5" = { input_per_mtok = 0.80, output_per_mtok = 4.00 }
-
-[pricing.openai]
-"gpt-4o" = { input_per_mtok = 2.50, output_per_mtok = 10.00 }
-"gpt-4-turbo" = { input_per_mtok = 10.00, output_per_mtok = 30.00 }
-"gpt-3.5-turbo" = { input_per_mtok = 0.50, output_per_mtok = 1.50 }
-
-[pricing.ollama]
-# Local models are free
-"llama2" = { input_per_mtok = 0.00, output_per_mtok = 0.00 }
-```
-
-## Sandbox Configuration
+<details>
+<summary><b>A complete file that passes validation</b></summary>
 
 ```toml
+default_model = "anthropic:claude-sonnet-4-5"
+
+[providers.openai]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://api.deepseek.com"
+model = "deepseek-chat"
+
 [sandbox]
-# Auto-detect: "seatbelt" (macOS), "landlock" (Linux), "seccomp" (fallback)
-platform = "auto"
+mode = "Supervised"
+allowed_commands = ["cargo", "git"]
+allowed_network_domains = ["crates.io"]
+protected_paths = ["~/.ssh"]
 
-# Enforce sandbox policy (fail-closed)
-enforce = true
+[[routing]]
+task = "file_read"
+model = "anthropic:claude-haiku-4-5"
 
-# Default policy for all tools
-[sandbox.defaults]
-allow_network = false          # deny network by default
-allow_read = ["{project_root}"]
-allow_write = ["/tmp"]
-allow_env = ["PATH", "HOME", "USER"]
+[budget]
+daily_limit_usd = 10.0
+session_limit_usd = 2.0
 
-# Per-tool policy overrides
-[sandbox.tools.shell]
-allow_read = ["{project_root}", "/usr/lib"]
-allow_write = ["/tmp", "{project_root}/target"]
-allow_exec = ["/bin", "/usr/bin", "/usr/local/bin"]
-allow_network = false
-allow_env = ["PATH", "HOME", "RUST_BACKTRACE"]
-
-[sandbox.tools.git]
-allow_read = ["{project_root}"]
-allow_write = ["{project_root}"]
-allow_exec = ["/usr/bin/git"]
-allow_network = false
-allow_env = ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL"]
-
-# Process resource limits
-[sandbox.limits]
-cpu_seconds = 30           # max CPU time per tool call
-memory_mb = 512            # max RAM per tool call
-disk_mb = 1024             # max disk writes per turn
-open_files = 1024          # max open file descriptors
-subprocess_count = 10      # max subprocesses per tool call
-```
-
-**Variables:**
-- `{project_root}` — current working directory
-- `{home}` — user's home directory
-
-## Server Configuration
-
-```toml
 [server]
-# HTTP/2 server listen address
-host = "0.0.0.0"
-port = 7070
-
-# TLS certificate and key (optional)
-tls_cert = "/etc/hone/cert.pem"
-tls_key = "/etc/hone/key.pem"
-
-# Max concurrent connections
-max_connections = 1000
-
-# Request timeout
-request_timeout_secs = 300
-
-# Health check interval (seconds)
-health_check_interval_secs = 60
+host = "127.0.0.1"
+port = 3117
 ```
 
-### Authentication
+Again: these values are validated, not applied. `honed` takes its host, port and token
+from `HONE_BIND`, its `PORT` argument and `HONE_AUTH_TOKEN`, not from `[server]`.
 
-```toml
-[server.auth]
-enabled = true
+</details>
 
-# Bearer token (basic security)
-[[server.auth.tokens]]
-token = "sk-hone-abc123def456..."
-user = "alice@example.com"
-
-# OAuth2 (future)
-# oauth2_provider = "https://auth.example.com"
-```
-
-Usage:
-
-```bash
-# Start daemon
-honed --config ~/.config/hone/config.toml
-
-# Connect with token
-curl -H "Authorization: Bearer sk-hone-abc123def456..." \
-  http://localhost:7070/sessions
-```
-
-## Team Configuration (RBAC)
-
-```toml
-[rbac]
-enabled = true
-
-# Role definitions
-[[rbac.roles]]
-name = "admin"
-permissions = ["sessions:create", "sessions:delete", "tools:all", "mcp:all"]
-
-[[rbac.roles]]
-name = "developer"
-permissions = ["sessions:create", "sessions:read", "tools:file", "tools:git", "tools:shell"]
-
-[[rbac.roles]]
-name = "viewer"
-permissions = ["sessions:read", "mcp:read_only"]
-
-# User assignments
-[[rbac.users]]
-user_id = "alice@example.com"
-role = "admin"
-
-[[rbac.users]]
-user_id = "bob@example.com"
-role = "developer"
-
-[[rbac.users]]
-user_id = "carol@example.com"
-role = "viewer"
-```
-
-## Audit Logging
-
-```toml
-[audit]
-enabled = true
-log_file = "/var/log/hone/audit.log"
-log_level = "info"  # info, warn, error
-log_format = "json"
-```
-
-Audit logs include:
-- Tool calls (input, output, duration)
-- File access attempts (allowed and denied)
-- Security events (sandbox violations, auth failures)
-- Cost tracking (tokens, USD)
-
-Query logs:
-
-```bash
-# All events for a session
-grep "session_id=sess_abc123" /var/log/hone/audit.log | jq .
-
-# Access denials
-grep '"event":"access_denied"' /var/log/hone/audit.log | jq .
-
-# Cost tracking
-grep '"event":"cost_incurred"' /var/log/hone/audit.log | jq .
-```
-
-## Semantic Index (PostgreSQL)
-
-```toml
-[index]
-enabled = true
-database_url = "postgres://user:pass@localhost/hone_index"
-
-# Embedding model (default: sentence-transformers/all-MiniLM-L6-v2)
-embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
-embedding_dimensions = 384
-
-# Index type: "hnsw" or "ivfflat"
-index_type = "hnsw"
-
-# HNSW parameters
-hnsw_m = 16              # neighbor list size
-hnsw_ef_construction = 64  # construction effort
-
-# Batch size for indexing
-batch_size = 100
-
-# File watcher for incremental updates
-watch_enabled = true
-watch_ignore_patterns = [".git", "target", "node_modules"]
-```
-
-If PostgreSQL is unavailable, the semantic index falls back to in-memory substring matching.
-
-## MCP Servers
-
-```toml
-[[mcp_servers]]
-name = "github"
-command = "npx"
-args = ["@modelcontextprotocol/server-github"]
-hash = "sha256:abc123def456..."  # integrity check
-timeout_secs = 30
-```
-
-## Fallback Chains
-
-```toml
-[[fallback_chains]]
-name = "production"
-providers = ["anthropic:claude-opus-4-5", "openai:gpt-4o", "ollama:llama2"]
-retry_on = ["RateLimit", "Timeout", "ServiceUnavailable"]
-retry_delay_secs = 5
-max_retries = 3
-```
-
-Usage:
-
-```bash
-hone --fallback-chain production
-```
-
-Or set as default:
-
-```toml
-[agent]
-default_fallback_chain = "production"
-```
-
-## Model Routing Rules
-
-```toml
-[[routing_rules]]
-name = "quick_tasks"
-condition = "input_length < 50"
-provider = "anthropic:claude-haiku-3-5"
-
-[[routing_rules]]
-name = "complex_reasoning"
-condition = "input_contains('analyze')"
-provider = "anthropic:claude-opus-4-5"
-
-[[routing_rules]]
-name = "budget_conscious"
-condition = "true"  # default
-provider = "ollama:llama2"
-```
-
-## Theme Customization
-
-Create `~/.config/hone/theme.toml` to override theme colors with 24-bit RGB hex values:
-
-```toml
-# Accent colors
-accent-hot = "#FF1744"
-accent-muted = "#FFB74D"
-
-# Background colors
-bg-normal = "#0d1117"
-bg-secondary = "#1C1C24"
-
-# Text colors
-text-normal = "#E6E1E8"
-text-muted = "#8B8B8B"
-
-# Status colors
-success = "#27AE60"
-error = "#E74C3C"
-warning = "#F39C12"
-info = "#3498DB"
-```
-
-**All available color keys:**
-
-| Key | Purpose |
-|-----|---------|
-| `accent-hot` | Active/focused elements (cursor, selection) |
-| `accent-muted` | Secondary accent (disabled, dimmed) |
-| `bg-normal` | Main background |
-| `bg-secondary` | Secondary background (panels, sidebar) |
-| `text-normal` | Primary text color |
-| `text-muted` | Dimmed text (hints, timestamps) |
-| `text-link` | Hyperlink text |
-| `border-normal` | Normal borders |
-| `border-muted` | Dimmed borders |
-| `success` | Success states (green, checkmarks) |
-| `error` | Error states (red) |
-| `warning` | Warning states (yellow) |
-| `info` | Information states (blue) |
-
-Only list colors you want to override; all others use the theme defaults. Colors are merged with the selected theme, not replacing it entirely.
+---
 
 ## Permissions
 
 Permission rules decide which tool calls run, ask first, or are refused. With no
-permission files, Hone behaves as before.
+permission files, Hone behaves as before. The full guide, with diagrams and recipes, is
+[Permissions and sandbox](permissions-and-sandbox.md).
 
 **Files**
 
@@ -503,14 +227,32 @@ op = "read"
 decision = "ask"
 ```
 
-**Precedence.** Built-in rules come first (none ship yet), then the user file, then the
-project file. User rules replace the built-in verdict. Project rules can only tighten:
-a project file cannot allow what the user file asks about or denies. A broken
-permission file stops the run (exit code 2 for the CLI, HTTP 400 for honed).
+**Precedence.** Built-in rules come first (none ship yet; a default set is planned), then
+the user file, then the project file. User rules replace the built-in verdict. Project
+rules can only tighten: a project file cannot allow what the user file asks about or
+denies. A broken permission file stops the run (exit code 2 for the CLI, HTTP 400 for
+honed).
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  S["Subject"] --> U{"First matching<br/>user rule?"}
+  U -->|yes| BASE["base = user verdict"]
+  U -->|no| BI{"Built-in rule?<br/>(none yet)"}
+  BI -->|no| ALLOW["base = allow"]
+  BI -->|yes| BASE2["base = built-in verdict"]
+  BASE --> P{"Project rule<br/>stricter than base?"}
+  ALLOW --> P
+  BASE2 --> P
+  P -->|yes| PV["verdict = project rule"]
+  P -->|no| BV["verdict = base"]
+```
 
 **Asks.**
 
-- Interactive runs (the TUI) pause and prompt. Approving "always" on a rule with a
+- Interactive runs pause and prompt. **In the TUI that currently happens only on
+  orchestrated turns**; on simple and medium turns (most messages) an `ask` is refused
+  ([known bug](permissions-and-sandbox.md#known-issue-tui), fix planned). Approving "always" on a rule with a
   wildcard (any `*`, `?`, `[` or `{`, e.g. `*.example`, `{workdir}/**`, `git push*`)
   approves only that host, path or command, so approving one doesn't approve the others.
   Approving "always" on a rule without a wildcard remembers the whole rule for the
@@ -544,184 +286,345 @@ returns an error result and the tool is not called. There is no prompt, so use
 makes the server exit with code 2.
 
 **Providers that run their own tools** (the `claude` CLI adapter, ACP agents and the
-Gemini CLI adapter)
-execute tools themselves, so the policy cannot check them. Under a non-empty policy Hone
-refuses to use such a provider (exit code 2 / HTTP 400) unless
+Gemini CLI adapter) execute tools themselves, so the policy cannot check them. Under a
+non-empty policy Hone refuses to use such a provider (exit code 2 / HTTP 400) unless
 `HONE_ALLOW_UNGATED_PROVIDER=1` is set, in which case it prints a warning and continues.
 With no policy or an empty one there is no refusal.
 
 **Limits.** Command rules match the command text after parsing, which is a speed bump
 rather than a security boundary: shell aliases, interpreters (`python -c ...`), paths
 inside tool options and similar indirections are not seen. The sandbox is the boundary;
-see [Sandbox Configuration](#sandbox-configuration).
+see [Sandbox](#sandbox).
 
-## Environment Variables
+<a id="sandbox-configuration"></a>
+
+## Sandbox
+
+The OS sandbox wraps child processes started by the `shell` tool. It is configured only
+through environment variables; the `[sandbox]` table in `config.toml` is not applied.
+
+| Platform | Default | Variable |
+|---|---|---|
+| macOS (Seatbelt) | on | `HONE_SANDBOX_EXTRA_READ` adds read-only roots |
+| Linux (Landlock) | off: opt-in while it is validated on a Landlock kernel | `HONE_SANDBOX_ENFORCE=1` turns it on; `HONE_SANDBOX_EXTRA_READ` adds read-only roots |
+| Other | no sandbox | — |
+
+Details, including what is readable and writable, are in
+[Permissions and sandbox](permissions-and-sandbox.md#3-os-sandbox).
+
+---
+
+## MCP servers
+
+MCP servers are configured in JSON, in the same shape as Claude Code's `.claude/mcp.json`,
+so you can copy or symlink an existing file.
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}" },
+      "timeout_ms": 10000
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+      "disabled": true
+    }
+  }
+}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `command` | required | Executable to spawn (stdio transport) |
+| `args` | `[]` | Arguments |
+| `env` | `{}` | Extra environment; values may reference `${VAR}` |
+| `disabled` | `false` | Skip this server at startup |
+| `timeout_ms` | `10000` | Per-request timeout |
+
+The project file (`<cwd>/.hone/mcp.json`) wins over `~/.config/hone/mcp.json` when server
+names collide. A missing or malformed file, or a server that fails to start, is logged and
+skipped. Native tools win over MCP tools with the same name. Permission rules don't see
+MCP tool calls.
+
+## HONE.md
+
+`HONE.md` holds conventions for the agent. Hone merges up to three files, least specific
+first: `~/.config/hone/HONE.md`, `<project root>/HONE.md`, `<cwd>/HONE.md`. Each `##`
+heading is a section; sections with the same heading are concatenated. The result is
+added to the system prompt.
+
+```markdown
+## Style
+- Prefer small, pure functions. No `unwrap()` outside tests.
+
+## Commands
+- Tests: `cargo test --workspace`
+```
+
+## Custom agents and slash commands
+
+| What | Where | Precedence |
+|---|---|---|
+| Agent personas | `~/.config/hone/agents/*.md`, `<project root>/.hone/agents/*.md` | project > user > built-in, by name |
+| Slash commands | `~/.config/hone/commands/*.md`, `<project root>/.hone/commands/*.md` | project > user, by file name |
+
+An agent file is Markdown with YAML front matter. The body becomes the system prompt.
+
+```markdown
+---
+name: release-notes
+description: Writes release notes from merged PRs and the changelog
+tools: [read_file, grep, glob, shell, write_file]
+model: sonnet
+---
+
+You write concise release notes. Group changes by user impact...
+```
+
+In the TUI, start a message with `@release-notes` to use it. `tools:` must use real tool
+names (`read_file`, `write_file`, `edit_file`, `multi_edit`, `glob`, `grep`, `shell`,
+`git_status`, `git_diff`, `git_commit`, `web_fetch`, ...); unknown names are dropped with
+only a log warning. An empty or missing `tools:` list keeps every tool.
+
+> [!WARNING]
+> The built-in personas list short names such as `read`, `edit` and `write`, which match
+> no tool. When `@persona` (or a distributed worker) applies their list, they keep only
+> `shell`, `grep` and `glob` and lose the file tools. This is a known bug.
+
+## Theme
+
+The TUI picks a base theme from `HONE_THEME` (`crimson` by default, or `neon`, `chalk`,
+`minimal`), then applies overrides from `~/.config/hone/theme.toml`. Each line is
+`key = "#rrggbb"`; unknown keys and invalid colours are ignored.
+
+```toml
+accent = "#FF1744"
+surface = "#0d1117"
+text_primary = "#E6E1E8"
+role_error = "#E74C3C"
+```
+
+<details>
+<summary><b>All theme keys</b></summary>
+
+| Key | Aliases |
+|---|---|
+| `accent_hot` | `accent` |
+| `accent_mid`, `accent_deep` | |
+| `text_primary`, `text_secondary`, `text_muted` | |
+| `role_user`, `role_assistant`, `role_tool_result`, `role_error` | |
+| `role_tool` | `role_tool_call` |
+| `surface_base` | `surface` |
+| `surface_raised`, `surface_overlay`, `surface_focus`, `surface_border` | |
+| `budget_low`, `budget_mid`, `budget_high` | |
+
+`NO_COLOR` or `HONE_NO_COLOR` switches to the minimal ASCII theme. `HONE_REDUCED_MOTION=1`
+stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
+
+</details>
+
+---
+
+## Where Hone keeps data
+
+| Path | Contents | Turn off |
+|---|---|---|
+| `~/.local/share/hone/memory.db` | Long-term memory (SQLite) | `--ephemeral`, `HONE_DISABLE_PERSISTENT_STORES=1` |
+| `~/.local/share/hone/index.db` | Symbol index of `.rs` and `.py` files in the working dir | same |
+| `~/.local/share/hone/sessions.db` | Conversations from one-shot runs (saved under a generated name unless you pass `--session`); `honed` sessions (`HONE_SESSION_DB` overrides) | `--ephemeral`; `HONE_EPHEMERAL` for `honed` |
+| `~/.local/share/hone/tool-cache.db` | Cache of read-only tool results | `HONE_TOOL_CACHE=0` |
+| `<cwd>/.hone/audit.jsonl` | Egress audit log of every tool call | off unless `--audit` or `HONE_AUDIT_LOG=1` |
+| `<cwd>/.hone/reports/` | Session reports (`hone reports`) | |
+| `<cwd>/.hone/plan.md` | Orchestrator plan and worker status | |
+| `<cwd>/.hone/plans/` | Saved plans from plan mode (`hone --plan FILE`) | |
+| `<project root>/.hone/specs/` | Output of `hone spec` | |
+
+## Environment variables
+
+<details open>
+<summary><b>Providers and models</b></summary>
 
 | Variable | Purpose |
-|----------|---------|
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `OPENAI_API_KEY` | OpenAI API key (or custom endpoint token) |
-| `HONE_OPENAI_BASE_URL` | Override OpenAI endpoint URL |
-| `HONE_OPENAI_MODEL` | Override model name for custom endpoint |
-| `RUST_LOG` | Logging level (`debug`, `info`, `warn`, `error`) |
-| `HONE_CONFIG` | Override config file path |
-| `DATABASE_URL` | PostgreSQL connection string (if not in config) |
-| `OLLAMA_HOST` | Ollama server URL (default: `http://localhost:11434`) |
-| `HONE_DISABLE_PERSISTENT_STORES` | Skip SQLite session/memory setup for this run (same effect as `--ephemeral`; set to `1` in CI, demos, or expect scripts) |
-| `HONE_AUDIT_LOG` | Enable JSONL egress audit log (equivalent to `--audit`) |
-| `HONE_CONTEXT_INJECTION` / `HONE_NO_INJECTION` | Force-enable or force-disable proactive context injection |
-| `HONE_CONTEXT_WINDOW` | Override the model's context window in tokens (4096–10000000), e.g. `32768` for a model served with a 32k window. Applies to every agent and model in the process. Hone compacts conversation history at its per-model budget ratio of this value (Qwen: 45%); the system prompt and tool schemas come on top, so windows below about 16k may still overflow. Unset: the window is inferred from the model name. An invalid value is ignored and logged at warn level (visible with `RUST_LOG=warn`). |
+|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic API key; also drives `honed`'s `POST /run` |
+| `OPENAI_API_KEY` | OpenAI key, or the token for an OpenAI-compatible endpoint |
+| `HONE_OPENAI_BASE_URL` | OpenAI-compatible endpoint URL (DeepSeek, Qwen, Kimi, OpenRouter, vLLM, ...) |
+| `HONE_OPENAI_MODEL` | Model name for that endpoint (default `gpt-4o`) |
+| `HONE_CLAUDE_PERMISSION_MODE` | Permission mode passed to the `claude` CLI (default `acceptEdits`) |
+| `HONE_CACHE` | Any value wraps the provider in an in-process LRU response cache (100 entries) |
+| `HONE_CONTEXT_WINDOW` | Override the model's context window in tokens (4096–10000000), e.g. `32768` for a model served with a 32k window. Applies to every agent and model in the process. Hone compacts conversation history at its per-model budget ratio of this value (Qwen: 45%); the system prompt and tool schemas come on top, so windows below about 16k may still overflow. Unset: the window is inferred from the model name. An invalid value is ignored and logged at warn level. |
+
+</details>
+
+<details>
+<summary><b>Context, memory and storage</b></summary>
+
+| Variable | Purpose |
+|---|---|
+| `HONE_NO_INJECTION` | `1` disables proactive context injection (same as `--no-inject`) |
+| `HONE_SKELETON_STRATEGY` | `adaptive` (default), `call-graph`, `hybrid`, `dependency-graph` or `flat` |
+| `HONE_DISABLE_PERSISTENT_STORES` | `1` skips the memory and symbol-index stores. (`--ephemeral` does that and also skips saving the session.) |
+| `HONE_MEMORY_PASSPHRASE` | Passphrase for `--encrypted-memory` (required with that flag) |
+| `HONE_TOOL_CACHE` | `0` disables the tool-result cache |
+| `HONE_AUDIT_LOG` | `1` writes `.hone/audit.jsonl` (same as `--audit`) |
+| `HONE_WEBSEARCH_PROVIDER`, `HONE_WEBSEARCH_KEY` | `tavily`, `brave` or `exa` plus a key. Live search is not implemented yet: the `web_search` tool returns an error either way. |
+
+</details>
+
+<details>
+<summary><b>Permissions and sandbox</b></summary>
+
+| Variable | Purpose |
+|---|---|
 | `HONE_ALLOW_UNGATED_PROVIDER` | `1` lets a provider that runs its own tools be used under a non-empty permission policy (see [Permissions](#permissions)) |
 | `HONE_APPROVE` | Comma-separated permission rule ids pre-approved for `hone-mcp-server` |
 | `HONE_SANDBOX_ENFORCE` | `1` turns on Landlock enforcement for shell commands on Linux (opt-in while it is validated; Seatbelt on macOS is always on) |
 | `HONE_SANDBOX_EXTRA_READ` | Extra read-only roots for the shell sandbox, colon-separated |
-| `HONE_REDUCED_MOTION` | Disable Agent Rail animation |
+
+</details>
+
+<details>
+<summary><b>Terminal UI and logging</b></summary>
+
+| Variable | Purpose |
+|---|---|
+| `HONE_THEME` | `crimson` (default), `neon`, `chalk`, `minimal` |
+| `NO_COLOR`, `HONE_NO_COLOR` | Disable colour (minimal ASCII theme) |
+| `HONE_REDUCED_MOTION` | Disable spinner and Agent Rail animation |
 | `HONE_ASCII_ONLY` | Force ASCII box drawing and file-op badges |
-| `HONE_NO_BELL` | Disable terminal bell on 10s+ turns |
-| `NO_COLOR` | Disable all colorized output |
+| `RUST_LOG` | Log filter, e.g. `warn`, `hone_core=debug` |
 
-## CLI Flags
+</details>
 
-A few options can be set per run with CLI flags:
+<a id="server-configuration"></a>
 
-```bash
-hone --model openai:gpt-4o --ephemeral --audit "fix the failing test"
+<details>
+<summary><b><code>honed</code> daemon and distributed mode</b></summary>
+
+| Variable | Purpose |
+|---|---|
+| `HONE_AUTH_TOKEN` | Bearer token. Required when binding a non-loopback address, whatever the role: `honed` exits 2 without it. Also needed by `hone --distributed` and by workers |
+| `HONE_BIND` | Bind host, default `0.0.0.0`. Use `127.0.0.1` for loopback-only |
+| `HONE_ALLOW_UNAUTH` | Exactly `1` allows a non-loopback bind without a token (not recommended) |
+| `HONE_SESSION_DB` | SQLite path for sessions (default `~/.local/share/hone/sessions.db`) |
+| `HONE_EPHEMERAL` | Any value keeps sessions in memory only |
+| `HONE_MEMORY_DB` | Enables `/memory` endpoints backed by this SQLite file |
+| `HONE_PROVENANCE_DIR` | Records each `/run` as a hash chain here and enables `/provenance` endpoints |
+| `HONE_EVAL_HISTORY_DB` | Enables `/evals` endpoints |
+| `HONE_DISTRIBUTED_DB` | Run as coordinator, with the task queue in this SQLite file |
+| `HONE_DISTRIBUTED_REAP_SECS`, `HONE_DISTRIBUTED_MAX_ATTEMPTS` | Lease reaper interval (default 15) and max claim attempts (default 3) |
+| `HONE_WORKER_COORDINATOR` | Run as a worker that polls this coordinator URL |
+| `HONE_WORKER_ID`, `HONE_WORKER_CAPABILITIES` | Worker id (default: hostname) and comma-separated tags |
+| `HONE_WORKER_LSP_LANGS`, `HONE_WORKER_MCP_CONFIG`, `HONE_WORKER_MEMORY_DB` | Optional LSP languages, MCP config and memory file for the worker |
+
+</details>
+
+## CLI flags
+
+```text
+hone [OPTIONS] [PROMPT] [COMMAND]
 ```
 
-Run `hone --help` for the full list. There are no flags for budget, temperature,
-iteration limit, context window or sandbox mode. The context window is set with
-`HONE_CONTEXT_WINDOW`.
+| Flag | Purpose |
+|---|---|
+| `PROMPT` | Run one prompt and exit (one-shot) |
+| `-m, --model <ID>` | `anthropic:…`, `openai:…`, `ollama:…`, `claude-cli:…`, `gemini-cli:…` |
+| `--json` | One-shot with structured JSON output (response, tool calls, usage, cost, exit status) |
+| `--orchestrate` | Run the prompt through the multi-agent orchestrator |
+| `--distributed <URL>` | With `--orchestrate`, dispatch subtasks through a remote `honed` coordinator (needs `HONE_AUTH_TOKEN`) |
+| `--ensemble <N>` | Run N candidates (2–10) at different temperatures and rank them |
+| `--recipe <NAME>`, `--list-recipes`, `--var KEY=VALUE` | Run a built-in recipe, list recipes, set recipe variables |
+| `--plan <FILE>` | Execute a plan saved by plan mode |
+| `--image <FILE>` | Attach png, jpg, gif or webp images to the prompt (repeatable) |
+| `--session <NAME>` | Name under which a one-shot run is saved. The TUI doesn't save sessions yet; it writes a session report on exit. |
+| `--ephemeral` | No memory, index or session persistence |
+| `--encrypted-memory` | Encrypt memory content with AES-256-GCM (needs `HONE_MEMORY_PASSPHRASE`) |
+| `--approve <RULE_ID>` | Pre-approve a permission rule's `ask` (repeatable) |
+| `--audit` | Write the egress audit log to `.hone/audit.jsonl` |
+| `--no-inject`, `--skeleton-strategy <S>` | Turn off context injection, or choose the skeleton strategy |
+| `--no-clarify` | Don't print clarifying questions for ambiguous one-shot prompts |
+| `--step` | TUI: ask before every tool call. Today this only reaches orchestrated turns ([known bug](permissions-and-sandbox.md#known-issue-tui)) |
+| `--vim` | TUI: vim-style keybindings |
+| `--agent <NAME>` | Parsed but not applied yet; use `@agent-name` in the TUI |
 
-## Example Configs
+| Subcommand | Purpose |
+|---|---|
+| `hone configure` | Provider wizard (writes `~/.config/hone/config.toml`) |
+| `hone session list \| resume <name> \| rename <old> <new> \| delete <name>` | Named sessions |
+| `hone memory ls \| show <id> \| forget --tag/--kind/--before` | Inspect and prune memory |
+| `hone trace list \| show <id> \| stats` | Read the egress audit log as traces |
+| `hone reports list \| show <id> \| diff <a> <b>` | Session reports |
+| `hone eval <tasks.toml>` | Run an eval task file and write `report.json` / `report.md` |
+| `hone spec "<goal>"` | Write requirements, design and tasks to `.hone/specs/<slug>/` |
 
-### Minimal (Quick Start)
-
-```toml
-[agent]
-default_model = "anthropic:claude-opus-4-5"
-
-[providers.anthropic]
-api_key = "${ANTHROPIC_API_KEY}"
-```
-
-### Production (Server + Team)
-
-```toml
-[agent]
-default_model = "anthropic:claude-opus-4-5"
-max_iterations = 50
-
-[memory]
-enabled = true
-encrypted = true
-
-[providers.anthropic]
-api_key = "${ANTHROPIC_API_KEY}"
-timeout_secs = 30
-
-[server]
-host = "0.0.0.0"
-port = 7070
-max_connections = 1000
-
-[server.auth]
-enabled = true
-[[server.auth.tokens]]
-token = "sk-hone-prod-abc123..."
-user = "ops@example.com"
-
-[rbac]
-enabled = true
-[[rbac.roles]]
-name = "admin"
-permissions = ["sessions:create", "sessions:delete", "tools:all", "mcp:all"]
-
-[audit]
-enabled = true
-log_file = "/var/log/hone/audit.log"
-
-[sandbox]
-enforce = true
-platform = "landlock"
-```
-
-### Budget-Conscious (Ollama Local)
-
-```toml
-[agent]
-default_model = "ollama:llama2"
-
-[providers.ollama]
-base_url = "http://localhost:11434"
-timeout_secs = 300
-
-[sandbox]
-enforce = false  # local-only, less critical
-```
+There are no flags for temperature, iteration limit, sandbox mode or context window. Set a
+budget in the TUI with `/budget <usd>`; set the context window with `HONE_CONTEXT_WINDOW`.
 
 ## Troubleshooting
 
-### Config file not found
+<details>
+<summary><b>"No AI provider detected"</b></summary>
 
-```
-error: config file not found at ~/.config/hone/config.toml
-```
-
-Create the file:
+Hone checked Anthropic, OpenAI, `claude`, `gemini` and Ollama in that order and found
+none. Set a key or start Ollama:
 
 ```bash
-mkdir -p ~/.config/hone
-touch ~/.config/hone/config.toml
+export ANTHROPIC_API_KEY=sk-ant-...
+# or
+ollama pull llama3.2      # with `ollama serve` running
 ```
 
-### API key not recognized
+</details>
 
-```
-error: ANTHROPIC_API_KEY not set or invalid
-```
+<details>
+<summary><b>My <code>default_model</code> (or <code>[sandbox]</code>, <code>[budget]</code>) setting has no effect</b></summary>
 
-Check environment variable:
+The strict `config.toml` schema is validated but not applied yet. Use `--model`, the
+provider environment variables, `/budget` in the TUI, and the sandbox variables above.
 
-```bash
-echo $ANTHROPIC_API_KEY
-```
+</details>
 
-Or add to config:
+<details>
+<summary><b><code>Failed to load config: unknown field ...</code> in the logs</b></summary>
 
-```toml
-[providers.anthropic]
-api_key = "sk-ant-..."
-```
+The strict schema rejects keys it doesn't know. A wizard-written file always produces
+`unknown field 'provider'`; that one is harmless. For other keys, compare the file with
+the [schema](#schema).
 
-### Sandbox policy violation
+</details>
 
-```
-error: sandbox policy not met (path not in allowlist)
-```
+<details>
+<summary><b><code>hone: permission policy error: ...</code> and exit code 2</b></summary>
 
-Add the path to the allowlist:
+A `permissions.toml` failed to parse or contains an invalid rule (bad id, a host pattern
+with a port, `**` inside a segment, ...). Fix the file named in the message; Hone won't run
+without the rules you wrote.
 
-```toml
-[sandbox.tools.file_reader]
-allow_read = ["/new/path"]
-```
+</details>
 
-### PostgreSQL connection failed
+<details>
+<summary><b><code>requires approval (rule ...)</code> in a one-shot or <code>--json</code> run</b></summary>
 
-```
-error: failed to connect to PostgreSQL at postgres://localhost/hone_index
-```
+Headless runs can't prompt. Re-run with `--approve <rule id>`, or change the rule.
 
-Check PostgreSQL is running:
+</details>
 
-```bash
-psql -U postgres -d hone_index -c "SELECT 1"
-```
+<details>
+<summary><b><code>command blocked (requires approval): ...</code></b></summary>
 
-If unavailable, semantic index falls back to in-memory substring matching.
+The shell tool's built-in checks refused a destructive, network or chained command.
+There is no prompt at this layer; split the command or use a dedicated tool. See
+[shell command checks](permissions-and-sandbox.md#2-shell-command-checks).
 
-## See Also
+</details>
 
-- [Architecture: Context Optimization](architecture.md#10-context-optimization)
-- [Security Guide](tutorials/security.md)
-- [Provider Configuration](tutorials/providers.md)
+## See also
+
+- [Getting started](getting-started.md)
+- [Permissions and sandbox](permissions-and-sandbox.md)
+- [Architecture](architecture.md)
+- [Provider tutorial](tutorials/providers.md) (older; may be out of date, this page wins)
