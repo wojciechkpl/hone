@@ -3562,6 +3562,291 @@ mod tests {
              messages in context: {messages:?}"
         );
     }
+
+    // ---- TUI approval wiring (docs/plans/tui-approval-fix-spec.md rows 6-8) ----
+
+    /// Call 1: one tool call. Call 2+: text "done". (`MockProvider` repeats its tool
+    /// call on every request, which would loop after a denial, so it is not used here.)
+    struct OneCallThenDone {
+        tool: String,
+        n: std::sync::Mutex<usize>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for OneCallThenDone {
+        fn id(&self) -> &str {
+            "one-call"
+        }
+        fn display_name(&self) -> &str {
+            "One call"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![hone_proto::ModelInfo {
+                id: ModelId::new("mock:test"),
+                display_name: "Test".to_owned(),
+                context_length: 4096,
+                supports_tools: true,
+                supports_streaming: true,
+            }]
+        }
+        async fn complete(
+            &self,
+            _req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let i = {
+                let mut n = self.n.lock().unwrap();
+                let i = *n;
+                *n += 1;
+                i
+            };
+            let events = if i == 0 {
+                vec![
+                    hone_proto::ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
+                        id: "c1".to_owned(),
+                        name: self.tool.clone(),
+                        arguments: serde_json::json!({}),
+                    }),
+                    hone_proto::ProviderEvent::Done,
+                ]
+            } else {
+                vec![
+                    hone_proto::ProviderEvent::Token {
+                        text: "done".to_owned(),
+                    },
+                    hone_proto::ProviderEvent::Done,
+                ]
+            };
+            Ok(Box::pin(futures::stream::iter(events)))
+        }
+        fn estimate_tokens(&self, _m: &[Message]) -> u32 {
+            5
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    /// Marker-file tool; the name is deliberately not one of the code-modifying
+    /// tools that trigger post-turn test verification.
+    struct MarkerTool {
+        name: &'static str,
+        read_only: bool,
+        target: PathBuf,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_tools::Tool for MarkerTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn description(&self) -> &str {
+            "writes a marker file"
+        }
+        fn schema(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+        async fn call(
+            &self,
+            _input: hone_tools::ToolInput,
+            _ctx: &hone_tools::ToolContext,
+        ) -> Result<hone_tools::ToolOutput, hone_tools::ToolError> {
+            std::fs::write(&self.target, b"written").unwrap();
+            Ok(hone_tools::ToolOutput::new(serde_json::json!({ "ok": true })))
+        }
+        fn layer(&self) -> hone_proto::ToolLayer {
+            hone_proto::ToolLayer::Native
+        }
+        fn is_read_only(&self) -> bool {
+            self.read_only
+        }
+    }
+
+    /// An `Auto`, no-channel config exactly like `build_agent_config` produces.
+    fn tui_wiring_config(tool: MarkerTool, dir: &std::path::Path) -> AgentConfig {
+        let name = tool.name.to_owned();
+        AgentConfig {
+            provider: Arc::new(OneCallThenDone {
+                tool: name,
+                n: std::sync::Mutex::new(0),
+            }),
+            tools: ToolRegistry::builder().register(Box::new(tool)).build(),
+            sandbox: Arc::new(hone_sandbox::NullSandbox),
+            sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
+            system_prompt: "test".to_owned(),
+            model: ModelId::new("mock:test"),
+            max_tokens: None,
+            temperature: None,
+            budget_limit: None,
+            pricing: PricingEntry {
+                model: ModelId::new("mock:test"),
+                input_per_million: 0.0,
+                output_per_million: 0.0,
+                cache_read_per_million: None,
+                cache_creation_per_million: None,
+            },
+            working_dir: dir.to_path_buf(),
+            memory_store: None,
+            retry_config: hone_core::RetryConfig::default(),
+            index: None,
+            inject_context: false,
+            skeleton_strategy: Default::default(),
+            egress_log: None,
+            approval_policy: ToolApprovalPolicy::Auto,
+            step_rx: None,
+            hooks: None,
+            skills: None,
+            embedder: None,
+            mode: AgentMode::Build,
+            policy: None,
+        }
+    }
+
+    /// Run a simple turn through `spawn_agent_turn` (what the TUI uses), answering
+    /// each `ToolCallPaused` with the next reply. Returns all events.
+    async fn drive_simple_turn(
+        agent: &AgentHandle,
+        step_tx: &mpsc::Sender<hone_proto::StepAction>,
+        mut replies: Vec<hone_proto::StepAction>,
+    ) -> Vec<AgentEvent> {
+        replies.reverse();
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _task = spawn_agent_turn(agent.clone(), "go".to_owned(), tx);
+        let mut events = Vec::new();
+        let collect = async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    let reply = replies
+                        .pop()
+                        .unwrap_or_else(|| panic!("unexpected extra pause: {events:?}"));
+                    step_tx.send(reply).await.unwrap();
+                }
+                let terminal = matches!(e, AgentEvent::Done { .. } | AgentEvent::Error { .. });
+                events.push(e);
+                if terminal {
+                    break;
+                }
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), collect)
+            .await
+            .expect("turn hung: no pause where one was expected");
+        events
+    }
+
+    fn paused_count(events: &[AgentEvent]) -> usize {
+        events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ToolCallPaused { .. }))
+            .count()
+    }
+
+    // Spec row 6.
+    #[tokio::test]
+    async fn test_wire_tui_approvals_when_not_step_should_set_askrisky_everywhere_and_pause_simple_turn()
+     {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+
+        let step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        assert!(matches!(
+            base_config.approval_policy,
+            ToolApprovalPolicy::AskRisky { ref always_allowed } if always_allowed.is_empty()
+        ));
+        assert!(base_config.step_rx.is_some(), "orchestrated turns need the channel");
+        assert!(matches!(
+            agent.approval_policy().await,
+            ToolApprovalPolicy::AskRisky { ref always_allowed } if always_allowed.is_empty()
+        ));
+
+        let events = drive_simple_turn(
+            &agent,
+            &step_tx,
+            vec![hone_proto::StepAction::Deny("nope".to_owned())],
+        )
+        .await;
+
+        assert_eq!(paused_count(&events), 1, "{events:?}");
+        assert!(!target.exists(), "denied write must not happen");
+    }
+
+    // Spec row 7.
+    #[tokio::test]
+    async fn test_wire_tui_approvals_when_step_should_set_alwaysask_and_pause_on_read_only_tool() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("out.txt");
+        let tool = MarkerTool {
+            name: "mock_read",
+            read_only: true,
+            target: target.clone(),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+
+        let step_tx = wire_tui_approvals(&agent, &mut base_config, true).await;
+
+        assert!(matches!(
+            base_config.approval_policy,
+            ToolApprovalPolicy::AlwaysAsk
+        ));
+        assert!(matches!(
+            agent.approval_policy().await,
+            ToolApprovalPolicy::AlwaysAsk
+        ));
+
+        let events = drive_simple_turn(
+            &agent,
+            &step_tx,
+            vec![hone_proto::StepAction::Deny("nope".to_owned())],
+        )
+        .await;
+
+        assert_eq!(paused_count(&events), 1, "read-only tool must pause under --step: {events:?}");
+        assert!(!target.exists());
+    }
+
+    // Spec row 8.
+    #[tokio::test]
+    async fn test_wire_tui_approvals_when_history_loaded_should_keep_history_in_running_agent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tool = MarkerTool {
+            name: "mock_write",
+            read_only: false,
+            target: tmp.path().join("out.txt"),
+        };
+        let mut base_config = tui_wiring_config(tool, tmp.path());
+        let agent = AgentHandle::spawn(base_config.clone());
+        agent
+            .load_history(vec![
+                Message::user("remember the blue heron"),
+                Message::assistant("noted"),
+            ])
+            .await;
+
+        let _step_tx = wire_tui_approvals(&agent, &mut base_config, false).await;
+
+        let text: String = agent
+            .get_messages()
+            .await
+            .iter()
+            .map(|m| m.content.as_text())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("remember the blue heron") && text.contains("noted"),
+            "resumed history must survive wiring (no respawn); got: {text:?}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
