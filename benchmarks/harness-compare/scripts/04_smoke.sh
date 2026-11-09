@@ -5,13 +5,16 @@
 #                    seccomp blocks Landlock)
 #   toolchain-probe  /opt/miniconda3 (SWE-bench env) is reachable from the shell
 #   landlock-canary  Hone's sandbox denies ~/.ssh inside Docker (Pi expected to leak)
+#   p-h1..p-h7       Hermes probes: one-shot exit + transcript, proxy sees requests, tool-call
+#                    parsing, headless approvals (observation), no memory/skill writes,
+#                    context window (observation), offline start-up
 #
 # Usage: scripts/04_smoke.sh [campaign-name] [arms]
 source "$(dirname "$0")/lib.sh"
 load_env
 
 name="${1:-smoke-$(date +%Y%m%d-%H%M)}"
-arms="${2:-${HC_ARMS_MAIN},pi-guarded,hone-guarded}"
+arms="${2:-${HC_ARMS_MAIN},pi-guarded,hone-guarded,hermes-guarded}"
 out="$(campaign_dir "${name}")"
 
 docker pull -q "$(python3 -c "
@@ -34,6 +37,9 @@ Interpretation:
   * landlock-canary FAIL for hone-guarded → Landlock is not enforced in the container even with
                                        HONE_SANDBOX_ENFORCE=1 (check the kernel and seccomp).
   * pi-guarded rows                  → record whether the gates block or allow without a UI.
+  * hermes FAIL / 0 proxy requests   → Hermes did not route to the proxy (provider, base URL).
+  * p-h4 for hermes-guarded          → record block / deny / hang; "not runnable headless" is a result.
+  * p-h6                             → compare Hermes's effective context window with HC_MAX_MODEL_LEN.
 Results: ${out}
 EOF
 exit "${status}"

@@ -70,6 +70,11 @@ def wrap_redteam_setup(setup: str, workdir: str = REDTEAM_WORKDIR) -> str:
     )
 
 
+def _ctx(text: str, cfg: BenchConfig) -> str:
+    """Fill `{{context_window}}` (the served window) in a task's setup/prompt/check."""
+    return text.replace("{{context_window}}", str(cfg.context_window))
+
+
 def load_task_suite(path: Path, suite: str, cfg: BenchConfig) -> list[Task]:
     """Suite B and the smoke suite share one TOML layout ([[task]])."""
     data = tomllib.loads(Path(path).read_text())
@@ -84,7 +89,7 @@ def load_task_suite(path: Path, suite: str, cfg: BenchConfig) -> list[Task]:
         image = resolve_image(alias, cfg)
         is_swe = alias.startswith("swebench:")
         workdir = raw.get("workdir", SWE_WORKDIR if is_swe else MINI_WORKDIR)
-        setup = raw.get("setup", "")
+        setup = _ctx(raw.get("setup", ""), cfg)
         if raw.get("init_repo", True):
             setup = wrap_repo_setup(setup, workdir)
         env = {"PATH": SWE_PATH} if is_swe else {}
@@ -94,9 +99,9 @@ def load_task_suite(path: Path, suite: str, cfg: BenchConfig) -> list[Task]:
                 task_id=tid,
                 image=image,
                 workdir=workdir,
-                prompt=raw["prompt"],
+                prompt=_ctx(raw["prompt"], cfg),
                 setup=setup,
-                check=raw.get("check", ""),
+                check=_ctx(raw.get("check", ""), cfg),
                 env=env,
                 expect=dict(raw.get("expect") or {}),
             )

@@ -25,14 +25,37 @@ from .redteam import (
     summarize_outcomes,
 )
 from .sampling import manifest_digest
-from .stats import discordant, mcnemar_exact, paired_bootstrap, pass_at_1, task_means
+from .stats import (
+    bootstrap_pvalue,
+    discordant,
+    mcnemar_exact,
+    paired_bootstrap,
+    pass_at_1,
+    task_means,
+)
 
 PAIRS = [
     ("hone-inject", "pi"),
     ("hone-noinject", "pi"),
     ("hone-inject", "hone-noinject"),
+    ("hone-inject", "hermes"),
     ("hone-callgraph", "hone-noinject"),
 ]
+
+
+# Suite-A primary family (Holm-corrected together); other pairs are descriptive.
+PRIMARY_FAMILY = {("hone-inject", "pi"), ("hone-inject", "hermes")}
+
+
+def holm(pvalues: Mapping[str, float], alpha: float = 0.05) -> dict[str, bool]:
+    """Holm-Bonferroni step-down: True = rejected (a difference may be claimed)."""
+    m = len(pvalues)
+    out = {k: False for k in pvalues}
+    for i, (k, p) in enumerate(sorted(pvalues.items(), key=lambda kv: (kv[1], kv[0]))):
+        if p > alpha / (m - i):
+            break
+        out[k] = True
+    return out
 
 
 def load_runs(campaign: Path) -> list[dict]:
@@ -187,9 +210,17 @@ def pairwise_table(rows: list[dict], suite: str) -> str:
     rows = [r for r in rows if r["suite"] == suite and r["resolved"] is not None]
     arms = {r["arm"] for r in rows}
     lines = []
-    for a, b in PAIRS:
-        if a not in arms or b not in arms:
-            continue
+    present = [(a, b) for a, b in PAIRS if a in arms and b in arms]
+    claim: dict[str, bool] = {}
+    if suite == "a":
+        claim = holm(
+            {
+                f"{a} − {b}": bootstrap_pvalue(task_means(rows, a), task_means(rows, b))
+                for a, b in present
+                if (a, b) in PRIMARY_FAMILY
+            }
+        )
+    for a, b in present:
         ta, tb = task_means(rows, a), task_means(rows, b)
         pb = paired_bootstrap(ta, tb)
         first = min(r["seed"] for r in rows)
@@ -200,16 +231,21 @@ def pairwise_table(rows: list[dict], suite: str) -> str:
             r["task_id"]: bool(r["resolved"]) for r in rows if r["arm"] == b and r["seed"] == first
         }
         b01, b10 = discordant(ra, rb)
+        label = f"{a} − {b}"
+        holm_cell = ("yes" if claim[label] else "no") if label in claim else "-"
         lines.append(
             f"| {a} − {b} | {pb['diff']:+.3f} | [{pb['lo']:+.3f}, {pb['hi']:+.3f}] "
             f"| {pb['n_tasks']} | {b01}/{b10} | {mcnemar_exact(b01, b10):.3f} "
-            f"| {'yes' if pb['lo'] > 0 or pb['hi'] < 0 else 'no'} |"
+            f"| {'yes' if pb['lo'] > 0 or pb['hi'] < 0 else 'no'} "
+            f"| {holm_cell} |"
         )
     if not lines:
         return "_No comparable arm pairs._\n"
     return (
         "| comparison | Δ pass@1 | 95% CI (paired bootstrap) | tasks | discordant (a/b, repeat 0) "
-        "| McNemar p | CI excludes 0 |\n|---|---|---|---|---|---|---|\n" + "\n".join(lines) + "\n"
+        "| McNemar p | CI excludes 0 | Holm |\n|---|---|---|---|---|---|---|---|\n"
+        + "\n".join(lines)
+        + "\n"
     )
 
 

@@ -202,6 +202,19 @@ story than having a reviewer find it.
 
 ## 5. Phase 1 — verified numbers (weeks 1–2)
 
+> **Updated 2026-11-09.** Several things below are superseded, and
+> [`harness-compare-v2-2026-11.md`](harness-compare-v2-2026-11.md) now governs them:
+> - Hermes Agent joins the campaign (its §4.1).
+> - The model is **Qwen3.8-27B NVFP4** with thinking off, replacing Qwen3-Coder-30B-A3B.
+> - Sampling is the model card's recommended non-thinking sampling with seeded repeats,
+>   replacing temperature 0.
+> - Suite A is **SWE-rebench**, using splits from 2026-09 onward, replacing SWE-bench
+>   Lite.
+> - Suite G is **Terminal-Bench 2.x**.
+>
+> See its §10. The proxy, caps, isolation, grading discipline and publishing rules below
+> still apply.
+
 ### 5.1 Definition of done
 
 - Pre-registration is committed and tagged (`bench-prereg-2026-11`) **before** any suite

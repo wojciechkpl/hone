@@ -29,7 +29,7 @@ from typing import Any, Protocol
 
 from .arms import Arm, render
 from .config import BenchConfig
-from .harness_out import parse_hone_json, parse_pi_jsonl
+from .harness_out import parse_hermes_jsonl, parse_hone_json, parse_pi_jsonl
 from .ids import make_run_id
 from .proxy_log import summarize_records
 from .suites import Task
@@ -107,11 +107,13 @@ def _write_json(path: Path, obj: Any) -> None:
     tmp.replace(path)
 
 
-def harness_summary(kind: str, stdout: str) -> dict:
+def harness_summary(kind: str, stdout: str, exit_code: int | None = None) -> dict:
     if kind == "hone":
         return parse_hone_json(stdout)
     if kind == "pi":
         return parse_pi_jsonl(stdout.splitlines())
+    if kind == "hermes":
+        return parse_hermes_jsonl(stdout.splitlines(), exit_code)
     return {}
 
 
@@ -363,7 +365,7 @@ def execute_run(
         result["killed"] = code == 137 and not result["timed_out"]
         (rdir / "stdout.txt").write_text(stdout or "")
         (rdir / "stderr.txt").write_text(stderr or "")
-        result["harness"] = harness_summary(arm.kind, stdout or "")
+        result["harness"] = harness_summary(arm.kind, stdout or "", code)
 
         diff = _capture_patch(c, base, task.workdir)
         (rdir / "patch.diff").write_text(diff)

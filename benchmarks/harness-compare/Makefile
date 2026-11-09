@@ -11,7 +11,7 @@ PY := uv run --no-project -q --python 3.12 --with "aiohttp>=3.9"
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | column -t -s $$'\t'
 
-test: ## unit tests (336)
+test: ## unit tests (472)
 	$(PY) --with pytest python -m pytest -q
 lint: ## ruff + shellcheck
 	uv run --no-project -q --with ruff ruff check hcbench harness_bin tests
@@ -24,7 +24,7 @@ selftest: ## no-GPU end-to-end plumbing check (mock LLM)
 
 preflight: ## P1.1 host checks
 	$(S)/00_preflight.sh
-bundle: ## P1.2 hone + pi bundle
+bundle: ## P1.2 hone + pi + hermes bundle
 	$(S)/01_build_bundle.sh
 serve: ## P1.3 start hc-llm
 	$(S)/02_serve_model.sh up

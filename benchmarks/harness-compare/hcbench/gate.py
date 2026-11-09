@@ -22,6 +22,13 @@ from .proxy_log import message_text
 from .report import load_records, load_runs, redteam_rows, redteam_unknown
 
 
+def _by_arm(table, arm: str, kind: str | None):
+    """Per-arm table lookup like `expect`: arm name first (even an empty value), then kind."""
+    if not isinstance(table, dict):
+        return None
+    return table[arm] if arm in table else table.get(kind)
+
+
 def smoke_gate(campaign: Path, suite_file: Path) -> int:
     spec = {t["id"]: t for t in tomllib.loads(suite_file.read_text()).get("task", [])}
     failures = 0
@@ -36,8 +43,30 @@ def smoke_gate(campaign: Path, suite_file: Path) -> int:
         ok = run.get("infra_error") is None
         if expect:
             ok = ok and expect == actual
-        if run.get("arm_kind") in ("pi", "hone"):
+        if run.get("arm_kind") in ("pi", "hone", "hermes"):
             ok = ok and requests > 0
+        task = spec.get(run["task_id"], {})
+        reasons = []
+        # An arm named in either table is constrained only by its own entries; otherwise the
+        # arm-kind entries apply (so `hermes-guarded = []` opts that arm out of the kind's rules).
+        named = any(
+            isinstance(task.get(k), dict) and run["arm"] in task[k]
+            for k in ("require", "max_wall_s")
+        )
+        lookup_kind = None if named else run.get("arm_kind")
+        required = _by_arm(task.get("require"), run["arm"], lookup_kind) or []
+        if "exited" in required and run.get("timed_out"):
+            reasons.append("run timed out")
+        if "result_event" in required and not ((run.get("harness") or {}).get("completed")):
+            reasons.append("no result event")
+        bound = _by_arm(task.get("max_wall_s"), run["arm"], lookup_kind)
+        if bound is not None:
+            wall = run.get("wall_s")
+            if not isinstance(wall, int | float) or wall > bound:
+                reasons.append(f"wall_s {wall} > {bound}")
+        if reasons:
+            ok = False
+            run["infra_error"] = "; ".join(reasons)
         # Evidence: a pass must be backed by what the tools actually returned (e.g. the
         # canary passing because Landlock said EACCES, not because nothing ran).
         ev = spec.get(run["task_id"], {}).get("evidence") or {}

@@ -1,4 +1,4 @@
-# harness-compare: Hone vs Pi on one locally served model
+# harness-compare: Hone vs Pi vs Hermes on one locally served model
 
 This directory benchmarks coding-agent *harnesses* against a single locally served model.
 The model, sampling and caps are held fixed; only the harness changes. It automates
@@ -14,8 +14,10 @@ hc-llm (vLLM) ◀── hc-proxy (metering, forced sampling, caps, records) ◀�
   - **A**: SWE-bench Lite, 40 tasks (pre-registered, stratified by repo, official grader)
   - **B**: the 10-task mini-bench (graded by check commands; never part of the headline)
   - **C**: red team, 20 risky calls + 5 planted injections, judged by tripwires
-- **Arms** (`config/arms.toml`): `pi`, `hone-noinject`, `hone-inject`, plus `pi-guarded`
-  and `hone-callgraph`. The `selftest` arm checks plumbing only.
+- **Arms** (`config/arms.toml`): `pi`, `hone-noinject`, `hone-inject`, `hermes`, plus
+  `pi-guarded`, `hone-guarded`, `hermes-guarded` and `hone-callgraph`. The `selftest` arm
+  checks plumbing only. `hermes` runs Hermes Agent with `--yolo`; `hermes-guarded` keeps its
+  approval prompts on (probe P-H4 records what that does headless).
 - **Contracts**: [`SPEC.md`](SPEC.md). Tests: `tests/` (pytest, no plugins).
 
 ## Quick start on the GPU box (Ubuntu + RTX 5090)
@@ -23,12 +25,23 @@ hc-llm (vLLM) ◀── hc-proxy (metering, forced sampling, caps, records) ◀�
 ```bash
 cd benchmarks/harness-compare
 cp config/bench.env.example config/bench.env    # fill in every CHANGE-ME
-make preflight bundle serve stack                # P1.1–P1.4
-make smoke                                       # P1.5 capability probes (must PASS)
+make preflight bundle serve stack                # P1.1–P1.4 (bundle: Hone, Pi, Hermes)
+make smoke                                       # P1.5 capability probes incl. Hermes P-H1..P-H7 (must PASS)
 make prereg NAME=2026-11                         # P1.6, then commit + tag + push
 make run-c run-b run-a CAMPAIGN=2026-11          # P1.7–P1.9, resumable
 make grade report CAMPAIGN=2026-11               # P1.10–P1.11
 ```
+
+**Hermes in the bundle.** `scripts/01_build_bundle.sh` installs Hermes Agent at
+`HC_HERMES_REF` (a release tag; its SHA goes into `manifest.json`) from its `uv.lock`, with its
+own python-build-standalone interpreter (`HC_HERMES_PYTHON`, installed by `uv`) and a venv built
+at the final path `/opt/harness/hermes/venv`, because arm containers are SWE-bench images with
+their own Python and the bundle is mounted read-only. `bin/hermes` runs the venv's Python on a
+console script kept alone in `hermes/entry/` (Hermes prepends that dir to the tool shells' PATH,
+so the venv's `bin/` must not be it). Skip it with `--skip-hermes` (the manifest then keeps the existing build's ref and SHA).
+The Hermes build runs as `linux/amd64` (slow under emulation on Apple silicon), with uv and the
+build image pinned by checksum/digest (`HC_UV_SHA256`, `HC_HERMES_BUILD_IMAGE`), and checks that
+`HC_HERMES_REF` (a tag or full SHA) resolves to `HC_HERMES_SHA`.
 
 To check the plumbing without a GPU (works on macOS with Docker): `make selftest`.
 

@@ -146,6 +146,86 @@ HONE_OPENAI_BASE_URL = "{{base_url}}"
 HONE_OPENAI_MODEL = "{{model}}"
 HONE_DISABLE_PERSISTENT_STORES = "1"
 
+# -------------------------------------------------------------- Hermes
+# Hermes Agent (Nous Research). `--yolo` bypasses approval prompts (permissive arm);
+# `--ignore-rules` skips AGENTS.md/SOUL.md/memory/skill injection. The endpoint comes from
+# config.yaml (Hermes `chat` has no --base-url/--api-key flags). Never add
+# --ignore-user-config: it would skip that file.
+# Off by config: memory, the skills and cronjob toolsets, the update check
+# (`updates.check: false`). HERMES_BUNDLED_SKILLS points at a path that does not exist (the build never
+# creates it), so skills_sync writes nothing into HERMES_HOME/skills. Telemetry is off by default
+# (`telemetry.shared_metrics.enabled: false`). HERMES_HOME is a fresh tmp dir per run.
+[arms.hermes]
+kind = "hermes"
+argv = [
+  "/opt/harness/bin/hermes", "chat", "-Q", "-q", "{{prompt}}",
+  "--format", "stream-json",
+  "--provider", "custom", "-m", "{{model}}",
+  "--yolo", "--ignore-rules",
+]
+
+[arms.hermes.env]
+HERMES_HOME = "/tmp/hc-hermes-home"
+HERMES_BUNDLED_SKILLS = "/opt/harness/hermes/no-bundled-skills"
+
+[arms.hermes.files]
+"/tmp/hc-hermes-home/config.yaml" = '''
+model:
+  provider: custom
+  base_url: {{base_url}}/v1
+  api_key: hcbench
+  context_length: {{context_window}}
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+terminal:
+  backend: local
+agent:
+  disabled_toolsets: [skills, cronjob]
+updates:
+  check: false
+approvals:
+  mode: smart
+  single_query_mode: deny
+'''
+
+# Same as `hermes` minus --yolo: Hermes's own approval prompts stay on, and the documented
+# defaults are pinned explicitly in both arms' (identical) config; --yolo overrides them. What it does when it cannot prompt is probe P-H4;
+# "not runnable headless" is a result.
+[arms.hermes-guarded]
+kind = "hermes"
+argv = [
+  "/opt/harness/bin/hermes", "chat", "-Q", "-q", "{{prompt}}",
+  "--format", "stream-json",
+  "--provider", "custom", "-m", "{{model}}",
+  "--ignore-rules",
+]
+
+[arms.hermes-guarded.env]
+HERMES_HOME = "/tmp/hc-hermes-home"
+HERMES_BUNDLED_SKILLS = "/opt/harness/hermes/no-bundled-skills"
+
+[arms.hermes-guarded.files]
+"/tmp/hc-hermes-home/config.yaml" = '''
+model:
+  provider: custom
+  base_url: {{base_url}}/v1
+  api_key: hcbench
+  context_length: {{context_window}}
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+terminal:
+  backend: local
+agent:
+  disabled_toolsets: [skills, cronjob]
+updates:
+  check: false
+approvals:
+  mode: smart
+  single_query_mode: deny
+'''
+
 # ------------------------------------------------------------- selftest
 # Plumbing check without a GPU: one request through the proxy, no real agent.
 [arms.selftest]
