@@ -2,6 +2,7 @@ mod hone_md;
 pub mod mcp;
 pub mod permissions;
 pub mod policy;
+pub mod resolve;
 mod types;
 
 pub use hone_md::{find_project_root, HoneMd};
@@ -13,5 +14,5 @@ pub use policy::{
 };
 pub use types::{
     BudgetConfig, Config, ConfigError, ProviderConfig, RoutingRule, SandboxConfig, SandboxMode,
-    ServerConfig,
+    ServerConfig, WizardProviderConfig,
 };

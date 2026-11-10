@@ -137,6 +137,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: config.toml is applied
+
+- **The bug:** `~/.config/hone/config.toml` and `.hone/config.toml` were validated but never used: `default_model`, `[providers.*]` and `[budget]` had no effect. The `[provider]` table that `hone configure` writes failed validation, and a separate reader picked up only part of it, so choosing Ollama or Claude CLI in the wizard, or an Anthropic model, did nothing.
+- **Now applied:** `default_model`, `[providers.anthropic|openai|ollama]` (`model`, `base_url`, `api_key_env`), `[budget].session_limit_usd` (the cap `/budget` sets) and the wizard's `[provider]` table. One strict reader replaces the old line parser. Everything that builds a provider uses it: the TUI, one-shot, `--json`, orchestrate / ensemble / medium, `hone eval` and `hone spec`.
+- **The project file is untrusted.** A repository's `.hone/config.toml` may choose models and lower the budget. It may not set endpoints, key variables, the `[provider]` table, or a `claude-cli:` / `gemini-cli:` model; those are ignored with a warning. When it chooses the model, Hone says so on stderr, and if you have no key for that provider, Hone falls back to your own model choice, then auto-detection. The project `.hone` directory and file must not be symlinks; files must be regular, at most 64 KiB and UTF-8; parse errors give the line and column, never file text.
+- **Model names are checked** (non-empty, no leading `-`, no whitespace or control characters) wherever they come from, and the Gemini CLI receives the model as one `--model=<name>` argument. Before, `gemini-cli:--yolo` reached the CLI as a separate `--yolo` flag.
+- **Not applied yet:** `[sandbox]`, `[[routing]]`, `[server]` and `daily_limit_usd`. Hone warns on stderr at startup when they are set.
+- **Behaviour changes:**
+  - A broken or unknown-key `config.toml` now stops `hone` with exit code 2 and the file's path, like a broken `permissions.toml`. Commands that don't start a model (`configure`, `session list`, `memory`, ...) still work. Tables shown in older docs (`[agent]`, `[memory]`, `[pricing]`) were never read and are now rejected.
+  - A model chosen in the wizard now wins over auto-detection, so an API key for another provider in your environment no longer switches you away from it.
+  - `--model anthropic:…` / `openai:…` without a key exits 1 and names the variable, instead of falling back to another provider with a mismatched model id. `claude-cli:` and `gemini-cli:` now always run those CLIs. A keyless OpenAI-compatible server needs a placeholder key (`OPENAI_API_KEY=local`).
+  - An empty key variable counts as unset.
+  - The benchmark arms are unaffected: they pass `--model` and the `HONE_OPENAI_*` variables, which take precedence.
+- Contract: `docs/plans/config-apply-spec.md`.
+
 ### Fixed: guard messages under tool ids the model never issued
 
 - Two edit guards added their output to the history as separate tool messages under ids the model never issued:

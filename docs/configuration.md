@@ -28,7 +28,7 @@ flowchart LR
   end
   subgraph hone["What reads it"]
     DET["Provider detection"]
-    STRICT["Strict Config schema<br/>(validated, not applied yet)"]
+    RES["Config resolver<br/>(model, provider settings,<br/>session budget)"]
     GATE["Permission gate"]
     MGR["MCP manager"]
     SYS["System prompt"]
@@ -37,8 +37,8 @@ flowchart LR
   end
   ENV --> DET
   FLAGS --> DET
-  CFG -->|"[provider] table"| DET
-  CFG --> STRICT
+  CFG --> RES
+  RES --> DET
   PERM --> GATE
   MCPJ --> MGR
   MD --> SYS
@@ -50,7 +50,7 @@ flowchart LR
 
 | File | Read by | Format | Applied? |
 |---|---|---|---|
-| `~/.config/hone/config.toml`, `<cwd>/.hone/config.toml` | `hone` | TOML | The `[provider]` table: **yes**. The strict schema: validated only ([details](#configtoml)) |
+| `~/.config/hone/config.toml`, `<cwd>/.hone/config.toml` | `hone` | TOML | **yes**: model, provider settings, session budget. `[sandbox]`, `[[routing]]`, `[server]` and `daily_limit_usd` are not applied, and Hone warns when they are set ([details](#configtoml)) |
 | `~/.config/hone/permissions.toml`, `<cwd>/.hone/permissions.toml` | `hone`, `honed`, `hone-mcp-server` | TOML | **yes** ([Permissions](#permissions)) |
 | `~/.config/hone/mcp.json`, `<cwd>/.hone/mcp.json` | `hone` | JSON (Claude Code compatible) | **yes** ([MCP servers](#mcp-servers)) |
 | `~/.config/hone/HONE.md`, `<project root>/HONE.md`, `<cwd>/HONE.md` | `hone` | Markdown | **yes** ([HONE.md](#honemd)) |
@@ -66,36 +66,61 @@ working directory itself: those files are **not** looked up in parent directorie
 
 ## Choosing a provider and model
 
-Provider settings come from environment variables first, then from the `[provider]` table
-that `hone configure` writes. With no `--model` flag, Hone takes the first provider that
-is available, in this order:
+Hone first looks for an explicit model choice: `--model`, then `default_model` in
+`config.toml` (the project file before the user file), then the model you picked in
+`hone configure`. With none of these, it takes the first provider that is available:
 
 ```mermaid
 %%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
 flowchart TD
-  A{"ANTHROPIC_API_KEY<br/>(or wizard key)"} -->|set| A1["anthropic:claude-sonnet-4-5"]
-  A -->|unset| B{"OPENAI_API_KEY<br/>(or wizard key)"}
-  B -->|set| B1["openai:gpt-4o<br/>HONE_OPENAI_BASE_URL / HONE_OPENAI_MODEL override"]
+  M{"--model, default_model<br/>or wizard model?"} -->|yes| M1["the provider its prefix names<br/>(exit 1 if its key is missing)"]
+  M -->|no| A{"Anthropic key?"}
+  A -->|set| A1["anthropic:claude-sonnet-4-5<br/>or [providers.anthropic].model"]
+  A -->|unset| B{"OpenAI key?"}
+  B -->|set| B1["openai:gpt-4o<br/>or HONE_OPENAI_MODEL / [providers.openai].model"]
   B -->|unset| C{"claude on PATH?"}
   C -->|yes| C1["claude-cli:claude-sonnet-4-5<br/>(no Hone tools)"]
   C -->|no| D{"gemini on PATH?"}
   D -->|yes| D1["gemini-cli:gemini-2.5-pro<br/>(no Hone tools)"]
-  D -->|no| E{"Ollama answers on<br/>localhost:11434 and has llama3.2?"}
-  E -->|yes| E1["ollama:llama3.2"]
+  D -->|no| E{"Ollama answers and<br/>has its model?"}
+  E -->|yes| E1["ollama:llama3.2<br/>or [providers.ollama].model"]
   E -->|no| X["Exit 1 with setup hints"]
 ```
 
-`--model <provider>:<name>` picks the model explicitly. The accepted prefixes are
-`anthropic:`, `openai:`, `ollama:`, `claude-cli:` and `gemini-cli:`; anything else exits
-with an error. `anthropic:` and `openai:` still need their API key; `ollama:` always
-connects to `http://localhost:11434`.
+A model id is `<provider>:<name>`. The accepted prefixes are `anthropic:`, `openai:`,
+`ollama:`, `claude-cli:` and `gemini-cli:`. The name must not be empty, must not start
+with `-`, and must not contain spaces or control characters. An explicit choice always
+uses the provider its prefix names:
+
+- `anthropic:` and `openai:` need their API key. Without it Hone exits 1 and says which
+  variable to set; it doesn't fall back to another provider. Keyless OpenAI-compatible
+  servers (a local vLLM, for example) still need a placeholder key such as
+  `OPENAI_API_KEY=local`.
+- `ollama:` connects to `[providers.ollama].base_url`, by default `http://localhost:11434`.
+- `claude-cli:` and `gemini-cli:` run those CLIs, even when an API key is set.
+
+**Where each setting comes from**, highest first:
+
+| Setting | Sources |
+|---|---|
+| Model | `--model` → `default_model` (project, then user) → wizard model → auto-detection |
+| Anthropic key | the variable named by `[providers.anthropic].api_key_env`, else `ANTHROPIC_API_KEY` → wizard key |
+| OpenAI key | the variable named by `[providers.openai].api_key_env`, else `OPENAI_API_KEY` → wizard key |
+| OpenAI base URL | `HONE_OPENAI_BASE_URL` → `[providers.openai].base_url` → wizard `base_url` |
+| Anthropic base URL | `[providers.anthropic].base_url` → Anthropic's API |
+| Ollama base URL | `[providers.ollama].base_url` → wizard `base_url` → `http://localhost:11434` |
+| Model when detection picks OpenAI | `HONE_OPENAI_MODEL` → `[providers.openai].model` → wizard model → `gpt-4o` |
+| Model when detection picks Anthropic / Ollama | `[providers.<p>].model` → wizard model → `claude-sonnet-4-5` / `llama3.2` |
+
+An empty environment variable counts as unset. When `api_key_env` names a variable that
+isn't set, Hone doesn't fall back to the default variable.
 
 | Provider | How to enable | Hone's tools | Notes |
 |---|---|---|---|
 | Anthropic | `ANTHROPIC_API_KEY=sk-ant-...` | yes | Default model `claude-sonnet-4-5` |
 | OpenAI | `OPENAI_API_KEY=...` | yes | Default model `gpt-4o` |
-| OpenAI-compatible | `OPENAI_API_KEY` + `HONE_OPENAI_BASE_URL` (+ `HONE_OPENAI_MODEL`) | yes | DeepSeek `https://api.deepseek.com`, OpenRouter `https://openrouter.ai/api/v1`, vLLM `http://localhost:8000/v1`, ... |
-| Ollama | `ollama serve` + `ollama pull llama3.2` | yes | Fixed URL `http://localhost:11434` |
+| OpenAI-compatible | `OPENAI_API_KEY` + `HONE_OPENAI_BASE_URL` (+ `HONE_OPENAI_MODEL`), or `[providers.openai]` | yes | DeepSeek `https://api.deepseek.com`, OpenRouter `https://openrouter.ai/api`, vLLM `http://localhost:8000`, ... Give the URL **without** `/v1`: Hone appends `/v1/chat/completions` |
+| Ollama | `ollama serve` + `ollama pull llama3.2` | yes | URL from `[providers.ollama].base_url`, default `http://localhost:11434` |
 | Claude CLI | `claude` on `PATH` | no: runs its own tools | Permission mode `acceptEdits` unless `HONE_CLAUDE_PERMISSION_MODE` is set |
 | Gemini CLI | `gemini` on `PATH` | no: runs its own tools | |
 
@@ -103,6 +128,10 @@ connects to `http://localhost:11434`.
 > The Claude CLI and Gemini CLI adapters run their own tools, which Hone's permission
 > rules can't see. With a non-empty permission policy, Hone refuses them unless you set
 > `HONE_ALLOW_UNGATED_PROVIDER=1`. See [Permissions and sandbox](permissions-and-sandbox.md#providers-that-run-their-own-tools).
+> For the same reason, a project `config.toml` can't choose them.
+
+`hone eval` and `hone spec` use the resolved keys and endpoints, but not the model
+choice: they take Anthropic if a key is available, else OpenAI, with their own model.
 
 ### What `hone configure` writes
 
@@ -119,78 +148,114 @@ model = "deepseek-chat"
 base_url = "https://api.deepseek.com"
 ```
 
-At startup Hone uses these values only where the matching environment variable is unset:
-`anthropic` fills `ANTHROPIC_API_KEY`; `openai`, `deepseek` and `openrouter` fill
-`OPENAI_API_KEY`, `HONE_OPENAI_BASE_URL` and `HONE_OPENAI_MODEL`. Nothing else is read:
-choosing Ollama or Claude CLI, or picking an Anthropic model, currently has no effect. The key is stored in
-plain text, and the wizard does not mask it while you type.
+Hone reads this table only from the user file:
+
+- **Model.** `name` and `model` set the default model when there is no `--model` or
+  `default_model`: `anthropic` → `anthropic:<model>`; `openai`, `deepseek` and
+  `openrouter` → `openai:<model>`; `ollama` → `ollama:<model>`; `claude-cli` →
+  `claude-cli:<model>`. This choice wins over auto-detection, so an API key for another
+  provider in your environment doesn't switch you away from it.
+- **Key and endpoint.** `api_key` and `base_url` fill in where nothing higher is set (see
+  the table above).
+
+The key is stored in plain text, and the wizard does not mask it while you type. To keep
+it out of the file, set `api_key_env` under `[providers.<p>]` instead (see
+[config.toml](#configtoml)).
 
 ---
 
 ## config.toml
 
-`~/.config/hone/config.toml` and `<cwd>/.hone/config.toml` are also loaded through a
-**strict** schema (`hone_config::Config`, `deny_unknown_fields`). The project file wins
-over the user file, key by key.
+`hone` reads two files, both optional:
 
-> [!WARNING]
-> **The strict schema is validated but not applied yet.** `hone` loads it and logs
-> "config loaded successfully", but no code reads `default_model`, `[sandbox]`,
-> `[[routing]]`, `[budget]` or `[server]` today. Use `--model`, the environment variables
-> and the TUI's `/budget` command instead. A file that fails validation is skipped with a
-> warning (visible with `RUST_LOG=warn`); it never stops Hone from starting.
+- `~/.config/hone/config.toml`, the **user file**. You own it, so it's trusted.
+- `<cwd>/.hone/config.toml`, the **project file**. It comes with the repository, so it's
+  untrusted, like the project `permissions.toml`. It may choose models and lower the
+  budget. It may not set endpoints, key variables or keys, and it may not switch to the
+  Claude or Gemini CLI: those would send your key or code to a host the repository chose,
+  or run tools outside Hone's permission rules.
 
-> [!CAUTION]
-> The wizard's `[provider]` table is not part of the strict schema, so a wizard-written file
-> always logs `unknown field 'provider'` at warn level. That warning is harmless: the
-> `[provider]` table is still read by the provider reader above. Tables such as `[agent]`,
-> `[memory]` and `[pricing]` were never part of either reader and are rejected.
+`hone` reads them only for commands that start a model (the TUI, one-shot, `--json`,
+`hone eval`, `hone spec`, `hone session resume`). `hone configure`, `session list`,
+`memory` and the other subcommands work even when a file is broken.
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  U["~/.config/hone/config.toml<br/>(trusted)"] --> R["resolve"]
+  P[".hone/config.toml<br/>(untrusted)"] -->|"models, lower budget"| R
+  P -.->|"endpoints, keys, CLI providers:<br/>ignored with a warning"| W["stderr warnings"]
+  ENV["environment variables"] --> R
+  R --> M["model choice"]
+  R --> S["provider key, URL, model"]
+  R --> B["session budget"]
+```
 
 ### Schema
 
-| Key | Type | Default | Meaning |
+| Key | Type | Effect | In the project file |
 |---|---|---|---|
-| `default_model` | string `provider:model` | none | Model to use when no routing rule matches |
-| `[providers.<name>]` | table | empty | `api_key_env` (name of the env var holding the key), `base_url`, `model`. No other keys. |
-| `[sandbox]` | table | `mode = "Manual"` | `mode` = `"Manual"`, `"Supervised"` or `"Autonomous"` (capitalised); `allowed_commands`, `allowed_network_domains`, `protected_paths` (lists) |
-| `[[routing]]` | array of tables | empty | `task` (for example `"file_read"`) and `model`; first match wins |
-| `[budget]` | table | none | `daily_limit_usd`, `session_limit_usd` (floats) |
-| `[server]` | table | `127.0.0.1`, `3117` | `host`, `port`, `auth_token` |
+| `default_model` | string `provider:model` | The model when there is no `--model` ([precedence](#choosing-a-provider-and-model)) | allowed, and wins over the user file; `claude-cli:` / `gemini-cli:` are ignored with a warning |
+| `[providers.<p>]`, `p` = `anthropic`, `openai`, `ollama` | table | Settings for that provider. Any other name is an error | |
+| `[providers.<p>].model` | string | The model used when auto-detection picks `p` | allowed, and wins over the user file |
+| `[providers.<p>].base_url` | string | The endpoint for `p` | ignored, with a warning |
+| `[providers.<p>].api_key_env` | string | The name of the variable that holds the key, instead of `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`. Not valid under `ollama` | ignored, with a warning |
+| `[provider]` | table | The table `hone configure` writes ([details](#what-hone-configure-writes)) | ignored, with a warning |
+| `[budget].session_limit_usd` | float ≥ 0 | Cost cap for the session, the same cap `/budget` sets. `/budget` still changes it while the TUI runs | allowed, but it can only lower the cap: Hone uses the smaller of the two |
+| `[budget].daily_limit_usd` | float ≥ 0 | **Not applied** (it needs spend kept across sessions) | |
+| `[sandbox]` | table | **Not applied.** Use `permissions.toml` and the [sandbox variables](#sandbox) | |
+| `[[routing]]` | array of tables | **Not applied.** Use `--model` or `default_model` | |
+| `[server]` | table | **Not applied.** `honed` takes its port argument, `HONE_BIND` and `HONE_AUTH_TOKEN` | |
+
+`hone` prints one warning per start for every key it ignores or doesn't apply, on stderr
+as `hone: warning: <path>: <message>`. When the project file chose the model, it also
+prints `hone: using model <m> (from <path>)`. Neither goes to stdout, so `--json` output
+stays valid JSON.
+
+If a project `default_model` names a provider you have no key for, Hone warns and falls
+back to your own choice: the user file's `default_model`, then the wizard model, then
+auto-detection. The same missing key for a choice from the user file, or from `--model`,
+exits 1.
 
 <details>
-<summary><b>A complete file that passes validation</b></summary>
+<summary><b>A complete user file</b></summary>
 
 ```toml
-default_model = "anthropic:claude-sonnet-4-5"
+default_model = "openai:deepseek-chat"
 
 [providers.openai]
-api_key_env = "OPENAI_API_KEY"
+api_key_env = "DEEPSEEK_API_KEY"
 base_url = "https://api.deepseek.com"
 model = "deepseek-chat"
 
-[sandbox]
-mode = "Supervised"
-allowed_commands = ["cargo", "git"]
-allowed_network_domains = ["crates.io"]
-protected_paths = ["~/.ssh"]
+[providers.anthropic]
+model = "claude-sonnet-4-5"
 
-[[routing]]
-task = "file_read"
-model = "anthropic:claude-haiku-4-5"
+[providers.ollama]
+base_url = "http://localhost:11434"
+model = "qwen2.5-coder"
 
 [budget]
-daily_limit_usd = 10.0
 session_limit_usd = 2.0
-
-[server]
-host = "127.0.0.1"
-port = 3117
 ```
 
-Again: these values are validated, not applied. `honed` takes its host, port and token
-from `HONE_BIND`, its `PORT` argument and `HONE_AUTH_TOKEN`, not from `[server]`.
-
 </details>
+
+### Errors
+
+A file that Hone can't use stops it with **exit code 2** and
+`hone: config error in <path>: <reason>`, the same as a broken `permissions.toml`. Hone
+never runs without the settings you wrote. That covers:
+
+- a TOML syntax error, an unknown key or table, or a value of the wrong type;
+- an unknown provider name in `[providers]` or `[provider]`;
+- a model id without a known prefix, or with an invalid name;
+- a negative or non-finite budget;
+- a file that isn't a regular file, is larger than 64 KiB or isn't UTF-8;
+- in the project directory, a `.hone` directory or `config.toml` that is a symlink.
+
+Parse errors give the line and column, never the file's text. Validation errors quote the
+value they reject, such as the model id.
 
 ---
 
@@ -513,7 +578,8 @@ see [Sandbox](#sandbox).
 ## Sandbox
 
 The OS sandbox wraps child processes started by the `shell` tool. It is configured only
-through environment variables; the `[sandbox]` table in `config.toml` is not applied.
+through environment variables. The `[sandbox]` table in `config.toml` is not applied, and
+Hone warns at startup when it is set.
 
 | Platform | Default | Variable |
 |---|---|---|
@@ -794,19 +860,31 @@ ollama pull llama3.2      # with `ollama serve` running
 </details>
 
 <details>
-<summary><b>My <code>default_model</code> (or <code>[sandbox]</code>, <code>[budget]</code>) setting has no effect</b></summary>
+<summary><b><code>hone: config error in ...</code> and exit code 2</b></summary>
 
-The strict `config.toml` schema is validated but not applied yet. Use `--model`, the
-provider environment variables, `/budget` in the TUI, and the sandbox variables above.
+A `config.toml` failed to parse, has a key Hone doesn't know, or has an invalid value. The
+message names the file and the line. Compare it with the [schema](#schema). Older docs
+showed `[agent]`, `[memory]` and `[pricing]` tables: Hone never read them, and they are now
+rejected, so delete them. `hone configure` still works and rewrites the user file.
 
 </details>
 
 <details>
-<summary><b><code>Failed to load config: unknown field ...</code> in the logs</b></summary>
+<summary><b><code>hone: warning: ... is not applied</code> or <code>... is ignored in a project config</code></b></summary>
 
-The strict schema rejects keys it doesn't know. A wizard-written file always produces
-`unknown field 'provider'`; that one is harmless. For other keys, compare the file with
-the [schema](#schema).
+The key is valid but Hone doesn't act on it: `[sandbox]`, `[[routing]]`, `[server]` and
+`daily_limit_usd` are not applied yet, and a project file can't set endpoints, key
+variables, the `[provider]` table or a CLI provider. The message says what to use instead.
+Hone keeps running.
+
+</details>
+
+<details>
+<summary><b><code>model '...' (from ...) needs an API key</code> and exit code 1</b></summary>
+
+The model was chosen explicitly (`--model`, `default_model` in your user file, or the
+wizard) and its provider has no key. Set the variable the message names, or pick another
+model. Hone doesn't silently switch to a different provider.
 
 </details>
 

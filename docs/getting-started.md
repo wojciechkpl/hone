@@ -94,13 +94,13 @@ Step 1: Select a provider
 ```
 
 > [!NOTE]
-> At startup Hone only reads the wizard's Anthropic key and its OpenAI, DeepSeek and
-> OpenRouter settings (key, base URL, model). Choosing Ollama or Claude CLI, or picking an
-> Anthropic model, currently has no effect: Ollama and `claude` are found by auto-detection,
-> and you pick an Anthropic model with `--model`.
+> The provider and model you pick become your default model (for example
+> `ollama:llama3.2` or `anthropic:claude-sonnet-4-5`). It wins over auto-detection, so a
+> key for another provider in your environment doesn't switch you away from it. Pass
+> `--model` to use something else for one run.
 
 > [!TIP]
-> Environment variables always win over the wizard's file. The detection order, the
+> For the key and endpoint, environment variables win over the wizard's file. The detection order, the
 > `--model` prefixes and the full provider table are in
 > [Configuration → Choosing a provider](configuration.md#choosing-a-provider-and-model).
 

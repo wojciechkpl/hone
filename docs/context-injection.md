@@ -32,7 +32,7 @@ The foundation of context injection. Provides a complete roadmap of the codebase
 - **CallGraph (default):** Function-level call relationships showing which functions call which other functions
 - **Alternative strategies:** Flat (signatures only), DependencyGraph (imports), Hybrid (calls for top-5 files)
 
-**Size:** 800-1500 tokens (configurable via `context_skeleton_budget`)
+**Size:** 800-1500 tokens
 
 **Example output (CallGraph strategy):**
 ```
@@ -459,23 +459,7 @@ HONE_SKELETON_STRATEGY=hybrid hone "your task"
 
 ### Configuration File
 
-In `~/.config/hone/config.toml`:
-
-```toml
-[agent]
-# Strategy: adaptive (default), call_graph, hybrid, flat, dependency_graph
-# adaptive = auto-select based on repo size
-skeleton_strategy = "adaptive"
-
-# Token budget for skeleton (affects how many functions are included)
-context_skeleton_budget = 1500
-
-# Auto-skip large files
-max_file_size_bytes = 102400  # 100KB
-
-# Auto-skip slow parses
-max_parse_time_ms = 100
-```
+There is no `config.toml` key for this: `config.toml` rejects an `[agent]` table ([schema](configuration.md#schema)). Use the environment variable or the CLI flag above.
 
 ### Selection Guide
 
@@ -535,11 +519,7 @@ HONE_NO_INJECTION=1 hone "your task"
 hone --no-inject "your task"
 ```
 
-**In config.toml:**
-```toml
-[agent]
-context_injection = false
-```
+There is no `config.toml` key for this: `config.toml` rejects an `[agent]` table ([schema](configuration.md#schema)).
 
 ### When You Might Want to Disable
 
@@ -565,15 +545,7 @@ context_injection = false
 
 ### Partial Disable
 
-You can selectively disable specific tiers:
-
-```toml
-[agent]
-context_injection = true
-inject_skeleton = true       # Always inject Tier 1
-inject_signatures = false    # Skip Tier 2
-inject_budget_hints = true   # Include Tier 3
-```
+The tiers can't be switched off separately yet; there is no setting for it.
 
 ---
 
@@ -633,15 +605,7 @@ Task: "Refactor authentication module"
 
 ### Tuning
 
-You can adjust sensitivity via config:
-
-```toml
-[agent]
-context_injection = true
-confidence_gap_threshold = 0.4  # Default: 0.4
-                                # Lower (0.2): More aggressive injection
-                                # Higher (0.6): Conservative injection
-```
+The threshold isn't configurable yet.
 
 ---
 
@@ -872,32 +836,7 @@ time hone --no-inject "fix off-by-one error in bounds_check()"
 
 ### Global Configuration (config.toml)
 
-```toml
-[agent]
-# Enable proactive context injection (default: true)
-context_injection = true
-
-# Skeleton strategy: adaptive, call_graph, hybrid, flat, dependency_graph (default: adaptive)
-# adaptive: detail level chosen from repo size (call graph for small repos)
-# call_graph: function-level calls, capped at 30 functions
-# hybrid: dependency graph + calls for the top-5 relevant files
-# flat: signatures only, fastest generation
-# dependency_graph: import relationships only
-skeleton_strategy = "adaptive"
-
-# BM25 confidence gap threshold (default: 0.4)
-# Lower = more aggressive injection, Higher = conservative
-confidence_gap_threshold = 0.4
-
-# Token budget for skeleton (default: 1500)
-context_skeleton_budget = 1500
-
-# Number of signatures to inject from Tier 2 (default: 3)
-context_signature_count = 3
-
-# Enable exploration budget hints (default: true)
-context_budget_hints = true
-```
+There is no `config.toml` key for this: `config.toml` rejects an `[agent]` table ([schema](configuration.md#schema)). Use the environment variables and flags below.
 
 ### Environment Variables
 

@@ -117,7 +117,7 @@ Read the [architecture](architecture.md) for the crate map and data flow.
 | State | Memory with typed entries, optional AES-256-GCM encryption | ![shipped](https://img.shields.io/badge/-shipped-2ea043) |
 | | Tree-sitter symbol index (`.rs`, `.py`), tool-result cache | ![shipped](https://img.shields.io/badge/-shipped-2ea043) |
 | | Tamper-evident run log in `honed` (`HONE_PROVENANCE_DIR`) | ![opt-in](https://img.shields.io/badge/-opt--in-d29922) |
-| | `config.toml` strict schema (`default_model`, `[budget]`, ...) | ![partial](https://img.shields.io/badge/-validated%2C%20not%20applied-d29922) |
+| | `config.toml`: model, provider settings, session budget; project file untrusted | ![partial](https://img.shields.io/badge/-applied%20(sandbox%2C%20routing%2C%20server%20not%20yet)-d29922) |
 | Multi-agent | Orchestrator, distributed workers, ensemble, recipes, `hone spec` | ![shipped](https://img.shields.io/badge/-shipped-2ea043) |
 | Evidence | Pre-registered Hone vs Pi benchmark | ![in progress](https://img.shields.io/badge/-in%20progress-1f6feb) |
 
