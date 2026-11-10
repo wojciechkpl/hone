@@ -146,3 +146,9 @@ impl LastFailure {
         }
     }
 }
+
+/// Whether a failed request should be handed to the next provider: a transient
+/// error, or no answer at all (HTTP status 0: connection refused, DNS, TLS).
+pub(crate) fn hands_over(e: &ProviderError) -> bool {
+    e.is_transient() || matches!(e, ProviderError::Http { status: 0, .. })
+}

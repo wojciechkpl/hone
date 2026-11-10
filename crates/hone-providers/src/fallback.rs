@@ -6,7 +6,7 @@ use futures::Stream;
 use hone_proto::{Message, ModelInfo, ProviderEvent, ProviderHealth};
 
 use crate::error::ProviderError;
-use crate::stream_probe::{Attempt, LastFailure, attempt, with_carried};
+use crate::stream_probe::{Attempt, LastFailure, attempt, hands_over, with_carried};
 use crate::traits::{CompletionRequest, ModelProvider};
 
 /// A provider that tries each member in order, moving on when one fails with
@@ -73,7 +73,7 @@ impl ModelProvider for FallbackChain {
                     carried.extend(failure.usage);
                     last = Some(LastFailure::Stream(failure.message, failure.kind));
                 }
-                Attempt::Request(e) if e.is_transient() => {
+                Attempt::Request(e) if hands_over(&e) => {
                     last = Some(LastFailure::Request(e));
                 }
                 Attempt::Request(e) => return Err(e),

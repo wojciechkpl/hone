@@ -7,7 +7,7 @@ use hone_proto::{Message, ModelInfo, ProviderEvent, ProviderHealth};
 
 use crate::error::ProviderError;
 use crate::registry::ProviderRegistry;
-use crate::stream_probe::{Attempt, LastFailure, attempt, with_carried};
+use crate::stream_probe::{Attempt, LastFailure, attempt, hands_over, with_carried};
 use crate::traits::{CompletionRequest, ModelProvider};
 
 /// A rule that maps a task keyword/prefix to a provider id.
@@ -332,7 +332,7 @@ impl ModelProvider for TierFallbackProvider {
         // Try primary first.
         let mut last = match attempt(self.primary.as_ref(), request.clone()).await {
             Attempt::Stream(stream) => return Ok(stream),
-            Attempt::Request(e) if !e.is_transient() => return Err(e),
+            Attempt::Request(e) if !hands_over(&e) => return Err(e),
             Attempt::Request(e) => LastFailure::Request(e),
             Attempt::Failed(failure) => {
                 carried.extend(failure.usage);
@@ -359,7 +359,7 @@ impl ModelProvider for TierFallbackProvider {
 
             match attempt(candidate.as_ref(), request.clone()).await {
                 Attempt::Stream(stream) => return Ok(with_carried(carried, stream)),
-                Attempt::Request(e) if !e.is_transient() => return Err(e),
+                Attempt::Request(e) if !hands_over(&e) => return Err(e),
                 Attempt::Request(e) => last = LastFailure::Request(e),
                 Attempt::Failed(failure) => {
                     carried.extend(failure.usage);

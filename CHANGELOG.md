@@ -137,6 +137,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Routing by complexity, fallback models, and `/model` across providers
+
+- **Before:** `[[routing]]` in `config.toml` was parsed and ignored, with a warning. Its example task names (`file_read`, `multi_file_edit`) were never produced by anything. The fallback wrappers (`FallbackChain`) weren't used by `hone`, and they didn't move on when a provider gave no answer at all. `/model` changed only the model name: `/model openai:gpt-4o` in an Anthropic session sent `gpt-4o` to Anthropic.
+- **`[[routing]]`:** `task = "simple" | "medium" | "complex"` picks the model for turns of that complexity, using the classification the TUI already makes for every prompt.
+  - One-shot and `--json` classify the prompt once. `--json` reports the chosen model, and stderr names the routing rule.
+  - A project file's entry wins over the user's for its tier. Hone announces each one at start (`hone: routing <tier> requests to <model> (from <path>)`), as it does for a project `default_model`.
+  - Another `task` name, or a Claude/Gemini CLI model, is ignored with a warning.
+- **`fallback_models = [...]`** (user file only): models to try, in order, when the turn's model fails before answering. A project file's list is ignored with a warning, because a repository could otherwise send your session to a provider it chose without any notice. That covers an overload, a rate limit, a 5xx error, a stream that fails before any output, or no answer at all, such as a refused connection. `FallbackChain` and `TierFallbackProvider` now also move on when there was no answer (HTTP status 0); the agent's own retry still doesn't retry it.
+- **`/model`** now switches the provider with the model, and updates the status bar's model label. It accepts `anthropic:`, `openai:` and `ollama:` models whose provider has a key, and refuses the agent CLIs. It confirms the change only once it has been applied. A switch typed while a turn is running is checked at once and applied when that turn has finished, including its self-refine rounds and test-fix follow-ups, so one turn never mixes models.
+- **How the model choice interacts with routing:**
+  - `--model` means exactly that model: no routing and no fallback.
+  - `/model` turns routing off for the rest of the session, and fallback still applies.
+  - Without `[[routing]]` and `fallback_models`, requests and `--json` output are unchanged, apart from tool order (below).
+- **New `hone_providers::ModelDispatch`:** it sends each request to the provider its model's prefix names, and runs the fallback models through `FallbackChain`.
+- **Tool order:** tool definitions are now sent sorted by name. Their order used to come from a hash map and changed from run to run, so identical sessions now send identical requests; this also helps providers' prompt caching. Requests therefore differ from earlier versions in tool order only.
+- **Not yet:**
+  - Cost estimates still use one flat rate for every model.
+  - Nothing reports when a fallback model answered, and `--json` names the chosen model.
+  - A turn routed to a model with a smaller context window gets the whole history, which the server may truncate.
+- Contract: `docs/plans/routing-fallback-spec.md`.
+
 ### Fixed: errors a retry can't fix were retried
 
 - **The bug:** a stream error (`ProviderEvent::Error`) carried only its message. After the retry fix below, an error that a provider sends inside the stream and that no retry can fix was therefore sent again twice, with the whole conversation, before the same error came back. Examples are vLLM's `"code": 400`, LiteLLM's `"code": "400"`, OpenAI's `context_length_exceeded` and Anthropic's `invalid_request_error`. Hone's own idle timeout was recognised by its message text, so a provider message that happened to start the same way was skipped too.

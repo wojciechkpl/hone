@@ -679,3 +679,26 @@ async fn test_e6_an_unclassified_error_is_still_retried_as_before() {
     assert_eq!(res.unwrap().response, "ok");
     assert_eq!(p.calls(), 2);
 }
+
+// -- G5: the agent's own retry is unchanged for "no answer at all" ----------------------------------------------
+
+#[tokio::test]
+async fn test_g5_the_agent_still_does_not_retry_a_status_zero_request_error() {
+    let p = Script::new(vec![
+        Call::Http(
+            0,
+            "error sending request for url (http://localhost:1/v1/chat/completions)",
+        ),
+        answer("never"),
+    ]);
+    let h = handle(Arc::clone(&p));
+
+    let (res, _) = run(&h).await;
+
+    assert!(res.is_err());
+    assert_eq!(
+        p.calls(),
+        1,
+        "falling back is the wrappers' job, not the agent's"
+    );
+}
