@@ -72,6 +72,90 @@ impl Utf8Decoder {
     }
 }
 
+/// Idle limit for a streamed response: how long the body may stay silent before
+/// the read fails with a timeout. It is reset by every received frame, so a
+/// long answer that keeps streaming is never cut off.
+pub(crate) const HTTP_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+pub(crate) const HTTP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Build the shared HTTP client: connect timeout plus a per-read idle timeout
+/// (not a total deadline).
+#[allow(clippy::expect_used)] // the builder only fails if the TLS backend cannot initialise
+pub(crate) fn build_client(idle: std::time::Duration) -> reqwest::Client {
+    reqwest::Client::builder()
+        .read_timeout(idle)
+        .connect_timeout(HTTP_CONNECT_TIMEOUT)
+        .build()
+        .expect("reqwest builder cannot fail with valid timeout values")
+}
+
+/// An error with its `source()` chain joined by `: `, so a timeout deep in
+/// hyper reads "timed out" in the message.
+pub(crate) fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut out = e.to_string();
+    let mut cur = e.source();
+    while let Some(src) = cur {
+        let msg = src.to_string();
+        if !out.contains(&msg) {
+            out.push_str(": ");
+            out.push_str(&msg);
+        }
+        cur = src.source();
+    }
+    out
+}
+
+/// Tracks how a provider's event stream ends. A stream is *complete* once a
+/// `Done` was parsed (each adapter emits `Done` at its completion marker) and
+/// *failed* once an `Error` was emitted. Completion wins over a later transport
+/// error; nothing follows an `Error`.
+#[derive(Debug, Default)]
+pub(crate) struct StreamProgress {
+    complete: bool,
+    failed: bool,
+}
+
+impl StreamProgress {
+    /// Record freshly parsed events. Everything after the first `Error` is
+    /// dropped, so an in-band error can never be followed by `Done`.
+    pub(crate) fn observe(&mut self, events: &mut Vec<hone_proto::ProviderEvent>) {
+        use hone_proto::ProviderEvent;
+        if let Some(pos) = events
+            .iter()
+            .position(|e| matches!(e, ProviderEvent::Error { .. }))
+        {
+            events.truncate(pos + 1);
+            self.failed = true;
+        }
+        if !self.failed && events.iter().any(|e| matches!(e, ProviderEvent::Done)) {
+            self.complete = true;
+        }
+    }
+
+    /// True once an `Error` was emitted: the reader must stop.
+    pub(crate) fn is_failed(&self) -> bool {
+        self.failed
+    }
+
+    /// At end of stream: the one `Error` for a response that did not complete
+    /// (`cause` is the transport error, `None` for a clean end).
+    pub(crate) fn end_events(
+        &mut self,
+        provider: &str,
+        cause: Option<&reqwest::Error>,
+    ) -> Vec<hone_proto::ProviderEvent> {
+        if self.complete || self.failed {
+            return Vec::new();
+        }
+        self.failed = true;
+        let message = match cause {
+            Some(e) => format!("{provider} response interrupted: {}", error_chain(e)),
+            None => format!("{provider} response ended before it was complete"),
+        };
+        vec![hone_proto::ProviderEvent::Error { message }]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

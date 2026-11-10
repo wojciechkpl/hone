@@ -17,8 +17,7 @@ use crate::retry_after::parse_retry_after;
 use crate::traits::{CompletionRequest, ModelProvider};
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com";
-const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
-const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+use super::http_common::{HTTP_CONNECT_TIMEOUT, HTTP_IDLE_TIMEOUT, build_client};
 
 pub struct OpenAiProvider {
     api_key: String,
@@ -33,12 +32,8 @@ impl OpenAiProvider {
         Self {
             api_key: api_key.into(),
             base_url: DEFAULT_BASE_URL.to_owned(),
-            client: Client::builder()
-                .timeout(HTTP_TIMEOUT)
-                .connect_timeout(HTTP_CONNECT_TIMEOUT)
-                .build()
-                .expect("reqwest builder cannot fail with valid timeout values"),
-            timeout: HTTP_TIMEOUT,
+            client: build_client(HTTP_IDLE_TIMEOUT),
+            timeout: HTTP_IDLE_TIMEOUT,
             connect_timeout: HTTP_CONNECT_TIMEOUT,
         }
     }
@@ -47,14 +42,18 @@ impl OpenAiProvider {
         Self {
             api_key: api_key.into(),
             base_url: super::http_common::normalize_base_url(&base_url.into()),
-            client: Client::builder()
-                .timeout(HTTP_TIMEOUT)
-                .connect_timeout(HTTP_CONNECT_TIMEOUT)
-                .build()
-                .expect("reqwest builder cannot fail with valid timeout values"),
-            timeout: HTTP_TIMEOUT,
+            client: build_client(HTTP_IDLE_TIMEOUT),
+            timeout: HTTP_IDLE_TIMEOUT,
             connect_timeout: HTTP_CONNECT_TIMEOUT,
         }
+    }
+
+    /// Replace the idle limit: how long the response may stay silent before the
+    /// read fails with a timeout. It is not a total deadline.
+    pub fn with_idle_timeout(mut self, idle: Duration) -> Self {
+        self.client = build_client(idle);
+        self.timeout = idle;
+        self
     }
 
     pub fn http_client_timeout(&self) -> Option<Duration> {
@@ -214,6 +213,16 @@ pub fn parse_sse_chunk(
 
     let mut events = Vec::new();
 
+    // In-band error (a top-level `error` object, e.g. OpenRouter's "Provider
+    // disconnected unexpectedly"): report it and ignore the rest of the chunk,
+    // including a `finish_reason: "error"` that may ride along.
+    if let Some(err) = value.get("error").filter(|e| !e.is_null()) {
+        events.push(ProviderEvent::Error {
+            message: in_band_error_message(err),
+        });
+        return events;
+    }
+
     // Extract usage if present (appears in the final chunk alongside choices)
     if let Some(usage) = value.get("usage").filter(|u| !u.is_null()) {
         let input = usage["prompt_tokens"].as_u64().unwrap_or(0) as u32;
@@ -306,11 +315,25 @@ pub fn parse_sse_chunk(
                 tool_states.clear();
                 events.push(ProviderEvent::Done);
             }
+            Some("error") => {
+                events.push(ProviderEvent::Error {
+                    message: "the provider ended the response with finish_reason \"error\""
+                        .to_owned(),
+                });
+            }
             _ => {}
         }
     }
 
     events
+}
+
+/// The message of an in-band `error` value (an object with `message`, or a string).
+fn in_band_error_message(err: &Value) -> String {
+    err["message"]
+        .as_str()
+        .or_else(|| err.as_str())
+        .map_or_else(|| err.to_string(), str::to_owned)
 }
 
 #[async_trait]
@@ -411,9 +434,13 @@ impl ModelProvider for OpenAiProvider {
                 String::new(),
                 HashMap::<usize, ToolCallState>::new(),
                 super::http_common::Utf8Decoder::default(),
+                super::http_common::StreamProgress::default(),
             ),
-            |(mut byte_stream, mut buffer, mut tool_states, mut decoder)| async move {
+            |(mut byte_stream, mut buffer, mut tool_states, mut decoder, mut progress)| async move {
                 loop {
+                    if progress.is_failed() {
+                        return None;
+                    }
                     let mut emitted = Vec::new();
 
                     // Process complete lines (SSE lines are newline-delimited)
@@ -426,17 +453,22 @@ impl ModelProvider for OpenAiProvider {
                             emitted.extend(parsed);
                         }
                     }
+                    progress.observe(&mut emitted);
 
                     if !emitted.is_empty() {
                         return Some((
                             stream::iter(emitted),
-                            (byte_stream, buffer, tool_states, decoder),
+                            (byte_stream, buffer, tool_states, decoder, progress),
                         ));
                     }
 
                     match byte_stream.next().await {
                         Some(Ok(chunk)) => decoder.push(&chunk, &mut buffer),
-                        Some(Err(_)) | None => {
+                        end => {
+                            let cause = match &end {
+                                Some(Err(e)) => Some(e),
+                                _ => None,
+                            };
                             // A character cut off by the end of the stream becomes U+FFFD.
                             decoder.finish(&mut buffer);
                             // Process any remaining lines in the buffer
@@ -450,10 +482,12 @@ impl ModelProvider for OpenAiProvider {
                                     final_events.extend(parsed);
                                 }
                             }
+                            progress.observe(&mut final_events);
+                            final_events.extend(progress.end_events("openai", cause));
                             if !final_events.is_empty() {
                                 return Some((
                                     stream::iter(final_events),
-                                    (byte_stream, buffer, tool_states, decoder),
+                                    (byte_stream, buffer, tool_states, decoder, progress),
                                 ));
                             }
                             return None;

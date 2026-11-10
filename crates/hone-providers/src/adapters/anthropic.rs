@@ -19,8 +19,7 @@ use crate::traits::{CompletionRequest, ModelProvider};
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const DEFAULT_MAX_TOKENS: u32 = 8192;
-const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
-const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+use super::http_common::{HTTP_CONNECT_TIMEOUT, HTTP_IDLE_TIMEOUT, build_client};
 
 pub struct AnthropicProvider {
     api_key: String,
@@ -35,12 +34,8 @@ impl AnthropicProvider {
         Self {
             api_key: api_key.into(),
             base_url: DEFAULT_BASE_URL.to_owned(),
-            client: Client::builder()
-                .timeout(HTTP_TIMEOUT)
-                .connect_timeout(HTTP_CONNECT_TIMEOUT)
-                .build()
-                .expect("reqwest builder cannot fail with valid timeout values"),
-            timeout: HTTP_TIMEOUT,
+            client: build_client(HTTP_IDLE_TIMEOUT),
+            timeout: HTTP_IDLE_TIMEOUT,
             connect_timeout: HTTP_CONNECT_TIMEOUT,
         }
     }
@@ -49,14 +44,18 @@ impl AnthropicProvider {
         Self {
             api_key: api_key.into(),
             base_url: super::http_common::normalize_base_url(&base_url.into()),
-            client: Client::builder()
-                .timeout(HTTP_TIMEOUT)
-                .connect_timeout(HTTP_CONNECT_TIMEOUT)
-                .build()
-                .expect("reqwest builder cannot fail with valid timeout values"),
-            timeout: HTTP_TIMEOUT,
+            client: build_client(HTTP_IDLE_TIMEOUT),
+            timeout: HTTP_IDLE_TIMEOUT,
             connect_timeout: HTTP_CONNECT_TIMEOUT,
         }
+    }
+
+    /// Replace the idle limit: how long the response may stay silent before the
+    /// read fails with a timeout. It is not a total deadline.
+    pub fn with_idle_timeout(mut self, idle: Duration) -> Self {
+        self.client = build_client(idle);
+        self.timeout = idle;
+        self
     }
 
     pub fn http_client_timeout(&self) -> Option<Duration> {
@@ -388,6 +387,14 @@ pub fn parse_sse_data(
         "message_stop" => {
             events.push(ProviderEvent::Done);
         }
+        "error" => {
+            let err = &value["error"];
+            let message = err["message"]
+                .as_str()
+                .or_else(|| err.as_str())
+                .map_or_else(|| err.to_string(), str::to_owned);
+            events.push(ProviderEvent::Error { message });
+        }
         _ => {}
     }
 
@@ -510,9 +517,13 @@ impl ModelProvider for AnthropicProvider {
                 String::new(),
                 HashMap::<usize, ToolCallState>::new(),
                 super::http_common::Utf8Decoder::default(),
+                super::http_common::StreamProgress::default(),
             ),
-            |(mut byte_stream, mut buffer, mut tool_states, mut decoder)| async move {
+            |(mut byte_stream, mut buffer, mut tool_states, mut decoder, mut progress)| async move {
                 loop {
+                    if progress.is_failed() {
+                        return None;
+                    }
                     // Try to process events already in the buffer
                     let mut emitted = Vec::new();
 
@@ -527,34 +538,39 @@ impl ModelProvider for AnthropicProvider {
                         }
                     }
 
+                    progress.observe(&mut emitted);
+
                     if !emitted.is_empty() {
                         return Some((
                             stream::iter(emitted),
-                            (byte_stream, buffer, tool_states, decoder),
+                            (byte_stream, buffer, tool_states, decoder, progress),
                         ));
                     }
 
                     // Need more bytes
                     match byte_stream.next().await {
                         Some(Ok(chunk)) => decoder.push(&chunk, &mut buffer),
-                        Some(Err(_)) | None => {
+                        end => {
+                            let cause = match &end {
+                                Some(Err(e)) => Some(e),
+                                _ => None,
+                            };
                             // A character cut off by the end of the stream becomes U+FFFD.
                             decoder.finish(&mut buffer);
                             // Process any remaining buffer content
-                            if !buffer.is_empty() {
-                                let remaining = buffer.clone();
-                                buffer.clear();
-                                let mut final_events = Vec::new();
-                                for (_event_type, data) in extract_sse_events(&remaining) {
-                                    let parsed = parse_sse_data(data, &mut tool_states);
-                                    final_events.extend(parsed);
-                                }
-                                if !final_events.is_empty() {
-                                    return Some((
-                                        stream::iter(final_events),
-                                        (byte_stream, buffer, tool_states, decoder),
-                                    ));
-                                }
+                            let remaining = std::mem::take(&mut buffer);
+                            let mut final_events = Vec::new();
+                            for (_event_type, data) in extract_sse_events(&remaining) {
+                                let parsed = parse_sse_data(data, &mut tool_states);
+                                final_events.extend(parsed);
+                            }
+                            progress.observe(&mut final_events);
+                            final_events.extend(progress.end_events("anthropic", cause));
+                            if !final_events.is_empty() {
+                                return Some((
+                                    stream::iter(final_events),
+                                    (byte_stream, buffer, tool_states, decoder, progress),
+                                ));
                             }
                             return None;
                         }
