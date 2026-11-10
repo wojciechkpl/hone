@@ -24,6 +24,8 @@ pub struct StreamFailure {
     pub usage: Vec<ProviderEvent>,
     /// The provider's error message, unchanged.
     pub message: String,
+    /// What kind of failure it was; decides whether another attempt is worthwhile.
+    pub kind: hone_proto::StreamErrorKind,
 }
 
 impl StreamFailure {
@@ -32,6 +34,7 @@ impl StreamFailure {
         let mut events = self.usage;
         events.push(ProviderEvent::Error {
             message: self.message,
+            kind: self.kind,
         });
         events
     }
@@ -53,10 +56,11 @@ pub async fn probe_first_output(mut stream: EventStream) -> Probe {
     while let Some(event) = stream.next().await {
         match event {
             ProviderEvent::Usage(_) => head.push(event),
-            ProviderEvent::Error { message } => {
+            ProviderEvent::Error { message, kind } => {
                 return Probe::Failed(StreamFailure {
                     usage: head,
                     message,
+                    kind,
                 });
             }
             output => {
@@ -97,9 +101,7 @@ pub async fn attempt(provider: &dyn ModelProvider, request: CompletionRequest) -
     match probe_first_output(stream).await {
         Probe::Stream(s) => Attempt::Stream(s),
         Probe::Failed(f) => {
-            if cancelled.is_some_and(|t| t.is_cancelled())
-                || crate::adapters::http_common::is_idle_timeout_message(&f.message)
-            {
+            if cancelled.is_some_and(|t| t.is_cancelled()) || !f.kind.is_retryable() {
                 Attempt::Stream(Box::pin(stream::iter(f.into_events())))
             } else {
                 tracing::warn!(
@@ -125,7 +127,7 @@ pub(crate) fn with_carried(carried: Vec<ProviderEvent>, stream: EventStream) -> 
 /// How the last attempt of a fallback sequence failed.
 pub(crate) enum LastFailure {
     Request(ProviderError),
-    Stream(String),
+    Stream(String, hone_proto::StreamErrorKind),
 }
 
 impl LastFailure {
@@ -137,8 +139,8 @@ impl LastFailure {
     ) -> Result<EventStream, ProviderError> {
         match self {
             LastFailure::Request(e) => Err(e),
-            LastFailure::Stream(message) => {
-                carried.push(ProviderEvent::Error { message });
+            LastFailure::Stream(message, kind) => {
+                carried.push(ProviderEvent::Error { message, kind });
                 Ok(Box::pin(stream::iter(carried)))
             }
         }

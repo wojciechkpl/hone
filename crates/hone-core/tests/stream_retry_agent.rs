@@ -16,7 +16,7 @@ use futures::{Stream, StreamExt, stream};
 use hone_core::{AgentConfig, AgentError, AgentHandle, AgentMode, RetryConfig, TurnResult};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
-    TokenUsage, ToolApprovalPolicy, ToolCallRequest,
+    StreamErrorKind, TokenUsage, ToolApprovalPolicy, ToolCallRequest,
 };
 use hone_providers::{CompletionRequest, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
@@ -146,6 +146,13 @@ fn tok(t: &str) -> ProviderEvent {
 fn err(m: &str) -> ProviderEvent {
     ProviderEvent::Error {
         message: m.to_owned(),
+        kind: hone_proto::StreamErrorKind::Unclassified,
+    }
+}
+fn err_kind(m: &str, kind: StreamErrorKind) -> ProviderEvent {
+    ProviderEvent::Error {
+        message: m.to_owned(),
+        kind,
     }
 }
 fn usage(input: u32, output: u32) -> ProviderEvent {
@@ -515,7 +522,10 @@ async fn test_r10_the_existing_text_check_still_retries_a_status_zero_error_ment
 #[tokio::test]
 async fn test_r12_an_idle_timeout_failure_before_output_is_not_retried() {
     let msg = "openai response timed out: operation timed out";
-    let p = Script::new(vec![events(vec![err(msg)]), answer("never")]);
+    let p = Script::new(vec![
+        events(vec![err_kind(msg, StreamErrorKind::IdleTimeout)]),
+        answer("never"),
+    ]);
     let h = handle(Arc::clone(&p));
 
     let (res, evs) = run(&h).await;
@@ -586,4 +596,86 @@ async fn test_r13_cancel_during_an_attempt_that_fails_the_request_makes_no_furth
 
     assert!(matches!(res, Err(AgentError::Cancelled)), "{res:?}");
     assert_eq!(p.calls(), 1);
+}
+
+// -- E6: the kind decides -------------------------------------------------------------------------------------------------
+
+fn prov(status: Option<u16>) -> StreamErrorKind {
+    StreamErrorKind::Provider { status }
+}
+
+#[tokio::test]
+async fn test_e6_a_non_retryable_provider_error_fails_after_one_attempt_with_its_message() {
+    for status in [400u16, 401, 403, 404, 413] {
+        let msg = "maximum context length exceeded";
+        let p = Script::new(vec![
+            events(vec![err_kind(msg, prov(Some(status)))]),
+            answer("never"),
+        ]);
+        let h = handle(Arc::clone(&p));
+
+        let (res, evs) = run(&h).await;
+
+        assert!(
+            matches!(res, Err(AgentError::Provider(_))),
+            "{status}: {res:?}"
+        );
+        assert_eq!(p.calls(), 1, "status {status}");
+        assert_eq!(agent_errors(&evs), vec![msg.to_owned()], "status {status}");
+    }
+}
+
+#[tokio::test]
+async fn test_e6_retryable_provider_errors_are_retried() {
+    for kind in [
+        prov(Some(529)),
+        prov(Some(503)),
+        prov(Some(429)),
+        prov(None),
+        StreamErrorKind::Interrupted,
+    ] {
+        let p = Script::new(vec![events(vec![err_kind("failed", kind)]), answer("ok")]);
+        let h = handle(Arc::clone(&p));
+
+        let (res, evs) = run(&h).await;
+
+        assert_eq!(
+            res.unwrap_or_else(|e| panic!("{kind:?}: {e}")).response,
+            "ok",
+            "{kind:?}"
+        );
+        assert_eq!(p.calls(), 2, "{kind:?}");
+        assert!(agent_errors(&evs).is_empty(), "{kind:?}: {evs:?}");
+    }
+}
+
+#[tokio::test]
+async fn test_e6_an_unclassified_error_that_looks_like_an_idle_timeout_is_retried() {
+    let p = Script::new(vec![
+        events(vec![err(
+            "openai response timed out: sent by the provider itself",
+        )]),
+        answer("ok"),
+    ]);
+    let h = handle(Arc::clone(&p));
+
+    let (res, _) = run(&h).await;
+
+    assert_eq!(res.unwrap().response, "ok");
+    assert_eq!(
+        p.calls(),
+        2,
+        "the text must not exempt an error from retries"
+    );
+}
+
+#[tokio::test]
+async fn test_e6_an_unclassified_error_is_still_retried_as_before() {
+    let p = Script::new(vec![events(vec![err("something")]), answer("ok")]);
+    let h = handle(Arc::clone(&p));
+
+    let (res, _) = run(&h).await;
+
+    assert_eq!(res.unwrap().response, "ok");
+    assert_eq!(p.calls(), 2);
 }

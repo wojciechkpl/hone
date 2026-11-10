@@ -401,7 +401,12 @@ pub fn parse_sse_data(
                 .as_str()
                 .or_else(|| err.as_str())
                 .map_or_else(|| err.to_string(), str::to_owned);
-            events.push(ProviderEvent::Error { message });
+            events.push(ProviderEvent::Error {
+                message,
+                kind: hone_proto::StreamErrorKind::Provider {
+                    status: super::http_common::anthropic_error_status(err),
+                },
+            });
         }
         _ => {}
     }

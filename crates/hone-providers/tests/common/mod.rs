@@ -200,7 +200,7 @@ pub fn errors(events: &[ProviderEvent]) -> Vec<String> {
     events
         .iter()
         .filter_map(|e| match e {
-            ProviderEvent::Error { message } => Some(message.clone()),
+            ProviderEvent::Error { message, .. } => Some(message.clone()),
             _ => None,
         })
         .collect()

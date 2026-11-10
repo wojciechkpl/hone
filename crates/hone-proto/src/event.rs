@@ -3,6 +3,43 @@ use serde::{Deserialize, Serialize};
 use crate::model::TokenUsage;
 use crate::tool::ToolCallRequest;
 
+/// What kind of failure a [`ProviderEvent::Error`] reports.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+#[serde(rename_all = "snake_case")]
+pub enum StreamErrorKind {
+    /// Not classified by the producer (CLI and ACP providers, test doubles).
+    #[default]
+    Unclassified,
+    /// The connection broke, or the response ended before its completion marker.
+    Interrupted,
+    /// No data arrived for Hone's idle limit after the response had started.
+    IdleTimeout,
+    /// The provider reported the error inside the stream. `status` is the
+    /// HTTP-style status it gave or implied, if any.
+    Provider { status: Option<u16> },
+}
+
+impl StreamErrorKind {
+    /// True if another attempt (or another provider) may succeed after a
+    /// failure of this kind before any output. An idle timeout is not retried
+    /// (a slow model would just be slow again); a provider-reported status
+    /// follows [`is_transient_status`]; anything else is worth another try.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            StreamErrorKind::Unclassified | StreamErrorKind::Interrupted => true,
+            StreamErrorKind::IdleTimeout => false,
+            StreamErrorKind::Provider { status: None } => true,
+            StreamErrorKind::Provider { status: Some(s) } => is_transient_status(*s),
+        }
+    }
+}
+
+/// True for an HTTP status that signals a transient condition: 429 or 5xx.
+pub fn is_transient_status(status: u16) -> bool {
+    status == 429 || (500..=599).contains(&status)
+}
+
 /// Events streamed from a model provider during completion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -16,6 +53,10 @@ pub enum ProviderEvent {
     Done,
     Error {
         message: String,
+        /// What kind of failure this is, so a caller can tell whether another
+        /// attempt may succeed. JSON without it reads as `Unclassified`.
+        #[serde(default)]
+        kind: StreamErrorKind,
     },
     /// A tool call that the provider/CLI is executing on its own behalf
     /// (i.e. not dispatched through hone's ToolRegistry). The agent

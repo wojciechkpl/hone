@@ -12,7 +12,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt, stream};
-use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, TokenUsage};
+use hone_proto::{
+    Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, StreamErrorKind, TokenUsage,
+};
 use hone_providers::{
     CompletionRequest, FallbackChain, ModelProvider, ModelRouter, ProviderError, ProviderRegistry,
     ProviderTier, RoutePolicy, TierFallbackProvider,
@@ -121,6 +123,13 @@ fn tok(t: &str) -> ProviderEvent {
 fn err(m: &str) -> ProviderEvent {
     ProviderEvent::Error {
         message: m.to_owned(),
+        kind: hone_proto::StreamErrorKind::Unclassified,
+    }
+}
+fn err_kind(m: &str, kind: StreamErrorKind) -> ProviderEvent {
+    ProviderEvent::Error {
+        message: m.to_owned(),
+        kind,
     }
 }
 fn usage(input: u32) -> ProviderEvent {
@@ -523,12 +532,18 @@ const INTERRUPTED: &str = "openai response interrupted: connection reset";
 
 #[tokio::test]
 async fn test_r12_chain_passes_an_idle_timeout_on_without_trying_the_next_member() {
-    let (a, a_calls) = Scripted::new("a", vec![ok(vec![err(TIMED_OUT)])]);
+    let (a, a_calls) = Scripted::new(
+        "a",
+        vec![ok(vec![err_kind(TIMED_OUT, StreamErrorKind::IdleTimeout)])],
+    );
     let (b, b_calls) = Scripted::new("b", vec![ok(vec![tok("b"), ProviderEvent::Done])]);
 
     let events = events_of(&chain(vec![a, b]), request()).await;
 
-    assert_eq!(events, vec![err(TIMED_OUT)]);
+    assert_eq!(
+        events,
+        vec![err_kind(TIMED_OUT, StreamErrorKind::IdleTimeout)]
+    );
     assert_eq!((count(&a_calls), count(&b_calls)), (1, 0));
 }
 
@@ -546,14 +561,20 @@ async fn test_r12_chain_control_an_interrupted_response_is_still_handed_over() {
 #[tokio::test]
 async fn test_r12_tier_fallback_passes_an_idle_timeout_on_without_using_a_hop() {
     let t = tier(
-        Scripted::new("primary", vec![ok(vec![err(TIMED_OUT)])]),
+        Scripted::new(
+            "primary",
+            vec![ok(vec![err_kind(TIMED_OUT, StreamErrorKind::IdleTimeout)])],
+        ),
         good("c1", "x"),
         good("c2", "y"),
     );
 
     let events = events_of(&t.fallback, request()).await;
 
-    assert_eq!(events, vec![err(TIMED_OUT)]);
+    assert_eq!(
+        events,
+        vec![err_kind(TIMED_OUT, StreamErrorKind::IdleTimeout)]
+    );
     assert_eq!((count(&t.primary_calls), count(&t.c1_calls)), (1, 0));
 }
 
@@ -568,4 +589,168 @@ async fn test_r12_tier_fallback_control_an_interrupted_response_still_uses_a_hop
     let events = events_of(&t.fallback, request()).await;
 
     assert_eq!(events, vec![tok("fallback-ok"), ProviderEvent::Done]);
+}
+
+// -- E6 / E7: the kind decides, and survives -----------------------------------------------------------------------
+
+fn prov(status: Option<u16>) -> StreamErrorKind {
+    StreamErrorKind::Provider { status }
+}
+
+#[tokio::test]
+async fn test_e6_chain_passes_a_non_retryable_provider_error_on_with_its_kind() {
+    for status in [400u16, 401, 403, 404, 413] {
+        let failure = err_kind("rejected", prov(Some(status)));
+        let (a, a_calls) = Scripted::new("a", vec![ok(vec![failure.clone()])]);
+        let (b, b_calls) = Scripted::new("b", vec![ok(vec![tok("b"), ProviderEvent::Done])]);
+
+        let events = events_of(&chain(vec![a, b]), request()).await;
+
+        assert_eq!(
+            events,
+            vec![failure],
+            "status {status}: A's whole event, kind included"
+        );
+        assert_eq!(
+            (count(&a_calls), count(&b_calls)),
+            (1, 0),
+            "status {status}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_e6_chain_hands_over_a_retryable_failure_of_any_kind() {
+    for kind in [
+        prov(Some(503)),
+        prov(Some(529)),
+        prov(Some(429)),
+        prov(None),
+        StreamErrorKind::Interrupted,
+        StreamErrorKind::Unclassified,
+    ] {
+        let (a, _) = Scripted::new("a", vec![ok(vec![err_kind("failed", kind)])]);
+        let (b, b_calls) = Scripted::new("b", vec![ok(vec![tok("b"), ProviderEvent::Done])]);
+
+        let events = events_of(&chain(vec![a, b]), request()).await;
+
+        assert_eq!(events, vec![tok("b"), ProviderEvent::Done], "{kind:?}");
+        assert_eq!(count(&b_calls), 1, "{kind:?}");
+    }
+}
+
+#[tokio::test]
+async fn test_e6_an_unclassified_error_that_looks_like_an_idle_timeout_is_handed_over() {
+    // The text check is gone: only the kind exempts an idle timeout.
+    let (a, _) = Scripted::new("a", vec![ok(vec![err(TIMED_OUT)])]);
+    let (b, b_calls) = Scripted::new("b", vec![ok(vec![tok("b"), ProviderEvent::Done])]);
+
+    let events = events_of(&chain(vec![a, b]), request()).await;
+
+    assert_eq!(events, vec![tok("b"), ProviderEvent::Done]);
+    assert_eq!(count(&b_calls), 1);
+}
+
+#[tokio::test]
+async fn test_e6_tier_fallback_follows_the_kind_too() {
+    // non-retryable: passed on, no hop
+    let failure = err_kind("rejected", prov(Some(401)));
+    let t = tier(
+        Scripted::new("primary", vec![ok(vec![failure.clone()])]),
+        good("c1", "x"),
+        good("c2", "y"),
+    );
+    assert_eq!(events_of(&t.fallback, request()).await, vec![failure]);
+    assert_eq!(count(&t.c1_calls), 0);
+
+    // retryable provider status: hop
+    let t = tier(
+        Scripted::new("primary", vec![ok(vec![err_kind("down", prov(Some(503)))])]),
+        good("c1", "fallback-ok"),
+        good("c2", "y"),
+    );
+    assert_eq!(
+        events_of(&t.fallback, request()).await,
+        vec![tok("fallback-ok"), ProviderEvent::Done]
+    );
+
+    // unclassified idle-timeout-looking text: hop
+    let t = tier(
+        Scripted::new("primary", vec![ok(vec![err(TIMED_OUT)])]),
+        good("c1", "fallback-ok"),
+        good("c2", "y"),
+    );
+    assert_eq!(
+        events_of(&t.fallback, request()).await,
+        vec![tok("fallback-ok"), ProviderEvent::Done]
+    );
+}
+
+#[tokio::test]
+async fn test_e7_chain_reports_the_last_failure_with_its_kind() {
+    let (a, _) = Scripted::new(
+        "a",
+        vec![ok(vec![
+            usage(10),
+            err_kind("a-failed", StreamErrorKind::Interrupted),
+        ])],
+    );
+    let (b, _) = Scripted::new("b", vec![ok(vec![err_kind("b-failed", prov(None))])]);
+
+    let events = events_of(&chain(vec![a, b]), request()).await;
+
+    assert_eq!(events, vec![usage(10), err_kind("b-failed", prov(None))]);
+}
+
+#[tokio::test]
+async fn test_e7_tier_fallback_reports_the_last_failure_with_its_kind() {
+    let t = tier(
+        Scripted::new(
+            "primary",
+            vec![ok(vec![err_kind(
+                "primary-failed",
+                StreamErrorKind::Interrupted,
+            )])],
+        ),
+        Scripted::new("c1", vec![ok(vec![err_kind("c1-failed", prov(Some(503)))])]),
+        good("c2", "y"),
+    );
+    let fallback = t.fallback.with_max_hops(1);
+
+    let events = events_of(&fallback, request()).await;
+
+    assert_eq!(events, vec![err_kind("c1-failed", prov(Some(503)))]);
+}
+
+#[tokio::test]
+async fn test_e7_the_probe_replays_a_failure_with_its_kind() {
+    use hone_providers::{Probe, probe_first_output};
+    for kind in [
+        StreamErrorKind::Interrupted,
+        StreamErrorKind::IdleTimeout,
+        prov(Some(400)),
+        prov(None),
+        StreamErrorKind::Unclassified,
+    ] {
+        let original = vec![usage(5), err_kind("failed", kind)];
+        let stream: Pin<Box<dyn Stream<Item = ProviderEvent> + Send>> =
+            Box::pin(stream::iter(original.clone()));
+
+        match probe_first_output(stream).await {
+            Probe::Failed(f) => assert_eq!(f.into_events(), original, "{kind:?}"),
+            Probe::Stream(_) => panic!("{kind:?}: expected a failure before output"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_e7_caching_provider_passes_the_kind_through() {
+    use hone_providers::CachingProvider;
+    let failure = err_kind("failed", prov(Some(400)));
+    let (inner, _) = Scripted::new("inner", vec![ok(vec![tok("par"), failure.clone()])]);
+    let cache = CachingProvider::new(inner as Arc<dyn ModelProvider>, 10);
+
+    let events = events_of(&cache, request()).await;
+
+    assert_eq!(events, vec![tok("par"), failure]);
 }

@@ -336,7 +336,7 @@ impl ModelProvider for TierFallbackProvider {
             Attempt::Request(e) => LastFailure::Request(e),
             Attempt::Failed(failure) => {
                 carried.extend(failure.usage);
-                LastFailure::Stream(failure.message)
+                LastFailure::Stream(failure.message, failure.kind)
             }
         };
 
@@ -363,7 +363,7 @@ impl ModelProvider for TierFallbackProvider {
                 Attempt::Request(e) => last = LastFailure::Request(e),
                 Attempt::Failed(failure) => {
                     carried.extend(failure.usage);
-                    last = LastFailure::Stream(failure.message);
+                    last = LastFailure::Stream(failure.message, failure.kind);
                 }
             }
         }

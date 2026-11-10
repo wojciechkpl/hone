@@ -71,7 +71,7 @@ impl ModelProvider for FallbackChain {
                 Attempt::Stream(stream) => return Ok(with_carried(carried, stream)),
                 Attempt::Failed(failure) => {
                     carried.extend(failure.usage);
-                    last = Some(LastFailure::Stream(failure.message));
+                    last = Some(LastFailure::Stream(failure.message, failure.kind));
                 }
                 Attempt::Request(e) if e.is_transient() => {
                     last = Some(LastFailure::Request(e));

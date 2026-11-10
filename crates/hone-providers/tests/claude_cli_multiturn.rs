@@ -2280,7 +2280,7 @@ async fn cancel_before_first_poll_yields_error_then_done() {
     // The second-to-last event must be an Error whose message contains "cancel".
     let second_to_last = &events[events.len() - 2];
     match second_to_last {
-        ProviderEvent::Error { message } => {
+        ProviderEvent::Error { message, .. } => {
             assert!(
                 message.to_lowercase().contains("cancel"),
                 "Error message must contain 'cancel' (case-insensitive) to indicate \
@@ -2447,7 +2447,7 @@ async fn cancel_mid_stream_tombstones_process_for_next_call() {
 
     // No Error event from cancellation must appear in the second turn.
     let has_cancel_error = second_events.iter().any(|e| {
-        matches!(e, ProviderEvent::Error { message } if message.to_lowercase().contains("cancel"))
+        matches!(e, ProviderEvent::Error { message, .. } if message.to_lowercase().contains("cancel"))
     });
     assert!(
         !has_cancel_error,

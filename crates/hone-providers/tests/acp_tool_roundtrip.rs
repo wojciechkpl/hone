@@ -346,7 +346,7 @@ mod tests {
 
         // Must contain an Error event mentioning the tool result channel.
         let error_event = events.iter().find(|e| {
-            if let ProviderEvent::Error { message } = e {
+            if let ProviderEvent::Error { message, .. } = e {
                 message.to_lowercase().contains("tool result")
             } else {
                 false

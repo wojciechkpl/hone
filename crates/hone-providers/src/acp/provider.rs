@@ -242,6 +242,7 @@ impl ModelProvider for AcpProvider {
                 Err(e) => {
                     events.push(ProviderEvent::Error {
                         message: format!("ACP transport error: {e}"),
+                        kind: hone_proto::StreamErrorKind::Unclassified,
                     });
                     break 'outer;
                 }
@@ -294,6 +295,7 @@ impl ModelProvider for AcpProvider {
                                             message: "tool result channel closed before result \
                                                       arrived"
                                                 .to_owned(),
+                                            kind: hone_proto::StreamErrorKind::Unclassified,
                                         });
                                         break 'outer;
                                     }
@@ -303,6 +305,7 @@ impl ModelProvider for AcpProvider {
                                         message: "received tool result request but no tool result \
                                                   channel was provided"
                                             .to_owned(),
+                                        kind: hone_proto::StreamErrorKind::Unclassified,
                                     });
                                     break 'outer;
                                 }

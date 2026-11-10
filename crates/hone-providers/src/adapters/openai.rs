@@ -219,6 +219,9 @@ pub fn parse_sse_chunk(
     if let Some(err) = value.get("error").filter(|e| !e.is_null()) {
         events.push(ProviderEvent::Error {
             message: in_band_error_message(err),
+            kind: hone_proto::StreamErrorKind::Provider {
+                status: super::http_common::openai_error_status(err),
+            },
         });
         return events;
     }
@@ -324,6 +327,7 @@ pub fn parse_sse_chunk(
                 events.push(ProviderEvent::Error {
                     message: "the provider ended the response with finish_reason \"error\""
                         .to_owned(),
+                    kind: hone_proto::StreamErrorKind::Provider { status: None },
                 });
             }
             _ => {}

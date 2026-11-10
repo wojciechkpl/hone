@@ -191,7 +191,10 @@ pub fn parse_ndjson_line(line: &str) -> Vec<ProviderEvent> {
             .as_str()
             .or_else(|| err["message"].as_str())
             .map_or_else(|| err.to_string(), str::to_owned);
-        return vec![ProviderEvent::Error { message }];
+        return vec![ProviderEvent::Error {
+            message,
+            kind: hone_proto::StreamErrorKind::Provider { status: None },
+        }];
     }
 
     let done = value["done"].as_bool().unwrap_or(false);

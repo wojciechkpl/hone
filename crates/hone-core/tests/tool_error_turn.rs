@@ -378,6 +378,7 @@ async fn test_t3_streamed_provider_error_should_send_exactly_one_error() {
                     },
                     ProviderEvent::Error {
                         message: "stream blew up".to_owned(),
+                        kind: hone_proto::StreamErrorKind::Unclassified,
                     },
                     ProviderEvent::Done,
                 ])]),
