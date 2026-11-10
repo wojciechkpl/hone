@@ -910,8 +910,8 @@ hone --ephemeral
 ### Remote Daemon
 
 ```bash
-# Start the daemon (listens on localhost:3117 by default)
-honed --config ~/.config/hone/config.toml
+# Start the daemon (port 3117 by default; HONE_BIND sets the address, HONE_AUTH_TOKEN the token)
+honed
 
 # Connect from another terminal
 hone --remote localhost:3117
@@ -1146,36 +1146,26 @@ hone --agent rust-expert "how to handle lifetimes in this struct"
 
 ## Configuration
 
-Hone uses a three-level config hierarchy:
-
-1. **CLI flags** (highest priority)
-2. **TOML** (`~/.config/hone/config.toml`)
-3. **Defaults** (lowest priority)
+Settings come from CLI flags first, then environment variables, then `config.toml`, then
+built-in defaults.
 
 ### Sample config.toml
 
+`~/.config/hone/config.toml` sets your default model, provider settings and a session
+budget. A project's `.hone/config.toml` may choose models and lower the budget, but it
+can't set endpoints or keys. Unknown keys stop `hone` with exit code 2, so check the
+[schema](docs/configuration.md#configtoml) before adding one.
+
 ```toml
-[agent]
-default_model = "gpt-4o"
-max_iterations = 20
+default_model = "anthropic:claude-sonnet-4-5"
 
-[memory]
-enabled = true
-db_path = "~/.local/share/hone/memory.db"
-encryption_key_file = "~/.config/hone/key.bin"
+[providers.openai]
+api_key_env = "DEEPSEEK_API_KEY"       # name of the variable that holds the key
+base_url = "https://api.deepseek.com"
+model = "deepseek-chat"
 
-[sandbox]
-strategy = "seatbelt"  # macOS: seatbelt, Linux: landlock
-
-[team]
-rbac_enabled = true
-audit_log_path = "~/.local/share/hone/audit.log"
-
-[providers]
-default = "anthropic"
-# Add API keys for each provider
-anthropic_api_key = "${ANTHROPIC_API_KEY}"
-openai_api_key = "${OPENAI_API_KEY}"
+[budget]
+session_limit_usd = 2.0
 ```
 
 ### Environment Variables

@@ -309,9 +309,9 @@ or its parents, and anything under the working dir or `/tmp` are ignored.
 > once at warn level.
 
 > [!NOTE]
-> The `[sandbox]` table in `config.toml` is parsed but not applied yet. The two
-> environment variables above are the only sandbox settings that take effect. See
-> [Configuration](configuration.md#configtoml).
+> The `[sandbox]` table in `config.toml` is not applied; Hone warns at startup when it is
+> set. The two environment variables above are the only sandbox settings that take effect.
+> See [Configuration](configuration.md#configtoml).
 
 ---
 
