@@ -105,6 +105,24 @@ pub(crate) fn error_chain(e: &dyn std::error::Error) -> String {
     out
 }
 
+/// The adapters that stream over HTTP (their names appear in error messages).
+const HTTP_ADAPTERS: [&str; 3] = ["openai", "anthropic", "ollama"];
+
+/// Message for a response that went silent for longer than the idle limit.
+/// `is_idle_timeout_message` recognises exactly this shape.
+pub(crate) fn timed_out_message(provider: &str, cause: &str) -> String {
+    format!("{provider} response timed out: {cause}")
+}
+
+/// True for a message produced by [`timed_out_message`] for one of our HTTP
+/// adapters. Only the exact prefix counts, so a provider's own in-band text
+/// that merely mentions a timeout is never taken for an idle timeout.
+pub(crate) fn is_idle_timeout_message(message: &str) -> bool {
+    HTTP_ADAPTERS
+        .iter()
+        .any(|p| message.starts_with(&timed_out_message(p, "")))
+}
+
 /// Tracks how a provider's event stream ends. A stream is *complete* once a
 /// `Done` was parsed (each adapter emits `Done` at its completion marker) and
 /// *failed* once an `Error` was emitted. Completion wins over a later transport
@@ -159,6 +177,7 @@ impl StreamProgress {
         }
         self.failed = true;
         let message = match cause {
+            Some(e) if e.is_timeout() => timed_out_message(provider, &error_chain(e)),
             Some(e) => format!("{provider} response interrupted: {}", error_chain(e)),
             None => format!("{provider} response ended before it was complete"),
         };

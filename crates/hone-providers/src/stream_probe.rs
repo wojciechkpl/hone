@@ -97,7 +97,9 @@ pub async fn attempt(provider: &dyn ModelProvider, request: CompletionRequest) -
     match probe_first_output(stream).await {
         Probe::Stream(s) => Attempt::Stream(s),
         Probe::Failed(f) => {
-            if cancelled.is_some_and(|t| t.is_cancelled()) {
+            if cancelled.is_some_and(|t| t.is_cancelled())
+                || crate::adapters::http_common::is_idle_timeout_message(&f.message)
+            {
                 Attempt::Stream(Box::pin(stream::iter(f.into_events())))
             } else {
                 tracing::warn!(

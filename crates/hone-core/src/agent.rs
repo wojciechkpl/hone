@@ -161,6 +161,8 @@ enum AttemptError {
     Request(ProviderError),
     /// The response failed before any output.
     Stream(hone_providers::StreamFailure),
+    /// The turn's event receiver closed: no further attempt.
+    Cancelled,
 }
 
 /// Outcome of waiting for the user's answer on the step channel.
@@ -1325,7 +1327,12 @@ impl Agent {
                 || {
                     let req = request_clone.clone();
                     let prov = Arc::clone(&provider);
+                    let listener_gone = events.is_closed();
                     async move {
+                        // Esc closed the receiver: no further attempt, including retries.
+                        if listener_gone {
+                            return Err(AttemptError::Cancelled);
+                        }
                         match hone_providers::attempt(prov.as_ref(), req).await {
                             hone_providers::Attempt::Stream(s) => Ok(s),
                             hone_providers::Attempt::Failed(f) => Err(AttemptError::Stream(f)),
@@ -1343,6 +1350,7 @@ impl Agent {
                     AttemptError::Request(e) => {
                         e.is_transient() || is_transient_error(&e.to_string())
                     }
+                    AttemptError::Cancelled => false,
                 },
             )
             .await;
@@ -1351,6 +1359,10 @@ impl Agent {
                 Err(AttemptError::Request(e)) => {
                     self.count_usage(failed_usage, &mut turn_usage);
                     return Err(e.into());
+                }
+                Err(AttemptError::Cancelled) => {
+                    self.count_usage(failed_usage, &mut turn_usage);
+                    return Err(AgentError::Cancelled);
                 }
                 Err(AttemptError::Stream(failure)) => {
                     // Every attempt failed before output: the turn fails with the
