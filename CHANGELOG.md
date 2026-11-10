@@ -137,6 +137,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: errors a retry can't fix were retried
+
+- **The bug:** a stream error (`ProviderEvent::Error`) carried only its message. After the retry fix below, an error that a provider sends inside the stream and that no retry can fix was therefore sent again twice, with the whole conversation, before the same error came back. Examples are vLLM's `"code": 400`, LiteLLM's `"code": "400"`, OpenAI's `context_length_exceeded` and Anthropic's `invalid_request_error`. Hone's own idle timeout was recognised by its message text, so a provider message that happened to start the same way was skipped too.
+- **Now:** the event carries a `kind` (new `hone_proto::StreamErrorKind`):
+  - **Interrupted:** the connection broke, or the response ended early.
+  - **IdleTimeout:** Hone's idle limit ran out.
+  - **Provider { status }:** the provider reported the error.
+  - **Unclassified:** CLI and ACP providers, test doubles.
+  
+  The status comes from the error's `code`: a number, a number as text, or a known name such as OpenRouter's `server_error`. Failing that it comes from its `type` (Anthropic's `overloaded_error` is 529). A stream error before any output is retried or handed to another provider only if its kind says another attempt can help. So a provider error with status 429 or 5xx, or with no status, is retried; any other status and an idle timeout fail after one attempt. Messages are unchanged.
+- One rule for a transient status, `hone_proto::is_transient_status` (429, 500–599), now serves both request errors and stream errors.
+- Still retried: an error name Hone doesn't know, such as OpenAI's `insufficient_quota`, and Ollama's errors, which carry no status.
+- Contract: `docs/plans/provider-error-kind-spec.md`.
+
 ### Fixed: responses that failed before any output were not retried
 
 - **The bug:** the agent retried a failed request (3 attempts with backoff), but a request counts as successful as soon as the response headers arrive. A response that then failed before its first word failed the turn at once, although nothing had been shown and another attempt would have gone unnoticed. Examples are Anthropic's `overloaded_error`, OpenRouter's "Provider disconnected unexpectedly", and a connection reset. `FallbackChain` and the router's `TierFallbackProvider` didn't move to the next provider for such a failure either. The agent also chose which request errors to retry by their text, so HTTP 500, 504 and Anthropic's 529 "Overloaded" were never retried.
