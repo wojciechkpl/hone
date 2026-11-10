@@ -121,6 +121,7 @@ fn tok(t: &str) -> ProviderEvent {
 fn err(m: &str) -> ProviderEvent {
     ProviderEvent::Error {
         message: m.to_owned(),
+        kind: hone_proto::StreamErrorKind::Unclassified,
     }
 }
 fn usage(input: u32) -> ProviderEvent {

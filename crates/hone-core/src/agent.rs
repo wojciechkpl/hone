@@ -1427,7 +1427,7 @@ impl Agent {
                         break;
                     }
 
-                    ProviderEvent::Error { message } => {
+                    ProviderEvent::Error { message, .. } => {
                         self.error_event_sent = true;
                         let _ = events
                             .send(AgentEvent::Error {

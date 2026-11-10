@@ -32,6 +32,7 @@ impl StreamFailure {
         let mut events = self.usage;
         events.push(ProviderEvent::Error {
             message: self.message,
+            kind: hone_proto::StreamErrorKind::Unclassified,
         });
         events
     }
@@ -53,7 +54,7 @@ pub async fn probe_first_output(mut stream: EventStream) -> Probe {
     while let Some(event) = stream.next().await {
         match event {
             ProviderEvent::Usage(_) => head.push(event),
-            ProviderEvent::Error { message } => {
+            ProviderEvent::Error { message, .. } => {
                 return Probe::Failed(StreamFailure {
                     usage: head,
                     message,
@@ -138,7 +139,10 @@ impl LastFailure {
         match self {
             LastFailure::Request(e) => Err(e),
             LastFailure::Stream(message) => {
-                carried.push(ProviderEvent::Error { message });
+                carried.push(ProviderEvent::Error {
+                    message,
+                    kind: hone_proto::StreamErrorKind::Unclassified,
+                });
                 Ok(Box::pin(stream::iter(carried)))
             }
         }

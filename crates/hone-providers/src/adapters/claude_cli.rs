@@ -525,6 +525,7 @@ fn parse_line(line: &str, out: &mut Vec<ProviderEvent>, last_text: &mut String) 
                     .unwrap_or("unknown error");
                 out.push(ProviderEvent::Error {
                     message: msg.to_owned(),
+                    kind: hone_proto::StreamErrorKind::Unclassified,
                 });
             }
 
@@ -926,7 +927,12 @@ impl ModelProvider for ClaudeCliProvider {
                             "claude-cli turn cancelled via CancellationToken; \
                              emitting Error and tombstoning"
                         );
-                        let _ = tx.send(ProviderEvent::Error { message: msg }).await;
+                        let _ = tx
+                            .send(ProviderEvent::Error {
+                                message: msg,
+                                kind: hone_proto::StreamErrorKind::Unclassified,
+                            })
+                            .await;
                         let _ = tx.send(ProviderEvent::Done).await;
                         *guard = None;
                         return;
@@ -980,7 +986,12 @@ impl ModelProvider for ClaudeCliProvider {
                         // doesn't mistake a truncated turn for natural completion.
                         // If the consumer already dropped the receiver, both sends
                         // fail silently — that's fine, they abandoned the stream.
-                        let _ = tx.send(ProviderEvent::Error { message: msg }).await;
+                        let _ = tx
+                            .send(ProviderEvent::Error {
+                                message: msg,
+                                kind: hone_proto::StreamErrorKind::Unclassified,
+                            })
+                            .await;
                         let _ = tx.send(ProviderEvent::Done).await;
                         *guard = None;
                         return;
@@ -998,7 +1009,12 @@ impl ModelProvider for ClaudeCliProvider {
                              Error and tombstoning",
                             e
                         );
-                        let _ = tx.send(ProviderEvent::Error { message: msg }).await;
+                        let _ = tx
+                            .send(ProviderEvent::Error {
+                                message: msg,
+                                kind: hone_proto::StreamErrorKind::Unclassified,
+                            })
+                            .await;
                         let _ = tx.send(ProviderEvent::Done).await;
                         *guard = None;
                         return;

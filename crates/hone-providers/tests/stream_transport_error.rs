@@ -331,6 +331,7 @@ impl ModelProvider for FlakyThenFine {
                 },
                 ProviderEvent::Error {
                     message: "interrupted".to_owned(),
+                    kind: hone_proto::StreamErrorKind::Unclassified,
                 },
             ]
         } else {

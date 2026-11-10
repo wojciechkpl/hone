@@ -181,7 +181,10 @@ impl StreamProgress {
             Some(e) => format!("{provider} response interrupted: {}", error_chain(e)),
             None => format!("{provider} response ended before it was complete"),
         };
-        vec![hone_proto::ProviderEvent::Error { message }]
+        vec![hone_proto::ProviderEvent::Error {
+            message,
+            kind: hone_proto::StreamErrorKind::Unclassified,
+        }]
     }
 }
 

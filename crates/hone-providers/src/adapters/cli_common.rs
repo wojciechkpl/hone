@@ -107,6 +107,7 @@ pub fn spawn_cli_stream_with_stdin(
                 let _ = tx
                     .send(ProviderEvent::Error {
                         message: format!("failed to spawn process: {e}"),
+                        kind: hone_proto::StreamErrorKind::Unclassified,
                     })
                     .await;
                 let _ = tx.send(ProviderEvent::Done).await;
@@ -121,6 +122,7 @@ pub fn spawn_cli_stream_with_stdin(
                 let _ = tx
                     .send(ProviderEvent::Error {
                         message: format!("failed to write prompt to stdin: {e}"),
+                        kind: hone_proto::StreamErrorKind::Unclassified,
                     })
                     .await;
                 let _ = tx.send(ProviderEvent::Done).await;
@@ -135,6 +137,7 @@ pub fn spawn_cli_stream_with_stdin(
                 let _ = tx
                     .send(ProviderEvent::Error {
                         message: "failed to capture process stdout".to_owned(),
+                        kind: hone_proto::StreamErrorKind::Unclassified,
                     })
                     .await;
                 let _ = tx.send(ProviderEvent::Done).await;
@@ -162,6 +165,7 @@ pub fn spawn_cli_stream_with_stdin(
                     let _ = tx
                         .send(ProviderEvent::Error {
                             message: format!("error reading process output: {e}"),
+                            kind: hone_proto::StreamErrorKind::Unclassified,
                         })
                         .await;
                     break;
@@ -175,6 +179,7 @@ pub fn spawn_cli_stream_with_stdin(
                 let _ = tx
                     .send(ProviderEvent::Error {
                         message: format!("process exited with status {code}"),
+                        kind: hone_proto::StreamErrorKind::Unclassified,
                     })
                     .await;
             }
@@ -207,6 +212,7 @@ pub fn spawn_cli_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderE
                 let _ = tx
                     .send(ProviderEvent::Error {
                         message: format!("failed to spawn process: {e}"),
+                        kind: hone_proto::StreamErrorKind::Unclassified,
                     })
                     .await;
                 let _ = tx.send(ProviderEvent::Done).await;
@@ -220,6 +226,7 @@ pub fn spawn_cli_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderE
                 let _ = tx
                     .send(ProviderEvent::Error {
                         message: "failed to capture process stdout".to_owned(),
+                        kind: hone_proto::StreamErrorKind::Unclassified,
                     })
                     .await;
                 let _ = tx.send(ProviderEvent::Done).await;
@@ -248,6 +255,7 @@ pub fn spawn_cli_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderE
                     let _ = tx
                         .send(ProviderEvent::Error {
                             message: format!("error reading process output: {e}"),
+                            kind: hone_proto::StreamErrorKind::Unclassified,
                         })
                         .await;
                     break;
@@ -262,6 +270,7 @@ pub fn spawn_cli_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderE
                 let _ = tx
                     .send(ProviderEvent::Error {
                         message: format!("process exited with status {code}"),
+                        kind: hone_proto::StreamErrorKind::Unclassified,
                     })
                     .await;
             }

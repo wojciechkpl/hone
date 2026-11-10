@@ -138,6 +138,7 @@ async fn test_ensemble_handles_candidate_failure() {
                 },
                 ProviderEvent::Error {
                     message: "simulated failure".to_owned(),
+                    kind: hone_proto::StreamErrorKind::Unclassified,
                 },
                 ProviderEvent::Done,
             ];
