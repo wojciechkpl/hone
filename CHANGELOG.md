@@ -137,6 +137,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: responses that failed before any output were not retried
+
+- **The bug:** the agent retried a failed request (3 attempts with backoff), but a request counts as successful as soon as the response headers arrive. A response that then failed before its first word failed the turn at once, although nothing had been shown and another attempt would have gone unnoticed. Examples are Anthropic's `overloaded_error`, OpenRouter's "Provider disconnected unexpectedly", and a connection reset. `FallbackChain` and the router's `TierFallbackProvider` didn't move to the next provider for such a failure either. The agent also chose which request errors to retry by their text, so HTTP 500, 504 and Anthropic's 529 "Overloaded" were never retried.
+- **Now:**
+  - A response that fails before any output (text, a tool call, or its end) is retried with the agent's existing attempts and backoff. Nothing from the failed attempt is shown. If every attempt fails, the turn fails with the last provider message, unchanged.
+  - `FallbackChain` and `TierFallbackProvider` move to the next provider on such a failure, and on any transient request error. The new `ProviderError::is_transient()` counts rate limits, timeouts, I/O stream errors, and HTTP 429 and 5xx as transient. Before, `FallbackChain` moved on only for rate limits.
+  - The agent also retries HTTP 500, 504 and 529.
+  - Usage that failed attempts report is counted in the turn and the session cost.
+- **Not retried:**
+  - A break after output has appeared, as before.
+  - A response from a provider that runs its own tools (the Claude and Gemini CLIs, ACP agents) once it has started, because the provider may already have acted. Their request errors are still retried.
+  - A cancelled turn: Esc stops further attempts.
+  - A response that started and then sent nothing for the whole idle limit. That usually means a slow model, and a retry would repeat the wait and any billed reasoning. This idle timeout is now reported as `<provider> response timed out: …` instead of `response interrupted: …`.
+- **Behaviour change:** when every attempt fails, the turn makes 3 requests instead of 1. It ends about 1.5 s later, plus the time each attempt takes to fail.
+- Contract: `docs/plans/stream-retry-fallback-spec.md`.
+
 ### Fixed: cut-off responses looked complete
 
 - **The bug:** the OpenAI-compatible, Anthropic and Ollama adapters ended the response stream the same way whether the answer had finished or the connection had broken. A reset, a body cut short, or a timeout was swallowed. The agent saved the partial answer as if it were complete, and a tool call whose arguments were still streaming was dropped without a word. Errors that providers send inside the stream after the `200` headers were ignored too: OpenAI-compatible `{"error": …}` (OpenRouter's "Provider disconnected unexpectedly"), Anthropic's `overloaded_error` event, and Ollama's `{"error": …}` line. With OpenRouter the `[DONE]` that follows its error turned the failure into a normal end.
