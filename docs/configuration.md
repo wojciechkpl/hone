@@ -50,7 +50,7 @@ flowchart LR
 
 | File | Read by | Format | Applied? |
 |---|---|---|---|
-| `~/.config/hone/config.toml`, `<cwd>/.hone/config.toml` | `hone` | TOML | **yes**: model, provider settings, session budget. `[sandbox]`, `[[routing]]`, `[server]` and `daily_limit_usd` are not applied, and Hone warns when they are set ([details](#configtoml)) |
+| `~/.config/hone/config.toml`, `<cwd>/.hone/config.toml` | `hone` | TOML | **yes**: model, routing by complexity, fallback models, provider settings, session budget. `[sandbox]`, `[server]` and `daily_limit_usd` are not applied, and Hone warns when they are set ([details](#configtoml)) |
 | `~/.config/hone/permissions.toml`, `<cwd>/.hone/permissions.toml` | `hone`, `honed`, `hone-mcp-server` | TOML | **yes** ([Permissions](#permissions)) |
 | `~/.config/hone/mcp.json`, `<cwd>/.hone/mcp.json` | `hone` | JSON (Claude Code compatible) | **yes** ([MCP servers](#mcp-servers)) |
 | `~/.config/hone/HONE.md`, `<project root>/HONE.md`, `<cwd>/HONE.md` | `hone` | Markdown | **yes** ([HONE.md](#honemd)) |
@@ -204,7 +204,8 @@ flowchart LR
 | `[budget].session_limit_usd` | float ≥ 0 | Cost cap for the session, the same cap `/budget` sets. `/budget` still changes it while the TUI runs | allowed, but it can only lower the cap: Hone uses the smaller of the two |
 | `[budget].daily_limit_usd` | float ≥ 0 | **Not applied** (it needs spend kept across sessions) | |
 | `[sandbox]` | table | **Not applied.** Use `permissions.toml` and the [sandbox variables](#sandbox) | |
-| `[[routing]]` | array of tables | **Not applied.** Use `--model` or `default_model` | |
+| `[[routing]]` | array of tables: `task` = `simple` / `medium` / `complex`, `model` = `anthropic:` / `openai:` / `ollama:` model | The model for turns of that complexity ([routing and fallback](#routing-and-fallback)). Another `task` is ignored with a warning, a CLI model too | allowed, and wins over the user file per task; announced at start as `hone: routing <tier> requests to <model> (from <path>)` |
+| `fallback_models` | array of `provider:model` strings (`anthropic:`, `openai:`, `ollama:`) | Models to try, in order, when the turn's model fails before answering ([routing and fallback](#routing-and-fallback)) | ignored, with a warning: a fallback is used without notice, so a repository could otherwise send your session to a provider it chose |
 | `[server]` | table | **Not applied.** `honed` takes its port argument, `HONE_BIND` and `HONE_AUTH_TOKEN` | |
 
 `hone` prints one warning per start for every key it ignores or doesn't apply, on stderr
@@ -240,6 +241,56 @@ session_limit_usd = 2.0
 ```
 
 </details>
+
+### Routing and fallback
+
+Hone sorts every prompt as **simple**, **medium** or **complex** (short single-file fixes
+are simple; architecture work or changes across three or more files are complex). With
+`[[routing]]` each kind of turn can use its own model, and `fallback_models` lists models
+to try when the turn's model fails before answering: an overload or outage, a rate limit,
+a 5xx error, or no answer at all.
+
+```toml
+default_model = "anthropic:claude-sonnet-4-5"      # medium turns, and any tier without a rule
+fallback_models = ["openai:deepseek-chat", "ollama:qwen2.5-coder"]
+
+[[routing]]
+task = "simple"
+model = "openai:deepseek-chat"
+
+[[routing]]
+task = "complex"
+model = "anthropic:claude-opus-4-5"
+```
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
+flowchart LR
+  P["prompt"] --> T["simple / medium / complex"]
+  T --> Q{"--model or /model?"}
+  Q -->|yes| M["that model"]
+  Q -->|no| R["[[routing]] model for the tier,<br/>else the default model"]
+  M & R --> F["fails before answering?<br/>next of fallback_models"]
+```
+
+- **The TUI** picks the model for each turn. **One-shot** and `--json` sort the prompt once;
+  `--json` reports the chosen model, and stderr says
+  `hone: using <model> for this <tier> request (from [[routing]] in <path>)`.
+- **`--model`** means exactly that model: no routing and no fallback, so a benchmark run
+  never switches models behind your back.
+- **`fallback_models`** is read from your user file only.
+- **`/model <id>`** switches model and provider, and turns routing off for the rest of the
+  session; fallback still applies. It accepts `anthropic:`, `openai:` and `ollama:` models
+  whose provider has a key. Typed while a turn is running, it takes effect once that turn has
+  finished.
+- Only API models can be routed to or fall back to. The Claude and Gemini CLIs run their own
+  tools outside Hone's permission rules, so with a CLI model as the session's model routing
+  and fallback are not applied.
+- A routed or fallback model whose provider has no key is dropped with a warning.
+- Cost estimates use one flat rate for every model, and nothing tells you yet when a
+  fallback model answered.
+- A turn routed to a model with a smaller context window (Ollama's default, for example)
+  still gets the whole conversation, which the server may cut short.
 
 ### Errors
 
@@ -872,8 +923,9 @@ rejected, so delete them. `hone configure` still works and rewrites the user fil
 <details>
 <summary><b><code>hone: warning: ... is not applied</code> or <code>... is ignored in a project config</code></b></summary>
 
-The key is valid but Hone doesn't act on it: `[sandbox]`, `[[routing]]`, `[server]` and
-`daily_limit_usd` are not applied yet, and a project file can't set endpoints, key
+The key is valid but Hone doesn't act on it: `[sandbox]`, `[server]` and
+`daily_limit_usd` are not applied yet, a `[[routing]]` entry with an unknown `task` or a CLI
+model is skipped, a routed or fallback model whose provider has no key is dropped, and a project file can't set endpoints, key
 variables, the `[provider]` table or a CLI provider. The message says what to use instead.
 Hone keeps running.
 
