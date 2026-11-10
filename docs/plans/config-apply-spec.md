@@ -95,6 +95,18 @@ flowchart LR
 - C9 is decided in the binary, not the resolver. The resolver takes `--model` as an input
   (`cli_model`) so the model choice carries its source.
 
+## 3b. Review round 1: required changes
+
+| # | Finding | Requirement | Test |
+|---|---|---|---|
+| R1 | **H1** A project `default_model = "claude-cli:…"` / `"gemini-cli:…"` switches the session to an agent CLI that runs its own tools outside Hone's policy, approvals and egress log (confirmed: Claude CLI spawned with `--permission-mode acceptEdits` while an API key was set) | Choosing a CLI provider is trusted-only: a project `default_model` with the `claude-cli:` or `gemini-cli:` prefix is ignored with a warning naming the key, and the model choice falls through (user `default_model` → wizard → auto-detection). The user file and `--model` may still choose them | Project file selects `claude-cli:`, API key set → the fake `claude` is not spawned, the API provider gets the request, stderr warns |
+| R2 | **H1/M2** Nothing tells the user that a repository chose the model | When the model comes from the project file, print `hone: using model <m> (from <path>)` to stderr once at startup. No notice for `--model` or the user file | Project `default_model` → notice on stderr; `--json` stdout still valid JSON; user-file `default_model` → no notice |
+| R3 | **H2** Argument injection: `gemini-cli:--yolo` reaches the Gemini CLI as `-m --yolo` (confirmed at argv level); empty names like `openai:` pass | A model name (the part after the prefix) must be non-empty, must not start with `-`, and must not contain whitespace or control characters. Applies to `--model` (exit 1, existing invalid-model message), `default_model`, `[providers.*].model` and the wizard `model` (config error, exit 2, C12). The Gemini CLI adapter passes the model as one token, `--model=<name>` | Each bad form rejected at each source; the adapter's argv contains `--model=<name>` and no separate `-m` |
+| R4 | **M1** The config loader lacks the `permissions.toml` hardening; a parse error echoes a line of the file, so a project `.hone/config.toml` symlinked to a file outside the repo prints its first line (confirmed) | Both layers load like `permissions.toml`: the project `.hone` directory and `.hone/config.toml` must not be symlinks; the file must be a regular file of at most 64 KiB and valid UTF-8; parse errors give the message and line/column only, never file content (reuse `policy.rs` `load_policy_file` checks and `toml_error`) | Symlinked project file / directory → config error without its content; `/dev/zero`-style non-regular file → error; >64 KiB → error; a parse error message contains no line of the file |
+| R5 | **M3** A project `default_model` whose provider has no key makes `hone` exit 1 for every contributor without that key | A project-sourced choice that can't be built (no key) warns and falls back to auto-detection, which uses its own model id. `--model` and the user file keep exit 1 (C9) | Project `default_model = "anthropic:…"`, only an OpenAI key → runs on OpenAI with detection's model, warning on stderr |
+| R6 | Minor: `detect_provider`'s "set but empty" branch can no longer fire (`non_empty` drops empty keys) | Remove the dead branch | — |
+| R7 | **M4** Behaviour changes for existing users | CHANGELOG entry and docs (done outside the TDD loop) | — |
+
 ## 4. Out of scope (follow-ups)
 
 - Applying `[sandbox]`, `[[routing]]`, `daily_limit_usd` (needs spend persisted across
