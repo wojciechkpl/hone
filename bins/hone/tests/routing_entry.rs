@@ -665,3 +665,202 @@ fn test_g6_routing_and_fallback_are_not_applied_with_an_agent_cli_model() {
     );
     let _ = e.root;
 }
+
+// ==============================================================================================
+// Review round 1: B1 (project fallback_models ignored) and G11 (project routing announced)
+// ==============================================================================================
+
+#[test]
+fn test_g2_a_project_fallback_list_cannot_send_the_session_to_another_provider() {
+    // The reviewer's scenario: the repository picks a local-only Ollama model and a fallback
+    // to OpenAI; the user's Ollama endpoint is down. Without the rule, the OpenAI key (and
+    // the code) would go to OpenAI without the user choosing it.
+    let e = Env::new();
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    let closed = {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        format!("http://{}", l.local_addr().unwrap())
+    };
+    write(
+        &e.user_config(),
+        &format!("[providers.ollama]\nbase_url = {closed:?}\n"),
+    );
+    write(
+        &e.project_config(),
+        "default_model = \"ollama:local-only-model\"\nfallback_models = [\"openai:gpt-4o\"]\n",
+    );
+
+    let o = hone_json(&e, Some(&openai), None, "say hi");
+
+    assert_eq!(
+        openai.count(),
+        0,
+        "no request may reach the OpenAI mock: {}",
+        o.stderr
+    );
+    assert_eq!(o.json()["success"], false, "{}", o.stderr);
+    assert!(
+        o.stderr.contains("warning")
+            && o.stderr.contains("fallback_models")
+            && o.stderr.contains(".hone/config.toml"),
+        "{}",
+        o.stderr
+    );
+}
+
+#[test]
+fn test_g2_the_users_fallback_list_still_applies_next_to_a_project_list() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama rescued it"));
+    let openai = Mock::start(Kind::OpenAi, vec![Reply::FailBeforeOutput]);
+    write(
+        &e.user_config(),
+        &user_config(&ollama, "fallback_models = [\"ollama:user-fb\"]\n"),
+    );
+    write(
+        &e.project_config(),
+        "fallback_models = [\"openai:project-fb\"]\n",
+    );
+
+    let o = hone_json(&e, Some(&openai), None, "say hi");
+
+    let v = o.json();
+    assert_eq!(v["success"], true, "{v}\nstderr: {}", o.stderr);
+    assert_eq!(ollama.models(), vec!["user-fb".to_owned()]);
+    assert!(
+        !openai.models().iter().any(|m| m == "project-fb"),
+        "the project's fallback is never used: {:?}",
+        openai.models()
+    );
+}
+
+/// The start-up announcement (G11), as opposed to the per-request line of G7 ("hone: using ...").
+const ANNOUNCE: &str = "hone: routing ";
+
+#[test]
+fn test_g11_project_routing_is_announced_at_start_in_every_run() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    write(&e.user_config(), &user_config(&ollama, ""));
+    write(
+        &e.project_config(),
+        "[[routing]]\ntask = \"simple\"\nmodel = \"ollama:proj-simple\"\n",
+    );
+
+    // A simple run: both the start-up line and the per-request line.
+    let simple = hone_json(&e, Some(&openai), None, SIMPLE);
+    assert_eq!(simple.code, Some(0), "stderr: {}", simple.stderr);
+    assert_eq!(
+        simple
+            .stderr
+            .matches("hone: routing simple requests to ollama:proj-simple (from ")
+            .count(),
+        1,
+        "{}",
+        simple.stderr
+    );
+    assert!(
+        simple.stderr.contains(".hone/config.toml)"),
+        "{}",
+        simple.stderr
+    );
+    assert!(
+        simple
+            .stderr
+            .contains("hone: using ollama:proj-simple for this simple request"),
+        "the per-request line is separate: {}",
+        simple.stderr
+    );
+
+    // A complex run is not routed, but the repository's routing is still announced.
+    let complex = hone_json(&e, Some(&openai), None, COMPLEX);
+    assert_eq!(complex.code, Some(0), "stderr: {}", complex.stderr);
+    assert_eq!(
+        complex
+            .stderr
+            .matches("hone: routing simple requests to ollama:proj-simple (from ")
+            .count(),
+        1,
+        "{}",
+        complex.stderr
+    );
+    assert!(
+        !complex.stderr.contains("hone: using"),
+        "{}",
+        complex.stderr
+    );
+}
+
+#[test]
+fn test_g11_every_applied_project_entry_gets_its_own_line() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    write(&e.user_config(), &user_config(&ollama, ""));
+    write(
+        &e.project_config(),
+        "[[routing]]\ntask = \"simple\"\nmodel = \"ollama:proj-simple\"\n[[routing]]\ntask = \"complex\"\nmodel = \"ollama:proj-complex\"\n",
+    );
+
+    let o = hone_json(&e, Some(&openai), None, "say hi");
+
+    assert!(
+        o.stderr
+            .contains("hone: routing simple requests to ollama:proj-simple (from "),
+        "{}",
+        o.stderr
+    );
+    assert!(
+        o.stderr
+            .contains("hone: routing complex requests to ollama:proj-complex (from "),
+        "{}",
+        o.stderr
+    );
+}
+
+#[test]
+fn test_g11_user_file_routing_is_not_announced() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    write(
+        &e.user_config(),
+        &user_config(
+            &ollama,
+            "[[routing]]\ntask = \"simple\"\nmodel = \"ollama:user-simple\"\n",
+        ),
+    );
+
+    let o = hone_json(&e, Some(&openai), None, SIMPLE);
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert!(
+        !o.stderr.contains(ANNOUNCE),
+        "the user's own routing needs no announcement: {}",
+        o.stderr
+    );
+    assert!(
+        o.stderr
+            .contains("hone: using ollama:user-simple for this simple request"),
+        "{}",
+        o.stderr
+    );
+}
+
+#[test]
+fn test_g11_a_project_entry_that_is_not_applied_is_not_announced() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    write(&e.user_config(), &user_config(&ollama, ""));
+    // No Anthropic key: the entry is dropped with a warning, so nothing is routed.
+    write(
+        &e.project_config(),
+        "[[routing]]\ntask = \"simple\"\nmodel = \"anthropic:claude-x\"\n",
+    );
+
+    let o = hone_json(&e, Some(&openai), None, SIMPLE);
+
+    assert!(!o.stderr.contains(ANNOUNCE), "{}", o.stderr);
+}

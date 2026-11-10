@@ -2775,12 +2775,40 @@ mod tests {
             Some("anthropic:claude-opus-4"),
             "pending_model_change must be set"
         );
-        assert_eq!(app.status.model, "anthropic:claude-opus-4");
-        let msg = last_system_msg(&app);
+        // The confirmation comes from `hone` after it has checked the request (G8): the app
+        // itself announces nothing, so a refused `/model` never shows a false "changed" line.
         assert!(
-            msg.contains("Model changed to"),
-            "should produce model-changed message"
+            !app.messages
+                .iter()
+                .any(|m| m.content.contains("Model changed to")),
+            "the app must not announce a change before the check"
         );
+    }
+
+    /// `/model <id>` records the pending change without a confirmation line (G8).
+    #[test]
+    fn model_command_sets_the_pending_change_and_adds_no_confirmation_line() {
+        let mut app = App::new();
+        let before = app.messages.len();
+
+        app.handle_command(Command::Model("openai:gpt-4o".to_string()));
+
+        assert_eq!(app.pending_model_change.as_deref(), Some("openai:gpt-4o"));
+        assert!(
+            !app.messages.iter().any(|m| m.content.contains("Model changed")),
+            "no confirmation line: {:?}",
+            app.messages.iter().map(|m| m.content.clone()).collect::<Vec<_>>()
+        );
+        assert_eq!(app.messages.len(), before, "no line of any kind is added");
+    }
+
+    /// An empty `/model` still shows its usage error (unchanged).
+    #[test]
+    fn model_command_without_an_id_still_shows_the_usage_error() {
+        let mut app = App::new();
+        app.handle_command(Command::Model(String::new()));
+        assert!(app.pending_model_change.is_none());
+        assert!(app.messages.iter().any(|m| m.content.contains("Usage: /model")));
     }
 
     /// `/configure model` with no id produces the usage error from Command::Model.

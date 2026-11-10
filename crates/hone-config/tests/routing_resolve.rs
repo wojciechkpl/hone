@@ -356,18 +356,59 @@ fn test_g2_duplicates_are_dropped_keeping_the_first() {
 }
 
 #[test]
-fn test_g2_a_non_empty_project_list_replaces_the_users() {
+fn test_g2_a_project_list_is_ignored_and_the_users_list_keeps_applying() {
+    // Review round 1 (B1): a repository must not choose where the session falls back to.
     let u = user("fallback_models = [\"openai:user\"]\n");
     let p = project("fallback_models = [\"ollama:project\"]\n");
 
     let e = run(Some(&u), Some(&p));
 
-    assert_eq!(models(&e), vec!["ollama:project"]);
-    assert_eq!(e.fallback_path, Some(PathBuf::from(PROJECT_PATH)));
+    assert_eq!(models(&e), vec!["openai:user"]);
+    assert_eq!(e.fallback_path, Some(PathBuf::from(USER_PATH)));
+    let ws = warnings_for(&e, PROJECT_PATH);
+    assert_eq!(
+        ws.len(),
+        1,
+        "one warning naming the project file: {:?}",
+        e.warnings
+    );
+    assert!(
+        ws[0].message.contains("fallback_models"),
+        "{}",
+        ws[0].message
+    );
 }
 
 #[test]
-fn test_g2_an_empty_or_fully_filtered_project_list_leaves_the_users() {
+fn test_g2_a_project_list_alone_gives_no_fallback_and_one_warning() {
+    let p = project("fallback_models = [\"openai:gpt-4o\", \"ollama:x\"]\n");
+
+    let e = run(None, Some(&p));
+
+    assert!(e.fallback_models.is_empty());
+    assert_eq!(e.fallback_path, None);
+    let ws = warnings_for(&e, PROJECT_PATH);
+    assert_eq!(ws.len(), 1, "{:?}", e.warnings);
+    assert!(
+        ws[0].message.contains("fallback_models"),
+        "{}",
+        ws[0].message
+    );
+}
+
+#[test]
+fn test_g2_a_bad_project_list_is_still_a_config_error() {
+    for bad in ["gpt-4o", "mistral:x", "openai:", "openai:-x", "ollama:a b"] {
+        let raw = format!("fallback_models = [\"{bad}\"]\n");
+        let p = ConfigLayer::from_toml(PROJECT_PATH, &raw).unwrap();
+        let e = run_err(None, Some(&p));
+        assert_eq!(err_path(&e), Path::new(PROJECT_PATH), "{bad}");
+        assert!(err_reason(&e).contains("fallback_models"), "{bad}: {e}");
+    }
+}
+
+#[test]
+fn test_g2_an_empty_or_cli_only_project_list_leaves_the_users() {
     let u = user("fallback_models = [\"openai:user\"]\n");
     for raw in [
         "fallback_models = []\n",
