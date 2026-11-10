@@ -213,7 +213,9 @@ prints `hone: using model <m> (from <path>)`. Neither goes to stdout, so `--json
 stays valid JSON.
 
 If a project `default_model` names a provider you have no key for, Hone warns and falls
-back to auto-detection. The same choice in the user file, or in `--model`, exits 1.
+back to your own choice: the user file's `default_model`, then the wizard model, then
+auto-detection. The same missing key for a choice from the user file, or from `--model`,
+exits 1.
 
 <details>
 <summary><b>A complete user file</b></summary>
@@ -252,7 +254,8 @@ never runs without the settings you wrote. That covers:
 - a file that isn't a regular file, is larger than 64 KiB or isn't UTF-8;
 - in the project directory, a `.hone` directory or `config.toml` that is a symlink.
 
-Error messages give the line and column, never the file's content.
+Parse errors give the line and column, never the file's text. Validation errors quote the
+value they reject, such as the model id.
 
 ---
 

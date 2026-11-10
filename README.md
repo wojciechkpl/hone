@@ -1147,7 +1147,8 @@ hone --agent rust-expert "how to handle lifetimes in this struct"
 ## Configuration
 
 Settings come from CLI flags first, then environment variables, then `config.toml`, then
-built-in defaults.
+built-in defaults. The model is the exception: `default_model` and the wizard's model win
+over auto-detection (see [Choosing a provider and model](docs/configuration.md#choosing-a-provider-and-model)).
 
 ### Sample config.toml
 
