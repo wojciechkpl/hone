@@ -6,10 +6,12 @@ use futures::Stream;
 use hone_proto::{Message, ModelInfo, ProviderEvent, ProviderHealth};
 
 use crate::error::ProviderError;
+use crate::stream_probe::{Attempt, LastFailure, attempt, with_carried};
 use crate::traits::{CompletionRequest, ModelProvider};
 
 /// A provider that tries each member in order, moving on when one fails with
-/// a `RateLimit` or `Unavailable` health status.
+/// a transient error, an `Unavailable` health status, or a stream that fails
+/// before any output.
 pub struct FallbackChain {
     providers: Vec<Arc<dyn ModelProvider>>,
 }
@@ -49,38 +51,38 @@ impl ModelProvider for FallbackChain {
         &self,
         request: CompletionRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
-        let mut last_err = None;
+        // Usage reported by members that failed before any output, passed on
+        // ahead of the events of the member that finally answers.
+        let mut carried: Vec<ProviderEvent> = Vec::new();
+        let mut last: Option<LastFailure> = None;
 
         for provider in &self.providers {
             // Skip unavailable providers without even trying them.
             if let ProviderHealth::Unavailable { reason } = provider.health().await {
-                last_err = Some(ProviderError::Http {
+                last = Some(LastFailure::Request(ProviderError::Http {
                     provider: provider.id().to_owned(),
                     status: 503,
                     body: reason,
-                });
+                }));
                 continue;
             }
 
-            match provider.complete(request.clone()).await {
-                Ok(stream) => return Ok(stream),
-                Err(ProviderError::RateLimit {
-                    provider: prov,
-                    retry_after_secs,
-                }) => {
-                    last_err = Some(ProviderError::RateLimit {
-                        provider: prov,
-                        retry_after_secs,
-                    });
-                    // try next
+            match attempt(provider.as_ref(), request.clone()).await {
+                Attempt::Stream(stream) => return Ok(with_carried(carried, stream)),
+                Attempt::Failed(failure) => {
+                    carried.extend(failure.usage);
+                    last = Some(LastFailure::Stream(failure.message));
                 }
-                Err(e) => return Err(e),
+                Attempt::Request(e) if e.is_transient() => {
+                    last = Some(LastFailure::Request(e));
+                }
+                Attempt::Request(e) => return Err(e),
             }
         }
 
-        // Safe: constructor (line 19) asserts !providers.is_empty(), so loop executes at least once.
+        // Safe: constructor asserts !providers.is_empty(), so the loop ran at least once.
         #[allow(clippy::expect_used)]
-        Err(last_err.expect("providers vec is non-empty"))
+        last.expect("providers vec is non-empty").report(carried)
     }
 
     fn estimate_tokens(&self, messages: &[Message]) -> u32 {
