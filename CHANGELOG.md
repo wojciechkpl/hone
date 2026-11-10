@@ -140,7 +140,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed: base URLs ending in `/v1`
 
 - **The bug:** the OpenAI-compatible adapter added `/v1/chat/completions` to the base URL, and the Anthropic adapter `/v1/messages`. A base URL that already ended in `/v1`, which is the usual form (OpenRouter `https://openrouter.ai/api/v1`, vLLM `http://localhost:8000/v1`, the OpenAI SDKs), became `…/v1/v1/…` and failed. `hone configure` writes the OpenRouter URL in exactly that form, so every OpenRouter wizard user was affected, and since the previous fix their wizard settings are always applied.
-- **Now:** both adapters accept a base URL with or without a trailing `/v1` and trailing slashes. Only a whole `/v1` segment is removed (`/v1beta`, `/apiv1` stay as they are). Base URLs with another API version, such as Gemini's `…/v1beta/openai`, are still not supported.
+- **Now:** both adapters accept a base URL with or without a trailing `/v1` and trailing slashes. Only a whole `/v1` segment is removed (`/v1beta`, `/apiv1` stay as they are). Hone always requests `<base>/v1/chat/completions` (or `/v1/messages`), so endpoints that serve chat elsewhere, such as Azure, Zhipu's `…/api/paas/v4`, Gemini's `…/v1beta/openai` or Cloudflare AI Gateway's `…/openai` route, are still not supported.
 - Contract: `docs/plans/base-url-v1-spec.md`.
 
 ### Fixed: config.toml is applied

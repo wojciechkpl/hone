@@ -119,7 +119,7 @@ isn't set, Hone doesn't fall back to the default variable.
 |---|---|---|---|
 | Anthropic | `ANTHROPIC_API_KEY=sk-ant-...` | yes | Default model `claude-sonnet-4-5` |
 | OpenAI | `OPENAI_API_KEY=...` | yes | Default model `gpt-4o` |
-| OpenAI-compatible | `OPENAI_API_KEY` + `HONE_OPENAI_BASE_URL` (+ `HONE_OPENAI_MODEL`), or `[providers.openai]` | yes | DeepSeek `https://api.deepseek.com`, OpenRouter `https://openrouter.ai/api/v1`, vLLM `http://localhost:8000/v1`, ... The URL may end in `/v1` or not; Hone sends requests to `…/v1/chat/completions` |
+| OpenAI-compatible | `OPENAI_API_KEY` + `HONE_OPENAI_BASE_URL` (+ `HONE_OPENAI_MODEL`), or `[providers.openai]` | yes | DeepSeek `https://api.deepseek.com`, OpenRouter `https://openrouter.ai/api/v1`, vLLM `http://localhost:8000/v1`, ... The URL may end in `/v1` or not; Hone sends requests to `<base>/v1/chat/completions`, so the endpoint must serve that path (Azure, Zhipu `…/api/paas/v4`, Gemini `…/v1beta/openai` and Cloudflare's `…/openai` route don't) |
 | Ollama | `ollama serve` + `ollama pull llama3.2` | yes | URL from `[providers.ollama].base_url`, default `http://localhost:11434` |
 | Claude CLI | `claude` on `PATH` | no: runs its own tools | Permission mode `acceptEdits` unless `HONE_CLAUDE_PERMISSION_MODE` is set |
 | Gemini CLI | `gemini` on `PATH` | no: runs its own tools | |
