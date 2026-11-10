@@ -31,15 +31,21 @@ impl ToolRegistry {
     }
 
     /// Return the JSON Schema descriptors for all registered tools.
+    ///
+    /// Sorted by name, so the same registry always produces the same request
+    /// (the map's own order changes from run to run).
     pub fn schemas(&self) -> Vec<ToolSchema> {
-        self.tools
+        let mut schemas: Vec<ToolSchema> = self
+            .tools
             .values()
             .map(|t| ToolSchema {
                 name: t.name().to_string(),
                 description: t.description().to_string(),
                 parameters: t.schema(),
             })
-            .collect()
+            .collect();
+        schemas.sort_by(|a, b| a.name.cmp(&b.name));
+        schemas
     }
 
     /// Return the names of all registered tools.

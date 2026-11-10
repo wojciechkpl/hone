@@ -31,7 +31,9 @@ use crossterm::{
 };
 use futures::StreamExt;
 use hone_cache::{SqliteBackend, ToolResultCache};
-use hone_config::resolve::{Effective, ModelChoice, ModelSource};
+use hone_config::resolve::{
+    Effective, ModelChoice, ModelSource, Tier, check_model_switch, turn_model,
+};
 use hone_config::{HoneMd, McpConfig};
 use hone_core::{
     AdaptiveClassifier, AgentConfig, AgentEnsemble, AgentHandle, AgentMode, AgentRegistry,
@@ -549,6 +551,115 @@ fn api_provider_from_settings(eff: &Effective, command: &str) -> Result<Arc<dyn 
             eff.anthropic.api_key_env.as_deref().unwrap_or("ANTHROPIC_API_KEY"),
             eff.openai.api_key_env.as_deref().unwrap_or("OPENAI_API_KEY"),
         )
+    }
+}
+
+fn is_api_model(model: &ModelId) -> bool {
+    matches!(model.provider(), Some("anthropic" | "openai" | "ollama"))
+}
+
+fn tier_of(t: ComplexityTier) -> Tier {
+    match t {
+        ComplexityTier::Simple => Tier::Simple,
+        ComplexityTier::Medium => Tier::Medium,
+        ComplexityTier::Complex => Tier::Complex,
+    }
+}
+
+/// Everything the TUI needs to route turns and validate `/model`.
+struct TuiRouting {
+    eff: Effective,
+    dispatch: Arc<hone_providers::ModelDispatch>,
+    /// `--model`: exactly that model, no routing.
+    pinned: Option<ModelId>,
+}
+
+/// Build the provider set for a session on an API model: Anthropic and OpenAI
+/// when they have a key, Ollama always, with `fallback_models` (not after
+/// `--model`). The session's own provider is reused as is.
+///
+/// Routed or fallback models whose provider is missing get one warning each and
+/// are dropped.
+fn build_model_dispatch(
+    eff: &Effective,
+    detected: &DetectedProvider,
+    pinned: bool,
+) -> Arc<hone_providers::ModelDispatch> {
+    let session_prefix = detected.model_id.provider().unwrap_or_default().to_owned();
+    let mut dispatch = hone_providers::ModelDispatch::new(detected.model_id.clone())
+        .with_provider(&session_prefix, Arc::clone(&detected.provider));
+    if session_prefix != "anthropic" {
+        if let Some(key) = eff.anthropic.api_key.clone() {
+            dispatch = dispatch.with_provider("anthropic", Arc::new(anthropic_provider(eff, key)));
+        }
+    }
+    if session_prefix != "openai" {
+        if let Some(key) = eff.openai.api_key.clone() {
+            dispatch = dispatch.with_provider("openai", Arc::new(openai_provider(eff, key)));
+        }
+    }
+    if session_prefix != "ollama" {
+        dispatch = dispatch.with_provider(
+            "ollama",
+            Arc::new(OllamaProvider::new(ollama_base_url(eff))),
+        );
+    }
+    if pinned {
+        return Arc::new(dispatch);
+    }
+
+    let missing = |model: &ModelId| -> String {
+        let prefix = model.provider().unwrap_or_default();
+        let var = match prefix {
+            "anthropic" => eff
+                .anthropic
+                .api_key_env
+                .as_deref()
+                .unwrap_or("ANTHROPIC_API_KEY"),
+            "openai" => eff
+                .openai
+                .api_key_env
+                .as_deref()
+                .unwrap_or("OPENAI_API_KEY"),
+            _ => "the provider's settings",
+        };
+        format!("no {prefix} provider is configured (set {var})")
+    };
+    for tier in [Tier::Simple, Tier::Medium, Tier::Complex] {
+        if let Some(r) = eff.routing.get(tier) {
+            if !dispatch.has_provider_for(&r.model) {
+                eprintln!(
+                    "hone: warning: {}: [[routing]] {} -> {} is not used: {}; using the default model",
+                    r.path.display(),
+                    tier.as_str(),
+                    r.model,
+                    missing(&r.model)
+                );
+            }
+        }
+    }
+    let mut fallback = Vec::new();
+    for m in &eff.fallback_models {
+        if dispatch.has_provider_for(m) {
+            fallback.push(m.clone());
+        } else if let Some(path) = &eff.fallback_path {
+            eprintln!(
+                "hone: warning: {}: fallback_models {m} is dropped: {}",
+                path.display(),
+                missing(m)
+            );
+        }
+    }
+    Arc::new(dispatch.with_fallback(fallback))
+}
+
+/// `[[routing]]` and `fallback_models` do nothing with an agent CLI model.
+fn warn_routing_not_applied(eff: &Effective) {
+    if !eff.routing.is_empty() {
+        eprintln!("hone: warning: [[routing]] is not applied with an agent CLI model");
+    }
+    if !eff.fallback_models.is_empty() {
+        eprintln!("hone: warning: fallback_models is not applied with an agent CLI model");
     }
 }
 
@@ -2529,6 +2640,25 @@ async fn main() -> Result<()> {
         detect_provider(&eff).await
     };
 
+    // A session on an API model gets a provider that serves every configured
+    // API provider (routing, fallback models, `/model` across providers). With an
+    // agent CLI model nothing is routed.
+    let pinned_choice: Option<ModelId> = match &eff.model {
+        Some(ModelChoice {
+            model,
+            source: ModelSource::Cli,
+        }) => Some(model.clone()),
+        _ => None,
+    };
+    let dispatch: Option<Arc<hone_providers::ModelDispatch>> = if is_api_model(&detected.model_id) {
+        let d = build_model_dispatch(&eff, &detected, pinned_choice.is_some());
+        detected.provider = d.clone();
+        Some(d)
+    } else {
+        warn_routing_not_applied(&eff);
+        None
+    };
+
     // Opt-in local response cache: set HONE_CACHE=1 (or any value) to wrap
     // the inner provider with an LRU cache. Useful for development/testing
     // and retry scenarios where the exact same request may repeat.
@@ -2537,7 +2667,33 @@ async fn main() -> Result<()> {
         detected.provider = Arc::new(hone_providers::CachingProvider::new(detected.provider, 100));
     }
 
-    let model_id: ModelId = detected.model_id.clone();
+    let session_default: ModelId = detected.model_id.clone();
+    let mut model_id: ModelId = session_default.clone();
+
+    // One-shot runs (plain, --json, --orchestrate, --ensemble) pick their model by
+    // the prompt's complexity tier; the TUI does it per turn.
+    if let Some(d) = &dispatch {
+        let one_shot_prompt = if cli.recipe.is_none() && cli.plan.is_none() && !cli.list_recipes {
+            cli.prompt.as_deref()
+        } else {
+            None
+        };
+        if let Some(prompt) = one_shot_prompt {
+            let tier = tier_of(ComplexityClassifier::classify(prompt));
+            let turn = turn_model(&eff, tier, pinned_choice.as_ref(), &session_default, &|m| {
+                d.has_provider_for(m)
+            });
+            if let Some(path) = &turn.routed_from {
+                eprintln!(
+                    "hone: using {} for this {} request (from [[routing]] in {})",
+                    turn.model,
+                    tier.as_str(),
+                    path.display()
+                );
+            }
+            model_id = turn.model;
+        }
+    }
 
     // Provider capability warnings: --orchestrate and --ensemble require tool
     // calling. Warn (but do not abort) when used with a CLI/Ollama provider
@@ -2664,8 +2820,20 @@ async fn main() -> Result<()> {
     // Run the selected mode and capture the result so we can shut down MCP
     // servers before returning regardless of which path was taken.
     let no_clarify = cli.no_clarify;
-    let run_result =
-        run_selected_mode(cli, agent, base_config, model_id, session_name, no_clarify).await;
+    let run_result = run_selected_mode(
+        cli,
+        agent,
+        base_config,
+        model_id,
+        session_name,
+        no_clarify,
+        dispatch.map(|dispatch| TuiRouting {
+            eff,
+            dispatch,
+            pinned: pinned_choice,
+        }),
+    )
+    .await;
 
     // Graceful MCP server shutdown — always runs, even on error.
     mcp_manager.shutdown().await;
@@ -2714,6 +2882,7 @@ async fn run_selected_mode(
     model_id: ModelId,
     session_name: Option<String>,
     no_clarify: bool,
+    routing: Option<TuiRouting>,
 ) -> Result<()> {
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -2851,6 +3020,7 @@ async fn run_selected_mode(
         base_config,
         cli.vim,
         step_tx,
+        routing,
     )
     .await;
 
@@ -2985,6 +3155,7 @@ async fn run_tui(
     base_config: AgentConfig,
     vim: bool,
     step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
+    routing: Option<TuiRouting>,
 ) -> Result<()> {
     let mut app = if vim { App::with_vim() } else { App::new() };
     // Wire step-mode sender into app so it can unblock the agent.
@@ -2995,6 +3166,13 @@ async fn run_tui(
     // Show which model is active in the status bar and set the context limit.
     app.status_mut().model = model_id.to_string();
     app.status_mut().context_limit = model_context_limit(model_id.as_str());
+
+    // Per-turn model routing (API sessions only). `pinned` is set by --model and
+    // by a successful `/model`: from then on routing stops for the session.
+    let mut pinned_model: Option<ModelId> = routing.as_ref().and_then(|r| r.pinned.clone());
+    // The model the agent is currently set to, and the label shown in the status bar.
+    let mut applied_model: ModelId = model_id.clone();
+    let mut shown_model: String = model_id.to_string();
 
     // Load saved sessions into the session-switcher overlay.
     if let Some(store) = open_session_store().await {
@@ -3118,9 +3296,33 @@ async fn run_tui(
 
                             // Handle pending model changes from /model or /configure model.
                             if let Some(new_model) = app.take_pending_model_change() {
-                                let model = ModelId::new(&new_model);
-                                agent.set_model(model).await;
-                                app.status_mut().context_limit = model_context_limit(&new_model);
+                                // In an API session `/model` goes through the same check as
+                                // everything else: an API prefix whose provider is configured.
+                                let checked = match &routing {
+                                    Some(r) => check_model_switch(&new_model, &|m| {
+                                        r.dispatch.has_provider_for(m)
+                                    }),
+                                    None => Ok(ModelId::new(&new_model)),
+                                };
+                                match checked {
+                                    Ok(model) => {
+                                        agent.set_model(model.clone()).await;
+                                        app.status_mut().context_limit =
+                                            model_context_limit(&new_model);
+                                        shown_model = new_model.clone();
+                                        applied_model = model.clone();
+                                        // Pin it: routing stops for the rest of the session
+                                        // (fallback models still apply).
+                                        if routing.is_some() {
+                                            pinned_model = Some(model);
+                                        }
+                                    }
+                                    Err(msg) => {
+                                        // Keep the current model and say why.
+                                        app.status_mut().model = shown_model.clone();
+                                        app.push_error(msg);
+                                    }
+                                }
                             }
 
                             // Handle pending agent mode changes from Shift+Tab.
@@ -3255,10 +3457,40 @@ async fn run_tui(
                                     agent.approve_tools(pending_gov.permits.clone()).await;
                                 }
 
+                                // Pick this turn's model: pinned, else the [[routing]] model for the
+                                // tier, else the session default. Simple/medium turns run on the
+                                // agent (set its model); orchestrated turns use the config clone.
+                                let turn_model_choice = routing.as_ref().map(|r| {
+                                    turn_model(
+                                        &r.eff,
+                                        tier_of(tier),
+                                        pinned_model.as_ref(),
+                                        &model_id,
+                                        &|m| r.dispatch.has_provider_for(m),
+                                    )
+                                });
+                                if let Some(turn) = &turn_model_choice {
+                                    if !matches!(tier, ComplexityTier::Complex)
+                                        && turn.model != applied_model
+                                    {
+                                        agent.set_model(turn.model.clone()).await;
+                                        applied_model = turn.model.clone();
+                                    }
+                                    if turn.model.as_str() != shown_model {
+                                        shown_model = turn.model.to_string();
+                                        app.status_mut().model = shown_model.clone();
+                                        app.status_mut().context_limit =
+                                            model_context_limit(turn.model.as_str());
+                                    }
+                                }
+
                                 // Spawn the appropriate turn.
                                 let agent_clone = agent.clone();
                                 let effective_text_clone = effective_text.clone();
                                 let mut base_config_clone = base_config.clone();
+                                if let Some(turn) = &turn_model_choice {
+                                    base_config_clone.model = turn.model.clone();
+                                }
                                 // Mirror the per-run gov onto the orchestrated path's clone too —
                                 // spawn_orchestrated_turn builds a disposable Orchestrator from this
                                 // clone and never sees the AgentHandle setters above.

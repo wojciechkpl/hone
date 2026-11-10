@@ -182,6 +182,10 @@ pub struct Config {
     #[serde(default)]
     pub server: Option<ServerConfig>,
 
+    /// Models to try, in order, when the session's model fails (see `resolve`).
+    #[serde(default)]
+    pub fallback_models: Vec<ModelId>,
+
     /// The `[provider]` table written by `hone configure`.
     #[serde(default)]
     pub provider: Option<WizardProviderConfig>,
