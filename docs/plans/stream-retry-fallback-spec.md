@@ -10,8 +10,8 @@ looking complete. Nothing retries it or sends it to another provider:
 - **The agent retries only the request.** `Agent` wraps `provider.complete()` in
   `retry()` (3 attempts, 500 ms / 1 s backoff), but `complete()` succeeds as soon as the
   `200` headers arrive. An Anthropic `overloaded_error`, an OpenRouter "Provider
-  disconnected unexpectedly", a connection reset or an idle timeout that comes *before the
-  first token* fails the turn at once, although nothing has been shown and a second
+  disconnected unexpectedly" or a connection reset that comes *before the first token*
+  fails the turn at once, although nothing has been shown and a second
   attempt would be invisible to the user.
 - **`FallbackChain` and `TierFallbackProvider` only look at `complete()`'s result.** A
   member whose stream fails before any output is returned as is; the next member is never
@@ -31,7 +31,7 @@ flowchart TD
   C["complete(request)"] -->|"Err: transient"| N["next attempt /<br/>next provider"]
   C -->|"Err: not transient"| F["fail (as now)"]
   C -->|"Ok(stream)"| W{"first event that<br/>is not Usage"}
-  W -->|"Error"| G{"runs own tools<br/>or cancelled?"}
+  W -->|"Error"| G{"runs own tools, cancelled<br/>or idle timeout?"}
   G -->|"no"| N
   G -->|"yes"| F2["fail with that Error (as now)"]
   W -->|"output: Token, ToolCall, Done, …"| P["pass the stream on;<br/>a later Error fails the turn (PR #84)"]
@@ -67,6 +67,8 @@ flowchart TD
 | R8 | **`FallbackChain`** moves to the next member when a member (a) reports `Unavailable` health (as now), (b) fails the request with an `is_transient()` error (before: only `RateLimit`), or (c) has `runs_own_tools() == false` and its stream fails before output. A non-transient request error is returned at once (as now). Each member is tried at most once per call. `Usage` from a failed member is passed on ahead of the next member's events. When every member fails, the chain reports the last member's failure the way that member reported it: a request error as that `Err`, a stream failure as a stream with that member's events up to and including its `Error`, preceded by the `Usage` of earlier members | [A `[Error]`, B `[Token, Done]`] → caller sees B's events, A and B called once. [A `Err(Http 503)`, B ok] → B. [A `Err(Http 400)`, B] → `Err(400)`, B not called. [A `[Usage, Error]`, B `[Token, Done]`] → `[Usage, Token, Done]`. All fail before output → the last member's `Error` message in the stream. [A `[Token, Error]`, B] → A's events, B not called |
 | R9 | **`TierFallbackProvider`** treats the primary and each candidate the same way as R8 (a failure before output is transient and uses a hop; `Usage` carried forward; last failure reported as that provider reported it) and uses `ProviderError::is_transient()` instead of its private check (this adds `Timeout` and `Stream`). `max_hops` and candidate order are unchanged | Primary `[Error]`, candidate `[Token "fallback-ok", Done]` → candidate's answer. Primary `Err(Timeout)` → candidate tried. Primary and every candidate fail before output, `max_hops = 1` → 2 calls, last `Error` in the stream |
 | R10 | **One classification for request errors:** `ProviderError::is_transient()` as defined in §2. The agent retries a request error when `is_transient()` is `true` **or** the existing text check `is_transient_error` matches (kept, so nothing retried today stops being retried); this newly retries HTTP 500, 504 and 529 | Table test of `is_transient()` for every variant and the status boundaries (0, 400, 428, 429, 499, 500, 529, 599). Agent: `Err(Http 529 "Overloaded")` then success → 2 calls, `Ok`. `Err(Http 400)` → 1 call |
+| R12 | **An idle timeout is not retried** (review finding): a response that started (headers received) and then sent nothing for the idle limit is most likely a slow model (long reasoning before the first token, a queue); another attempt would repeat the wait and, for reasoning models, the billed reasoning. Such a failure before output is not retried by the agent and not handed to another provider by either wrapper: it fails after one attempt, as today. To recognise it, the HTTP adapters report an idle timeout (the cause's `reqwest::Error::is_timeout()`) as `<provider> response timed out: <cause>` instead of `<provider> response interrupted: <cause>`; other transport failures keep `response interrupted`. A provider's own in-band error text is never taken for an idle timeout | Adapter with idle limit 1 s, server sends headers and then stalls: one `Error` starting `openai response timed out:` (likewise anthropic, ollama). Agent with a scripted `[Error "openai response timed out: …"]`, `max_attempts = 3` → 1 call, `Err`, one `AgentEvent::Error` with that message. `FallbackChain` [A same failure, B ok] → A's `Error`, B not called. Control: `[Error "openai response interrupted: …"]` is still retried. Existing S5 test (message contains "timed out") still passes |
+| R13 | **Cancelling the turn stops retries** (review finding): since PR #78 the turn is cancelled when its event receiver closes, and Esc must stop it before its next model call. The agent checks this before every attempt, including retries: once the receiver is closed, no further attempt is made and the turn ends with `AgentError::Cancelled` (no `AgentEvent::Error`) | Provider whose first attempt fails before output; the test closes the event receiver while that attempt runs → exactly 1 call, `Err(AgentError::Cancelled)`. Same with a retryable request error (`Err(Http 503)`) on the first attempt |
 | R11 | **End to end:** through the `hone` binary (`--json`, OpenAI-compatible mock, default `RetryConfig`), a response that fails before any text is retried | Mock answers request 1 with an in-band error before any content and request 2 normally → exit 0, `success: true`, the answer text, exactly 2 requests. Mock that fails before output every time → non-zero exit, `success: false`, `error` contains the provider's message, exactly 3 requests. Existing S7 tests (failure after "partial answer") make exactly 1 request |
 
 Unchanged: the adapters and their messages (PR #84), `RetryConfig` defaults, a failure
@@ -88,10 +90,14 @@ the `ProviderEvent` and `AgentEvent` types.
 
 ## 5. Behaviour changes
 
-- A turn whose response failed before any text (overload, disconnect, reset, idle timeout
-  before the first token) now succeeds if a retry works. When every attempt fails, the turn
-  takes up to about 1.5 s longer and makes 3 requests instead of 1; a provider may bill
-  input tokens for each failed attempt, and Hone counts any usage it reports.
+- A turn whose response failed before any text (overload, disconnect, reset) now
+  succeeds if a retry works. When every attempt fails, the turn
+  takes up to about 1.5 s longer (plus the time each attempt takes to fail) and makes
+  3 requests instead of 1. A provider may bill each failed attempt; Hone counts the usage
+  it reports, but tokens billed without a `Usage` event (e.g. reasoning tokens before a
+  failure) are not counted. An idle timeout is not retried (R12).
+- An idle timeout's message now reads `<provider> response timed out: <cause>` instead of
+  `<provider> response interrupted: <cause>`.
 - The agent now retries HTTP 500, 504 and 529 request errors.
 - `FallbackChain` moves on for any transient error (5xx, 429, timeouts), not only
   `RateLimit`; `TierFallbackProvider` also for `Timeout` and `Stream`.
@@ -104,6 +110,11 @@ the `ProviderEvent` and `AgentEvent` types.
   reqwest's message is "error sending request for url (…)" without its cause, so the text
   check never sees "connection refused". Retrying them also needs a decision on the 120 s
   wait for headers (three attempts could take six minutes).
+- In-band errors with a 4xx code (context length, moderation, invalid request) are
+  retried like any failure before output (two extra requests, about 2 s). Not retrying
+  them needs the provider's code carried in `ProviderEvent::Error`, which only has a
+  message today.
+- No total time budget per turn across attempts.
 - The agent's backoff ignores `RateLimit::retry_after_secs`.
 - No user-visible notice while retrying (logs only).
 - `FallbackChain`, `TierFallbackProvider` and the router are not wired into the `hone`
