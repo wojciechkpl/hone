@@ -442,3 +442,91 @@ async fn test_s6_control_caching_provider_still_caches_a_successful_response() {
     }
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
+
+// -- S8: every finish reason completes the response ----------------------------------------------------
+
+fn openai_finish_chunk(reason: &str) -> String {
+    format!(
+        "data: {}\n\n",
+        serde_json::json!({"choices":[{"index":0,"delta":{},"finish_reason":reason}]})
+    )
+}
+
+#[tokio::test]
+async fn test_s8_openai_any_non_error_finish_reason_completes_the_response() {
+    let a = Adapter::OpenAi;
+    for reason in [
+        "content_filter",
+        "function_call",
+        "eos_token",
+        "some_future_reason",
+    ] {
+        for end in [End::Normal, End::CutOff] {
+            // No `[DONE]` after the finish_reason chunk. Whether a Done is emitted is up to the
+            // implementation; what must not happen is an Error.
+            let tail = [openai_finish_chunk(reason)];
+            let events = run(a, steps_with(a, &["kept text"], &tail), end, None).await;
+
+            assert_eq!(
+                text_of(&events),
+                "kept text",
+                "{reason} / {end:?}: text delivered"
+            );
+            assert!(
+                errors(&events).is_empty(),
+                "{reason} / {end:?}: a finish_reason completes the response: {events:?}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_s8_anthropic_message_delta_with_a_stop_reason_completes_the_response() {
+    let a = Adapter::Anthropic;
+    // A proxy that drops `message_stop`: head, text, content_block_stop, message_delta only.
+    let tail = [
+        "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n".to_owned(),
+        "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n".to_owned(),
+    ];
+    for end in [End::Normal, End::CutOff] {
+        let events = run(a, steps_with(a, &["kept text"], &tail), end, None).await;
+
+        assert_eq!(text_of(&events), "kept text", "{end:?}");
+        assert!(
+            errors(&events).is_empty(),
+            "{end:?}: stop_reason in message_delta completes the response: {events:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_s8_guard_message_delta_without_a_stop_reason_does_not_complete() {
+    let a = Adapter::Anthropic;
+    let tail = [
+        "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":null},\"usage\":{\"output_tokens\":1}}\n\n".to_owned(),
+    ];
+    let events = run(a, steps_with(a, &["partial"], &tail), End::Normal, None).await;
+    assert_eq!(
+        errors(&events).len(),
+        1,
+        "a null stop_reason is not a completion: {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_s8_guard_finish_reason_error_is_still_an_error_and_not_a_completion() {
+    let a = Adapter::OpenAi;
+    for end in [End::Normal, End::CutOff] {
+        // finish_reason "error" without an error object, no [DONE].
+        let tail = [openai_finish_chunk("error")];
+        let events = run(a, steps_with(a, &["partial"], &tail), end, None).await;
+
+        assert_eq!(text_of(&events), "partial", "{end:?}");
+        assert_eq!(
+            errors(&events).len(),
+            1,
+            "{end:?}: exactly one Error: {events:?}"
+        );
+        assert!(!has_done(&events), "{end:?}: {events:?}");
+    }
+}
