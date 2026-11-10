@@ -509,8 +509,9 @@ impl ModelProvider for AnthropicProvider {
                 byte_stream,
                 String::new(),
                 HashMap::<usize, ToolCallState>::new(),
+                super::http_common::Utf8Decoder::default(),
             ),
-            |(mut byte_stream, mut buffer, mut tool_states)| async move {
+            |(mut byte_stream, mut buffer, mut tool_states, mut decoder)| async move {
                 loop {
                     // Try to process events already in the buffer
                     let mut emitted = Vec::new();
@@ -527,21 +528,18 @@ impl ModelProvider for AnthropicProvider {
                     }
 
                     if !emitted.is_empty() {
-                        return Some((stream::iter(emitted), (byte_stream, buffer, tool_states)));
+                        return Some((
+                            stream::iter(emitted),
+                            (byte_stream, buffer, tool_states, decoder),
+                        ));
                     }
 
                     // Need more bytes
                     match byte_stream.next().await {
-                        Some(Ok(chunk)) => {
-                            match std::str::from_utf8(&chunk) {
-                                Ok(text) => buffer.push_str(text),
-                                Err(_) => {
-                                    // Skip invalid UTF-8 chunks
-                                    debug!("Received non-UTF-8 chunk from Anthropic SSE stream");
-                                }
-                            }
-                        }
+                        Some(Ok(chunk)) => decoder.push(&chunk, &mut buffer),
                         Some(Err(_)) | None => {
+                            // A character cut off by the end of the stream becomes U+FFFD.
+                            decoder.finish(&mut buffer);
                             // Process any remaining buffer content
                             if !buffer.is_empty() {
                                 let remaining = buffer.clone();
@@ -554,7 +552,7 @@ impl ModelProvider for AnthropicProvider {
                                 if !final_events.is_empty() {
                                     return Some((
                                         stream::iter(final_events),
-                                        (byte_stream, buffer, tool_states),
+                                        (byte_stream, buffer, tool_states, decoder),
                                     ));
                                 }
                             }

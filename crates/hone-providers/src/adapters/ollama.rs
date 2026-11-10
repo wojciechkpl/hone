@@ -406,8 +406,12 @@ impl ModelProvider for OllamaProvider {
 
         // Ollama streams newline-delimited JSON, not SSE
         let event_stream = stream::unfold(
-            (byte_stream, String::new()),
-            |(mut byte_stream, mut buffer)| async move {
+            (
+                byte_stream,
+                String::new(),
+                super::http_common::Utf8Decoder::default(),
+            ),
+            |(mut byte_stream, mut buffer, mut decoder)| async move {
                 loop {
                     let mut emitted = Vec::new();
 
@@ -423,17 +427,14 @@ impl ModelProvider for OllamaProvider {
                     }
 
                     if !emitted.is_empty() {
-                        return Some((stream::iter(emitted), (byte_stream, buffer)));
+                        return Some((stream::iter(emitted), (byte_stream, buffer, decoder)));
                     }
 
                     match byte_stream.next().await {
-                        Some(Ok(chunk)) => match std::str::from_utf8(&chunk) {
-                            Ok(text) => buffer.push_str(text),
-                            Err(_) => {
-                                debug!("Received non-UTF-8 chunk from Ollama stream");
-                            }
-                        },
+                        Some(Ok(chunk)) => decoder.push(&chunk, &mut buffer),
                         Some(Err(_)) | None => {
+                            // A character cut off by the end of the stream becomes U+FFFD.
+                            decoder.finish(&mut buffer);
                             // Process any remaining content in the buffer
                             let remaining = buffer.clone();
                             buffer.clear();
@@ -446,7 +447,10 @@ impl ModelProvider for OllamaProvider {
                                 }
                             }
                             if !final_events.is_empty() {
-                                return Some((stream::iter(final_events), (byte_stream, buffer)));
+                                return Some((
+                                    stream::iter(final_events),
+                                    (byte_stream, buffer, decoder),
+                                ));
                             }
                             return None;
                         }
