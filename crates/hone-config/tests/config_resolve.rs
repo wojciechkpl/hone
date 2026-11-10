@@ -602,3 +602,130 @@ fn test_c12_error_in_the_project_layer_names_the_project_file() {
 // keep the unused-import lint quiet for types referenced only in the pinned-API docs
 #[allow(dead_code)]
 fn _api_shape(_: &ProviderSettings) {}
+
+// ==============================================================================================
+// Review round 1 (spec section 3b): R1 and R3 at the resolver level.
+//
+// Extra PINNED API:
+//   pub fn validate_model_name(name: &str) -> Result<(), String>   // in hone_config::resolve
+//     `name` is the part after the provider prefix. Err(reason) when it is empty, starts with
+//     '-', or contains whitespace or control characters.
+// ==============================================================================================
+
+use hone_config::resolve::validate_model_name;
+
+// -- R1: choosing an agent CLI is trusted-only ------------------------------------------------------
+
+#[test]
+fn test_r1_project_cli_default_model_is_ignored_with_a_warning_and_falls_through() {
+    for m in ["claude-cli:claude-sonnet-4-5", "gemini-cli:gemini-2.5-pro"] {
+        let p = project(&format!("default_model = {m:?}"));
+        let e = run(None, Some(&p), None, &no_env());
+        assert!(e.model.is_none(), "{m}: the choice must fall through to auto-detection");
+        let ws = warnings_for(&e, PROJECT_PATH);
+        assert_eq!(ws.len(), 1, "{m}: {:?}", e.warnings);
+        assert!(ws[0].message.contains("default_model"), "{m}: {}", ws[0].message);
+        assert!(
+            ws[0].message.contains("claude-cli") || ws[0].message.contains("gemini-cli"),
+            "{m}: {}",
+            ws[0].message
+        );
+    }
+}
+
+#[test]
+fn test_r1_project_cli_default_model_falls_through_to_the_user_default_model() {
+    let u = user(r#"default_model = "openai:user-model""#);
+    let p = project(r#"default_model = "claude-cli:x""#);
+    let e = run(Some(&u), Some(&p), None, &no_env());
+    let (m, s) = model_of(&e).expect("the user's choice applies");
+    assert_eq!(m, "openai:user-model");
+    assert_eq!(*s, ModelSource::DefaultModel { path: PathBuf::from(USER_PATH) });
+}
+
+#[test]
+fn test_r1_project_cli_default_model_falls_through_to_the_wizard_model() {
+    let u = user("[provider]\nname = \"openai\"\nmodel = \"wiz\"\n");
+    let p = project(r#"default_model = "gemini-cli:x""#);
+    let e = run(Some(&u), Some(&p), None, &no_env());
+    assert_eq!(model_of(&e).unwrap().0, "openai:wiz");
+}
+
+#[test]
+fn test_r1_user_file_and_cli_may_still_choose_an_agent_cli() {
+    let u = user(r#"default_model = "claude-cli:claude-sonnet-4-5""#);
+    let e = run(Some(&u), None, None, &no_env());
+    assert_eq!(model_of(&e).unwrap().0, "claude-cli:claude-sonnet-4-5");
+    assert!(e.warnings.is_empty(), "{:?}", e.warnings);
+
+    let e = run(None, None, Some("gemini-cli:gemini-2.5-pro"), &no_env());
+    assert_eq!(model_of(&e).unwrap().0, "gemini-cli:gemini-2.5-pro");
+}
+
+#[test]
+fn test_r1_project_api_provider_default_models_are_still_allowed() {
+    for m in ["anthropic:a", "openai:b", "ollama:c"] {
+        let p = project(&format!("default_model = {m:?}"));
+        let e = run(None, Some(&p), None, &no_env());
+        assert_eq!(model_of(&e).unwrap().0, m);
+        assert!(e.warnings.is_empty(), "{m}: {:?}", e.warnings);
+    }
+}
+
+// -- R3: model-name validation ---------------------------------------------------------------------------
+
+#[test]
+fn test_r3_validate_model_name_accepts_ordinary_names() {
+    for n in ["gpt-4o", "claude-sonnet-4-5", "qwen2.5-coder:14b", "openai/gpt-4o", "llama3.2", "a"] {
+        assert!(validate_model_name(n).is_ok(), "{n}");
+    }
+}
+
+#[test]
+fn test_r3_validate_model_name_rejects_bad_names() {
+    for n in ["", "-x", "--yolo", "a b", " lead", "trail ", "tab\there", "new\nline", "nul\0byte", "bell\u{7}"] {
+        assert!(validate_model_name(n).is_err(), "{n:?} must be rejected");
+    }
+}
+
+#[test]
+fn test_r3_default_model_with_a_bad_name_is_a_config_error_in_either_file() {
+    for bad in ["openai:", "openai:-x", "gemini-cli:--yolo", "ollama:has space", "anthropic:tab\\there"] {
+        let raw = format!("default_model = \"{bad}\"");
+        let u = ConfigLayer::from_toml(USER_PATH, &raw).unwrap();
+        let e = resolve(Some(&u), None, None, &no_env()).expect_err(bad);
+        assert_eq!(err_path(&e), Path::new(USER_PATH), "{bad}");
+        assert!(err_reason(&e).contains("default_model"), "{bad}: {e}");
+
+        let p = ConfigLayer::from_toml(PROJECT_PATH, &raw).unwrap();
+        let e = resolve(None, Some(&p), None, &no_env()).expect_err(bad);
+        assert_eq!(err_path(&e), Path::new(PROJECT_PATH), "{bad}");
+    }
+}
+
+#[test]
+fn test_r3_providers_model_with_a_bad_name_is_a_config_error() {
+    for bad in ["", "-x", "a b"] {
+        for prov in ["anthropic", "openai", "ollama"] {
+            let raw = format!("[providers.{prov}]\nmodel = {bad:?}\n");
+            let u = ConfigLayer::from_toml(USER_PATH, &raw).unwrap();
+            let e = resolve(Some(&u), None, None, &no_env()).expect_err(&raw);
+            assert_eq!(err_path(&e), Path::new(USER_PATH), "{raw}");
+            assert!(err_reason(&e).contains("model"), "{raw}: {e}");
+
+            let p = ConfigLayer::from_toml(PROJECT_PATH, &raw).unwrap();
+            let e = resolve(None, Some(&p), None, &no_env()).expect_err(&raw);
+            assert_eq!(err_path(&e), Path::new(PROJECT_PATH), "{raw}");
+        }
+    }
+}
+
+#[test]
+fn test_r3_wizard_model_with_a_bad_name_is_a_config_error() {
+    for bad in ["-x", "a b", "tab\\there"] {
+        let u = ConfigLayer::from_toml(USER_PATH, &format!("[provider]\nname = \"openai\"\nmodel = \"{bad}\"\n")).unwrap();
+        let e = resolve(Some(&u), None, None, &no_env()).expect_err(bad);
+        assert_eq!(err_path(&e), Path::new(USER_PATH), "{bad}");
+        assert!(err_reason(&e).contains("model"), "{bad}: {e}");
+    }
+}
