@@ -5,28 +5,53 @@
 use std::path::PathBuf;
 
 use hone_config::ConfigError;
-use hone_config::resolve::{ConfigLayer, Effective, resolve};
+use hone_config::resolve::{ConfigLayer, Effective, ModelChoice, ModelSource, resolve};
 
-/// Paths of the (trusted) user file and the (untrusted) project file.
-fn config_paths() -> (Option<PathBuf>, PathBuf) {
-    let user = std::env::var("HOME")
+/// Path of the (trusted) user file.
+fn user_config_path() -> Option<PathBuf> {
+    std::env::var("HOME")
         .ok()
-        .map(|home| PathBuf::from(home).join(".config/hone/config.toml"));
-    let cwd = std::env::current_dir().unwrap_or_default();
-    (user, cwd.join(".hone/config.toml"))
+        .map(|home| PathBuf::from(home).join(".config/hone/config.toml"))
+}
+
+fn workdir() -> PathBuf {
+    std::env::current_dir().unwrap_or_default()
 }
 
 /// Read both files and resolve them with the process environment.
+///
+/// The project file comes with the repository, so it is loaded without
+/// following symlinks (see [`ConfigLayer::load_project`]).
 pub fn load_effective(cli_model: Option<&str>) -> Result<Effective, ConfigError> {
-    let (user_path, project_path) = config_paths();
-    let user = match user_path {
+    let user = match user_config_path() {
         Some(p) => ConfigLayer::load(&p)?,
         None => None,
     };
-    let project = ConfigLayer::load(&project_path)?;
+    let project = ConfigLayer::load_project(&workdir())?;
     resolve(user.as_ref(), project.as_ref(), cli_model, &|k| {
         std::env::var(k).ok()
     })
+}
+
+/// True when the model choice came from the repository's `.hone/config.toml`.
+pub fn is_project_sourced(choice: &ModelChoice) -> bool {
+    matches!(
+        &choice.source,
+        ModelSource::DefaultModel { path } if *path == workdir().join(".hone/config.toml")
+    )
+}
+
+/// Tell the user (stderr, once) that the repository chose the model.
+pub fn announce_project_model(choice: &ModelChoice) {
+    if let ModelSource::DefaultModel { path } = &choice.source {
+        if is_project_sourced(choice) {
+            eprintln!(
+                "hone: using model {} (from {})",
+                choice.model,
+                path.display()
+            );
+        }
+    }
 }
 
 /// Format a config error as `hone: config error in <path>: <reason>`.

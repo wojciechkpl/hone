@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 
 use hone_proto::ModelId;
 
-use crate::{Config, ConfigError, WizardProviderConfig};
+use crate::policy::{read_checked_text, toml_location};
+use crate::{Config, ConfigError, PermissionError, WizardProviderConfig};
 
 const KNOWN_PREFIXES: [&str; 5] = [
     "anthropic:",
@@ -20,6 +21,7 @@ const KNOWN_PREFIXES: [&str; 5] = [
     "claude-cli:",
     "gemini-cli:",
 ];
+const CLI_PREFIXES: [&str; 2] = ["claude-cli:", "gemini-cli:"];
 const KNOWN_PROVIDERS: [&str; 3] = ["anthropic", "openai", "ollama"];
 const OLLAMA_DEFAULT_URL: &str = "http://localhost:11434";
 
@@ -31,30 +33,76 @@ pub struct ConfigLayer {
 }
 
 impl ConfigLayer {
-    /// Parse `raw` as the file at `path`.
+    /// Parse `raw` as the file at `path`. A parse error carries the message and
+    /// `line:column` only, never a line of the file.
     pub fn from_toml(path: impl Into<PathBuf>, raw: &str) -> Result<ConfigLayer, ConfigError> {
         let path = path.into();
         match toml::from_str::<Config>(raw) {
             Ok(config) => Ok(ConfigLayer { path, config }),
             Err(e) => Err(ConfigError::InvalidField {
                 path,
-                reason: e.to_string(),
+                reason: toml_location(raw, &e),
             }),
         }
     }
 
-    /// `Ok(None)` if the file does not exist; unreadable or unparsable files
-    /// are an error naming the path.
+    /// Load a file like `permissions.toml`: a regular file (symlinks followed) of
+    /// at most 64 KiB and valid UTF-8. `Ok(None)` if it does not exist; anything
+    /// else wrong is an error naming the path.
     pub fn load(path: &Path) -> Result<Option<ConfigLayer>, ConfigError> {
-        match std::fs::read_to_string(path) {
-            Ok(raw) => Self::from_toml(path, &raw).map(Some),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(ConfigError::InvalidField {
-                path: path.to_path_buf(),
-                reason: format!("cannot read file: {e}"),
-            }),
+        match read_checked_text(path) {
+            Ok(Some(raw)) => Self::from_toml(path, &raw).map(Some),
+            Ok(None) => Ok(None),
+            Err(e) => Err(invalid(path, permission_reason(e))),
         }
     }
+
+    /// Load the project layer: `<workdir>/.hone` and `<workdir>/.hone/config.toml`
+    /// must not be symlinks (the file comes with the repository), then the same
+    /// checks as [`ConfigLayer::load`].
+    pub fn load_project(workdir: &Path) -> Result<Option<ConfigLayer>, ConfigError> {
+        let dir = workdir.join(".hone");
+        let file = dir.join("config.toml");
+        for (p, what) in [(&dir, ".hone directory"), (&file, "config file")] {
+            match std::fs::symlink_metadata(p) {
+                Ok(m) if m.file_type().is_symlink() => {
+                    return Err(invalid(
+                        p,
+                        format!("the project {what} must not be a symlink"),
+                    ));
+                }
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(e) => return Err(invalid(p, format!("cannot read: {e}"))),
+            }
+        }
+        Self::load(&file)
+    }
+}
+
+fn permission_reason(e: PermissionError) -> String {
+    match e {
+        PermissionError::UnsafeFile { reason, .. } => reason,
+        PermissionError::Toml(m) => m,
+        PermissionError::Io(e) => format!("cannot read file: {e}"),
+        other => other.to_string(),
+    }
+}
+
+/// Check the model name (the part after the provider prefix): non-empty, no
+/// leading `-`, no whitespace or control characters. Guards against a name being
+/// read as a flag by an agent CLI.
+pub fn validate_model_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("the model name is empty".to_owned());
+    }
+    if name.starts_with('-') {
+        return Err("the model name must not start with '-'".to_owned());
+    }
+    if name.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err("the model name must not contain whitespace or control characters".to_owned());
+    }
+    Ok(())
 }
 
 /// Where an explicit model choice came from.
@@ -157,6 +205,27 @@ fn validate(layer: &ConfigLayer) -> Result<(), ConfigError> {
             ));
         }
     }
+    if let Some(m) = &cfg.default_model {
+        let name = KNOWN_PREFIXES
+            .iter()
+            .find_map(|p| m.as_str().strip_prefix(p))
+            .unwrap_or_default();
+        if let Err(why) = validate_model_name(name) {
+            return Err(invalid(path, format!("default_model '{m}': {why}")));
+        }
+    }
+    for (prov, p) in &cfg.providers {
+        if let Some(model) = &p.model {
+            if let Err(why) = validate_model_name(model) {
+                return Err(invalid(path, format!("[providers.{prov}].model: {why}")));
+            }
+        }
+    }
+    if let Some(model) = cfg.provider.as_ref().and_then(|w| w.model.as_deref()) {
+        if let Err(why) = validate_model_name(model) {
+            return Err(invalid(path, format!("[provider].model: {why}")));
+        }
+    }
     if let Some(b) = &cfg.budget {
         for (key, v) in [
             ("session_limit_usd", b.session_limit_usd),
@@ -230,6 +299,19 @@ fn collect_warnings(layer: &ConfigLayer, trusted: bool, out: &mut Vec<Warning>) 
     if trusted {
         return;
     }
+    if let Some(m) = &cfg.default_model {
+        if CLI_PREFIXES.iter().any(|p| m.as_str().starts_with(p)) {
+            warn(
+                out,
+                path,
+                format!(
+                    "default_model '{m}' is ignored in a project config (an agent CLI runs \
+                     its own tools outside hone's policy; choose it in the user config or \
+                     with --model)"
+                ),
+            );
+        }
+    }
     let mut names: Vec<&String> = cfg.providers.keys().collect();
     names.sort();
     for name in names {
@@ -300,10 +382,17 @@ pub fn resolve(
             model: ModelId::new(m),
             source: ModelSource::Cli,
         })
-    } else if let Some((l, m)) = [project, user]
+    } else if let Some((l, m)) = [(project, false), (user, true)]
         .into_iter()
-        .flatten()
-        .find_map(|l| l.config.default_model.clone().map(|m| (l, m)))
+        .filter_map(|(l, trusted)| l.map(|l| (l, trusted)))
+        .find_map(|(l, trusted)| {
+            l.config
+                .default_model
+                .clone()
+                // Choosing an agent CLI is trusted-only: a project file's choice falls through.
+                .filter(|m| trusted || !CLI_PREFIXES.iter().any(|p| m.as_str().starts_with(p)))
+                .map(|m| (l, m))
+        })
     {
         Some(ModelChoice {
             model: m,

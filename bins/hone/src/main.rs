@@ -555,31 +555,25 @@ fn api_provider_from_settings(eff: &Effective, command: &str) -> Result<Arc<dyn 
 async fn detect_provider(eff: &Effective) -> DetectedProvider {
     // Prefer direct Anthropic API — supports tool calling.
     if let Some(api_key) = eff.anthropic.api_key.clone() {
+        // Empty keys never get here: the resolver drops them.
         let var = eff.anthropic.api_key_env.as_deref().unwrap_or("ANTHROPIC_API_KEY");
-        if api_key.trim().is_empty() {
+        if !api_key.starts_with("sk-ant-") {
             eprintln!(
-                "{} {var} is set but empty. Skipping Anthropic provider.",
+                "{} {var} doesn't start with 'sk-ant-'. Is this correct?",
                 warn_style("Warning:")
             );
-        } else {
-            if !api_key.starts_with("sk-ant-") {
-                eprintln!(
-                    "{} {var} doesn't start with 'sk-ant-'. Is this correct?",
-                    warn_style("Warning:")
-                );
-            }
-            tracing::info!(
-                provider = "anthropic",
-                api = "http",
-                tools = true,
-                "provider detected"
-            );
-            return DetectedProvider {
-                provider: Arc::new(anthropic_provider(eff, api_key)),
-                model_id: ModelId::new(format!("anthropic:{}", eff.anthropic.default_model)),
-                supports_tools: true,
-            };
         }
+        tracing::info!(
+            provider = "anthropic",
+            api = "http",
+            tools = true,
+            "provider detected"
+        );
+        return DetectedProvider {
+            provider: Arc::new(anthropic_provider(eff, api_key)),
+            model_id: ModelId::new(format!("anthropic:{}", eff.anthropic.default_model)),
+            supports_tools: true,
+        };
     }
 
     // OpenAI API (or any OpenAI-compatible endpoint) — supports tool calling.
@@ -2473,7 +2467,11 @@ async fn main() -> Result<()> {
             "claude-cli:",
             "gemini-cli:",
         ];
-        if !known_prefixes.iter().any(|p| m.starts_with(p)) {
+        let name_ok = known_prefixes
+            .iter()
+            .find_map(|p| m.strip_prefix(p))
+            .is_none_or(|name| hone_config::resolve::validate_model_name(name).is_ok());
+        if !known_prefixes.iter().any(|p| m.starts_with(p)) || !name_ok {
             eprintln!("{} invalid model ID '{m}'", error_style("Error:"));
             eprintln!();
             eprintln!("Model IDs must start with a provider prefix:");
@@ -2489,7 +2487,17 @@ async fn main() -> Result<()> {
     }
     let mut detected = if let Some(choice) = &eff.model {
         match build_explicit_provider(choice, &eff) {
-            Ok(d) => d,
+            Ok(d) => {
+                settings::announce_project_model(choice);
+                d
+            }
+            // A repository's choice that can't be built (no key) must not stop every
+            // contributor without that key: warn and detect instead, with detection's
+            // own model id.
+            Err(msg) if settings::is_project_sourced(choice) => {
+                eprintln!("hone: warning: {msg}; falling back to auto-detection");
+                detect_provider(&eff).await
+            }
             Err(msg) => {
                 eprintln!("{} {msg}", error_style("Error:"));
                 std::process::exit(1);

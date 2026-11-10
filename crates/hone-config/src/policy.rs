@@ -454,8 +454,8 @@ fn sanitize_message(msg: &str) -> String {
     }
 }
 
-/// Convert a TOML error to a message with `line:column` and no file text.
-fn toml_error(content: &str, e: &toml::de::Error) -> PermissionError {
+/// A TOML error as a message with `line:column` and no file text.
+pub(crate) fn toml_location(content: &str, e: &toml::de::Error) -> String {
     let mut msg = sanitize_message(e.message());
     if let Some(span) = e.span() {
         let upto = content.get(..span.start).unwrap_or("");
@@ -463,7 +463,12 @@ fn toml_error(content: &str, e: &toml::de::Error) -> PermissionError {
         let col = upto.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
         msg.push_str(&format!(" at line {line}:{col}"));
     }
-    PermissionError::Toml(msg)
+    msg
+}
+
+/// Convert a TOML error to a message with `line:column` and no file text.
+fn toml_error(content: &str, e: &toml::de::Error) -> PermissionError {
+    PermissionError::Toml(toml_location(content, e))
 }
 
 fn unsafe_file(path: &Path, reason: &str) -> PermissionError {
@@ -473,13 +478,12 @@ fn unsafe_file(path: &Path, reason: &str) -> PermissionError {
     }
 }
 
-/// Load rules from a v1 or v2 policy file. A missing file yields no rules.
-///
-/// The path (symlinks followed) must be a regular file of at most 64 KiB.
-pub fn load_policy_file(path: &Path) -> Result<Vec<PolicyRule>, PermissionError> {
+/// Read a config-like file with the policy-file checks: a regular file (symlinks
+/// followed) of at most 64 KiB, valid UTF-8. `Ok(None)` when it does not exist.
+pub(crate) fn read_checked_text(path: &Path) -> Result<Option<String>, PermissionError> {
     let meta = match std::fs::metadata(path) {
         Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(PermissionError::Io(e)),
     };
     if !meta.is_file() {
@@ -492,8 +496,18 @@ pub fn load_policy_file(path: &Path) -> Result<Vec<PolicyRule>, PermissionError>
     if bytes.len() as u64 > MAX_FILE_BYTES {
         return Err(unsafe_file(path, "file exceeds 64 KiB"));
     }
-    let content = String::from_utf8(bytes)
-        .map_err(|_| PermissionError::Toml("file is not valid UTF-8".to_string()))?;
+    String::from_utf8(bytes)
+        .map(Some)
+        .map_err(|_| PermissionError::Toml("file is not valid UTF-8".to_string()))
+}
+
+/// Load rules from a v1 or v2 policy file. A missing file yields no rules.
+///
+/// The path (symlinks followed) must be a regular file of at most 64 KiB.
+pub fn load_policy_file(path: &Path) -> Result<Vec<PolicyRule>, PermissionError> {
+    let Some(content) = read_checked_text(path)? else {
+        return Ok(Vec::new());
+    };
     let probe: VersionProbe = toml::from_str(&content).map_err(|e| toml_error(&content, &e))?;
     if let Some(v) = probe.version {
         if v != 1 && v != 2 {

@@ -83,7 +83,8 @@ impl ModelProvider for GeminiCliProvider {
         let prompt = messages_to_prompt(&request.messages);
 
         let mut cmd = Command::new(&self.binary);
-        cmd.arg("-m").arg(&model_name);
+        // One token, so a model name can never be read as a separate flag.
+        cmd.arg(format!("--model={model_name}"));
 
         Ok(spawn_cli_stream_with_stdin(cmd, prompt))
     }
