@@ -20,6 +20,26 @@ pub enum StreamErrorKind {
     Provider { status: Option<u16> },
 }
 
+impl StreamErrorKind {
+    /// True if another attempt (or another provider) may succeed after a
+    /// failure of this kind before any output. An idle timeout is not retried
+    /// (a slow model would just be slow again); a provider-reported status
+    /// follows [`is_transient_status`]; anything else is worth another try.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            StreamErrorKind::Unclassified | StreamErrorKind::Interrupted => true,
+            StreamErrorKind::IdleTimeout => false,
+            StreamErrorKind::Provider { status: None } => true,
+            StreamErrorKind::Provider { status: Some(s) } => is_transient_status(*s),
+        }
+    }
+}
+
+/// True for an HTTP status that signals a transient condition: 429 or 5xx.
+pub fn is_transient_status(status: u16) -> bool {
+    status == 429 || (500..=599).contains(&status)
+}
+
 /// Events streamed from a model provider during completion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]

@@ -193,7 +193,7 @@ pub fn parse_ndjson_line(line: &str) -> Vec<ProviderEvent> {
             .map_or_else(|| err.to_string(), str::to_owned);
         return vec![ProviderEvent::Error {
             message,
-            kind: hone_proto::StreamErrorKind::Unclassified,
+            kind: hone_proto::StreamErrorKind::Provider { status: None },
         }];
     }
 

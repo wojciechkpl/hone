@@ -105,22 +105,58 @@ pub(crate) fn error_chain(e: &dyn std::error::Error) -> String {
     out
 }
 
-/// The adapters that stream over HTTP (their names appear in error messages).
-const HTTP_ADAPTERS: [&str; 3] = ["openai", "anthropic", "ollama"];
-
 /// Message for a response that went silent for longer than the idle limit.
-/// `is_idle_timeout_message` recognises exactly this shape.
 pub(crate) fn timed_out_message(provider: &str, cause: &str) -> String {
     format!("{provider} response timed out: {cause}")
 }
 
-/// True for a message produced by [`timed_out_message`] for one of our HTTP
-/// adapters. Only the exact prefix counts, so a provider's own in-band text
-/// that merely mentions a timeout is never taken for an idle timeout.
-pub(crate) fn is_idle_timeout_message(message: &str) -> bool {
-    HTTP_ADAPTERS
+/// Status implied by a provider's error name (`error.type` / a named `error.code`).
+/// Exact and case-sensitive.
+const ERROR_NAMES: [(&str, u16); 11] = [
+    ("invalid_request_error", 400),
+    ("authentication_error", 401),
+    ("permission_error", 403),
+    ("not_found_error", 404),
+    ("request_too_large", 413),
+    ("rate_limit_error", 429),
+    ("api_error", 500),
+    ("overloaded_error", 529),
+    ("server_error", 500),
+    ("context_length_exceeded", 400),
+    ("rate_limit_exceeded", 429),
+];
+
+fn status_for_name(name: &str) -> Option<u16> {
+    ERROR_NAMES
         .iter()
-        .any(|p| message.starts_with(&timed_out_message(p, "")))
+        .find(|(n, _)| *n == name)
+        .map(|(_, status)| *status)
+}
+
+fn valid_status(n: u64) -> Option<u16> {
+    u16::try_from(n).ok().filter(|s| (100..=599).contains(s))
+}
+
+/// Status of an OpenAI-compatible in-band `error` object, first match wins:
+/// `code` an integer in 100-599; `code` a digit string in 100-599; `code` a
+/// known name; `type` a known name; otherwise none.
+pub(crate) fn openai_error_status(err: &serde_json::Value) -> Option<u16> {
+    let code = &err["code"];
+    code.as_u64()
+        .and_then(valid_status)
+        .or_else(|| {
+            code.as_str()
+                .filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|s| s.parse::<u64>().ok())
+                .and_then(valid_status)
+        })
+        .or_else(|| code.as_str().and_then(status_for_name))
+        .or_else(|| err["type"].as_str().and_then(status_for_name))
+}
+
+/// Status of an Anthropic `error` event's `error.type`, if it is a known name.
+pub(crate) fn anthropic_error_status(err: &serde_json::Value) -> Option<u16> {
+    err["type"].as_str().and_then(status_for_name)
 }
 
 /// Tracks how a provider's event stream ends. A stream is *complete* once a
@@ -176,15 +212,21 @@ impl StreamProgress {
             return Vec::new();
         }
         self.failed = true;
-        let message = match cause {
-            Some(e) if e.is_timeout() => timed_out_message(provider, &error_chain(e)),
-            Some(e) => format!("{provider} response interrupted: {}", error_chain(e)),
-            None => format!("{provider} response ended before it was complete"),
+        let (message, kind) = match cause {
+            Some(e) if e.is_timeout() => (
+                timed_out_message(provider, &error_chain(e)),
+                hone_proto::StreamErrorKind::IdleTimeout,
+            ),
+            Some(e) => (
+                format!("{provider} response interrupted: {}", error_chain(e)),
+                hone_proto::StreamErrorKind::Interrupted,
+            ),
+            None => (
+                format!("{provider} response ended before it was complete"),
+                hone_proto::StreamErrorKind::Interrupted,
+            ),
         };
-        vec![hone_proto::ProviderEvent::Error {
-            message,
-            kind: hone_proto::StreamErrorKind::Unclassified,
-        }]
+        vec![hone_proto::ProviderEvent::Error { message, kind }]
     }
 }
 

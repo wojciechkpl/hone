@@ -69,7 +69,7 @@ impl ProviderError {
             ProviderError::RateLimit { .. }
             | ProviderError::Timeout { .. }
             | ProviderError::Stream { .. } => true,
-            ProviderError::Http { status, .. } => *status == 429 || (500..=599).contains(status),
+            ProviderError::Http { status, .. } => hone_proto::is_transient_status(*status),
             ProviderError::ModelNotFound { .. } | ProviderError::Serialization(_) => false,
         }
     }

@@ -403,7 +403,9 @@ pub fn parse_sse_data(
                 .map_or_else(|| err.to_string(), str::to_owned);
             events.push(ProviderEvent::Error {
                 message,
-                kind: hone_proto::StreamErrorKind::Unclassified,
+                kind: hone_proto::StreamErrorKind::Provider {
+                    status: super::http_common::anthropic_error_status(err),
+                },
             });
         }
         _ => {}
