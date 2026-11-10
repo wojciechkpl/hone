@@ -487,7 +487,7 @@ daily_limit_usd = 10.0
 allowed_commands = ["ls"]
 [[routing]]
 task = "file_read"
-model = "fast"
+model = "anthropic:fast"
 [server]
 port = 4000
 "#,
@@ -500,14 +500,14 @@ port = 4000
         assert!(ws.iter().any(|w| w.message.contains(needle)), "no warning for {needle}: {all}");
     }
     assert!(all.contains("permissions.toml") && all.contains("HONE_SANDBOX_"), "sandbox alternative: {all}");
-    assert!(all.contains("--model") && all.contains("default_model"), "routing alternative: {all}");
+    // (The routing warning is now about an unknown `task`; see routing_resolve.rs for G1.)
     assert!(all.contains("HONE_BIND") && all.contains("HONE_AUTH_TOKEN"), "server alternative: {all}");
     assert_eq!(e.session_limit_usd, None, "daily limit is not a session limit");
 }
 
 #[test]
 fn test_c8_project_file_gets_the_same_warnings_with_its_own_path() {
-    let p = project("[budget]\ndaily_limit_usd = 1.0\n[[routing]]\ntask = \"t\"\nmodel = \"m\"\n");
+    let p = project("[budget]\ndaily_limit_usd = 1.0\n[[routing]]\ntask = \"t\"\nmodel = \"anthropic:m\"\n");
     let e = run(None, Some(&p), None, &no_env());
     assert_eq!(warnings_for(&e, PROJECT_PATH).len(), 2, "{:?}", e.warnings);
 }

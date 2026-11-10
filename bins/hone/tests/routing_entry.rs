@@ -1,0 +1,667 @@
+#![cfg(unix)]
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+//! G6, G7, G9 and G10 (`docs/plans/routing-fallback-spec.md`) through the `hone` binary.
+//!
+//! Two raw HTTP mocks: an OpenAI-compatible one (reached through `HONE_OPENAI_BASE_URL`) and an
+//! Ollama one (NDJSON on `/api/chat`, reached through `[providers.ollama].base_url` in the user
+//! config). Each counts and records its requests and scripts one reply per request (the last
+//! entry repeats). HOME and the working directory are temp dirs; the user config is
+//! `$HOME/.config/hone/config.toml`, the project config `<wd>/.hone/config.toml`.
+//!
+//! Prompts come from `crates/hone-core/src/complexity.rs`: "fix typo in README" is Simple,
+//! "implement a new caching layer across modules" is Complex.
+//! Credential-shaped fixtures are built at runtime. Every child has a timeout.
+
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use serde_json::{Value, json};
+
+const SIMPLE: &str = "fix typo in README";
+const COMPLEX: &str = "implement a new caching layer across modules";
+
+// -- mocks -----------------------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug)]
+enum Kind {
+    OpenAi,
+    Ollama,
+}
+
+#[derive(Clone, Debug)]
+enum Reply {
+    Answer(&'static str),
+    /// A failure before any output (retryable).
+    FailBeforeOutput,
+}
+
+#[derive(Clone, Debug)]
+struct Recorded {
+    path: String,
+    body: Value,
+}
+
+struct Mock {
+    url: String,
+    seen: Arc<Mutex<Vec<Recorded>>>,
+}
+
+impl Mock {
+    fn start(kind: Kind, script: Vec<Reply>) -> Mock {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let seen: Arc<Mutex<Vec<Recorded>>> = Arc::new(Mutex::new(Vec::new()));
+        let counter = Arc::new(AtomicUsize::new(0));
+        let (s, c) = (Arc::clone(&seen), counter);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { continue };
+                let n = c.fetch_add(1, Ordering::SeqCst);
+                let reply = script[n.min(script.len() - 1)].clone();
+                let s = Arc::clone(&s);
+                std::thread::spawn(move || serve_one(stream, kind, reply, &s));
+            }
+        });
+        Mock { url, seen }
+    }
+
+    fn count(&self) -> usize {
+        self.seen.lock().unwrap().len()
+    }
+
+    fn models(&self) -> Vec<String> {
+        self.seen
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|r| r.body["model"].as_str().unwrap_or_default().to_owned())
+            .collect()
+    }
+
+    fn bodies(&self) -> Vec<Value> {
+        self.seen
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|r| r.body.clone())
+            .collect()
+    }
+}
+
+fn sse(v: Value) -> String {
+    format!("data: {v}\n\n")
+}
+
+fn body_for(kind: Kind, reply: &Reply) -> String {
+    match (kind, reply) {
+        (Kind::OpenAi, Reply::Answer(t)) => {
+            let text =
+                sse(json!({"choices":[{"index":0,"delta":{"content":t},"finish_reason":null}]}));
+            let fin = sse(
+                json!({"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2}}),
+            );
+            format!("{text}{fin}data: [DONE]\n\n")
+        }
+        (Kind::OpenAi, Reply::FailBeforeOutput) => {
+            let e = sse(json!({"error":{"message":"openai mock overloaded","code":502}}));
+            format!("{e}data: [DONE]\n\n")
+        }
+        (Kind::Ollama, Reply::Answer(t)) => format!(
+            "{}\n{}\n",
+            json!({"model":"m","message":{"role":"assistant","content":t},"done":false}),
+            json!({"model":"m","message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":3,"eval_count":2}),
+        ),
+        (Kind::Ollama, Reply::FailBeforeOutput) => {
+            format!("{}\n", json!({"error": "ollama mock exploded"}))
+        }
+    }
+}
+
+fn serve_one(mut stream: TcpStream, kind: Kind, reply: Reply, seen: &Mutex<Vec<Recorded>>) {
+    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    let header_end = loop {
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => return,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+        }
+        if let Some(p) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            break p + 4;
+        }
+    };
+    let head = String::from_utf8_lossy(&buf[..header_end]).into_owned();
+    let lower = head.to_ascii_lowercase();
+    let len = lower
+        .lines()
+        .find_map(|l| {
+            l.strip_prefix("content-length:")
+                .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+        })
+        .unwrap_or(0);
+    while buf.len() < header_end + len {
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+        }
+    }
+    let path = head
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("")
+        .to_owned();
+    let body: Value = serde_json::from_slice(&buf[header_end..]).unwrap_or(Value::Null);
+    seen.lock().unwrap().push(Recorded { path, body });
+
+    let payload = body_for(kind, &reply);
+    let ct = match kind {
+        Kind::OpenAi => "text/event-stream",
+        Kind::Ollama => "application/x-ndjson",
+    };
+    let resp = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: {ct}\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{payload}",
+        payload.len()
+    );
+    let _ = stream.write_all(resp.as_bytes());
+    let _ = stream.flush();
+}
+
+// -- harness -----------------------------------------------------------------------------------------
+
+struct Env {
+    _tmp: tempfile::TempDir,
+    root: PathBuf,
+    bin_dir: PathBuf,
+    home: PathBuf,
+    wd: PathBuf,
+}
+
+impl Env {
+    fn new() -> Env {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(tmp.path()).unwrap();
+        let (bin_dir, home, wd) = (root.join("bin"), root.join("home"), root.join("wd"));
+        for d in [&bin_dir, &home, &wd] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        Env {
+            _tmp: tmp,
+            root,
+            bin_dir,
+            home,
+            wd,
+        }
+    }
+    fn user_config(&self) -> PathBuf {
+        self.home.join(".config/hone/config.toml")
+    }
+    fn project_config(&self) -> PathBuf {
+        self.wd.join(".hone/config.toml")
+    }
+}
+
+fn write(path: &Path, body: &str) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, body).unwrap();
+}
+
+struct Out {
+    code: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
+impl Out {
+    fn json(&self) -> Value {
+        serde_json::from_str(&self.stdout).unwrap_or_else(|e| {
+            panic!(
+                "--json stdout must be JSON ({e}): {}\nstderr: {}",
+                self.stdout, self.stderr
+            )
+        })
+    }
+}
+
+/// Run `hone --json` with the OpenAI-compatible mock wired through the environment.
+fn hone_json(e: &Env, openai: Option<&Mock>, model: Option<&str>, prompt: &str) -> Out {
+    let token = format!("sk-{}", "fixture0123456789");
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_hone"));
+    cmd.env_clear()
+        .env("HOME", &e.home)
+        .env("PATH", format!("{}:/usr/bin:/bin", e.bin_dir.display()))
+        .env("HONE_DISABLE_PERSISTENT_STORES", "1")
+        .env("OPENAI_API_KEY", token)
+        .current_dir(&e.wd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(m) = openai {
+        cmd.env("HONE_OPENAI_BASE_URL", &m.url);
+    }
+    cmd.args(["--no-clarify", "--no-inject", "--json"]);
+    if let Some(m) = model {
+        cmd.args(["--model", m]);
+    }
+    cmd.arg(prompt);
+    let child = cmd.spawn().expect("spawn hone");
+    let pid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+    match rx.recv_timeout(Duration::from_secs(90)) {
+        Ok(Ok(o)) => Out {
+            code: o.status.code(),
+            stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&o.stderr).into_owned(),
+        },
+        _ => {
+            let _ = Command::new("kill").arg("-9").arg(pid.to_string()).status();
+            panic!("hone timed out");
+        }
+    }
+}
+
+/// User config: `default_model = "openai:main-model"` and the Ollama endpoint, plus `extra`.
+fn user_config(ollama: &Mock, extra: &str) -> String {
+    format!(
+        "default_model = \"openai:main-model\"\n{extra}\n[providers.ollama]\nbase_url = {:?}\n",
+        ollama.url
+    )
+}
+
+fn answer(t: &'static str) -> Vec<Reply> {
+    vec![Reply::Answer(t)]
+}
+
+fn write_fake_claude(e: &Env) -> PathBuf {
+    let marker = e.bin_dir.join("claude-was-run");
+    let bin = e.bin_dir.join("claude");
+    std::fs::write(
+        &bin,
+        format!(
+            "#!/bin/sh\ncase \"$1\" in --version|-v) echo 1.0.0; exit 0;; esac\ntouch '{}'\necho '{{\"type\":\"result\",\"result\":\"fake\"}}'\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    marker
+}
+
+// -- G9: nothing changes without the new config ---------------------------------------------------------
+
+#[test]
+fn test_g9_without_routing_or_fallback_the_request_and_json_output_are_the_established_ones() {
+    let e = Env::new();
+    let openai = Mock::start(Kind::OpenAi, answer("mock reply"));
+
+    let o = hone_json(&e, Some(&openai), None, "say hi");
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert_eq!(openai.count(), 1);
+    // Pinned golden values of the request.
+    let body = &openai.bodies()[0];
+    assert_eq!(body["model"], "gpt-4o");
+    assert_eq!(body["stream"], true);
+    assert_eq!(body["stream_options"], json!({"include_usage": true}));
+    let mut keys: Vec<&str> = body
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        ["messages", "model", "stream", "stream_options", "tools"]
+    );
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(messages[0]["role"], "system");
+    assert_eq!(
+        messages.last().unwrap(),
+        &json!({"role": "user", "content": "say hi"})
+    );
+    assert_eq!(openai.seen.lock().unwrap()[0].path, "/v1/chat/completions");
+    // Pinned golden values of the --json output.
+    let v = o.json();
+    let mut out_keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    out_keys.sort_unstable();
+    assert_eq!(
+        out_keys,
+        [
+            "cost_usd",
+            "error",
+            "model",
+            "response",
+            "success",
+            "tool_calls",
+            "usage"
+        ]
+    );
+    assert_eq!(v["model"], "openai:gpt-4o");
+    assert_eq!(v["response"], "mock reply");
+    assert_eq!(v["success"], true);
+    assert_eq!(v["usage"]["input"], 3);
+    assert_eq!(v["usage"]["output"], 2);
+    assert!(
+        !o.stderr.contains("using"),
+        "no routing notice: {}",
+        o.stderr
+    );
+}
+
+#[test]
+fn test_g9_empty_new_keys_change_nothing() {
+    let plain_env = Env::new();
+    let plain_mock = Mock::start(Kind::OpenAi, answer("mock reply"));
+    let plain = hone_json(&plain_env, Some(&plain_mock), None, SIMPLE);
+
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("mock reply"));
+    write(
+        &e.user_config(),
+        &format!(
+            "fallback_models = []\n[providers.ollama]\nbase_url = {:?}\n",
+            ollama.url
+        ),
+    );
+
+    let o = hone_json(&e, Some(&openai), None, SIMPLE);
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert_eq!(
+        openai.bodies(),
+        plain_mock.bodies(),
+        "byte-for-byte the same request"
+    );
+    assert_eq!(o.json(), plain.json());
+    assert_eq!(ollama.count(), 0);
+}
+
+// -- G10 (a): routing by tier -----------------------------------------------------------------------------
+
+#[test]
+fn test_g10a_a_simple_prompt_is_routed_to_ollama_and_a_complex_one_stays_on_the_default() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    write(
+        &e.user_config(),
+        &user_config(
+            &ollama,
+            "[[routing]]\ntask = \"simple\"\nmodel = \"ollama:qwen-test\"\n",
+        ),
+    );
+
+    let o = hone_json(&e, Some(&openai), None, SIMPLE);
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert_eq!(
+        (ollama.count(), openai.count()),
+        (1, 0),
+        "only the Ollama mock: {}",
+        o.stderr
+    );
+    assert_eq!(ollama.models(), vec!["qwen-test".to_owned()]);
+    let v = o.json();
+    assert_eq!(v["model"], "ollama:qwen-test");
+    assert_eq!(v["response"], "ollama says hi");
+    assert!(
+        o.stderr
+            .contains("hone: using ollama:qwen-test for this simple request (from [[routing]] in "),
+        "{}",
+        o.stderr
+    );
+    assert!(
+        o.stderr.contains(".config/hone/config.toml)"),
+        "{}",
+        o.stderr
+    );
+
+    let o = hone_json(&e, Some(&openai), None, COMPLEX);
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert_eq!(
+        (ollama.count(), openai.count()),
+        (1, 1),
+        "the complex prompt reaches only OpenAI"
+    );
+    assert_eq!(openai.models(), vec!["main-model".to_owned()]);
+    assert_eq!(o.json()["model"], "openai:main-model");
+    assert!(
+        !o.stderr.contains("hone: using"),
+        "no notice without routing: {}",
+        o.stderr
+    );
+}
+
+// -- G10 (b)-(d): fallback models ----------------------------------------------------------------------------
+
+#[test]
+fn test_g10b_a_provider_failing_before_output_falls_back_to_the_listed_model() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama rescued it"));
+    let openai = Mock::start(Kind::OpenAi, vec![Reply::FailBeforeOutput]);
+    write(
+        &e.user_config(),
+        &user_config(&ollama, "fallback_models = [\"ollama:fb-test\"]\n"),
+    );
+
+    let o = hone_json(&e, Some(&openai), None, "say hi");
+
+    let v = o.json();
+    assert_eq!(v["success"], true, "{v}\nstderr: {}", o.stderr);
+    assert_eq!(v["response"], "ollama rescued it");
+    assert_eq!(ollama.models(), vec!["fb-test".to_owned()]);
+    assert!(openai.count() >= 1);
+}
+
+#[test]
+fn test_g10c_an_unreachable_openai_endpoint_falls_back_to_ollama() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama rescued it"));
+    // A port nobody listens on.
+    let closed = {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        format!("http://{}", l.local_addr().unwrap())
+    };
+    let dead = Mock {
+        url: closed,
+        seen: Arc::new(Mutex::new(Vec::new())),
+    };
+    write(
+        &e.user_config(),
+        &user_config(&ollama, "fallback_models = [\"ollama:fb-test\"]\n"),
+    );
+
+    let o = hone_json(&e, Some(&dead), None, "say hi");
+
+    let v = o.json();
+    assert_eq!(v["success"], true, "{v}\nstderr: {}", o.stderr);
+    assert_eq!(v["response"], "ollama rescued it");
+    assert_eq!(ollama.count(), 1);
+}
+
+#[test]
+fn test_g10d_dash_dash_model_pins_exactly_that_model_with_no_fallback() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama rescued it"));
+    let openai = Mock::start(Kind::OpenAi, vec![Reply::FailBeforeOutput]);
+    write(
+        &e.user_config(),
+        &user_config(&ollama, "fallback_models = [\"ollama:fb-test\"]\n"),
+    );
+
+    let o = hone_json(&e, Some(&openai), Some("openai:pinned-model"), "say hi");
+
+    let v = o.json();
+    assert_eq!(v["success"], false, "{v}\nstderr: {}", o.stderr);
+    assert_eq!(ollama.count(), 0, "no fallback after --model");
+    assert!(openai.count() >= 1);
+    assert_eq!(openai.models()[0], "pinned-model");
+}
+
+// -- G10 (e), (f): routing entries that cannot be used --------------------------------------------------------
+
+#[test]
+fn test_g10e_routing_to_a_provider_without_a_key_warns_and_uses_the_default_model() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    write(
+        &e.user_config(),
+        &user_config(
+            &ollama,
+            "[[routing]]\ntask = \"simple\"\nmodel = \"anthropic:claude-x\"\n",
+        ),
+    );
+
+    let o = hone_json(&e, Some(&openai), None, SIMPLE);
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert!(
+        o.stderr.contains("warning") && o.stderr.to_lowercase().contains("anthropic"),
+        "{}",
+        o.stderr
+    );
+    assert_eq!(openai.models(), vec!["main-model".to_owned()]);
+    assert_eq!(o.json()["model"], "openai:main-model");
+    assert!(!o.stderr.contains("hone: using"), "{}", o.stderr);
+}
+
+#[test]
+fn test_g10f_routing_to_an_agent_cli_model_warns_and_is_ignored() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    let marker = write_fake_claude(&e);
+    write(
+        &e.user_config(),
+        &user_config(
+            &ollama,
+            "[[routing]]\ntask = \"simple\"\nmodel = \"claude-cli:claude-x\"\n",
+        ),
+    );
+
+    let o = hone_json(&e, Some(&openai), None, SIMPLE);
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert!(
+        o.stderr.contains("warning") && o.stderr.contains("claude-cli"),
+        "{}",
+        o.stderr
+    );
+    assert!(!marker.exists(), "an agent CLI can never be routed to");
+    assert_eq!(openai.count(), 1);
+}
+
+// -- G10 (g): project over user ---------------------------------------------------------------------------------
+
+#[test]
+fn test_g10g_project_routing_overrides_the_users_for_that_tier_only() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    write(
+        &e.user_config(),
+        &user_config(
+            &ollama,
+            "[[routing]]\ntask = \"simple\"\nmodel = \"ollama:user-simple\"\n[[routing]]\ntask = \"complex\"\nmodel = \"ollama:user-complex\"\n",
+        ),
+    );
+    write(
+        &e.project_config(),
+        "[[routing]]\ntask = \"simple\"\nmodel = \"ollama:project-simple\"\n",
+    );
+
+    let simple = hone_json(&e, Some(&openai), None, SIMPLE);
+    assert_eq!(simple.code, Some(0), "stderr: {}", simple.stderr);
+    assert_eq!(simple.json()["model"], "ollama:project-simple");
+    assert!(
+        simple.stderr.contains(".hone/config.toml)"),
+        "the notice names the project file: {}",
+        simple.stderr
+    );
+
+    let complex = hone_json(&e, Some(&openai), None, COMPLEX);
+    assert_eq!(complex.code, Some(0), "stderr: {}", complex.stderr);
+    assert_eq!(complex.json()["model"], "ollama:user-complex");
+    assert!(
+        complex.stderr.contains(".config/hone/config.toml)"),
+        "{}",
+        complex.stderr
+    );
+
+    assert_eq!(
+        ollama.models(),
+        vec!["project-simple".to_owned(), "user-complex".to_owned()]
+    );
+    assert_eq!(openai.count(), 0);
+}
+
+// -- G6 / G7: pinned model and agent-CLI sessions ------------------------------------------------------------------
+
+#[test]
+fn test_g7_dash_dash_model_disables_routing() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    write(
+        &e.user_config(),
+        &user_config(
+            &ollama,
+            "[[routing]]\ntask = \"simple\"\nmodel = \"ollama:qwen-test\"\n",
+        ),
+    );
+
+    let o = hone_json(&e, Some(&openai), Some("openai:pinned-model"), SIMPLE);
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert_eq!(ollama.count(), 0);
+    assert_eq!(openai.models(), vec!["pinned-model".to_owned()]);
+    assert_eq!(o.json()["model"], "openai:pinned-model");
+    assert!(!o.stderr.contains("hone: using"), "{}", o.stderr);
+}
+
+#[test]
+fn test_g6_routing_and_fallback_are_not_applied_with_an_agent_cli_model() {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, answer("ollama says hi"));
+    let openai = Mock::start(Kind::OpenAi, answer("openai says hi"));
+    let _marker = write_fake_claude(&e);
+    write(
+        &e.user_config(),
+        &format!(
+            "default_model = \"claude-cli:claude-x\"\nfallback_models = [\"ollama:fb\"]\n[[routing]]\ntask = \"simple\"\nmodel = \"ollama:qwen-test\"\n[providers.ollama]\nbase_url = {:?}\n",
+            ollama.url
+        ),
+    );
+
+    let o = hone_json(&e, Some(&openai), None, SIMPLE);
+
+    assert_eq!(
+        o.stderr
+            .matches("not applied with an agent CLI model")
+            .count(),
+        2,
+        "one warning each for [[routing]] and fallback_models: {}",
+        o.stderr
+    );
+    assert_eq!(
+        (ollama.count(), openai.count()),
+        (0, 0),
+        "nothing is routed away from the CLI"
+    );
+    let _ = e.root;
+}

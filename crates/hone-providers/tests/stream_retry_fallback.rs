@@ -754,3 +754,53 @@ async fn test_e7_caching_provider_passes_the_kind_through() {
 
     assert_eq!(events, vec![tok("par"), failure]);
 }
+
+// -- G5: no answer at all moves on ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_g5_chain_moves_on_when_a_member_got_no_response() {
+    let (a, a_calls) = Scripted::new(
+        "a",
+        vec![Call::Fail(ErrSpec::Http(
+            0,
+            "error sending request for url (http://x/)",
+        ))],
+    );
+    let (b, b_calls) = Scripted::new("b", vec![ok(vec![tok("b"), ProviderEvent::Done])]);
+
+    let events = events_of(&chain(vec![a, b]), request()).await;
+
+    assert_eq!(events, vec![tok("b"), ProviderEvent::Done]);
+    assert_eq!((count(&a_calls), count(&b_calls)), (1, 1));
+}
+
+#[tokio::test]
+async fn test_g5_tier_fallback_moves_on_when_the_primary_got_no_response() {
+    let t = tier(
+        Scripted::new(
+            "primary",
+            vec![Call::Fail(ErrSpec::Http(0, "error sending request"))],
+        ),
+        good("c1", "fallback-ok"),
+        good("c2", "unused"),
+    );
+
+    let events = events_of(&t.fallback, request()).await;
+
+    assert_eq!(events, vec![tok("fallback-ok"), ProviderEvent::Done]);
+    assert_eq!(count(&t.c1_calls), 1);
+}
+
+#[tokio::test]
+async fn test_g5_a_client_error_still_stops_the_chain() {
+    let (a, _) = Scripted::new("a", vec![Call::Fail(ErrSpec::Http(401, "bad key"))]);
+    let (b, b_calls) = Scripted::new("b", vec![ok(vec![tok("b"), ProviderEvent::Done])]);
+
+    let e = expect_err(&chain(vec![a, b]), request()).await;
+
+    assert!(
+        matches!(e, ProviderError::Http { status: 401, .. }),
+        "{e:?}"
+    );
+    assert_eq!(count(&b_calls), 0);
+}
