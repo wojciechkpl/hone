@@ -3183,6 +3183,29 @@ async fn run_tui(
     // The model the agent is currently set to, and the label shown in the status bar.
     let mut applied_model: ModelId = model_id.clone();
     let mut shown_model: String = model_id.to_string();
+    // A `/model` accepted while a turn is running waits for the turn to end, so one
+    // turn (answer, critique, refine, test-fix follow-ups) never spans two models.
+    let mut deferred_model: Option<(String, ModelId)> = None;
+    // The most recent turn task, to tell when it has really finished (a medium turn
+    // or the automatic test fix keeps running after the first `Done`).
+    let mut last_turn_task: Option<tokio::task::AbortHandle> = None;
+    // Apply a checked model switch: agent, status bar, confirmation, and the pin
+    // (routing stops for the rest of the session; fallback models still apply).
+    macro_rules! apply_model_switch {
+        ($new_model:expr, $model:expr) => {{
+            let new_model: String = $new_model;
+            let model: ModelId = $model;
+            agent.set_model(model.clone()).await;
+            app.status_mut().model = new_model.clone();
+            app.status_mut().context_limit = model_context_limit(&new_model);
+            app.push_system_message(format!("Model changed to: {new_model}"));
+            shown_model = new_model;
+            applied_model = model.clone();
+            if routing.is_some() {
+                pinned_model = Some(model);
+            }
+        }};
+    }
 
     // Load saved sessions into the session-switcher overlay.
     if let Some(store) = open_session_store().await {
@@ -3453,6 +3476,11 @@ async fn run_tui(
                                 // Pick this turn's model: pinned, else the [[routing]] model for the
                                 // tier, else the session default. Simple/medium turns run on the
                                 // agent (set its model); orchestrated turns use the config clone.
+                                // A change still waiting for the previous turn must be in
+                                // place (and pinned) before this turn's model is chosen.
+                                if let Some((new_model, model)) = deferred_model.take() {
+                                    apply_model_switch!(new_model, model);
+                                }
                                 let turn_model_choice = routing.as_ref().map(|r| {
                                     turn_model(
                                         &r.eff,
@@ -3553,6 +3581,7 @@ async fn run_tui(
                                         }
                                     }
                                 };
+                                last_turn_task = Some(task_handle.abort_handle());
                                 current_task_abort = Some(task_handle.abort_handle());
 
                                 // After the turn is dispatched, clear the mode label
@@ -3647,9 +3676,13 @@ async fn run_tui(
         }
 
         // Handle pending model changes from /model or /configure model. This runs on
-        // every loop iteration, after any key handling (not only on Enter while idle),
-        // so a `/model` typed during a turn is checked and confirmed at once; the agent
-        // applies `set_model` between turns, so "next turn" is accurate.
+        // every loop iteration, after any key handling, so a `/model` typed during a
+        // turn is checked and answered at once. While a turn is running (the app is
+        // not idle, or its task has not finished) an accepted change is only stored
+        // and applied when the turn ends; the last accepted one wins.
+        let turn_busy = !matches!(app.state(), AppState::Idle | AppState::Error(_))
+            || last_turn_task.as_ref().is_some_and(|t| !t.is_finished());
+        let mut to_apply: Option<(String, ModelId)> = None;
         if let Some(new_model) = app.take_pending_model_change() {
             // In an API session `/model` goes through the same check as
             // everything else: an API prefix whose provider is configured.
@@ -3658,27 +3691,28 @@ async fn run_tui(
                 None => Ok(ModelId::new(&new_model)),
             };
             match checked {
-                Ok(model) => {
-                    agent.set_model(model.clone()).await;
-                    // Confirm only now that the switch was checked.
-                    app.status_mut().model = new_model.clone();
-                    app.status_mut().context_limit = model_context_limit(&new_model);
+                Ok(model) if turn_busy => {
                     app.push_system_message(format!(
-                        "Model changed to: {new_model}  (takes effect on next turn)"
+                        "Model will change to {new_model} when the current turn ends"
                     ));
-                    shown_model = new_model.clone();
-                    applied_model = model.clone();
-                    // Pin it: routing stops for the rest of the session
-                    // (fallback models still apply).
-                    if routing.is_some() {
-                        pinned_model = Some(model);
-                    }
+                    deferred_model = Some((new_model, model));
+                }
+                Ok(model) => {
+                    deferred_model = None;
+                    to_apply = Some((new_model, model));
                 }
                 Err(msg) => {
                     // Keep the current model and say why.
                     app.push_error(msg);
                 }
             }
+        }
+        // The turn ended: apply the change that was waiting for it.
+        if to_apply.is_none() && !turn_busy {
+            to_apply = deferred_model.take();
+        }
+        if let Some((new_model, model)) = to_apply {
+            apply_model_switch!(new_model, model);
         }
 
         // Refresh context-window stats in the status bar.
