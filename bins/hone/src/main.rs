@@ -627,7 +627,17 @@ fn build_model_dispatch(
     };
     for tier in [Tier::Simple, Tier::Medium, Tier::Complex] {
         if let Some(r) = eff.routing.get(tier) {
-            if !dispatch.has_provider_for(&r.model) {
+            if dispatch.has_provider_for(&r.model) {
+                // A repository chose this model: say so, as for its default_model.
+                if settings::is_project_config_path(&r.path) {
+                    eprintln!(
+                        "hone: routing {} requests to {} (from {})",
+                        tier.as_str(),
+                        r.model,
+                        r.path.display()
+                    );
+                }
+            } else {
                 eprintln!(
                     "hone: warning: {}: [[routing]] {} -> {} is not used: {}; using the default model",
                     r.path.display(),
@@ -3205,6 +3215,8 @@ async fn run_tui(
         .map(|store| Arc::new(AdaptiveClassifier::new(Arc::clone(store))));
     let mut current_tier: Option<ComplexityTier> = None;
     let mut current_turn_prompt = String::new();
+    // The model the running turn was sent to (for outcome records).
+    let mut current_turn_model: String = model_id.to_string();
 
     // Install a SIGINT handler so the process shuts down cleanly when the
     // terminal sends Ctrl+C at the OS level (e.g. from a wrapper script).
@@ -3307,8 +3319,13 @@ async fn run_tui(
                                 match checked {
                                     Ok(model) => {
                                         agent.set_model(model.clone()).await;
+                                        // Confirm only now that the switch was checked.
+                                        app.status_mut().model = new_model.clone();
                                         app.status_mut().context_limit =
                                             model_context_limit(&new_model);
+                                        app.push_system_message(format!(
+                                            "Model changed to: {new_model}  (takes effect on next turn)"
+                                        ));
                                         shown_model = new_model.clone();
                                         applied_model = model.clone();
                                         // Pin it: routing stops for the rest of the session
@@ -3319,7 +3336,6 @@ async fn run_tui(
                                     }
                                     Err(msg) => {
                                         // Keep the current model and say why.
-                                        app.status_mut().model = shown_model.clone();
                                         app.push_error(msg);
                                     }
                                 }
@@ -3334,8 +3350,20 @@ async fn run_tui(
                             // in-process and surface the result through the
                             // plan-preview overlay.
                             if let Some(plan_prompt) = app.take_pending_plan_prompt() {
+                                // /plan decomposes with the model a Complex turn would use.
+                                let mut plan_config = base_config.clone();
+                                if let Some(r) = &routing {
+                                    plan_config.model = turn_model(
+                                        &r.eff,
+                                        Tier::Complex,
+                                        pinned_model.as_ref(),
+                                        &model_id,
+                                        &|m| r.dispatch.has_provider_for(m),
+                                    )
+                                    .model;
+                                }
                                 match dispatch_plan_decompose(
-                                    base_config.clone(),
+                                    plan_config,
                                     app.working_dir().to_path_buf(),
                                     &plan_prompt,
                                 )
@@ -3469,6 +3497,9 @@ async fn run_tui(
                                         &|m| r.dispatch.has_provider_for(m),
                                     )
                                 });
+                                current_turn_model = turn_model_choice
+                                    .as_ref()
+                                    .map_or_else(|| shown_model.clone(), |t| t.model.to_string());
                                 if let Some(turn) = &turn_model_choice {
                                     if !matches!(tier, ComplexityTier::Complex)
                                         && turn.model != applied_model
@@ -3606,7 +3637,7 @@ async fn run_tui(
             // Agent events from the provider task
             maybe_agent = agent_rx.recv() => {
                 if let Some(event) = maybe_agent {
-                    record_outcome_for_event(&event, &adaptive, &mut current_tier, base_config.model.as_str(), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
+                    record_outcome_for_event(&event, &adaptive, &mut current_tier, current_turn_model.as_str(), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
                     app.handle_agent_event(event);
                     // When a turn completes, clear the abort handle and restore
                     // any follow-up message the user typed while waiting.
@@ -3633,7 +3664,7 @@ async fn run_tui(
                 &event,
                 &adaptive,
                 &mut current_tier,
-                base_config.model.as_str(),
+                current_turn_model.as_str(),
                 base_config.pricing.input_per_million,
                 base_config.pricing.output_per_million,
                 &current_turn_prompt,

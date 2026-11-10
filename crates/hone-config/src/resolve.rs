@@ -447,7 +447,11 @@ fn is_cli_model(model: &str) -> bool {
 
 /// The accepted `[[routing]]` entries and `fallback_models` of one file, with
 /// a warning for each entry that is ignored.
-fn routing_of(layer: &ConfigLayer, out: &mut Vec<Warning>) -> (TierRouting, Vec<ModelId>) {
+fn routing_of(
+    layer: &ConfigLayer,
+    trusted: bool,
+    out: &mut Vec<Warning>,
+) -> (TierRouting, Vec<ModelId>) {
     let (path, cfg) = (&layer.path, &layer.config);
     let mut routing = TierRouting::default();
     for entry in &cfg.routing {
@@ -491,6 +495,21 @@ fn routing_of(layer: &ConfigLayer, out: &mut Vec<Warning>) -> (TierRouting, Vec<
             model: ModelId::new(entry.model.clone()),
             path: path.clone(),
         });
+    }
+
+    // A fallback model is used without notice when the chosen one fails, so a
+    // repository must not choose it: only the user file's list applies. The
+    // project's list was validated; it is ignored with one warning.
+    if !trusted {
+        if !cfg.fallback_models.is_empty() {
+            warn(
+                out,
+                path,
+                "fallback_models is ignored in a project config (a fallback is used without \
+                 notice, so a repository must not choose it; set it in the user config)",
+            );
+        }
+        return (routing, Vec::new());
     }
 
     let mut fallback: Vec<ModelId> = Vec::new();
@@ -605,8 +624,11 @@ pub fn resolve(
     let mut fallback_models: Vec<ModelId> = Vec::new();
     let mut fallback_path: Option<PathBuf> = None;
     let mut layers_routing: Vec<(&ConfigLayer, TierRouting, Vec<ModelId>)> = Vec::new();
-    for l in [user, project].into_iter().flatten() {
-        let (r, f) = routing_of(l, &mut warnings);
+    for (l, trusted) in [(user, true), (project, false)]
+        .into_iter()
+        .filter_map(|(l, t)| l.map(|l| (l, t)))
+    {
+        let (r, f) = routing_of(l, trusted, &mut warnings);
         layers_routing.push((l, r, f));
     }
     for (l, r, f) in layers_routing.iter().rev() {

@@ -1743,15 +1743,10 @@ impl App {
                         "Usage: /model <provider:model-id>".to_string(),
                     ));
                 } else {
-                    self.status.model = id.clone();
+                    // Only record the request: `hone` checks it and then confirms
+                    // (`push_system_message`) or shows the error, so a refused switch
+                    // never announces a change.
                     self.pending_model_change = Some(id);
-                    self.messages.push(DisplayMessage::new(
-                        DisplayRole::System,
-                        format!(
-                            "Model changed to: {}  (takes effect on next turn)",
-                            self.status.model
-                        ),
-                    ));
                 }
             }
             Command::Cost => {

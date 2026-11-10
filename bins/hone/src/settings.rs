@@ -60,6 +60,11 @@ pub fn load_effective_without_project_model() -> Effective {
     }
 }
 
+/// True when `path` is the repository's `.hone/config.toml`.
+pub fn is_project_config_path(path: &std::path::Path) -> bool {
+    path == workdir().join(".hone/config.toml")
+}
+
 /// True when the model choice came from the repository's `.hone/config.toml`.
 pub fn is_project_sourced(choice: &ModelChoice) -> bool {
     matches!(
