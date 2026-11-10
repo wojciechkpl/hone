@@ -7,6 +7,7 @@ use hone_proto::{Message, ModelInfo, ProviderEvent, ProviderHealth};
 
 use crate::error::ProviderError;
 use crate::registry::ProviderRegistry;
+use crate::stream_probe::{Attempt, LastFailure, attempt, with_carried};
 use crate::traits::{CompletionRequest, ModelProvider};
 
 /// A rule that maps a task keyword/prefix to a provider id.
@@ -273,11 +274,6 @@ impl ModelRouter {
     }
 }
 
-fn is_transient(e: &ProviderError) -> bool {
-    matches!(e, ProviderError::Http { status, .. } if *status >= 500 || *status == 429)
-        || matches!(e, ProviderError::RateLimit { .. })
-}
-
 /// Cost-aware fallback wrapper that retries with the next-best provider from
 /// the router's tier list under the configured policy when the primary fails
 /// with a transient error.
@@ -331,40 +327,48 @@ impl ModelProvider for TierFallbackProvider {
         &self,
         request: CompletionRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
+        let mut carried: Vec<ProviderEvent> = Vec::new();
+
         // Try primary first.
-        match self.primary.complete(request.clone()).await {
-            Ok(stream) => return Ok(stream),
-            Err(e) if !is_transient(&e) => return Err(e),
-            Err(e) => {
-                // Transient — proceed to fallback chain.
-                let mut last_err = e;
-                let mut tried: std::collections::HashSet<String> =
-                    std::collections::HashSet::new();
-                tried.insert(self.primary.id().to_owned());
+        let mut last = match attempt(self.primary.as_ref(), request.clone()).await {
+            Attempt::Stream(stream) => return Ok(stream),
+            Attempt::Request(e) if !e.is_transient() => return Err(e),
+            Attempt::Request(e) => LastFailure::Request(e),
+            Attempt::Failed(failure) => {
+                carried.extend(failure.usage);
+                LastFailure::Stream(failure.message)
+            }
+        };
 
-                let candidates = self.router.sorted_by_policy(self.policy);
+        // Transient failure: proceed to the fallback candidates.
+        let mut tried: std::collections::HashSet<String> = std::collections::HashSet::new();
+        tried.insert(self.primary.id().to_owned());
 
-                let mut hops = 0usize;
-                for candidate in candidates {
-                    if hops >= self.max_hops {
-                        break;
-                    }
-                    if tried.contains(candidate.id()) {
-                        continue;
-                    }
-                    tried.insert(candidate.id().to_owned());
-                    hops += 1;
+        let candidates = self.router.sorted_by_policy(self.policy);
 
-                    match candidate.complete(request.clone()).await {
-                        Ok(stream) => return Ok(stream),
-                        Err(e) if !is_transient(&e) => return Err(e),
-                        Err(e) => last_err = e,
-                    }
+        let mut hops = 0usize;
+        for candidate in candidates {
+            if hops >= self.max_hops {
+                break;
+            }
+            if tried.contains(candidate.id()) {
+                continue;
+            }
+            tried.insert(candidate.id().to_owned());
+            hops += 1;
+
+            match attempt(candidate.as_ref(), request.clone()).await {
+                Attempt::Stream(stream) => return Ok(with_carried(carried, stream)),
+                Attempt::Request(e) if !e.is_transient() => return Err(e),
+                Attempt::Request(e) => last = LastFailure::Request(e),
+                Attempt::Failed(failure) => {
+                    carried.extend(failure.usage);
+                    last = LastFailure::Stream(failure.message);
                 }
-
-                Err(last_err)
             }
         }
+
+        last.report(carried)
     }
 
     fn estimate_tokens(&self, messages: &[Message]) -> u32 {

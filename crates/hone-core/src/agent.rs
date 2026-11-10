@@ -155,6 +155,16 @@ struct GuardNotes {
     hint: Option<String>,
 }
 
+/// Why one attempt at the provider failed (see `hone_providers::attempt`).
+enum AttemptError {
+    /// The request itself failed.
+    Request(ProviderError),
+    /// The response failed before any output.
+    Stream(hone_providers::StreamFailure),
+    /// The turn's event receiver closed: no further attempt.
+    Cancelled,
+}
+
 /// Outcome of waiting for the user's answer on the step channel.
 enum StepWait {
     Answer(StepAction),
@@ -837,6 +847,16 @@ impl Agent {
         }
     }
 
+    /// Count `Usage` events of failed attempts in the turn and the session cost.
+    fn count_usage(&mut self, events: Vec<ProviderEvent>, turn_usage: &mut TokenUsage) {
+        for event in events {
+            if let ProviderEvent::Usage(usage) = event {
+                *turn_usage = *turn_usage + usage;
+                self.cost.add(usage, &self.config.pricing);
+            }
+        }
+    }
+
     /// Add the tool-result message for call `id`. Guard notes prepared for this
     /// call follow its own result (own result, then the guard read, then the
     /// edit-streak hint), so the history only ever holds results for ids the
@@ -1299,16 +1319,70 @@ impl Agent {
             let retry_cfg = self.config.retry_config.clone();
             let provider = Arc::clone(&self.config.provider);
             let request_clone = request.clone();
-            let mut stream = retry(
+            // Usage reported by attempts that failed before any output and were
+            // retried: it was billed, so it counts.
+            let mut failed_usage: Vec<ProviderEvent> = Vec::new();
+            let outcome = retry(
                 &retry_cfg,
                 || {
                     let req = request_clone.clone();
                     let prov = Arc::clone(&provider);
-                    async move { prov.complete(req).await }
+                    let listener_gone = events.is_closed();
+                    async move {
+                        // Esc closed the receiver: no further attempt, including retries.
+                        if listener_gone {
+                            return Err(AttemptError::Cancelled);
+                        }
+                        match hone_providers::attempt(prov.as_ref(), req).await {
+                            hone_providers::Attempt::Stream(s) => Ok(s),
+                            hone_providers::Attempt::Failed(f) => Err(AttemptError::Stream(f)),
+                            hone_providers::Attempt::Request(e) => Err(AttemptError::Request(e)),
+                        }
+                    }
                 },
-                |e: &ProviderError| is_transient_error(&e.to_string()),
+                |e: &AttemptError| match e {
+                    // A failure before any output is always worth another attempt
+                    // (nothing was shown); the shared budget is `retry_config`.
+                    AttemptError::Stream(f) => {
+                        failed_usage.extend(f.usage.iter().cloned());
+                        true
+                    }
+                    AttemptError::Request(e) => {
+                        e.is_transient() || is_transient_error(&e.to_string())
+                    }
+                    AttemptError::Cancelled => false,
+                },
             )
-            .await?;
+            .await;
+            let mut stream = match outcome {
+                Ok(stream) => stream,
+                Err(AttemptError::Request(e)) => {
+                    self.count_usage(failed_usage, &mut turn_usage);
+                    return Err(e.into());
+                }
+                Err(AttemptError::Cancelled) => {
+                    self.count_usage(failed_usage, &mut turn_usage);
+                    return Err(AgentError::Cancelled);
+                }
+                Err(AttemptError::Stream(failure)) => {
+                    // Every attempt failed before output: the turn fails with the
+                    // last provider message, unchanged.
+                    failed_usage.extend(failure.usage);
+                    self.count_usage(failed_usage, &mut turn_usage);
+                    self.error_event_sent = true;
+                    let _ = events
+                        .send(AgentEvent::Error {
+                            message: failure.message.clone(),
+                        })
+                        .await;
+                    return Err(AgentError::Provider(hone_providers::ProviderError::Http {
+                        provider: self.config.provider.id().to_owned(),
+                        status: 0,
+                        body: failure.message,
+                    }));
+                }
+            };
+            self.count_usage(failed_usage, &mut turn_usage);
 
             // Collect any tool calls from this streaming response so we can
             // process them after the stream is exhausted.

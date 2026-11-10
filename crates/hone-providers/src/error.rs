@@ -59,6 +59,22 @@ pub enum ProviderError {
     Timeout { provider: String },
 }
 
+impl ProviderError {
+    /// True if trying again (or another provider) may succeed: rate limits,
+    /// timeouts, I/O stream errors, and HTTP 429 or 5xx. HTTP status 0 (the
+    /// request never got an answer), other 4xx, unknown models and
+    /// serialization errors are not transient.
+    pub fn is_transient(&self) -> bool {
+        match self {
+            ProviderError::RateLimit { .. }
+            | ProviderError::Timeout { .. }
+            | ProviderError::Stream { .. } => true,
+            ProviderError::Http { status, .. } => *status == 429 || (500..=599).contains(status),
+            ProviderError::ModelNotFound { .. } | ProviderError::Serialization(_) => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,6 +9,7 @@ pub mod pricing;
 pub mod registry;
 pub mod retry_after;
 pub mod router;
+pub mod stream_probe;
 pub mod traits;
 
 pub use acp::AcpProvider;
@@ -25,6 +26,7 @@ pub use mock::MockProvider;
 pub use pricing::PricingTable;
 pub use registry::ProviderRegistry;
 pub use router::{ModelRouter, ProviderTier, RoutePolicy, RoutingRule, TierFallbackProvider};
+pub use stream_probe::{Attempt, Probe, StreamFailure, attempt, probe_first_output};
 pub use traits::{
     CompletionRequest, ModelProvider, ToolResultSendError, ToolResultSender, ToolResultStream,
 };
