@@ -33,7 +33,11 @@ fn test_r10_http_status_boundaries() {
         (599, true),
         (600, false),
     ] {
-        assert_eq!(http(status).is_transient(), expected, "HTTP status {status}");
+        assert_eq!(
+            http(status).is_transient(),
+            expected,
+            "HTTP status {status}"
+        );
     }
 }
 

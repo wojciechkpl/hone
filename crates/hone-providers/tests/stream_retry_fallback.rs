@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use futures::{Stream, StreamExt, stream};
 use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, TokenUsage};
 use hone_providers::{
-    CompletionRequest, FallbackChain, ModelProvider, ModelRouter, ProviderError,
-    ProviderRegistry, ProviderTier, RoutePolicy, TierFallbackProvider,
+    CompletionRequest, FallbackChain, ModelProvider, ModelRouter, ProviderError, ProviderRegistry,
+    ProviderTier, RoutePolicy, TierFallbackProvider,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -87,7 +87,10 @@ impl ModelProvider for Scripted {
         &self,
         _r: CompletionRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
-        let n = self.calls.fetch_add(1, Ordering::SeqCst).min(self.script.len() - 1);
+        let n = self
+            .calls
+            .fetch_add(1, Ordering::SeqCst)
+            .min(self.script.len() - 1);
         match self.script[n].clone() {
             Call::Events(e) => Ok(Box::pin(stream::iter(e))),
             Call::Fail(ErrSpec::Http(status, body)) => Err(ProviderError::Http {
@@ -116,7 +119,9 @@ fn tok(t: &str) -> ProviderEvent {
     ProviderEvent::Token { text: t.to_owned() }
 }
 fn err(m: &str) -> ProviderEvent {
-    ProviderEvent::Error { message: m.to_owned() }
+    ProviderEvent::Error {
+        message: m.to_owned(),
+    }
 }
 fn usage(input: u32) -> ProviderEvent {
     ProviderEvent::Usage(TokenUsage {
@@ -157,7 +162,12 @@ async fn expect_err(p: &dyn ModelProvider, req: CompletionRequest) -> ProviderEr
 }
 
 fn chain(members: Vec<Arc<Scripted>>) -> FallbackChain {
-    FallbackChain::new(members.into_iter().map(|m| m as Arc<dyn ModelProvider>).collect())
+    FallbackChain::new(
+        members
+            .into_iter()
+            .map(|m| m as Arc<dyn ModelProvider>)
+            .collect(),
+    )
 }
 
 // -- R7: cancellation is never retried ---------------------------------------------------------------
@@ -176,7 +186,11 @@ async fn test_r7_cancelled_request_passes_the_stream_failure_on_without_trying_t
 
     assert_eq!(events, vec![err("cancelled")]);
     assert_eq!(count(&a_calls), 1);
-    assert_eq!(count(&b_calls), 0, "a cancelled request must not be retried elsewhere");
+    assert_eq!(
+        count(&b_calls),
+        0,
+        "a cancelled request must not be retried elsewhere"
+    );
 }
 
 // -- R8: FallbackChain ---------------------------------------------------------------------------------
@@ -218,7 +232,10 @@ async fn test_r8_non_transient_request_error_is_returned_at_once() {
 
     let e = expect_err(&chain(vec![a, b]), request()).await;
 
-    assert!(matches!(e, ProviderError::Http { status: 400, .. }), "{e:?}");
+    assert!(
+        matches!(e, ProviderError::Http { status: 400, .. }),
+        "{e:?}"
+    );
     assert_eq!(count(&b_calls), 0);
 }
 
@@ -240,7 +257,11 @@ async fn test_r8_all_members_failing_before_output_report_the_last_members_failu
     let events = events_of(&chain(vec![a, b]), request()).await;
 
     assert_eq!(events, vec![usage(10), usage(20), err("b-failed")]);
-    assert_eq!((count(&a_calls), count(&b_calls)), (1, 1), "each member at most once");
+    assert_eq!(
+        (count(&a_calls), count(&b_calls)),
+        (1, 1),
+        "each member at most once"
+    );
 }
 
 #[tokio::test]
@@ -251,7 +272,9 @@ async fn test_r8_last_member_failing_the_request_is_reported_as_that_error() {
     let e = expect_err(&chain(vec![a, b]), request()).await;
 
     match e {
-        ProviderError::Http { status: 503, body, .. } => assert_eq!(body, "b-down"),
+        ProviderError::Http {
+            status: 503, body, ..
+        } => assert_eq!(body, "b-down"),
         other => panic!("{other:?}"),
     }
 }
@@ -317,7 +340,11 @@ struct Tier {
     c2_calls: Arc<AtomicUsize>,
 }
 
-fn tier(primary: (Arc<Scripted>, Arc<AtomicUsize>), c1: (Arc<Scripted>, Arc<AtomicUsize>), c2: (Arc<Scripted>, Arc<AtomicUsize>)) -> Tier {
+fn tier(
+    primary: (Arc<Scripted>, Arc<AtomicUsize>),
+    c1: (Arc<Scripted>, Arc<AtomicUsize>),
+    c2: (Arc<Scripted>, Arc<AtomicUsize>),
+) -> Tier {
     let registry = Arc::new(ProviderRegistry::new());
     registry.register(c1.0 as Arc<dyn ModelProvider>);
     registry.register(c2.0 as Arc<dyn ModelProvider>);
@@ -334,7 +361,11 @@ fn tier(primary: (Arc<Scripted>, Arc<AtomicUsize>), c1: (Arc<Scripted>, Arc<Atom
         .collect();
     let router = Arc::new(ModelRouter::new(vec![], registry, "c1").with_tiers(tiers));
     Tier {
-        fallback: TierFallbackProvider::new(primary.0 as Arc<dyn ModelProvider>, router, RoutePolicy::Cheapest),
+        fallback: TierFallbackProvider::new(
+            primary.0 as Arc<dyn ModelProvider>,
+            router,
+            RoutePolicy::Cheapest,
+        ),
         primary_calls: primary.1,
         c1_calls: c1.1,
         c2_calls: c2.1,
@@ -356,12 +387,24 @@ async fn test_r9_primary_failing_before_output_falls_back_to_a_candidate() {
     let events = events_of(&t.fallback, request()).await;
 
     assert_eq!(events, vec![tok("fallback-ok"), ProviderEvent::Done]);
-    assert_eq!((count(&t.primary_calls), count(&t.c1_calls), count(&t.c2_calls)), (1, 1, 0));
+    assert_eq!(
+        (
+            count(&t.primary_calls),
+            count(&t.c1_calls),
+            count(&t.c2_calls)
+        ),
+        (1, 1, 0)
+    );
 }
 
 #[tokio::test]
 async fn test_r9_timeout_and_stream_request_errors_are_transient() {
-    for spec in [ErrSpec::Timeout, ErrSpec::Stream, ErrSpec::Http(503, "x"), ErrSpec::Http(529, "x")] {
+    for spec in [
+        ErrSpec::Timeout,
+        ErrSpec::Stream,
+        ErrSpec::Http(503, "x"),
+        ErrSpec::Http(529, "x"),
+    ] {
         let t = tier(
             Scripted::new("primary", vec![Call::Fail(spec.clone())]),
             good("c1", "fallback-ok"),
@@ -370,7 +413,11 @@ async fn test_r9_timeout_and_stream_request_errors_are_transient() {
 
         let events = events_of(&t.fallback, request()).await;
 
-        assert_eq!(events, vec![tok("fallback-ok"), ProviderEvent::Done], "{spec:?}");
+        assert_eq!(
+            events,
+            vec![tok("fallback-ok"), ProviderEvent::Done],
+            "{spec:?}"
+        );
     }
 }
 
@@ -384,7 +431,10 @@ async fn test_r9_non_transient_request_error_is_returned_at_once() {
 
     let e = expect_err(&t.fallback, request()).await;
 
-    assert!(matches!(e, ProviderError::Http { status: 400, .. }), "{e:?}");
+    assert!(
+        matches!(e, ProviderError::Http { status: 400, .. }),
+        "{e:?}"
+    );
     assert_eq!(count(&t.c1_calls), 0);
 }
 
@@ -412,9 +462,17 @@ async fn test_r9_every_provider_failing_before_output_uses_the_hops_and_reports_
 
     let events = events_of(&fallback, request()).await;
 
-    assert_eq!(events, vec![err("c1-failed")], "the last attempted provider's failure");
     assert_eq!(
-        (count(&t.primary_calls), count(&t.c1_calls), count(&t.c2_calls)),
+        events,
+        vec![err("c1-failed")],
+        "the last attempted provider's failure"
+    );
+    assert_eq!(
+        (
+            count(&t.primary_calls),
+            count(&t.c1_calls),
+            count(&t.c2_calls)
+        ),
         (1, 1, 0),
         "primary + max_hops = 2 calls"
     );
@@ -456,4 +514,58 @@ async fn test_r9_healthy_primary_streams_through_untouched() {
 
     assert_eq!(events, vec![tok("fine"), ProviderEvent::Done]);
     assert_eq!(count(&t.c1_calls), 0);
+}
+
+// -- R12: an idle timeout is not handed to another provider -------------------------------------------------
+
+const TIMED_OUT: &str = "openai response timed out: operation timed out";
+const INTERRUPTED: &str = "openai response interrupted: connection reset";
+
+#[tokio::test]
+async fn test_r12_chain_passes_an_idle_timeout_on_without_trying_the_next_member() {
+    let (a, a_calls) = Scripted::new("a", vec![ok(vec![err(TIMED_OUT)])]);
+    let (b, b_calls) = Scripted::new("b", vec![ok(vec![tok("b"), ProviderEvent::Done])]);
+
+    let events = events_of(&chain(vec![a, b]), request()).await;
+
+    assert_eq!(events, vec![err(TIMED_OUT)]);
+    assert_eq!((count(&a_calls), count(&b_calls)), (1, 0));
+}
+
+#[tokio::test]
+async fn test_r12_chain_control_an_interrupted_response_is_still_handed_over() {
+    let (a, _) = Scripted::new("a", vec![ok(vec![err(INTERRUPTED)])]);
+    let (b, b_calls) = Scripted::new("b", vec![ok(vec![tok("b"), ProviderEvent::Done])]);
+
+    let events = events_of(&chain(vec![a, b]), request()).await;
+
+    assert_eq!(events, vec![tok("b"), ProviderEvent::Done]);
+    assert_eq!(count(&b_calls), 1);
+}
+
+#[tokio::test]
+async fn test_r12_tier_fallback_passes_an_idle_timeout_on_without_using_a_hop() {
+    let t = tier(
+        Scripted::new("primary", vec![ok(vec![err(TIMED_OUT)])]),
+        good("c1", "x"),
+        good("c2", "y"),
+    );
+
+    let events = events_of(&t.fallback, request()).await;
+
+    assert_eq!(events, vec![err(TIMED_OUT)]);
+    assert_eq!((count(&t.primary_calls), count(&t.c1_calls)), (1, 0));
+}
+
+#[tokio::test]
+async fn test_r12_tier_fallback_control_an_interrupted_response_still_uses_a_hop() {
+    let t = tier(
+        Scripted::new("primary", vec![ok(vec![err(INTERRUPTED)])]),
+        good("c1", "fallback-ok"),
+        good("c2", "y"),
+    );
+
+    let events = events_of(&t.fallback, request()).await;
+
+    assert_eq!(events, vec![tok("fallback-ok"), ProviderEvent::Done]);
 }

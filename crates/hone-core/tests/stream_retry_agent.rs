@@ -32,6 +32,10 @@ enum Call {
     Http(u16, &'static str),
     /// `Token`, then wait for the gate, then `Done` (R4).
     TokenThenWait,
+    /// `complete()` first signals `entered`, then waits for the gate (R13), then yields these events.
+    GateThenEvents(Vec<ProviderEvent>),
+    /// Same, then fails the request with this HTTP status.
+    GateThenHttp(u16, &'static str),
 }
 
 struct Script {
@@ -39,6 +43,7 @@ struct Script {
     calls: Arc<AtomicUsize>,
     own_tools: bool,
     gate: Arc<Notify>,
+    entered: Arc<Notify>,
     requests: Mutex<Vec<usize>>, // message counts of each request
 }
 
@@ -52,6 +57,7 @@ impl Script {
             calls: Arc::new(AtomicUsize::new(0)),
             own_tools,
             gate: Arc::new(Notify::new()),
+            entered: Arc::new(Notify::new()),
             requests: Mutex::new(Vec::new()),
         })
     }
@@ -85,7 +91,10 @@ impl ModelProvider for Script {
         r: CompletionRequest,
     ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
         self.requests.lock().unwrap().push(r.messages.len());
-        let n = self.calls.fetch_add(1, Ordering::SeqCst).min(self.script.len() - 1);
+        let n = self
+            .calls
+            .fetch_add(1, Ordering::SeqCst)
+            .min(self.script.len() - 1);
         match self.script[n].clone() {
             Call::Events(e) => Ok(Box::pin(stream::iter(e))),
             Call::Http(status, body) => Err(ProviderError::Http {
@@ -93,15 +102,32 @@ impl ModelProvider for Script {
                 status,
                 body: body.to_owned(),
             }),
+            Call::GateThenEvents(e) => {
+                self.entered.notify_one();
+                self.gate.notified().await;
+                Ok(Box::pin(stream::iter(e)))
+            }
+            Call::GateThenHttp(status, body) => {
+                self.entered.notify_one();
+                self.gate.notified().await;
+                Err(ProviderError::Http {
+                    provider: "script".to_owned(),
+                    status,
+                    body: body.to_owned(),
+                })
+            }
             Call::TokenThenWait => {
                 let gate = Arc::clone(&self.gate);
                 Ok(Box::pin(
-                    stream::once(async { ProviderEvent::Token { text: "early".to_owned() } }).chain(
-                        stream::once(async move {
-                            gate.notified().await;
-                            ProviderEvent::Done
-                        }),
-                    ),
+                    stream::once(async {
+                        ProviderEvent::Token {
+                            text: "early".to_owned(),
+                        }
+                    })
+                    .chain(stream::once(async move {
+                        gate.notified().await;
+                        ProviderEvent::Done
+                    })),
                 ))
             }
         }
@@ -118,7 +144,9 @@ fn tok(t: &str) -> ProviderEvent {
     ProviderEvent::Token { text: t.to_owned() }
 }
 fn err(m: &str) -> ProviderEvent {
-    ProviderEvent::Error { message: m.to_owned() }
+    ProviderEvent::Error {
+        message: m.to_owned(),
+    }
 }
 fn usage(input: u32, output: u32) -> ProviderEvent {
     ProviderEvent::Usage(TokenUsage {
@@ -217,13 +245,19 @@ async fn test_r1_error_before_output_is_retried_and_the_turn_succeeds() {
 
     assert_eq!(res.expect("the retry succeeds").response, "hello");
     assert_eq!(p.calls(), 2);
-    assert!(agent_errors(&evs).is_empty(), "nothing of the failed attempt reaches the caller: {evs:?}");
+    assert!(
+        agent_errors(&evs).is_empty(),
+        "nothing of the failed attempt reaches the caller: {evs:?}"
+    );
     assert_eq!(agent_tokens(&evs), "hello");
 }
 
 #[tokio::test]
 async fn test_r1_usage_then_error_before_output_is_retried_too() {
-    let p = Script::new(vec![events(vec![usage(10, 0), err("Overloaded")]), answer("hello")]);
+    let p = Script::new(vec![
+        events(vec![usage(10, 0), err("Overloaded")]),
+        answer("hello"),
+    ]);
     let h = handle(Arc::clone(&p));
 
     let (res, evs) = run(&h).await;
@@ -236,7 +270,11 @@ async fn test_r1_usage_then_error_before_output_is_retried_too() {
 #[tokio::test]
 async fn test_r1_request_errors_and_stream_failures_share_one_attempt_budget() {
     // Request error, stream failure, then success: 3 attempts.
-    let p = Script::new(vec![Call::Http(503, "down"), events(vec![err("Overloaded")]), answer("hello")]);
+    let p = Script::new(vec![
+        Call::Http(503, "down"),
+        events(vec![err("Overloaded")]),
+        answer("hello"),
+    ]);
     let h = handle(Arc::clone(&p));
 
     let (res, _) = run(&h).await;
@@ -247,7 +285,11 @@ async fn test_r1_request_errors_and_stream_failures_share_one_attempt_budget() {
 
 #[tokio::test]
 async fn test_r1_the_same_request_is_sent_on_every_attempt() {
-    let p = Script::new(vec![events(vec![err("x")]), events(vec![err("x")]), answer("ok")]);
+    let p = Script::new(vec![
+        events(vec![err("x")]),
+        events(vec![err("x")]),
+        answer("ok"),
+    ]);
     let h = handle(Arc::clone(&p));
 
     let (res, _) = run(&h).await;
@@ -255,7 +297,10 @@ async fn test_r1_the_same_request_is_sent_on_every_attempt() {
     res.unwrap();
     let sizes = p.requests.lock().unwrap().clone();
     assert_eq!(sizes.len(), 3);
-    assert!(sizes.iter().all(|n| *n == sizes[0]), "history must not change between attempts: {sizes:?}");
+    assert!(
+        sizes.iter().all(|n| *n == sizes[0]),
+        "history must not change between attempts: {sizes:?}"
+    );
 }
 
 // -- R2: all attempts fail --------------------------------------------------------------------------------------
@@ -269,14 +314,21 @@ async fn test_r2_every_attempt_failing_before_output_fails_the_turn_with_the_pro
 
     assert!(matches!(res, Err(AgentError::Provider(_))), "{res:?}");
     assert_eq!(p.calls(), 3, "max_attempts attempts");
-    assert_eq!(agent_errors(&evs), vec!["Overloaded".to_owned()], "exactly one Error, message unchanged");
+    assert_eq!(
+        agent_errors(&evs),
+        vec!["Overloaded".to_owned()],
+        "exactly one Error, message unchanged"
+    );
 }
 
 // -- R3: failure after output is not retried -----------------------------------------------------------------------
 
 #[tokio::test]
 async fn test_r3_error_after_a_token_is_not_retried_and_the_token_was_delivered() {
-    let p = Script::new(vec![events(vec![tok("partial"), err("cut")]), answer("never")]);
+    let p = Script::new(vec![
+        events(vec![tok("partial"), err("cut")]),
+        answer("never"),
+    ]);
     let h = handle(Arc::clone(&p));
 
     let (res, evs) = run(&h).await;
@@ -321,7 +373,11 @@ async fn test_r3_a_stream_with_no_events_at_all_is_passed_on_not_retried() {
 
     let (_res, evs) = run(&h).await;
 
-    assert_eq!(p.calls(), 1, "an empty stream is not a failure before output");
+    assert_eq!(
+        p.calls(),
+        1,
+        "an empty stream is not a failure before output"
+    );
     assert!(agent_errors(&evs).is_empty(), "{evs:?}");
 }
 
@@ -350,7 +406,10 @@ async fn test_r4_events_reach_the_caller_as_they_arrive_once_output_has_started(
     .expect("the token was held back until the stream finished");
 
     gate.notify_one();
-    let res = tokio::time::timeout(Duration::from_secs(10), turn).await.expect("turn hung").unwrap();
+    let res = tokio::time::timeout(Duration::from_secs(10), turn)
+        .await
+        .expect("turn hung")
+        .unwrap();
     assert!(res.is_ok(), "{res:?}");
     assert_eq!(p.calls(), 1);
 }
@@ -368,10 +427,17 @@ async fn test_r5_usage_reported_before_a_failure_is_counted_in_the_turn_and_the_
     let (res, _) = run(&h).await;
 
     let turn = res.expect("second attempt succeeds");
-    assert_eq!((turn.usage.input, turn.usage.output), (30, 5), "turn usage includes the failed attempt");
+    assert_eq!(
+        (turn.usage.input, turn.usage.output),
+        (30, 5),
+        "turn usage includes the failed attempt"
+    );
     let (session, cost) = h.session_spend().await;
     assert_eq!(session.input, 30);
-    assert!((cost - 30.0).abs() < 1e-6, "session cost includes the failed attempt: {cost}");
+    assert!(
+        (cost - 30.0).abs() < 1e-6,
+        "session cost includes the failed attempt: {cost}"
+    );
 }
 
 // -- R6: providers that run their own tools -----------------------------------------------------------------------------------
@@ -409,7 +475,11 @@ async fn test_r10_http_500_504_529_request_errors_are_retried() {
 
         let (res, _) = run(&h).await;
 
-        assert_eq!(res.unwrap_or_else(|e| panic!("{status}: {e}")).response, "ok", "{status}");
+        assert_eq!(
+            res.unwrap_or_else(|e| panic!("{status}: {e}")).response,
+            "ok",
+            "{status}"
+        );
         assert_eq!(p.calls(), 2, "HTTP {status}");
     }
 }
@@ -428,11 +498,92 @@ async fn test_r10_non_transient_request_error_is_not_retried() {
 #[tokio::test]
 async fn test_r10_the_existing_text_check_still_retries_a_status_zero_error_mentioning_503() {
     // Nothing retried today may stop being retried: status 0 is decided by the text check.
-    let p = Script::new(vec![Call::Http(0, "connection reset: 503 from proxy"), answer("ok")]);
+    let p = Script::new(vec![
+        Call::Http(0, "connection reset: 503 from proxy"),
+        answer("ok"),
+    ]);
     let h = handle(Arc::clone(&p));
 
     let (res, _) = run(&h).await;
 
     assert_eq!(res.unwrap().response, "ok");
     assert_eq!(p.calls(), 2);
+}
+
+// -- R12: an idle timeout is not retried -----------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_r12_an_idle_timeout_failure_before_output_is_not_retried() {
+    let msg = "openai response timed out: operation timed out";
+    let p = Script::new(vec![events(vec![err(msg)]), answer("never")]);
+    let h = handle(Arc::clone(&p));
+
+    let (res, evs) = run(&h).await;
+
+    assert!(matches!(res, Err(AgentError::Provider(_))), "{res:?}");
+    assert_eq!(p.calls(), 1, "a slow model must not be asked again");
+    assert_eq!(
+        agent_errors(&evs),
+        vec![msg.to_owned()],
+        "exactly one Error with that message"
+    );
+}
+
+#[tokio::test]
+async fn test_r12_control_an_interrupted_response_is_still_retried() {
+    let p = Script::new(vec![
+        events(vec![err("openai response interrupted: connection reset")]),
+        answer("ok"),
+    ]);
+    let h = handle(Arc::clone(&p));
+
+    let (res, _) = run(&h).await;
+
+    assert_eq!(res.unwrap().response, "ok");
+    assert_eq!(p.calls(), 2);
+}
+
+// -- R13: cancelling the turn stops retries --------------------------------------------------------------------------
+
+/// Start a turn, wait until the provider is inside its first `complete()`, close the event
+/// receiver, release the provider, and return the turn's result.
+async fn cancel_during_first_attempt(p: &Arc<Script>) -> Result<TurnResult, AgentError> {
+    let h = handle(Arc::clone(p));
+    let (tx, rx) = mpsc::channel::<AgentEvent>(256);
+    let h2 = h.clone();
+    let turn = tokio::spawn(async move { h2.run_turn("go", tx).await });
+
+    tokio::time::timeout(Duration::from_secs(10), p.entered.notified())
+        .await
+        .expect("the first attempt never started");
+    drop(rx); // Esc: nobody is listening any more
+    p.gate.notify_one();
+
+    tokio::time::timeout(Duration::from_secs(20), turn)
+        .await
+        .expect("turn hung")
+        .unwrap()
+}
+
+#[tokio::test]
+async fn test_r13_cancel_during_an_attempt_that_fails_before_output_makes_no_further_attempt() {
+    let p = Script::new(vec![
+        Call::GateThenEvents(vec![err("Overloaded")]),
+        answer("never"),
+    ]);
+
+    let res = cancel_during_first_attempt(&p).await;
+
+    assert!(matches!(res, Err(AgentError::Cancelled)), "{res:?}");
+    assert_eq!(p.calls(), 1, "no retry once the receiver is closed");
+}
+
+#[tokio::test]
+async fn test_r13_cancel_during_an_attempt_that_fails_the_request_makes_no_further_attempt() {
+    let p = Script::new(vec![Call::GateThenHttp(503, "down"), answer("never")]);
+
+    let res = cancel_during_first_attempt(&p).await;
+
+    assert!(matches!(res, Err(AgentError::Cancelled)), "{res:?}");
+    assert_eq!(p.calls(), 1);
 }

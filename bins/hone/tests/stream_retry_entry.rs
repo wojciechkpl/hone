@@ -147,7 +147,10 @@ fn hone_json_against(base_url: &str) -> Out {
 
 fn json_of(o: &Out) -> serde_json::Value {
     serde_json::from_str(&o.stdout).unwrap_or_else(|e| {
-        panic!("--json stdout must be JSON ({e}): {}\nstderr: {}", o.stdout, o.stderr)
+        panic!(
+            "--json stdout must be JSON ({e}): {}\nstderr: {}",
+            o.stdout, o.stderr
+        )
     })
 }
 
@@ -160,8 +163,18 @@ fn test_r11_a_failure_before_any_text_is_retried_and_the_run_succeeds() {
     let v = json_of(&o);
     assert_eq!(v["success"], true, "{v}\nstderr: {}", o.stderr);
     assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
-    assert!(v["response"].as_str().unwrap_or_default().contains("partial answer"), "{v}");
-    assert_eq!(requests.load(Ordering::SeqCst), 2, "one failed attempt, one good one");
+    assert!(
+        v["response"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("partial answer"),
+        "{v}"
+    );
+    assert_eq!(
+        requests.load(Ordering::SeqCst),
+        2,
+        "one failed attempt, one good one"
+    );
 }
 
 #[test]
@@ -180,7 +193,11 @@ fn test_r11_a_provider_that_always_fails_before_output_is_tried_three_times_then
             .contains("Provider disconnected unexpectedly"),
         "{v}"
     );
-    assert_eq!(requests.load(Ordering::SeqCst), 3, "default RetryConfig: three attempts");
+    assert_eq!(
+        requests.load(Ordering::SeqCst),
+        3,
+        "default RetryConfig: three attempts"
+    );
 }
 
 #[test]
@@ -191,7 +208,11 @@ fn test_r11_a_failure_after_output_makes_exactly_one_request() {
 
     let v = json_of(&o);
     assert_eq!(v["success"], false, "{v}\nstderr: {}", o.stderr);
-    assert_eq!(requests.load(Ordering::SeqCst), 1, "a break after text is not retried");
+    assert_eq!(
+        requests.load(Ordering::SeqCst),
+        1,
+        "a break after text is not retried"
+    );
 }
 
 #[test]
