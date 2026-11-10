@@ -137,6 +137,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: cut-off responses looked complete
+
+- **The bug:** the OpenAI-compatible, Anthropic and Ollama adapters ended the response stream the same way whether the answer had finished or the connection had broken. A reset, a body cut short, or a timeout was swallowed. The agent saved the partial answer as if it were complete, and a tool call whose arguments were still streaming was dropped without a word. Errors that providers send inside the stream after the `200` headers were ignored too: OpenAI-compatible `{"error": …}` (OpenRouter's "Provider disconnected unexpectedly"), Anthropic's `overloaded_error` event, and Ollama's `{"error": …}` line. With OpenRouter the `[DONE]` that follows its error turned the failure into a normal end.
+- **Long answers were cut at two minutes.** The HTTP clients had a 120 s *total* deadline, which reqwest applies until the response body has finished. Any answer that streamed for longer, such as a slow local model or a long generation, was cut off, and because of the bug above it looked complete.
+- **Now:**
+  - A response that ends before the provider's completion marker becomes an error: `<provider> response interrupted: <cause>` or `<provider> response ended before it was complete`. In-band errors carry the provider's message, and nothing after them is read.
+  - Once the response has started, the 120 s limit is an idle limit: it resets on every piece of data, so an answer that keeps streaming is never cut off, and a stall of 120 s fails with "timed out". Waiting for the first byte is still limited to 120 s, as before (an Ollama model that takes longer to load still times out).
+  - An OpenAI-compatible response that ends with any finish reason (`content_filter`, TGI's `eos_token`, …) counts as finished, and so does an Anthropic `message_delta` with a stop reason.
+  - The opt-in response cache (`HONE_CACHE`) no longer stores a failed response.
+- **Behaviour change:** a cut-off answer now fails the turn (an error in the TUI, a non-zero exit in one-shot and `--json`) instead of being kept as a complete answer. Benchmark runs that were silently truncated now show as provider errors.
+- Contract: `docs/plans/stream-transport-error-spec.md`.
+
 ### Fixed: streamed text lost when a character was split across chunks
 
 - **The bug:** the OpenAI-compatible, Anthropic and Ollama adapters decoded each network chunk of a streamed response on its own and silently dropped any chunk that wasn't valid UTF-8 by itself. Chunk boundaries come from the network, not from characters, so a multi-byte character (Polish letters, `€`, CJK, emoji) cut between two chunks dropped both. Text went missing from answers, the events in those chunks were lost, and a tool call whose arguments were cut that way arrived broken or not at all. One invalid byte also dropped every event in its chunk.
