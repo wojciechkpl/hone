@@ -277,3 +277,16 @@ pub fn spawn_cli_stream(mut cmd: Command) -> Pin<Box<dyn Stream<Item = ProviderE
         Some((event, rx))
     }))
 }
+
+/// Normalise a provider base URL: drop trailing `/`, then one trailing whole
+/// `/v1` segment, then trailing `/` again. Request sites append `/v1/...`
+/// themselves, so `https://openrouter.ai/api/v1` must not become `.../v1/v1/...`.
+/// `/apiv1`, `/v1beta` and `/v10` are left alone.
+pub(crate) fn normalize_base_url(url: &str) -> String {
+    let trimmed = url.trim_end_matches('/');
+    let without_v1 = match trimmed.strip_suffix("/v1") {
+        Some(rest) => rest,
+        None => trimmed,
+    };
+    without_v1.trim_end_matches('/').to_owned()
+}

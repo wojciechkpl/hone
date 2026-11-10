@@ -48,7 +48,7 @@ impl AnthropicProvider {
     pub fn with_base_url(api_key: impl Into<String>, base_url: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
-            base_url: base_url.into(),
+            base_url: super::cli_common::normalize_base_url(&base_url.into()),
             client: Client::builder()
                 .timeout(HTTP_TIMEOUT)
                 .connect_timeout(HTTP_CONNECT_TIMEOUT)
