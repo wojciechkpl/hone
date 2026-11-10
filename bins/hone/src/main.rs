@@ -2467,11 +2467,15 @@ async fn main() -> Result<()> {
             "claude-cli:",
             "gemini-cli:",
         ];
-        let name_ok = known_prefixes
-            .iter()
-            .find_map(|p| m.strip_prefix(p))
-            .is_none_or(|name| hone_config::resolve::validate_model_name(name).is_ok());
-        if !known_prefixes.iter().any(|p| m.starts_with(p)) || !name_ok {
+        // A known prefix with a bad name gets the name's reason; only an unknown
+        // prefix gets the prefix help.
+        if let Some(name) = known_prefixes.iter().find_map(|p| m.strip_prefix(p)) {
+            if let Err(why) = hone_config::resolve::validate_model_name(name) {
+                eprintln!("{} invalid model ID '{m}': {why}", error_style("Error:"));
+                std::process::exit(1);
+            }
+        }
+        if !known_prefixes.iter().any(|p| m.starts_with(p)) {
             eprintln!("{} invalid model ID '{m}'", error_style("Error:"));
             eprintln!();
             eprintln!("Model IDs must start with a provider prefix:");
@@ -2492,11 +2496,29 @@ async fn main() -> Result<()> {
                 d
             }
             // A repository's choice that can't be built (no key) must not stop every
-            // contributor without that key: warn and detect instead, with detection's
-            // own model id.
+            // contributor without that key. It falls through like an ignored choice:
+            // the user's default_model, then the wizard model, then auto-detection
+            // (with detection's own model id).
             Err(msg) if settings::is_project_sourced(choice) => {
-                eprintln!("hone: warning: {msg}; falling back to auto-detection");
-                detect_provider(&eff).await
+                let next = settings::load_effective_without_project_model();
+                match &next.model {
+                    Some(own) => {
+                        eprintln!(
+                            "hone: warning: {msg}; falling back to your own model choice"
+                        );
+                        match build_explicit_provider(own, &next) {
+                            Ok(d) => d,
+                            Err(msg) => {
+                                eprintln!("{} {msg}", error_style("Error:"));
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                    None => {
+                        eprintln!("hone: warning: {msg}; falling back to auto-detection");
+                        detect_provider(&next).await
+                    }
+                }
             }
             Err(msg) => {
                 eprintln!("{} {msg}", error_style("Error:"));

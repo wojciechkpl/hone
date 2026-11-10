@@ -33,6 +33,33 @@ pub fn load_effective(cli_model: Option<&str>) -> Result<Effective, ConfigError>
     })
 }
 
+/// Resolve again as if the project file had no `default_model`: the next
+/// choice is the user's `default_model`, then the wizard model, else none.
+/// Used when the repository's choice cannot be built. Warnings were already
+/// printed by the first load, so none are printed here.
+pub fn load_effective_without_project_model() -> Effective {
+    let result = (|| {
+        let user = match user_config_path() {
+            Some(p) => ConfigLayer::load(&p)?,
+            None => None,
+        };
+        let project = ConfigLayer::load_project(&workdir())?.map(|mut l| {
+            l.config.default_model = None;
+            l
+        });
+        resolve(user.as_ref(), project.as_ref(), None, &|k| {
+            std::env::var(k).ok()
+        })
+    })();
+    match result {
+        Ok(eff) => eff,
+        Err(e) => {
+            eprintln!("{}", format_config_error(&e));
+            std::process::exit(2);
+        }
+    }
+}
+
 /// True when the model choice came from the repository's `.hone/config.toml`.
 pub fn is_project_sourced(choice: &ModelChoice) -> bool {
     matches!(
