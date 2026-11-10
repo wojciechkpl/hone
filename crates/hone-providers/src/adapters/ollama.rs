@@ -15,8 +15,7 @@ use crate::error::{ProviderError, extract_api_error_message};
 use crate::retry_after::parse_retry_after;
 use crate::traits::{CompletionRequest, ModelProvider};
 
-const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
-const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+use super::http_common::{HTTP_CONNECT_TIMEOUT, HTTP_IDLE_TIMEOUT, build_client};
 
 pub struct OllamaProvider {
     base_url: String,
@@ -29,14 +28,18 @@ impl OllamaProvider {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into(),
-            client: Client::builder()
-                .timeout(HTTP_TIMEOUT)
-                .connect_timeout(HTTP_CONNECT_TIMEOUT)
-                .build()
-                .expect("reqwest builder cannot fail with valid timeout values"),
-            timeout: HTTP_TIMEOUT,
+            client: build_client(HTTP_IDLE_TIMEOUT),
+            timeout: HTTP_IDLE_TIMEOUT,
             connect_timeout: HTTP_CONNECT_TIMEOUT,
         }
+    }
+
+    /// Replace the idle limit: how long the response may stay silent before the
+    /// read fails with a timeout. It is not a total deadline.
+    pub fn with_idle_timeout(mut self, idle: Duration) -> Self {
+        self.client = build_client(idle);
+        self.timeout = idle;
+        self
     }
 
     pub fn http_client_timeout(&self) -> Option<Duration> {
@@ -181,6 +184,15 @@ pub fn parse_ndjson_line(line: &str) -> Vec<ProviderEvent> {
         debug!("Failed to parse Ollama NDJSON line: {line}");
         return Vec::new();
     };
+
+    // In-band error (e.g. the model crashed mid-stream).
+    if let Some(err) = value.get("error").filter(|e| !e.is_null()) {
+        let message = err
+            .as_str()
+            .or_else(|| err["message"].as_str())
+            .map_or_else(|| err.to_string(), str::to_owned);
+        return vec![ProviderEvent::Error { message }];
+    }
 
     let done = value["done"].as_bool().unwrap_or(false);
 
@@ -410,9 +422,13 @@ impl ModelProvider for OllamaProvider {
                 byte_stream,
                 String::new(),
                 super::http_common::Utf8Decoder::default(),
+                super::http_common::StreamProgress::default(),
             ),
-            |(mut byte_stream, mut buffer, mut decoder)| async move {
+            |(mut byte_stream, mut buffer, mut decoder, mut progress)| async move {
                 loop {
+                    if progress.should_stop() {
+                        return None;
+                    }
                     let mut emitted = Vec::new();
 
                     // Process all complete lines in the buffer
@@ -426,18 +442,26 @@ impl ModelProvider for OllamaProvider {
                         }
                     }
 
+                    progress.observe(&mut emitted);
+
                     if !emitted.is_empty() {
-                        return Some((stream::iter(emitted), (byte_stream, buffer, decoder)));
+                        return Some((
+                            stream::iter(emitted),
+                            (byte_stream, buffer, decoder, progress),
+                        ));
                     }
 
                     match byte_stream.next().await {
                         Some(Ok(chunk)) => decoder.push(&chunk, &mut buffer),
-                        Some(Err(_)) | None => {
+                        end => {
+                            let cause = match &end {
+                                Some(Err(e)) => Some(e),
+                                _ => None,
+                            };
                             // A character cut off by the end of the stream becomes U+FFFD.
                             decoder.finish(&mut buffer);
                             // Process any remaining content in the buffer
-                            let remaining = buffer.clone();
-                            buffer.clear();
+                            let remaining = std::mem::take(&mut buffer);
                             let mut final_events = Vec::new();
                             for line in remaining.lines() {
                                 let line = line.trim();
@@ -446,10 +470,12 @@ impl ModelProvider for OllamaProvider {
                                     final_events.extend(parsed);
                                 }
                             }
+                            progress.observe(&mut final_events);
+                            final_events.extend(progress.end_events("ollama", cause));
                             if !final_events.is_empty() {
                                 return Some((
                                     stream::iter(final_events),
-                                    (byte_stream, buffer, decoder),
+                                    (byte_stream, buffer, decoder, progress),
                                 ));
                             }
                             return None;

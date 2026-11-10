@@ -227,7 +227,11 @@ impl ModelProvider for CachingProvider {
         let inner_stream = self.inner.complete(request).await?;
         let collected: Arc<Vec<ProviderEvent>> = Arc::new(inner_stream.collect().await);
 
-        // Store the full sequence
+        // Store the full sequence, unless it failed: a response with an Error
+        // event must go to the provider again next time.
+        if !collected
+            .iter()
+            .any(|e| matches!(e, ProviderEvent::Error { .. }))
         {
             let mut cache = self.cache.lock().await;
             cache.put(key, Arc::clone(&collected));
