@@ -3306,41 +3306,6 @@ async fn run_tui(
                                 app.handle_shell_escape_result(result);
                             }
 
-                            // Handle pending model changes from /model or /configure model.
-                            if let Some(new_model) = app.take_pending_model_change() {
-                                // In an API session `/model` goes through the same check as
-                                // everything else: an API prefix whose provider is configured.
-                                let checked = match &routing {
-                                    Some(r) => check_model_switch(&new_model, &|m| {
-                                        r.dispatch.has_provider_for(m)
-                                    }),
-                                    None => Ok(ModelId::new(&new_model)),
-                                };
-                                match checked {
-                                    Ok(model) => {
-                                        agent.set_model(model.clone()).await;
-                                        // Confirm only now that the switch was checked.
-                                        app.status_mut().model = new_model.clone();
-                                        app.status_mut().context_limit =
-                                            model_context_limit(&new_model);
-                                        app.push_system_message(format!(
-                                            "Model changed to: {new_model}  (takes effect on next turn)"
-                                        ));
-                                        shown_model = new_model.clone();
-                                        applied_model = model.clone();
-                                        // Pin it: routing stops for the rest of the session
-                                        // (fallback models still apply).
-                                        if routing.is_some() {
-                                            pinned_model = Some(model);
-                                        }
-                                    }
-                                    Err(msg) => {
-                                        // Keep the current model and say why.
-                                        app.push_error(msg);
-                                    }
-                                }
-                            }
-
                             // Handle pending agent mode changes from Shift+Tab.
                             if let Some(new_mode) = app.take_pending_mode_change() {
                                 agent.set_mode(new_mode).await;
@@ -3679,6 +3644,41 @@ async fn run_tui(
         {
             current_task_abort = None;
             app.restore_queued_message_if_idle();
+        }
+
+        // Handle pending model changes from /model or /configure model. This runs on
+        // every loop iteration, after any key handling (not only on Enter while idle),
+        // so a `/model` typed during a turn is checked and confirmed at once; the agent
+        // applies `set_model` between turns, so "next turn" is accurate.
+        if let Some(new_model) = app.take_pending_model_change() {
+            // In an API session `/model` goes through the same check as
+            // everything else: an API prefix whose provider is configured.
+            let checked = match &routing {
+                Some(r) => check_model_switch(&new_model, &|m| r.dispatch.has_provider_for(m)),
+                None => Ok(ModelId::new(&new_model)),
+            };
+            match checked {
+                Ok(model) => {
+                    agent.set_model(model.clone()).await;
+                    // Confirm only now that the switch was checked.
+                    app.status_mut().model = new_model.clone();
+                    app.status_mut().context_limit = model_context_limit(&new_model);
+                    app.push_system_message(format!(
+                        "Model changed to: {new_model}  (takes effect on next turn)"
+                    ));
+                    shown_model = new_model.clone();
+                    applied_model = model.clone();
+                    // Pin it: routing stops for the rest of the session
+                    // (fallback models still apply).
+                    if routing.is_some() {
+                        pinned_model = Some(model);
+                    }
+                }
+                Err(msg) => {
+                    // Keep the current model and say why.
+                    app.push_error(msg);
+                }
+            }
         }
 
         // Refresh context-window stats in the status bar.
