@@ -107,6 +107,13 @@ flowchart LR
 | R6 | Minor: `detect_provider`'s "set but empty" branch can no longer fire (`non_empty` drops empty keys) | Remove the dead branch | — |
 | R7 | **M4** Behaviour changes for existing users | CHANGELOG entry and docs (done outside the TDD loop) | — |
 
+## 3c. Review round 2: required changes
+
+| # | Finding | Requirement | Test |
+|---|---|---|---|
+| R8 | **Medium** The R5 fallback goes straight to auto-detection and skips the user's own `default_model` and wizard model (confirmed: user `default_model = "openai:user-pick"`, project `anthropic:…`, only an OpenAI key → ran `openai:gpt-4o`). A user who chose a local Ollama model can end up on a cloud API | When a project-sourced choice can't be built, fall through exactly like R1: user `default_model` → wizard model → auto-detection. A user-sourced choice reached this way that can't be built exits 1 (C9) | The confirmed scenario runs `openai:user-pick`; with a wizard model and no user `default_model`, the wizard model is used; with neither, detection |
+| R9 | Minor: `--model openai:-x` prints the "Model IDs must start with a provider prefix" help although the prefix is fine | For a bad name after a known prefix, print `validate_model_name`'s reason, not the prefix help; still exit 1 | `--model openai:-x` → exit 1, stderr has the reason, not "must start with a provider prefix" |
+
 ## 4. Out of scope (follow-ups)
 
 - Applying `[sandbox]`, `[[routing]]`, `daily_limit_usd` (needs spend persisted across
