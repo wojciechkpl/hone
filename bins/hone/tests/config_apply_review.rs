@@ -478,3 +478,139 @@ fn test_r5_user_file_and_dash_dash_model_keep_the_hard_error() {
     assert_eq!(o.code, Some(1), "--model: {}", o.stderr);
     assert!(mock.requests().is_empty());
 }
+
+// ==============================================================================================
+// Review round 2 (spec section 3c): R8 and R9
+// ==============================================================================================
+
+// -- R8: an unbuildable project choice falls through like R1 -------------------------------------------
+
+#[test]
+fn test_r8_unbuildable_project_choice_falls_through_to_the_user_default_model() {
+    let e = env();
+    let mock = Mock::start();
+    write(&e.user_config(), "default_model = \"openai:user-pick\"\n");
+    write(&e.project_config(), "default_model = \"anthropic:proj-claude\"\n");
+
+    // Only an OpenAI-compatible key exists: the project's anthropic choice cannot be built.
+    let env_vars = openai_env(&mock);
+    let o = hone_json(&e, &as_refs(&env_vars), None);
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 1, "stderr: {}", o.stderr);
+    assert_eq!(reqs[0].model(), "user-pick", "the user's own choice, not detection's gpt-4o");
+    assert!(o.stderr.contains("warning") && o.stderr.contains(".hone/config.toml"), "{}", o.stderr);
+    let v: serde_json::Value = serde_json::from_str(&o.stdout).expect("clean JSON on stdout");
+    assert_eq!(v["model"], "openai:user-pick");
+}
+
+#[test]
+fn test_r8_unbuildable_project_choice_falls_through_to_the_wizard_model() {
+    let e = env();
+    let mock = Mock::start();
+    write_fake_cli(&e, "claude");
+    // The wizard model names a provider that auto-detection would NOT pick here (detection
+    // prefers the OpenAI-compatible key over the Claude CLI), so only a real fall-through
+    // reaches it.
+    write(&e.user_config(), "[provider]\nname = \"claude-cli\"\nmodel = \"wiz-model\"\n");
+    write(&e.project_config(), "default_model = \"anthropic:proj-claude\"\n");
+
+    let env_vars = openai_env(&mock);
+    let _ = hone_json(&e, &as_refs(&env_vars), None);
+
+    assert!(e.marker("claude").exists(), "the wizard's claude-cli model must be used");
+    assert!(mock.requests().is_empty(), "not detection's OpenAI provider");
+}
+
+#[test]
+fn test_r8_wizard_model_for_the_detected_provider_is_used_too() {
+    let e = env();
+    let mock = Mock::start();
+    write(&e.user_config(), "[provider]\nname = \"openai\"\nmodel = \"wiz-model\"\n");
+    write(&e.project_config(), "default_model = \"anthropic:proj-claude\"\n");
+
+    let env_vars = openai_env(&mock);
+    let o = hone_json(&e, &as_refs(&env_vars), None);
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert_eq!(mock.requests()[0].model(), "wiz-model");
+}
+
+#[test]
+fn test_r8_with_neither_user_choice_nor_wizard_model_detection_decides() {
+    let e = env();
+    let mock = Mock::start();
+    write(&e.project_config(), "default_model = \"anthropic:proj-claude\"\n");
+
+    let env_vars = openai_env(&mock);
+    let o = hone_json(&e, &as_refs(&env_vars), None);
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    let reqs = mock.requests();
+    assert_eq!(reqs.len(), 1, "stderr: {}", o.stderr);
+    assert_eq!(reqs[0].model(), "gpt-4o", "detection's own model");
+}
+
+#[test]
+fn test_r8_a_user_choice_reached_through_the_fallthrough_that_cannot_be_built_exits_1() {
+    let e = env();
+    let mock = Mock::start();
+    write(&e.user_config(), "default_model = \"anthropic:user-claude\"\n");
+    write(&e.project_config(), "default_model = \"anthropic:proj-claude\"\n");
+
+    // Neither anthropic choice has a key; an OpenAI key exists but must not be used silently.
+    let env_vars = openai_env(&mock);
+    let o = hone_json(&e, &as_refs(&env_vars), None);
+
+    assert_eq!(o.code, Some(1), "stderr: {}", o.stderr);
+    assert!(o.stderr.contains("ANTHROPIC_API_KEY"), "{}", o.stderr);
+    assert!(
+        o.stderr.contains(".config/hone/config.toml"),
+        "the message names the user file the choice came from: {}",
+        o.stderr
+    );
+    assert!(mock.requests().is_empty(), "no silent fallback to the OpenAI key");
+}
+
+// -- R9: a bad name after a good prefix gets the name's reason, not the prefix help ------------------------
+
+#[test]
+fn test_r9_dash_dash_model_with_a_leading_dash_name_prints_the_reason_not_the_prefix_help() {
+    let e = env();
+    let mock = Mock::start();
+
+    let env_vars = openai_env(&mock);
+    let o = hone_json(&e, &as_refs(&env_vars), Some("openai:-x"));
+
+    assert_eq!(o.code, Some(1), "stderr: {}", o.stderr);
+    assert!(o.stderr.contains("start with '-'"), "the name's reason is shown: {}", o.stderr);
+    assert!(
+        !o.stderr.contains("must start with a provider prefix"),
+        "the prefix is fine, so the prefix help is misleading: {}",
+        o.stderr
+    );
+    assert!(mock.requests().is_empty());
+}
+
+#[test]
+fn test_r9_other_bad_names_get_their_own_reasons() {
+    for (m, needle) in [
+        ("openai:", "empty"),
+        ("ollama:has space", "whitespace"),
+    ] {
+        let e = env();
+        let o = hone_json(&e, &[], Some(m));
+        assert_eq!(o.code, Some(1), "{m:?}: {}", o.stderr);
+        assert!(o.stderr.contains(needle), "{m:?}: {}", o.stderr);
+        assert!(!o.stderr.contains("must start with a provider prefix"), "{m:?}: {}", o.stderr);
+    }
+}
+
+#[test]
+fn test_r9_an_unknown_prefix_still_gets_the_prefix_help() {
+    let e = env();
+    let o = hone_json(&e, &[], Some("gpt-4o"));
+    assert_eq!(o.code, Some(1), "{}", o.stderr);
+    assert!(o.stderr.contains("must start with a provider prefix"), "{}", o.stderr);
+}
