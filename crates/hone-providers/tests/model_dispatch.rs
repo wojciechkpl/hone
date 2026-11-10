@@ -204,7 +204,12 @@ async fn test_g3_requests_reach_the_provider_for_their_prefix_unchanged() {
 
         let ev = events(&s.dispatch, req(model)).await;
 
-        assert_eq!(ev, vec![tok(&expect[..1]), done()], "{model}");
+        let answers = match expect {
+            "anthropic" => "a",
+            "openai" => "o",
+            _ => "l",
+        };
+        assert_eq!(ev, vec![tok(answers), done()], "{model}");
         let counts = [s.anthropic.calls(), s.openai.calls(), s.ollama.calls()];
         let want = match expect {
             "anthropic" => [1, 0, 0],
