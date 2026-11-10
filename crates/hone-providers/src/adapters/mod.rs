@@ -5,5 +5,6 @@ pub mod anthropic;
 pub mod claude_cli;
 pub mod cli_common;
 pub mod gemini_cli;
+pub(crate) mod http_common;
 pub mod ollama;
 pub mod openai;

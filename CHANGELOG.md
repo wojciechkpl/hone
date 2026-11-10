@@ -137,6 +137,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: base URLs ending in `/v1`
+
+- **The bug:** the OpenAI-compatible adapter added `/v1/chat/completions` to the base URL, and the Anthropic adapter `/v1/messages`. A base URL that already ended in `/v1`, which is the usual form (OpenRouter `https://openrouter.ai/api/v1`, vLLM `http://localhost:8000/v1`, the OpenAI SDKs), became `…/v1/v1/…` and failed. `hone configure` writes the OpenRouter URL in exactly that form, so every OpenRouter wizard user was affected, and since the previous fix their wizard settings are always applied.
+- **Now:** both adapters accept a base URL with or without a trailing `/v1` and trailing slashes, and trim surrounding whitespace (a stray space in `HONE_OPENAI_BASE_URL` used to give a confusing 404). Only a whole `/v1` segment is removed (`/v1beta`, `/apiv1` stay as they are). Hone always requests `<base>/v1/chat/completions` (or `/v1/messages`), so endpoints that serve chat elsewhere, such as Azure, Zhipu's `…/api/paas/v4`, Gemini's `…/v1beta/openai` or Cloudflare AI Gateway's `…/openai` route, are still not supported.
+- Contract: `docs/plans/base-url-v1-spec.md`.
+
 ### Fixed: config.toml is applied
 
 - **The bug:** `~/.config/hone/config.toml` and `.hone/config.toml` were validated but never used: `default_model`, `[providers.*]` and `[budget]` had no effect. The `[provider]` table that `hone configure` writes failed validation, and a separate reader picked up only part of it, so choosing Ollama or Claude CLI in the wizard, or an Anthropic model, did nothing.
