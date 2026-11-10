@@ -315,6 +315,11 @@ pub fn parse_sse_chunk(
                 tool_states.clear();
                 events.push(ProviderEvent::Done);
             }
+            // Any other non-empty finish reason (content_filter, function_call, TGI's
+            // eos_token, a reason added later) also ends the response.
+            Some(reason) if !reason.is_empty() && reason != "error" => {
+                events.push(ProviderEvent::Done);
+            }
             Some("error") => {
                 events.push(ProviderEvent::Error {
                     message: "the provider ended the response with finish_reason \"error\""
@@ -438,7 +443,7 @@ impl ModelProvider for OpenAiProvider {
             ),
             |(mut byte_stream, mut buffer, mut tool_states, mut decoder, mut progress)| async move {
                 loop {
-                    if progress.is_failed() {
+                    if progress.should_stop() {
                         return None;
                     }
                     let mut emitted = Vec::new();

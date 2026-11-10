@@ -277,6 +277,14 @@ pub struct ToolCallState {
     partial_json: String,
 }
 
+/// True for a `message_delta` whose `stop_reason` is set: the model finished,
+/// even if a proxy drops the closing `message_stop`.
+fn has_stop_reason(data: &str) -> bool {
+    serde_json::from_str::<Value>(data).is_ok_and(|v| {
+        v["type"].as_str() == Some("message_delta") && !v["delta"]["stop_reason"].is_null()
+    })
+}
+
 /// Parses a single SSE `data:` line into zero or more `ProviderEvent`s.
 ///
 /// `tool_states` is a mutable map from block index to in-progress tool call state.
@@ -521,7 +529,7 @@ impl ModelProvider for AnthropicProvider {
             ),
             |(mut byte_stream, mut buffer, mut tool_states, mut decoder, mut progress)| async move {
                 loop {
-                    if progress.is_failed() {
+                    if progress.should_stop() {
                         return None;
                     }
                     // Try to process events already in the buffer
@@ -533,6 +541,9 @@ impl ModelProvider for AnthropicProvider {
                         buffer.drain(..pos + 2);
 
                         for (_event_type, data) in extract_sse_events(&block) {
+                            if has_stop_reason(data) {
+                                progress.mark_complete();
+                            }
                             let parsed = parse_sse_data(data, &mut tool_states);
                             emitted.extend(parsed);
                         }
@@ -561,6 +572,9 @@ impl ModelProvider for AnthropicProvider {
                             let remaining = std::mem::take(&mut buffer);
                             let mut final_events = Vec::new();
                             for (_event_type, data) in extract_sse_events(&remaining) {
+                                if has_stop_reason(data) {
+                                    progress.mark_complete();
+                                }
                                 let parsed = parse_sse_data(data, &mut tool_states);
                                 final_events.extend(parsed);
                             }

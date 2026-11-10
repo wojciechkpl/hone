@@ -426,7 +426,7 @@ impl ModelProvider for OllamaProvider {
             ),
             |(mut byte_stream, mut buffer, mut decoder, mut progress)| async move {
                 loop {
-                    if progress.is_failed() {
+                    if progress.should_stop() {
                         return None;
                     }
                     let mut emitted = Vec::new();

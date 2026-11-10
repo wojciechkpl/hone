@@ -113,6 +113,8 @@ pub(crate) fn error_chain(e: &dyn std::error::Error) -> String {
 pub(crate) struct StreamProgress {
     complete: bool,
     failed: bool,
+    /// The end-of-stream arm already ran: the byte stream must not be polled again.
+    ended: bool,
 }
 
 impl StreamProgress {
@@ -132,9 +134,16 @@ impl StreamProgress {
         }
     }
 
-    /// True once an `Error` was emitted: the reader must stop.
-    pub(crate) fn is_failed(&self) -> bool {
-        self.failed
+    /// Mark the response complete without a `Done` event (a completion marker
+    /// that the parser reports differently, e.g. Anthropic's `stop_reason`).
+    pub(crate) fn mark_complete(&mut self) {
+        self.complete = true;
+    }
+
+    /// True once an `Error` was emitted or the end of the stream was handled:
+    /// the reader must stop and never poll the byte stream again.
+    pub(crate) fn should_stop(&self) -> bool {
+        self.failed || self.ended
     }
 
     /// At end of stream: the one `Error` for a response that did not complete
@@ -144,6 +153,7 @@ impl StreamProgress {
         provider: &str,
         cause: Option<&reqwest::Error>,
     ) -> Vec<hone_proto::ProviderEvent> {
+        self.ended = true;
         if self.complete || self.failed {
             return Vec::new();
         }
