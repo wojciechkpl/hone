@@ -136,3 +136,68 @@ async fn test_b3_anthropic_health_never_doubles_v1() {
         assert_eq!(paths(&s).await, vec![expected.to_owned()], "base suffix {suffix:?}");
     }
 }
+
+// -- B5: surrounding whitespace is trimmed before normalising -------------------------------------------
+
+/// `(text before the server URI, text after it, expected normalised path prefix)`.
+const WHITESPACE_CASES: [(&str, &str, &str); 7] = [
+    ("", " ", ""),
+    ("", "/v1 ", ""),
+    ("  ", "/v1", ""),
+    ("", "/v1/\t", ""),
+    ("", "/v1/\n", ""),
+    (" \t", "/api/v1/ \n", "/api"),
+    ("", "/ ", ""),
+];
+
+#[tokio::test]
+async fn test_b5_openai_trims_surrounding_whitespace() {
+    for (before, after, prefix) in WHITESPACE_CASES {
+        let s = server().await;
+        let p = OpenAiProvider::with_base_url("fixture-key", format!("{before}{}{after}", s.uri()));
+
+        drain(&p, "openai:gpt-4o").await;
+        assert_eq!(
+            paths(&s).await,
+            vec![format!("{prefix}/v1/chat/completions")],
+            "complete, {before:?} + uri + {after:?}"
+        );
+
+        let s = server().await;
+        let p = OpenAiProvider::with_base_url("fixture-key", format!("{before}{}{after}", s.uri()));
+        let _ = tokio::time::timeout(Duration::from_secs(20), p.health())
+            .await
+            .expect("health hung");
+        assert_eq!(
+            paths(&s).await,
+            vec![format!("{prefix}/v1/chat/completions")],
+            "health, {before:?} + uri + {after:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_b5_anthropic_trims_surrounding_whitespace() {
+    for (before, after, prefix) in WHITESPACE_CASES {
+        let s = server().await;
+        let p = AnthropicProvider::with_base_url("fixture-key", format!("{before}{}{after}", s.uri()));
+
+        drain(&p, "anthropic:claude-sonnet-4-5").await;
+        assert_eq!(
+            paths(&s).await,
+            vec![format!("{prefix}/v1/messages")],
+            "complete, {before:?} + uri + {after:?}"
+        );
+
+        let s = server().await;
+        let p = AnthropicProvider::with_base_url("fixture-key", format!("{before}{}{after}", s.uri()));
+        let _ = tokio::time::timeout(Duration::from_secs(20), p.health())
+            .await
+            .expect("health hung");
+        assert_eq!(
+            paths(&s).await,
+            vec![format!("{prefix}/v1/messages")],
+            "health, {before:?} + uri + {after:?}"
+        );
+    }
+}
