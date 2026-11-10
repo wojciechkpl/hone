@@ -45,8 +45,8 @@ flowchart LR
 ## 2. Contract
 
 Completion markers: **OpenAI-compatible** `data: [DONE]` or any chunk with a non-null
-`finish_reason` other than `"error"`; **Anthropic** `message_stop`; **Ollama** a line with
-`"done": true`.
+`finish_reason` other than `"error"`; **Anthropic** `message_stop`, or a `message_delta`
+with a non-null `stop_reason`; **Ollama** a line with `"done": true`.
 
 | # | Requirement | Test |
 |---|---|---|
@@ -56,6 +56,7 @@ Completion markers: **OpenAI-compatible** `data: [DONE]` or any chunk with a non
 | S4 | **In-band errors:** OpenAI-compatible chunk with a top-level `error` object, or `finish_reason: "error"`; Anthropic `error` event; Ollama line with a top-level `error` → one `Error` carrying the provider's message (e.g. `Overloaded`, `Provider disconnected unexpectedly`). Events before it are delivered; the reader stops after it, so a following `[DONE]` / `message_stop` produces no `Done` | One body per format, including OpenRouter's shape (error + `finish_reason: "error"` + `[DONE]`) |
 | S5 | **Idle limit, not a total deadline:** a response that keeps sending data more often than the idle limit is never cut off however long it runs; no data for longer than the idle limit is a transport error (S1, "timed out"). Default idle limit 120 s, connect timeout unchanged (10 s). `http_client_timeout()` returns the idle limit. New `with_idle_timeout(Duration) -> Self` on `OpenAiProvider`, `AnthropicProvider`, `OllamaProvider` | Idle 1 s: a body streamed over about 3 s with a piece every 200 ms completes with no `Error`; a 2 s stall after the first event gives `Error` containing "timed out" within a few seconds. Existing `http_timeout_contract.rs` still passes |
 | S6 | **No caching of failed responses:** `CachingProvider` does not store a response that contains an `Error` event, so the same request goes to the provider again | Inner provider yields `[Token, Error]` then `[Token, Done]`: two calls reach it; the second result is cached |
+| S8 | **Every finish reason counts** (review finding: only `stop` / `length` / `tool_calls` / `[DONE]` did, so `content_filter`, `function_call`, TGI's `eos_token` or an unknown reason followed by a clean end without `[DONE]` failed a response that used to work). OpenAI-compatible: any non-null `finish_reason` other than `"error"` completes the response. Anthropic: a `message_delta` with a non-null `stop_reason` completes it too (a proxy that drops `message_stop`). No `Error` afterwards on a clean end or a cut | OpenAI `content_filter` and an unknown reason, each followed by a clean end and by a cut, no `[DONE]`: text delivered, no `Error`. Anthropic `message_delta` with `stop_reason` then a clean end without `message_stop`: no `Error` |
 | S7 | **End to end:** through the `hone` binary, a cut-off OpenAI-compatible response is reported as a provider error (non-zero exit, error event in `--json`), not as a successful answer | Binary test with a mock server whose body stops before completion |
 
 Unchanged: framing, event parsing for well-formed responses, `Done` semantics on success,
@@ -78,7 +79,14 @@ shared test module (`tests/common/`) is fine.
 ## 5. Out of scope (follow-ups)
 
 - Retrying a stream that fails before its first event (the agent retries only the initial
-  request).
+  request). `FallbackChain` and the router fall back only on request errors, never on a
+  mid-stream `Error`.
+- The idle limit is not configurable from the binary (`with_idle_timeout` has no caller);
+  users of very slow local models may want a setting.
+- Provider-supplied text (tokens and now in-band error messages) is printed raw to the
+  terminal in one-shot mode; control characters other than `\n` / `\t` should be stripped.
+- The Ollama tool-detection wrapper drops its buffered tokens when an `Error` arrives, so
+  the partial text is not shown.
 - `hone spec` ignores `Error` events and keeps partial text.
 - The OpenAI reader accepts only `data: ` with a space; the Anthropic reader splits blocks on
   `\n\n` only. `queue_client` frame decoding and the stdio readers (see
