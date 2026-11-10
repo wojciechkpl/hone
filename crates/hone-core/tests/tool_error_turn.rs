@@ -370,7 +370,12 @@ async fn test_t3_streamed_provider_error_should_send_exactly_one_error() {
     run_both(
         || {
             handle(
+                // Output first: an Error before any output is retried (stream-retry spec);
+                // this test is about a stream that breaks after it started.
                 Script::new(vec![Step::Events(vec![
+                    ProviderEvent::Token {
+                        text: "partial".to_owned(),
+                    },
                     ProviderEvent::Error {
                         message: "stream blew up".to_owned(),
                     },

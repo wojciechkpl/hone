@@ -129,8 +129,13 @@ async fn test_ensemble_handles_candidate_failure() {
             &self,
             _request: CompletionRequest,
         ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
-            // Emit an Error event so the agent returns Err.
+            // Emit some output and then an Error event so the agent returns Err.
+            // (An Error before any output is retried by the agent; a break after output
+            // fails the turn at once, which is what this provider is meant to simulate.)
             let events = vec![
+                ProviderEvent::Token {
+                    text: "partial".to_owned(),
+                },
                 ProviderEvent::Error {
                     message: "simulated failure".to_owned(),
                 },
