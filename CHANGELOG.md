@@ -137,6 +137,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: streamed text lost when a character was split across chunks
+
+- **The bug:** the OpenAI-compatible, Anthropic and Ollama adapters decoded each network chunk of a streamed response on its own and silently dropped any chunk that wasn't valid UTF-8 by itself. Chunk boundaries come from the network, not from characters, so a multi-byte character (Polish letters, `€`, CJK, emoji) cut between two chunks dropped both. Text went missing from answers, the events in those chunks were lost, and a tool call whose arguments were cut that way arrived broken or not at all. One invalid byte also dropped every event in its chunk.
+- **Now:** a shared decoder carries an incomplete character over to the next chunk and replaces genuinely invalid bytes with U+FFFD, so the text is the same however the response is chunked.
+- Contract: `docs/plans/stream-utf8-split-spec.md`.
+
 ### Fixed: base URLs ending in `/v1`
 
 - **The bug:** the OpenAI-compatible adapter added `/v1/chat/completions` to the base URL, and the Anthropic adapter `/v1/messages`. A base URL that already ended in `/v1`, which is the usual form (OpenRouter `https://openrouter.ai/api/v1`, vLLM `http://localhost:8000/v1`, the OpenAI SDKs), became `…/v1/v1/…` and failed. `hone configure` writes the OpenRouter URL in exactly that form, so every OpenRouter wizard user was affected, and since the previous fix their wizard settings are always applied.

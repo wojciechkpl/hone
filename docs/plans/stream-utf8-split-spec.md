@@ -82,3 +82,10 @@ adapter as written. The red phase proves it: the tests must fail on the current 
   the stream stops without an `Error` event, so a cut-off answer looks complete.
 - The OpenAI reader only accepts `data: ` with a space; the SSE spec also allows `data:`.
 - The Anthropic reader splits blocks on `\n\n` only, not `\r\n\r\n`.
+- `hone-core` `queue_client::parse_sse_data_lines` handles splits (it frames on bytes) but
+  does `from_utf8(raw).unwrap_or("")`, so one invalid byte drops its whole frame; it also
+  frames on `\n\n` only.
+- Line-based stdio readers (`cli_common.rs`, `claude_cli.rs`, `hone-mcp` stdio client, the
+  ACP transport, the MCP/ACP servers) handle splits, but one invalid byte is a hard error:
+  the turn ends, the persistent Claude process is tombstoned, or the MCP call fails. Fix:
+  `read_until(b'\n')` plus lossy decoding.
