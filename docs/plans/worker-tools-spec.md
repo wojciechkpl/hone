@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W32.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W34.
 
 ## Problem
 
@@ -133,6 +133,13 @@ keeps building and testing after Esc. The TUI's post-turn test run
 | W31 | **<kbd>x</kbd> aborts first, and needs an empty input box.** <kbd>x</kbd> acts only when the input box is empty (like <kbd>a</kbd> and <kbd>Enter</kbd>). The TUI loop aborts the current turn first, then answers the paused call with `Deny`, so a paused call from another task is answered too and a denied worker can't start another call before the abort. (Review 2 nit 1; amends W21.) |
 | W32 | **One snapshot of the run settings.** `AgentHandle::run_settings() -> Option<RunSettings>` returns the approval policy, mode and session approvals in one actor round trip; `spawn_orchestrated_turn` uses it, and `None` is W19's error. No `AskRisky` fallback is left. (Review 2 nit 4; amends W10, W17, W19.) |
 
+### Which worker is asking (W33–W34, added at the user's request)
+
+| Row | Behaviour |
+|---|---|
+| W33 | **Approval events name the worker.** `AgentEvent::ToolCallPaused` and `AgentEvent::ApprovalRequired` gain `worker: Option<WorkerRef>` (`hone-proto`; `WorkerRef { task_id, agent }`), serialized only when set (`#[serde(default, skip_serializing_if = "Option::is_none")]`), so the JSON for the main agent's events is unchanged and old payloads without it still parse. An orchestrator worker's approval events carry its subtask id and agent name (set on the worker's `Agent` by the orchestrator, e.g. `Agent::with_worker(WorkerRef)`); the main agent's carry `None`. Both the approval-policy pause and a policy `ask` prompt are tagged. |
+| W34 | **The TUI's approval menu shows it.** When the paused call has a `worker`, the menu shows a line naming it — the agent and the subtask id, plus the subtask's description when the TUI has it from that worker's `WorkerStarted`, cut to fit the menu width. A main-agent prompt shows no such line, as now. The worker named belongs to the call being asked about (a later prompt from another worker replaces it). |
+
 ## What each entry point gets
 
 | Entry point | Tools a worker can use | Risky calls |
@@ -148,8 +155,7 @@ keeps building and testing after Esc. The TUI's post-turn test run
   parallel (up to 4). A `write_file` from one worker can overwrite another's
   edit. The planner is asked to order dependent subtasks; nothing enforces
   `scope`.
-- **The approval menu doesn't say which worker asks** (`ToolCallPaused` has no
-  agent field).
+- **The web UI** doesn't show the new `worker` field (W33) yet.
 - **Worker tool output streams into one message** with the other workers'
   text, as today.
 - **No test run after an orchestrated turn** (`maybe_run_test_verification`
