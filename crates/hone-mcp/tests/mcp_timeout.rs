@@ -101,7 +101,11 @@ async fn test_t1_list_tools_to_a_silent_server_should_time_out() {
 #[tokio::test]
 async fn test_t1_connect_to_a_silent_server_should_time_out() {
     let (client, _dir) = spawn("silent").await;
-    let mut client = client.with_request_timeout(ms(300));
+    // `connect` is bounded by the handshake timeout (T7: by default the larger
+    // of the request timeout and 60 s), set here to 300 ms.
+    let mut client = client
+        .with_request_timeout(ms(300))
+        .with_handshake_timeout(ms(300));
 
     let err = bounded(client.connect()).await.expect_err("no handshake");
 

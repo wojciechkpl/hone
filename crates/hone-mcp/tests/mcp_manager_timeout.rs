@@ -4,7 +4,6 @@
 //! answers (within its `timeout_ms`) is skipped at startup and its process is
 //! killed; the healthy server still connects. Existing APIs only.
 
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use hone_config::mcp::{McpConfig, McpServerConfig};
@@ -36,16 +35,24 @@ for line in sys.stdin:
     sys.stdout.flush()
 "#;
 
-fn server(script: &std::path::Path, extra: &[&str], timeout_ms: u64) -> McpServerConfig {
+/// Built from JSON so the test does not depend on the struct's field list.
+fn server(
+    script: &std::path::Path,
+    extra: &[&str],
+    timeout_ms: u64,
+    handshake_timeout_ms: Option<u64>,
+) -> McpServerConfig {
     let mut args = vec![script.to_str().unwrap().to_owned()];
     args.extend(extra.iter().map(|s| (*s).to_owned()));
-    McpServerConfig {
-        command: "python3".to_owned(),
-        args,
-        env: HashMap::new(),
-        disabled: false,
-        timeout_ms,
+    let mut value = serde_json::json!({
+        "command": "python3",
+        "args": args,
+        "timeout_ms": timeout_ms,
+    });
+    if let Some(h) = handshake_timeout_ms {
+        value["handshake_timeout_ms"] = serde_json::json!(h);
     }
+    serde_json::from_value(value).unwrap()
 }
 
 /// Alive = the pid exists and is not a zombie.
@@ -70,11 +77,11 @@ async fn test_t5_hung_initialize_should_be_skipped_and_its_process_killed() {
     let mut config = McpConfig::default();
     config.mcp_servers.insert(
         "hung".to_owned(),
-        server(&hung, &[pid_file.to_str().unwrap()], 300),
+        server(&hung, &[pid_file.to_str().unwrap()], 300, Some(300)),
     );
     config
         .mcp_servers
-        .insert("healthy".to_owned(), server(&healthy, &[], 5000));
+        .insert("healthy".to_owned(), server(&healthy, &[], 5000, None));
 
     let start = Instant::now();
     let manager = tokio::time::timeout(Duration::from_secs(4), McpManager::from_config(&config))
@@ -102,6 +109,48 @@ async fn test_t5_hung_initialize_should_be_skipped_and_its_process_killed() {
     assert!(
         gone,
         "the hung server's process must be killed, not left running"
+    );
+    manager.shutdown().await;
+}
+
+/// `initialize` takes ~600 ms.
+const SLOW_START_SERVER: &str = r#"
+import json, sys, time
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    req = json.loads(line)
+    if "id" not in req:
+        continue
+    if req.get("method") == "tools/list":
+        result = {"tools": []}
+    else:
+        time.sleep(0.6)
+        result = {"serverInfo": {"name": "slow", "version": "1"}}
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": result}) + "\n")
+    sys.stdout.flush()
+"#;
+
+#[tokio::test]
+async fn test_t10_absent_handshake_timeout_should_use_the_default_not_timeout_ms() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("slow.py");
+    std::fs::write(&script, SLOW_START_SERVER).unwrap();
+    let mut config = McpConfig::default();
+    // timeout_ms 300 < the 600 ms handshake; no handshake_timeout_ms set.
+    config
+        .mcp_servers
+        .insert("slow".to_owned(), server(&script, &[], 300, None));
+
+    let manager = tokio::time::timeout(Duration::from_secs(10), McpManager::from_config(&config))
+        .await
+        .expect("startup hung");
+
+    assert_eq!(
+        manager.server_count(),
+        1,
+        "the handshake default (max(timeout_ms, 60 s)) lets a slow start connect"
     );
     manager.shutdown().await;
 }

@@ -49,19 +49,14 @@ async fn manager_for(source: &str) -> (McpManager, String, tempfile::TempDir) {
     std::fs::write(&script, source).unwrap();
     let pid_file = dir.path().join("pid");
     let mut servers = HashMap::new();
-    servers.insert(
-        "s".to_owned(),
-        McpServerConfig {
-            command: "python3".to_owned(),
-            args: vec![
-                script.to_str().unwrap().to_owned(),
-                pid_file.to_str().unwrap().to_owned(),
-            ],
-            env: HashMap::new(),
-            disabled: false,
-            timeout_ms: 10_000,
-        },
-    );
+    // Built from JSON so the test does not depend on the struct's field list.
+    let server: McpServerConfig = serde_json::from_value(serde_json::json!({
+        "command": "python3",
+        "args": [script.to_str().unwrap(), pid_file.to_str().unwrap()],
+        "timeout_ms": 10_000,
+    }))
+    .unwrap();
+    servers.insert("s".to_owned(), server);
     let manager = McpManager::from_config(&McpConfig {
         mcp_servers: servers,
     })
