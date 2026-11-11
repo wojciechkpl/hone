@@ -16,8 +16,13 @@ use ratatui::{
 
 use crate::app::App;
 
-/// Rows a single argument value may take before it is cut.
+/// Rows a bulk argument value (`content`, `new_string`, ...) may take before it
+/// is cut.
 const ARG_VALUE_ROWS: usize = 6;
+
+/// Rows an identifying value (`command`, `path`, ...) may take: it decides what
+/// runs or is touched, so its tail must stay visible far longer.
+const ARG_IDENTIFYING_ROWS: usize = 20;
 
 /// Keys listed before the others: what the call touches or runs.
 const IDENTIFYING_KEYS: [&str; 5] = ["path", "file_path", "command", "url", "pattern"];
@@ -34,22 +39,24 @@ fn capped(text: String, cap: usize) -> String {
 }
 
 /// The argument lines of the menu: one `key: value` line per field of an
-/// object (identifying keys first), each value capped at `cap` chars; anything
-/// else is shown as capped JSON.
-fn arg_lines(args: Option<&serde_json::Value>, cap: usize) -> Vec<String> {
+/// object (identifying keys first, capped at `ARG_IDENTIFYING_ROWS` rows of
+/// `row_width` chars, the others at `ARG_VALUE_ROWS`); anything else is shown
+/// as capped JSON.
+fn arg_lines(args: Option<&serde_json::Value>, row_width: usize) -> Vec<String> {
+    let cap = row_width * ARG_VALUE_ROWS;
+    let id_cap = row_width * ARG_IDENTIFYING_ROWS;
     let render = |v: &serde_json::Value| serde_json::to_string(v).unwrap_or_default();
     match args {
         Some(serde_json::Value::Object(map)) if !map.is_empty() => {
             let first = IDENTIFYING_KEYS
                 .iter()
-                .filter_map(|k| map.get_key_value(*k));
+                .filter_map(|k| map.get_key_value(*k))
+                .map(|(k, v)| format!("  {k}: {}", capped(render(v), id_cap)));
             let rest = map
                 .iter()
-                .filter(|(k, _)| !IDENTIFYING_KEYS.contains(&k.as_str()));
-            first
-                .chain(rest)
-                .map(|(k, v)| format!("  {k}: {}", capped(render(v), cap)))
-                .collect()
+                .filter(|(k, _)| !IDENTIFYING_KEYS.contains(&k.as_str()))
+                .map(|(k, v)| format!("  {k}: {}", capped(render(v), cap)));
+            first.chain(rest).collect()
         }
         Some(v) => vec![format!("  {}", capped(render(v), cap))],
         None => vec!["  {}".to_owned()],
@@ -138,8 +145,8 @@ pub fn render_debugger(app: &App, frame: &mut Frame, area: Rect) {
     // every value is capped at a few wrapped rows, so a long `content` can't
     // push the target out of view.
     let text_style = Style::default().fg(theme.text_primary);
-    let cap = usize::from(inner.width.saturating_sub(4)).max(20) * ARG_VALUE_ROWS;
-    for arg_line in arg_lines(app.debugger_paused_args.as_ref(), cap) {
+    let row_width = usize::from(inner.width.saturating_sub(4)).max(20);
+    for arg_line in arg_lines(app.debugger_paused_args.as_ref(), row_width) {
         lines.push(Line::from(Span::styled(arg_line, text_style)));
     }
 

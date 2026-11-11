@@ -2493,12 +2493,32 @@ impl Agent {
                             name: call.name.clone(),
                         }),
                         Some(t) => {
-                            dispatch_with_recovery(t, ToolInput::new(call.arguments.clone()), &ctx)
-                                .await
-                                .map_err(|e| AgentError::Tool {
-                                    name: call.name.clone(),
-                                    source: e,
-                                })
+                            let dispatch = dispatch_with_recovery(
+                                t,
+                                ToolInput::new(call.arguments.clone()),
+                                &ctx,
+                            );
+                            // The caller went away (Esc): drop the dispatch so a
+                            // running command is killed with its call (W23) and the
+                            // actor is not held until the command ends. Every issued
+                            // call still gets a result in the history.
+                            let finished = tokio::select! {
+                                biased;
+                                () = events.closed() => None,
+                                r = dispatch => Some(r),
+                            };
+                            let Some(finished) = finished else {
+                                self.cancel_pending_calls(
+                                    &pending_tool_calls,
+                                    redact,
+                                    CANCELLED_REASON,
+                                );
+                                return Err(AgentError::Cancelled);
+                            };
+                            finished.map_err(|e| AgentError::Tool {
+                                name: call.name.clone(),
+                                source: e,
+                            })
                         }
                     };
                     let duration_ms = dispatch_start.elapsed().as_millis() as u64;
