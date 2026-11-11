@@ -124,6 +124,50 @@ pub(crate) fn load_run_policy(
     Ok(policy)
 }
 
+/// The step channel of a run, shared by the workers of an orchestrated run.
+pub(crate) type StepRx = Arc<tokio::sync::Mutex<mpsc::Receiver<hone_proto::StepAction>>>;
+
+/// Approval policy, step channel and registry guard of a run (see
+/// [`register_step_run`]).
+pub(crate) type StepRun = (
+    ToolApprovalPolicy,
+    Option<StepRx>,
+    Option<crate::run_registry::RunGuard>,
+);
+
+/// Step-mode plumbing shared by `/run` and `/orchestrate`: step mode is on when
+/// `approval_policy` is given and is not `Auto`. Then `request_id` is required
+/// (400) and is registered in the run registry (409 if in use); the returned
+/// guard must live as long as the run. Otherwise the policy is `Auto` and there
+/// is no channel or guard.
+pub(crate) fn register_step_run(
+    state: &AppState,
+    request_id: Option<&str>,
+    approval_policy: Option<&ToolApprovalPolicy>,
+) -> Result<StepRun, (StatusCode, String)> {
+    let approval_policy = approval_policy.cloned().unwrap_or(ToolApprovalPolicy::Auto);
+    if matches!(approval_policy, ToolApprovalPolicy::Auto) {
+        return Ok((approval_policy, None, None));
+    }
+    let request_id = request_id.ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "request_id is required when approval_policy != Auto".to_string(),
+        )
+    })?;
+    match state.run_registry.register(request_id.to_owned()) {
+        Ok((rx, guard)) => Ok((
+            approval_policy,
+            Some(Arc::new(tokio::sync::Mutex::new(rx))),
+            Some(guard),
+        )),
+        Err(crate::run_registry::DuplicateRunId(id)) => Err((
+            StatusCode::CONFLICT,
+            format!("request_id already in use: {id}"),
+        )),
+    }
+}
+
 fn event_type(event: &AgentEvent) -> &'static str {
     match event {
         AgentEvent::Token { .. } => "token",
@@ -294,30 +338,11 @@ pub async fn run_handler(
             // The wire shape is: client supplies `request_id` AND
             // `approval_policy != Auto`. Anything else (Auto policy, or no
             // request_id) preserves the legacy fire-and-forget behaviour.
-            let approval_policy = req
-                .approval_policy
-                .clone()
-                .unwrap_or(ToolApprovalPolicy::Auto);
-            let step_mode_enabled = !matches!(approval_policy, ToolApprovalPolicy::Auto);
-            let (step_rx, run_guard) = if step_mode_enabled {
-                let request_id = req.request_id.clone().ok_or_else(|| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        "request_id is required when approval_policy != Auto".to_string(),
-                    )
-                })?;
-                match state.run_registry.register(request_id) {
-                    Ok((rx, guard)) => (Some(Arc::new(tokio::sync::Mutex::new(rx))), Some(guard)),
-                    Err(crate::run_registry::DuplicateRunId(id)) => {
-                        return Err((
-                            StatusCode::CONFLICT,
-                            format!("request_id already in use: {id}"),
-                        ));
-                    }
-                }
-            } else {
-                (None, None)
-            };
+            let (approval_policy, step_rx, run_guard) = register_step_run(
+                &state,
+                req.request_id.as_deref(),
+                req.approval_policy.as_ref(),
+            )?;
 
             let config = AgentConfig {
                 provider,

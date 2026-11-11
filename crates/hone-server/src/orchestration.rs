@@ -70,6 +70,15 @@ pub struct OrchestrateRequest {
     /// workers are short-circuited with a `BudgetExceeded` status.
     #[serde(default)]
     pub total_budget_usd: Option<f64>,
+    /// Step mode, with the same rules as `/run`: when `approval_policy` is
+    /// given and is not `Auto`, `request_id` is required and the run is
+    /// registered under it, so `POST /run/{request_id}/step` answers its
+    /// approval prompts. Both are ignored by `?dry_run=true`.
+    #[serde(default)]
+    pub request_id: Option<String>,
+    /// Approval policy of the run's workers. Absent or `Auto`: no step mode.
+    #[serde(default)]
+    pub approval_policy: Option<ToolApprovalPolicy>,
 }
 
 /// Query parameters for `POST /orchestrate`.
@@ -206,9 +215,8 @@ pub async fn orchestrate_handler(
 
     // ---- Provenance tee --------------------------------------
     //
-    // Same shape as `execution::run_handler`. /orchestrate has no
-    // step-mode `request_id`, so we always mint a fresh UUID for the
-    // session.
+    // Same shape as `execution::run_handler`, but the session id is always a
+    // fresh UUID (the step-mode `request_id` is not reused here).
     let provenance_tee: Option<ProvenanceTee> = if let Some(dir) = state.provenance_dir.clone() {
         let session_id = uuid::Uuid::now_v7().to_string();
         match open_session_log(&dir, &session_id) {
@@ -246,17 +254,46 @@ pub async fn orchestrate_handler(
 
             let policy = crate::execution::load_run_policy(&state, &working_dir, None, &*provider)
                 .map_err(|msg| (StatusCode::BAD_REQUEST, msg))?;
-            let lead_config =
+            let mut lead_config =
                 build_lead_agent_config(provider, model_id, working_dir.clone(), policy);
+
+            let is_dry_run = dry_run_flag.dry_run;
+
+            // Step mode (as `/run`): workers get their agent's tools in `Build`
+            // mode under the requested approval policy, and ask through the
+            // run's step channel. A dry run ignores both fields and registers
+            // nothing. Without step mode the config stays Plan/Auto (read-only
+            // workers, no prompts).
+            let mut run_guard = None;
+            if !is_dry_run {
+                let (approval_policy, step_rx, guard) = crate::execution::register_step_run(
+                    &state,
+                    req.request_id.as_deref(),
+                    req.approval_policy.as_ref(),
+                )?;
+                if step_rx.is_some() {
+                    lead_config.mode = AgentMode::Build;
+                    lead_config.approval_policy = approval_policy;
+                    lead_config.step_rx = step_rx;
+                }
+                run_guard = guard;
+            }
+            let step_mode = run_guard.is_some();
 
             // The agent registry is loaded hierarchically (built-ins, user-level,
             // project-level overrides). For an unknown working_dir this falls
             // back to built-ins only.
             let registry = AgentRegistry::load_hierarchical(&working_dir);
 
-            let is_dry_run = dry_run_flag.dry_run;
             tokio::spawn(async move {
+                // Held for the whole run: dropping it frees the request id.
+                let _run_guard = run_guard;
                 let mut orchestrator = Orchestrator::new(lead_config, registry, max_workers);
+                if step_mode {
+                    // A person answers the prompts; a client that hangs up
+                    // cancels the run.
+                    orchestrator = orchestrator.without_worker_timeout();
+                }
                 if let Some(b) = total_budget {
                     orchestrator = orchestrator.with_total_budget(b);
                 }
