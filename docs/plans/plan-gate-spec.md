@@ -67,6 +67,17 @@ The reviewer found that background planning lets typed text hit the overlay (B1)
 | **G17** | **Small fixes.** Run adds the prompt to Up-arrow history, as a submitted message does. A planning task that ends without sending a result (a panic) leads to `plan_failed("planning stopped unexpectedly")`, not an endless spinner. `set_input_buffer`'s doc comment no longer mentions Run. | hone-tui (history); loop by reading |
 | **G18** | **Test gaps from review:** Esc during planning goes through `handle_key` and requests a cancel; `run_plan` runs a dependency after its prerequisite (call order). | hone-tui, hone-core |
 
+## Review round 2 (rows G19–G22)
+
+The reviewer approved round 2 with three low findings: with one terminal `Done`, earlier messages of an orchestrated run stay streaming; `BudgetProgress` overwrites the session cost, which the summed `Done` then adds to; and the G18 test can't tell dependency order from list order.
+
+| Row | Contract | Where tested |
+|---|---|---|
+| **G19** | **No message is left streaming.** Before pushing the System message for `PlanCreated`, `WorkerStarted` or `WorkerCompleted`, the App ends a streaming message, as the `ModelFallback` handler does. `Done`, `Error` and `cancel_turn` clear `is_streaming` on every message, not only the last. After the event sequence `spawn_orchestrated_turn` sends (tokens, plan and worker events, worker tokens, summary token, one `Done`), no message is streaming. | hone-tui |
+| **G20** | **`BudgetProgress` doesn't touch the session cost.** It keeps updating `budget_usd`, the mode label and the phase, but `session_cost_usd` changes only by `Done`'s `cost_usd`. A session at 1.0 that runs an orchestration reporting `BudgetProgress { spent_usd: 0.3 }` and then `Done { cost_usd: 0.5 }` ends at 1.5. | hone-tui |
+| **G21** | **A refused `/plan` leaves no "Planning:" line.** `refuse_plan` removes the `"Planning: <prompt>"` System message when it is the last message, so the transcript shows only the refusal. | hone-tui |
+| **G22** | **Test strength:** G18 lists the dependent subtask first, so only dependency order can pass; a run in which one worker fails and the run succeeds forwards the failed `WorkerCompleted`, no `Error`, and exactly one `Done`. | hone-core, bins/hone |
+
 ## Out of scope (follow-ups)
 
 - **Orchestrated workers have no tools.** `Orchestrator::build_lead_config` and `build_worker_config` give the lead and every worker an empty `ToolRegistry` (`crates/hone-core/src/orchestrator.rs:772`, `:830`), so a Complex turn or `/plan` Run can't read or edit files: workers answer in text only. (Their hard-coded `AgentMode::Build` / `ToolApprovalPolicy::Auto` is moot without tools.) Pre-existing; affects every orchestrated path.
@@ -76,4 +87,5 @@ The reviewer found that background planning lets typed text hit the overlay (B1)
 - **Vim mode:** Esc never requests a cancel there (pre-existing), so "Esc stops it" doesn't hold in vim mode.
 - **Planning's lead-call cost** isn't added to the session cost total.
 - **Edit replaces the input bar's text,** including a follow-up typed while planning and restored when planning ended.
+- **Status label after an orchestrated run:** `BudgetProgress` sets the mode label to `orchestrator i/n`, and nothing restores the agent mode label after the run (pre-existing).
 - **Other drains in the Enter block:** a `!command` typed during a turn waits for the next Enter with text, like the plan actions did.
