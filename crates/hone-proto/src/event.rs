@@ -3,6 +3,13 @@ use serde::{Deserialize, Serialize};
 use crate::model::TokenUsage;
 use crate::tool::ToolCallRequest;
 
+/// The orchestrator worker an event belongs to: its subtask id and agent name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkerRef {
+    pub task_id: String,
+    pub agent: String,
+}
+
 /// What kind of failure a [`ProviderEvent::Error`] reports.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -140,7 +147,13 @@ pub enum AgentEvent {
     /// An error occurred during the turn.
     Error { message: String },
     /// The agent is waiting for user approval.
-    ApprovalRequired { action: String, description: String },
+    ApprovalRequired {
+        action: String,
+        description: String,
+        /// The orchestrator worker that asks; `None` for the main agent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worker: Option<WorkerRef>,
+    },
     /// The lead agent produced a decomposition plan.
     PlanCreated { goal: String, subtask_count: usize },
     /// A worker agent started executing a subtask.
@@ -176,6 +189,9 @@ pub enum AgentEvent {
         id: String,
         name: String,
         args: serde_json::Value,
+        /// The orchestrator worker that asks; `None` for the main agent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worker: Option<WorkerRef>,
     },
     /// Emitted once per turn when proactive context injection fires.
     ContextInjected {

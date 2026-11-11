@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: AI/ML research scientist for literature review, experiment design, and paper analysis
-tools: [read, write, shell, grep, glob]
+tools: [read_file, write_file, shell, grep, glob]
 model: opus
 ---
 

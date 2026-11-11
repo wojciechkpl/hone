@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 
 use crate::app::App;
@@ -37,8 +37,10 @@ pub fn render_debugger(app: &App, frame: &mut Frame, area: Rect) {
             title_style,
         ));
 
-    // Inner area after the border.
+    // Inner area after the border. Clear first: the menu sits over the
+    // conversation, whose text must not show through.
     let inner = block.inner(area);
+    frame.render_widget(Clear, area);
     frame.render_widget(block, area);
 
     if inner.height < 3 {
@@ -63,6 +65,29 @@ pub fn render_debugger(app: &App, frame: &mut Frame, area: Rect) {
         Span::raw("  Tool: "),
         Span::styled(tool_name, name_style),
     ]));
+
+    // The worker that asks (orchestrated runs): agent, subtask id and the
+    // subtask's description when seen, cut to the menu width.
+    if let Some(w) = &app.debugger_paused_worker {
+        let mut text = format!("  Worker: {} ({})", w.agent, w.task_id);
+        if let Some(d) = app.worker_descriptions.get(&w.task_id) {
+            let d = d.split_whitespace().collect::<Vec<_>>().join(" ");
+            text.push_str(" \u{2014} ");
+            text.push_str(&d);
+        }
+        let width = usize::from(inner.width);
+        if text.chars().count() > width {
+            text = text
+                .chars()
+                .take(width.saturating_sub(1))
+                .collect::<String>()
+                + "\u{2026}";
+        }
+        lines.push(Line::from(Span::styled(
+            text,
+            Style::default().fg(theme.text_muted),
+        )));
+    }
 
     // Blank separator.
     lines.push(Line::from(""));

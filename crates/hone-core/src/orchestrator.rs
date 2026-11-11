@@ -863,16 +863,29 @@ impl Orchestrator {
         }
 
         // A worker gets no more than the session has: the session's tools
-        // narrowed by its agent definition (empty list or unknown agent = all
-        // of them), run under the session's approval policy, step channel,
-        // mode, permission policy, sandbox, hooks and audit log. The agent
-        // definition's own `sandbox:` profile is deliberately not applied.
-        let allowed = self
-            .registry
-            .get(&task.agent)
-            .map(|def| def.tools.as_slice())
-            .unwrap_or(&[]);
-        let mut tools = filtered_registry(&self.lead_config.tools, allowed);
+        // narrowed by its agent definition (an empty list = all of them; an
+        // unregistered agent = the read-only ones), run under the session's
+        // approval policy, step channel, mode, permission policy, sandbox,
+        // hooks and audit log. The agent definition's own `sandbox:` profile
+        // is deliberately not applied.
+        // A name that is not in the registry (a typo, a made-up agent) gets
+        // read-only tools only: nothing narrows it, so it must not have every
+        // tool. A registered agent with an empty list still gets all of them.
+        let (mut tools, unknown_agent) = match self.registry.get(&task.agent) {
+            Some(def) => (
+                filtered_registry(&self.lead_config.tools, &def.tools),
+                false,
+            ),
+            None => (self.lead_config.tools.clone(), true),
+        };
+        if unknown_agent {
+            tracing::warn!(
+                agent = %task.agent,
+                task_id = %task.id,
+                "worker for an unregistered agent: giving it read-only tools"
+            );
+            tools = crate::plan_mode::read_only_registry(&tools);
+        }
         // In Plan mode a worker is read-only and must not write a plan file,
         // so it runs in Build mode with a read-only registry.
         let mode = match self.lead_config.mode {
@@ -933,7 +946,12 @@ async fn run_worker(
         config.budget_limit = worker_budget;
     }
 
-    let mut agent = Agent::new(config).with_session_approvals(approvals);
+    let mut agent = Agent::new(config)
+        .with_session_approvals(approvals)
+        .with_worker(hone_proto::WorkerRef {
+            task_id: task_id.clone(),
+            agent: agent_name.clone(),
+        });
     let prompt = format!("{}\n\n{}", task.description, task.context);
     let turn_fut = agent.run_turn(&prompt, events.clone());
     let outcome = match timeout_secs {

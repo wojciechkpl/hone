@@ -1,7 +1,7 @@
 ---
 name: tdd-workflow
 description: Test-Driven Development workflow enforcing Red-Green-Refactor discipline
-tools: [read, edit, write, shell, grep, glob]
+tools: [read_file, edit_file, write_file, shell, grep, glob]
 model: sonnet
 ---
 

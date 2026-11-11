@@ -1,7 +1,7 @@
 ---
 name: rust-expert
 description: Rust specialist for ownership, lifetimes, async with tokio, and idiomatic error handling
-tools: [read, edit, write, shell, grep, glob]
+tools: [read_file, edit_file, write_file, shell, grep, glob]
 model: sonnet
 ---
 

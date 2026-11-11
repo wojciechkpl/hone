@@ -34,12 +34,12 @@ impl SessionApprovals {
     }
 
     /// Record "always" for a tool at the approval-policy pause.
-    pub fn record_tool(&self, name: &str) {
+    pub(crate) fn record_tool(&self, name: &str) {
         self.lock().tools.insert(name.to_owned());
     }
 
     /// Record the entries of an "always" answer at a policy `ask` prompt.
-    pub fn record_entries<I: IntoIterator<Item = String>>(&self, entries: I) {
+    pub(crate) fn record_entries<I: IntoIterator<Item = String>>(&self, entries: I) {
         self.lock().entries.extend(entries);
     }
 

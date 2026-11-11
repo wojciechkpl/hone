@@ -1538,9 +1538,7 @@ fn spawn_orchestrated_turn(
     tokio::spawn(async move {
         let mut lead_config = lead_config;
         // A stopped agent fails closed: no lead or worker call is made.
-        let (Some(mode), Some(session_approvals)) =
-            (agent.mode().await, agent.session_approvals().await)
-        else {
+        let Some(settings) = agent.run_settings().await else {
             let _ = tx
                 .send(AgentEvent::Error {
                     message: "orchestration failed: the agent has stopped".to_owned(),
@@ -1550,11 +1548,10 @@ fn spawn_orchestrated_turn(
         };
         // Workers run under the agent's current approval policy and mode
         // ("always" answers, /permit, /mode). Read here, not in the UI loop,
-        // so the UI never waits on the actor. Each read is a round trip
-        // through the actor (the run waits if it is busy), and they are taken
-        // one after another, not as one atomic snapshot.
-        lead_config.approval_policy = agent.approval_policy().await;
-        lead_config.mode = mode;
+        // so the UI never waits on the actor. One round trip through the actor
+        // (the run waits if it is busy) gives a consistent snapshot.
+        lead_config.approval_policy = settings.approval_policy;
+        lead_config.mode = settings.mode;
 
         let registry = AgentRegistry::load_hierarchical(&lead_config.working_dir);
 
@@ -1566,7 +1563,7 @@ fn spawn_orchestrated_turn(
         let mut orchestrator = Orchestrator::new(lead_config, registry, 4)
             .with_plan_store(plan_store)
             .without_worker_timeout()
-            .with_session_approvals(session_approvals);
+            .with_session_approvals(settings.session_approvals);
 
         // The orchestrator's lead and worker turns each end in a `Done` (or an
         // `Error`) on this channel. Those belong to the inner turns: swallow
@@ -3241,6 +3238,31 @@ impl Drop for KillCommandsOnExit {
     }
 }
 
+/// Empty the agent event queue after a turn was cancelled, so no menu opens for
+/// the dead run. Each dropped `ToolCallPaused` is answered with `Deny` on the
+/// step channel, so whoever holds the step lock (e.g. a post-turn fix run that
+/// is not the cancelled task) is released instead of waiting forever; a dropped
+/// `Done` still counts its cost and tokens.
+fn drain_after_cancel(
+    app: &mut App,
+    rx: &mut mpsc::Receiver<AgentEvent>,
+    step_tx: Option<&mpsc::Sender<hone_proto::StepAction>>,
+) {
+    while let Ok(event) = rx.try_recv() {
+        match event {
+            AgentEvent::ToolCallPaused { .. } => {
+                if let Some(tx) = step_tx {
+                    let _ = tx.try_send(hone_proto::StepAction::Deny("turn cancelled".to_owned()));
+                }
+            }
+            AgentEvent::Done {
+                usage, cost_usd, ..
+            } => app.record_spend(usage.total(), cost_usd),
+            _ => {}
+        }
+    }
+}
+
 /// Waits for the next SIGTERM or SIGHUP on unix; never completes elsewhere.
 #[cfg(unix)]
 async fn os_term_signal(signals: &mut (tokio::signal::unix::Signal, tokio::signal::unix::Signal)) {
@@ -3475,8 +3497,8 @@ async fn run_tui(
 ) -> Result<()> {
     let mut app = if vim { App::with_vim() } else { App::new() };
     // Wire step-mode sender into app so it can unblock the agent.
-    if let Some(tx) = step_tx {
-        app.set_step_tx(tx);
+    if let Some(tx) = &step_tx {
+        app.set_step_tx(tx.clone());
     }
 
     // Show which model is active in the status bar and set the context limit.
@@ -3981,16 +4003,27 @@ async fn run_tui(
                         // Only act if there is actually a task to abort; without
                         // this guard, Escape during a shell escape would fire
                         // cancel_turn() spuriously and discard the shell output.
+                        // `x` in the approval menu also asks to deny the paused call.
+                        let deny_paused = app.take_pending_deny_paused();
                         if app.take_pending_cancel() {
                             if let Some(abort) = current_task_abort.take() {
                                 abort.abort();
                                 // Events the stopped run queued (e.g. another
                                 // worker's approval prompt) must not reach the
                                 // UI: they would open a menu for a dead run.
-                                while agent_rx.try_recv().is_ok() {}
+                                drain_after_cancel(&mut app, &mut agent_rx, step_tx.as_ref());
                                 // A planning result arriving later is dropped.
                                 planning_id = None;
                                 app.cancel_turn();
+                            }
+                        }
+                        // After the abort: a denied worker cannot start another
+                        // call first, and a pause of another task is answered too.
+                        if deny_paused {
+                            if let Some(tx) = &step_tx {
+                                let _ = tx.try_send(hone_proto::StepAction::Deny(
+                                    "turn stopped by user".to_owned(),
+                                ));
                             }
                         }
 

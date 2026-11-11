@@ -1,7 +1,7 @@
 ---
 name: security-auditor
 description: Security auditor for vulnerability scanning, secret detection, and OWASP review
-tools: [read, grep, glob, shell]
+tools: [read_file, grep, glob, shell]
 model: sonnet
 ---
 

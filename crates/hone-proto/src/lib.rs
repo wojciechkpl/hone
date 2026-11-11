@@ -12,7 +12,9 @@ mod tool;
 pub use content::{Content, ContentPart};
 pub use cost::{CostEstimate, PricingEntry};
 pub use error::ProtoError;
-pub use event::{AgentEvent, ProviderEvent, StepAction, StreamErrorKind, is_transient_status};
+pub use event::{
+    AgentEvent, ProviderEvent, StepAction, StreamErrorKind, WorkerRef, is_transient_status,
+};
 pub use handoff::{HandoffBuffer, HandoffRequest};
 pub use message::{Message, Role};
 pub use model::{ModelId, ModelInfo, ProviderHealth, TokenUsage};

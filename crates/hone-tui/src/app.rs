@@ -128,6 +128,9 @@ pub struct App {
     /// Set by Escape during WaitingForResponse; the event loop aborts the task
     /// and calls cancel_turn().
     pub(crate) pending_cancel: bool,
+    /// Set by `x` in the approval menu: after aborting the turn the loop
+    /// answers the paused call with `Deny` (see `take_pending_deny_paused`).
+    pub(crate) pending_deny_paused: bool,
     /// Message typed while a turn was active; restored to the input box on Done.
     pub(crate) queued_message: Option<String>,
 
@@ -171,6 +174,11 @@ pub struct App {
     pub(crate) debugger_paused_name: Option<String>,
     pub(crate) debugger_paused_args: Option<serde_json::Value>,
     pub(crate) debugger_paused_id: Option<String>,
+    /// The orchestrator worker whose call the menu asks about (`None`: the
+    /// main agent).
+    pub(crate) debugger_paused_worker: Option<hone_proto::WorkerRef>,
+    /// Subtask descriptions seen in `WorkerStarted`, by task id.
+    pub(crate) worker_descriptions: HashMap<String, String>,
     pub(crate) step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
     /// When the approval menu last opened (see [`MENU_KEY_GUARD`]).
     pub(crate) menu_opened_at: Option<Instant>,
@@ -278,6 +286,7 @@ impl App {
             completion_index: None,
             focus_msg_index: None,
             pending_cancel: false,
+            pending_deny_paused: false,
             queued_message: None,
             history: PromptHistory::load(),
             history_search_open: false,
@@ -299,6 +308,8 @@ impl App {
             debugger_paused_name: None,
             debugger_paused_args: None,
             debugger_paused_id: None,
+            debugger_paused_worker: None,
+            worker_descriptions: HashMap::new(),
             step_tx: None,
             menu_opened_at: None,
             last_key_at: None,
@@ -388,6 +399,20 @@ impl App {
         self.pending_cancel = true;
     }
 
+    /// Add the spend of a turn that was dropped before the UI saw its `Done`
+    /// (the cancel drain), so the session's totals stay right.
+    pub fn record_spend(&mut self, tokens: u32, cost_usd: f64) {
+        self.status.token_count += tokens;
+        self.status.session_cost_usd += cost_usd;
+    }
+
+    /// Drain the request to answer the paused call with `Deny` (set by `x` in
+    /// the approval menu, together with the cancel flag). The loop aborts the
+    /// turn first and then sends the answer.
+    pub fn take_pending_deny_paused(&mut self) -> bool {
+        std::mem::take(&mut self.pending_deny_paused)
+    }
+
     /// Drain the cancel flag; returns `true` once after `request_cancel`.
     pub fn take_pending_cancel(&mut self) -> bool {
         std::mem::take(&mut self.pending_cancel)
@@ -406,6 +431,7 @@ impl App {
         self.debugger_paused_id = None;
         self.debugger_paused_name = None;
         self.debugger_paused_args = None;
+        self.debugger_paused_worker = None;
         // Clear stale per-turn tracking so the next turn starts fresh.
         self.pending_tool_start.clear();
         self.current_turn = None;
@@ -688,8 +714,8 @@ impl App {
             // to the input; only `y` approves.
             let input_empty = self.input.buffer.is_empty();
             let is_menu_key = match key.code {
-                KeyCode::Enter | KeyCode::Char('a') => input_empty,
-                KeyCode::Esc | KeyCode::Char('y' | 'd' | 'n' | 's' | 'x') => true,
+                KeyCode::Enter | KeyCode::Char('a' | 'x') => input_empty,
+                KeyCode::Esc | KeyCode::Char('y' | 'd' | 'n' | 's') => true,
                 _ => false,
             };
             menu_ok = is_menu_key
@@ -1294,17 +1320,14 @@ impl App {
                 }
                 self.debugger_open = false;
             }
-            // `x` denies the paused call and stops the whole turn (like Esc
-            // with no menu open): the loop aborts the run, so no further
-            // approval menu opens for it.
+            // `x` stops the whole turn (like Esc with no menu open) and denies
+            // the paused call. The loop aborts the run first and then answers
+            // (`take_pending_deny_paused`), so a denied worker cannot start
+            // another call before the abort and no further menu opens for it.
             KeyCode::Char('x') => {
-                if let Some(tx) = &self.step_tx {
-                    let _ = tx.try_send(hone_proto::StepAction::Deny(
-                        "turn stopped by user".to_string(),
-                    ));
-                }
                 self.debugger_open = false;
                 self.pending_cancel = true;
+                self.pending_deny_paused = true;
             }
             // Esc dismisses the prompt without running the call.
             KeyCode::Esc => {
@@ -2580,6 +2603,8 @@ impl App {
                     DisplayRole::System,
                     format!("[{task_id}] {agent}: {description}"),
                 ));
+                self.worker_descriptions
+                    .insert(task_id.clone(), description.clone());
                 if self.current_turn.is_none() {
                     let turn_index = self.completed_turns.len();
                     let mut ledger = TurnLedger::new(turn_index);
@@ -2679,7 +2704,13 @@ impl App {
                 }
             }
 
-            AgentEvent::ToolCallPaused { id, name, args } => {
+            AgentEvent::ToolCallPaused {
+                id,
+                name,
+                args,
+                worker,
+            } => {
+                self.debugger_paused_worker = worker;
                 self.debugger_paused_id = Some(id);
                 self.debugger_paused_name = Some(name);
                 self.debugger_paused_args = Some(args);
