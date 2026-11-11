@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W34.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W36.
 
 ## Problem
 
@@ -140,13 +140,24 @@ keeps building and testing after Esc. The TUI's post-turn test run
 | W33 | **Approval events name the worker.** `AgentEvent::ToolCallPaused` and `AgentEvent::ApprovalRequired` gain `worker: Option<WorkerRef>` (`hone-proto`; `WorkerRef { task_id, agent }`), serialized only when set (`#[serde(default, skip_serializing_if = "Option::is_none")]`), so the JSON for the main agent's events is unchanged and old payloads without it still parse. An orchestrator worker's approval events carry its subtask id and agent name (set on the worker's `Agent` by the orchestrator, e.g. `Agent::with_worker(WorkerRef)`); the main agent's carry `None`. Both the approval-policy pause and a policy `ask` prompt are tagged. |
 | W34 | **The TUI's approval menu shows it.** When the paused call has a `worker`, the menu shows a line naming it — the agent and the subtask id, plus the subtask's description when the TUI has it from that worker's `WorkerStarted`, cut to fit the menu width. A main-agent prompt shows no such line, as now. The worker named belongs to the call being asked about (a later prompt from another worker replaces it). |
 
+### Web UI workers can ask (W35–W36, added at the user's request)
+
+The user chose the full version: today `POST /orchestrate` has no approval
+channel and its run config is in Plan mode, so web workers are read-only and
+never ask.
+
+| Row | Behaviour |
+|---|---|
+| W35 | **`POST /orchestrate` step mode** (`hone-server`). `OrchestrateRequest` gains `request_id: Option<String>` and `approval_policy: Option<ToolApprovalPolicy>` with `/run`'s rules: step mode is on when `approval_policy` is given and isn't `Auto`; then `request_id` is required (400 without it), a `request_id` already in use gives 409, and the run is registered in the run registry for its whole life, so `POST /run/{request_id}/step` answers its prompts. In step mode the run config is in `Build` mode with that approval policy and the run's step channel: workers get their agent's tools from the server's set (`read_file`, `write_file`, `edit_file`, `glob`, `grep`, `shell`; W26 still makes made-up agents read-only), a risky call sends `tool_call_paused` with `worker` (W33), workers ask one at a time and share "always" answers within the run (W16), and there is no per-worker timeout (a person answers; a client that disconnects cancels the run). Without step mode (no `approval_policy`, or `Auto`) nothing changes: Plan mode, read-only workers, 300 s timeout (W22). `?dry_run=true` ignores both fields and registers nothing. |
+| W36 | **The web UI asks for it and names the worker** (`apps/webui`). The `tool_call_paused` and `approval_required` event types gain an optional `worker: { task_id, agent }`. The approval dialog shows a line naming the worker — agent, subtask id, and the subtask's description from the run's `worker_started` events — and nothing for the main agent. With step mode on, an orchestrated run (Run on the plan preview) sends a `request_id` and `approval_policy: { AskRisky: { always_allowed: [] } }`, as `/run` does, and the dialog's answers go to `/run/{request_id}/step`; with it off, and for `?dry_run=true`, it sends neither. Verified by `npm run build` (`tsc --noEmit` + `vite build`); the web UI has no test runner. |
+
 ## What each entry point gets
 
 | Entry point | Tools a worker can use | Risky calls |
 |---|---|---|
 | TUI (complex prompt, `/plan` Run) | its agent's list, from the session's tools | asked in the TUI, one at a time; read-only tools in Plan mode; no pause in AutoApprove mode or once permitted |
 | `hone --orchestrate` | its agent's list, from the session's tools | run without asking (the session is `Auto`, like `hone -p`); the permission policy applies |
-| Web UI / `POST /orchestrate` | read-only (`read_file`, `grep`, `glob`): the server's run config is in Plan mode | none |
+| Web UI / `POST /orchestrate` | without step mode: read-only (`read_file`, `grep`, `glob`), the run config is in Plan mode; with step mode (W35): its agent's list from the server's tools | without step mode: none; with it: asked in the web UI's dialog, one at a time |
 | `honed` distributed worker | unchanged (`AgentExecutor`), but W3 now gives it `read_file`, `edit_file`, `write_file` | unchanged |
 
 ## Out of scope (follow-ups)
@@ -155,7 +166,7 @@ keeps building and testing after Esc. The TUI's post-turn test run
   parallel (up to 4). A `write_file` from one worker can overwrite another's
   edit. The planner is asked to order dependent subtasks; nothing enforces
   `scope`.
-- **The web UI** doesn't show the new `worker` field (W33) yet.
+- **The desktop app** (`apps/hone-desktop`) doesn't show the `worker` field.
 - **Worker tool output streams into one message** with the other workers'
   text, as today.
 - **No test run after an orchestrated turn** (`maybe_run_test_verification`
