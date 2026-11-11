@@ -1518,6 +1518,16 @@ fn spawn_medium_turn(
 // Agent turn dispatch — complex (orchestrator as spawned task)
 // ---------------------------------------------------------------------------
 
+/// The run config of an orchestrated turn under an inline `@agent` persona:
+/// `config` with its tools narrowed to the persona's `tools:` list, the same
+/// narrowing the persona's own turn gets. An empty list leaves it unchanged.
+fn narrow_run_config_for_persona(mut config: AgentConfig, allowed: &[String]) -> AgentConfig {
+    if !allowed.is_empty() {
+        config.tools = hone_core::filtered_registry(&config.tools, allowed);
+    }
+    config
+}
+
 fn spawn_orchestrated_turn(
     lead_config: AgentConfig,
     user_text: String,
@@ -1527,29 +1537,36 @@ fn spawn_orchestrated_turn(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut lead_config = lead_config;
+        // A stopped agent fails closed: no lead or worker call is made.
+        let (Some(mode), Some(session_approvals)) =
+            (agent.mode().await, agent.session_approvals().await)
+        else {
+            let _ = tx
+                .send(AgentEvent::Error {
+                    message: "orchestration failed: the agent has stopped".to_owned(),
+                })
+                .await;
+            return;
+        };
         // Workers run under the agent's current approval policy and mode
         // ("always" answers, /permit, /mode). Read here, not in the UI loop,
-        // so the UI never waits on the actor.
+        // so the UI never waits on the actor. Each read is a round trip
+        // through the actor (the run waits if it is busy), and they are taken
+        // one after another, not as one atomic snapshot.
         lead_config.approval_policy = agent.approval_policy().await;
-        if let Some(mode) = agent.mode().await {
-            lead_config.mode = mode;
-        }
-
-        let session_approvals = agent.session_approvals().await;
+        lead_config.mode = mode;
 
         let registry = AgentRegistry::load_hierarchical(&lead_config.working_dir);
 
         let plan_store = PlanStore::default_for(&lead_config.working_dir);
         // No per-worker timeout: a worker may wait on an approval or a long
-        // build. Esc stops the run.
-        let mut orchestrator = Orchestrator::new(lead_config, registry, 4)
-            .with_plan_store(plan_store)
-            .without_worker_timeout();
+        // build. Esc (or `x` in the approval menu) stops the run.
         // The session's "always" answers cover every worker, and the
         // workers' answers cover the session agent in turn.
-        if let Some(approvals) = session_approvals {
-            orchestrator = orchestrator.with_session_approvals(approvals);
-        }
+        let mut orchestrator = Orchestrator::new(lead_config, registry, 4)
+            .with_plan_store(plan_store)
+            .without_worker_timeout()
+            .with_session_approvals(session_approvals);
 
         // The orchestrator's lead and worker turns each end in a `Done` (or an
         // `Error`) on this channel. Those belong to the inner turns: swallow
@@ -3629,6 +3646,9 @@ async fn run_tui(
                                 // Track whether we applied a filtered tool registry so we
                                 // can restore the base registry after the turn completes.
                                 let mut applied_tool_filter = false;
+                                // The persona's `tools:` list, kept so an orchestrated run
+                                // narrows its tools the same way (W18).
+                                let mut persona_tools: Vec<String> = Vec::new();
                                 if let Some(ref agent_name) = maybe_inline_agent {
                                     // Look up the agent definition and swap the prompt.
                                     let registry = AgentRegistry::load_hierarchical(app.working_dir());
@@ -3644,6 +3664,7 @@ async fn run_tui(
                                             );
                                             agent.set_tools(filtered).await;
                                             applied_tool_filter = true;
+                                            persona_tools = def.tools.clone();
                                         }
 
                                         tracing::info!(agent = %agent_name, "inline @agent persona active");
@@ -3733,11 +3754,15 @@ async fn run_tui(
                                 if matches!(tier, ComplexityTier::Complex) {
                                     base_config_clone.model = complex_model!();
                                 }
-                                // Mirror the per-run gov onto the orchestrated path's clone too —
+                                // Mirror the per-run budget onto the orchestrated path's clone too —
                                 // spawn_orchestrated_turn builds a disposable Orchestrator from this
-                                // clone and never sees the AgentHandle setters above.
+                                // clone. (The approval policy is not mirrored: the spawned task reads
+                                // it from the AgentHandle, which got the /permit changes.)
                                 pending_gov.clone().apply_to_budget(&mut base_config_clone.budget_limit);
-                                pending_gov.apply_to_policy(&mut base_config_clone.approval_policy);
+                                // An inline @agent's tool list narrows the run's tools too, so
+                                // its workers never have a tool the persona's turn doesn't.
+                                let base_config_clone =
+                                    narrow_run_config_for_persona(base_config_clone, &persona_tools);
                                 let agent_tx_clone = agent_tx.clone();
                                 let original_prompt = base_config.system_prompt.clone();
                                 let base_tools = base_config.tools.clone();
@@ -3869,7 +3894,6 @@ async fn run_tui(
                             }
                             let pending_gov = drain_governance!();
                             pending_gov.clone().apply_to_budget(&mut run_config.budget_limit);
-                            pending_gov.apply_to_policy(&mut run_config.approval_policy);
                             // The classifier didn't pick this tier: it records nothing.
                             current_tier = None;
                             turn_fallback_model = None;
@@ -3892,6 +3916,10 @@ async fn run_tui(
                         if app.take_pending_cancel() {
                             if let Some(abort) = current_task_abort.take() {
                                 abort.abort();
+                                // Events the stopped run queued (e.g. another
+                                // worker's approval prompt) must not reach the
+                                // UI: they would open a menu for a dead run.
+                                while agent_rx.try_recv().is_ok() {}
                                 // A planning result arriving later is dropped.
                                 planning_id = None;
                                 app.cancel_turn();

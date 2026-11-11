@@ -85,7 +85,7 @@ pub fn render_debugger(app: &App, frame: &mut Frame, area: Rect) {
     // Footer with keybinding hints.
     let footer_style = Style::default().fg(theme.text_muted);
     lines.push(Line::from(Span::styled(
-        "  y/Enter proceed  s skip (inject stub)  Esc skip",
+        "  y/Enter proceed  a always  n deny  s skip  x stop turn  Esc skip",
         footer_style,
     )));
 

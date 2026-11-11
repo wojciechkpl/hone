@@ -164,8 +164,9 @@ impl AllowlistRejection {
 /// * If `allowed.is_empty()`, return `base` unchanged (no allowlist == all tools).
 /// * Otherwise, return a new registry containing only the listed tools. The
 ///   short names `read`, `write` and `edit` resolve to `read_file`,
-///   `write_file` and `edit_file`; real names work too, and a tool listed
-///   twice is registered once.
+///   `write_file` and `edit_file` only when no tool has that exact name (an
+///   MCP tool called `write` is kept as is); real names work too, and a tool
+///   listed twice, by either name, is registered once.
 /// * Names that resolve to nothing in `base` are skipped (logged via
 ///   `tracing::warn!`).
 pub fn filtered_registry(base: &ToolRegistry, allowed: &[String]) -> ToolRegistry {
@@ -176,11 +177,16 @@ pub fn filtered_registry(base: &ToolRegistry, allowed: &[String]) -> ToolRegistr
     let mut builder = ToolRegistry::builder();
     let mut seen = std::collections::HashSet::new();
     for name in allowed {
-        let resolved = match name.as_str() {
-            "read" => "read_file",
-            "write" => "write_file",
-            "edit" => "edit_file",
-            other => other,
+        // An exact name wins; the alias applies only when no tool has it.
+        let resolved = if base.get(name).is_some() {
+            name.as_str()
+        } else {
+            match name.as_str() {
+                "read" => "read_file",
+                "write" => "write_file",
+                "edit" => "edit_file",
+                other => other,
+            }
         };
         match base.get(resolved) {
             Some(tool) => {

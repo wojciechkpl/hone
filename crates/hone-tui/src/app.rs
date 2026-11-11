@@ -689,7 +689,7 @@ impl App {
             let input_empty = self.input.buffer.is_empty();
             let is_menu_key = match key.code {
                 KeyCode::Enter | KeyCode::Char('a') => input_empty,
-                KeyCode::Esc | KeyCode::Char('y' | 'd' | 'n' | 's') => true,
+                KeyCode::Esc | KeyCode::Char('y' | 'd' | 'n' | 's' | 'x') => true,
                 _ => false,
             };
             menu_ok = is_menu_key
@@ -1293,6 +1293,18 @@ impl App {
                     let _ = tx.try_send(hone_proto::StepAction::Skip);
                 }
                 self.debugger_open = false;
+            }
+            // `x` denies the paused call and stops the whole turn (like Esc
+            // with no menu open): the loop aborts the run, so no further
+            // approval menu opens for it.
+            KeyCode::Char('x') => {
+                if let Some(tx) = &self.step_tx {
+                    let _ = tx.try_send(hone_proto::StepAction::Deny(
+                        "turn stopped by user".to_string(),
+                    ));
+                }
+                self.debugger_open = false;
+                self.pending_cancel = true;
             }
             // Esc dismisses the prompt without running the call.
             KeyCode::Esc => {
