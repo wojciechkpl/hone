@@ -23,6 +23,7 @@ use crate::cost::CostAccumulator;
 use crate::egress_log::{EgressEntry, EgressLog, SpanKind, TraceContext, now_rfc3339, preview};
 use crate::error::AgentError;
 use crate::hooks::{HookEvent, HookOutcome, HookRegistry};
+use crate::session_approvals::SessionApprovals;
 use crate::injection_detector::InjectionDetector;
 use crate::memory_format::format_memory_body;
 use crate::memory_worthy::{MemoryCandidate, classify_turn};
@@ -172,6 +173,9 @@ enum StepWait {
     ChannelClosed,
     /// The turn's event receiver closed: cancel the turn.
     EventsClosed,
+    /// Once this caller held the channel, the re-check found the call already
+    /// covered by the session's "always" answers; nothing was sent.
+    Covered,
 }
 
 /// Wait for one answer on the step channel. Shared by the policy `ask` prompt
@@ -181,16 +185,25 @@ enum StepWait {
 /// turn whose UI went away can never wedge the actor. Stale answers buffered
 /// from an earlier, cancelled prompt are drained after taking the lock and
 /// before `prompts` are emitted, so they cannot answer this prompt.
+///
+/// `covered` runs once, right after the lock is taken and before anything is
+/// drained or sent: a caller that queued behind another prompt can find that
+/// an "always" given meanwhile now covers its call, and then does not ask.
+/// It is never consulted after a prompt went out.
 async fn wait_for_step(
     rx: &Arc<tokio::sync::Mutex<mpsc::Receiver<StepAction>>>,
     events: &mpsc::Sender<AgentEvent>,
     prompts: Vec<AgentEvent>,
+    covered: impl FnOnce() -> bool,
 ) -> StepWait {
     let mut guard = tokio::select! {
         biased;
         () = events.closed() => return StepWait::EventsClosed,
         g = rx.lock() => g,
     };
+    if covered() {
+        return StepWait::Covered;
+    }
     while guard.try_recv().is_ok() {}
     for prompt in prompts {
         if events.send(prompt).await.is_err() {
@@ -238,6 +251,7 @@ async fn record_policy_block(
 async fn apply_policy(
     policy: &PolicyConfig,
     approved: &mut HashSet<String>,
+    shared: &SessionApprovals,
     tool: Option<&dyn Tool>,
     step_rx: Option<&Arc<tokio::sync::Mutex<mpsc::Receiver<StepAction>>>>,
     egress: Option<&Arc<tokio::sync::Mutex<EgressLog>>>,
@@ -285,9 +299,15 @@ async fn apply_policy(
                 message: format!("(requires approval: rule {rule_id})"),
             };
         }
-        match ask_user(policy, approved, tool, step_rx, egress, turn_trace, call, events, &rule_id)
-            .await
-        {
+        let outcome = ask_user(
+            policy, current, approved, shared, tool, step_rx, egress, turn_trace, call, events,
+            &rule_id,
+        )
+        .await;
+        match outcome {
+            // Another agent's "always" now clears the rule (`approved` has it):
+            // run the gate again without having prompted.
+            AskOutcome::Covered => {}
             AskOutcome::Once | AskOutcome::Always => {
                 prompted_any = true;
                 let mut p = once.take().unwrap_or_else(|| policy.clone());
@@ -304,6 +324,8 @@ async fn apply_policy(
 enum AskOutcome {
     Once,
     Always,
+    /// Shared "always" answers cleared the rule while waiting for the channel.
+    Covered,
     /// The turn's event receiver closed: nobody can answer, cancel the turn.
     Cancelled,
     Blocked(PolicyVerdict),
@@ -313,7 +335,9 @@ enum AskOutcome {
 #[allow(clippy::too_many_arguments)]
 async fn ask_user(
     policy: &PolicyConfig,
+    current: &PolicyConfig,
     approved: &mut HashSet<String>,
+    shared: &SessionApprovals,
     tool: Option<&dyn Tool>,
     step_rx: Option<&Arc<tokio::sync::Mutex<mpsc::Receiver<StepAction>>>>,
     egress: Option<&Arc<tokio::sync::Mutex<EgressLog>>>,
@@ -352,15 +376,27 @@ async fn ask_user(
         },
     ];
 
-    let answer = match wait_for_step(rx, events, prompts).await {
+    // Once this call holds the channel, take in what others recorded and ask
+    // only if the rule is still uncleared.
+    let covered = || {
+        shared.extend_entries_into(approved);
+        !matches!(
+            decide(current, approved, tool, call),
+            GateDecision::Ask { rule_id: ref r } if *r == rule_id
+        )
+    };
+    let answer = match wait_for_step(rx, events, prompts, covered).await {
         StepWait::EventsClosed => return AskOutcome::Cancelled,
+        StepWait::Covered => return AskOutcome::Covered,
         StepWait::ChannelClosed => None,
         StepWait::Answer(a) => Some(a),
     };
     match answer {
         Some(StepAction::Proceed) => AskOutcome::Once,
         Some(StepAction::ApproveAlways(_)) => {
-            approved.extend(session_approval_entries(policy, tool, call, &rule_id));
+            let entries = session_approval_entries(policy, tool, call, &rule_id);
+            shared.record_entries(entries.iter().cloned());
+            approved.extend(entries);
             AskOutcome::Always
         }
         Some(StepAction::Skip) => {
@@ -578,6 +614,8 @@ pub struct Agent {
     base_tools: ToolRegistry,
     /// Policy rule ids the user approved with `ApproveAlways` this session.
     policy_session_approved: HashSet<String>,
+    /// The session's "always" answers, possibly shared with other agents.
+    session_approvals: Arc<SessionApprovals>,
     /// Valid `HONE_CONTEXT_WINDOW` override, read once at construction.
     context_window_override: Option<u32>,
 }
@@ -624,8 +662,33 @@ impl Agent {
             model_info_emitted: false,
             base_tools,
             policy_session_approved: HashSet::new(),
+            session_approvals: Arc::new(SessionApprovals::default()),
             context_window_override,
         }
+    }
+
+    /// Use `approvals` as this agent's session approvals instead of its own, so
+    /// "always" answers given to (or by) any agent holding the same `Arc` cover
+    /// all of them.
+    pub fn with_session_approvals(mut self, approvals: Arc<SessionApprovals>) -> Self {
+        self.session_approvals = approvals;
+        self
+    }
+
+    /// This agent's session approvals.
+    pub fn session_approvals(&self) -> Arc<SessionApprovals> {
+        Arc::clone(&self.session_approvals)
+    }
+
+    /// Take in the session's "always" answers: tool names through the approval
+    /// policy (`Auto` and `AlwaysAsk` keep their meaning), policy entries into
+    /// the policy session approvals.
+    fn take_in_session_approvals(&mut self) {
+        for name in self.session_approvals.tools() {
+            self.config.approval_policy.approve_always(&name);
+        }
+        self.session_approvals
+            .extend_entries_into(&mut self.policy_session_approved);
     }
 
     /// Swap out the active provider (e.g. for hot-reload / fallback tests).
@@ -988,12 +1051,14 @@ impl Agent {
         turn_trace: &TraceContext,
         events: &mpsc::Sender<AgentEvent>,
     ) -> PolicyVerdict {
+        self.take_in_session_approvals();
         match self.config.policy.as_ref() {
             None => PolicyVerdict::Proceed { prompted: false },
             Some(policy) => {
                 apply_policy(
                     policy,
                     &mut self.policy_session_approved,
+                    &self.session_approvals,
                     self.config.tools.get(&call.name).map(|t| &**t),
                     self.config.step_rx.as_ref(),
                     self.config.egress_log.as_ref(),
@@ -2207,6 +2272,8 @@ impl Agent {
                         .map(|t| t.is_read_only())
                         .unwrap_or(false);
 
+                    self.take_in_session_approvals();
+
                     // AutoApprove skips the approval pause only; the permission
                     // policy gate above still applies deny/ask rules. A call to
                     // a tool this agent doesn't have is not paused: it is
@@ -2248,7 +2315,21 @@ impl Agent {
                             name: call.name.clone(),
                             args: call.arguments.clone(),
                         };
-                        match wait_for_step(&rx, &events, vec![paused]).await {
+                        // Re-check once this call holds the channel: another
+                        // agent's "always" for the tool may have arrived while
+                        // it waited. `--step` (AlwaysAsk) asks every time.
+                        let covered = {
+                            let shared = Arc::clone(&self.session_approvals);
+                            let name = call.name.clone();
+                            let always_ask =
+                                matches!(self.config.approval_policy, ToolApprovalPolicy::AlwaysAsk);
+                            move || !always_ask && shared.covers_tool(&name)
+                        };
+                        match wait_for_step(&rx, &events, vec![paused], covered).await {
+                            StepWait::Covered => {
+                                self.take_in_session_approvals();
+                                // Fall through to dispatch, no prompt was sent.
+                            }
                             StepWait::EventsClosed => {
                                 self.cancel_pending_calls(
                                     &pending_tool_calls,
@@ -2304,6 +2385,7 @@ impl Agent {
                                 // The gate trusts the paused call, not the name
                                 // the UI sent.
                                 self.config.approval_policy.approve_always(&call.name);
+                                self.session_approvals.record_tool(&call.name);
                                 // Fall through to dispatch.
                             }
                             StepWait::Answer(StepAction::Deny(reason)) => {
@@ -2996,6 +3078,10 @@ enum AgentCommand {
     GetMode {
         reply: oneshot::Sender<AgentMode>,
     },
+    /// Read the agent's session approvals.
+    GetSessionApprovals {
+        reply: oneshot::Sender<Arc<SessionApprovals>>,
+    },
     Shutdown,
 }
 
@@ -3108,6 +3194,9 @@ impl AgentHandle {
                     }
                     AgentCommand::GetMode { reply } => {
                         let _ = reply.send(agent.config.mode);
+                    }
+                    AgentCommand::GetSessionApprovals { reply } => {
+                        let _ = reply.send(agent.session_approvals());
                     }
                     AgentCommand::Shutdown => break,
                 }
@@ -3337,6 +3426,17 @@ impl AgentHandle {
         let (tx, rx) = oneshot::channel();
         self.cmd_tx
             .send(AgentCommand::GetMode { reply: tx })
+            .await
+            .ok()?;
+        rx.await.ok()
+    }
+
+    /// The agent's session approvals (its "always" answers), to share with the
+    /// workers of an orchestrated run. `None` if the actor has stopped.
+    pub async fn session_approvals(&self) -> Option<Arc<SessionApprovals>> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(AgentCommand::GetSessionApprovals { reply: tx })
             .await
             .ok()?;
         rx.await.ok()

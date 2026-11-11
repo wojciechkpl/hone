@@ -10,6 +10,7 @@ use crate::agent_registry::{AgentRegistry, filtered_registry};
 use crate::checkpoint::CheckpointStore;
 use crate::error::AgentError;
 use crate::plan_store::PlanStore;
+use crate::session_approvals::SessionApprovals;
 use crate::task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
 use hone_proto::{AgentEvent, TokenUsage, ToolApprovalPolicy};
 
@@ -38,6 +39,8 @@ pub struct Orchestrator {
     queue_client: Option<Arc<crate::queue_client::QueueClient>>,
     /// Polling interval for distributed mode (default 500ms).
     distributed_poll_interval: std::time::Duration,
+    /// "Always" answers shared by every worker of this orchestrator.
+    session_approvals: Arc<SessionApprovals>,
 }
 
 impl Orchestrator {
@@ -54,7 +57,16 @@ impl Orchestrator {
             checkpoint_store: None,
             queue_client: None,
             distributed_poll_interval: std::time::Duration::from_millis(500),
+            session_approvals: Arc::new(SessionApprovals::default()),
         }
+    }
+
+    /// Share `approvals` with every worker instead of the orchestrator's own,
+    /// so an "always" answer given to a worker also covers whoever else holds
+    /// them (e.g. the session agent in the TUI).
+    pub fn with_session_approvals(mut self, approvals: Arc<SessionApprovals>) -> Self {
+        self.session_approvals = approvals;
+        self
     }
 
     /// Override the per-worker budget (USD). Workers without a budget run unbounded.
@@ -444,6 +456,7 @@ impl Orchestrator {
                     let task = task.clone();
                     let events = events.clone();
                     let worker_config = self.build_worker_config(&task);
+                    let approvals = Arc::clone(&self.session_approvals);
                     // Per-task budget from the plan overrides the default worker budget.
                     let effective_budget = task.budget_usd.or(self.worker_budget);
                     let timeout_secs = self.worker_timeout_secs;
@@ -468,9 +481,15 @@ impl Orchestrator {
                     let permit = sem.acquire_owned().await.expect("semaphore never closed");
 
                     set.spawn(async move {
-                        let result =
-                            run_worker(task, worker_config, effective_budget, timeout_secs, events)
-                                .await;
+                        let result = run_worker(
+                            task,
+                            worker_config,
+                            approvals,
+                            effective_budget,
+                            timeout_secs,
+                            events,
+                        )
+                        .await;
                         // Explicit drop documents the intent; the borrow-checker
                         // guarantees the permit is released here regardless.
                         drop(permit);
@@ -900,6 +919,7 @@ impl Orchestrator {
 async fn run_worker(
     task: SubTask,
     mut config: AgentConfig,
+    approvals: Arc<SessionApprovals>,
     worker_budget: Option<f64>,
     timeout_secs: Option<u64>,
     events: mpsc::Sender<AgentEvent>,
@@ -913,7 +933,7 @@ async fn run_worker(
         config.budget_limit = worker_budget;
     }
 
-    let mut agent = Agent::new(config);
+    let mut agent = Agent::new(config).with_session_approvals(approvals);
     let prompt = format!("{}\n\n{}", task.description, task.context);
     let turn_fut = agent.run_turn(&prompt, events.clone());
     let outcome = match timeout_secs {

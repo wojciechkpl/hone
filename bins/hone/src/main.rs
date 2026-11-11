@@ -1535,6 +1535,8 @@ fn spawn_orchestrated_turn(
             lead_config.mode = mode;
         }
 
+        let session_approvals = agent.session_approvals().await;
+
         let registry = AgentRegistry::load_hierarchical(&lead_config.working_dir);
 
         let plan_store = PlanStore::default_for(&lead_config.working_dir);
@@ -1543,6 +1545,11 @@ fn spawn_orchestrated_turn(
         let mut orchestrator = Orchestrator::new(lead_config, registry, 4)
             .with_plan_store(plan_store)
             .without_worker_timeout();
+        // The session's "always" answers cover every worker, and the
+        // workers' answers cover the session agent in turn.
+        if let Some(approvals) = session_approvals {
+            orchestrator = orchestrator.with_session_approvals(approvals);
+        }
 
         // The orchestrator's lead and worker turns each end in a `Done` (or an
         // `Error`) on this channel. Those belong to the inner turns: swallow
