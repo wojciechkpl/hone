@@ -1,6 +1,6 @@
 # MCP servers connect in parallel — spec
 
-Branch `fix/mcp-parallel-connect`. Contract for the TDD rounds: rows P1–P6.
+Branch `fix/mcp-parallel-connect`. Contract for the TDD rounds: rows P1–P9.
 
 ## Problem
 
@@ -48,6 +48,14 @@ gantt
 | P4 | **Servers shut down at the same time.** `McpManager::shutdown()` shuts every server down concurrently, so exit waits about one server's shutdown budget (5 s) at most, not 5 s per server that ignores its input closing. A server that exits when its input ends still stops at once. |
 | P5 | **A server that stopped reading can't stall exit.** Each server's shutdown (the `notifications/cancelled` message, closing its input, waiting for it to exit) shares one 5 s budget; when it runs out, the process is killed and `shutdown` returns. Before, the notification write and flush had no limit. Waiting for an in-flight tool call to release the connection is outside the budget (that call is bounded by `timeout_ms`). |
 | P6 | **Docs.** `docs/configuration.md` says servers start in parallel and startup waits for the slowest one (a hung server delays it by its handshake timeout); the CHANGELOG has an entry. |
+
+### Review round 1 (P7–P9)
+
+| Row | Behaviour |
+|---|---|
+| P7 | **A failed session resume stops MCP servers.** `hone session resume <name>` that ends with "Session '…' not found" or "Could not load session" (exit code 1) shuts its MCP servers down first, like every other exit path; a server that ignores its input closing is not left running after hone exits. (Review S1, reproduced: `std::process::exit(1)` skipped `mcp_manager.shutdown()` and destructors. Older than this branch.) |
+| P8 | **Each server's result is logged when it finishes.** The `MCP server connected` / `MCP server failed to start, skipping` line for a server is logged as soon as that server's start ends, not when the slowest server's does (a healthy server's line no longer waits out a hung server's handshake timeout). Startup still returns only when every server has finished. |
+| P9 | **The kill after an exhausted budget doesn't wait forever.** When a server's 5 s shutdown budget runs out, hone sends the kill and waits at most about 1 s more for the process to go away, then returns. A process that can't die promptly (stuck in the kernel, e.g. on a hung network mount) no longer holds hone's exit. Not testable without such a process; the P5 test covers the kill path. |
 
 ## Out of scope
 
