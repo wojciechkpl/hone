@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W25.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W26.
 
 ## Problem
 
@@ -53,7 +53,7 @@ flowchart LR
 
 | Row | Behaviour |
 |---|---|
-| W1 | **Workers get tools.** A worker's registry is `filtered_registry(&lead_config.tools, def.tools)` for its agent definition. An empty `tools:` list, or an agent name not in the registry, gives the whole `lead_config.tools` (as for the main agent). Visible in the tool definitions the worker sends to the provider. |
+| W1 | **Workers get tools.** A worker's registry is `filtered_registry(&lead_config.tools, def.tools)` for its agent definition. An empty `tools:` list gives the whole `lead_config.tools` (as for the main agent); an agent name not in the registry gets read-only tools (W26). Visible in the tool definitions the worker sends to the provider. |
 | W2 | **The lead keeps no tools.** Decompose and merge requests carry no tool definitions, even when `lead_config.tools` is full. Lead config otherwise unchanged (Auto, no step channel, no hooks, no audit log). |
 | W3 | **Short tool names resolve.** In `filtered_registry`, `read` → `read_file`, `write` → `write_file`, `edit` → `edit_file`. Real names still work; a list may mix both; a name that resolves to nothing is skipped with a warning (as now); listing a tool twice (`read` and `read_file`) registers it once. Applies everywhere `filtered_registry` is used (workers, TUI `@agent`, `honed` executor). |
 | W4 | **Approvals follow the session.** A worker takes `approval_policy` and `step_rx` from `lead_config`. With `AskRisky` and a step channel, a risky call pauses (`ToolCallPaused` on the run's event channel) and runs or not per the `StepAction` answer. With `AskRisky` and no channel, it is denied (`denied: no approval channel`) and the worker carries on. With `Auto`, it runs. A tool in `always_allowed` runs without a pause. |
@@ -116,6 +116,12 @@ keeps building and testing after Esc. The TUI's post-turn test run
 | W24 | **The TUI's post-turn test run ends with its turn.** `test_loop`'s test command runs the same way (one shared helper), so <kbd>Esc</kbd> during the test run kills it. |
 | W25 | **hone's exit kills running commands.** A process-wide registry tracks running command groups; `hone_tools` exposes a function that kills them all. The TUI calls it when it exits (quit, <kbd>Ctrl</kbd>+<kbd>C</kbd>, SIGINT) and on SIGTERM and SIGHUP (which it now handles like SIGINT). One-shot runs (`-p`, `--orchestrate`) handle SIGINT, SIGTERM and SIGHUP by killing running commands and exiting with 128 + the signal number. Without this, moving commands out of hone's process group (W23) would let them outlive hone, because the terminal's <kbd>Ctrl</kbd>+<kbd>C</kbd> and hangup no longer reach them. |
 
+### Made-up agent names (W26, added at the user's request)
+
+| Row | Behaviour |
+|---|---|
+| W26 | **A worker for an agent name not in the registry gets read-only tools**: `read_only_registry` of what it would otherwise get (the session's tools, after W18's persona narrowing and W5's mode), with a `tracing::warn!` naming the agent. It still runs, with the lead's system prompt as now. An agent that is in the registry with an empty or missing `tools:` list still gets every session tool. The planner's own fallback plan (`single_subtask_plan`) uses the first registered agent, so it is unaffected unless the registry is empty. (Review N3: a typo such as `rust_expert` gave a worker every tool.) |
+
 ## What each entry point gets
 
 | Entry point | Tools a worker can use | Risky calls |
@@ -141,9 +147,6 @@ keeps building and testing after Esc. The TUI's post-turn test run
   300 s worker timeout, which a long build can hit.
 - **An agent definition's `sandbox:` profile** is not applied to in-process
   workers (W6).
-- **A worker for an agent name not in the registry** (a planner typo) gets the
-  whole session registry, as the main agent has; least privilege would give it
-  read-only tools (review N3).
 - **Other commands hone runs** (`!command` in the TUI, hooks, a recipe's
   `test_cmd`) still run as before; Esc doesn't stop a `!command`.
 - **A command that starts its own session or process group** (`setsid`,
