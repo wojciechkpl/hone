@@ -19,20 +19,25 @@ pub struct McpManager {
 }
 
 impl McpManager {
-    /// Spawn and handshake all enabled servers from `config`.
+    /// Spawn and handshake all enabled servers from `config`, concurrently.
     ///
     /// Servers that fail to start are logged as warnings and skipped — one
-    /// broken MCP server must not prevent the agent from starting.
+    /// broken (or hung) MCP server must not prevent the agent from starting, and
+    /// startup takes as long as the slowest server, not the sum. The connections
+    /// are driven in the caller's task, not detached: dropping this future drops,
+    /// and so kills, every client still connecting.
     pub async fn from_config(config: &McpConfig) -> Self {
-        let mut clients = HashMap::new();
-
-        for (name, server_cfg) in &config.mcp_servers {
+        let connecting = config.mcp_servers.iter().filter_map(|(name, server_cfg)| {
             if server_cfg.disabled {
                 tracing::info!(server = %name, "MCP server disabled, skipping");
-                continue;
+                return None;
             }
+            Some(async move { (name, Self::spawn_and_connect(name, server_cfg).await) })
+        });
 
-            match Self::spawn_and_connect(name, server_cfg).await {
+        let mut clients = HashMap::new();
+        for (name, result) in futures::future::join_all(connecting).await {
+            match result {
                 Ok(client) => {
                     tracing::info!(
                         server = %name,
@@ -71,17 +76,20 @@ impl McpManager {
         self.clients.len()
     }
 
-    /// Gracefully shut down all MCP server subprocesses.
+    /// Gracefully shut down all MCP server subprocesses, concurrently.
     ///
     /// Each server receives a `notifications/cancelled` notification and is
-    /// given 5 seconds to exit before a hard kill.  Shutdown errors are logged
-    /// but never propagated — callers can drop `McpManager` unconditionally.
+    /// given 5 seconds to exit before a hard kill (the budgets run side by side,
+    /// so the whole shutdown takes at most about 5 seconds).  Shutdown errors
+    /// are logged but never propagated — callers can drop `McpManager`
+    /// unconditionally.
     pub async fn shutdown(mut self) {
-        for (name, mut client) in self.clients.drain() {
+        let stopping = self.clients.drain().map(|(name, mut client)| async move {
             if let Err(e) = client.shutdown().await {
                 tracing::warn!(server = %name, error = %e, "MCP server shutdown error");
             }
-        }
+        });
+        futures::future::join_all(stopping).await;
     }
 
     // -----------------------------------------------------------------------

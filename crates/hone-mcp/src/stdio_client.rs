@@ -484,32 +484,33 @@ impl StdioMcpClient {
 
     /// Gracefully stop the MCP server subprocess.
     ///
-    /// Sends a `notifications/cancelled` notification and then waits up to 5
-    /// seconds for the process to exit cleanly before issuing a hard kill.
+    /// Sends a `notifications/cancelled` notification, closes the server's
+    /// stdin and waits for the process to exit; all of that shares one 5 second
+    /// budget, after which the process is killed. (Waiting for the transport
+    /// lock, held by a request in flight, is outside the budget.)
     pub async fn shutdown(&mut self) -> Result<(), McpError> {
-        // Best-effort notification — the server may already be gone.
-        let _ = self
-            .transport
-            .lock()
-            .await
-            .send_notification("notifications/cancelled", None, &self.server_name)
-            .await;
-
-        let kill_timeout = tokio::time::Duration::from_secs(5);
+        let budget = tokio::time::Duration::from_secs(5);
+        let server_name = self.server_name.clone();
         let mut transport = self.transport.lock().await;
-        // Close the server's stdin (after flushing the notification), so a
-        // server that exits when its input ends is gone at once; the wait and
-        // kill below remain the fallback for one that does not.
-        if let Some(mut stdin) = transport.stdin.take() {
-            let _ = stdin.flush().await;
-            drop(stdin);
-        }
-        match tokio::time::timeout(kill_timeout, transport.process.wait()).await {
-            Ok(_) => {}
-            Err(_) => {
-                // Timed out — forcibly kill the subprocess.
-                let _ = transport.process.kill().await;
+        let ended = tokio::time::timeout(budget, async {
+            // Best-effort notification — the server may already be gone.
+            let _ = transport
+                .send_notification("notifications/cancelled", None, &server_name)
+                .await;
+            // Close the server's stdin (after flushing the notification), so a
+            // server that exits when its input ends is gone at once; the wait
+            // and kill remain the fallback for one that does not.
+            if let Some(mut stdin) = transport.stdin.take() {
+                let _ = stdin.flush().await;
+                drop(stdin);
             }
+            let _ = transport.process.wait().await;
+        })
+        .await;
+        if ended.is_err() {
+            // Out of budget (also when it ran out writing the notification):
+            // forcibly kill the subprocess.
+            let _ = transport.process.kill().await;
         }
         Ok(())
     }

@@ -2784,6 +2784,7 @@ name = "hone-mcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures",
  "hone-config",
  "hone-proto",
  "hone-sandbox",
