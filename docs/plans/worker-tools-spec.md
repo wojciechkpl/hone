@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W50.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W51.
 
 ## Problem
 
@@ -185,6 +185,12 @@ never ask.
 |---|---|
 | W50 | **A cancelled call can't shift later results.** The stdio MCP client matches each response to its request by JSON-RPC `id` and skips any other line (a stale response from a call that was dropped mid-flight, or a notification), so after <kbd>Esc</kbd> during an MCP call (W48), a worker timeout or a stopped run, the server's next response still goes to the right call. A call cancelled mid-dispatch (W48) is recorded in the audit log as cancelled mid-call, since it may have partly run. After a mid-call cancel, the next turn on the same agent succeeds (the history has no orphan calls). (Review 6 B1, reproduced: after dropping call A, call B returned A's result and C returned B's.) |
 
+### Review round 7 (W51)
+
+| Row | Behaviour |
+|---|---|
+| W51 | **The MCP client never waits forever on a reply it skipped.** A JSON-RPC error response with `id: null` (how a server answers a request it couldn't parse) is taken as the answer to the outstanding request and returned as its error. A request from the server (`method` plus `id`) is answered — `ping` with `{}`, anything else with error `-32601 Method not found` — and then skipped, so a server that waits for that answer goes on to answer ours. Response and request ids are compared as JSON values, so string ids are handled too. (Review 7 S1, reproduced: both cases waited indefinitely; there is no MCP request timeout.) |
+
 ## What each entry point gets
 
 | Entry point | Tools a worker can use | Risky calls |
@@ -230,3 +236,5 @@ never ask.
 - **A write cancelled mid-call may still land** (`tokio::fs::write` finishes on its
   blocking thread) and `multi_edit` may stop between files, while the call is
   reported cancelled.
+- **No MCP request timeout:** `McpServerConfig.timeout_ms` is read nowhere, so a
+  server that never answers holds its transport until <kbd>Esc</kbd>/Ctrl+C.
