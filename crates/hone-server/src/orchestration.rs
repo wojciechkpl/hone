@@ -123,6 +123,7 @@ fn make_sse_event(event: AgentEvent, id: u64) -> Event {
         AgentEvent::ToolCallPaused { .. } => "tool_call_paused",
         AgentEvent::ContextInjected { .. } => "context_injected",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
+        AgentEvent::ModelFallback { .. } => "model_fallback",
         _ => "unknown",
     };
     let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_owned());

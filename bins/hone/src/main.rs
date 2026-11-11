@@ -1611,12 +1611,19 @@ async fn print_orchestrate_events<O: io::Write, E: io::Write>(
     out: &mut O,
     err: &mut E,
 ) {
+    let mut fallbacks = FallbackPrinter::default();
     while let Some(event) = rx.recv().await {
         match event {
             AgentEvent::Token { text } => {
+                fallbacks.wrote(&text);
                 let _ = write!(out, "{text}");
                 let _ = out.flush();
             }
+            AgentEvent::ModelFallback {
+                requested,
+                fallback,
+                reason,
+            } => fallbacks.event(err, &requested, &fallback, &reason),
             AgentEvent::PlanCreated {
                 goal,
                 subtask_count,
@@ -1730,13 +1737,20 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 
     let printer = tokio::spawn(async move {
+        let mut fallbacks = FallbackPrinter::default();
         while let Some(event) = rx.recv().await {
             match event {
                 AgentEvent::Token { text } => {
+                    fallbacks.wrote(&text);
                     print!("{text}");
                     use io::Write;
                     let _ = io::stdout().flush();
                 }
+                AgentEvent::ModelFallback {
+                    requested,
+                    fallback,
+                    reason,
+                } => fallbacks.event(&mut io::stderr(), &requested, &fallback, &reason),
                 AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     eprintln!("\nerror: {message}");
@@ -1791,13 +1805,20 @@ async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
 
     // Drain events and print tokens while the agent runs inline.
     let printer = tokio::spawn(async move {
+        let mut fallbacks = FallbackPrinter::default();
         while let Some(event) = rx.recv().await {
             match event {
                 AgentEvent::Token { text } => {
+                    fallbacks.wrote(&text);
                     print!("{text}");
                     use io::Write;
                     let _ = io::stdout().flush();
                 }
+                AgentEvent::ModelFallback {
+                    requested,
+                    fallback,
+                    reason,
+                } => fallbacks.event(&mut io::stderr(), &requested, &fallback, &reason),
                 AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     eprintln!("\nerror: {message}");
@@ -1818,13 +1839,20 @@ async fn run_one_shot_content(agent: AgentHandle, content: Content) -> Result<()
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 
     let printer = tokio::spawn(async move {
+        let mut fallbacks = FallbackPrinter::default();
         while let Some(event) = rx.recv().await {
             match event {
                 AgentEvent::Token { text } => {
+                    fallbacks.wrote(&text);
                     print!("{text}");
                     use io::Write;
                     let _ = io::stdout().flush();
                 }
+                AgentEvent::ModelFallback {
+                    requested,
+                    fallback,
+                    reason,
+                } => fallbacks.event(&mut io::stderr(), &requested, &fallback, &reason),
                 AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     eprintln!("\nerror: {message}");
@@ -1851,7 +1879,8 @@ async fn run_one_shot_content(agent: AgentHandle, content: Content) -> Result<()
 ///   "cost_usd": 0.0034,
 ///   "model": "openai:deepseek/deepseek-chat",
 ///   "success": true,
-///   "error": null
+///   "error": null,
+///   "fallbacks": [{"requested": "...", "fallback": "...", "reason": "...", "calls": 1}]
 /// }
 /// ```
 async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Result<()> {
@@ -1862,12 +1891,18 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
         let mut tool_calls: Vec<serde_json::Value> = Vec::new();
         let mut error: Option<String> = None;
         let mut current_tool: Option<String> = None;
+        let mut fallbacks = FallbackPrinter::default();
 
         while let Some(event) = rx.recv().await {
             match event {
                 AgentEvent::Token { text } => {
                     response.push_str(&text);
                 }
+                AgentEvent::ModelFallback {
+                    requested,
+                    fallback,
+                    reason,
+                } => fallbacks.event(&mut io::stderr(), &requested, &fallback, &reason),
                 AgentEvent::ToolCallStart { name, .. } => {
                     current_tool = Some(name);
                 }
@@ -1890,16 +1925,21 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
             }
         }
 
-        (response, tool_calls, error)
+        (response, tool_calls, error, fallbacks.log.to_json())
     });
 
     let turn_result = agent.run_turn(prompt, tx).await;
-    let (response, tool_calls, error) = collector.await.unwrap_or_default();
+    let (response, tool_calls, error, fallbacks) = collector.await.unwrap_or_default();
     // One fresh agent per run, so the session's spend is this run's spend,
     // including model calls of a turn that failed or was cancelled.
     let spend = agent.session_spend().await;
 
-    let output = json_mode_output(&turn_result, response, tool_calls, error, spend, model_id);
+    let mut output = json_mode_output(&turn_result, response, tool_calls, error, spend, model_id);
+    output["fallbacks"] = if fallbacks.is_null() {
+        serde_json::json!([])
+    } else {
+        fallbacks
+    };
     println!("{}", serde_json::to_string_pretty(&output)?);
 
     if output["success"] != true {
@@ -3108,6 +3148,91 @@ fn model_context_limit(model: &str) -> u32 {
     }
 }
 
+/// Remember the fallback model of a `ModelFallback` event for the running turn.
+fn note_turn_fallback(event: &AgentEvent, slot: &mut Option<String>) {
+    if let AgentEvent::ModelFallback { fallback, .. } = event {
+        *slot = Some(fallback.clone());
+    }
+}
+
+/// Forget the turn's fallback model once the turn has ended.
+fn end_turn_fallback(event: &AgentEvent, slot: &mut Option<String>) {
+    if matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. }) {
+        *slot = None;
+    }
+}
+
+/// The `ModelFallback` events of a run, for the one-shot stderr line and the
+/// `--json` `fallbacks` array: one entry per (requested, fallback) pair, in
+/// first-seen order.
+#[derive(Default)]
+struct FallbackLog {
+    /// (requested, fallback, first reason, number of events)
+    pairs: Vec<(String, String, String, u32)>,
+}
+
+impl FallbackLog {
+    /// Record an event; returns the stderr line if this pair is new.
+    fn record(&mut self, requested: &str, fallback: &str, reason: &str) -> Option<String> {
+        if let Some(entry) = self
+            .pairs
+            .iter_mut()
+            .find(|(r, f, _, _)| r == requested && f == fallback)
+        {
+            entry.3 += 1;
+            return None;
+        }
+        self.pairs.push((
+            requested.to_owned(),
+            fallback.to_owned(),
+            reason.to_owned(),
+            1,
+        ));
+        Some(format!(
+            "hone: {requested} failed ({reason}); switched to fallback {fallback}"
+        ))
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        self.pairs
+            .iter()
+            .map(|(requested, fallback, reason, calls)| {
+                serde_json::json!({
+                    "requested": requested,
+                    "fallback": fallback,
+                    "reason": reason,
+                    "calls": calls,
+                })
+            })
+            .collect()
+    }
+}
+
+/// Prints the one-shot stderr line for each new fallback pair, on its own
+/// line even when stdout tokens ended mid-line.
+#[derive(Default)]
+struct FallbackPrinter {
+    log: FallbackLog,
+    mid_line: bool,
+}
+
+impl FallbackPrinter {
+    /// Note tokens written to stdout.
+    fn wrote(&mut self, text: &str) {
+        if !text.is_empty() {
+            self.mid_line = !text.ends_with('\n');
+        }
+    }
+
+    fn event<E: io::Write>(&mut self, err: &mut E, requested: &str, fallback: &str, reason: &str) {
+        if let Some(line) = self.log.record(requested, fallback, reason) {
+            let lead = if self.mid_line { "\n" } else { "" };
+            let _ = writeln!(err, "{lead}{line}");
+            self.mid_line = false;
+        }
+    }
+}
+
 fn record_outcome_for_event(
     event: &AgentEvent,
     adaptive: &Option<Arc<AdaptiveClassifier>>,
@@ -3240,6 +3365,9 @@ async fn run_tui(
     let mut current_turn_prompt = String::new();
     // The model the running turn was sent to (for outcome records).
     let mut current_turn_model: String = model_id.to_string();
+    // Model of the last `ModelFallback` of the running turn: the adaptive
+    // classifier records the turn under it, since it gave the answer.
+    let mut turn_fallback_model: Option<String> = None;
 
     // Install a SIGINT handler so the process shuts down cleanly when the
     // terminal sends Ctrl+C at the OS level (e.g. from a wrapper script).
@@ -3631,7 +3759,9 @@ async fn run_tui(
             // Agent events from the provider task
             maybe_agent = agent_rx.recv() => {
                 if let Some(event) = maybe_agent {
-                    record_outcome_for_event(&event, &adaptive, &mut current_tier, current_turn_model.as_str(), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
+                    note_turn_fallback(&event, &mut turn_fallback_model);
+                    record_outcome_for_event(&event, &adaptive, &mut current_tier, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str()), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
+                    end_turn_fallback(&event, &mut turn_fallback_model);
                     app.handle_agent_event(event);
                     // When a turn completes, clear the abort handle and restore
                     // any follow-up message the user typed while waiting.
@@ -3654,15 +3784,19 @@ async fn run_tui(
 
         // Drain any remaining agent events that arrived during the select branch.
         while let Ok(event) = agent_rx.try_recv() {
+            note_turn_fallback(&event, &mut turn_fallback_model);
             record_outcome_for_event(
                 &event,
                 &adaptive,
                 &mut current_tier,
-                current_turn_model.as_str(),
+                turn_fallback_model
+                    .as_deref()
+                    .unwrap_or(current_turn_model.as_str()),
                 base_config.pricing.input_per_million,
                 base_config.pricing.output_per_million,
                 &current_turn_prompt,
             );
+            end_turn_fallback(&event, &mut turn_fallback_model);
             app.handle_agent_event(event);
         }
         // Mirror the post-select restore logic for the drain path: if the drain

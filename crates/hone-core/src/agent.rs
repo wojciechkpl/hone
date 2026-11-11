@@ -1498,6 +1498,21 @@ impl Agent {
                         truncated_tools = Some(lost_tool_calls);
                     }
 
+                    // A fallback model took over this call: tell the surface.
+                    ProviderEvent::ModelFallback {
+                        requested,
+                        fallback,
+                        reason,
+                    } => {
+                        let _ = events
+                            .send(AgentEvent::ModelFallback {
+                                requested,
+                                fallback,
+                                reason,
+                            })
+                            .await;
+                    }
+
                     // Forward-compat: unknown ProviderEvent variants are silently ignored.
                     _ => {}
                 }
