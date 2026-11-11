@@ -1523,6 +1523,7 @@ fn spawn_orchestrated_turn(
     user_text: String,
     tx: mpsc::Sender<AgentEvent>,
     agent: AgentHandle,
+    plan: Option<hone_core::TaskPlan>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let registry = AgentRegistry::load_hierarchical(&lead_config.working_dir);
@@ -1531,7 +1532,12 @@ fn spawn_orchestrated_turn(
         let mut orchestrator =
             Orchestrator::new(lead_config, registry, 4).with_plan_store(plan_store);
 
-        match orchestrator.run(&user_text, tx.clone()).await {
+        // A plan the user already saw runs as shown; otherwise decompose first.
+        let outcome = match plan {
+            Some(plan) => orchestrator.run_plan(plan, tx.clone()).await,
+            None => orchestrator.run(&user_text, tx.clone()).await,
+        };
+        match outcome {
             Ok(result) => {
                 if result.merged_response.is_empty()
                     || result.merged_response.starts_with("Merge failed:")
@@ -3385,6 +3391,13 @@ async fn run_tui(
     let mut events = EventStream::new();
     // Abort handle for the currently running agent task; cleared on completion.
     let mut current_task_abort: Option<tokio::task::AbortHandle> = None;
+    // `/plan` decompose runs as a background task and reports here, so the loop
+    // keeps drawing and Esc can cancel it. Results carry the id of the planning
+    // run; one that isn't `planning_id` (cancelled meanwhile) is dropped.
+    type PlanResult = (u64, String, Result<(hone_core::TaskPlan, f64), String>);
+    let (plan_tx, mut plan_rx) = mpsc::channel::<PlanResult>(1);
+    let mut planning_id: Option<u64> = None;
+    let mut next_planning_id: u64 = 0;
 
     // Adaptive classifier: wired only when a memory store is available.
     let adaptive: Option<Arc<AdaptiveClassifier>> = base_config
@@ -3444,7 +3457,9 @@ async fn run_tui(
                             break;
                         }
 
+                        // Enter on the plan overlay is the overlay's Run, not a submit.
                         if key.code == KeyCode::Enter
+                            && !app.plan_preview_open
                             && !app.input().is_empty()
                             && matches!(app.state(), AppState::Idle | AppState::Error(_))
                         {
@@ -3490,66 +3505,6 @@ async fn run_tui(
                             // Handle pending agent mode changes from Shift+Tab.
                             if let Some(new_mode) = app.take_pending_mode_change() {
                                 agent.set_mode(new_mode).await;
-                            }
-
-                            // Handle /plan dispatch — call Orchestrator::decompose
-                            // in-process and surface the result through the
-                            // plan-preview overlay.
-                            if let Some(plan_prompt) = app.take_pending_plan_prompt() {
-                                // /plan decomposes with the model a Complex turn would use.
-                                let mut plan_config = base_config.clone();
-                                if let Some(r) = &routing {
-                                    plan_config.model = turn_model(
-                                        &r.eff,
-                                        Tier::Complex,
-                                        pinned_model.as_ref(),
-                                        &model_id,
-                                        &|m| r.dispatch.has_provider_for(m),
-                                    )
-                                    .model;
-                                }
-                                match dispatch_plan_decompose(
-                                    plan_config,
-                                    app.working_dir().to_path_buf(),
-                                    &plan_prompt,
-                                )
-                                .await
-                                {
-                                    Ok((task_plan, lead_cost, _lead_usage)) => {
-                                        let preview = hone_tui::plan_preview::PlanPreviewState::from_decompose(
-                                            &plan_prompt,
-                                            task_plan,
-                                            lead_cost,
-                                        );
-                                        app.set_plan_preview(preview);
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!("/plan decompose failed: {e}");
-                                        app.push_error(format!("/plan decompose failed: {e}"));
-                                    }
-                                }
-                            }
-
-                            // Plan-preview overlay actions: Run replays the prompt
-                            // through the normal turn dispatch; Edit restores it
-                            // to the input bar; Cancel is a no-op.
-                            if let Some(action) = app.take_pending_plan_action() {
-                                use hone_tui::plan_preview::PlanAction;
-                                let prompt = app.plan_preview().map(|s| s.prompt.clone());
-                                match action {
-                                    PlanAction::Run => {
-                                        if let Some(p) = prompt {
-                                            app.set_input_buffer(p);
-                                            app.submit_input();
-                                        }
-                                    }
-                                    PlanAction::Edit => {
-                                        if let Some(p) = prompt {
-                                            app.set_input_buffer(p);
-                                        }
-                                    }
-                                    PlanAction::Cancel => {}
-                                }
                             }
 
                             if !is_command && !is_shell_escape && matches!(app.state(), AppState::WaitingForResponse) {
@@ -3727,7 +3682,7 @@ async fn run_tui(
                                             let restore_tools = applied_tool_filter;
                                             {
                                                 let (tx2, rx2) = mpsc::channel(256);
-                                                let inner = spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2, agent_clone.clone());
+                                                let inner = spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2, agent_clone.clone(), None);
                                                 spawn_inline_turn_wrapper(inner, rx2, agent_tx_clone, async move {
                                                     agent_clone.set_system_prompt(original_prompt).await;
                                                     if restore_tools {
@@ -3736,7 +3691,7 @@ async fn run_tui(
                                                 })
                                             }
                                         } else {
-                                            spawn_orchestrated_turn(base_config_clone, effective_text, agent_tx.clone(), agent.clone())
+                                            spawn_orchestrated_turn(base_config_clone, effective_text, agent_tx.clone(), agent.clone(), None)
                                         }
                                     }
                                 };
@@ -3755,6 +3710,83 @@ async fn run_tui(
                             app.handle_key(key);
                         }
 
+                        // `/plan <prompt>`: decompose in the background. Drained after
+                        // every key event, so the overlay's keys act at once.
+                        if let Some(plan_prompt) = app.take_pending_plan_prompt() {
+                            // /plan decomposes with the model a Complex turn would use.
+                            let mut plan_config = base_config.clone();
+                            if let Some(r) = &routing {
+                                plan_config.model = turn_model(
+                                    &r.eff,
+                                    Tier::Complex,
+                                    pinned_model.as_ref(),
+                                    &model_id,
+                                    &|m| r.dispatch.has_provider_for(m),
+                                )
+                                .model;
+                            }
+                            let working_dir = app.working_dir().to_path_buf();
+                            let id = next_planning_id;
+                            next_planning_id += 1;
+                            planning_id = Some(id);
+                            let tx = plan_tx.clone();
+                            let task = tokio::spawn(async move {
+                                let result = dispatch_plan_decompose(plan_config, working_dir, &plan_prompt)
+                                    .await
+                                    .map(|(plan, cost, _usage)| (plan, cost))
+                                    .map_err(|e| e.to_string());
+                                let _ = tx.send((id, plan_prompt, result)).await;
+                            });
+                            // Esc cancels planning through the usual cancel path.
+                            current_task_abort = Some(task.abort_handle());
+                        }
+
+                        // Run confirmed on the plan overlay: run the plan shown, with
+                        // the settings of a Complex turn.
+                        if let Some(preview) = app.take_pending_plan_run() {
+                            if let Some((new_model, model)) = deferred_model.take() {
+                                apply_model_switch!(new_model, model);
+                            }
+                            let turn_model_choice = routing.as_ref().map(|r| {
+                                turn_model(
+                                    &r.eff,
+                                    Tier::Complex,
+                                    pinned_model.as_ref(),
+                                    &model_id,
+                                    &|m| r.dispatch.has_provider_for(m),
+                                )
+                            });
+                            current_turn_model = turn_model_choice
+                                .as_ref()
+                                .map_or_else(|| shown_model.clone(), |t| t.model.to_string());
+                            let mut run_config = base_config.clone();
+                            if let Some(turn) = &turn_model_choice {
+                                run_config.model = turn.model.clone();
+                                if turn.model.as_str() != shown_model {
+                                    shown_model = turn.model.to_string();
+                                    app.status_mut().model = shown_model.clone();
+                                    app.status_mut().context_limit =
+                                        model_context_limit(turn.model.as_str());
+                                }
+                            }
+                            let pending_gov = app.take_pending_governance();
+                            pending_gov.clone().apply_to_budget(&mut run_config.budget_limit);
+                            pending_gov.apply_to_policy(&mut run_config.approval_policy);
+                            // The classifier didn't pick this tier: it records nothing.
+                            current_tier = None;
+                            turn_fallback_model = None;
+                            current_turn_prompt = preview.prompt.chars().take(200).collect::<String>();
+                            let task = spawn_orchestrated_turn(
+                                run_config,
+                                preview.prompt,
+                                agent_tx.clone(),
+                                agent.clone(),
+                                Some(preview.plan),
+                            );
+                            last_turn_task = Some(task.abort_handle());
+                            current_task_abort = Some(task.abort_handle());
+                        }
+
                         // Escape pressed during an AI turn — abort the task.
                         // Only act if there is actually a task to abort; without
                         // this guard, Escape during a shell escape would fire
@@ -3762,6 +3794,8 @@ async fn run_tui(
                         if app.take_pending_cancel() {
                             if let Some(abort) = current_task_abort.take() {
                                 abort.abort();
+                                // A planning result arriving later is dropped.
+                                planning_id = None;
                                 app.cancel_turn();
                             }
                         }
@@ -3799,6 +3833,26 @@ async fn run_tui(
                     if matches!(app.state(), AppState::Idle | AppState::Error(_)) {
                         current_task_abort = None;
                         app.restore_queued_message_if_idle();
+                    }
+                }
+            }
+
+            // Result of the background `/plan` decompose
+            Some((id, plan_prompt, result)) = plan_rx.recv() => {
+                if planning_id == Some(id) {
+                    planning_id = None;
+                    match result {
+                        Ok((task_plan, lead_cost)) => {
+                            app.set_plan_preview(hone_tui::plan_preview::PlanPreviewState::from_decompose(
+                                &plan_prompt,
+                                task_plan,
+                                lead_cost,
+                            ));
+                        }
+                        Err(e) => {
+                            tracing::warn!("/plan decompose failed: {e}");
+                            app.plan_failed(&e);
+                        }
                     }
                 }
             }
@@ -4180,7 +4234,7 @@ mod tests {
         // Run an orchestrated turn — today this creates a disposable
         // Orchestrator and never writes results back to `agent`.
         let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
-        let _handle = spawn_orchestrated_turn(config, "do X please".to_string(), tx, agent.clone());
+        let _handle = spawn_orchestrated_turn(config, "do X please".to_string(), tx, agent.clone(), None);
 
         // Drain events until the sender is dropped (Orchestrator finished).
         while rx.recv().await.is_some() {}

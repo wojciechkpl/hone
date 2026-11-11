@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use hone_core::AgentMode;
 
 pub use crate::governance::PendingGovernance;
-pub use crate::plan_preview::{PlanAction, PlanPreviewState, PlanPreviewSubtask};
+pub use crate::plan_preview::{PlanPreviewState, PlanPreviewSubtask};
 
 use crate::{
     animation::AnimationState,
@@ -223,9 +223,8 @@ pub struct App {
     pub plan_preview_open: bool,
     /// State for the plan-preview overlay, if one has been set.
     pub(crate) plan_preview: Option<crate::plan_preview::PlanPreviewState>,
-    /// Action chosen by the user in the plan-preview overlay, pending
-    /// consumption by the event loop.
-    pub(crate) pending_plan_action: Option<crate::plan_preview::PlanAction>,
+    /// Plan the user confirmed with Run, pending consumption by the event loop.
+    pub(crate) pending_plan_run: Option<crate::plan_preview::PlanPreviewState>,
     /// Prompt the user typed via `/plan <prompt>` that the event loop
     /// needs to dispatch through `Orchestrator::decompose`. Drained on
     /// `take_pending_plan_prompt`.
@@ -316,7 +315,7 @@ impl App {
             pending_mode_change: None,
             plan_preview_open: false,
             plan_preview: None,
-            pending_plan_action: None,
+            pending_plan_run: None,
             pending_plan_prompt: None,
             pending_governance: crate::governance::PendingGovernance::default(),
         };
@@ -363,7 +362,7 @@ impl App {
     pub fn set_input_buffer(&mut self, text: impl Into<String>) {
         let text = text.into();
         self.input.buffer = text;
-        self.input.cursor_position = self.input.buffer.chars().count();
+        self.input.cursor_position = self.input.buffer.len();
     }
 
     /// Push an error message into the conversation log. Used by external
@@ -1331,6 +1330,8 @@ impl App {
     pub fn set_plan_preview(&mut self, state: crate::plan_preview::PlanPreviewState) {
         self.plan_preview = Some(state);
         self.plan_preview_open = true;
+        self.state = AppState::Idle;
+        self.turn_start = None;
     }
 
     /// Read access to the current plan-preview state.
@@ -1338,9 +1339,16 @@ impl App {
         self.plan_preview.as_ref()
     }
 
-    /// Drain the pending plan action, returning it (and leaving `None`).
-    pub fn take_pending_plan_action(&mut self) -> Option<crate::plan_preview::PlanAction> {
-        self.pending_plan_action.take()
+    /// Drain the plan confirmed with Run (prompt and full plan), once.
+    pub fn take_pending_plan_run(&mut self) -> Option<crate::plan_preview::PlanPreviewState> {
+        self.pending_plan_run.take()
+    }
+
+    /// Report a failed `/plan` decompose: push the error and go back to Idle.
+    pub fn plan_failed(&mut self, msg: &str) {
+        self.push_error(format!("/plan decompose failed: {msg}"));
+        self.state = AppState::Idle;
+        self.turn_start = None;
     }
 
     /// Drain the prompt set by `/plan <prompt>` so the event loop can
@@ -1378,31 +1386,44 @@ impl App {
 
     /// Handle a key event while the plan-preview overlay is open.
     ///
-    /// * `r` / `Enter` — confirm and run the plan.
-    /// * `e` — dismiss and let the user edit the prompt.
+    /// * `r` / `Enter` — run the plan shown (staged for the event loop).
+    /// * `e` — close the overlay and put the planned prompt in the input bar.
     /// * `c` / `Esc` — cancel; discard the plan entirely.
     /// * Any other key — no-op.
     pub fn handle_key_plan_preview(&mut self, key: crossterm::event::KeyEvent) {
-        use crate::plan_preview::PlanAction;
         use crossterm::event::KeyCode;
         match key.code {
             KeyCode::Char('r') | KeyCode::Enter => {
-                self.pending_plan_action = Some(PlanAction::Run);
                 self.plan_preview_open = false;
-                // Keep self.plan_preview so the outer loop can read the prompt.
+                if let Some(preview) = self.plan_preview.take() {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::User,
+                        preview.prompt.clone(),
+                    ));
+                    self.begin_turn("default".to_string());
+                    self.pending_plan_run = Some(preview);
+                }
             }
             KeyCode::Char('e') => {
-                self.pending_plan_action = Some(PlanAction::Edit);
                 self.plan_preview_open = false;
-                self.plan_preview = None;
+                if let Some(preview) = self.plan_preview.take() {
+                    self.set_input_buffer(preview.prompt);
+                }
             }
             KeyCode::Char('c') | KeyCode::Esc => {
-                self.pending_plan_action = Some(PlanAction::Cancel);
                 self.plan_preview_open = false;
                 self.plan_preview = None;
             }
             _ => {}
         }
+    }
+
+    /// Common turn-start bookkeeping: active agent, waiting state, timer.
+    fn begin_turn(&mut self, agent: String) {
+        self.pending_active_agent = Some(agent);
+        self.state = AppState::WaitingForResponse;
+        self.turn_start = Some(Instant::now());
+        self.fallback_notices.clear();
     }
 
     // -----------------------------------------------------------------------
@@ -1568,15 +1589,13 @@ impl App {
 
         // Plain message — add it to the conversation and start waiting.
         self.history.push(&text);
-        self.pending_active_agent = self
+        let agent = self
             .inline_agent
             .clone()
-            .or_else(|| Some("default".to_string()));
+            .unwrap_or_else(|| "default".to_string());
         self.messages
             .push(DisplayMessage::new(DisplayRole::User, text));
-        self.state = AppState::WaitingForResponse;
-        self.turn_start = Some(Instant::now());
-        self.fallback_notices.clear();
+        self.begin_turn(agent);
     }
 
     /// Begin handling a shell escape (`!command`).
@@ -1891,8 +1910,15 @@ impl App {
                         DisplayRole::Error,
                         "usage: /plan <describe what you want done>".to_string(),
                     ));
+                } else if matches!(self.state, AppState::WaitingForResponse) {
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::Error,
+                        "/plan: wait for the running turn to finish (Esc stops it)".to_string(),
+                    ));
                 } else {
                     self.pending_plan_prompt = Some(prompt.to_string());
+                    self.state = AppState::WaitingForResponse;
+                    self.turn_start = Some(Instant::now());
                     self.messages.push(DisplayMessage::new(
                         DisplayRole::System,
                         format!("Planning: {prompt}"),
