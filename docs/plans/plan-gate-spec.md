@@ -54,9 +54,26 @@ sequenceDiagram
 | **G11** | `PlanAction`, `pending_plan_action` and `take_pending_plan_action` are removed: nothing reads them once the App acts on the keys. | compile |
 | **G12** | Docs: `docs/tutorials/orchestration-gui.md` (Run runs the plan shown, without planning again; planning can be cancelled with Esc), the TUI half of `docs/architecture/orchestration-gui-flow.md`, `CHANGELOG.md`. | by reading |
 
+## Review round 1 (rows G13–G18)
+
+The reviewer found that background planning lets typed text hit the overlay (B1), that an orchestrated run's many `Done`s end the turn early in the TUI (S1), and that the plan run drained `/permit` without applying it (S2).
+
+| Row | Contract | Where tested |
+|---|---|---|
+| **G13** | **The overlay can't be answered by accident.** In `App::handle_key_at(key, now)` with the overlay open, `r`, `e`, `c` and Enter act only when `now` is at least `MENU_KEY_GUARD` (400 ms) after the overlay opened (`set_plan_preview`) **and** after the previous keystroke, as the approval menu does. A key failing the guard is dropped: the overlay stays open and nothing reaches the input bar. Esc cancels at once. `handle_key_plan_preview` ignores `r`, `e`, `c` and Enter carrying any modifier (Ctrl+R, Alt+Enter, Shift+Enter are no-ops). Text pasted while the overlay is open is dropped. | hone-tui (`handle_key_at` clock seam) |
+| **G14** | **An orchestrated turn ends once.** `spawn_orchestrated_turn` (Complex turns and plan runs) forwards the orchestrator's events except `Done` and `Error`, which belong to its inner lead and worker turns (a failed worker is already reported by `WorkerCompleted { status: "failed: …" }`). It then sends exactly one terminal event: on success the summary `Token`, then one `Done` whose `usage` and `cost_usd` are the sums of the swallowed `Done`s (`plan: None`); on failure one `Error { message: "orchestration failed: …" }` and no `Done`. So the TUI stays busy (spinner, Esc cancels, `/plan` refused) until the run really ends. | bins/hone `mod tests` (existing `spawn_orchestrated_turn` harness), with G7's no-decompose and history write-back for `Some(plan)` |
+| **G15** | **`/plan` waits for the previous turn's task.** If `last_turn_task` hasn't finished (a medium turn or the automatic test fix keeps running after its `Done`), the loop doesn't plan and calls the new `App::refuse_plan()`: an `Error` message `"/plan: the previous turn is still finishing; try again when it's done"`, state `Idle`, `turn_start` cleared, nothing staged. | hone-tui (`refuse_plan`); loop by reading |
+| **G16** | **A plan run gets the turn settings of a Complex turn, through one helper.** The model and governance steps shared by Complex turns, plan runs and planning move into one helper so they can't drift. Pending `/budget` and `/permit` are applied to the agent (`set_budget_limit`, `approve_tools`) **and** to the run's config, as every turn does, so a `/permit` drained by a plan run isn't lost. With `[[routing]]` off, the config's model is the agent's current model (`applied_model`), so `/model` reaches orchestrated runs and planning; with routing on, the Complex model as before. | by reading |
+| **G17** | **Small fixes.** Run adds the prompt to Up-arrow history, as a submitted message does. A planning task that ends without sending a result (a panic) leads to `plan_failed("planning stopped unexpectedly")`, not an endless spinner. `set_input_buffer`'s doc comment no longer mentions Run. | hone-tui (history); loop by reading |
+| **G18** | **Test gaps from review:** Esc during planning goes through `handle_key` and requests a cancel; `run_plan` runs a dependency after its prerequisite (call order). | hone-tui, hone-core |
+
 ## Out of scope (follow-ups)
 
 - **Orchestrated workers have no tools.** `Orchestrator::build_lead_config` and `build_worker_config` give the lead and every worker an empty `ToolRegistry` (`crates/hone-core/src/orchestrator.rs:772`, `:830`), so a Complex turn or `/plan` Run can't read or edit files: workers answer in text only. (Their hard-coded `AgentMode::Build` / `ToolApprovalPolicy::Auto` is moot without tools.) Pre-existing; affects every orchestrated path.
 - **Web UI Run plans again:** the `<DryRunCard>` Run sends `POST /orchestrate` without `dry_run`, which decomposes anew.
 - **Planning's fallback notices** are still dropped (the decompose drains its own events).
+- **`/budget` doesn't cap a plan's workers:** it reaches only the orchestrator's lead config (merge call); workers use `worker_budget`, unset in the TUI. Wiring it to `Orchestrator::with_total_budget` is a follow-up.
+- **Vim mode:** Esc never requests a cancel there (pre-existing), so "Esc stops it" doesn't hold in vim mode.
+- **Planning's lead-call cost** isn't added to the session cost total.
+- **Edit replaces the input bar's text,** including a follow-up typed while planning and restored when planning ended.
 - **Other drains in the Enter block:** a `!command` typed during a turn waits for the next Enter with text, like the plan actions did.
