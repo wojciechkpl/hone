@@ -435,10 +435,17 @@ impl StdioMcpClient {
     /// Kill the server process and reap it (startup failure path).
     pub(crate) async fn kill(&mut self) {
         let mut transport = self.transport.lock().await;
-        let _ = transport.process.kill().await;
+        // Group first, while the leader is not yet reaped (its pid stays
+        // reserved); the group SIGKILL takes the leader too, then reap it.
         if let Some(group) = transport.group.as_mut() {
             group.kill();
         }
+        let _ = transport.process.start_kill();
+        let _ = tokio::time::timeout(
+            tokio::time::Duration::from_secs(1),
+            transport.process.wait(),
+        )
+        .await;
     }
 
     /// Spawn with an explicit logical name and additional environment variables.
@@ -530,6 +537,9 @@ impl StdioMcpClient {
             // Out of budget (also when it ran out writing the notification):
             // forcibly kill the subprocess. Signal first, then wait only briefly
             // for the reap, so shutdown cannot hang here.
+            if let Some(group) = transport.group.as_mut() {
+                group.kill();
+            }
             let _ = transport.process.start_kill();
             let _ = tokio::time::timeout(
                 tokio::time::Duration::from_secs(1),

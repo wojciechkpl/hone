@@ -50,7 +50,7 @@ pub async fn run_command(
     // A failed spawn never reaches the guard: nothing is registered or killed.
     let child = cmd.spawn().map_err(RunCommandError::Io)?;
     // Armed until the child has exited; fires on drop (cancellation, timeout).
-    let mut guard = child.id().map(GroupGuard::new);
+    let mut guard = child.id().map(|pid| GroupGuard::new(pid, false));
 
     let wait = child.wait_with_output();
     let result = match timeout {
@@ -74,14 +74,16 @@ pub async fn run_command(
 /// A process group created outside [`run_command`] (the child was spawned with
 /// `process_group(0)`, so its group id is its pid), tracked in the same
 /// registry: [`kill_running_commands`] and [`kill_commands_and_reraise`] reach
-/// it. Dropping the guard (or [`kill`](Self::kill)) sends `SIGKILL` to the whole
-/// group and deregisters it. Off unix it does nothing.
+/// it (as an *MCP group*: [`kill_running_commands`] stops it with `SIGTERM`
+/// first, [`kill_shell_commands`] leaves it alone). Dropping the guard (or
+/// [`kill`](Self::kill)) sends `SIGKILL` to the whole group and deregisters it.
+/// Off unix it does nothing.
 pub struct ProcessGroupGuard(GroupGuard);
 
 impl ProcessGroupGuard {
     /// Track the group led by the child with process id `pid`.
     pub fn new(pid: u32) -> Self {
-        Self(GroupGuard::new(pid))
+        Self(GroupGuard::new(pid, true))
     }
 
     /// Kill the whole group now (idempotent) and stop tracking it. Call it
@@ -92,13 +94,25 @@ impl ProcessGroupGuard {
     }
 }
 
-/// Kill every process group that is currently running: shell commands, test
-/// runs and other children registered with a [`ProcessGroupGuard`] (MCP
-/// servers). Synchronous and cheap; safe to call from a signal-handling task. A
-/// no-op off unix.
+/// Stop every process group that is currently running, for an abrupt exit.
+/// Shell-command groups (commands, test runs) get `SIGKILL` at once. Groups
+/// registered with a [`ProcessGroupGuard`] (MCP servers) get `SIGTERM` first, so
+/// they can clean up (close a browser they started, ...); those still running
+/// about a second later get `SIGKILL`. Returns when all are gone, and does not
+/// wait when there is no MCP group. Synchronous (a short sleep loop): safe to
+/// call from a signal-handling task or right before `process::exit`. A no-op
+/// off unix.
 pub fn kill_running_commands() {
     #[cfg(unix)]
     unix::kill_all();
+}
+
+/// Kill only the shell-command groups (commands, test runs), with `SIGKILL`,
+/// and leave registered MCP groups running, for an exit that goes on to shut
+/// the MCP servers down gracefully itself. A no-op off unix.
+pub fn kill_shell_commands() {
+    #[cfg(unix)]
+    unix::kill_shell();
 }
 
 /// For a one-shot run that received `signal` (SIGINT, SIGTERM, SIGHUP): kill
@@ -135,10 +149,15 @@ use unix::GroupGuard;
 
 #[cfg(unix)]
 mod unix {
-    use std::collections::HashSet;
+    use std::collections::HashMap;
     use std::sync::{Mutex, PoisonError};
+    use std::time::{Duration, Instant};
 
-    static RUNNING: Mutex<Option<HashSet<i32>>> = Mutex::new(None);
+    /// Running groups: group id -> is it an MCP server group (else a command).
+    static RUNNING: Mutex<Option<HashMap<i32, bool>>> = Mutex::new(None);
+
+    /// How long an abrupt exit waits for MCP groups to leave after `SIGTERM`.
+    const TERM_GRACE: Duration = Duration::from_secs(1);
 
     /// Kill process group `pgid`. Group ids 0 (our own group) and 1 (init) and
     /// negatives (`killpg` semantics differ) are never signalled.
@@ -155,6 +174,17 @@ mod unix {
         }
     }
 
+    /// Send `signal` to group `pgid` (same rules as [`kill_group`]).
+    fn signal_group(pgid: i32, signal: i32) {
+        if pgid <= 1 {
+            return;
+        }
+        // SAFETY: as for `kill_group`.
+        unsafe {
+            libc::killpg(pgid, signal);
+        }
+    }
+
     /// Registers a command's process group while armed and kills it if dropped
     /// still armed.
     pub(super) struct GroupGuard {
@@ -163,7 +193,7 @@ mod unix {
     }
 
     impl GroupGuard {
-        pub(super) fn new(pid: u32) -> Self {
+        pub(super) fn new(pid: u32, mcp: bool) -> Self {
             // pgid == pid because of `process_group(0)`. An out-of-range pid
             // maps to 0, which is never signalled or registered.
             let pgid = i32::try_from(pid).unwrap_or(0);
@@ -172,17 +202,18 @@ mod unix {
                 RUNNING
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
-                    .get_or_insert_with(HashSet::new)
-                    .insert(pgid);
+                    .get_or_insert_with(HashMap::new)
+                    .insert(pgid, mcp);
             }
             Self { pgid, armed }
         }
 
-        /// Kill the whole group now and stop tracking it.
+        /// Kill the whole group now and stop tracking it. Does nothing if the
+        /// group was already stopped and deregistered by [`kill_all`]: its id
+        /// may be reused by now.
         pub(super) fn kill(&mut self) {
-            if std::mem::take(&mut self.armed) {
+            if std::mem::take(&mut self.armed) && unregister(self.pgid) {
                 kill_group(self.pgid);
-                unregister(self.pgid);
             }
         }
 
@@ -196,20 +227,38 @@ mod unix {
 
     impl Drop for GroupGuard {
         fn drop(&mut self) {
-            if std::mem::take(&mut self.armed) {
-                kill_group(self.pgid);
-                unregister(self.pgid);
-            }
+            self.kill();
         }
     }
 
-    fn unregister(pgid: i32) {
-        if let Some(set) = RUNNING
+    /// Deregister `pgid`; whether it was registered.
+    fn unregister(pgid: i32) -> bool {
+        RUNNING
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .as_mut()
-        {
-            set.remove(&pgid);
+            .is_some_and(|map| map.remove(&pgid).is_some())
+    }
+
+    /// Whether group `pgid` has no live member we care about: the group is
+    /// gone, or its leader (our child) has exited and only waits to be reaped.
+    fn group_gone(pgid: i32) -> bool {
+        // SAFETY: `waitid` with WNOHANG|WNOWAIT only inspects our child's state
+        // (it reaps nothing) and writes into a zeroed `siginfo_t` that lives for
+        // the call; `killpg(.., 0)` only checks existence.
+        unsafe {
+            let mut info: libc::siginfo_t = std::mem::zeroed();
+            let r = libc::waitid(
+                libc::P_PID,
+                pgid as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            );
+            if r == 0 && info.si_signo == libc::SIGCHLD {
+                return true; // the leader exited (a zombie nobody reaped yet)
+            }
+            libc::killpg(pgid, 0) == -1
+                && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
         }
     }
 
@@ -241,15 +290,51 @@ mod unix {
         }
     }
 
-    pub(super) fn kill_all() {
-        // Entries stay registered: each command's own guard removes its entry
-        // when it ends. The lock is held only while signalling.
-        if let Some(set) = RUNNING
+    /// SIGKILL the command groups. Entries stay registered: each command's own
+    /// guard removes its entry when it ends. The lock is held only while
+    /// signalling.
+    pub(super) fn kill_shell() {
+        if let Some(map) = RUNNING
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .as_ref()
         {
-            for &pgid in set {
+            for (&pgid, &mcp) in map {
+                if !mcp {
+                    kill_group(pgid);
+                }
+            }
+        }
+    }
+
+    pub(super) fn kill_all() {
+        kill_shell();
+        // MCP groups: SIGTERM, wait (without the lock) until they are gone, then
+        // SIGKILL what is left and deregister, so a later guard drop does not
+        // signal a reused group id.
+        let mcp_groups: Vec<i32> = RUNNING
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map(|map| {
+                map.iter()
+                    .filter(|(_, mcp)| **mcp)
+                    .map(|(p, _)| *p)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if mcp_groups.is_empty() {
+            return;
+        }
+        for &pgid in &mcp_groups {
+            signal_group(pgid, libc::SIGTERM);
+        }
+        let deadline = Instant::now() + TERM_GRACE;
+        while Instant::now() < deadline && !mcp_groups.iter().all(|&p| group_gone(p)) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        for &pgid in &mcp_groups {
+            if unregister(pgid) {
                 kill_group(pgid);
             }
         }
@@ -261,7 +346,7 @@ struct GroupGuard;
 
 #[cfg(not(unix))]
 impl GroupGuard {
-    fn new(_pid: u32) -> Self {
+    fn new(_pid: u32, _mcp: bool) -> Self {
         Self
     }
     fn disarm(&mut self) {}

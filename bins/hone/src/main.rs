@@ -3275,14 +3275,15 @@ fn exit_now(code: i32) -> ! {
     std::process::exit(code)
 }
 
-/// Kills the commands and MCP servers hone still has running when
-/// dropped. They run in their own process groups, so neither the terminal's
-/// Ctrl+C nor its hangup reaches them; hone's exit has to (W25).
+/// Kills the shell commands hone still has running when dropped. They run in
+/// their own process groups, so neither the terminal's Ctrl+C nor its hangup
+/// reaches them; hone's exit has to (W25). MCP servers are left alone: `main`
+/// shuts them down gracefully right after the TUI returns.
 struct KillCommandsOnExit;
 
 impl Drop for KillCommandsOnExit {
     fn drop(&mut self) {
-        hone_tools::kill_running_commands();
+        hone_tools::kill_shell_commands();
     }
 }
 
