@@ -39,6 +39,9 @@ enum Reply {
     Answer(&'static str),
     /// A failure before any output (retryable).
     FailBeforeOutput,
+    /// (Ollama only) a tool call for a file that does not exist: the tool fails, the turn
+    /// goes on with another model call.
+    ToolCall,
 }
 
 #[derive(Clone, Debug)]
@@ -115,6 +118,12 @@ fn body_for(kind: Kind, reply: &Reply) -> String {
         (Kind::Ollama, Reply::Answer(t)) => format!(
             "{}\n{}\n",
             json!({"model":"m","message":{"role":"assistant","content":t},"done":false}),
+            json!({"model":"m","message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":3,"eval_count":2}),
+        ),
+        (Kind::OpenAi, Reply::ToolCall) => unimplemented!("tool calls are scripted on Ollama only"),
+        (Kind::Ollama, Reply::ToolCall) => format!(
+            "{}\n{}\n",
+            json!({"model":"m","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"read_file","arguments":{"path":"does-not-exist.txt"}}}]},"done":false}),
             json!({"model":"m","message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":3,"eval_count":2}),
         ),
         (Kind::Ollama, Reply::FailBeforeOutput) => {
@@ -233,6 +242,15 @@ impl Out {
 
 /// Run `hone --json` with the OpenAI-compatible mock wired through the environment.
 fn hone_json(e: &Env, openai: Option<&Mock>, model: Option<&str>, prompt: &str) -> Out {
+    run_hone(e, openai, model, prompt, true)
+}
+
+/// Run `hone` (one-shot, without `--json`) with the same wiring.
+fn hone_plain(e: &Env, openai: Option<&Mock>, model: Option<&str>, prompt: &str) -> Out {
+    run_hone(e, openai, model, prompt, false)
+}
+
+fn run_hone(e: &Env, openai: Option<&Mock>, model: Option<&str>, prompt: &str, json: bool) -> Out {
     let token = format!("sk-{}", "fixture0123456789");
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_hone"));
     cmd.env_clear()
@@ -247,7 +265,10 @@ fn hone_json(e: &Env, openai: Option<&Mock>, model: Option<&str>, prompt: &str) 
     if let Some(m) = openai {
         cmd.env("HONE_OPENAI_BASE_URL", &m.url);
     }
-    cmd.args(["--no-clarify", "--no-inject", "--json"]);
+    cmd.args(["--no-clarify", "--no-inject"]);
+    if json {
+        cmd.arg("--json");
+    }
     if let Some(m) = model {
         cmd.args(["--model", m]);
     }
@@ -341,6 +362,7 @@ fn test_g9_without_routing_or_fallback_the_request_and_json_output_are_the_estab
         [
             "cost_usd",
             "error",
+            "fallbacks",
             "model",
             "response",
             "success",
@@ -349,6 +371,7 @@ fn test_g9_without_routing_or_fallback_the_request_and_json_output_are_the_estab
         ]
     );
     assert_eq!(v["model"], "openai:gpt-4o");
+    assert_eq!(v["fallbacks"], json!([]), "N8: always present, empty");
     assert_eq!(v["response"], "mock reply");
     assert_eq!(v["success"], true);
     assert_eq!(v["usage"]["input"], 3);
@@ -863,4 +886,192 @@ fn test_g11_a_project_entry_that_is_not_applied_is_not_announced() {
     let o = hone_json(&e, Some(&openai), None, SIMPLE);
 
     assert!(!o.stderr.contains(ANNOUNCE), "{}", o.stderr);
+}
+
+// ==============================================================================================
+// Fallback notice (docs/plans/fallback-notice-spec.md): N7 (stderr line) and N8 (--json)
+// ==============================================================================================
+
+const NOTICE: &str =
+    "hone: openai:main-model failed (openai mock overloaded); switched to fallback ollama:fb-test";
+
+fn fallback_env(ollama_script: Vec<Reply>, fallback_list: &str) -> (Env, Mock, Mock) {
+    let e = Env::new();
+    let ollama = Mock::start(Kind::Ollama, ollama_script);
+    let openai = Mock::start(Kind::OpenAi, vec![Reply::FailBeforeOutput]);
+    write(
+        &e.user_config(),
+        &user_config(&ollama, &format!("fallback_models = {fallback_list}\n")),
+    );
+    (e, ollama, openai)
+}
+
+fn notice_lines(stderr: &str) -> Vec<&str> {
+    stderr
+        .lines()
+        .filter(|l| l.contains("switched to fallback"))
+        .collect()
+}
+
+#[test]
+fn test_n7_a_fallback_prints_one_exact_stderr_line_and_leaves_stdout_alone() {
+    let (e, ollama, openai) = fallback_env(answer("ollama rescued it"), "[\"ollama:fb-test\"]");
+
+    let o = hone_plain(&e, Some(&openai), None, "say hi");
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert_eq!(notice_lines(&o.stderr), vec![NOTICE], "{}", o.stderr);
+    assert!(o.stdout.contains("ollama rescued it"), "{}", o.stdout);
+    assert!(
+        !o.stdout.contains("switched to fallback"),
+        "stdout is the answer only: {}",
+        o.stdout
+    );
+    assert_eq!(ollama.models(), vec!["fb-test".to_owned()]);
+}
+
+#[test]
+fn test_n7_json_mode_prints_the_same_stderr_line_and_stdout_stays_one_json_document() {
+    let (e, _ollama, openai) = fallback_env(answer("ollama rescued it"), "[\"ollama:fb-test\"]");
+
+    let o = hone_json(&e, Some(&openai), None, "say hi");
+
+    assert_eq!(notice_lines(&o.stderr), vec![NOTICE], "{}", o.stderr);
+    assert!(!o.stdout.contains("switched to fallback"), "{}", o.stdout);
+    assert_eq!(o.json()["response"], "ollama rescued it");
+}
+
+#[test]
+fn test_n7_the_line_is_printed_once_even_when_the_fallback_answers_several_calls() {
+    // Two model calls in one run (a tool call, then the answer): OpenAI fails both, Ollama
+    // answers both.
+    let (e, ollama, openai) = fallback_env(
+        vec![Reply::ToolCall, Reply::Answer("all done")],
+        "[\"ollama:fb-test\"]",
+    );
+
+    let o = hone_plain(&e, Some(&openai), None, "say hi");
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert_eq!(ollama.count(), 2, "the fallback answered two calls");
+    assert_eq!(
+        notice_lines(&o.stderr),
+        vec![NOTICE],
+        "once per pair per run: {}",
+        o.stderr
+    );
+}
+
+#[test]
+fn test_n7_no_line_when_the_requested_model_answers() {
+    let (e, ollama, _) = fallback_env(answer("never"), "[\"ollama:fb-test\"]");
+    let openai = Mock::start(Kind::OpenAi, answer("openai is fine"));
+
+    let o = hone_plain(&e, Some(&openai), None, "say hi");
+
+    assert_eq!(o.code, Some(0), "stderr: {}", o.stderr);
+    assert!(!o.stderr.contains("switched to fallback"), "{}", o.stderr);
+    assert_eq!(ollama.count(), 0);
+}
+
+#[test]
+fn test_n7_no_line_when_every_model_fails() {
+    let (e, _ollama, openai) = fallback_env(vec![Reply::FailBeforeOutput], "[\"ollama:fb-test\"]");
+
+    let o = hone_json(&e, Some(&openai), None, "say hi");
+
+    assert_eq!(o.json()["success"], false, "{}", o.stderr);
+    assert!(!o.stderr.contains("switched to fallback"), "{}", o.stderr);
+    assert_eq!(o.json()["fallbacks"], json!([]));
+}
+
+#[test]
+fn test_n8_json_lists_the_fallback_with_a_call_count_and_keeps_model_and_success() {
+    let (e, _ollama, openai) = fallback_env(
+        vec![Reply::ToolCall, Reply::Answer("all done")],
+        "[\"ollama:fb-test\"]",
+    );
+
+    let o = hone_json(&e, Some(&openai), None, "say hi");
+
+    let v = o.json();
+    assert_eq!(v["success"], true, "{v}\nstderr: {}", o.stderr);
+    assert_eq!(v["model"], "openai:main-model", "model keeps its meaning");
+    assert_eq!(
+        v["fallbacks"],
+        json!([{
+            "requested": "openai:main-model",
+            "fallback": "ollama:fb-test",
+            "reason": "openai mock overloaded",
+            "calls": 2
+        }])
+    );
+}
+
+#[test]
+fn test_n8_json_without_a_fallback_has_an_empty_array_and_no_other_key_changes() {
+    let e = Env::new();
+    let openai = Mock::start(Kind::OpenAi, answer("mock reply"));
+
+    let o = hone_json(&e, Some(&openai), None, "say hi");
+
+    let v = o.json();
+    assert_eq!(v["fallbacks"], json!([]));
+    let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "cost_usd",
+            "error",
+            "fallbacks",
+            "model",
+            "response",
+            "success",
+            "tool_calls",
+            "usage"
+        ]
+    );
+}
+
+#[test]
+fn test_n8_two_fallback_models_taking_over_on_different_calls_give_two_entries_in_first_seen_order()
+{
+    // Call 1: OpenAI fails, fb1 answers with a tool call. Call 2: OpenAI fails, fb1 fails
+    // before output, fb2 answers. Reason of both pairs comes from member 0 (OpenAI).
+    let (e, ollama, openai) = fallback_env(
+        vec![
+            Reply::ToolCall,
+            Reply::FailBeforeOutput,
+            Reply::Answer("fb2 answered"),
+        ],
+        "[\"ollama:fb1\", \"ollama:fb2\"]",
+    );
+
+    let o = hone_json(&e, Some(&openai), None, "say hi");
+
+    let v = o.json();
+    assert_eq!(v["success"], true, "{v}\nstderr: {}", o.stderr);
+    assert_eq!(
+        ollama.models(),
+        vec!["fb1".to_owned(), "fb1".to_owned(), "fb2".to_owned()]
+    );
+    assert_eq!(
+        v["fallbacks"],
+        json!([
+            {"requested": "openai:main-model", "fallback": "ollama:fb1",
+             "reason": "openai mock overloaded", "calls": 1},
+            {"requested": "openai:main-model", "fallback": "ollama:fb2",
+             "reason": "openai mock overloaded", "calls": 1},
+        ])
+    );
+    assert_eq!(
+        notice_lines(&o.stderr),
+        vec![
+            "hone: openai:main-model failed (openai mock overloaded); switched to fallback ollama:fb1",
+            "hone: openai:main-model failed (openai mock overloaded); switched to fallback ollama:fb2",
+        ],
+        "{}",
+        o.stderr
+    );
 }

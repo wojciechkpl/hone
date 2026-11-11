@@ -360,6 +360,20 @@ pub async fn orchestrate_handler(
 mod tests {
     use super::*;
 
+    // N11 of docs/plans/fallback-notice-spec.md: a model fallback has its own SSE name
+    // (read from the frame's Debug output: the `event:` line is not otherwise reachable).
+    #[test]
+    fn n11_make_sse_event_names_a_model_fallback() {
+        let ev = AgentEvent::ModelFallback {
+            requested: "anthropic:claude-x".into(),
+            fallback: "openai:gpt-4o".into(),
+            reason: "overloaded".into(),
+        };
+        let frame = format!("{:?}", make_sse_event(ev, 3));
+        assert!(frame.contains("event: model_fallback"), "{frame}");
+        assert!(!frame.contains("event: unknown"), "{frame}");
+    }
+
     #[test]
     fn make_sse_event_serialises_plan_created() {
         let ev = AgentEvent::PlanCreated {

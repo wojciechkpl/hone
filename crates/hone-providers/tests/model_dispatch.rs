@@ -130,6 +130,13 @@ fn usage(n: u32) -> ProviderEvent {
         cache_creation: 0,
     })
 }
+fn mf(requested: &str, fallback: &str, reason: &str) -> ProviderEvent {
+    ProviderEvent::ModelFallback {
+        requested: requested.to_owned(),
+        fallback: fallback.to_owned(),
+        reason: reason.to_owned(),
+    }
+}
 fn answer(t: &str) -> Call {
     Call::Events(vec![tok(t), done()])
 }
@@ -330,7 +337,15 @@ async fn test_g4_a_failure_before_output_goes_to_the_fallback_model_with_its_id(
 
     let ev = events(&d, req("openai:gpt-x")).await;
 
-    assert_eq!(ev, vec![tok("fallback-ok"), done()]);
+    assert_eq!(
+        ev,
+        vec![
+            mf("openai:gpt-x", "ollama:fb-model", "overloaded"),
+            tok("fallback-ok"),
+            done()
+        ],
+        "N4: the notice names the full model ids"
+    );
     assert_eq!(s.openai.calls(), 1);
     assert_eq!(
         s.ollama.models_seen(),
@@ -354,7 +369,22 @@ async fn test_g4_a_transient_request_error_falls_back_and_a_non_transient_one_do
         );
         let d = s.dispatch.with_fallback(vec![id("ollama:fb")]);
         let ev = events(&d, req("openai:gpt-x")).await;
-        assert_eq!(ev, vec![tok("fb"), done()], "status {status}");
+        match ev.first() {
+            Some(ProviderEvent::ModelFallback {
+                requested,
+                fallback,
+                reason,
+            }) => {
+                assert_eq!(
+                    (requested.as_str(), fallback.as_str()),
+                    ("openai:gpt-x", "ollama:fb"),
+                    "status {status}"
+                );
+                assert!(reason.contains("down"), "status {status}: {reason}");
+            }
+            other => panic!("status {status}: expected a leading ModelFallback, got {other:?}"),
+        }
+        assert_eq!(ev[1..], [tok("fb"), done()], "status {status}");
     }
     let s = set(
         "openai:gpt-x",
@@ -433,7 +463,14 @@ async fn test_g4_a_fallback_equal_to_the_primary_is_skipped() {
 
     let ev = events(&d, req("openai:gpt-x")).await;
 
-    assert_eq!(ev, vec![tok("fb"), done()]);
+    assert_eq!(
+        ev,
+        vec![
+            mf("openai:gpt-x", "ollama:fb", "overloaded"),
+            tok("fb"),
+            done()
+        ]
+    );
     assert_eq!(
         s.openai.calls(),
         1,
@@ -458,7 +495,14 @@ async fn test_g4_a_fallback_whose_provider_is_missing_is_skipped() {
 
     let ev = events(&d, req("openai:gpt-x")).await;
 
-    assert_eq!(ev, vec![tok("fb"), done()]);
+    assert_eq!(
+        ev,
+        vec![
+            mf("openai:gpt-x", "ollama:fb", "overloaded"),
+            tok("fb"),
+            done()
+        ]
+    );
 }
 
 #[tokio::test]
@@ -476,7 +520,15 @@ async fn test_g4_usage_of_a_failed_member_is_carried_forward() {
 
     let ev = events(&d, req("openai:gpt-x")).await;
 
-    assert_eq!(ev, vec![usage(10), tok("fb"), done()]);
+    assert_eq!(
+        ev,
+        vec![
+            mf("openai:gpt-x", "ollama:fb", "overloaded"),
+            usage(10),
+            tok("fb"),
+            done()
+        ]
+    );
 }
 
 #[tokio::test]
@@ -528,7 +580,14 @@ async fn test_g4_fallbacks_are_tried_in_order_until_one_answers() {
 
     let ev = events(&d, req("openai:gpt-x")).await;
 
-    assert_eq!(ev, vec![tok("anthropic-ok"), done()]);
+    assert_eq!(
+        ev,
+        vec![
+            mf("openai:gpt-x", "anthropic:second-fb", "overloaded"),
+            tok("anthropic-ok"),
+            done()
+        ]
+    );
     assert_eq!(s.ollama.models_seen(), vec!["ollama:first-fb".to_owned()]);
     assert_eq!(
         s.anthropic.models_seen(),
