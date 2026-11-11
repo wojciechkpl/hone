@@ -142,6 +142,10 @@ mod tests {
             ],
             lead_cost_usd: 0.012,
             estimated_total_usd: 0.112,
+            plan: hone_core::TaskPlan {
+                goal: "Refactor the auth module".into(),
+                subtasks: vec![],
+            },
         }
     }
 

@@ -9,12 +9,13 @@ wired in both the TUI (`hone`) and the web UI (`honed` at `/ui`).
 | Command | What it does | Where |
 |---|---|---|
 | `/plan <prompt>` | Preview the orchestrator's decomposed plan + cost estimate **before** any worker runs. Pick Run / Edit / Cancel. | TUI + web UI |
-| `/budget <usd>` | Cap the next run's cost ceiling. Drains after one turn. | TUI |
-| `/permit <tool>` | Pre-approve a tool for the next run (skip the AskRisky pause for it). Drains after one turn. | TUI |
+| `/budget <usd>` | Set the agent's cost cap, from the next turn on (for an orchestrated run it caps only the lead's calls). | TUI |
+| `/permit <tool>` | Pre-approve a tool, from the next turn on (skip the AskRisky pause for it). | TUI |
 | `/workflows` | Open the **Workflows drawer**: list saved YAML recipes, fill in `{{var}}` template fields, click Run. | web UI |
 
-All four are intentionally **per-run** — they apply to the very next
-turn and then drain. Nothing persists to your config.
+`/budget` and `/permit` are picked up by the very next turn. The agent
+then keeps them for the rest of the session (they were meant to last
+one run; that is a known gap). Nothing is written to your config.
 
 ---
 
@@ -43,25 +44,41 @@ result before paying for any worker.
 
 Three keys:
 
-- **r / Enter** — run the plan. The prompt replays through the normal
-  turn dispatch; each subtask spawns the right specialist.
-- **e** — restore the prompt to the input bar. Tweak it and submit
-  again (or `/plan` again).
+- **r / Enter** — run the plan shown: each subtask goes to its
+  specialist, then the results are merged. Hone doesn't plan again.
+  The run uses the model a complex prompt would: your `/model`, or
+  else the `[[routing]]` complex model. It uses up a pending `/budget`
+  or `/permit` like any turn (see § 2 and § 3 for what they do here).
+- **e** — put the prompt back in the input bar, without `/plan`.
+  Tweak it and submit it as a normal prompt, or add `/plan` again.
 - **c / Esc** — cancel. Costs you only the lead-LLM call you already
   paid.
+
+The keys count only after a 400 ms pause, so text you are typing when
+the overlay opens can't answer it; with Ctrl, Alt or Shift held they do
+nothing.
+
+The TUI keeps running while the lead plans: press **Esc** to stop it
+(outside vim mode). `/plan` isn't accepted while a turn is running or
+still finishing.
+
+The plan's workers have no tools: they answer in text and don't read or
+edit files.
 
 The cost line shows two figures:
 
 - **paid** — the real lead-LLM cost from the decompose call.
 - **projected** — `paid + N × DEFAULT_WORKER_COST_USD`, where
   `DEFAULT_WORKER_COST_USD = $0.05` lives in `hone-core`. It's a
-  heuristic, not a guarantee — set a hard ceiling with `/budget` if
-  you need one (see § 2).
+  heuristic, not a guarantee, and `/budget` doesn't cap a plan's
+  workers yet (see § 2).
 
 The **same** preview is available in the web UI at `/ui` — type
 `/plan <prompt>` in the chat input and a `<DryRunCard>` overlay
-appears with the same Run / Edit / Cancel buttons. Both surfaces
-back onto `POST /orchestrate?dry_run=true`.
+appears with the same Run / Edit / Cancel buttons. The web UI backs
+onto `POST /orchestrate?dry_run=true`; the TUI plans in-process. The
+web UI's Run sends the prompt to `POST /orchestrate` again, which plans
+anew.
 
 ---
 
@@ -74,10 +91,13 @@ runtime budget check (`Cost::check_budget`) trips with
 
 ```
 > /budget 0.20
-> /plan refactor x
-... overlay shows projected cost of $0.18 — under budget, safe to Run.
-> r
+> fix the flaky date test
 ```
+
+For an orchestrated run (a `/plan` Run or a prompt classified complex)
+the cap reaches only the lead's calls, each on its own: the merge, and
+for a complex prompt the planning call too. It doesn't cap the workers,
+so it is not yet a ceiling for a plan.
 
 Validation rules:
 
@@ -85,8 +105,8 @@ Validation rules:
 - Finite only — `/budget inf`, `/budget nan` are rejected.
 - Integers and decimals both work — `/budget 5` is `Some(5.0)`.
 
-`/budget` drains after one turn. To set a permanent ceiling, edit
-your config TOML directly.
+The agent keeps the cap for the rest of the session. To set a ceiling
+for every session, edit your config TOML.
 
 ---
 
@@ -100,10 +120,13 @@ press `y` ten times.
 ```
 > /permit shell
 > /permit edit_file
-> /plan apply the migration plan from PR #42
-... overlay shows projected cost; Run.
+> run scripts/migrate.sh and fix what it reports
 ... shell + edit_file fire without pausing.
 ```
+
+An orchestrated run (a `/plan` Run or a prompt classified complex)
+doesn't use tools: its lead and workers have none, so `/permit` changes
+nothing for it.
 
 Notes:
 

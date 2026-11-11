@@ -22,6 +22,8 @@ pub struct PlanPreviewState {
     pub lead_cost_usd: f64,
     /// Projected total cost: `lead_cost_usd + N * DEFAULT_WORKER_COST_USD`.
     pub estimated_total_usd: f64,
+    /// The full plan as decomposed, run as shown when the user confirms.
+    pub plan: hone_core::TaskPlan,
 }
 
 impl PlanPreviewState {
@@ -34,30 +36,20 @@ impl PlanPreviewState {
             lead_cost_usd + plan.subtasks.len() as f64 * hone_core::DEFAULT_WORKER_COST_USD;
         let subtasks = plan
             .subtasks
-            .into_iter()
+            .iter()
             .map(|s| PlanPreviewSubtask {
-                id: s.id,
-                agent: s.agent,
-                description: s.description,
+                id: s.id.clone(),
+                agent: s.agent.clone(),
+                description: s.description.clone(),
             })
             .collect();
         Self {
             prompt: prompt.to_string(),
-            goal: plan.goal,
+            goal: plan.goal.clone(),
             subtasks,
             lead_cost_usd,
             estimated_total_usd,
+            plan,
         }
     }
-}
-
-/// User action chosen from the plan-preview overlay.
-#[derive(Debug, Clone, PartialEq)]
-pub enum PlanAction {
-    /// Execute the plan as shown.
-    Run,
-    /// Return the prompt to the input box so the user can edit it.
-    Edit,
-    /// Dismiss the overlay without doing anything.
-    Cancel,
 }

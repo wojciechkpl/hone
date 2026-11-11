@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -534,4 +536,249 @@ async fn test_panicked_worker_has_correct_task_id() {
         result_ids,
         vec!["task-panic-A", "task-panic-B", "task-panic-C"]
     );
+}
+
+// ---------------------------------------------------------------------------
+// G6 of docs/plans/plan-gate-spec.md: `Orchestrator::run_plan`
+// ---------------------------------------------------------------------------
+
+/// Records the text of every message of every `complete()` call, and answers
+/// each call with the fixed text `"ok"`.
+struct RecordingProvider {
+    calls: std::sync::Mutex<Vec<String>>,
+}
+
+impl RecordingProvider {
+    fn new() -> Self {
+        Self {
+            calls: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+    fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+    fn decompose_calls(&self) -> usize {
+        self.calls()
+            .iter()
+            .filter(|c| c.contains("You are a lead agent. Decompose"))
+            .count()
+    }
+}
+
+#[async_trait]
+impl ModelProvider for RecordingProvider {
+    fn id(&self) -> &str {
+        "recording"
+    }
+    fn display_name(&self) -> &str {
+        "Recording Provider"
+    }
+    fn supported_models(&self) -> Vec<ModelInfo> {
+        vec![]
+    }
+    async fn complete(
+        &self,
+        req: CompletionRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
+        let text = req
+            .messages
+            .iter()
+            .map(|m| m.content.as_text())
+            .collect::<Vec<_>>()
+            .join("\n");
+        self.calls.lock().unwrap().push(text);
+        Ok(Box::pin(futures::stream::iter(vec![
+            ProviderEvent::Token {
+                text: "ok".to_owned(),
+            },
+            ProviderEvent::Done,
+        ])))
+    }
+    fn estimate_tokens(&self, _: &[Message]) -> u32 {
+        1
+    }
+    async fn health(&self) -> ProviderHealth {
+        ProviderHealth::Healthy
+    }
+}
+
+fn recording_config(provider: Arc<RecordingProvider>) -> AgentConfig {
+    let mut cfg = base_config(Arc::new(MockProvider::new(vec![])));
+    cfg.provider = provider;
+    cfg
+}
+
+fn two_task_plan() -> TaskPlan {
+    let task = |id: &str, deps: Vec<&str>| SubTask {
+        id: id.to_owned(),
+        description: format!("do {id}"),
+        agent: "debugger".to_owned(),
+        context: String::new(),
+        depends_on: deps.into_iter().map(str::to_owned).collect(),
+        acceptance_tests: vec![],
+        budget_usd: None,
+        scope: vec![],
+        requires_capabilities: vec![],
+    };
+    TaskPlan {
+        goal: "ship the shown plan".to_owned(),
+        // The dependent is listed first: only dependency order can put "a" before "b".
+        subtasks: vec![task("b", vec!["a"]), task("a", vec![])],
+    }
+}
+
+fn drain(rx: &mut mpsc::Receiver<hone_proto::AgentEvent>) -> Vec<hone_proto::AgentEvent> {
+    let mut out = Vec::new();
+    while let Ok(e) = rx.try_recv() {
+        out.push(e);
+    }
+    out
+}
+
+#[tokio::test]
+async fn test_g6_run_plan_never_asks_the_lead_to_decompose() {
+    let provider = Arc::new(RecordingProvider::new());
+    let mut orch = Orchestrator::new(
+        recording_config(Arc::clone(&provider)),
+        registry_with_debugger(),
+        4,
+    );
+    let (tx, _rx) = mpsc::channel(256);
+
+    let result = orch.run_plan(two_task_plan(), tx).await.expect("run_plan");
+
+    assert_eq!(
+        provider.decompose_calls(),
+        0,
+        "run_plan must not decompose; prompts: {:?}",
+        provider.calls()
+    );
+    assert_eq!(result.workers.len(), 2, "both subtasks must run");
+    assert!(
+        result
+            .workers
+            .iter()
+            .all(|w| w.status == WorkerStatus::Completed)
+    );
+}
+
+#[tokio::test]
+async fn test_g6_run_plan_sends_plan_created_before_any_worker_event() {
+    let provider = Arc::new(RecordingProvider::new());
+    let mut orch = Orchestrator::new(recording_config(provider), registry_with_debugger(), 4);
+    let (tx, mut rx) = mpsc::channel(256);
+
+    orch.run_plan(two_task_plan(), tx).await.expect("run_plan");
+    let events = drain(&mut rx);
+
+    let created: Vec<usize> = events
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| matches!(e, hone_proto::AgentEvent::PlanCreated { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(created.len(), 1, "exactly one PlanCreated: {events:?}");
+    match &events[created[0]] {
+        hone_proto::AgentEvent::PlanCreated {
+            goal,
+            subtask_count,
+        } => {
+            assert_eq!(goal, "ship the shown plan");
+            assert_eq!(*subtask_count, 2);
+        }
+        _ => unreachable!(),
+    }
+    let first_worker = events
+        .iter()
+        .position(|e| matches!(e, hone_proto::AgentEvent::WorkerStarted { .. }))
+        .expect("a WorkerStarted event");
+    assert!(
+        created[0] < first_worker,
+        "PlanCreated must precede workers: {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_g6_run_plan_merges_with_the_plans_goal() {
+    let provider = Arc::new(RecordingProvider::new());
+    let mut orch = Orchestrator::new(
+        recording_config(Arc::clone(&provider)),
+        registry_with_debugger(),
+        4,
+    );
+    let (tx, _rx) = mpsc::channel(256);
+
+    let result = orch.run_plan(two_task_plan(), tx).await.expect("run_plan");
+
+    assert_eq!(result.goal, "ship the shown plan");
+    assert_eq!(result.merged_response, "ok");
+    // The merge call is the last lead call and mentions the goal.
+    let calls = provider.calls();
+    assert!(
+        calls.last().unwrap().contains("ship the shown plan"),
+        "merge prompt must carry the plan goal; last call: {:?}",
+        calls.last()
+    );
+}
+
+#[tokio::test]
+async fn test_g6_run_plan_writes_the_plan_store_before_and_after() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = hone_core::PlanStore::new(dir.path().join("plan.json"));
+    let provider = Arc::new(RecordingProvider::new());
+    let mut orch = Orchestrator::new(recording_config(provider), registry_with_debugger(), 4)
+        .with_plan_store(store);
+    let (tx, _rx) = mpsc::channel(256);
+
+    orch.run_plan(two_task_plan(), tx).await.expect("run_plan");
+
+    let written = std::fs::read_to_string(dir.path().join("plan.json")).expect("plan file");
+    assert!(written.contains("ship the shown plan"), "{written}");
+}
+
+#[tokio::test]
+async fn test_g6_run_still_decomposes_then_runs_the_plan() {
+    let provider = Arc::new(RecordingProvider::new());
+    let mut orch = Orchestrator::new(
+        recording_config(Arc::clone(&provider)),
+        registry_with_debugger(),
+        4,
+    );
+    let (tx, mut rx) = mpsc::channel(256);
+
+    // The recording provider answers "ok" (not JSON), so decompose falls back
+    // to a single-subtask plan; what matters is that it was asked.
+    let result = orch.run("do thing", tx).await.expect("run");
+
+    assert_eq!(
+        provider.decompose_calls(),
+        1,
+        "run must still decompose once"
+    );
+    assert_eq!(result.workers.len(), 1);
+    assert!(
+        drain(&mut rx)
+            .iter()
+            .any(|e| matches!(e, hone_proto::AgentEvent::PlanCreated { .. }))
+    );
+}
+
+#[tokio::test]
+async fn test_g18_run_plan_runs_a_dependency_after_its_prerequisite() {
+    let provider = Arc::new(RecordingProvider::new());
+    let mut orch = Orchestrator::new(
+        recording_config(Arc::clone(&provider)),
+        registry_with_debugger(),
+        4,
+    );
+    let (tx, _rx) = mpsc::channel(256);
+
+    // Plan: b depends on a (descriptions "do a" / "do b").
+    orch.run_plan(two_task_plan(), tx).await.expect("run_plan");
+
+    let calls = provider.calls();
+    let first = |needle: &str| calls.iter().position(|c| c.contains(needle));
+    let a = first("do a").expect("a's prompt");
+    let b = first("do b").expect("b's prompt");
+    assert!(a < b, "prerequisite a must be asked before b: {calls:?}");
 }

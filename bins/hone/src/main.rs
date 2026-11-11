@@ -1523,6 +1523,7 @@ fn spawn_orchestrated_turn(
     user_text: String,
     tx: mpsc::Sender<AgentEvent>,
     agent: AgentHandle,
+    plan: Option<hone_core::TaskPlan>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let registry = AgentRegistry::load_hierarchical(&lead_config.working_dir);
@@ -1531,7 +1532,58 @@ fn spawn_orchestrated_turn(
         let mut orchestrator =
             Orchestrator::new(lead_config, registry, 4).with_plan_store(plan_store);
 
-        match orchestrator.run(&user_text, tx.clone()).await {
+        // The orchestrator's lead and worker turns each end in a `Done` (or an
+        // `Error`) on this channel. Those belong to the inner turns: swallow
+        // them, sum the `Done`s, and send exactly one terminal event at the end
+        // so the TUI stays busy until the whole run is over.
+        let (inner_tx, mut inner_rx) = mpsc::channel::<AgentEvent>(256);
+        let run_text = user_text.clone();
+        let run_task = tokio::spawn(async move {
+            match plan {
+                Some(plan) => orchestrator.run_plan(plan, inner_tx).await,
+                None => orchestrator.run(&run_text, inner_tx).await,
+            }
+        });
+        // Dropped when this task is aborted (Esc), which stops the run too.
+        let _guard = AbortOnDrop(run_task.abort_handle());
+
+        let mut total_usage = hone_proto::TokenUsage::default();
+        let mut total_cost = 0.0_f64;
+        loop {
+            tokio::select! {
+                biased;
+                // The UI went away: stop forwarding.
+                () = tx.closed() => return,
+                ev = inner_rx.recv() => {
+                    let Some(event) = ev else { break };
+                    match event {
+                        AgentEvent::Done { usage, cost_usd, .. } => {
+                            total_usage = total_usage + usage;
+                            total_cost += cost_usd;
+                        }
+                        AgentEvent::Error { .. } => {}
+                        other => {
+                            if tx.send(other).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let outcome = match run_task.await {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                let _ = tx
+                    .send(AgentEvent::Error {
+                        message: format!("orchestration failed: {e}"),
+                    })
+                    .await;
+                return;
+            }
+        };
+        match outcome {
             Ok(result) => {
                 if result.merged_response.is_empty()
                     || result.merged_response.starts_with("Merge failed:")
@@ -1559,6 +1611,13 @@ fn spawn_orchestrated_turn(
                     result.workers.len()
                 );
                 let _ = tx.send(AgentEvent::Token { text: summary }).await;
+                let _ = tx
+                    .send(AgentEvent::Done {
+                        usage: total_usage,
+                        cost_usd: total_cost,
+                        plan: None,
+                    })
+                    .await;
             }
             Err(e) => {
                 let _ = tx
@@ -3362,6 +3421,42 @@ async fn run_tui(
         }};
     }
 
+    // The model an orchestrated run (Complex turn, plan run, `/plan` decompose)
+    // uses: pinned, else the [[routing]] model for the Complex tier, else the
+    // agent's current model (so `/model` reaches orchestrated runs).
+    macro_rules! complex_model {
+        () => {{
+            match &routing {
+                Some(r) => {
+                    turn_model(
+                        &r.eff,
+                        Tier::Complex,
+                        pinned_model.as_ref(),
+                        &model_id,
+                        &|m| r.dispatch.has_provider_for(m),
+                    )
+                    .model
+                }
+                None => applied_model.clone(),
+            }
+        }};
+    }
+    // Drain `/budget` and `/permit`: apply them to the agent here; the caller
+    // mirrors the returned overrides onto an orchestrated run's config clone.
+    macro_rules! drain_governance {
+        () => {{
+            let pending_gov = app.take_pending_governance();
+            if pending_gov.budget_usd.is_some() {
+                agent.set_budget_limit(pending_gov.budget_usd).await;
+            }
+            if !pending_gov.permits.is_empty() {
+                // Fire-and-forget: never wait on the actor from the UI loop.
+                agent.approve_tools(pending_gov.permits.clone()).await;
+            }
+            pending_gov
+        }};
+    }
+
     // Load saved sessions into the session-switcher overlay.
     if let Some(store) = open_session_store().await {
         if let Ok(sessions) = store.list_sessions().await {
@@ -3385,6 +3480,13 @@ async fn run_tui(
     let mut events = EventStream::new();
     // Abort handle for the currently running agent task; cleared on completion.
     let mut current_task_abort: Option<tokio::task::AbortHandle> = None;
+    // `/plan` decompose runs as a background task and reports here, so the loop
+    // keeps drawing and Esc can cancel it. Results carry the id of the planning
+    // run; one that isn't `planning_id` (cancelled meanwhile) is dropped.
+    type PlanResult = (u64, String, Result<(hone_core::TaskPlan, f64), String>);
+    let (plan_tx, mut plan_rx) = mpsc::channel::<PlanResult>(1);
+    let mut planning_id: Option<u64> = None;
+    let mut next_planning_id: u64 = 0;
 
     // Adaptive classifier: wired only when a memory store is available.
     let adaptive: Option<Arc<AdaptiveClassifier>> = base_config
@@ -3444,7 +3546,9 @@ async fn run_tui(
                             break;
                         }
 
+                        // Enter on the plan overlay is the overlay's Run, not a submit.
                         if key.code == KeyCode::Enter
+                            && !app.plan_preview_open
                             && !app.input().is_empty()
                             && matches!(app.state(), AppState::Idle | AppState::Error(_))
                         {
@@ -3490,66 +3594,6 @@ async fn run_tui(
                             // Handle pending agent mode changes from Shift+Tab.
                             if let Some(new_mode) = app.take_pending_mode_change() {
                                 agent.set_mode(new_mode).await;
-                            }
-
-                            // Handle /plan dispatch — call Orchestrator::decompose
-                            // in-process and surface the result through the
-                            // plan-preview overlay.
-                            if let Some(plan_prompt) = app.take_pending_plan_prompt() {
-                                // /plan decomposes with the model a Complex turn would use.
-                                let mut plan_config = base_config.clone();
-                                if let Some(r) = &routing {
-                                    plan_config.model = turn_model(
-                                        &r.eff,
-                                        Tier::Complex,
-                                        pinned_model.as_ref(),
-                                        &model_id,
-                                        &|m| r.dispatch.has_provider_for(m),
-                                    )
-                                    .model;
-                                }
-                                match dispatch_plan_decompose(
-                                    plan_config,
-                                    app.working_dir().to_path_buf(),
-                                    &plan_prompt,
-                                )
-                                .await
-                                {
-                                    Ok((task_plan, lead_cost, _lead_usage)) => {
-                                        let preview = hone_tui::plan_preview::PlanPreviewState::from_decompose(
-                                            &plan_prompt,
-                                            task_plan,
-                                            lead_cost,
-                                        );
-                                        app.set_plan_preview(preview);
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!("/plan decompose failed: {e}");
-                                        app.push_error(format!("/plan decompose failed: {e}"));
-                                    }
-                                }
-                            }
-
-                            // Plan-preview overlay actions: Run replays the prompt
-                            // through the normal turn dispatch; Edit restores it
-                            // to the input bar; Cancel is a no-op.
-                            if let Some(action) = app.take_pending_plan_action() {
-                                use hone_tui::plan_preview::PlanAction;
-                                let prompt = app.plan_preview().map(|s| s.prompt.clone());
-                                match action {
-                                    PlanAction::Run => {
-                                        if let Some(p) = prompt {
-                                            app.set_input_buffer(p);
-                                            app.submit_input();
-                                        }
-                                    }
-                                    PlanAction::Edit => {
-                                        if let Some(p) = prompt {
-                                            app.set_input_buffer(p);
-                                        }
-                                    }
-                                    PlanAction::Cancel => {}
-                                }
                             }
 
                             if !is_command && !is_shell_escape && matches!(app.state(), AppState::WaitingForResponse) {
@@ -3623,14 +3667,7 @@ async fn run_tui(
                                 // override fires exactly once. The orchestrated branch picks up
                                 // changes through `base_config_clone` below; the Simple/Medium
                                 // branches go through the AgentHandle, which has its own setters.
-                                let pending_gov = app.take_pending_governance();
-                                if pending_gov.budget_usd.is_some() {
-                                    agent.set_budget_limit(pending_gov.budget_usd).await;
-                                }
-                                if !pending_gov.permits.is_empty() {
-                                    // Fire-and-forget: never wait on the actor from the UI loop.
-                                    agent.approve_tools(pending_gov.permits.clone()).await;
-                                }
+                                let pending_gov = drain_governance!();
 
                                 // Pick this turn's model: pinned, else the [[routing]] model for the
                                 // tier, else the session default. Simple/medium turns run on the
@@ -3673,6 +3710,9 @@ async fn run_tui(
                                 let mut base_config_clone = base_config.clone();
                                 if let Some(turn) = &turn_model_choice {
                                     base_config_clone.model = turn.model.clone();
+                                }
+                                if matches!(tier, ComplexityTier::Complex) {
+                                    base_config_clone.model = complex_model!();
                                 }
                                 // Mirror the per-run gov onto the orchestrated path's clone too —
                                 // spawn_orchestrated_turn builds a disposable Orchestrator from this
@@ -3727,7 +3767,7 @@ async fn run_tui(
                                             let restore_tools = applied_tool_filter;
                                             {
                                                 let (tx2, rx2) = mpsc::channel(256);
-                                                let inner = spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2, agent_clone.clone());
+                                                let inner = spawn_orchestrated_turn(base_config_clone, effective_text_clone, tx2, agent_clone.clone(), None);
                                                 spawn_inline_turn_wrapper(inner, rx2, agent_tx_clone, async move {
                                                     agent_clone.set_system_prompt(original_prompt).await;
                                                     if restore_tools {
@@ -3736,7 +3776,7 @@ async fn run_tui(
                                                 })
                                             }
                                         } else {
-                                            spawn_orchestrated_turn(base_config_clone, effective_text, agent_tx.clone(), agent.clone())
+                                            spawn_orchestrated_turn(base_config_clone, effective_text, agent_tx.clone(), agent.clone(), None)
                                         }
                                     }
                                 };
@@ -3755,6 +3795,77 @@ async fn run_tui(
                             app.handle_key(key);
                         }
 
+                        // `/plan <prompt>`: decompose in the background. Drained after
+                        // every key event, so the overlay's keys act at once.
+                        if let Some(plan_prompt) = app.take_pending_plan_prompt() {
+                            // The previous turn's task may outlive its `Done`.
+                            if last_turn_task.as_ref().is_some_and(|t| !t.is_finished()) {
+                                app.refuse_plan();
+                            } else {
+                                // /plan decomposes with the model a Complex turn would use.
+                                let mut plan_config = base_config.clone();
+                                plan_config.model = complex_model!();
+                                let working_dir = app.working_dir().to_path_buf();
+                                let id = next_planning_id;
+                                next_planning_id += 1;
+                                planning_id = Some(id);
+                                let tx = plan_tx.clone();
+                                let watcher_tx = tx.clone();
+                                let task = tokio::spawn(async move {
+                                    let result = dispatch_plan_decompose(plan_config, working_dir, &plan_prompt)
+                                        .await
+                                        .map(|(plan, cost, _usage)| (plan, cost))
+                                        .map_err(|e| e.to_string());
+                                    let _ = tx.send((id, plan_prompt, result)).await;
+                                });
+                                // Esc cancels planning through the usual cancel path.
+                                current_task_abort = Some(task.abort_handle());
+                                // A task that ends without sending (a panic) must not
+                                // leave the spinner running. An aborted one carries a
+                                // stale id, so its message is dropped.
+                                tokio::spawn(async move {
+                                    if task.await.is_err() {
+                                        let _ = watcher_tx
+                                            .send((id, String::new(), Err("planning stopped unexpectedly".to_owned())))
+                                            .await;
+                                    }
+                                });
+                            }
+                        }
+
+                        // Run confirmed on the plan overlay: run the plan shown, with
+                        // the settings of a Complex turn.
+                        if let Some(preview) = app.take_pending_plan_run() {
+                            if let Some((new_model, model)) = deferred_model.take() {
+                                apply_model_switch!(new_model, model);
+                            }
+                            let complex = complex_model!();
+                            current_turn_model = complex.to_string();
+                            let mut run_config = base_config.clone();
+                            run_config.model = complex.clone();
+                            if complex.as_str() != shown_model {
+                                shown_model = complex.to_string();
+                                app.status_mut().model = shown_model.clone();
+                                app.status_mut().context_limit = model_context_limit(complex.as_str());
+                            }
+                            let pending_gov = drain_governance!();
+                            pending_gov.clone().apply_to_budget(&mut run_config.budget_limit);
+                            pending_gov.apply_to_policy(&mut run_config.approval_policy);
+                            // The classifier didn't pick this tier: it records nothing.
+                            current_tier = None;
+                            turn_fallback_model = None;
+                            current_turn_prompt = preview.prompt.chars().take(200).collect::<String>();
+                            let task = spawn_orchestrated_turn(
+                                run_config,
+                                preview.prompt,
+                                agent_tx.clone(),
+                                agent.clone(),
+                                Some(preview.plan),
+                            );
+                            last_turn_task = Some(task.abort_handle());
+                            current_task_abort = Some(task.abort_handle());
+                        }
+
                         // Escape pressed during an AI turn — abort the task.
                         // Only act if there is actually a task to abort; without
                         // this guard, Escape during a shell escape would fire
@@ -3762,6 +3873,8 @@ async fn run_tui(
                         if app.take_pending_cancel() {
                             if let Some(abort) = current_task_abort.take() {
                                 abort.abort();
+                                // A planning result arriving later is dropped.
+                                planning_id = None;
                                 app.cancel_turn();
                             }
                         }
@@ -3799,6 +3912,26 @@ async fn run_tui(
                     if matches!(app.state(), AppState::Idle | AppState::Error(_)) {
                         current_task_abort = None;
                         app.restore_queued_message_if_idle();
+                    }
+                }
+            }
+
+            // Result of the background `/plan` decompose
+            Some((id, plan_prompt, result)) = plan_rx.recv() => {
+                if planning_id == Some(id) {
+                    planning_id = None;
+                    match result {
+                        Ok((task_plan, lead_cost)) => {
+                            app.set_plan_preview(hone_tui::plan_preview::PlanPreviewState::from_decompose(
+                                &plan_prompt,
+                                task_plan,
+                                lead_cost,
+                            ));
+                        }
+                        Err(e) => {
+                            tracing::warn!("/plan decompose failed: {e}");
+                            app.plan_failed(&e);
+                        }
                     }
                 }
             }
@@ -4180,7 +4313,7 @@ mod tests {
         // Run an orchestrated turn — today this creates a disposable
         // Orchestrator and never writes results back to `agent`.
         let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
-        let _handle = spawn_orchestrated_turn(config, "do X please".to_string(), tx, agent.clone());
+        let _handle = spawn_orchestrated_turn(config, "do X please".to_string(), tx, agent.clone(), None);
 
         // Drain events until the sender is dropped (Orchestrator finished).
         while rx.recv().await.is_some() {}
@@ -4214,6 +4347,379 @@ mod tests {
             "persistent agent context is missing the assistant response; \
              spawn_orchestrated_turn does not write back to AgentHandle. \
              messages in context: {messages:?}"
+        );
+    }
+
+    // ---- /plan gate G7 + G14 (docs/plans/plan-gate-spec.md) ----
+
+    fn orch_config(
+        provider: Arc<dyn hone_providers::ModelProvider>,
+        dir: &std::path::Path,
+    ) -> AgentConfig {
+        use hone_core::RetryConfig;
+        use hone_sandbox::NullSandbox;
+        AgentConfig {
+            provider,
+            tools: ToolRegistry::new(),
+            sandbox: Arc::new(NullSandbox),
+            sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
+            system_prompt: "You are a lead orchestrator.".to_owned(),
+            model: ModelId::new("mock:test"),
+            max_tokens: None,
+            temperature: None,
+            budget_limit: None,
+            pricing: PricingEntry {
+                model: ModelId::new("mock:test"),
+                input_per_million: 1_000_000.0,
+                output_per_million: 1_000_000.0,
+                cache_read_per_million: None,
+                cache_creation_per_million: None,
+            },
+            working_dir: dir.to_path_buf(),
+            memory_store: None,
+            retry_config: RetryConfig::default(),
+            index: None,
+            inject_context: false,
+            skeleton_strategy: Default::default(),
+            egress_log: None,
+            approval_policy: ToolApprovalPolicy::Auto,
+            step_rx: None,
+            hooks: None,
+            skills: None,
+            embedder: None,
+            mode: AgentMode::Build,
+            policy: None,
+        }
+    }
+
+    /// Answers "ok" with usage 10 in / 5 out on every call; records each prompt.
+    struct UsageRecorder {
+        prompts: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for UsageRecorder {
+        fn id(&self) -> &str {
+            "usage-recorder"
+        }
+        fn display_name(&self) -> &str {
+            "Usage recorder"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![]
+        }
+        async fn complete(
+            &self,
+            req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let text = req
+                .messages
+                .iter()
+                .map(|m| m.content.as_text())
+                .collect::<Vec<_>>()
+                .join("\n");
+            self.prompts.lock().unwrap().push(text);
+            Ok(Box::pin(futures::stream::iter(vec![
+                hone_proto::ProviderEvent::Token {
+                    text: "ok".to_owned(),
+                },
+                hone_proto::ProviderEvent::Usage(hone_proto::TokenUsage {
+                    input: 10,
+                    output: 5,
+                    cache_read: 0,
+                    cache_creation: 0,
+                }),
+                hone_proto::ProviderEvent::Done,
+            ])))
+        }
+        fn estimate_tokens(&self, _: &[hone_proto::Message]) -> u32 {
+            1
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    /// Every call fails with a non-retryable HTTP error.
+    struct AlwaysFails;
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for AlwaysFails {
+        fn id(&self) -> &str {
+            "always-fails"
+        }
+        fn display_name(&self) -> &str {
+            "Always fails"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![]
+        }
+        async fn complete(
+            &self,
+            _req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            Err(hone_providers::ProviderError::Http {
+                provider: "always-fails".to_owned(),
+                status: 400,
+                body: "bad request".to_owned(),
+            })
+        }
+        fn estimate_tokens(&self, _: &[hone_proto::Message]) -> u32 {
+            1
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    fn one_task_plan() -> hone_core::TaskPlan {
+        hone_core::TaskPlan {
+            goal: "ship the shown plan".to_owned(),
+            subtasks: vec![hone_core::SubTask {
+                id: "1".to_owned(),
+                description: "do the one thing".to_owned(),
+                agent: "debugger".to_owned(),
+                context: String::new(),
+                depends_on: vec![],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
+                requires_capabilities: vec![],
+            }],
+        }
+    }
+
+    async fn collect_events(rx: &mut tokio::sync::mpsc::Receiver<AgentEvent>) -> Vec<AgentEvent> {
+        let mut out = Vec::new();
+        while let Some(e) = rx.recv().await {
+            out.push(e);
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn g7_orchestrated_turn_with_a_plan_does_not_decompose_and_writes_history_back() {
+        use hone_proto::Role;
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(UsageRecorder {
+            prompts: std::sync::Mutex::new(Vec::new()),
+        });
+        let config = orch_config(Arc::clone(&provider) as _, dir.path());
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_string(),
+            tx,
+            agent.clone(),
+            Some(one_task_plan()),
+        );
+        let _ = collect_events(&mut rx).await;
+        tokio::task::yield_now().await;
+
+        let prompts = provider.prompts.lock().unwrap().clone();
+        assert!(
+            !prompts
+                .iter()
+                .any(|p| p.contains("You are a lead agent. Decompose")),
+            "a staged plan must not be decomposed again: {prompts:?}"
+        );
+        let messages = agent.get_messages().await;
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.role == Role::User && m.content.as_text().contains("ship it")),
+            "{messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.role == Role::Assistant && m.content.as_text().contains("ok")),
+            "{messages:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn g14_orchestrated_turn_ends_with_exactly_one_done_after_the_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(UsageRecorder {
+            prompts: std::sync::Mutex::new(Vec::new()),
+        });
+        let config = orch_config(provider as _, dir.path());
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_string(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = collect_events(&mut rx).await;
+
+        let dones: Vec<usize> = events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| matches!(e, AgentEvent::Done { .. }))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(dones.len(), 1, "exactly one Done: {events:?}");
+        assert_eq!(dones[0], events.len() - 1, "Done is the last event: {events:?}");
+        match &events[events.len() - 2] {
+            AgentEvent::Token { text } => {
+                assert!(text.contains("Orchestration complete"), "{text}")
+            }
+            other => panic!("summary Token must precede Done, got {other:?}"),
+        }
+        assert!(
+            !events.iter().any(|e| matches!(e, AgentEvent::Error { .. })),
+            "inner errors are not forwarded: {events:?}"
+        );
+        // Worker + merge ran (2 inner turns, 10 in / 5 out each); the final
+        // Done carries their sums. Priced at 1 USD per token.
+        match events.last().unwrap() {
+            AgentEvent::Done {
+                usage,
+                cost_usd,
+                plan,
+            } => {
+                assert!(plan.is_none());
+                assert_eq!(usage.input, 20, "{usage:?}");
+                assert_eq!(usage.output, 10, "{usage:?}");
+                assert!((cost_usd - 30.0).abs() < 1e-6, "cost {cost_usd}");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// The first call fails (HTTP 400); every later call answers "ok".
+    struct FirstCallFails {
+        n: std::sync::Mutex<usize>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for FirstCallFails {
+        fn id(&self) -> &str {
+            "first-call-fails"
+        }
+        fn display_name(&self) -> &str {
+            "First call fails"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![]
+        }
+        async fn complete(
+            &self,
+            _req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let first = {
+                let mut n = self.n.lock().unwrap();
+                *n += 1;
+                *n == 1
+            };
+            if first {
+                return Err(hone_providers::ProviderError::Http {
+                    provider: "first-call-fails".to_owned(),
+                    status: 400,
+                    body: "bad request".to_owned(),
+                });
+            }
+            Ok(Box::pin(futures::stream::iter(vec![
+                hone_proto::ProviderEvent::Token {
+                    text: "ok".to_owned(),
+                },
+                hone_proto::ProviderEvent::Done,
+            ])))
+        }
+        fn estimate_tokens(&self, _: &[hone_proto::Message]) -> u32 {
+            1
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    #[tokio::test]
+    async fn g22_a_failed_worker_is_forwarded_and_the_run_still_ends_with_one_done() {
+        let dir = tempfile::tempdir().unwrap();
+        // With a staged plan the worker is the first provider call; it fails,
+        // the merge call succeeds.
+        let config = orch_config(
+            Arc::new(FirstCallFails {
+                n: std::sync::Mutex::new(0),
+            }),
+            dir.path(),
+        );
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_string(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = collect_events(&mut rx).await;
+
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                AgentEvent::WorkerCompleted { status, .. } if status.starts_with("failed")
+            )),
+            "the failed WorkerCompleted must be forwarded: {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| matches!(e, AgentEvent::Error { .. })),
+            "no Error: {events:?}"
+        );
+        let dones = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Done { .. }))
+            .count();
+        assert_eq!(dones, 1, "exactly one Done: {events:?}");
+        assert!(
+            matches!(events.last(), Some(AgentEvent::Done { .. })),
+            "Done is last: {events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn g14_failed_orchestration_sends_exactly_one_error_and_no_done() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = orch_config(Arc::new(AlwaysFails), dir.path());
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
+
+        // No staged plan: the decompose call hits the failing provider.
+        let _h = spawn_orchestrated_turn(config, "ship it".to_string(), tx, agent, None);
+        let events = collect_events(&mut rx).await;
+
+        let errors: Vec<&AgentEvent> = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .collect();
+        assert_eq!(errors.len(), 1, "exactly one Error: {events:?}");
+        match errors[0] {
+            AgentEvent::Error { message, .. } => {
+                assert!(message.starts_with("orchestration failed:"), "{message}")
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !events.iter().any(|e| matches!(e, AgentEvent::Done { .. })),
+            "no Done on failure: {events:?}"
         );
     }
 

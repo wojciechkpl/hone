@@ -134,7 +134,17 @@ impl Orchestrator {
     ) -> Result<OrchestratorResult, AgentError> {
         // 1. Decompose the request into a TaskPlan.
         let (plan, _lead_cost, _lead_usage) = self.decompose(user_request, events.clone()).await?;
+        self.run_plan(plan, events).await
+    }
 
+    /// Run a given plan: announce it, execute the subtasks in dependency
+    /// order and merge the results. Makes no decompose (lead) call.
+    #[tracing::instrument(skip(self, plan, events))]
+    pub async fn run_plan(
+        &mut self,
+        plan: TaskPlan,
+        events: mpsc::Sender<AgentEvent>,
+    ) -> Result<OrchestratorResult, AgentError> {
         let _ = events
             .send(AgentEvent::PlanCreated {
                 goal: plan.goal.clone(),

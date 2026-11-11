@@ -1,6 +1,6 @@
 # Orchestration GUI Flow Architecture
 
-This document visualizes the end-to-end `/plan` command flow across Hone's TUI and web UI surfaces. Both surfaces reuse the same backend `/orchestrate?dry_run=true` endpoint; the difference lies in how they dispatch the decomposition, render the preview, and handle user actions.
+This document visualizes the end-to-end `/plan` command flow across Hone's TUI and web UI surfaces. The web UI calls the daemon's `/orchestrate?dry_run=true` endpoint; the TUI plans in-process. They differ in how they dispatch the decomposition, render the preview, and handle user actions.
 
 The TUI path runs the orchestrator in-process (`Orchestrator::decompose`), while the web UI streams SSE events from the daemon. Both paths surface the same state shape: goal, cost estimates, and subtask list.
 
@@ -9,56 +9,47 @@ The TUI path runs the orchestrator in-process (`Orchestrator::decompose`), while
 ## TUI Flow: Local Decomposition
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
 sequenceDiagram
     actor User
-    participant TUI as hone (TUI)<br/>bins/hone/src/main.rs
     participant App as App State<br/>hone_tui/src/app.rs
-    participant Dispatch as dispatch_plan_decompose<br/>bins/hone/src/main.rs:1173
+    participant TUI as TUI loop<br/>bins/hone/src/main.rs
     participant Orch as Orchestrator<br/>hone_core/src/orchestrator.rs
-    participant LLM as Lead Agent<br/>(decompose call)
-    participant Render as render_plan_preview<br/>hone_tui/src/render/plan_preview.rs
+    participant LLM as Lead Agent
 
-    User->>TUI: Type /plan <prompt>
-    TUI->>App: handle_command(Command::Plan)
-    App->>App: set_pending_plan_prompt(prompt)
-    
-    Note over TUI: Main event loop continues
-    
-    TUI->>TUI: Check app.take_pending_plan_prompt()
-    TUI->>Dispatch: dispatch_plan_decompose(config, cwd, prompt)
-    Dispatch->>Orch: Orchestrator::new(lead_config, registry, 4)
-    Dispatch->>Orch: decompose(prompt, events_tx)
-    Orch->>LLM: Run lead agent once (plan-mode system prompt)
-    LLM-->>Orch: Returns TaskPlan + lead_cost + usage
-    Dispatch-->>TUI: Ok((plan, lead_cost, usage))
-    
-    TUI->>App: PlanPreviewState::from_decompose(prompt, plan, lead_cost)
-    App->>App: set_plan_preview(state)
-    TUI->>Render: Render overlay on next frame
-    
-    Note over Render: Display goal, paid/projected costs, subtasks (up to 20)
-    Note over Render: Footer: [r]un / [e]dit / [c]ancel
-    
-    User->>TUI: Press 'r' or Enter
-    TUI->>App: handle_key_plan_preview(KeyCode::Char('r'))
-    App->>App: set_pending_plan_action(PlanAction::Run)
-    
-    Note over TUI: Next main loop iteration
-    
-    TUI->>App: take_pending_plan_action()
-    TUI->>App: set_input_buffer(prompt)
-    TUI->>App: submit_input()
-    
-    Note over TUI: Normal turn dispatch (Simple/Medium/Complex tier)
+    User->>App: /plan <prompt>
+    App->>App: "Planning: …", state WaitingForResponse,<br/>pending_plan_prompt = prompt
+    TUI->>App: take_pending_plan_prompt()
+    TUI->>Orch: spawn dispatch_plan_decompose (background task)
+    Note over TUI: keeps drawing; Esc cancels like a turn,<br/>and a late result is dropped
+    Orch->>LLM: decompose (one lead call)
+    LLM-->>Orch: TaskPlan
+    Orch-->>TUI: (plan, lead_cost, usage)
+    TUI->>App: set_plan_preview(PlanPreviewState::from_decompose(…))
+    Note over App: overlay open, state Idle;<br/>on error: plan_failed(msg)
+
+    alt r / Enter
+        User->>App: handle_key_plan_preview
+        App->>App: user message, state WaitingForResponse,<br/>pending_plan_run = preview
+        TUI->>App: take_pending_plan_run() (after every key event)
+        TUI->>Orch: spawn_orchestrated_turn(…, Some(plan)) → run_plan
+        Note over Orch: no second decompose: runs the plan shown,<br/>with the Complex turn's model, /budget and /permit
+    else e
+        App->>App: input bar = prompt, cursor at end
+    else c / Esc
+        App->>App: overlay closed, plan dropped
+    end
 ```
 
+`/plan` while a turn (or another plan) is running is refused with a message.
+
 **Key functions and files:**
-- `bins/hone/src/main.rs:handle_command` (line ~2800) — intercepts `/plan` slash command
-- `bins/hone/src/main.rs:dispatch_plan_decompose` (line 1173) — in-process orchestrator call
-- `hone_tui/src/app.rs` — state holders: `pending_plan_prompt`, `set_plan_preview`
-- `hone_core/src/orchestrator.rs:Orchestrator::decompose` — decomposition-only path
-- `hone_tui/src/render/plan_preview.rs:render_plan_preview` (line 20) — overlay rendering
-- `hone_tui/src/plan_preview.rs` — `PlanPreviewState` and `PlanAction` types
+- `hone_tui/src/app.rs` — `/plan` command handling, `handle_key_plan_preview`, `set_plan_preview`, `plan_failed`, `take_pending_plan_prompt`, `take_pending_plan_run`
+- `bins/hone/src/main.rs:dispatch_plan_decompose` — in-process decompose, spawned as a task
+- `bins/hone/src/main.rs:spawn_orchestrated_turn` — runs a Complex turn, or a given plan
+- `hone_core/src/orchestrator.rs` — `Orchestrator::decompose`, `Orchestrator::run_plan`
+- `hone_tui/src/render/plan_preview.rs:render_plan_preview` — overlay rendering
+- `hone_tui/src/plan_preview.rs` — `PlanPreviewState` (keeps the full `TaskPlan`)
 
 ---
 
@@ -133,9 +124,10 @@ sequenceDiagram
 
 ## Governance Overrides: `/budget` and `/permit`
 
-Both surfaces feed per-run governance flags into the turn dispatch:
+Both surfaces feed governance flags into the next turn's dispatch:
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
 sequenceDiagram
     actor User
     participant CLI as hone (TUI)
@@ -158,16 +150,17 @@ sequenceDiagram
     Note over CLI: Main loop drains pending_governance before dispatching
     
     CLI->>App: take_pending_governance()
-    App->>App: agent.set_budget_limit(Some(0.50))
-    App->>App: agent.set_approval_policy(...).approve_always("shell")
+    CLI->>CLI: agent.set_budget_limit(Some(0.50)), agent.approve_tools(["shell"])
+    CLI->>CLI: same budget and policy on the orchestrated run's config
     
-    Note over App: Governance drained — next turn has defaults
+    Note over App: Pending governance drained; the agent keeps<br/>the budget and permits for the rest of the session
+    Note over CLI: The orchestrator's lead and workers have no tools,<br/>so /permit changes nothing for the run; /budget caps<br/>only the lead's calls (workers use worker_budget)
 ```
 
 **Key types and functions:**
 - `hone_tui/src/governance.rs:PendingGovernance` (line 6) — state struct
-- `bins/hone/src/main.rs:2980` — drain point in main loop
-- `hone_core/src/agent.rs` (AgentHandle) — `set_budget_limit`, `set_approval_policy` setters
+- `bins/hone/src/main.rs:run_tui` — drain point in the main loop, at turn start (also for a `/plan` Run)
+- `hone_core/src/agent.rs` (AgentHandle) — `set_budget_limit`, `approve_tools` setters
 - `hone_proto::ToolApprovalPolicy::approve_always` — per-tool allowlist API
 
 ---
@@ -182,7 +175,7 @@ projected_cost_usd = lead_cost_usd + subtask_count × DEFAULT_WORKER_COST_USD
 
 Where `DEFAULT_WORKER_COST_USD = 0.05` (defined at `hone_core/src/lib.rs:89`).
 
-The lead cost is the real, measured cost from the decomposition LLM call. The worker estimates are heuristic (not measured) and based on the constant above. Users can override per-run with `/budget <usd>` (TUI) or `POST /orchestrate` with `total_budget_usd` (web UI).
+The lead cost is the real, measured cost from the decomposition LLM call. The worker estimates are heuristic (not measured) and based on the constant above. Users can set a cap with `/budget <usd>` (TUI; it doesn't cap orchestrator workers yet) or `POST /orchestrate` with `total_budget_usd` (web UI).
 
 ---
 
