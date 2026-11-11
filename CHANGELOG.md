@@ -151,7 +151,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - **Before:** the specialist agents that carry out a complex prompt or a `/plan` Run (`rust-expert`, `code-reviewer`, …) had no tools. They couldn't read, search, edit or run anything, and answered in text from the subtask description alone. Separately, the built-in agent files list tools by short names (`read`, `write`, `edit`) that matched no tool, so an `@rust-expert` turn in the TUI and a `honed` distributed worker got only `shell`, `grep` and `glob`.
 - **Now:**
-  - Each worker gets the tools its agent definition lists, taken from the session's tools. An agent with no `tools:` list, or one not found, gets all of them. The lead, which plans and merges, still has none.
+  - Each worker gets the tools its agent definition lists, taken from the session's tools. An agent with no `tools:` list gets all of them. A worker for an agent name the planner made up (not in the agent registry) gets only the read-only tools, and the name is logged as a warning. The lead, which plans and merges, still has none.
   - A worker never gets more than the session's own agent has. It runs under the session's approval policy, mode, permission policy, sandbox and audit log. In an `@agent` turn with a `tools:` list, a complex prompt's workers choose only from that list.
   - **In the TUI** a worker's risky call (an edit, a command) asks you in the approval menu, as the main agent's do. Workers running at the same time ask one at a time, and each answer goes to the worker that asked. `/permit`s given earlier in the session apply to the workers. In Plan mode workers get read-only tools and write no plan files; in AutoApprove mode they don't pause. The approval policy and mode are taken when the run starts.
   - **"Always" means the whole session.** An "always" answer, given to the main agent or to any worker, covers the main agent and every worker from then on, including a worker already waiting to ask; this holds for permission-policy `ask` rules too. With `--step` every call still asks. Separate sessions don't share answers.
@@ -167,7 +167,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - No test run follows an orchestrated turn (simple and medium turns have one).
   - `/budget` doesn't cap workers. `hone --orchestrate` and the server keep the 300 s worker timeout.
   - An agent definition's `sandbox:` profile isn't applied to in-process workers.
-  - A worker for an agent name the planner made up gets all the session's tools, as the main agent has.
   - Switching to Plan mode during a run doesn't stop its workers from writing.
 - Contract: `docs/plans/worker-tools-spec.md`.
 

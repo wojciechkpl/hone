@@ -64,7 +64,8 @@ still finishing.
 
 Each worker gets the tools its agent definition lists, from your
 session's tools: a `rust-expert` can read, search, edit and run commands;
-a `code-reviewer` can read, search and run commands. Workers follow your
+a `code-reviewer` can read, search and run commands. A subtask the
+planner gives to an agent that doesn't exist runs with read-only tools. Workers follow your
 session's rules. A risky call (an edit, a command) asks you in the
 approval menu, as the main agent's do, one worker at a time; <kbd>x</kbd>
 there stops the whole run (<kbd>Esc</kbd> skips only that call). An
