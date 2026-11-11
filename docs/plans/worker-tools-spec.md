@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W36.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W40.
 
 ## Problem
 
@@ -130,7 +130,7 @@ keeps building and testing after Esc. The TUI's post-turn test run
 | W28 | **An "always" at a policy `ask` prompt also covers the risky-tool pause.** When the permission gate clears an `ask` rule only because of a session "always" (the agent's own or shared, W13), the approval-policy pause is skipped for that call, as it is when the user answers the policy prompt within the same call. With `AlwaysAsk` (`--step`) the pause still asks. (Review 2 S2: under `AskRisky`, the TUI default, other workers were still asked.) |
 | W29 | **"Always" is recorded before the step channel is released.** The answering agent records the tool name or policy entries in its `SessionApprovals` while it still holds the step lock, so a worker waiting for the lock always sees it (W16 holds on the multi-thread runtime). Under `AlwaysAsk` nothing is recorded for the approval pause. `SessionApprovals`' recording methods are `pub(crate)`: code outside `hone-core` can't grant an "always". (Review 2 S3, nits 2 and 3: a queued worker sometimes asked again.) |
 | W30 | **Built-in agent files list real tool names** (`read_file`, `write_file`, `edit_file`), so a connected MCP tool named `read`, `write` or `edit` never replaces a built-in persona's file tools. The aliases (W3, W20) remain for user agent files. (Review 2 S4.) |
-| W31 | **<kbd>x</kbd> aborts first, and needs an empty input box.** <kbd>x</kbd> acts only when the input box is empty (like <kbd>a</kbd> and <kbd>Enter</kbd>). The TUI loop aborts the current turn first, then answers the paused call with `Deny`, so a paused call from another task is answered too and a denied worker can't start another call before the abort. (Review 2 nit 1; amends W21.) |
+| W31 | **<kbd>x</kbd> aborts first, and needs an empty input box.** <kbd>x</kbd> acts only when the input box is empty (like <kbd>a</kbd> and <kbd>Enter</kbd>). The TUI loop aborts the current turn first, then answers the paused call with `Deny`, so a paused call from another task is answered too. (Best effort: `abort()` only requests cancellation, so a denied worker may begin its next model call before it is dropped; it can't run a risky call without another approval.) (Review 2 nit 1; amends W21.) |
 | W32 | **One snapshot of the run settings.** `AgentHandle::run_settings() -> Option<RunSettings>` returns the approval policy, mode and session approvals in one actor round trip; `spawn_orchestrated_turn` uses it, and `None` is W19's error. No `AskRisky` fallback is left. (Review 2 nit 4; amends W10, W17, W19.) |
 
 ### Which worker is asking (W33–W34, added at the user's request)
@@ -150,6 +150,15 @@ never ask.
 |---|---|
 | W35 | **`POST /orchestrate` step mode** (`hone-server`). `OrchestrateRequest` gains `request_id: Option<String>` and `approval_policy: Option<ToolApprovalPolicy>` with `/run`'s rules: step mode is on when `approval_policy` is given and isn't `Auto`; then `request_id` is required (400 without it), a `request_id` already in use gives 409, and the run is registered in the run registry for its whole life, so `POST /run/{request_id}/step` answers its prompts. In step mode the run config is in `Build` mode with that approval policy and the run's step channel: workers get their agent's tools from the server's set (`read_file`, `write_file`, `edit_file`, `glob`, `grep`, `shell`; W26 still makes made-up agents read-only), a risky call sends `tool_call_paused` with `worker` (W33), workers ask one at a time and share "always" answers within the run (W16), and there is no per-worker timeout (a person answers; a client that disconnects cancels the run). Without step mode (no `approval_policy`, or `Auto`) nothing changes: Plan mode, read-only workers, 300 s timeout (W22). `?dry_run=true` ignores both fields and registers nothing. |
 | W36 | **The web UI asks for it and names the worker** (`apps/webui`). The `tool_call_paused` and `approval_required` event types gain an optional `worker: { task_id, agent }`. The approval dialog shows a line naming the worker — agent, subtask id, and the subtask's description from the run's `worker_started` events — and nothing for the main agent. With step mode on, an orchestrated run (Run on the plan preview) sends a `request_id` and `approval_policy: { AskRisky: { always_allowed: [] } }`, as `/run` does, and the dialog's answers go to `/run/{request_id}/step`; with it off, and for `?dry_run=true`, it sends neither. Verified by `npm run build` (`tsc --noEmit` + `vite build`); the web UI has no test runner. |
+
+### Review round 3 (W37–W40)
+
+| Row | Behaviour |
+|---|---|
+| W37 | **One-shot runs die by the signal.** On SIGINT, SIGTERM or SIGHUP a one-shot run kills its running commands, then restores the signal's default action and re-raises it, so hone ends *by* the signal (a calling shell script stops on <kbd>Ctrl</kbd>+<kbd>C</kbd>, as before W25); `exit(128 + n)` is only the fallback if re-raising returns. The handler lives in `hone_tools` next to `kill_running_commands` (the binary needs no `libc`). (Review 3 S1: hone exited normally with 130 and `for f in *; do hone -p …; done` carried on.) |
+| W38 | **Every mode that runs commands kills them on exit.** The one-shot handlers are installed for every non-TUI mode that can run the shell tool, including `--ensemble` and `--recipe` (installed before their branches). `honed` calls `kill_running_commands()` in its shutdown path and also shuts down on SIGHUP. `run_command` disarms its guard only when the wait succeeded, so a failed wait still kills the group on drop. (Review 3 S2 and nit 2.) |
+| W39 | **<kbd>Esc</kbd> stops the post-turn test run.** With the TUI idle, an empty input box, and the previous turn's task (the post-turn test run and any fix turns it starts) still running, <kbd>Esc</kbd> aborts that task — killing its test command (W24) — and says so in a system line. With text in the input box, <kbd>Esc</kbd> clears it, as now. (Review 3 S3: the test run started after the turn's `Done`, when <kbd>Esc</kbd> only cleared the input.) |
+| W40 | **Approval menu polish.** The key-hint footer stays visible however short the terminal (the argument lines are cut first) and long argument lines wrap; the worker line marks the planner-written description as quoted task text (e.g. in quotes and a muted style); the App forgets earlier workers' descriptions on `PlanCreated`. (Review 3 nits 6–8.) |
 
 ## What each entry point gets
 
@@ -181,3 +190,11 @@ never ask.
   some daemons) escapes the group kill.
 - **The approval policy and mode are taken when the run starts**: switching to
   Plan mode mid-run doesn't stop running workers from writing.
+- **Commands that need the terminal** (an ssh passphrase, a git credential
+  prompt reading `/dev/tty`) stop in their own process group until the
+  tool's timeout; <kbd>Ctrl</kbd>+<kbd>Z</kbd> in a one-shot run suspends hone
+  but not its command.
+- **A hard kill of hone** (`kill -9`) leaves its commands running.
+- **The planner's raw JSON** is shown as assistant text in the web UI (and the
+  TUI) while an orchestrated run plans; workers' text runs together in one
+  message.
