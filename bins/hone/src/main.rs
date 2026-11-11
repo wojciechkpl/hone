@@ -1526,11 +1526,23 @@ fn spawn_orchestrated_turn(
     plan: Option<hone_core::TaskPlan>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        let mut lead_config = lead_config;
+        // Workers run under the agent's current approval policy and mode
+        // ("always" answers, /permit, /mode). Read here, not in the UI loop,
+        // so the UI never waits on the actor.
+        lead_config.approval_policy = agent.approval_policy().await;
+        if let Some(mode) = agent.mode().await {
+            lead_config.mode = mode;
+        }
+
         let registry = AgentRegistry::load_hierarchical(&lead_config.working_dir);
 
         let plan_store = PlanStore::default_for(&lead_config.working_dir);
-        let mut orchestrator =
-            Orchestrator::new(lead_config, registry, 4).with_plan_store(plan_store);
+        // No per-worker timeout: a worker may wait on an approval or a long
+        // build. Esc stops the run.
+        let mut orchestrator = Orchestrator::new(lead_config, registry, 4)
+            .with_plan_store(plan_store)
+            .without_worker_timeout();
 
         // The orchestrator's lead and worker turns each end in a `Done` (or an
         // `Error`) on this channel. Those belong to the inner turns: swallow

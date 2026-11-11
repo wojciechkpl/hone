@@ -2067,7 +2067,11 @@ impl Agent {
                     // turn, automatically inject a read_file call first and feed
                     // its result back before proceeding with the edit.
                     // ----------------------------------------------------------
-                    if is_edit_tool(&pending_tool_calls[i].name) {
+                    // A call to an edit tool this agent doesn't have is answered
+                    // with "tool not found"; no read is injected for it.
+                    if is_edit_tool(&pending_tool_calls[i].name)
+                        && self.config.tools.get(&pending_tool_calls[i].name).is_some()
+                    {
                         if let Some(file_path) = extract_file_path(
                             &pending_tool_calls[i].name,
                             &pending_tool_calls[i].arguments,
@@ -2204,8 +2208,11 @@ impl Agent {
                         .unwrap_or(false);
 
                     // AutoApprove skips the approval pause only; the permission
-                    // policy gate above still applies deny/ask rules.
+                    // policy gate above still applies deny/ask rules. A call to
+                    // a tool this agent doesn't have is not paused: it is
+                    // answered with "tool not found" below.
                     if !policy_prompted
+                        && self.config.tools.get(&call.name).is_some()
                         && self.config.mode != AgentMode::AutoApprove
                         && self
                             .config
@@ -2985,6 +2992,10 @@ enum AgentCommand {
     GetApprovalPolicy {
         reply: oneshot::Sender<ToolApprovalPolicy>,
     },
+    /// Read the current agent mode.
+    GetMode {
+        reply: oneshot::Sender<AgentMode>,
+    },
     Shutdown,
 }
 
@@ -3094,6 +3105,9 @@ impl AgentHandle {
                     }
                     AgentCommand::GetApprovalPolicy { reply } => {
                         let _ = reply.send(agent.config.approval_policy.clone());
+                    }
+                    AgentCommand::GetMode { reply } => {
+                        let _ = reply.send(agent.config.mode);
                     }
                     AgentCommand::Shutdown => break,
                 }
@@ -3315,6 +3329,17 @@ impl AgentHandle {
             .send(AgentCommand::GetApprovalPolicy { reply: tx })
             .await;
         rx.await.unwrap_or_default()
+    }
+
+    /// Read the agent's current mode (the config's mode at spawn, then the
+    /// last `set_mode`). `None` if the actor has stopped.
+    pub async fn mode(&self) -> Option<AgentMode> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(AgentCommand::GetMode { reply: tx })
+            .await
+            .ok()?;
+        rx.await.ok()
     }
 
     /// Signal the actor to shut down.  The actor will finish processing any
