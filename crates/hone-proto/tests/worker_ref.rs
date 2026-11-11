@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 //! W33 of `docs/plans/worker-tools-spec.md`: approval events name the worker.
 //! Assumed: `hone_proto::WorkerRef { task_id: String, agent: String }` (derives
 //! Debug, Clone, PartialEq, Serialize, Deserialize), and a `worker:
