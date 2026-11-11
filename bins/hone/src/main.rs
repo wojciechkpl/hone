@@ -1722,6 +1722,40 @@ async fn run_orchestrate(
 
 /// Run a prompt through N parallel candidates with varied temperatures, then
 /// let a ranker agent pick the best response (MASAI Ranker pattern).
+/// Print `--ensemble` progress until the channel closes.
+///
+/// Tokens and the first `Error` are printed only until the first `Done` or
+/// `Error`; after that the channel is still read to its end, ignoring tokens
+/// and errors, so later candidates' fallback notices are printed.
+async fn print_ensemble_events<O: io::Write, E: io::Write>(
+    mut rx: mpsc::Receiver<AgentEvent>,
+    out: &mut O,
+    err: &mut E,
+) {
+    let mut fallbacks = FallbackPrinter::default();
+    let mut printing = true;
+    while let Some(event) = rx.recv().await {
+        match event {
+            AgentEvent::Token { text } if printing => {
+                fallbacks.wrote(&text);
+                let _ = write!(out, "{text}");
+                let _ = out.flush();
+            }
+            AgentEvent::ModelFallback {
+                requested,
+                fallback,
+                reason,
+            } => fallbacks.event(err, &requested, &fallback, &reason),
+            AgentEvent::Done { .. } => printing = false,
+            AgentEvent::Error { message } if printing => {
+                let _ = writeln!(err, "\nerror: {message}");
+                printing = false;
+            }
+            _ => {}
+        }
+    }
+}
+
 async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result<()> {
     // Temperature ladder: diverse but bounded.  We only use as many slots as
     // requested, so `--ensemble 2` picks the first two entries.
@@ -1737,34 +1771,10 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
     // overall assistant persona.
     let ensemble = AgentEnsemble::new(base_config.clone(), temperatures);
 
-    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+    let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
     let printer = tokio::spawn(async move {
-        let mut fallbacks = FallbackPrinter::default();
-        // Tokens stop at the first `Done`; the channel is still read to its
-        // end so later candidates' fallback notices are printed.
-        let mut printing = true;
-        while let Some(event) = rx.recv().await {
-            match event {
-                AgentEvent::Token { text } if printing => {
-                    fallbacks.wrote(&text);
-                    print!("{text}");
-                    use io::Write;
-                    let _ = io::stdout().flush();
-                }
-                AgentEvent::ModelFallback {
-                    requested,
-                    fallback,
-                    reason,
-                } => fallbacks.event(&mut io::stderr(), &requested, &fallback, &reason),
-                AgentEvent::Done { .. } => printing = false,
-                AgentEvent::Error { message } => {
-                    eprintln!("\nerror: {message}");
-                    break;
-                }
-                _ => {}
-            }
-        }
+        print_ensemble_events(rx, &mut io::stdout(), &mut io::stderr()).await;
     });
 
     let result = ensemble.run(prompt, tx).await?;

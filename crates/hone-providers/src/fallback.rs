@@ -40,8 +40,13 @@ fn is_invisible_format(c: char) -> bool {
         | '\u{FEFF}')
 }
 
-/// Remove user info and the query string from every `scheme://` URL in `s`.
-/// A URL ends at whitespace or one of `) ] > " ' ,`.
+/// Remove user info, query strings and fragments from every `scheme://` URL
+/// in `s`.
+///
+/// The authority (from after `://` to the first `/`, `?`, `#` or whitespace)
+/// loses everything through its last `@`. A `?` or `#` after the path starts a
+/// part removed up to the next whitespace; if that part ended with one of
+/// `) ] > " ' ,` that character is kept so surrounding text stays balanced.
 fn redact_urls(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
@@ -49,18 +54,32 @@ fn redact_urls(s: &str) -> String {
         let body_start = i + 3;
         out.push_str(&rest[..body_start]);
         let after = &rest[body_start..];
-        let end = after
-            .find(|c: char| c.is_whitespace() || matches!(c, ')' | ']' | '>' | '"' | '\'' | ','))
+        let auth_end = after
+            .find(|c: char| matches!(c, '/' | '?' | '#') || c.is_whitespace())
             .unwrap_or(after.len());
-        let url = &after[..end];
-        let url = url.find('?').map_or(url, |q| &url[..q]);
-        let authority_end = url.find('/').unwrap_or(url.len());
-        let url = match url[..authority_end].rfind('@') {
-            Some(at) => &url[at + 1..],
-            None => url,
-        };
-        out.push_str(url);
-        rest = &after[end..];
+        let authority = &after[..auth_end];
+        out.push_str(
+            authority
+                .rfind('@')
+                .map_or(authority, |at| &authority[at + 1..]),
+        );
+        let path_end = after[auth_end..]
+            .find(|c: char| matches!(c, '?' | '#') || c.is_whitespace())
+            .map_or(after.len(), |n| auth_end + n);
+        out.push_str(&after[auth_end..path_end]);
+        if after[path_end..].starts_with(['?', '#']) {
+            let removed_end = after[path_end..]
+                .find(char::is_whitespace)
+                .map_or(after.len(), |n| path_end + n);
+            if let Some(last) = after[path_end..removed_end].chars().next_back() {
+                if matches!(last, ')' | ']' | '>' | '"' | '\'' | ',') {
+                    out.push(last);
+                }
+            }
+            rest = &after[removed_end..];
+        } else {
+            rest = &after[path_end..];
+        }
     }
     out.push_str(rest);
     out
