@@ -7280,6 +7280,54 @@ mod tests {
         assert_eq!(wt_pauses(&run), 0, "no menu of any kind: {run:?}");
         assert_eq!(log.lock().unwrap().len(), 2);
     }
+
+    // ---- W44: the inline wrapper's restore also runs when it is aborted ----
+
+    #[tokio::test]
+    async fn w44_aborted_inline_wrapper_should_still_run_its_restore_exactly_once() {
+        let inner = tokio::spawn(std::future::pending::<()>());
+        let (_inner_tx, inner_rx) = mpsc::channel::<AgentEvent>(8);
+        let (outer_tx, _outer_rx) = mpsc::channel::<AgentEvent>(8);
+        let restored = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let flag = Arc::clone(&restored);
+        let wrapper = spawn_inline_turn_wrapper(inner, inner_rx, outer_tx, async move {
+            flag.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        // Let the wrapper start waiting for events.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        wrapper.abort();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while restored.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the persona restore must run when the wrapper is aborted");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(restored.load(std::sync::atomic::Ordering::SeqCst), 1, "once");
+    }
+
+    #[tokio::test]
+    async fn w44_inline_wrapper_ending_normally_should_run_its_restore_exactly_once() {
+        let (inner_tx, inner_rx) = mpsc::channel::<AgentEvent>(8);
+        let inner = tokio::spawn(async move { drop(inner_tx) });
+        let (outer_tx, _outer_rx) = mpsc::channel::<AgentEvent>(8);
+        let restored = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let flag = Arc::clone(&restored);
+        let wrapper = spawn_inline_turn_wrapper(inner, inner_rx, outer_tx, async move {
+            flag.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        tokio::time::timeout(Duration::from_secs(2), wrapper)
+            .await
+            .expect("wrapper ends")
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        assert_eq!(restored.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
 }
 
 // ---------------------------------------------------------------------------
