@@ -187,6 +187,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
             toolId: event.id,
             name: event.name,
             args: event.args,
+            worker: event.worker,
           });
         }
         break;
@@ -230,6 +231,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
             toolId: `req-${Date.now()}`,
             name: event.action || "approval_required",
             args: event.description,
+            worker: event.worker,
           });
         }
         break;
@@ -380,6 +382,17 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
     void touchSession(id, prompt.slice(0, 60));
 
     const body: OrchestrateRequest = { prompt };
+    if (!opts.dryRun && stepMode()) {
+      // Step mode: workers get tools and pause; answers go to
+      // POST /run/{request_id}/step under this run id.
+      const runId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      activeRunId = runId;
+      body.request_id = runId;
+      body.approval_policy = { AskRisky: { always_allowed: [] } };
+    }
     aborter = streamOrchestrate(
       baseUrl,
       null,

@@ -1,6 +1,7 @@
 import { Show, type Component } from "solid-js";
 import { usePendingApproval, setPendingApproval } from "../lib/step";
 import { postJson } from "../lib/api";
+import { useWorkers } from "../lib/orchestrator";
 
 /** StepAction wire shape mirrors `hone_proto::StepAction` exactly. */
 type StepAction =
@@ -25,6 +26,11 @@ async function send(action: StepAction): Promise<void> {
 
 export const ApprovalModal: Component = () => {
   const pending = usePendingApproval();
+  const workers = useWorkers();
+  const description = () => {
+    const w = pending()?.worker;
+    return w ? workers().find((x) => x.task_id === w.task_id)?.description : undefined;
+  };
 
   return (
     <Show when={pending()}>
@@ -60,6 +66,25 @@ export const ApprovalModal: Component = () => {
           <div style={{ "margin-bottom": "8px", color: "var(--text-secondary)", "font-size": "0.85em" }}>
             agent wants to run a tool
           </div>
+          <Show when={pending()!.worker}>
+            {(w) => (
+              <div
+                style={{
+                  "margin-bottom": "8px",
+                  color: "var(--text-secondary)",
+                  "font-size": "0.85em",
+                  "overflow-wrap": "anywhere",
+                  display: "-webkit-box",
+                  "-webkit-line-clamp": "3",
+                  "-webkit-box-orient": "vertical",
+                  overflow: "hidden",
+                }}
+              >
+                worker <strong>{w().agent}</strong> (subtask {w().task_id})
+                <Show when={description()}>{(d) => <>: {d()}</>}</Show>
+              </div>
+            )}
+          </Show>
           <div
             style={{
               "font-family": "var(--font-mono)",

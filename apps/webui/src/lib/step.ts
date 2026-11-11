@@ -15,6 +15,8 @@ export type PendingApproval = {
   toolId: string;
   name: string;
   args: unknown;
+  /** Set when an orchestrator worker is asking; absent for the main agent. */
+  worker?: { task_id: string; agent: string };
 };
 
 const [pending, setPending] = createSignal<PendingApproval | null>(null);

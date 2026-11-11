@@ -80,6 +80,10 @@ export type OrchestrateRequest = {
   working_dir?: string;
   max_workers?: number;
   total_budget_usd?: number;
+  /** Step-mode correlation id; answer pauses via `POST /run/{request_id}/step`. */
+  request_id?: string;
+  /** Opt-in step mode, e.g. `{ AskRisky: { always_allowed: [] } }`. */
+  approval_policy?: unknown;
 };
 
 export type OrchestrateOptions = {
