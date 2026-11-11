@@ -99,8 +99,19 @@ fn setup(base_url: &str, permissions: Option<&str>) -> Setup {
     }
 }
 
+/// Resets SIGINT/SIGTERM/SIGHUP to their defaults, then execs hone (same pid),
+/// so the signal tests do not depend on how `cargo test` was started (a
+/// background job has SIGINT ignored, which hone must then keep ignoring).
+const RESET_SIGNALS_AND_EXEC: &str = "import os, signal, sys\n\
+    for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):\n\
+    \x20   signal.signal(s, signal.SIG_DFL)\n\
+    os.execv(sys.argv[1], sys.argv[1:])";
+
 fn spawn_hone(s: &Setup, args: &[&str]) -> Child {
-    Command::new(env!("CARGO_BIN_EXE_hone"))
+    Command::new("python3")
+        .arg("-c")
+        .arg(RESET_SIGNALS_AND_EXEC)
+        .arg(env!("CARGO_BIN_EXE_hone"))
         .env_clear()
         .env("HOME", &s.home)
         .env("PATH", "/usr/bin:/bin:/usr/local/bin")
