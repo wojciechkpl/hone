@@ -660,6 +660,7 @@ fn approval_required(o: &Outcome) -> Vec<(String, String)> {
             AgentEvent::ApprovalRequired {
                 action,
                 description,
+                ..
             } => Some((action.clone(), description.clone())),
             _ => None,
         })

@@ -7094,6 +7094,135 @@ mod tests {
         }
     }
 
+
+    // ---- W27 / W28 (AskRisky) in the TUI (docs/plans/worker-tools-spec.md) ----
+    //
+    // Pins a function the TUI loop's cancel path must use instead of
+    // `while agent_rx.try_recv().is_ok() {}`:
+    //
+    //     fn drain_after_cancel(
+    //         app: &mut App,
+    //         rx: &mut mpsc::Receiver<AgentEvent>,
+    //         step_tx: Option<&mpsc::Sender<hone_proto::StepAction>>,
+    //     )
+    //
+    // Synchronous. It empties `rx`; each dropped `ToolCallPaused` is answered
+    // with `StepAction::Deny("turn cancelled")` on `step_tx`; a dropped `Done`
+    // still updates the session's cost and token counts; no menu is left open.
+
+    #[tokio::test]
+    async fn w27_drain_after_cancel_should_deny_dropped_pauses_keep_done_costs_and_open_no_menu() {
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(16);
+        let (step_tx, mut step_rx) = mpsc::channel::<hone_proto::StepAction>(16);
+        let paused = |id: &str| AgentEvent::ToolCallPaused {
+            id: id.to_owned(),
+            name: "shell".to_owned(),
+            args: serde_json::json!({}),
+            worker: None,
+        };
+        let usage = hone_proto::TokenUsage {
+            input: 10,
+            output: 5,
+            cache_read: 0,
+            cache_creation: 0,
+        };
+        tx.send(paused("p1")).await.unwrap();
+        tx.send(AgentEvent::Done {
+            usage,
+            cost_usd: 0.5,
+            plan: None,
+        })
+        .await
+        .unwrap();
+        tx.send(paused("p2")).await.unwrap();
+        let mut app = App::new();
+
+        drain_after_cancel(&mut app, &mut rx, Some(&step_tx));
+
+        for _ in 0..2 {
+            assert!(
+                matches!(step_rx.try_recv(), Ok(hone_proto::StepAction::Deny(_))),
+                "each dropped pause is denied"
+            );
+        }
+        assert!(step_rx.try_recv().is_err(), "exactly two answers");
+        assert!(rx.try_recv().is_err(), "the queue is empty");
+        assert!((app.status().session_cost_usd - 0.5).abs() < 1e-9);
+        assert_eq!(app.status().token_count, usage.total());
+        assert!(!app.debugger_open, "no menu for the cancelled run");
+    }
+
+    #[tokio::test]
+    async fn w27_drain_after_cancel_should_release_a_task_waiting_on_the_step_channel() {
+        // A separate turn (like a post-turn fix run) is paused for approval and
+        // holds the step lock; its prompt sits in the queue being drained.
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let turn = tokio::spawn(async move {
+            let mut agent = hone_core::Agent::new(config);
+            agent.run_turn("go", tx).await
+        });
+        // Wait for its ToolCallPaused to be queued.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while rx.len() < 3 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the turn should pause for approval");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let mut app = App::new();
+
+        drain_after_cancel(&mut app, &mut rx, Some(&step_tx));
+
+        tokio::time::timeout(Duration::from_secs(5), turn)
+            .await
+            .expect("the denied turn must be released, not wait forever")
+            .unwrap()
+            .unwrap();
+        assert!(log.lock().unwrap().is_empty(), "the denied call did not run");
+    }
+
+    // W28 under AskRisky (the TUI default); the W17 policy tests used Auto.
+
+    fn w17_risky_policy_session(
+        dir: &std::path::Path,
+    ) -> (AgentConfig, WtLog, mpsc::Sender<hone_proto::StepAction>) {
+        let (mut config, log, step_tx) = w17_session(dir, true);
+        config.approval_policy = ToolApprovalPolicy::AskRisky {
+            always_allowed: vec![],
+        };
+        (config, log, step_tx)
+    }
+
+    #[tokio::test]
+    async fn w28_ask_risky_workers_always_for_a_policy_rule_should_cover_the_agents_next_turn() {
+        let dir = std::fs::canonicalize(tempfile::tempdir().unwrap().keep()).unwrap();
+        let (config, log, step_tx) = w17_risky_policy_session(&dir);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let run = w17_run(&config, &agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&run), 1, "{run:?}");
+        let turn = w17_turn(&agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&turn), 0, "no menu of any kind: {turn:?}");
+        assert_eq!(log.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn w28_ask_risky_agents_always_for_a_policy_rule_should_cover_the_runs_workers() {
+        let dir = std::fs::canonicalize(tempfile::tempdir().unwrap().keep()).unwrap();
+        let (config, log, step_tx) = w17_risky_policy_session(&dir);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let turn = w17_turn(&agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&turn), 1, "{turn:?}");
+        let run = w17_run(&config, &agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&run), 0, "no menu of any kind: {run:?}");
+        assert_eq!(log.lock().unwrap().len(), 2);
+    }
 }
 
 // ---------------------------------------------------------------------------

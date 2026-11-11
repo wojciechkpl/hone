@@ -25,6 +25,7 @@ fn paused_event() -> AgentEvent {
         id: "c1".to_owned(),
         name: "shell".to_owned(),
         args: serde_json::json!({}),
+        worker: None,
     }
 }
 
@@ -36,21 +37,18 @@ fn app() -> (App, mpsc::Receiver<StepAction>) {
 }
 
 #[test]
-fn test_w21_x_after_guard_should_deny_close_menu_and_cancel_the_turn() {
+fn test_w31_x_with_text_in_the_input_box_should_do_nothing() {
     let (mut app, mut rx) = app();
     let t0 = Instant::now();
-    app.handle_agent_event_at(paused_event(), t0);
-    assert!(app.debugger_open);
+    app.type_text("fix the");
+    app.handle_agent_event_at(paused_event(), ms(t0, 0));
 
-    app.handle_key_at(key(KeyCode::Char('x')), ms(t0, 500));
+    app.handle_key_at(key(KeyCode::Char('x')), ms(t0, 900));
 
-    assert!(
-        matches!(rx.try_recv(), Ok(StepAction::Deny(_))),
-        "x denies the call"
-    );
-    assert!(!app.debugger_open, "the menu closes");
-    assert!(app.take_pending_cancel(), "the turn is cancelled");
-    assert!(!app.take_pending_cancel(), "the flag is taken once");
+    assert!(rx.try_recv().is_err(), "no answer");
+    assert!(app.debugger_open, "menu stays open");
+    assert!(!app.take_pending_cancel(), "no stop requested");
+    assert_eq!(app.input().buffer, "fix thex", "the x is typed");
 }
 
 #[test]
@@ -111,7 +109,7 @@ fn test_w21_menu_hints_should_list_x() {
     app.handle_agent_event_at(paused_event(), Instant::now());
     let (w, h) = (140u16, 40u16);
     let mut terminal = Terminal::new(TestBackend::new(w, h)).expect("terminal");
-    terminal.draw(|f| root::render(&mut app, f)).expect("draw");
+    terminal.draw(|f| root::render(&app, f)).expect("draw");
     let buf = terminal.backend().buffer().clone();
     let mut rows = Vec::new();
     for row in 0..h {
