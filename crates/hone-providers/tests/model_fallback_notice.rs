@@ -468,10 +468,41 @@ async fn test_n3_urls_lose_user_info_and_query() {
             "bad [http://u:p@h/x?k=v] and \"http://a@b/c?d\"",
             "bad [http://h/x] and \"http://b/c\"",
         ),
+        // Review round 2: the old input `urls http://u@a/x?q,http://b/y?r>z` (expecting
+        // `urls http://a/x,http://b/y>z`) is invalid under the new rule, where a query runs to
+        // the next whitespace; the same idea with a space between the URLs:
         (
-            "urls http://u@a/x?q,http://b/y?r>z",
-            "urls http://a/x,http://b/y>z",
+            "urls http://u@a/x?q http://b/y?r z",
+            "urls http://a/x http://b/y z",
         ),
+        // A query that swallows a second URL up to whitespace (no closing character to restore).
+        ("urls http://u@a/x?q,http://b/y?r>z", "urls http://a/x"),
+        // Review round 2 examples, in reqwest's real shape and bare.
+        (
+            "error sending request for url (http://user:pa)ss@host/v1)",
+            "error sending request for url (http://host/v1)",
+        ),
+        (
+            "error sending request for url (http://h/x?key=a)b)",
+            "error sending request for url (http://h/x)",
+        ),
+        (
+            "error sending request for url (http://h/x?key=a,b&c=d'e)",
+            "error sending request for url (http://h/x)",
+        ),
+        (
+            "error sending request for url (http://u:p@[::1]:80/x?key=s)",
+            "error sending request for url (http://[::1]:80/x)",
+        ),
+        (
+            "error sending request for url (http://h/x#tok=abc)",
+            "error sending request for url (http://h/x)",
+        ),
+        ("(http://us)er:pw@h/x)", "(http://h/x)"),
+        ("(http://user:p'a,ss@h/x?k=v)", "(http://h/x)"),
+        ("http://a@b@c@d/e", "http://d/e"),
+        ("see http://h/x#frag next", "see http://h/x next"),
+        ("see http://h/x?q=1#frag next", "see http://h/x next"),
         ("what? really?", "what? really?"),
         ("user@example.com asked", "user@example.com asked"),
     ];

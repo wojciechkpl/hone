@@ -3972,6 +3972,7 @@ fn chrono_like_timestamp() -> String {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -5104,7 +5105,15 @@ mod tests {
     fn test_u4_json_output_for_failed_turn_without_error_event_should_still_be_unsuccessful() {
         let turn: Result<hone_core::TurnResult, hone_core::AgentError> =
             Err(hone_core::AgentError::Cancelled);
-        let v = json_mode_output(&turn, String::new(), vec![], None, spend_100_50(), "m", &FallbackLog::default());
+        let v = json_mode_output(
+            &turn,
+            String::new(),
+            vec![],
+            None,
+            spend_100_50(),
+            "m",
+            &FallbackLog::default(),
+        );
         assert_eq!(v["success"], false, "{v}");
         assert_eq!(v["usage"]["input"], 100, "{v}");
     }
@@ -5118,7 +5127,15 @@ mod tests {
                 cost_usd: 0.0,
                 tool_calls_count: 0,
             });
-        let v = json_mode_output(&turn, "done".to_owned(), vec![], None, spend_100_50(), "m", &FallbackLog::default());
+        let v = json_mode_output(
+            &turn,
+            "done".to_owned(),
+            vec![],
+            None,
+            spend_100_50(),
+            "m",
+            &FallbackLog::default(),
+        );
         assert_eq!(v["success"], true, "{v}");
         assert_eq!(v["usage"]["input"], 100, "{v}");
         assert_eq!(v["usage"]["output"], 50, "{v}");
@@ -5195,6 +5212,7 @@ mod tests {
         assert_eq!(code_modifying_tools_that_ran(&events), vec!["write_file"]);
     }
 
+
     // ---- fallback notice (docs/plans/fallback-notice-spec.md: N7, N8, N10) ----
     //
     // Seams assumed:
@@ -5231,7 +5249,10 @@ mod tests {
 
         p.event(&mut err, "a:x", "b:y", "why");
 
-        assert_eq!(String::from_utf8(err).unwrap(), format!("\n{NOTICE_LINE}\n"));
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            format!("\n{NOTICE_LINE}\n")
+        );
     }
 
     #[test]
@@ -5284,14 +5305,19 @@ mod tests {
         )
         .await
         .expect("printer hung");
-        (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap())
+        (
+            String::from_utf8(out).unwrap(),
+            String::from_utf8(err).unwrap(),
+        )
     }
 
     #[tokio::test]
     async fn test_n7_orchestrate_printer_prints_a_pair_once_on_stderr_and_nothing_on_stdout() {
         let (out, err) = run_printer(vec![
             mf_event("a:x", "b:y", "why"),
-            AgentEvent::Token { text: "hi\n".to_owned() },
+            AgentEvent::Token {
+                text: "hi\n".to_owned(),
+            },
             mf_event("a:x", "b:y", "why"),
         ])
         .await;
@@ -5304,7 +5330,9 @@ mod tests {
     async fn test_n7_orchestrate_printer_adds_no_blank_line_after_a_worker_line() {
         // The token leaves stdout mid-line; the worker line (writeln!) ends it.
         let (out, err) = run_printer(vec![
-            AgentEvent::Token { text: "abc".to_owned() },
+            AgentEvent::Token {
+                text: "abc".to_owned(),
+            },
             AgentEvent::WorkerCompleted {
                 task_id: "t1".to_owned(),
                 agent: "coder".to_owned(),
@@ -5322,7 +5350,9 @@ mod tests {
     #[tokio::test]
     async fn test_n7_orchestrate_printer_starts_a_new_line_after_a_mid_line_token() {
         let (_, err) = run_printer(vec![
-            AgentEvent::Token { text: "abc".to_owned() },
+            AgentEvent::Token {
+                text: "abc".to_owned(),
+            },
             mf_event("a:x", "b:y", "why"),
         ])
         .await;
@@ -5351,7 +5381,16 @@ mod tests {
         keys.sort_unstable();
         assert_eq!(
             keys,
-            ["cost_usd", "error", "fallbacks", "model", "response", "success", "tool_calls", "usage"]
+            [
+                "cost_usd",
+                "error",
+                "fallbacks",
+                "model",
+                "response",
+                "success",
+                "tool_calls",
+                "usage"
+            ]
         );
     }
 
@@ -5405,7 +5444,9 @@ mod tests {
     #[test]
     fn test_n10_other_events_neither_set_nor_clear_the_slot() {
         let mut slot: Option<String> = None;
-        let token = AgentEvent::Token { text: "t".to_owned() };
+        let token = AgentEvent::Token {
+            text: "t".to_owned(),
+        };
         note_turn_fallback(&token, &mut slot);
         end_turn_fallback(&token, &mut slot);
         assert_eq!(slot, None);
@@ -5419,8 +5460,110 @@ mod tests {
     #[test]
     fn test_n10_an_error_clears_the_slot() {
         let mut slot = Some("b:y".to_owned());
-        end_turn_fallback(&AgentEvent::Error { message: "boom".to_owned() }, &mut slot);
+        end_turn_fallback(
+            &AgentEvent::Error {
+                message: "boom".to_owned(),
+            },
+            &mut slot,
+        );
         assert_eq!(slot, None);
+    }
+
+    // N7 ensemble printer. Seam assumed (free fn in main.rs, extracted from `run_ensemble`):
+    //   async fn print_ensemble_events<O: io::Write, E: io::Write>(
+    //       rx: mpsc::Receiver<AgentEvent>, out: &mut O, err: &mut E)
+    // Tokens and an `Error` are printed only until the first `Done` or `Error`; afterwards the
+    // channel is read to its end, ignoring tokens and errors, so later notices still print.
+    async fn run_ensemble_printer(events: Vec<AgentEvent>) -> (String, String) {
+        let (tx, rx) = mpsc::channel::<AgentEvent>(16);
+        let mut out: Vec<u8> = Vec::new();
+        let mut err: Vec<u8> = Vec::new();
+        for e in events {
+            tx.send(e).await.unwrap();
+        }
+        drop(tx);
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            print_ensemble_events(rx, &mut out, &mut err),
+        )
+        .await
+        .expect("printer hung");
+        (
+            String::from_utf8(out).unwrap(),
+            String::from_utf8(err).unwrap(),
+        )
+    }
+
+    fn token_event(text: &str) -> AgentEvent {
+        AgentEvent::Token {
+            text: text.to_owned(),
+        }
+    }
+
+    fn error_event(message: &str) -> AgentEvent {
+        AgentEvent::Error {
+            message: message.to_owned(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_n7_ensemble_printer_prints_tokens_before_the_first_done_and_ignores_later_ones() {
+        let (out, err) = run_ensemble_printer(vec![
+            token_event("one "),
+            token_event("two"),
+            done_event(),
+            token_event(" late"),
+        ])
+        .await;
+
+        assert_eq!(out, "one two");
+        assert_eq!(err, "");
+    }
+
+    #[tokio::test]
+    async fn test_n7_ensemble_printer_prints_a_notice_after_the_first_done() {
+        let (out, err) = run_ensemble_printer(vec![
+            token_event("answer"),
+            done_event(),
+            mf_event("a:x", "b:y", "why"),
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert_eq!(out, "answer");
+        assert_eq!(err, format!("\n{NOTICE_LINE}\n"), "once, on its own line");
+    }
+
+    #[tokio::test]
+    async fn test_n7_ensemble_printer_does_not_print_an_error_after_done_but_prints_the_notice() {
+        let (out, err) = run_ensemble_printer(vec![
+            token_event("answer\n"),
+            done_event(),
+            error_event("candidate 2 failed"),
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert_eq!(out, "answer\n");
+        assert!(!err.contains("candidate 2 failed"), "{err}");
+        assert_eq!(err, format!("{NOTICE_LINE}\n"));
+    }
+
+    #[tokio::test]
+    async fn test_n7_ensemble_printer_prints_the_first_error_then_still_prints_later_notices() {
+        let (out, err) = run_ensemble_printer(vec![
+            error_event("first failure"),
+            token_event("ignored"),
+            error_event("second failure"),
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert_eq!(out, "");
+        assert!(err.starts_with("\nerror: first failure\n"), "{err:?}");
+        assert!(!err.contains("second failure"), "{err}");
+        assert!(!err.contains("ignored"), "{err}");
+        assert!(err.ends_with(&format!("{NOTICE_LINE}\n")), "{err:?}");
     }
 }
 
