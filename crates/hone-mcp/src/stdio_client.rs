@@ -36,7 +36,9 @@ struct JsonRpcNotification {
 
 #[derive(Deserialize, Debug)]
 struct JsonRpcResponse {
-    id: Option<u64>,
+    /// Any JSON value (a server may use string ids); `null` and absent both
+    /// read as `None`.
+    id: Option<Value>,
     /// Set on notifications and server-to-client requests, which are not
     /// responses to ours.
     method: Option<String>,
@@ -101,7 +103,8 @@ impl TransportInner {
         // Read lines until the response to THIS request: skip blank lines,
         // notifications and responses with another id (e.g. the late reply to a
         // call that was dropped by a timeout or a cancel), so a result is never
-        // handed to the wrong caller.
+        // handed to the wrong caller. A server request gets a reply meanwhile.
+        let our_id = Value::from(id);
         loop {
             let mut response_line = String::new();
             let bytes = self
@@ -127,7 +130,48 @@ impl TransportInner {
 
             let resp: JsonRpcResponse = serde_json::from_str(trimmed)?;
 
-            if resp.method.is_some() || resp.id != Some(id) {
+            if let Some(method) = &resp.method {
+                // A server-to-client request (it has an id) must be answered or
+                // the server may wait on it forever; a notification is skipped.
+                if let Some(server_id) = resp.id {
+                    let reply = if method == "ping" {
+                        serde_json::json!({ "jsonrpc": "2.0", "id": server_id, "result": {} })
+                    } else {
+                        serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": server_id,
+                            "error": { "code": -32601, "message": "Method not found" },
+                        })
+                    };
+                    let mut reply_line = reply.to_string();
+                    reply_line.push('\n');
+                    // `self` is borrowed mutably for the whole call, so no other
+                    // writer or reader can be waiting on these pipes.
+                    self.stdin
+                        .write_all(reply_line.as_bytes())
+                        .await
+                        .map_err(|e| McpError::ConnectionFailed {
+                            server: server_name.to_string(),
+                            source: e,
+                        })?;
+                    self.stdin
+                        .flush()
+                        .await
+                        .map_err(|e| McpError::ConnectionFailed {
+                            server: server_name.to_string(),
+                            source: e,
+                        })?;
+                }
+                continue;
+            }
+
+            // An error with a null or absent id (e.g. "Invalid Request") answers
+            // the outstanding request; anything else must carry our id.
+            let answers_us = match &resp.id {
+                Some(got) => *got == our_id,
+                None => resp.error.is_some(),
+            };
+            if !answers_us {
                 tracing::debug!(
                     server = server_name,
                     expected = id,
