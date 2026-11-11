@@ -85,20 +85,26 @@ fn test_n9_a_different_pair_in_the_same_turn_is_shown_too() {
 }
 
 #[test]
-fn test_n9_the_pair_is_shown_again_after_the_turn_ends_with_done() {
+fn test_n9_the_same_pair_after_done_within_one_user_turn_is_not_shown_again() {
+    // An orchestrated turn sends a Done per worker.
     let mut app = App::new();
+    app.skip_splash();
+    app.type_text("do it");
+    app.submit_input();
     app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
     app.handle_agent_event(done());
 
     app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
-    app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
 
-    assert_eq!(notices(&app), vec![TEXT.to_owned(), TEXT.to_owned()]);
+    assert_eq!(notices(&app), vec![TEXT.to_owned()]);
 }
 
 #[test]
-fn test_n9_the_pair_is_shown_again_after_the_turn_ends_with_error() {
+fn test_n9_the_same_pair_after_error_within_one_user_turn_is_not_shown_again() {
     let mut app = App::new();
+    app.skip_splash();
+    app.type_text("do it");
+    app.submit_input();
     app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
     app.handle_agent_event(AgentEvent::Error {
         message: "boom".into(),
@@ -106,7 +112,78 @@ fn test_n9_the_pair_is_shown_again_after_the_turn_ends_with_error() {
 
     app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
 
+    assert_eq!(notices(&app), vec![TEXT.to_owned()]);
+}
+
+#[test]
+fn test_n9_the_pair_is_shown_again_after_a_new_plain_prompt() {
+    let mut app = App::new();
+    app.skip_splash();
+    app.type_text("first");
+    app.submit_input();
+    app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
+    app.handle_agent_event(done());
+
+    app.type_text("second");
+    app.submit_input();
+    app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
+
     assert_eq!(notices(&app), vec![TEXT.to_owned(), TEXT.to_owned()]);
+}
+
+#[test]
+fn test_n9_the_pair_is_shown_again_after_a_new_inline_agent_prompt() {
+    let mut app = App::new();
+    app.skip_splash();
+    app.type_text("first");
+    app.submit_input();
+    app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
+    app.handle_agent_event(done());
+
+    app.type_text("@reviewer look at this");
+    app.submit_input();
+    app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
+
+    assert_eq!(notices(&app), vec![TEXT.to_owned(), TEXT.to_owned()]);
+}
+
+#[test]
+fn test_n9_the_pair_is_shown_again_after_cancel_turn() {
+    let mut app = App::new();
+    app.skip_splash();
+    app.type_text("first");
+    app.submit_input();
+    app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
+
+    app.cancel_turn();
+    app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
+
+    assert_eq!(notices(&app), vec![TEXT.to_owned(), TEXT.to_owned()]);
+}
+
+#[test]
+fn test_n9_a_streaming_assistant_message_stops_streaming_before_the_notice() {
+    let mut app = App::new();
+    app.handle_agent_event(AgentEvent::Token {
+        text: "partial".into(),
+    });
+    assert!(app.messages().last().unwrap().is_streaming);
+
+    app.handle_agent_event(fb("anthropic:claude-x", "openai:gpt-4o", "overloaded"));
+    app.handle_agent_event(AgentEvent::Token {
+        text: "more".into(),
+    });
+
+    let msgs = app.messages();
+    let n = msgs.len();
+    assert_eq!(msgs[n - 3].content, "partial");
+    assert!(!msgs[n - 3].is_streaming, "no stuck cursor: {msgs:?}");
+    assert!(matches!(msgs[n - 2].role, DisplayRole::System), "{msgs:?}");
+    assert!(
+        matches!(msgs[n - 1].role, DisplayRole::Assistant),
+        "{msgs:?}"
+    );
+    assert_eq!(msgs[n - 1].content, "more", "tokens go to a new message");
 }
 
 #[test]

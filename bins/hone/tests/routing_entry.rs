@@ -120,7 +120,7 @@ fn body_for(kind: Kind, reply: &Reply) -> String {
             json!({"model":"m","message":{"role":"assistant","content":t},"done":false}),
             json!({"model":"m","message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":3,"eval_count":2}),
         ),
-        (Kind::OpenAi, Reply::ToolCall) => unimplemented!("tool calls are scripted on Ollama only"),
+        (Kind::OpenAi, Reply::ToolCall) => panic!("tool calls are scripted on Ollama only"),
         (Kind::Ollama, Reply::ToolCall) => format!(
             "{}\n{}\n",
             json!({"model":"m","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"read_file","arguments":{"path":"does-not-exist.txt"}}}]},"done":false}),

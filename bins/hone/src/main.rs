@@ -5067,6 +5067,7 @@ mod tests {
             Some("provider exploded".to_owned()),
             spend_100_50(),
             "mock:test",
+            &FallbackLog::default(),
         );
         assert_eq!(v["usage"]["input"], 100, "{v}");
         assert_eq!(v["usage"]["output"], 50, "{v}");
@@ -5082,7 +5083,7 @@ mod tests {
     fn test_u4_json_output_for_failed_turn_without_error_event_should_still_be_unsuccessful() {
         let turn: Result<hone_core::TurnResult, hone_core::AgentError> =
             Err(hone_core::AgentError::Cancelled);
-        let v = json_mode_output(&turn, String::new(), vec![], None, spend_100_50(), "m");
+        let v = json_mode_output(&turn, String::new(), vec![], None, spend_100_50(), "m", &FallbackLog::default());
         assert_eq!(v["success"], false, "{v}");
         assert_eq!(v["usage"]["input"], 100, "{v}");
     }
@@ -5096,7 +5097,7 @@ mod tests {
                 cost_usd: 0.0,
                 tool_calls_count: 0,
             });
-        let v = json_mode_output(&turn, "done".to_owned(), vec![], None, spend_100_50(), "m");
+        let v = json_mode_output(&turn, "done".to_owned(), vec![], None, spend_100_50(), "m", &FallbackLog::default());
         assert_eq!(v["success"], true, "{v}");
         assert_eq!(v["usage"]["input"], 100, "{v}");
         assert_eq!(v["usage"]["output"], 50, "{v}");
@@ -5171,6 +5172,234 @@ mod tests {
             end("ghost", serde_json::json!({"ok": true}), false), // no matching start
         ];
         assert_eq!(code_modifying_tools_that_ran(&events), vec!["write_file"]);
+    }
+
+    // ---- fallback notice (docs/plans/fallback-notice-spec.md: N7, N8, N10) ----
+    //
+    // Seams assumed:
+    //   FallbackLog::default(), FallbackLog::record(requested, fallback, reason)
+    //   json_mode_output(.., model_id, &FallbackLog) -> Value  (final parameter added; emits "fallbacks")
+    //   FallbackPrinter::default(), .wrote(&str), .event(&mut err, requested, fallback, reason)
+    //   note_turn_fallback(&AgentEvent, &mut Option<String>), end_turn_fallback(..)
+    // The `--ensemble` printer is not unit-testable as written (it owns stdout/stderr); it is
+    // covered by reading only.
+
+    fn mf_event(requested: &str, fallback: &str, reason: &str) -> AgentEvent {
+        AgentEvent::ModelFallback {
+            requested: requested.to_owned(),
+            fallback: fallback.to_owned(),
+            reason: reason.to_owned(),
+        }
+    }
+
+    fn done_event() -> AgentEvent {
+        AgentEvent::Done {
+            usage: hone_proto::TokenUsage::default(),
+            cost_usd: 0.0,
+            plan: None,
+        }
+    }
+
+    const NOTICE_LINE: &str = "hone: a:x failed (why); switched to fallback b:y";
+
+    #[test]
+    fn test_n7_printer_starts_the_line_on_a_new_one_after_a_token_without_newline() {
+        let mut p = FallbackPrinter::default();
+        let mut err: Vec<u8> = Vec::new();
+        p.wrote("abc");
+
+        p.event(&mut err, "a:x", "b:y", "why");
+
+        assert_eq!(String::from_utf8(err).unwrap(), format!("\n{NOTICE_LINE}\n"));
+    }
+
+    #[test]
+    fn test_n7_printer_adds_no_blank_line_after_a_token_ending_in_a_newline() {
+        let mut p = FallbackPrinter::default();
+        let mut err: Vec<u8> = Vec::new();
+        p.wrote("abc\n");
+
+        p.event(&mut err, "a:x", "b:y", "why");
+
+        assert_eq!(String::from_utf8(err).unwrap(), format!("{NOTICE_LINE}\n"));
+    }
+
+    #[test]
+    fn test_n7_printer_adds_no_blank_line_when_nothing_was_printed() {
+        let mut p = FallbackPrinter::default();
+        let mut err: Vec<u8> = Vec::new();
+
+        p.event(&mut err, "a:x", "b:y", "why");
+
+        assert_eq!(String::from_utf8(err).unwrap(), format!("{NOTICE_LINE}\n"));
+    }
+
+    #[test]
+    fn test_n7_printer_prints_a_pair_once() {
+        let mut p = FallbackPrinter::default();
+        let mut err: Vec<u8> = Vec::new();
+
+        p.event(&mut err, "a:x", "b:y", "why");
+        p.event(&mut err, "a:x", "b:y", "why again");
+        p.event(&mut err, "a:x", "c:z", "other");
+
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            format!("{NOTICE_LINE}\nhone: a:x failed (other); switched to fallback c:z\n")
+        );
+    }
+
+    async fn run_printer(events: Vec<AgentEvent>) -> (String, String) {
+        let (tx, rx) = mpsc::channel::<AgentEvent>(16);
+        let mut out: Vec<u8> = Vec::new();
+        let mut err: Vec<u8> = Vec::new();
+        for e in events {
+            tx.send(e).await.unwrap();
+        }
+        drop(tx);
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            print_orchestrate_events(rx, &mut out, &mut err),
+        )
+        .await
+        .expect("printer hung");
+        (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_n7_orchestrate_printer_prints_a_pair_once_on_stderr_and_nothing_on_stdout() {
+        let (out, err) = run_printer(vec![
+            mf_event("a:x", "b:y", "why"),
+            AgentEvent::Token { text: "hi\n".to_owned() },
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert_eq!(err, format!("{NOTICE_LINE}\n"));
+        assert_eq!(out, "hi\n", "stdout carries no notice");
+    }
+
+    #[tokio::test]
+    async fn test_n7_orchestrate_printer_adds_no_blank_line_after_a_worker_line() {
+        // The token leaves stdout mid-line; the worker line (writeln!) ends it.
+        let (out, err) = run_printer(vec![
+            AgentEvent::Token { text: "abc".to_owned() },
+            AgentEvent::WorkerCompleted {
+                task_id: "t1".to_owned(),
+                agent: "coder".to_owned(),
+                status: "ok".to_owned(),
+                cost_usd: 0.0,
+            },
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert!(out.ends_with('\n'), "{out:?}");
+        assert_eq!(err, format!("{NOTICE_LINE}\n"), "no leading blank line");
+    }
+
+    #[tokio::test]
+    async fn test_n7_orchestrate_printer_starts_a_new_line_after_a_mid_line_token() {
+        let (_, err) = run_printer(vec![
+            AgentEvent::Token { text: "abc".to_owned() },
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert_eq!(err, format!("\n{NOTICE_LINE}\n"));
+    }
+
+    fn failed_turn() -> Result<hone_core::TurnResult, hone_core::AgentError> {
+        Err(hone_core::AgentError::Cancelled)
+    }
+
+    #[test]
+    fn test_n8_json_output_has_an_empty_fallbacks_array_for_an_empty_log() {
+        let v = json_mode_output(
+            &failed_turn(),
+            String::new(),
+            vec![],
+            None,
+            spend_100_50(),
+            "m",
+            &FallbackLog::default(),
+        );
+
+        assert_eq!(v["fallbacks"], serde_json::json!([]), "{v}");
+        let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            ["cost_usd", "error", "fallbacks", "model", "response", "success", "tool_calls", "usage"]
+        );
+    }
+
+    #[test]
+    fn test_n8_json_output_lists_pairs_in_first_seen_order_with_counts_and_first_reason() {
+        let mut log = FallbackLog::default();
+        let _ = log.record("a:x", "b:y", "first reason");
+        let _ = log.record("a:x", "c:z", "other");
+        let _ = log.record("a:x", "b:y", "second reason");
+        let _ = log.record("a:x", "b:y", "third reason");
+
+        let v = json_mode_output(
+            &failed_turn(),
+            String::new(),
+            vec![],
+            None,
+            spend_100_50(),
+            "a:x",
+            &log,
+        );
+
+        assert_eq!(
+            v["fallbacks"],
+            serde_json::json!([
+                {"requested": "a:x", "fallback": "b:y", "reason": "first reason", "calls": 3},
+                {"requested": "a:x", "fallback": "c:z", "reason": "other", "calls": 1},
+            ])
+        );
+        assert_eq!(v["model"], "a:x", "model keeps its meaning");
+    }
+
+    #[test]
+    fn test_n10_a_fallback_then_done_records_the_fallback_model_then_clears_it() {
+        let mut slot: Option<String> = None;
+
+        note_turn_fallback(&mf_event("a:x", "b:y", "why"), &mut slot);
+        assert_eq!(slot.as_deref(), Some("b:y"));
+
+        end_turn_fallback(&done_event(), &mut slot);
+        assert_eq!(slot, None);
+    }
+
+    #[test]
+    fn test_n10_the_last_fallback_of_a_turn_wins() {
+        let mut slot: Option<String> = None;
+        note_turn_fallback(&mf_event("a:x", "b:y", "why"), &mut slot);
+        note_turn_fallback(&mf_event("a:x", "c:z", "why"), &mut slot);
+        assert_eq!(slot.as_deref(), Some("c:z"));
+    }
+
+    #[test]
+    fn test_n10_other_events_neither_set_nor_clear_the_slot() {
+        let mut slot: Option<String> = None;
+        let token = AgentEvent::Token { text: "t".to_owned() };
+        note_turn_fallback(&token, &mut slot);
+        end_turn_fallback(&token, &mut slot);
+        assert_eq!(slot, None);
+
+        note_turn_fallback(&mf_event("a:x", "b:y", "why"), &mut slot);
+        note_turn_fallback(&token, &mut slot);
+        end_turn_fallback(&token, &mut slot);
+        assert_eq!(slot.as_deref(), Some("b:y"));
+    }
+
+    #[test]
+    fn test_n10_an_error_clears_the_slot() {
+        let mut slot = Some("b:y".to_owned());
+        end_turn_fallback(&AgentEvent::Error { message: "boom".to_owned() }, &mut slot);
+        assert_eq!(slot, None);
     }
 }
 

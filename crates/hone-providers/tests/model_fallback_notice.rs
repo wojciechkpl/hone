@@ -425,6 +425,77 @@ async fn test_n3_reason_sanitization_table() {
 }
 
 #[tokio::test]
+async fn test_n3_bidi_and_zero_width_characters_become_spaces() {
+    let cases = [
+        ("a\u{202e}b", "a b"),
+        ("a\u{200b}b", "a b"),
+        ("a\u{feff}b", "a b"),
+        (
+            "a\u{061c}b\u{200f}c\u{2066}d\u{2069}e\u{2060}f",
+            "a b c d e f",
+        ),
+        ("\u{202e}evil\u{202c}", "evil"),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(
+            reason_for_stream_failure(input).await,
+            expected,
+            "input {input:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_n3_urls_lose_user_info_and_query() {
+    let cases = [
+        (
+            "error sending request for url (http://u:p@h:1/v1/x?key=s)",
+            "error sending request for url (http://h:1/v1/x)",
+        ),
+        (
+            "failed http://user@host/path ok",
+            "failed http://host/path ok",
+        ),
+        (
+            "failed http://host/path?a=b&c=d next",
+            "failed http://host/path next",
+        ),
+        (
+            "see https://h.example/v1/x done",
+            "see https://h.example/v1/x done",
+        ),
+        (
+            "bad [http://u:p@h/x?k=v] and \"http://a@b/c?d\"",
+            "bad [http://h/x] and \"http://b/c\"",
+        ),
+        (
+            "urls http://u@a/x?q,http://b/y?r>z",
+            "urls http://a/x,http://b/y>z",
+        ),
+        ("what? really?", "what? really?"),
+        ("user@example.com asked", "user@example.com asked"),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(
+            reason_for_stream_failure(input).await,
+            expected,
+            "input {input:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_n3_a_cut_right_after_a_space_gives_no_space_before_the_ellipsis() {
+    // Character 200 is a space: the cut text would end in whitespace.
+    let input = format!("{} {}", "a".repeat(199), "b".repeat(50));
+
+    assert_eq!(
+        reason_for_stream_failure(&input).await,
+        format!("{}…", "a".repeat(199))
+    );
+}
+
+#[tokio::test]
 async fn test_n3_collapse_happens_before_the_length_cut() {
     // 150 chars, a run of newlines, 100 chars: collapsed = 251 chars -> cut at 200.
     let input = format!("{}\n\n\n\n\n{}", "a".repeat(150), "b".repeat(100));
