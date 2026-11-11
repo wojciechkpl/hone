@@ -37,7 +37,7 @@ import type { AgentEvent } from "../types/events";
 type Bubble =
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string; done: boolean }
-  | { kind: "tool"; name: string; status: "running" | "done" | "error"; result?: string }
+  | { kind: "tool"; id?: string; name: string; status: "running" | "done" | "error"; result?: string }
   | { kind: "error"; message: string };
 
 type ChatPanelProps = {
@@ -146,7 +146,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         break;
       }
       case "tool_call_start": {
-        append({ kind: "tool", name: event.name, status: "running" });
+        append({ kind: "tool", id: event.id, name: event.name, status: "running" });
         // Auto-open the file in the preview pane for any tool that
         // names a path. read_file / edit_file / write_file all carry
         // either `path` or `file_path`. Best-effort: if there's no
@@ -163,9 +163,20 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
       case "tool_call_end": {
         setBubbles(
           produce((arr) => {
-            const idx = arr.length - 1;
-            const last = arr[idx];
-            if (last?.kind === "tool") {
+            // Match by tool call id (parallel workers interleave starts);
+            // fall back to the last bubble for cards without an id
+            // (restored from older persisted sessions).
+            let target: Bubble | undefined;
+            for (let i = arr.length - 1; i >= 0; i--) {
+              const b = arr[i];
+              if (b?.kind === "tool" && b.id === event.id) {
+                target = b;
+                break;
+              }
+            }
+            target ??= arr[arr.length - 1];
+            const last = target;
+            if (last?.kind === "tool" && (last.id === undefined || last.id === event.id)) {
               last.status = event.is_error ? "error" : "done";
               last.result =
                 typeof event.result === "string"
@@ -571,6 +582,7 @@ function bubbleToPersisted(b: Bubble, ts: number): PersistedMessage {
     case "tool":
       return {
         kind: "tool",
+        id: b.id,
         name: b.name,
         status: b.status,
         result: b.result,
@@ -590,6 +602,7 @@ function persistedToBubble(m: PersistedMessage): Bubble {
     case "tool":
       return {
         kind: "tool",
+        id: m.id,
         name: m.name,
         status: m.status,
         result: m.result,
@@ -600,7 +613,7 @@ function persistedToBubble(m: PersistedMessage): Bubble {
 }
 
 const ToolCardView: Component<{
-  card: { kind: "tool"; name: string; status: "running" | "done" | "error"; result?: string };
+  card: { kind: "tool"; id?: string; name: string; status: "running" | "done" | "error"; result?: string };
 }> = (props) => {
   // Long results collapse by default; the user can expand inline.
   const [expanded, setExpanded] = createSignal(false);
