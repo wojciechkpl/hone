@@ -134,7 +134,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **`honed`:** a client that disconnects from a `POST /run` or `/orchestrate` stream now cancels the run at its next tool call, prompt or model call, instead of letting it finish. The spend of a `/run` is recorded in the governance totals however the run ends (finished, failed or cancelled); before, only finished runs were counted.
 - **CLI `--orchestrate`:** a failing worker no longer stops the printer, so the other workers and the merge still run.
 - **AutoApprove mode** (<kbd>Shift</kbd>+<kbd>Tab</kbd>) now does what its name says: it skips the write/shell approval prompt, including the one `--step` adds. It never skips a permission rule: `deny` still refuses and `ask` still prompts.
-- **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
+- **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and (until "shell commands stop when their call ends" below) <kbd>Esc</kbd> didn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
 ### Fixed: shell commands stop when their call ends
@@ -142,10 +142,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Before:** a command run by the `shell` tool kept running when its call ended early: <kbd>Esc</kbd>, a worker's timeout, a stopped orchestrated run, or the tool's own time limit (30 s by default, which reported a timeout while the command carried on). `cargo test` went on building and testing in the background, and a dev server kept its port. The test run that follows a TUI turn was the same. Commands also inherited hone's stdin, so in the TUI one that read input (`cat`, a password prompt) waited on the terminal until it timed out.
 - **Now** (unix):
   - Each command runs in its own process group with stdin closed. When its call ends early, the whole group is killed: the shell, what it started, and what those started. A command that finishes normally is left alone.
-  - The test run after a TUI turn works the same way, so <kbd>Esc</kbd> stops it.
-  - hone kills its running commands when it exits: the TUI on quit, <kbd>Ctrl</kbd>+<kbd>C</kbd>, SIGINT, SIGTERM or SIGHUP; `hone -p` and `--orchestrate` on SIGINT, SIGTERM or SIGHUP, then exit with 128 + the signal number.
-- **Not yet:** a command that starts its own session or process group (`setsid`, some daemons) escapes. `!command` in the TUI, hooks and a recipe's `test_cmd` run as before. Elsewhere than unix, only the command's own process is killed.
-- Contract: `docs/plans/worker-tools-spec.md`, rows W23–W25.
+  - The test run after a TUI turn works the same way. It starts after the turn ends, so <kbd>Esc</kbd> with an empty input box now stops it (and any fix turns it started) while the TUI is idle; with text in the box, <kbd>Esc</kbd> still clears it.
+  - hone kills its running commands when it exits: the TUI on quit, <kbd>Ctrl</kbd>+<kbd>C</kbd>, SIGINT, SIGTERM or SIGHUP; a one-shot run (`hone "prompt"`, `--plan`, `--orchestrate`, `--ensemble`, `--recipe`) on SIGINT, SIGTERM or SIGHUP, after which it dies by that signal as before, so a calling shell script still stops on <kbd>Ctrl</kbd>+<kbd>C</kbd>; `honed` when it shuts down, now also on SIGHUP.
+- **Not yet:** a command that starts its own session or process group (`setsid`, some daemons) escapes, and so does every command when hone is killed hard (`kill -9`). A command that needs the terminal (an ssh passphrase, a git credential prompt) now stops until its timeout, and <kbd>Ctrl</kbd>+<kbd>Z</kbd> in a one-shot run suspends hone but not its command. `!command` in the TUI, hooks and a recipe's `test_cmd` run as before. Elsewhere than unix, only the command's own process is killed.
+- Contract: `docs/plans/worker-tools-spec.md`, rows W23–W25 and W37–W39.
 
 ### Fixed: orchestrator workers get tools
 
@@ -159,7 +159,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - The TUI no longer stops a worker after 300 s; <kbd>Esc</kbd> (with no menu open) or <kbd>x</kbd> stops the run. If the session's agent has stopped, a complex prompt fails with an error instead of starting workers.
   - The built-in agent files now list real tool names (`read_file`, `write_file`, `edit_file`). In your own agent files `read`, `write` and `edit` now mean those tools, unless a tool has that exact name (an MCP tool called `write`, say). This also fixes `@agent` turns and `honed` workers.
 - **Per entry point:**
-  - `hone --orchestrate`: workers run their tools without asking, as `hone -p` does. The permission policy applies.
+  - `hone --orchestrate`: workers run their tools without asking, as a one-shot `hone "prompt"` does. The permission policy applies.
   - Web UI and `POST /orchestrate`: by default the run config is in Plan mode, so workers get read-only tools and never ask. **New:** `POST /orchestrate` takes `request_id` and `approval_policy` with `/run`'s step-mode rules (400 without a `request_id`, 409 if it's in use). In step mode workers get their agent's tools and pause for approval, answered through `POST /run/{request_id}/step`, with no per-worker timeout. The web UI uses it when its step mode is on, and its approval dialog names the worker. `?dry_run=true` ignores both fields.
   - **Web UI fixes found by running it with parallel workers:**
     - A tool's result is matched to its card by call id. Before, it went to the last card, so one worker's output could land on another's card and a card could stay "running" forever.
