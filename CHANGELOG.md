@@ -160,10 +160,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - The built-in agent files now list real tool names (`read_file`, `write_file`, `edit_file`). In your own agent files `read`, `write` and `edit` now mean those tools, unless a tool has that exact name (an MCP tool called `write`, say). This also fixes `@agent` turns and `honed` workers.
 - **Per entry point:**
   - `hone --orchestrate`: workers run their tools without asking, as `hone -p` does. The permission policy applies.
-  - Web UI and `POST /orchestrate`: the server's run config is in Plan mode, so workers get read-only tools.
+  - Web UI and `POST /orchestrate`: by default the run config is in Plan mode, so workers get read-only tools and never ask. **New:** `POST /orchestrate` takes `request_id` and `approval_policy` with `/run`'s step-mode rules (400 without a `request_id`, 409 if it's in use). In step mode workers get their agent's tools and pause for approval, answered through `POST /run/{request_id}/step`, with no per-worker timeout. The web UI uses it when its step mode is on, and its approval dialog names the worker. `?dry_run=true` ignores both fields.
 - **Not yet:**
   - Workers running at the same time can edit the same file, and one's `write_file` can overwrite the other's change.
-  - The web UI doesn't show which worker is asking.
+  - The desktop app (`apps/hone-desktop`) doesn't show which worker is asking.
   - No test run follows an orchestrated turn (simple and medium turns have one).
   - `/budget` doesn't cap workers. `hone --orchestrate` and the server keep the 300 s worker timeout.
   - An agent definition's `sandbox:` profile isn't applied to in-process workers.
