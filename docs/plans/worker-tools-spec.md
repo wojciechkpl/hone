@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W12.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W17.
 
 ## Problem
 
@@ -76,6 +76,21 @@ flowchart LR
 | W11 | **No per-worker timeout in the TUI.** `spawn_orchestrated_turn` builds the orchestrator with `without_worker_timeout()`; Esc stops the run. `hone orchestrate` and the web server keep the 300 s default. |
 | W12 | **A worker's tool calls reach the TUI.** `ToolCallStart`, `ToolCallPaused`, `ApprovalRequired` and `ToolCallEnd` from a worker are forwarded to the TUI channel; a `StepAction` sent on the session's step channel answers a worker's pause; the run still ends with exactly one `Done` (G14 of the plan-gate spec). |
 
+### Shared "always" (W13–W17, added at the user's request)
+
+An "always" answer means "for this session": it covers the main agent and
+every worker of every orchestrated run, whichever of them asked. Today an
+"always" lives on the one agent that asked (`approve_always` on its own
+`approval_policy`, rule entries in its own `policy_session_approved`).
+
+| Row | Behaviour |
+|---|---|
+| W13 | **`SessionApprovals`** (`hone-core`, public, `Send + Sync`): the "always" answers of one session — tool names approved for the approval-policy pause, and the policy-gate session-approval entries (`session_approval_entries`). Every `Agent` has one: its own, new, by default; `Agent::with_session_approvals(Arc<SessionApprovals>)` replaces it with a shared one; `AgentHandle::session_approvals() -> Option<Arc<SessionApprovals>>` returns the actor's (`None` if the actor has stopped). Agents never share one unless it is attached explicitly (two `AgentHandle`s, e.g. two server sessions, don't). |
+| W14 | **"Always" is recorded.** An `ApproveAlways` answer at the approval-policy pause records the tool name, and one at a policy `ask` prompt records the rule's entries, in the agent's `SessionApprovals` — as well as where they go today. |
+| W15 | **"Always" is honoured.** Before each tool call's gates, the agent takes in its `SessionApprovals`: tool names through `approve_always` on its approval policy (so `Auto` and `AlwaysAsk` behave as now: `--step` still asks every time), and entries into its policy session approvals (so the policy gate, the read filter and the read-before-edit guard see them). A call it covers runs without a prompt. |
+| W16 | **Workers of a run share one.** The orchestrator attaches one `SessionApprovals` to every worker: its own by default (so workers share even outside the TUI), or the one passed to `Orchestrator::with_session_approvals`. A worker that was going to ask — including one waiting for its turn on the step channel — checks again once it holds the channel, before it sends a prompt, and doesn't ask if an "always" given meanwhile now covers the call (another worker's "always" for the same tool, or entries that now clear the policy rule). It never re-checks after it has sent a prompt. |
+| W17 | **The TUI shares the session agent's.** `spawn_orchestrated_turn` attaches `agent.session_approvals().await` to the orchestrator (in the spawned task, like W10). So an "always" given to a worker covers the run's other workers, later runs and the main agent's later turns; an "always" given to the main agent — including for a policy `ask` rule — covers the workers. |
+
 ## What each entry point gets
 
 | Entry point | Tools a worker can use | Risky calls |
@@ -93,9 +108,6 @@ flowchart LR
   `scope`.
 - **The approval menu doesn't say which worker asks** (`ToolCallPaused` has no
   agent field).
-- **An "always" answer to a worker's prompt covers only that worker**
-  (`approve_always` on its own config): sibling workers and the session's
-  later turns ask again.
 - **Worker tool output streams into one message** with the other workers'
   text, as today.
 - **No test run after an orchestrated turn** (`maybe_run_test_verification`
@@ -104,5 +116,3 @@ flowchart LR
   300 s worker timeout, which a long build can hit.
 - **An agent definition's `sandbox:` profile** is not applied to in-process
   workers (W6).
-- **Session "always" approvals of policy `ask` rules** are per agent: a worker
-  asks again even if the main agent was told "always".
