@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use hone_tools::Tool;
@@ -52,6 +53,9 @@ struct JsonRpcErrorObj {
     message: String,
 }
 
+/// A handshake is bounded by at least this long (see `handshake_limit`).
+const DEFAULT_HANDSHAKE_FLOOR: Duration = Duration::from_secs(60);
+
 // ---------------------------------------------------------------------------
 // Inner mutable transport state
 // ---------------------------------------------------------------------------
@@ -60,13 +64,77 @@ struct TransportInner {
     /// Keep the child alive so it is not reaped while we hold its pipes.
     #[allow(dead_code)]
     process: Child,
-    stdin: BufWriter<ChildStdin>,
+    /// `None` once closed at shutdown (the server sees end of input).
+    stdin: Option<BufWriter<ChildStdin>>,
     reader: BufReader<ChildStdout>,
     next_id: u64,
+    /// Bounds each request (write + wait for its response). `None`: no limit.
+    request_timeout: Option<Duration>,
+    /// Overrides the bound of the startup handshake (`Some(ZERO)` = none).
+    handshake_timeout: Option<Duration>,
 }
 
 impl TransportInner {
+    /// The server's stdin, or a broken-pipe error once it was closed.
+    fn stdin_writer(&mut self, server_name: &str) -> Result<&mut BufWriter<ChildStdin>, McpError> {
+        self.stdin
+            .as_mut()
+            .ok_or_else(|| McpError::ConnectionFailed {
+                server: server_name.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stdin closed"),
+            })
+    }
+
+    /// The bound of the startup handshake: the override if set (`ZERO` = none),
+    /// else the larger of the request timeout and 60 s (a first `npx` start may
+    /// download its package), and none when requests are unbounded.
+    fn handshake_limit(&self) -> Option<Duration> {
+        match self.handshake_timeout {
+            Some(d) => (!d.is_zero()).then_some(d),
+            None => self.request_timeout.map(|r| r.max(DEFAULT_HANDSHAKE_FLOOR)),
+        }
+    }
+
+    /// Send a request and wait for its response, bounded by the request
+    /// timeout (if any): on expiry the call fails with [`McpError::Timeout`]
+    /// and the late response is skipped by id on a later call.
     async fn send_request(
+        &mut self,
+        method: &str,
+        params: Option<Value>,
+        server_name: &str,
+    ) -> Result<Value, McpError> {
+        let limit = self.request_timeout;
+        self.send_request_within(limit, method, params, server_name)
+            .await
+    }
+
+    /// [`Self::send_request`] with an explicit bound (`None` = unbounded).
+    async fn send_request_within(
+        &mut self,
+        limit_for_call: Option<Duration>,
+        method: &str,
+        params: Option<Value>,
+        server_name: &str,
+    ) -> Result<Value, McpError> {
+        match limit_for_call {
+            None => {
+                self.send_request_unbounded(method, params, server_name)
+                    .await
+            }
+            Some(limit) => tokio::time::timeout(
+                limit,
+                self.send_request_unbounded(method, params, server_name),
+            )
+            .await
+            .map_err(|_| McpError::Timeout {
+                server: server_name.to_string(),
+                timeout_ms: u64::try_from(limit.as_millis()).unwrap_or(u64::MAX),
+            })?,
+        }
+    }
+
+    async fn send_request_unbounded(
         &mut self,
         method: &str,
         params: Option<Value>,
@@ -85,14 +153,14 @@ impl TransportInner {
         let mut line = serde_json::to_string(&req)?;
         line.push('\n');
 
-        self.stdin
+        self.stdin_writer(server_name)?
             .write_all(line.as_bytes())
             .await
             .map_err(|e| McpError::ConnectionFailed {
                 server: server_name.to_string(),
                 source: e,
             })?;
-        self.stdin
+        self.stdin_writer(server_name)?
             .flush()
             .await
             .map_err(|e| McpError::ConnectionFailed {
@@ -106,10 +174,10 @@ impl TransportInner {
         // handed to the wrong caller. A server request gets a reply meanwhile.
         let our_id = Value::from(id);
         loop {
-            let mut response_line = String::new();
+            let mut raw_line = Vec::new();
             let bytes = self
                 .reader
-                .read_line(&mut response_line)
+                .read_until(b'\n', &mut raw_line)
                 .await
                 .map_err(|e| McpError::ConnectionFailed {
                     server: server_name.to_string(),
@@ -123,12 +191,37 @@ impl TransportInner {
                 });
             }
 
+            // Bytes up to the newline, decoded here: a line cut inside a
+            // multi-byte character (after a dropped read) is not valid UTF-8 and
+            // is skipped like any other non-JSON line.
+            let response_line = match String::from_utf8(raw_line) {
+                Ok(l) => l,
+                Err(_) => {
+                    tracing::debug!(
+                        server = server_name,
+                        "skipping a line that is not valid UTF-8 on the server's stdout"
+                    );
+                    continue;
+                }
+            };
             let trimmed = response_line.trim();
             if trimmed.is_empty() {
                 continue;
             }
 
-            let resp: JsonRpcResponse = serde_json::from_str(trimmed)?;
+            // Log output (or the rest of a line whose read was dropped) is not a
+            // response: skip it.
+            let resp: JsonRpcResponse = match serde_json::from_str(trimmed) {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::debug!(
+                        server = server_name,
+                        error = %e,
+                        "skipping a non-JSON line on the server's stdout"
+                    );
+                    continue;
+                }
+            };
 
             if let Some(method) = &resp.method {
                 // A server-to-client request (it has an id) must be answered or
@@ -147,20 +240,19 @@ impl TransportInner {
                     reply_line.push('\n');
                     // `self` is borrowed mutably for the whole call, so no other
                     // writer or reader can be waiting on these pipes.
-                    self.stdin
+                    self.stdin_writer(server_name)?
                         .write_all(reply_line.as_bytes())
                         .await
                         .map_err(|e| McpError::ConnectionFailed {
                             server: server_name.to_string(),
                             source: e,
                         })?;
-                    self.stdin
-                        .flush()
-                        .await
-                        .map_err(|e| McpError::ConnectionFailed {
+                    self.stdin_writer(server_name)?.flush().await.map_err(|e| {
+                        McpError::ConnectionFailed {
                             server: server_name.to_string(),
                             source: e,
-                        })?;
+                        }
+                    })?;
                 }
                 continue;
             }
@@ -210,14 +302,14 @@ impl TransportInner {
         let mut line = serde_json::to_string(&notif)?;
         line.push('\n');
 
-        self.stdin
+        self.stdin_writer(server_name)?
             .write_all(line.as_bytes())
             .await
             .map_err(|e| McpError::ConnectionFailed {
                 server: server_name.to_string(),
                 source: e,
             })?;
-        self.stdin
+        self.stdin_writer(server_name)?
             .flush()
             .await
             .map_err(|e| McpError::ConnectionFailed {
@@ -265,6 +357,7 @@ impl StdioMcpClient {
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
             .spawn()
             .map_err(|e| McpError::ConnectionFailed {
                 server: server_name.clone(),
@@ -281,12 +374,54 @@ impl StdioMcpClient {
             server_name,
             transport: Arc::new(Mutex::new(TransportInner {
                 process: child,
-                stdin: BufWriter::new(stdin),
+                stdin: Some(BufWriter::new(stdin)),
                 reader: BufReader::new(stdout),
                 next_id: 1,
+                request_timeout: None,
+                handshake_timeout: None,
             })),
             server_info: Mutex::new(None),
         })
+    }
+
+    /// Bound every request (`initialize`, `tools/list`, `tools/call`, ...) by
+    /// `timeout`: write plus wait for the response. `Duration::ZERO` means no
+    /// timeout, which is also the default of the raw constructors.
+    /// Notifications are not bounded. Call it before `connect()`.
+    #[must_use]
+    pub fn with_request_timeout(mut self, timeout: Duration) -> Self {
+        let limit = (!timeout.is_zero()).then_some(timeout);
+        self.transport_mut().request_timeout = limit;
+        self
+    }
+
+    /// Bound the startup handshake (`connect()`: `initialize` and the first
+    /// `tools/list`) by `timeout`; `Duration::ZERO` means no bound. Without it
+    /// the handshake gets the larger of the request timeout and 60 s (a first
+    /// `npx` start may download its package), and none if requests are
+    /// unbounded. Later requests keep the request timeout.
+    #[must_use]
+    pub fn with_handshake_timeout(mut self, timeout: Duration) -> Self {
+        self.transport_mut().handshake_timeout = Some(timeout);
+        self
+    }
+
+    /// The transport settings, for the builders. The transport is only shared
+    /// (with tool wrappers) after `tools_as_native`, so a freshly built client
+    /// is its sole owner.
+    fn transport_mut(&mut self) -> &mut TransportInner {
+        match Arc::get_mut(&mut self.transport) {
+            Some(mutex) => mutex.get_mut(),
+            // Unreachable for a client that was just constructed; a client whose
+            // transport is already shared must not be reconfigured.
+            None => unreachable!("the transport is shared: configure the client before use"),
+        }
+    }
+
+    /// Kill the server process and reap it (startup failure path).
+    pub(crate) async fn kill(&mut self) {
+        let mut transport = self.transport.lock().await;
+        let _ = transport.process.kill().await;
     }
 
     /// Spawn with an explicit logical name and additional environment variables.
@@ -304,7 +439,8 @@ impl StdioMcpClient {
         cmd.args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null());
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
 
         // Security: clear the inherited environment so API keys are not leaked
         // to untrusted MCP subprocesses.  Re-inject only the minimum needed for
@@ -336,9 +472,11 @@ impl StdioMcpClient {
             server_name: server_name.to_string(),
             transport: Arc::new(Mutex::new(TransportInner {
                 process: child,
-                stdin: BufWriter::new(stdin),
+                stdin: Some(BufWriter::new(stdin)),
                 reader: BufReader::new(stdout),
                 next_id: 1,
+                request_timeout: None,
+                handshake_timeout: None,
             })),
             server_info: Mutex::new(None),
         })
@@ -359,6 +497,13 @@ impl StdioMcpClient {
 
         let kill_timeout = tokio::time::Duration::from_secs(5);
         let mut transport = self.transport.lock().await;
+        // Close the server's stdin (after flushing the notification), so a
+        // server that exits when its input ends is gone at once; the wait and
+        // kill below remain the fallback for one that does not.
+        if let Some(mut stdin) = transport.stdin.take() {
+            let _ = stdin.flush().await;
+            drop(stdin);
+        }
         match tokio::time::timeout(kill_timeout, transport.process.wait()).await {
             Ok(_) => {}
             Err(_) => {
@@ -401,8 +546,15 @@ impl McpClient for StdioMcpClient {
 
         let mut transport = self.transport.lock().await;
 
+        // The handshake (initialize + first tools/list) has its own bound.
+        let handshake = transport.handshake_limit();
         let init_result = transport
-            .send_request("initialize", Some(init_params), &self.server_name)
+            .send_request_within(
+                handshake,
+                "initialize",
+                Some(init_params),
+                &self.server_name,
+            )
             .await?;
 
         let name = init_result
@@ -424,7 +576,7 @@ impl McpClient for StdioMcpClient {
             .await?;
 
         let tools_result = transport
-            .send_request("tools/list", None, &self.server_name)
+            .send_request_within(handshake, "tools/list", None, &self.server_name)
             .await?;
 
         drop(transport);

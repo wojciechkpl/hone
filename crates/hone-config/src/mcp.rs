@@ -20,6 +20,11 @@ pub struct McpServerConfig {
     /// Per-request timeout in milliseconds.
     #[serde(default = "McpServerConfig::default_timeout_ms")]
     pub timeout_ms: u64,
+    /// Bound of the startup handshake (`initialize` and the first
+    /// `tools/list`) in milliseconds; `0` means no bound. Absent: the larger of
+    /// `timeout_ms` and 60 s, so a first `npx` start can download its package.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handshake_timeout_ms: Option<u64>,
 }
 
 impl McpServerConfig {
