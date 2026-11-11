@@ -5,7 +5,9 @@
 //! process group on unix and sends `SIGKILL` to the whole group when the
 //! caller's future is dropped or the timeout passes, so `sh -c "cargo test"`
 //! does not keep building after Esc. A process-wide registry of the running
-//! groups lets [`kill_running_commands`] end them all when hone exits.
+//! groups lets [`kill_running_commands`] end them all when hone exits. Other
+//! long-lived children that hone starts in their own group (MCP servers)
+//! register theirs with a [`ProcessGroupGuard`].
 //!
 //! Elsewhere only the direct child is killed (`kill_on_drop`).
 
@@ -69,8 +71,31 @@ pub async fn run_command(
     result
 }
 
-/// Kill every command group that is currently running. Synchronous and cheap;
-/// safe to call from a signal-handling task. A no-op off unix.
+/// A process group created outside [`run_command`] (the child was spawned with
+/// `process_group(0)`, so its group id is its pid), tracked in the same
+/// registry: [`kill_running_commands`] and [`kill_commands_and_reraise`] reach
+/// it. Dropping the guard (or [`kill`](Self::kill)) sends `SIGKILL` to the whole
+/// group and deregisters it. Off unix it does nothing.
+pub struct ProcessGroupGuard(GroupGuard);
+
+impl ProcessGroupGuard {
+    /// Track the group led by the child with process id `pid`.
+    pub fn new(pid: u32) -> Self {
+        Self(GroupGuard::new(pid))
+    }
+
+    /// Kill the whole group now (idempotent) and stop tracking it. Call it
+    /// whenever hone lets go of the child, also after the leader exited by
+    /// itself: a launcher's own child may outlive it.
+    pub fn kill(&mut self) {
+        self.0.kill();
+    }
+}
+
+/// Kill every process group that is currently running: shell commands, test
+/// runs and other children registered with a [`ProcessGroupGuard`] (MCP
+/// servers). Synchronous and cheap; safe to call from a signal-handling task. A
+/// no-op off unix.
 pub fn kill_running_commands() {
     #[cfg(unix)]
     unix::kill_all();
@@ -153,6 +178,14 @@ mod unix {
             Self { pgid, armed }
         }
 
+        /// Kill the whole group now and stop tracking it.
+        pub(super) fn kill(&mut self) {
+            if std::mem::take(&mut self.armed) {
+                kill_group(self.pgid);
+                unregister(self.pgid);
+            }
+        }
+
         /// The command ended by itself: stop tracking, never kill.
         pub(super) fn disarm(&mut self) {
             if std::mem::take(&mut self.armed) {
@@ -232,4 +265,5 @@ impl GroupGuard {
         Self
     }
     fn disarm(&mut self) {}
+    fn kill(&mut self) {}
 }

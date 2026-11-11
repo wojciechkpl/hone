@@ -835,7 +835,7 @@ async fn detect_provider(eff: &Effective) -> DetectedProvider {
     eprintln!("                         Install: https://ollama.com  then: ollama serve");
     eprintln!();
     eprintln!("Set one of the above and re-run hone.\n");
-    std::process::exit(1);
+    exit_now(1);
 }
 
 // ---------------------------------------------------------------------------
@@ -994,7 +994,7 @@ fn load_permission_policy(working_dir: &std::path::Path) -> Option<hone_core::Po
         Ok(policy) => policy,
         Err(e) => {
             eprintln!("hone: permission policy error: {e}");
-            std::process::exit(2);
+            exit_now(2);
         }
     }
 }
@@ -1006,7 +1006,7 @@ fn load_permission_policy(working_dir: &std::path::Path) -> Option<hone_core::Po
 fn apply_policy_flags(config: &mut AgentConfig, approve: &[String]) {
     let fail = |msg: String| -> ! {
         eprintln!("hone: {msg}");
-        std::process::exit(2);
+        exit_now(2);
     };
     match approve::validate_approvals(config.policy.as_ref(), approve) {
         Ok(ids) => {
@@ -2404,7 +2404,7 @@ async fn init_persistence(
                             "error: failed to open encrypted memory store: {e}\n\
                              Check that HONE_MEMORY_PASSPHRASE is correct."
                         );
-                        std::process::exit(1);
+                        exit_now(1);
                     } else {
                         eprintln!(
                             "Failed to initialise memory store: {e}\n\
@@ -2666,7 +2666,7 @@ async fn main() -> Result<()> {
                      environment variable to be set to a non-empty value.\n\
                      Example: export HONE_MEMORY_PASSPHRASE=\"your-strong-passphrase\""
                 );
-                std::process::exit(1);
+                exit_now(1);
             }
         }
     } else {
@@ -2769,7 +2769,7 @@ async fn main() -> Result<()> {
         if let Some(name) = known_prefixes.iter().find_map(|p| m.strip_prefix(p)) {
             if let Err(why) = hone_config::resolve::validate_model_name(name) {
                 eprintln!("{} invalid model ID '{m}': {why}", error_style("Error:"));
-                std::process::exit(1);
+                exit_now(1);
             }
         }
         if !known_prefixes.iter().any(|p| m.starts_with(p)) {
@@ -2783,7 +2783,7 @@ async fn main() -> Result<()> {
             eprintln!("  ollama:qwen2.5-coder:14b");
             eprintln!("  claude-cli:claude-sonnet-4-5");
             eprintln!("  gemini-cli:gemini-2.5-pro");
-            std::process::exit(1);
+            exit_now(1);
         }
     }
     let mut detected = if let Some(choice) = &eff.model {
@@ -2807,7 +2807,7 @@ async fn main() -> Result<()> {
                             Ok(d) => d,
                             Err(msg) => {
                                 eprintln!("{} {msg}", error_style("Error:"));
-                                std::process::exit(1);
+                                exit_now(1);
                             }
                         }
                     }
@@ -2819,7 +2819,7 @@ async fn main() -> Result<()> {
             }
             Err(msg) => {
                 eprintln!("{} {msg}", error_style("Error:"));
-                std::process::exit(1);
+                exit_now(1);
             }
         }
     } else {
@@ -2977,12 +2977,12 @@ async fn main() -> Result<()> {
                         eprintln!("{} Session '{}' not found.", error_style("Error:"), name);
                         // Stop the MCP servers first: `exit` runs no destructors.
                         mcp_manager.shutdown().await;
-                        std::process::exit(1);
+                        exit_now(1);
                     }
                     Err(e) => {
                         eprintln!("{} Could not load session: {e}", error_style("Error:"));
                         mcp_manager.shutdown().await;
-                        std::process::exit(1);
+                        exit_now(1);
                     }
                 }
             }
@@ -3029,7 +3029,7 @@ async fn main() -> Result<()> {
 
     if let Err(e) = &run_result {
         if e.downcast_ref::<AlreadyReported>().is_some() {
-            std::process::exit(1);
+            exit_now(1);
         }
     }
 
@@ -3116,7 +3116,7 @@ async fn run_selected_mode(
             );
             eprintln!("  2 is the minimum useful value (needs at least 2 candidates to compare)");
             eprintln!("  10 is the maximum (higher values risk runaway API costs)");
-            std::process::exit(1);
+            exit_now(1);
         }
 
         let prompt = match cli.prompt.as_deref() {
@@ -3266,7 +3266,16 @@ async fn os_signal(_sigint: &mut ()) {
     let _ = tokio::signal::ctrl_c().await;
 }
 
-/// Kills the commands the shell tool and the test loop still have running when
+/// Exit the process after stopping everything hone started in its own process
+/// group (shell commands, MCP servers): `std::process::exit` runs no
+/// destructors, so without this they would outlive hone. Harmless before any
+/// of them started.
+fn exit_now(code: i32) -> ! {
+    hone_tools::kill_running_commands();
+    std::process::exit(code)
+}
+
+/// Kills the commands and MCP servers hone still has running when
 /// dropped. They run in their own process groups, so neither the terminal's
 /// Ctrl+C nor its hangup reaches them; hone's exit has to (W25).
 struct KillCommandsOnExit;

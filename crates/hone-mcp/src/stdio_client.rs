@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use hone_tools::Tool;
+use hone_tools::{ProcessGroupGuard, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
@@ -53,6 +53,15 @@ struct JsonRpcErrorObj {
     message: String,
 }
 
+/// Run the server in its own process group (unix), so it and what it starts can
+/// be killed together and are not hit by the terminal's Ctrl+C directly.
+fn own_process_group(cmd: &mut tokio::process::Command) {
+    #[cfg(unix)]
+    cmd.process_group(0);
+    #[cfg(not(unix))]
+    let _ = cmd;
+}
+
 /// A handshake is bounded by at least this long (see `handshake_limit`).
 const DEFAULT_HANDSHAKE_FLOOR: Duration = Duration::from_secs(60);
 
@@ -64,6 +73,10 @@ struct TransportInner {
     /// Keep the child alive so it is not reaped while we hold its pipes.
     #[allow(dead_code)]
     process: Child,
+    /// The server's process group, registered with hone's running-process
+    /// registry: killed with everything the server started whenever hone lets
+    /// go of it (also on drop), and by `kill_running_commands()` on hone's exit.
+    group: Option<ProcessGroupGuard>,
     /// `None` once closed at shutdown (the server sees end of input).
     stdin: Option<BufWriter<ChildStdin>>,
     reader: BufReader<ChildStdout>,
@@ -352,17 +365,17 @@ impl StdioMcpClient {
     pub async fn spawn(command: &str, args: &[&str]) -> Result<Self, McpError> {
         let server_name = command.to_string();
 
-        let mut child = tokio::process::Command::new(command)
-            .args(args)
+        let mut cmd = tokio::process::Command::new(command);
+        cmd.args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| McpError::ConnectionFailed {
-                server: server_name.clone(),
-                source: e,
-            })?;
+            .kill_on_drop(true);
+        own_process_group(&mut cmd);
+        let mut child = cmd.spawn().map_err(|e| McpError::ConnectionFailed {
+            server: server_name.clone(),
+            source: e,
+        })?;
 
         // Safe: Command was configured with .stdin/.stdout(Stdio::piped) above.
         #[allow(clippy::expect_used)]
@@ -373,6 +386,7 @@ impl StdioMcpClient {
         Ok(Self {
             server_name,
             transport: Arc::new(Mutex::new(TransportInner {
+                group: child.id().map(ProcessGroupGuard::new),
                 process: child,
                 stdin: Some(BufWriter::new(stdin)),
                 reader: BufReader::new(stdout),
@@ -422,6 +436,9 @@ impl StdioMcpClient {
     pub(crate) async fn kill(&mut self) {
         let mut transport = self.transport.lock().await;
         let _ = transport.process.kill().await;
+        if let Some(group) = transport.group.as_mut() {
+            group.kill();
+        }
     }
 
     /// Spawn with an explicit logical name and additional environment variables.
@@ -457,6 +474,7 @@ impl StdioMcpClient {
             cmd.env(k, v);
         }
 
+        own_process_group(&mut cmd);
         let mut child = cmd.spawn().map_err(|e| McpError::ConnectionFailed {
             server: server_name.to_string(),
             source: e,
@@ -471,6 +489,7 @@ impl StdioMcpClient {
         Ok(Self {
             server_name: server_name.to_string(),
             transport: Arc::new(Mutex::new(TransportInner {
+                group: child.id().map(ProcessGroupGuard::new),
                 process: child,
                 stdin: Some(BufWriter::new(stdin)),
                 reader: BufReader::new(stdout),
@@ -517,6 +536,11 @@ impl StdioMcpClient {
                 transport.process.wait(),
             )
             .await;
+        }
+        // Whatever the leader did, nothing it started stays behind (a launcher's
+        // child may outlive it).
+        if let Some(group) = transport.group.as_mut() {
+            group.kill();
         }
         Ok(())
     }
