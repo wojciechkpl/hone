@@ -1532,10 +1532,56 @@ fn spawn_orchestrated_turn(
         let mut orchestrator =
             Orchestrator::new(lead_config, registry, 4).with_plan_store(plan_store);
 
-        // A plan the user already saw runs as shown; otherwise decompose first.
-        let outcome = match plan {
-            Some(plan) => orchestrator.run_plan(plan, tx.clone()).await,
-            None => orchestrator.run(&user_text, tx.clone()).await,
+        // The orchestrator's lead and worker turns each end in a `Done` (or an
+        // `Error`) on this channel. Those belong to the inner turns: swallow
+        // them, sum the `Done`s, and send exactly one terminal event at the end
+        // so the TUI stays busy until the whole run is over.
+        let (inner_tx, mut inner_rx) = mpsc::channel::<AgentEvent>(256);
+        let run_text = user_text.clone();
+        let run_task = tokio::spawn(async move {
+            match plan {
+                Some(plan) => orchestrator.run_plan(plan, inner_tx).await,
+                None => orchestrator.run(&run_text, inner_tx).await,
+            }
+        });
+        // Dropped when this task is aborted (Esc), which stops the run too.
+        let _guard = AbortOnDrop(run_task.abort_handle());
+
+        let mut total_usage = hone_proto::TokenUsage::default();
+        let mut total_cost = 0.0_f64;
+        loop {
+            tokio::select! {
+                biased;
+                // The UI went away: stop forwarding.
+                () = tx.closed() => return,
+                ev = inner_rx.recv() => {
+                    let Some(event) = ev else { break };
+                    match event {
+                        AgentEvent::Done { usage, cost_usd, .. } => {
+                            total_usage = total_usage + usage;
+                            total_cost += cost_usd;
+                        }
+                        AgentEvent::Error { .. } => {}
+                        other => {
+                            if tx.send(other).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let outcome = match run_task.await {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                let _ = tx
+                    .send(AgentEvent::Error {
+                        message: format!("orchestration failed: {e}"),
+                    })
+                    .await;
+                return;
+            }
         };
         match outcome {
             Ok(result) => {
@@ -1565,6 +1611,13 @@ fn spawn_orchestrated_turn(
                     result.workers.len()
                 );
                 let _ = tx.send(AgentEvent::Token { text: summary }).await;
+                let _ = tx
+                    .send(AgentEvent::Done {
+                        usage: total_usage,
+                        cost_usd: total_cost,
+                        plan: None,
+                    })
+                    .await;
             }
             Err(e) => {
                 let _ = tx
@@ -3368,6 +3421,42 @@ async fn run_tui(
         }};
     }
 
+    // The model an orchestrated run (Complex turn, plan run, `/plan` decompose)
+    // uses: pinned, else the [[routing]] model for the Complex tier, else the
+    // agent's current model (so `/model` reaches orchestrated runs).
+    macro_rules! complex_model {
+        () => {{
+            match &routing {
+                Some(r) => {
+                    turn_model(
+                        &r.eff,
+                        Tier::Complex,
+                        pinned_model.as_ref(),
+                        &model_id,
+                        &|m| r.dispatch.has_provider_for(m),
+                    )
+                    .model
+                }
+                None => applied_model.clone(),
+            }
+        }};
+    }
+    // Drain `/budget` and `/permit`: apply them to the agent here; the caller
+    // mirrors the returned overrides onto an orchestrated run's config clone.
+    macro_rules! drain_governance {
+        () => {{
+            let pending_gov = app.take_pending_governance();
+            if pending_gov.budget_usd.is_some() {
+                agent.set_budget_limit(pending_gov.budget_usd).await;
+            }
+            if !pending_gov.permits.is_empty() {
+                // Fire-and-forget: never wait on the actor from the UI loop.
+                agent.approve_tools(pending_gov.permits.clone()).await;
+            }
+            pending_gov
+        }};
+    }
+
     // Load saved sessions into the session-switcher overlay.
     if let Some(store) = open_session_store().await {
         if let Ok(sessions) = store.list_sessions().await {
@@ -3578,14 +3667,7 @@ async fn run_tui(
                                 // override fires exactly once. The orchestrated branch picks up
                                 // changes through `base_config_clone` below; the Simple/Medium
                                 // branches go through the AgentHandle, which has its own setters.
-                                let pending_gov = app.take_pending_governance();
-                                if pending_gov.budget_usd.is_some() {
-                                    agent.set_budget_limit(pending_gov.budget_usd).await;
-                                }
-                                if !pending_gov.permits.is_empty() {
-                                    // Fire-and-forget: never wait on the actor from the UI loop.
-                                    agent.approve_tools(pending_gov.permits.clone()).await;
-                                }
+                                let pending_gov = drain_governance!();
 
                                 // Pick this turn's model: pinned, else the [[routing]] model for the
                                 // tier, else the session default. Simple/medium turns run on the
@@ -3628,6 +3710,9 @@ async fn run_tui(
                                 let mut base_config_clone = base_config.clone();
                                 if let Some(turn) = &turn_model_choice {
                                     base_config_clone.model = turn.model.clone();
+                                }
+                                if matches!(tier, ComplexityTier::Complex) {
+                                    base_config_clone.model = complex_model!();
                                 }
                                 // Mirror the per-run gov onto the orchestrated path's clone too —
                                 // spawn_orchestrated_turn builds a disposable Orchestrator from this
@@ -3713,23 +3798,19 @@ async fn run_tui(
                         // `/plan <prompt>`: decompose in the background. Drained after
                         // every key event, so the overlay's keys act at once.
                         if let Some(plan_prompt) = app.take_pending_plan_prompt() {
+                            // The previous turn's task may outlive its `Done`.
+                            if last_turn_task.as_ref().is_some_and(|t| !t.is_finished()) {
+                                app.refuse_plan();
+                            } else {
                             // /plan decomposes with the model a Complex turn would use.
                             let mut plan_config = base_config.clone();
-                            if let Some(r) = &routing {
-                                plan_config.model = turn_model(
-                                    &r.eff,
-                                    Tier::Complex,
-                                    pinned_model.as_ref(),
-                                    &model_id,
-                                    &|m| r.dispatch.has_provider_for(m),
-                                )
-                                .model;
-                            }
+                            plan_config.model = complex_model!();
                             let working_dir = app.working_dir().to_path_buf();
                             let id = next_planning_id;
                             next_planning_id += 1;
                             planning_id = Some(id);
                             let tx = plan_tx.clone();
+                            let watcher_tx = tx.clone();
                             let task = tokio::spawn(async move {
                                 let result = dispatch_plan_decompose(plan_config, working_dir, &plan_prompt)
                                     .await
@@ -3739,6 +3820,17 @@ async fn run_tui(
                             });
                             // Esc cancels planning through the usual cancel path.
                             current_task_abort = Some(task.abort_handle());
+                            // A task that ends without sending (a panic) must not
+                            // leave the spinner running. An aborted one carries a
+                            // stale id, so its message is dropped.
+                            tokio::spawn(async move {
+                                if task.await.is_err() {
+                                    let _ = watcher_tx
+                                        .send((id, String::new(), Err("planning stopped unexpectedly".to_owned())))
+                                        .await;
+                                }
+                            });
+                            }
                         }
 
                         // Run confirmed on the plan overlay: run the plan shown, with
@@ -3747,29 +3839,16 @@ async fn run_tui(
                             if let Some((new_model, model)) = deferred_model.take() {
                                 apply_model_switch!(new_model, model);
                             }
-                            let turn_model_choice = routing.as_ref().map(|r| {
-                                turn_model(
-                                    &r.eff,
-                                    Tier::Complex,
-                                    pinned_model.as_ref(),
-                                    &model_id,
-                                    &|m| r.dispatch.has_provider_for(m),
-                                )
-                            });
-                            current_turn_model = turn_model_choice
-                                .as_ref()
-                                .map_or_else(|| shown_model.clone(), |t| t.model.to_string());
+                            let complex = complex_model!();
+                            current_turn_model = complex.to_string();
                             let mut run_config = base_config.clone();
-                            if let Some(turn) = &turn_model_choice {
-                                run_config.model = turn.model.clone();
-                                if turn.model.as_str() != shown_model {
-                                    shown_model = turn.model.to_string();
-                                    app.status_mut().model = shown_model.clone();
-                                    app.status_mut().context_limit =
-                                        model_context_limit(turn.model.as_str());
-                                }
+                            run_config.model = complex.clone();
+                            if complex.as_str() != shown_model {
+                                shown_model = complex.to_string();
+                                app.status_mut().model = shown_model.clone();
+                                app.status_mut().context_limit = model_context_limit(complex.as_str());
                             }
-                            let pending_gov = app.take_pending_governance();
+                            let pending_gov = drain_governance!();
                             pending_gov.clone().apply_to_budget(&mut run_config.budget_limit);
                             pending_gov.apply_to_policy(&mut run_config.approval_policy);
                             // The classifier didn't pick this tier: it records nothing.

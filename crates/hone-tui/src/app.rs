@@ -176,6 +176,8 @@ pub struct App {
     pub(crate) menu_opened_at: Option<Instant>,
     /// Time of the previous keystroke (see [`MENU_KEY_GUARD`]).
     pub(crate) last_key_at: Option<Instant>,
+    /// When the plan-preview overlay last opened (see [`MENU_KEY_GUARD`]).
+    pub(crate) plan_preview_opened_at: Option<Instant>,
 
     /// Wall-clock start of the current agent turn; used to ring the bell when a
     /// turn completes after more than 10 seconds.
@@ -300,6 +302,7 @@ impl App {
             step_tx: None,
             menu_opened_at: None,
             last_key_at: None,
+            plan_preview_opened_at: None,
             turn_start: None,
             fallback_notices: std::collections::HashSet::new(),
             sessions_open: false,
@@ -356,9 +359,9 @@ impl App {
         &self.input
     }
 
-    /// Replace the input buffer's contents and reset the cursor to the end.
-    /// Used by `/plan` Edit/Run to put the planned prompt back into the input
-    /// bar (Edit) or stage it for `submit_input` (Run).
+    /// Replace the input buffer's contents and put the cursor at the end
+    /// (a byte offset). Used by `/plan` Edit to put the planned prompt back
+    /// into the input bar.
     pub fn set_input_buffer(&mut self, text: impl Into<String>) {
         let text = text.into();
         self.input.buffer = text;
@@ -694,6 +697,23 @@ impl App {
             menu_ok = is_menu_key
                 && (key.code == KeyCode::Esc
                     || (settled(self.menu_opened_at) && settled(previous)));
+        }
+        // Plan overlay: its action keys count only once settled, like the
+        // approval menu's; Esc cancels at once. A dropped key reaches nothing.
+        if self.plan_preview_open
+            && !menu_ok
+            && !self.sessions_open
+            && matches!(
+                key.code,
+                KeyCode::Enter | KeyCode::Char('r' | 'e' | 'c')
+            )
+        {
+            let settled = |t: Option<Instant>| {
+                t.is_none_or(|t| now.saturating_duration_since(t) >= MENU_KEY_GUARD)
+            };
+            if !(settled(self.plan_preview_opened_at) && settled(previous)) {
+                return;
+            }
         }
         self.route_key(key, menu_ok);
     }
@@ -1330,6 +1350,7 @@ impl App {
     pub fn set_plan_preview(&mut self, state: crate::plan_preview::PlanPreviewState) {
         self.plan_preview = Some(state);
         self.plan_preview_open = true;
+        self.plan_preview_opened_at = Some(Instant::now());
         self.state = AppState::Idle;
         self.turn_start = None;
     }
@@ -1342,6 +1363,14 @@ impl App {
     /// Drain the plan confirmed with Run (prompt and full plan), once.
     pub fn take_pending_plan_run(&mut self) -> Option<crate::plan_preview::PlanPreviewState> {
         self.pending_plan_run.take()
+    }
+
+    /// Refuse `/plan` because the previous turn's task is still finishing.
+    pub fn refuse_plan(&mut self) {
+        self.push_error("/plan: the previous turn is still finishing; try again when it's done");
+        self.state = AppState::Idle;
+        self.turn_start = None;
+        self.pending_plan_prompt = None;
     }
 
     /// Report a failed `/plan` decompose: push the error and go back to Idle.
@@ -1392,6 +1421,15 @@ impl App {
     /// * Any other key — no-op.
     pub fn handle_key_plan_preview(&mut self, key: crossterm::event::KeyEvent) {
         use crossterm::event::KeyCode;
+        // Ctrl+R, Alt+Enter and the like are not the overlay's keys.
+        if !key.modifiers.is_empty()
+            && matches!(
+                key.code,
+                KeyCode::Enter | KeyCode::Char('r' | 'e' | 'c')
+            )
+        {
+            return;
+        }
         match key.code {
             KeyCode::Char('r') | KeyCode::Enter => {
                 self.plan_preview_open = false;
@@ -1400,6 +1438,7 @@ impl App {
                         DisplayRole::User,
                         preview.prompt.clone(),
                     ));
+                    self.history.push(&preview.prompt);
                     self.begin_turn("default".to_string());
                     self.pending_plan_run = Some(preview);
                 }
@@ -1742,6 +1781,10 @@ impl App {
     /// counts as a keystroke for the approval-menu guard.
     pub fn handle_paste_at(&mut self, text: &str, now: Instant) {
         self.last_key_at = Some(now);
+        // Text pasted while the plan overlay is open must not reach the input.
+        if self.plan_preview_open {
+            return;
+        }
         for c in text.chars() {
             self.input.insert_char(c);
         }
