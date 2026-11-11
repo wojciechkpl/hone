@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W26.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W32.
 
 ## Problem
 
@@ -72,7 +72,7 @@ flowchart LR
 
 | Row | Behaviour |
 |---|---|
-| W10 | **The run uses the agent's current approval policy and mode.** Inside the spawned task, before building the orchestrator, the config takes `agent.approval_policy().await` and `agent.mode().await` (on `None`, the config keeps its own mode). So "always" answers given earlier in the session, earlier `/permit`s and `/mode` changes reach the workers. Done in the task, not in the UI loop (never wait on the actor from the UI loop). |
+| W10 | **The run uses the agent's current approval policy and mode.** Inside the spawned task, before building the orchestrator, the config takes `agent.approval_policy().await` and `agent.mode().await` (since W19/W32: one `run_settings()` read, and a stopped agent is an error). So "always" answers given earlier in the session, earlier `/permit`s and `/mode` changes reach the workers. Done in the task, not in the UI loop (never wait on the actor from the UI loop). |
 | W11 | **No per-worker timeout in the TUI.** `spawn_orchestrated_turn` builds the orchestrator with `without_worker_timeout()`; Esc stops the run. `hone --orchestrate` and the web server keep the 300 s default. |
 | W12 | **A worker's tool calls reach the TUI.** `ToolCallStart`, `ToolCallPaused`, `ApprovalRequired` and `ToolCallEnd` from a worker are forwarded to the TUI channel; a `StepAction` sent on the session's step channel answers a worker's pause; the run still ends with exactly one `Done` (G14 of the plan-gate spec). |
 
@@ -121,6 +121,17 @@ keeps building and testing after Esc. The TUI's post-turn test run
 | Row | Behaviour |
 |---|---|
 | W26 | **A worker for an agent name not in the registry gets read-only tools**: `read_only_registry` of what it would otherwise get (the session's tools, after W18's persona narrowing and W5's mode), with a `tracing::warn!` naming the agent. It still runs, with the lead's system prompt as now. An agent that is in the registry with an empty or missing `tools:` list still gets every session tool. The planner's own fallback plan (`single_subtask_plan`) uses the first registered agent, so it is unaffected unless the registry is empty. (Review N3: a typo such as `rust_expert` gave a worker every tool.) |
+
+### Review round 2 (W27–W32)
+
+| Row | Behaviour |
+|---|---|
+| W27 | **The cancel drain answers what it drops.** When <kbd>Esc</kbd> or <kbd>x</kbd> cancels a turn, the TUI loop still drops queued events so no menu opens for the cancelled run, but each `ToolCallPaused` it drops is answered with `StepAction::Deny("turn cancelled")` on the step channel, so whoever holds the step lock (e.g. a post-turn fix run, which isn't the cancelled task) is released instead of waiting forever. Queued `Done` events still update the session's cost and token counts. (Review 2 S1: a dropped prompt could wedge the session.) |
+| W28 | **An "always" at a policy `ask` prompt also covers the risky-tool pause.** When the permission gate clears an `ask` rule only because of a session "always" (the agent's own or shared, W13), the approval-policy pause is skipped for that call, as it is when the user answers the policy prompt within the same call. With `AlwaysAsk` (`--step`) the pause still asks. (Review 2 S2: under `AskRisky`, the TUI default, other workers were still asked.) |
+| W29 | **"Always" is recorded before the step channel is released.** The answering agent records the tool name or policy entries in its `SessionApprovals` while it still holds the step lock, so a worker waiting for the lock always sees it (W16 holds on the multi-thread runtime). Under `AlwaysAsk` nothing is recorded for the approval pause. `SessionApprovals`' recording methods are `pub(crate)`: code outside `hone-core` can't grant an "always". (Review 2 S3, nits 2 and 3: a queued worker sometimes asked again.) |
+| W30 | **Built-in agent files list real tool names** (`read_file`, `write_file`, `edit_file`), so a connected MCP tool named `read`, `write` or `edit` never replaces a built-in persona's file tools. The aliases (W3, W20) remain for user agent files. (Review 2 S4.) |
+| W31 | **<kbd>x</kbd> aborts first, and needs an empty input box.** <kbd>x</kbd> acts only when the input box is empty (like <kbd>a</kbd> and <kbd>Enter</kbd>). The TUI loop aborts the current turn first, then answers the paused call with `Deny`, so a paused call from another task is answered too and a denied worker can't start another call before the abort. (Review 2 nit 1; amends W21.) |
+| W32 | **One snapshot of the run settings.** `AgentHandle::run_settings() -> Option<RunSettings>` returns the approval policy, mode and session approvals in one actor round trip; `spawn_orchestrated_turn` uses it, and `None` is W19's error. No `AskRisky` fallback is left. (Review 2 nit 4; amends W10, W17, W19.) |
 
 ## What each entry point gets
 
