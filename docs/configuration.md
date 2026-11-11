@@ -680,11 +680,12 @@ so you can copy or symlink an existing file.
 | `args` | `[]` | Arguments |
 | `env` | `{}` | Extra environment; values may reference `${VAR}` |
 | `disabled` | `false` | Skip this server at startup |
-| `timeout_ms` | `10000` | Per-request timeout |
+| `timeout_ms` | `10000` | Per-request timeout: the handshake at startup and every call, tool calls included, give up after it. `0` means no timeout |
 
 The project file (`<cwd>/.hone/mcp.json`) wins over `~/.config/hone/mcp.json` when server
-names collide. A missing or malformed file, or a server that fails to start, is logged and
-skipped. Native tools win over MCP tools with the same name. Permission rules don't see
+names collide. A missing or malformed file, or a server that fails to start or doesn't
+finish its handshake within `timeout_ms`, is logged and skipped. A tool call that times
+out returns an error to the model; the server stays connected for the next call. Native tools win over MCP tools with the same name. Permission rules don't see
 MCP tool calls.
 
 ## HONE.md

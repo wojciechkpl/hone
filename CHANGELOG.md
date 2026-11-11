@@ -137,13 +137,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and (until "shell commands stop when their call ends" below) <kbd>Esc</kbd> didn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: MCP requests time out
+
+- **Before:** `timeout_ms` in `mcp.json` (documented as the per-request timeout, default 10 000 ms) was never applied, so a request to a stdio MCP server that didn't answer waited forever. Servers connect one after another at startup, so a server that hung during its handshake kept hone from starting. A tool call to a hung server waited until <kbd>Esc</kbd> (TUI) or <kbd>Ctrl</kbd>+<kbd>C</kbd>, and a `honed` worker waited indefinitely, with every other call to that server queued behind it. A line on a server's stdout that wasn't JSON (log output) failed the call.
+- **Now:**
+  - Every request (the handshake, listing tools, each tool call) gives up after the server's `timeout_ms` with a timeout error. The model sees the error and the server stays connected; its late answer is skipped, so the next call gets its own result.
+  - A server that doesn't finish its handshake in time is skipped at startup and its process is killed; the other servers still connect.
+  - Lines that aren't JSON are skipped.
+  - `timeout_ms: 0` means no timeout.
+- **Upgrading:** an MCP tool that legitimately runs longer than 10 s now times out; raise that server's `timeout_ms`.
+- Contract: `docs/plans/mcp-timeout-spec.md`.
+
 ### Fixed: shell commands stop when their call ends
 
 - **Before:** a command run by the `shell` tool kept running when its call ended early: <kbd>Esc</kbd>, a worker's timeout, a stopped orchestrated run, or the tool's own time limit (30 s by default, which reported a timeout while the command carried on). `cargo test` went on building and testing in the background, and a dev server kept its port. The test run that follows a TUI turn was the same. Commands also inherited hone's stdin, so in the TUI one that read input (`cat`, a password prompt) waited on the terminal until it timed out.
 - **Now** (unix):
   - Each command runs in its own process group with stdin closed. When its call ends early, the whole group is killed: the shell, what it started, and what those started. A command that finishes normally is left alone.
   - A turn no longer waits for a running tool call once it's cancelled: <kbd>Esc</kbd> during the main agent's `shell` call ends the turn at once and kills the command (before, the agent finished the call first; a worker or fix turn stopped likewise only between calls).
-  - The MCP client matches each response to its request by id. Before, it took the next line as the answer, so a call cut short (now on <kbd>Esc</kbd>, before only on a worker timeout or a stopped run) left that server answering one call behind for the rest of the session. A call cut short is recorded in the audit log, since it may have partly run. A server's own requests (`ping`, `roots/list`, …) get an answer instead of being taken as the reply, and an error the server returns with `id: null` (a request it couldn't parse) ends the call. MCP calls still have no timeout: `timeout_ms` in an MCP server's config isn't applied.
+  - The MCP client matches each response to its request by id. Before, it took the next line as the answer, so a call cut short (now on <kbd>Esc</kbd>, before only on a worker timeout or a stopped run) left that server answering one call behind for the rest of the session. A call cut short is recorded in the audit log, since it may have partly run. A server's own requests (`ping`, `roots/list`, …) get an answer instead of being taken as the reply, and an error the server returns with `id: null` (a request it couldn't parse) ends the call. (MCP calls had no timeout then; see "MCP requests time out".)
   - The test run after a TUI turn works the same way. It starts after the turn ends, so <kbd>Esc</kbd> with an empty input box now stops it (and any fix turns it started) while the TUI is idle; with text in the box, <kbd>Esc</kbd> still clears it.
   - hone kills its running commands when it exits: the TUI on quit, <kbd>Ctrl</kbd>+<kbd>C</kbd>, SIGINT, SIGTERM or SIGHUP; a one-shot run (`hone "prompt"`, `--plan`, `--orchestrate`, `--ensemble`, `--recipe`) on SIGINT, SIGTERM or SIGHUP, after which it dies by that signal as before, so a calling shell script still stops on <kbd>Ctrl</kbd>+<kbd>C</kbd>; `honed` when it shuts down, now also on SIGHUP. A signal that was ignored when hone or `honed` started stays ignored, so `nohup` still keeps a run going after you log out.
   - <kbd>Esc</kbd> stopping the post-turn work also cancels a fix turn that's already running, and an `@agent` persona's prompt and tools are restored even when its turn is stopped.
