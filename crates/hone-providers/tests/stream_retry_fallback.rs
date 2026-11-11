@@ -587,7 +587,10 @@ async fn test_r12_chain_control_an_interrupted_response_is_still_handed_over() {
 
     let events = events_of(&chain(vec![a, b]), request()).await;
 
-    assert_eq!(events, vec![tok("b"), ProviderEvent::Done]);
+    assert_eq!(
+        events,
+        vec![mf("a", "b", INTERRUPTED), tok("b"), ProviderEvent::Done]
+    );
     assert_eq!(count(&b_calls), 1);
 }
 
@@ -667,7 +670,11 @@ async fn test_e6_chain_hands_over_a_retryable_failure_of_any_kind() {
 
         let events = events_of(&chain(vec![a, b]), request()).await;
 
-        assert_eq!(events, vec![tok("b"), ProviderEvent::Done], "{kind:?}");
+        assert_eq!(
+            events,
+            vec![mf("a", "b", "failed"), tok("b"), ProviderEvent::Done],
+            "{kind:?}"
+        );
         assert_eq!(count(&b_calls), 1, "{kind:?}");
     }
 }
@@ -680,7 +687,10 @@ async fn test_e6_an_unclassified_error_that_looks_like_an_idle_timeout_is_handed
 
     let events = events_of(&chain(vec![a, b]), request()).await;
 
-    assert_eq!(events, vec![tok("b"), ProviderEvent::Done]);
+    assert_eq!(
+        events,
+        vec![mf("a", "b", TIMED_OUT), tok("b"), ProviderEvent::Done]
+    );
     assert_eq!(count(&b_calls), 1);
 }
 
@@ -803,7 +813,16 @@ async fn test_g5_chain_moves_on_when_a_member_got_no_response() {
 
     let events = events_of(&chain(vec![a, b]), request()).await;
 
-    assert_eq!(events, vec![tok("b"), ProviderEvent::Done]);
+    let reason = ProviderError::Http {
+        provider: "a".to_owned(),
+        status: 0,
+        body: "error sending request for url (http://x/)".to_owned(),
+    }
+    .to_string();
+    assert_eq!(
+        events,
+        vec![mf("a", "b", &reason), tok("b"), ProviderEvent::Done]
+    );
     assert_eq!((count(&a_calls), count(&b_calls)), (1, 1));
 }
 

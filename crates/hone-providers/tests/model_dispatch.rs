@@ -611,7 +611,14 @@ async fn test_g4_a_request_for_another_model_uses_it_as_the_primary() {
 
     let ev = events(&d, req("ollama:routed")).await;
 
-    assert_eq!(ev, vec![tok("o"), done()]);
+    assert_eq!(
+        ev,
+        vec![
+            mf("ollama:routed", "openai:backup", "down"),
+            tok("o"),
+            done()
+        ]
+    );
     assert_eq!(s.ollama.models_seen(), vec!["ollama:routed".to_owned()]);
     assert_eq!(s.openai.models_seen(), vec!["openai:backup".to_owned()]);
 }
