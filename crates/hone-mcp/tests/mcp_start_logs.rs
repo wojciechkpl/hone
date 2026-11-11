@@ -144,6 +144,7 @@ async fn test_p8_a_healthy_servers_connected_line_should_not_wait_for_the_hung_o
     if let Ok(pid) = std::fs::read_to_string(&pid_file) {
         let _ = std::process::Command::new("kill")
             .args(["-9", pid.trim()])
+            .stderr(std::process::Stdio::null())
             .status();
     }
     manager.shutdown().await;

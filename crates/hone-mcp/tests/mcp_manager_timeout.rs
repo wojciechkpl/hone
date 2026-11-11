@@ -104,6 +104,7 @@ async fn test_t5_hung_initialize_should_be_skipped_and_its_process_killed() {
     if !gone {
         let _ = std::process::Command::new("kill")
             .args(["-9", pid.trim()])
+            .stderr(std::process::Stdio::null())
             .status();
     }
     assert!(

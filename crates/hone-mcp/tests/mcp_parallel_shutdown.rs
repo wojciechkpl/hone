@@ -54,6 +54,7 @@ impl Drop for Cleanup {
                     if let Ok(pid) = std::fs::read_to_string(e.path()) {
                         let _ = std::process::Command::new("kill")
                             .args(["-9", pid.trim()])
+                            .stderr(std::process::Stdio::null())
                             .status();
                     }
                 }

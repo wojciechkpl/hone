@@ -133,6 +133,7 @@ async fn test_p2_a_mix_of_servers_should_leave_only_the_healthy_one_live_and_kil
     if !gone {
         let _ = std::process::Command::new("kill")
             .args(["-9", pid.trim()])
+            .stderr(std::process::Stdio::null())
             .status();
     }
     assert!(gone, "the timed-out server must be killed");

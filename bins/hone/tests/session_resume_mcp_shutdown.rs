@@ -46,7 +46,10 @@ fn write(path: &Path, body: &str) {
 
 fn kill_server(pid_file: &Path) {
     if let Ok(pid) = std::fs::read_to_string(pid_file) {
-        let _ = Command::new("kill").args(["-9", pid.trim()]).status();
+        let _ = Command::new("kill")
+            .args(["-9", pid.trim()])
+            .stderr(std::process::Stdio::null())
+            .status();
     }
 }
 

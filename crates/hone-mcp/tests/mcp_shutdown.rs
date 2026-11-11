@@ -117,6 +117,7 @@ async fn test_t9_shutdown_should_still_kill_a_server_that_ignores_end_of_input()
     if !gone {
         let _ = std::process::Command::new("kill")
             .args(["-9", &pid])
+            .stderr(std::process::Stdio::null())
             .status();
     }
     assert!(gone, "the stubborn server must be killed by the fallback");
