@@ -137,19 +137,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
-### Fixed: `/plan` Run, Edit and planning
+### Fixed: `/plan` Run, Edit and planning; complex runs end once
 
 - **Before:**
   - The plan overlay's keys did nothing until the next Enter with text typed. That Enter also sent the typed text as a turn.
   - **Edit** didn't put the prompt back.
   - **Run** sent the prompt through the normal path again, so the complexity classifier chose the tier anew. A simple verdict ran one agent and no workers; a complex one asked for a new plan, paying for it again, and possibly getting a different one.
   - While the lead model planned, the TUI didn't redraw and ignored <kbd>Esc</kbd> and <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+  - A complex prompt's run sent one `Done` per lead call and per worker, so the TUI went idle at the first one while the rest kept running: the spinner stopped and <kbd>Esc</kbd> no longer stopped the run.
 - **Now:**
-  - **Run** (<kbd>r</kbd>/<kbd>Enter</kbd>) starts at once and runs the plan shown, without planning again (new `Orchestrator::run_plan`). It uses the settings of a complex prompt: the `[[routing]]` complex model or your `/model`, and any `/budget` or `/permit`.
+  - **Run** (<kbd>r</kbd>/<kbd>Enter</kbd>) starts at once and runs the plan shown, without planning again (new `Orchestrator::run_plan`). It uses the model a complex prompt would: your `/model`, or else the `[[routing]]` complex model.
   - **Edit** (<kbd>e</kbd>) puts the prompt in the input bar, without `/plan`, with the cursor at the end.
-  - **Planning** runs in the background with the spinner showing; <kbd>Esc</kbd> stops it. `/plan` isn't accepted while a turn is running.
-- **Also fixed:** text put in the input bar by the TUI (Edit) left the cursor short of the end when it had non-ASCII characters, and the next keystroke could crash the TUI.
-- **Not yet:** orchestrated workers, including those of a `/plan` run, have no tools, so they can't read or edit files; they answer in text. The web UI's Run still plans again.
+  - **Cancel** (<kbd>c</kbd>/<kbd>Esc</kbd>) drops the plan.
+  - **No accidental answers:** <kbd>r</kbd>, <kbd>e</kbd>, <kbd>c</kbd> and <kbd>Enter</kbd> count only after a 400 ms pause, as in the approval menu, so text you are typing when the overlay opens can't start the workers. With a modifier (<kbd>Ctrl</kbd>+<kbd>R</kbd>, <kbd>Shift</kbd>+<kbd>Enter</kbd>) they do nothing, and a paste is dropped.
+  - **Planning** runs in the background with the spinner showing; <kbd>Esc</kbd> stops it. `/plan` isn't accepted while a turn is running or still finishing.
+  - **Complex runs** (a complex prompt or a `/plan` Run) end with one `Done`, carrying the whole run's usage and cost, so the TUI stays busy, and <kbd>Esc</kbd> stops the run, until it ends. A failed worker shows in the worker list, not as an error that ends the turn.
+  - **`/model` reaches complex runs** when `[[routing]]` is off. They used the session's starting model.
+- **`/budget` and `/permit` with orchestrated runs** (unchanged, now documented): `/budget` caps only the final merge call, not the workers, and `/permit` changes nothing for them, since their lead and workers have no tools. A run uses both up like any turn, and passes them to the agent for later turns.
+- **Latent bug fixed:** `set_input_buffer` put the cursor short of the end of non-ASCII text, where the next keystroke could crash the TUI. Edit, now that it fills the input bar, would have hit it.
+- **Not yet:**
+  - Orchestrated workers, including those of a `/plan` run, have no tools, so they can't read or edit files; they answer in text.
+  - `/budget` doesn't cap a plan's workers.
+  - The web UI's Run still plans again.
+  - In vim mode <kbd>Esc</kbd> doesn't stop planning or a turn.
 - Contract: `docs/plans/plan-gate-spec.md`.
 
 ### Fallback notice: Hone says when a fallback model took over

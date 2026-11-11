@@ -1,6 +1,6 @@
 # Orchestration GUI Flow Architecture
 
-This document visualizes the end-to-end `/plan` command flow across Hone's TUI and web UI surfaces. Both surfaces reuse the same backend `/orchestrate?dry_run=true` endpoint; the difference lies in how they dispatch the decomposition, render the preview, and handle user actions.
+This document visualizes the end-to-end `/plan` command flow across Hone's TUI and web UI surfaces. The web UI calls the daemon's `/orchestrate?dry_run=true` endpoint; the TUI plans in-process. They differ in how they dispatch the decomposition, render the preview, and handle user actions.
 
 The TUI path runs the orchestrator in-process (`Orchestrator::decompose`), while the web UI streams SSE events from the daemon. Both paths surface the same state shape: goal, cost estimates, and subtask list.
 
@@ -127,6 +127,7 @@ sequenceDiagram
 Both surfaces feed per-run governance flags into the turn dispatch:
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
 sequenceDiagram
     actor User
     participant CLI as hone (TUI)
@@ -149,16 +150,17 @@ sequenceDiagram
     Note over CLI: Main loop drains pending_governance before dispatching
     
     CLI->>App: take_pending_governance()
-    App->>App: agent.set_budget_limit(Some(0.50))
-    App->>App: agent.set_approval_policy(...).approve_always("shell")
+    CLI->>CLI: agent.set_budget_limit(Some(0.50)), agent.approve_tools(["shell"])
+    CLI->>CLI: same budget and policy on the orchestrated run's config
     
     Note over App: Governance drained — next turn has defaults
+    Note over CLI: The orchestrator's lead and workers have no tools,<br/>so /permit changes nothing for the run; /budget caps<br/>only its merge call (workers use worker_budget)
 ```
 
 **Key types and functions:**
 - `hone_tui/src/governance.rs:PendingGovernance` (line 6) — state struct
-- `bins/hone/src/main.rs:2980` — drain point in main loop
-- `hone_core/src/agent.rs` (AgentHandle) — `set_budget_limit`, `set_approval_policy` setters
+- `bins/hone/src/main.rs:run_tui` — drain point in the main loop, at turn start (also for a `/plan` Run)
+- `hone_core/src/agent.rs` (AgentHandle) — `set_budget_limit`, `approve_tools` setters
 - `hone_proto::ToolApprovalPolicy::approve_always` — per-tool allowlist API
 
 ---
