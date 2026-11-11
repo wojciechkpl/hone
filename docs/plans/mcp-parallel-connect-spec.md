@@ -1,6 +1,6 @@
 # MCP servers connect in parallel — spec
 
-Branch `fix/mcp-parallel-connect`. Contract for the TDD rounds: rows P1–P9.
+Branch `fix/mcp-parallel-connect`. Contract for the TDD rounds: rows P1–P11.
 
 ## Problem
 
@@ -56,6 +56,15 @@ gantt
 | P7 | **A failed session resume stops MCP servers.** `hone session resume <name>` that ends with "Session '…' not found" or "Could not load session" (exit code 1) shuts its MCP servers down first, like every other exit path; a server that ignores its input closing is not left running after hone exits. (Review S1, reproduced: `std::process::exit(1)` skipped `mcp_manager.shutdown()` and destructors. Older than this branch.) |
 | P8 | **Each server's result is logged when it finishes.** The `MCP server connected` / `MCP server failed to start, skipping` line for a server is logged as soon as that server's start ends, not when the slowest server's does (a healthy server's line no longer waits out a hung server's handshake timeout). Startup still returns only when every server has finished. |
 | P9 | **The kill after an exhausted budget doesn't wait forever.** When a server's 5 s shutdown budget runs out, hone sends the kill and waits at most about 1 s more for the process to go away, then returns. A process that can't die promptly (stuck in the kernel, e.g. on a hung network mount) no longer holds hone's exit. Not testable without such a process; the P5 test covers the kill path. |
+
+### Review round 2 (P10–P11)
+
+| Row | Behaviour |
+|---|---|
+| P10 | **No hone exit leaves an MCP server running.** Every way `hone` ends after its MCP servers started stops them, not only the normal exit and P7's: an argument error found after startup (an unknown `--approve` id and a malformed project `permissions.toml`, both exit code 2; `--ensemble 11`, exit code 1), and SIGINT/SIGTERM/SIGHUP to a one-shot run (hone still dies *by* the signal, PR #90 W37). `honed` stops them on shutdown. Mechanism: each server runs in its own process group registered with hone's running-process registry (`hone_tools`, the one shell commands use), so every path that kills running commands kills MCP servers too, and each `std::process::exit` after startup goes through it first. (Review round 2 S1, reproduced for all four; older than this branch.) |
+| P11 | **Killing a server kills what it started.** When hone kills an MCP server (failed or timed-out start, exhausted shutdown budget, drop, P10), it kills the server's whole process group, so a server started through a launcher (`npx -y …`, `uvx`, `sh -c …`) doesn't leave its real process running. After hone lets go of a server, nothing in its group keeps running. Unix only, like PR #90's process groups. |
+
+Since a stubborn server gets its 5 s shutdown budget, a failed `session resume` (P7) with one takes about 5 s to exit; that is expected.
 
 ## Out of scope
 
