@@ -622,7 +622,8 @@ fn two_task_plan() -> TaskPlan {
     };
     TaskPlan {
         goal: "ship the shown plan".to_owned(),
-        subtasks: vec![task("a", vec![]), task("b", vec!["a"])],
+        // The dependent is listed first: only dependency order can put "a" before "b".
+        subtasks: vec![task("b", vec!["a"]), task("a", vec![])],
     }
 }
 

@@ -4600,6 +4600,101 @@ mod tests {
         }
     }
 
+    /// The first call fails (HTTP 400); every later call answers "ok".
+    struct FirstCallFails {
+        n: std::sync::Mutex<usize>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for FirstCallFails {
+        fn id(&self) -> &str {
+            "first-call-fails"
+        }
+        fn display_name(&self) -> &str {
+            "First call fails"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![]
+        }
+        async fn complete(
+            &self,
+            _req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let first = {
+                let mut n = self.n.lock().unwrap();
+                *n += 1;
+                *n == 1
+            };
+            if first {
+                return Err(hone_providers::ProviderError::Http {
+                    provider: "first-call-fails".to_owned(),
+                    status: 400,
+                    body: "bad request".to_owned(),
+                });
+            }
+            Ok(Box::pin(futures::stream::iter(vec![
+                hone_proto::ProviderEvent::Token {
+                    text: "ok".to_owned(),
+                },
+                hone_proto::ProviderEvent::Done,
+            ])))
+        }
+        fn estimate_tokens(&self, _: &[hone_proto::Message]) -> u32 {
+            1
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    #[tokio::test]
+    async fn g22_a_failed_worker_is_forwarded_and_the_run_still_ends_with_one_done() {
+        let dir = tempfile::tempdir().unwrap();
+        // With a staged plan the worker is the first provider call; it fails,
+        // the merge call succeeds.
+        let config = orch_config(
+            Arc::new(FirstCallFails {
+                n: std::sync::Mutex::new(0),
+            }),
+            dir.path(),
+        );
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_string(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = collect_events(&mut rx).await;
+
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                AgentEvent::WorkerCompleted { status, .. } if status.starts_with("failed")
+            )),
+            "the failed WorkerCompleted must be forwarded: {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| matches!(e, AgentEvent::Error { .. })),
+            "no Error: {events:?}"
+        );
+        let dones = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Done { .. }))
+            .count();
+        assert_eq!(dones, 1, "exactly one Done: {events:?}");
+        assert!(
+            matches!(events.last(), Some(AgentEvent::Done { .. })),
+            "Done is last: {events:?}"
+        );
+    }
+
     #[tokio::test]
     async fn g14_failed_orchestration_sends_exactly_one_error_and_no_done() {
         let dir = tempfile::tempdir().unwrap();
