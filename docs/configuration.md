@@ -688,7 +688,10 @@ names collide. A missing or malformed file, or a server that fails to start or d
 finish its handshake in time, is logged and skipped. Servers start in parallel, so startup
 waits only for the slowest one: a server that hangs delays it by its handshake timeout
 while the others connect. On exit, servers are stopped in parallel; each gets up to 5 s
-before it is killed. A tool call that times
+before it is killed. On unix each server runs in its own process group: when Hone kills a
+server, or exits for any reason (SIGINT, SIGTERM and SIGHUP included), the whole group
+goes, so a server started through `npx` or `sh -c` doesn't leave its real process behind.
+A tool call that times
 out returns an error to the model; the server stays connected for the next call. Native tools win over MCP tools with the same name. Permission rules don't see
 MCP tool calls.
 

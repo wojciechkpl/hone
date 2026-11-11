@@ -144,7 +144,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - All enabled servers start and handshake at once, so startup waits only for the slowest one. A hung server delays it by its handshake timeout while the others connect.
   - Which servers connect, and their tools, are unchanged. If startup is cancelled, every server it started is killed.
   - Exit stops every server at once. Each gets at most 5 s in all, that message included, before it is killed.
-  - `hone session resume` with a missing or unreadable session now stops its MCP servers before it exits. Before, a server that ignored its input closing was left running.
+  - No exit leaves an MCP server running any more (unix). Before, a server that ignored its input closing kept running in these cases, all older than this change:
+    - `hone session resume` with a missing session;
+    - an unknown `--approve` id or a malformed project `permissions.toml`;
+    - an out-of-range `--ensemble`;
+    - SIGTERM or SIGHUP sent to `hone` alone.
+  - Each server now runs in its own process group, which hone kills on every exit, the way it does for shell commands. A failed `session resume` with such a server takes about 5 s to exit, because the server gets its shutdown time first.
+  - Killing a server kills everything it started. A server launched through `npx -y …`, `uvx` or `sh -c` no longer leaves its real process running after a failed start or at exit. Before, only the launcher was killed.
 - Contract: `docs/plans/mcp-parallel-connect-spec.md`.
 
 ### Fixed: MCP requests time out
