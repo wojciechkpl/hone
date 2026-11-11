@@ -102,16 +102,31 @@ async fn test_w23_own_timeout_should_return_timeout_error_and_kill_grandchildren
 
 #[tokio::test]
 async fn test_w23_command_that_finishes_normally_should_keep_its_background_work_untouched() {
-    // A finished command is left alone: here it exits at once, and the
-    // *foreground* result is returned as before.
+    // A command that ends by itself is left alone, including work it
+    // backgrounded with its output redirected (so the call is not held open).
     let dir = tempfile::tempdir().unwrap();
+    let marker = marker_path(dir.path());
     let c = ctx(dir.path());
-    let input = ToolInput::new(json!({ "command": "echo hi" }));
+    let command = script(
+        dir.path(),
+        "bg.sh",
+        &format!(
+            "(sleep 1; touch '{}') > /dev/null 2>&1 &\n",
+            marker.display()
+        ),
+    );
 
-    let out = hone_tools::ShellTool.call(input, &c).await.unwrap();
-
-    assert_eq!(out.value["stdout"], "hi\n");
+    let out = hone_tools::ShellTool
+        .call(ToolInput::new(json!({ "command": command })), &c)
+        .await
+        .unwrap();
     assert_eq!(out.value["exit_code"], 0);
+
+    settle().await;
+    assert!(
+        marker.exists(),
+        "the finished command's background work must be left running"
+    );
 }
 
 #[tokio::test]

@@ -39,6 +39,17 @@ fn marker_script(dir: &Path, name: &str, marker: &Path) -> String {
     format!("sh {}", path.display())
 }
 
+/// The killed call ended: either an error, or a non-zero exit (killed by a
+/// signal reports no code).
+fn assert_killed(result: Result<hone_tools::ToolOutput, hone_tools::ToolError>) {
+    if let Ok(out) = result {
+        assert_ne!(
+            out.value["exit_code"], 0,
+            "a killed command did not succeed: {out:?}"
+        );
+    }
+}
+
 fn spawn_call(
     dir: &Path,
     command: String,
@@ -62,10 +73,11 @@ async fn test_w25_kill_running_commands_should_end_the_call_and_kill_grandchildr
     hone_tools::kill_running_commands();
 
     // The call ends promptly (killed, not waiting out `sleep 5`).
-    tokio::time::timeout(Duration::from_secs(2), call)
+    let result = tokio::time::timeout(Duration::from_secs(2), call)
         .await
         .expect("the call must end after kill_running_commands")
         .expect("task joins");
+    assert_killed(result);
     tokio::time::sleep(Duration::from_millis(1500)).await;
     assert!(!marker.exists(), "the grandchild survived kill-all");
 }
@@ -83,10 +95,11 @@ async fn test_w25_kill_running_commands_should_kill_every_running_command() {
     hone_tools::kill_running_commands();
 
     for call in [a, b] {
-        tokio::time::timeout(Duration::from_secs(2), call)
+        let result = tokio::time::timeout(Duration::from_secs(2), call)
             .await
             .expect("each call ends")
             .expect("task joins");
+        assert_killed(result);
     }
     tokio::time::sleep(Duration::from_millis(1500)).await;
     assert!(!m1.exists() && !m2.exists());
