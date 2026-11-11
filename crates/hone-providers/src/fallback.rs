@@ -29,20 +29,65 @@ impl FallbackChain {
 /// Longest reason shown, in characters.
 const MAX_REASON_CHARS: usize = 200;
 
-/// Make a failure message safe to show on one line: control characters become
-/// spaces, whitespace runs collapse, long text is cut with `…`.
+/// Bidi and zero-width format characters, blanked like control characters.
+fn is_invisible_format(c: char) -> bool {
+    matches!(c,
+        '\u{061C}'
+        | '\u{200B}'..='\u{200F}'
+        | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}'
+        | '\u{2066}'..='\u{2069}'
+        | '\u{FEFF}')
+}
+
+/// Remove user info and the query string from every `scheme://` URL in `s`.
+/// A URL ends at whitespace or one of `) ] > " ' ,`.
+fn redact_urls(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find("://") {
+        let body_start = i + 3;
+        out.push_str(&rest[..body_start]);
+        let after = &rest[body_start..];
+        let end = after
+            .find(|c: char| c.is_whitespace() || matches!(c, ')' | ']' | '>' | '"' | '\'' | ','))
+            .unwrap_or(after.len());
+        let url = &after[..end];
+        let url = url.find('?').map_or(url, |q| &url[..q]);
+        let authority_end = url.find('/').unwrap_or(url.len());
+        let url = match url[..authority_end].rfind('@') {
+            Some(at) => &url[at + 1..],
+            None => url,
+        };
+        out.push_str(url);
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Make a failure message safe to show on one line: control and bidi
+/// characters become spaces, whitespace runs collapse, URLs lose credentials
+/// and query strings, long text is cut with `…`.
 fn sanitize_reason(raw: &str) -> String {
     let spaced: String = raw
         .chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
+        .map(|c| {
+            if c.is_control() || is_invisible_format(c) {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect();
     let collapsed = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
-    if collapsed.is_empty() {
+    let redacted = redact_urls(&collapsed);
+    if redacted.is_empty() {
         return "unknown error".to_owned();
     }
-    match collapsed.char_indices().nth(MAX_REASON_CHARS) {
-        Some((cut, _)) => format!("{}…", &collapsed[..cut]),
-        None => collapsed,
+    match redacted.char_indices().nth(MAX_REASON_CHARS) {
+        Some((cut, _)) => format!("{}…", redacted[..cut].trim_end()),
+        None => redacted,
     }
 }
 

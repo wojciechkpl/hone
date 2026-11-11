@@ -80,6 +80,8 @@ impl ModelProvider for Pinned {
     fn runs_own_tools(&self) -> bool {
         self.inner.runs_own_tools()
     }
+    /// The pinned model's full id (not the inner provider's), so a fallback
+    /// notice names models.
     fn id(&self) -> &str {
         &self.id
     }

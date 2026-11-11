@@ -1632,6 +1632,7 @@ async fn print_orchestrate_events<O: io::Write, E: io::Write>(
                     out,
                     "\n[orchestrator] plan: {goal} ({subtask_count} subtasks)"
                 );
+                fallbacks.wrote("\n");
             }
             AgentEvent::WorkerStarted {
                 task_id,
@@ -1639,6 +1640,7 @@ async fn print_orchestrate_events<O: io::Write, E: io::Write>(
                 description,
             } => {
                 let _ = writeln!(out, "[{task_id}] starting {agent}: {description}");
+                fallbacks.wrote("\n");
             }
             AgentEvent::WorkerCompleted {
                 task_id,
@@ -1647,6 +1649,7 @@ async fn print_orchestrate_events<O: io::Write, E: io::Write>(
                 cost_usd,
             } => {
                 let _ = writeln!(out, "[{task_id}] {agent}: {status} (${cost_usd:.4})");
+                fallbacks.wrote("\n");
             }
             AgentEvent::Error { message } => {
                 let _ = writeln!(err, "\nerror: {message}");
@@ -1738,9 +1741,12 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
 
     let printer = tokio::spawn(async move {
         let mut fallbacks = FallbackPrinter::default();
+        // Tokens stop at the first `Done`; the channel is still read to its
+        // end so later candidates' fallback notices are printed.
+        let mut printing = true;
         while let Some(event) = rx.recv().await {
             match event {
-                AgentEvent::Token { text } => {
+                AgentEvent::Token { text } if printing => {
                     fallbacks.wrote(&text);
                     print!("{text}");
                     use io::Write;
@@ -1751,7 +1757,7 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
                     fallback,
                     reason,
                 } => fallbacks.event(&mut io::stderr(), &requested, &fallback, &reason),
-                AgentEvent::Done { .. } => break,
+                AgentEvent::Done { .. } => printing = false,
                 AgentEvent::Error { message } => {
                     eprintln!("\nerror: {message}");
                     break;
@@ -1925,7 +1931,7 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
             }
         }
 
-        (response, tool_calls, error, fallbacks.log.to_json())
+        (response, tool_calls, error, fallbacks.log)
     });
 
     let turn_result = agent.run_turn(prompt, tx).await;
@@ -1934,12 +1940,15 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
     // including model calls of a turn that failed or was cancelled.
     let spend = agent.session_spend().await;
 
-    let mut output = json_mode_output(&turn_result, response, tool_calls, error, spend, model_id);
-    output["fallbacks"] = if fallbacks.is_null() {
-        serde_json::json!([])
-    } else {
-        fallbacks
-    };
+    let output = json_mode_output(
+        &turn_result,
+        response,
+        tool_calls,
+        error,
+        spend,
+        model_id,
+        &fallbacks,
+    );
     println!("{}", serde_json::to_string_pretty(&output)?);
 
     if output["success"] != true {
@@ -1958,6 +1967,7 @@ fn json_mode_output(
     error: Option<String>,
     spend: (hone_proto::TokenUsage, f64),
     model_id: &str,
+    fallbacks: &FallbackLog,
 ) -> serde_json::Value {
     let (usage, cost_usd) = spend;
     serde_json::json!({
@@ -1972,6 +1982,7 @@ fn json_mode_output(
         "model": model_id,
         "success": turn.is_ok() && error.is_none(),
         "error": error,
+        "fallbacks": fallbacks.to_json(),
     })
 }
 
@@ -3167,8 +3178,17 @@ fn end_turn_fallback(event: &AgentEvent, slot: &mut Option<String>) {
 /// first-seen order.
 #[derive(Default)]
 struct FallbackLog {
-    /// (requested, fallback, first reason, number of events)
-    pairs: Vec<(String, String, String, u32)>,
+    pairs: Vec<FallbackPair>,
+}
+
+/// One (requested, fallback) pair seen in a run.
+struct FallbackPair {
+    requested: String,
+    fallback: String,
+    /// The first reason seen for the pair.
+    reason: String,
+    /// Number of `ModelFallback` events for the pair.
+    calls: u32,
 }
 
 impl FallbackLog {
@@ -3177,17 +3197,17 @@ impl FallbackLog {
         if let Some(entry) = self
             .pairs
             .iter_mut()
-            .find(|(r, f, _, _)| r == requested && f == fallback)
+            .find(|p| p.requested == requested && p.fallback == fallback)
         {
-            entry.3 += 1;
+            entry.calls += 1;
             return None;
         }
-        self.pairs.push((
-            requested.to_owned(),
-            fallback.to_owned(),
-            reason.to_owned(),
-            1,
-        ));
+        self.pairs.push(FallbackPair {
+            requested: requested.to_owned(),
+            fallback: fallback.to_owned(),
+            reason: reason.to_owned(),
+            calls: 1,
+        });
         Some(format!(
             "hone: {requested} failed ({reason}); switched to fallback {fallback}"
         ))
@@ -3196,12 +3216,12 @@ impl FallbackLog {
     fn to_json(&self) -> serde_json::Value {
         self.pairs
             .iter()
-            .map(|(requested, fallback, reason, calls)| {
+            .map(|p| {
                 serde_json::json!({
-                    "requested": requested,
-                    "fallback": fallback,
-                    "reason": reason,
-                    "calls": calls,
+                    "requested": p.requested,
+                    "fallback": p.fallback,
+                    "reason": p.reason,
+                    "calls": p.calls,
                 })
             })
             .collect()
@@ -3585,6 +3605,7 @@ async fn run_tui(
                                     ComplexityClassifier::classify(&effective_text)
                                 };
                                 current_tier = Some(tier);
+                                turn_fallback_model = None;
                                 current_turn_prompt = effective_text.chars().take(200).collect::<String>();
 
                                 // Apply per-run governance overrides set via /budget and /permit
@@ -3705,7 +3726,7 @@ async fn run_tui(
                                                 })
                                             }
                                         } else {
-                                            spawn_orchestrated_turn(base_config.clone(), effective_text, agent_tx.clone(), agent.clone())
+                                            spawn_orchestrated_turn(base_config_clone, effective_text, agent_tx.clone(), agent.clone())
                                         }
                                     }
                                 };

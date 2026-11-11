@@ -181,8 +181,9 @@ pub struct App {
     /// turn completes after more than 10 seconds.
     pub(crate) turn_start: Option<Instant>,
 
-    /// (requested, fallback) pairs already announced this turn; reset when the
-    /// turn ends.
+    /// (requested, fallback) pairs already announced this user turn; cleared
+    /// when a turn starts or is cancelled (not on `Done`: an orchestrated turn
+    /// sends one per worker).
     fallback_notices: std::collections::HashSet<(String, String)>,
 
     // --- Session switcher overlay -------------------------------------------
@@ -410,6 +411,7 @@ impl App {
         self.current_turn = None;
         self.pending_active_agent = None;
         self.turn_start = None;
+        self.fallback_notices.clear();
         self.messages.push(DisplayMessage::new(
             DisplayRole::System,
             "⚡ interrupted".to_string(),
@@ -1560,6 +1562,7 @@ impl App {
                 .push(DisplayMessage::new(DisplayRole::User, display_text));
             self.state = AppState::WaitingForResponse;
             self.turn_start = Some(Instant::now());
+            self.fallback_notices.clear();
             return;
         }
 
@@ -1573,6 +1576,7 @@ impl App {
             .push(DisplayMessage::new(DisplayRole::User, text));
         self.state = AppState::WaitingForResponse;
         self.turn_start = Some(Instant::now());
+        self.fallback_notices.clear();
     }
 
     /// Begin handling a shell escape (`!command`).
@@ -2386,7 +2390,6 @@ impl App {
                     self.completed_turns.push(ledger);
                 }
                 self.pending_active_agent = None;
-                self.fallback_notices.clear();
 
                 // Mark the last streaming message as complete.
                 if let Some(last) = self.messages.last_mut() {
@@ -2432,7 +2435,6 @@ impl App {
                 self.status.active_tool = None;
                 self.state = AppState::Error(message);
                 self.pending_active_agent = None;
-                self.fallback_notices.clear();
             }
 
             AgentEvent::ModelFallback {
@@ -2443,6 +2445,11 @@ impl App {
                 let text =
                     format!("{requested} failed ({reason}); switched to fallback {fallback}");
                 if self.fallback_notices.insert((requested, fallback)) {
+                    if let Some(last) = self.messages.last_mut() {
+                        if last.is_streaming && matches!(last.role, DisplayRole::Assistant) {
+                            last.is_streaming = false;
+                        }
+                    }
                     self.messages
                         .push(DisplayMessage::new(DisplayRole::System, text));
                 }
