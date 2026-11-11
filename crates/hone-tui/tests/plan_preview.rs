@@ -4,20 +4,18 @@
 //! - `Command::Plan(String)` variant parses from `/plan <prompt>`.
 //! - `PlanPreviewState` holds the decomposed plan + cost estimate and is
 //!   constructed via `PlanPreviewState::from_decompose`.
-//! - `App` gains `plan_preview`, `plan_preview_open`, and
-//!   `pending_plan_action` fields with documented setters / readers.
-//! - `App::handle_key_plan_preview` drives the overlay state machine.
-//!
-//! These tests are INTENTIONALLY failing until the rust-expert adds the
-//! required symbols in the green phase.  The implementer MUST NOT modify
-//! this file.
+//! - `App` gains `plan_preview` and `plan_preview_open` with setters/readers.
+//! - `App::handle_key_plan_preview` drives the overlay state machine; since
+//!   plan-gate spec G1-G4 the App acts on the keys itself (no PlanAction).
+//!   The G1-G10 behaviour tests live in `plan_gate.rs`; this file keeps the
+//!   overlay state machine, updated to the new contract (G11).
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hone_core::{DEFAULT_WORKER_COST_USD, SubTask, TaskPlan};
 use hone_tui::{
-    app::{App, PlanAction, PlanPreviewState},
+    app::{App, AppState, PlanPreviewState},
     commands::Command,
 };
 
@@ -135,29 +133,29 @@ fn set_plan_preview_opens_overlay() {
 
     app.set_plan_preview(make_preview_state());
 
-    assert!(app.plan_preview_open, "overlay must be open after set_plan_preview");
+    assert!(
+        app.plan_preview_open,
+        "overlay must be open after set_plan_preview"
+    );
     assert!(app.plan_preview().is_some(), "state must be stored");
 }
 
 // ---------------------------------------------------------------------------
-// 5-12. Key-handler state machine
+// 5-12. Key-handler state machine (plan-gate contract, G1-G4, G11)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn handle_key_plan_preview_r_runs() {
+fn handle_key_plan_preview_r_runs_at_once() {
     let mut app = App::new();
     app.set_plan_preview(make_preview_state());
 
     app.handle_key_plan_preview(make_key(KeyCode::Char('r')));
 
     assert!(!app.plan_preview_open, "overlay must be dismissed");
-    assert_eq!(
-        app.take_pending_plan_action(),
-        Some(PlanAction::Run),
-        "pending action must be Run"
-    );
-    // plan_preview preserved so the run loop can read the prompt.
-    assert!(app.plan_preview().is_some(), "plan_preview must stay Some for Run");
+    assert!(app.plan_preview().is_none(), "preview is moved out on Run");
+    assert!(matches!(app.state(), AppState::WaitingForResponse));
+    let staged = app.take_pending_plan_run().expect("run must be staged");
+    assert_eq!(staged.prompt, "refactor auth");
 }
 
 #[test]
@@ -168,15 +166,13 @@ fn handle_key_plan_preview_e_edits_and_clears_state() {
     app.handle_key_plan_preview(make_key(KeyCode::Char('e')));
 
     assert!(!app.plan_preview_open, "overlay must be dismissed");
+    assert!(app.plan_preview().is_none(), "plan_preview cleared on Edit");
     assert_eq!(
-        app.take_pending_plan_action(),
-        Some(PlanAction::Edit),
-        "pending action must be Edit"
+        app.input().buffer,
+        "refactor auth",
+        "Edit leaves the prompt in the input bar"
     );
-    assert!(
-        app.plan_preview().is_none(),
-        "plan_preview must be cleared on Edit (user will re-trigger)"
-    );
+    assert!(app.take_pending_plan_run().is_none());
 }
 
 #[test]
@@ -187,12 +183,11 @@ fn handle_key_plan_preview_esc_cancels() {
     app.handle_key_plan_preview(make_key(KeyCode::Esc));
 
     assert!(!app.plan_preview_open, "overlay must be dismissed");
-    assert_eq!(
-        app.take_pending_plan_action(),
-        Some(PlanAction::Cancel),
-        "pending action must be Cancel"
+    assert!(
+        app.plan_preview().is_none(),
+        "plan_preview must be cleared on Cancel"
     );
-    assert!(app.plan_preview().is_none(), "plan_preview must be cleared on Cancel");
+    assert!(app.take_pending_plan_run().is_none());
 }
 
 #[test]
@@ -203,12 +198,11 @@ fn handle_key_plan_preview_c_also_cancels() {
     app.handle_key_plan_preview(make_key(KeyCode::Char('c')));
 
     assert!(!app.plan_preview_open, "overlay must be dismissed");
-    assert_eq!(
-        app.take_pending_plan_action(),
-        Some(PlanAction::Cancel),
-        "pending action must be Cancel for 'c'"
+    assert!(
+        app.plan_preview().is_none(),
+        "plan_preview must be cleared on 'c'"
     );
-    assert!(app.plan_preview().is_none(), "plan_preview must be cleared on 'c'");
+    assert!(app.take_pending_plan_run().is_none());
 }
 
 #[test]
@@ -218,28 +212,28 @@ fn handle_key_plan_preview_unknown_key_is_noop() {
 
     app.handle_key_plan_preview(make_key(KeyCode::Char('x')));
 
-    assert!(app.plan_preview_open, "overlay must remain open on unknown key");
-    assert_eq!(
-        app.take_pending_plan_action(),
-        None,
-        "no pending action on unknown key"
+    assert!(
+        app.plan_preview_open,
+        "overlay must remain open on unknown key"
+    );
+    assert!(app.plan_preview().is_some());
+    assert!(
+        app.take_pending_plan_run().is_none(),
+        "nothing staged on unknown key"
     );
 }
 
 #[test]
-fn take_pending_plan_action_drains_once() {
+fn take_pending_plan_run_drains_once() {
     let mut app = App::new();
     app.set_plan_preview(make_preview_state());
 
     app.handle_key_plan_preview(make_key(KeyCode::Char('r')));
 
-    // First call returns Some.
-    assert_eq!(app.take_pending_plan_action(), Some(PlanAction::Run));
-    // Second call must drain to None.
-    assert_eq!(
-        app.take_pending_plan_action(),
-        None,
-        "take_pending_plan_action must drain the field"
+    assert!(app.take_pending_plan_run().is_some());
+    assert!(
+        app.take_pending_plan_run().is_none(),
+        "take_pending_plan_run must drain the field"
     );
 }
 
@@ -251,10 +245,9 @@ fn enter_key_treated_as_run() {
     app.handle_key_plan_preview(make_key(KeyCode::Enter));
 
     assert!(!app.plan_preview_open, "Enter must dismiss overlay");
-    assert_eq!(
-        app.take_pending_plan_action(),
-        Some(PlanAction::Run),
-        "Enter must produce Run action"
+    assert!(app.plan_preview().is_none());
+    assert!(
+        app.take_pending_plan_run().is_some(),
+        "Enter must stage the run"
     );
-    assert!(app.plan_preview().is_some(), "plan_preview preserved for Enter/Run path");
 }
