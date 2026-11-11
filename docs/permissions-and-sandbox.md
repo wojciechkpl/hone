@@ -302,6 +302,12 @@ are governed by permission rules, not by the OS sandbox.
 | Network | denied | not restricted (Hone targets Landlock ABI v1, filesystem only) |
 | Kernel needed | — | 5.13+; on older kernels the command fails instead of running unsandboxed |
 
+On unix each `shell` command runs in its own process group with stdin closed. If its
+call ends early (<kbd>Esc</kbd>, a worker's timeout, the tool's `timeout_ms`, 30 s by
+default), Hone kills the whole group: the shell and everything it started. Hone also
+kills its running commands when it exits. A command that starts its own session
+(`setsid`) escapes this.
+
 Add read-only roots (for a toolchain outside the defaults) with
 `HONE_SANDBOX_EXTRA_READ=/path/one:/path/two`. Relative paths, `/`, your home directory
 or its parents, and anything under the working dir or `/tmp` are ignored.

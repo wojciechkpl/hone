@@ -137,6 +137,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: shell commands stop when their call ends
+
+- **Before:** a command run by the `shell` tool kept running when its call ended early: <kbd>Esc</kbd>, a worker's timeout, a stopped orchestrated run, or the tool's own time limit (30 s by default, which reported a timeout while the command carried on). `cargo test` went on building and testing in the background, and a dev server kept its port. The test run that follows a TUI turn was the same. Commands also inherited hone's stdin, so in the TUI one that read input (`cat`, a password prompt) waited on the terminal until it timed out.
+- **Now** (unix):
+  - Each command runs in its own process group with stdin closed. When its call ends early, the whole group is killed: the shell, what it started, and what those started. A command that finishes normally is left alone.
+  - The test run after a TUI turn works the same way, so <kbd>Esc</kbd> stops it.
+  - hone kills its running commands when it exits: the TUI on quit, <kbd>Ctrl</kbd>+<kbd>C</kbd>, SIGINT, SIGTERM or SIGHUP; `hone -p` and `--orchestrate` on SIGINT, SIGTERM or SIGHUP, then exit with 128 + the signal number.
+- **Not yet:** a command that starts its own session or process group (`setsid`, some daemons) escapes. `!command` in the TUI, hooks and a recipe's `test_cmd` run as before. Elsewhere than unix, only the command's own process is killed.
+- Contract: `docs/plans/worker-tools-spec.md`, rows W23–W25.
+
 ### Fixed: orchestrator workers get tools
 
 - **Before:** the specialist agents that carry out a complex prompt or a `/plan` Run (`rust-expert`, `code-reviewer`, …) had no tools. They couldn't read, search, edit or run anything, and answered in text from the subtask description alone. Separately, the built-in agent files list tools by short names (`read`, `write`, `edit`) that matched no tool, so an `@rust-expert` turn in the TUI and a `honed` distributed worker got only `shell`, `grep` and `glob`.
@@ -158,7 +168,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - `/budget` doesn't cap workers. `hone --orchestrate` and the server keep the 300 s worker timeout.
   - An agent definition's `sandbox:` profile isn't applied to in-process workers.
   - A worker for an agent name the planner made up gets all the session's tools, as the main agent has.
-  - A shell command keeps running after <kbd>Esc</kbd> or a worker timeout (also true for the main agent).
   - Switching to Plan mode during a run doesn't stop its workers from writing.
 - Contract: `docs/plans/worker-tools-spec.md`.
 
