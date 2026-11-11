@@ -690,9 +690,12 @@ waits only for the slowest one: a server that hangs delays it by its handshake t
 while the others connect. On exit, servers are stopped in parallel; each gets up to 5 s
 before it is killed. On unix each server runs in its own process group, and when Hone
 kills a server the whole group goes, so a server started through `npx` or `sh -c` doesn't
-leave its real process behind. When Hone stops on an error or a signal (SIGINT, SIGTERM,
-SIGHUP), each group gets SIGTERM, then SIGKILL after 1 s. A server can't prompt on the
-terminal: one that reads `/dev/tty` stops until its handshake timeout.
+leave its real process behind. When Hone stops on an error, or a one-shot run or `honed`
+gets SIGINT, SIGTERM or SIGHUP, each group gets SIGTERM, then SIGKILL if it is still
+running 1 s later (the TUI takes the graceful path). If you start a server through a
+shell, `exec` it (`sh -c "cd DIR && exec server"`): on Linux the 1 s ends as soon as the
+shell itself exits. A server can't prompt on the terminal: one that reads `/dev/tty`
+stops until its handshake timeout.
 A tool call that times
 out returns an error to the model; the server stays connected for the next call. Native tools win over MCP tools with the same name. Permission rules don't see
 MCP tool calls.

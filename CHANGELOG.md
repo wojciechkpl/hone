@@ -151,7 +151,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
     - SIGTERM or SIGHUP sent to `hone` alone.
   - Each server now runs in its own process group, which hone stops on every exit.
     - A normal exit, TUI quit included, shuts it down gracefully: hone closes its input and gives it up to 5 s.
-    - An error exit or a signal sends it SIGTERM first, then SIGKILL after 1 s.
+    - An error exit, or a signal to a one-shot run or `honed`, sends it SIGTERM first, then SIGKILL if it is still running 1 s later. (In the TUI a signal takes the graceful path.)
+    - If you start a server through a shell (`sh -c "cd DIR && server"`), write `exec server`. On Linux the 1 s ends as soon as the shell itself exits.
     - A failed `session resume` with a server that ignores its input closing takes about 5 s to exit.
     - Because a server is no longer in the terminal's process group, one that prompts on the terminal (`/dev/tty`) now stops until its handshake timeout.
   - Killing a server kills everything it started. A server launched through `npx -y …`, `uvx` or `sh -c` no longer leaves its real process running after a failed start or at exit. Before, only the launcher was killed.
