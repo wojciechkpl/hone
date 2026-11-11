@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use hone_tools::Tool;
@@ -63,10 +64,38 @@ struct TransportInner {
     stdin: BufWriter<ChildStdin>,
     reader: BufReader<ChildStdout>,
     next_id: u64,
+    /// Bounds each request (write + wait for its response). `None`: no limit.
+    request_timeout: Option<Duration>,
 }
 
 impl TransportInner {
+    /// Send a request and wait for its response, bounded by the request
+    /// timeout (if any): on expiry the call fails with [`McpError::Timeout`]
+    /// and the late response is skipped by id on a later call.
     async fn send_request(
+        &mut self,
+        method: &str,
+        params: Option<Value>,
+        server_name: &str,
+    ) -> Result<Value, McpError> {
+        match self.request_timeout {
+            None => {
+                self.send_request_unbounded(method, params, server_name)
+                    .await
+            }
+            Some(limit) => tokio::time::timeout(
+                limit,
+                self.send_request_unbounded(method, params, server_name),
+            )
+            .await
+            .map_err(|_| McpError::Timeout {
+                server: server_name.to_string(),
+                timeout_ms: u64::try_from(limit.as_millis()).unwrap_or(u64::MAX),
+            })?,
+        }
+    }
+
+    async fn send_request_unbounded(
         &mut self,
         method: &str,
         params: Option<Value>,
@@ -128,7 +157,19 @@ impl TransportInner {
                 continue;
             }
 
-            let resp: JsonRpcResponse = serde_json::from_str(trimmed)?;
+            // Log output (or the rest of a line whose read was dropped) is not a
+            // response: skip it.
+            let resp: JsonRpcResponse = match serde_json::from_str(trimmed) {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::debug!(
+                        server = server_name,
+                        error = %e,
+                        "skipping a non-JSON line on the server's stdout"
+                    );
+                    continue;
+                }
+            };
 
             if let Some(method) = &resp.method {
                 // A server-to-client request (it has an id) must be answered or
@@ -265,6 +306,7 @@ impl StdioMcpClient {
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
             .spawn()
             .map_err(|e| McpError::ConnectionFailed {
                 server: server_name.clone(),
@@ -284,9 +326,31 @@ impl StdioMcpClient {
                 stdin: BufWriter::new(stdin),
                 reader: BufReader::new(stdout),
                 next_id: 1,
+                request_timeout: None,
             })),
             server_info: Mutex::new(None),
         })
+    }
+
+    /// Bound every request (`initialize`, `tools/list`, `tools/call`, ...) by
+    /// `timeout`: write plus wait for the response. `Duration::ZERO` means no
+    /// timeout, which is also the default of the raw constructors.
+    /// Notifications are not bounded. Call it before `connect()`.
+    #[must_use]
+    pub fn with_request_timeout(self, timeout: Duration) -> Self {
+        let limit = (!timeout.is_zero()).then_some(timeout);
+        // The transport is only shared once tools are handed out, so right
+        // after construction we are its sole owner; `try_lock` covers the rest.
+        if let Ok(mut transport) = self.transport.try_lock() {
+            transport.request_timeout = limit;
+        }
+        self
+    }
+
+    /// Kill the server process and reap it (startup failure path).
+    pub(crate) async fn kill(&mut self) {
+        let mut transport = self.transport.lock().await;
+        let _ = transport.process.kill().await;
     }
 
     /// Spawn with an explicit logical name and additional environment variables.
@@ -304,7 +368,8 @@ impl StdioMcpClient {
         cmd.args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null());
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
 
         // Security: clear the inherited environment so API keys are not leaked
         // to untrusted MCP subprocesses.  Re-inject only the minimum needed for
@@ -339,6 +404,7 @@ impl StdioMcpClient {
                 stdin: BufWriter::new(stdin),
                 reader: BufReader::new(stdout),
                 next_id: 1,
+                request_timeout: None,
             })),
             server_info: Mutex::new(None),
         })

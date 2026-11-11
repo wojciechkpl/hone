@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use hone_config::mcp::{McpConfig, McpServerConfig};
 use hone_tools::Tool;
@@ -100,10 +101,17 @@ impl McpManager {
 
         let args: Vec<&str> = cfg.args.iter().map(String::as_str).collect();
 
-        let mut client =
-            StdioMcpClient::spawn_with_name(name, &cfg.command, &args, &resolved_env).await?;
+        // `timeout_ms` bounds every request, the handshake included
+        // (0 = no timeout).
+        let mut client = StdioMcpClient::spawn_with_name(name, &cfg.command, &args, &resolved_env)
+            .await?
+            .with_request_timeout(Duration::from_millis(cfg.timeout_ms));
 
-        client.connect().await?;
+        if let Err(e) = client.connect().await {
+            // Do not leave a hung (or broken) server running.
+            client.kill().await;
+            return Err(e);
+        }
         Ok(client)
     }
 }
