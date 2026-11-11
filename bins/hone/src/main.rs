@@ -6507,6 +6507,50 @@ mod tests {
         assert!(approval < paused, "{events:?}");
         assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
     }
+
+    // W11 ---------------------------------------------------------------
+
+    #[tokio::test(start_paused = true)]
+    async fn w11_orchestrated_turn_should_not_time_out_a_slow_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        // 400 s per provider call: past the 300 s default worker timeout.
+        let (mut config, _provider, log, step_tx) =
+            wt_session(dir.path(), Some(Duration::from_secs(400)));
+        config.approval_policy = ToolApprovalPolicy::Auto;
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(
+            &mut rx,
+            &step_tx,
+            hone_proto::StepAction::Proceed,
+            Duration::from_secs(86_400),
+        )
+        .await;
+
+        assert!(
+            !events.iter().any(|e| matches!(
+                e,
+                AgentEvent::WorkerCompleted { status, .. } if status == "timed_out"
+            )),
+            "no per-worker timeout in the TUI: {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                AgentEvent::WorkerCompleted { status, .. } if status == "completed"
+            )),
+            "{events:?}"
+        );
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
 }
 
 // ---------------------------------------------------------------------------
