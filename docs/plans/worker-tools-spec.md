@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W47.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W49.
 
 ## Problem
 
@@ -168,9 +168,16 @@ never ask.
 | W42 | **The approval menu always shows what a call touches.** Short identifying fields (`path`, `file_path`, `command`, `url`, `pattern`) are shown before the others, and every value is capped at a few wrapped rows with "… (N more chars)", so a long `content` or `new_string` can't push the target path out of view. (Review 4 S2: sorted keys put `content` before `path`; W40's wrapping then hid the path.) |
 | W43 | **The web dialog ignores clicks for 400 ms** after a prompt is shown and after each click, like the TUI's guard, so a human double-click can't answer the next worker's prompt. (Review 4 S3: the in-flight check only covered the same prompt.) |
 | W44 | **An `@agent` persona is restored even when its turn is aborted.** The inline wrapper's restore (system prompt and tools) also runs when the wrapper task is aborted — by <kbd>Esc</kbd> during the turn or W39's <kbd>Esc</kbd> during the post-turn work. (Review 4 S4.) |
-| W45 | **Esc really stops a running fix turn.** The post-turn task gives its fix turns an event channel it owns (as `spawn_agent_turn` does), so aborting it closes the channel and the agent cancels the fix turn, including its pending tool calls. W39's system line names what was stopped (the test run or a fix turn). (Review 4 S5: aborting only dropped the wait; the actor finished the fix turn.) |
+| W45 | **Esc really stops a running fix turn.** The post-turn task gives its fix turns an event channel it owns (as `spawn_agent_turn` does), so aborting it closes the channel and the agent cancels the fix turn, including its pending tool calls. W39's system line reads "Stopped the post-turn test run and any fixes." (the App can't tell cheaply which was running). (Review 4 S5: aborting only dropped the wait; the actor finished the fix turn.) |
 | W46 | **Web UI approval races.** The dialog opens only on `tool_call_paused` (`approval_required` is information, as in the TUI), so one server prompt never shows two dialogs; a failed answer keeps the dialog open for a retry unless the response is 2xx, 404 or 410; a closing stream resets the active run id only if it is still that run's. (Review 4 web 1–3.) |
 | W47 | **Server input checks** (older bugs W35 touches). A `request_id` on `/run` or `/orchestrate` must be 1–128 characters of `A-Z a-z 0-9 - _` (400 otherwise), because `/run` names its provenance file after it and `../` escaped the provenance directory. `max_workers` must be at least 1 (400 for 0, which panicked in `chunks(0)`). |
+
+### Review round 5 (W48–W49)
+
+| Row | Behaviour |
+|---|---|
+| W48 | **<kbd>Esc</kbd> kills the main agent's running command.** In the agent loop, a tool call's dispatch races the turn's event channel closing (biased to the close): when the caller goes away (<kbd>Esc</kbd> aborts the TUI's turn task and drops its receiver; a worker or fix turn is dropped), the dispatch future is dropped, so `run_command`'s guard kills the command's process group (W23) and the turn ends cancelled instead of waiting for the command. Applies to every tool call, so W45 also cancels mid-tool. (Review 5 F1, reproduced: the actor kept running `sh` for 3.8 s after <kbd>Esc</kbd> and its grandchild survived.) |
+| W49 | **Small approval-safety fixes.** In the TUI menu, identifying fields (`command`, `url`, …) get a larger cap than bulk fields (so a long command isn't cut after six rows); in the web dialog, focus moves to the dialog when a new prompt replaces the shown one (so <kbd>Enter</kbd>/<kbd>Space</kbd> can't approve it through the previously clicked button), and the `approval_required` note is an info note, not an error. The `signal_ignored` tests reset SIGHUP/SIGINT/SIGTERM to their defaults in the child before applying their own ignore list, so they pass when `cargo test` itself runs with signals ignored. (Review 5 nits.) |
 
 ## What each entry point gets
 
