@@ -1,6 +1,6 @@
 # MCP request timeout — spec
 
-Branch `fix/mcp-timeout`. Contract for the TDD rounds: rows T1–T6.
+Branch `fix/mcp-timeout`. Contract for the TDD rounds: rows T1–T9.
 
 ## Problem
 
@@ -54,8 +54,20 @@ sequenceDiagram
 | T5 | **A hung server can't block startup.** A server whose `initialize` doesn't answer within its timeout is skipped at startup with the existing "failed to start, skipping" warning, and its process is killed (not left running). The other servers still connect. |
 | T6 | **Docs.** `docs/configuration.md` describes what `timeout_ms` bounds and `0`; the CHANGELOG says the setting is now applied (a long-running MCP tool may need a larger value). |
 
+### Review round 1 (T7–T9)
+
+| Row | Behaviour |
+|---|---|
+| T7 | **The startup handshake gets more time.** `connect()` (`initialize` and the first `tools/list`) is bounded by a handshake timeout that defaults to the larger of the request timeout and 60 s, so an `npx -y <package>` server (every built-in marketplace entry) can download on its first start. `with_handshake_timeout(Duration)` overrides it; a request timeout of `0` means no handshake timeout either. Later requests keep `timeout_ms`. (Review S1: a cold `npx` start commonly takes over 10 s and would be killed and skipped.) |
+| T8 | **A cut multi-byte character can't fail a call.** Lines are read as bytes up to `\n` and decoded afterwards; a line that isn't valid UTF-8 is skipped like any other non-JSON line (T4). (Review S2, reproduced: a timeout inside "é" made the next call fail with `ConnectionFailed(InvalidData)`.) |
+| T9 | **Shutdown is quick for a server that exits on end of input.** `McpManager::shutdown()` (and the client's `shutdown`) closes the server's stdin before waiting, so a server that exits when its input ends is gone at once; the 5 s wait and kill remain the fallback. (Review follow-up, reproduced: every hone exit waited 5 s per MCP server, then killed it.) |
+
 ## Out of scope
 
 - Connecting to several servers in parallel at startup (a hung server still delays startup by its timeout).
 - Restarting a server after repeated timeouts.
-- Per-tool timeouts, or a separate handshake timeout.
+- Per-tool timeouts (the handshake got its own bound in T7).
+- A request of 8 KiB or more cut off mid-write by a timeout can leave a partial
+  line on the server's stdin (one later call may fail; the stream resyncs).
+- Paths that never call `shutdown()` (`honed` exit, worker pools) SIGKILL their
+  servers when the transport drops, without closing stdin first.
