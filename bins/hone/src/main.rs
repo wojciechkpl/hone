@@ -1720,8 +1720,6 @@ async fn run_orchestrate(
 // Ensemble mode
 // ---------------------------------------------------------------------------
 
-/// Run a prompt through N parallel candidates with varied temperatures, then
-/// let a ranker agent pick the best response (MASAI Ranker pattern).
 /// Print `--ensemble` progress until the channel closes.
 ///
 /// Tokens and the first `Error` are printed only until the first `Done` or
@@ -1756,6 +1754,8 @@ async fn print_ensemble_events<O: io::Write, E: io::Write>(
     }
 }
 
+/// Run a prompt through N parallel candidates with varied temperatures, then
+/// let a ranker agent pick the best response (MASAI Ranker pattern).
 async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result<()> {
     // Temperature ladder: diverse but bounded.  We only use as many slots as
     // requested, so `--ensemble 2` picks the first two entries.
@@ -5221,7 +5221,6 @@ mod tests {
         ];
         assert_eq!(code_modifying_tools_that_ran(&events), vec!["write_file"]);
     }
-
 
     // ---- fallback notice (docs/plans/fallback-notice-spec.md: N7, N8, N10) ----
     //
