@@ -137,6 +137,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and (until "shell commands stop when their call ends" below) <kbd>Esc</kbd> didn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: MCP servers start and stop in parallel
+
+- **Before:** hone started MCP servers one after another and waited for each one's handshake before starting the next, so startup took the sum of their start times. A hung server held up the rest by its whole handshake timeout (60 s by default), and several `npx -y …` servers downloaded their packages one at a time. Exit stopped servers one after another too, giving each one that ignored its input closing 5 s. The message hone sends a server at exit had no time limit, so a server that had stopped reading could keep hone from exiting at all.
+- **Now:**
+  - All enabled servers start and handshake at once, so startup waits only for the slowest one. A hung server delays it by its handshake timeout while the others connect.
+  - Which servers connect, and their tools, are unchanged. If startup is cancelled, every server it started is killed.
+  - Exit stops every server at once. Each gets at most 5 s in all, that message included, before it is killed.
+- Contract: `docs/plans/mcp-parallel-connect-spec.md`.
+
 ### Fixed: MCP requests time out
 
 - **Before:** `timeout_ms` in `mcp.json` (documented as the per-request timeout, default 10 000 ms) was never applied, so a request to a stdio MCP server that didn't answer waited forever. Servers connect one after another at startup, so a server that hung during its handshake kept hone from starting. A tool call to a hung server waited until <kbd>Esc</kbd> (TUI) or <kbd>Ctrl</kbd>+<kbd>C</kbd>, and a `honed` worker waited indefinitely, with every other call to that server queued behind it. A line on a server's stdout that wasn't JSON (log output) failed the call.

@@ -685,7 +685,10 @@ so you can copy or symlink an existing file.
 
 The project file (`<cwd>/.hone/mcp.json`) wins over `~/.config/hone/mcp.json` when server
 names collide. A missing or malformed file, or a server that fails to start or doesn't
-finish its handshake in time, is logged and skipped. A tool call that times
+finish its handshake in time, is logged and skipped. Servers start in parallel, so startup
+waits only for the slowest one: a server that hangs delays it by its handshake timeout
+while the others connect. On exit, servers are stopped in parallel; each gets up to 5 s
+before it is killed. A tool call that times
 out returns an error to the model; the server stays connected for the next call. Native tools win over MCP tools with the same name. Permission rules don't see
 MCP tool calls.
 
