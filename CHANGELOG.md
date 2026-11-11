@@ -161,6 +161,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Per entry point:**
   - `hone --orchestrate`: workers run their tools without asking, as `hone -p` does. The permission policy applies.
   - Web UI and `POST /orchestrate`: by default the run config is in Plan mode, so workers get read-only tools and never ask. **New:** `POST /orchestrate` takes `request_id` and `approval_policy` with `/run`'s step-mode rules (400 without a `request_id`, 409 if it's in use). In step mode workers get their agent's tools and pause for approval, answered through `POST /run/{request_id}/step`, with no per-worker timeout. The web UI uses it when its step mode is on, and its approval dialog names the worker. `?dry_run=true` ignores both fields.
+  - **Web UI fixes found by running it with parallel workers:**
+    - A tool's result is matched to its card by call id. Before, it went to the last card, so one worker's output could land on another's card and a card could stay "running" forever.
+    - The approval dialog keeps a newer prompt. Before, it cleared itself after the answer's HTTP response, which could wipe out the next worker's prompt and leave that worker waiting.
+    - It ignores further clicks until an answer is sent. Before, a double-click on Allow could also approve the next worker's call, unseen.
 - **Not yet:**
   - Workers running at the same time can edit the same file, and one's `write_file` can overwrite the other's change.
   - The desktop app (`apps/hone-desktop`) doesn't show which worker is asking.
