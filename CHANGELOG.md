@@ -144,6 +144,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - All enabled servers start and handshake at once, so startup waits only for the slowest one. A hung server delays it by its handshake timeout while the others connect.
   - Which servers connect, and their tools, are unchanged. If startup is cancelled, every server it started is killed.
   - Exit stops every server at once. Each gets at most 5 s in all, that message included, before it is killed.
+  - `hone session resume` with a missing or unreadable session now stops its MCP servers before it exits. Before, a server that ignored its input closing was left running.
 - Contract: `docs/plans/mcp-parallel-connect-spec.md`.
 
 ### Fixed: MCP requests time out
