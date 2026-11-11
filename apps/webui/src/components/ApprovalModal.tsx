@@ -1,4 +1,4 @@
-import { Show, createSignal, type Component } from "solid-js";
+import { Show, createEffect, createSignal, on, type Component } from "solid-js";
 import { usePendingApproval, setPendingApproval, type PendingApproval } from "../lib/step";
 import { postJson } from "../lib/api";
 import { useWorkers } from "../lib/orchestrator";
@@ -15,14 +15,36 @@ type StepAction =
 // can't answer the *next* worker's prompt unseen.
 const [sendingFor, setSendingFor] = createSignal<PendingApproval | null>(null);
 
+// Settle guard (mirrors the TUI): ignore clicks for SETTLE_MS after a
+// prompt appears and after the last click, so a double-click's second
+// click can't answer the next worker's prompt unseen.
+const SETTLE_MS = 400;
+const [settling, setSettling] = createSignal(false);
+let settleTimer: ReturnType<typeof setTimeout> | undefined;
+function startSettle(): void {
+  setSettling(true);
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => setSettling(false), SETTLE_MS);
+}
+
+/** Statuses after which the dialog closes: success, or the prompt/run is gone. */
+function closesDialog(status: number): boolean {
+  return (status >= 200 && status < 300) || status === 404 || status === 410;
+}
+
 async function send(action: StepAction): Promise<void> {
   const p = usePendingApproval()();
-  if (!p || sendingFor() === p) return;
+  if (!p || sendingFor() === p || settling()) return;
+  startSettle();
   setSendingFor(p);
   try {
     const resp = await postJson(`/run/${encodeURIComponent(p.runId)}/step`, action, null);
-    if (!resp.ok) {
+    if (!closesDialog(resp.status)) {
+      // 401 / 429 / 5xx: keep the dialog open and re-enable so the user
+      // can retry; closing would leave the run waiting forever.
       console.warn(`step ${resp.status}`);
+      if (sendingFor() === p) setSendingFor(null);
+      return;
     }
   } catch (err) {
     console.warn(`step failed: ${err}`);
@@ -39,7 +61,9 @@ async function send(action: StepAction): Promise<void> {
 export const ApprovalModal: Component = () => {
   const pending = usePendingApproval();
   const workers = useWorkers();
-  const busy = () => sendingFor() === pending();
+  const busy = () => sendingFor() === pending() || settling();
+  // Each newly shown prompt starts a settle period.
+  createEffect(on(pending, (p) => { if (p) startSettle(); }));
   const description = () => {
     const w = pending()?.worker;
     return w ? workers().find((x) => x.task_id === w.task_id)?.description : undefined;

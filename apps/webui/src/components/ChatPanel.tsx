@@ -233,18 +233,16 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         break;
       }
       case "approval_required": {
-        // Generic approval (rare today; emitted by some agents at
-        // session level rather than per tool call). Show a modal anyway
-        // — Skip / Deny still work.
-        if (activeRunId) {
-          setPendingApproval({
-            runId: activeRunId,
-            toolId: `req-${Date.now()}`,
-            name: event.action || "approval_required",
-            args: event.description,
-            worker: event.worker,
-          });
-        }
+        // Informational only: a permission `ask` sends this and then a
+        // `tool_call_paused` for the same server prompt, and only the
+        // latter opens a dialog (a second dialog would answer the
+        // *next* prompt). Leave a note in the chat instead.
+        append({
+          kind: "error",
+          message: `approval requested: ${event.action || "approval_required"}${
+            event.description ? ` - ${event.description}` : ""
+          }`,
+        });
         break;
       }
       case "done": {
@@ -364,7 +362,8 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         onError: (e) => append({ kind: "error", message: e }),
         onClose: () => {
           setStreaming(false);
-          activeRunId = null;
+          // A late close from an older run must not clear a newer run's id.
+          if (activeRunId === runId) activeRunId = null;
         },
       },
     );
@@ -393,6 +392,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
     void touchSession(id, prompt.slice(0, 60));
 
     const body: OrchestrateRequest = { prompt };
+    let streamRunId: string | null = null;
     if (!opts.dryRun && stepMode()) {
       // Step mode: workers get tools and pause; answers go to
       // POST /run/{request_id}/step under this run id.
@@ -400,6 +400,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         typeof crypto !== "undefined" && crypto.randomUUID
           ? crypto.randomUUID()
           : `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      streamRunId = runId;
       activeRunId = runId;
       body.request_id = runId;
       body.approval_policy = { AskRisky: { always_allowed: [] } };
@@ -413,7 +414,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         onError: (e) => append({ kind: "error", message: e }),
         onClose: () => {
           setStreaming(false);
-          activeRunId = null;
+          if (activeRunId === streamRunId) activeRunId = null;
         },
       },
       { dryRun: !!opts.dryRun },
