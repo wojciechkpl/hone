@@ -180,7 +180,10 @@ single-pattern path rule with an explicit read or write op, is remembered as a w
 >   the one `--step` adds, but never a permission rule: `deny` still refuses and `ask` still
 >   prompts.
 > - With `--step`, <kbd>a</kbd> approves once: `--step` keeps no allow-list.
-> - Orchestrated turns never prompt: the orchestrator's lead and worker agents have no tools.
+> - Orchestrated turns (a complex prompt, a `/plan` Run): the lead has no tools. Each worker gets
+>   the tools its agent definition lists, from the session's tools, and prompts here like the
+>   main agent, one worker at a time. <kbd>x</kbd> in the menu stops the whole turn.
+> - An "always" answer covers the main agent and every worker for the rest of the session.
 
 > [!WARNING]
 > After an edit runs (`write_file`, `edit_file`, `multi_edit`: approved, or in AutoApprove), the TUI runs the

@@ -142,21 +142,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Before:** the specialist agents that carry out a complex prompt or a `/plan` Run (`rust-expert`, `code-reviewer`, …) had no tools. They couldn't read, search, edit or run anything, and answered in text from the subtask description alone. Separately, the built-in agent files list tools by short names (`read`, `write`, `edit`) that matched no tool, so an `@rust-expert` turn in the TUI and a `honed` distributed worker got only `shell`, `grep` and `glob`.
 - **Now:**
   - Each worker gets the tools its agent definition lists, taken from the session's tools. An agent with no `tools:` list, or one not found, gets all of them. The lead, which plans and merges, still has none.
-  - A worker never gets more than the session's own agent has. It runs under the session's approval policy, mode, permission policy, sandbox, hooks and audit log.
-  - **In the TUI** a worker's risky call (an edit, a command) asks you in the approval menu, as the main agent's do. Workers running at the same time ask one at a time, and each answer goes to the worker that asked. "Always" answers and `/permit`s given earlier in the session apply to the workers. In Plan mode workers get read-only tools and write no plan files; in AutoApprove mode they don't pause.
-  - The TUI no longer stops a worker after 300 s; <kbd>Esc</kbd> stops the run.
-  - In an agent's `tools:` list, `read`, `write` and `edit` now mean `read_file`, `write_file` and `edit_file`. This also fixes `@agent` turns and `honed` workers.
+  - A worker never gets more than the session's own agent has. It runs under the session's approval policy, mode, permission policy, sandbox and audit log. In an `@agent` turn with a `tools:` list, a complex prompt's workers choose only from that list.
+  - **In the TUI** a worker's risky call (an edit, a command) asks you in the approval menu, as the main agent's do. Workers running at the same time ask one at a time, and each answer goes to the worker that asked. `/permit`s given earlier in the session apply to the workers. In Plan mode workers get read-only tools and write no plan files; in AutoApprove mode they don't pause. The approval policy and mode are taken when the run starts.
+  - **"Always" means the whole session.** An "always" answer, given to the main agent or to any worker, covers the main agent and every worker from then on, including a worker already waiting to ask; this holds for permission-policy `ask` rules too. With `--step` every call still asks. Separate sessions don't share answers.
+  - <kbd>x</kbd> in the approval menu stops the whole turn. (<kbd>Esc</kbd> there skips only that call, and with several workers waiting the next one's menu opens at once.)
+  - The TUI no longer stops a worker after 300 s; <kbd>Esc</kbd> (with no menu open) or <kbd>x</kbd> stops the run. If the session's agent has stopped, a complex prompt fails with an error instead of starting workers.
+  - In an agent's `tools:` list, `read`, `write` and `edit` now mean `read_file`, `write_file` and `edit_file`, unless a tool has that exact name (an MCP tool called `write`, say). This also fixes `@agent` turns and `honed` workers.
 - **Per entry point:**
-  - `hone orchestrate`: workers run their tools without asking, as `hone -p` does. The permission policy applies.
+  - `hone --orchestrate`: workers run their tools without asking, as `hone -p` does. The permission policy applies.
   - Web UI and `POST /orchestrate`: the server's run config is in Plan mode, so workers get read-only tools.
 - **Not yet:**
   - Workers running at the same time can edit the same file, and one's `write_file` can overwrite the other's change.
   - The approval menu doesn't say which worker is asking.
-  - An "always" answer to a worker's prompt covers only that worker: the other workers, and your later turns, ask again.
   - No test run follows an orchestrated turn (simple and medium turns have one).
-  - `/budget` doesn't cap workers. `hone orchestrate` and the server keep the 300 s worker timeout.
+  - `/budget` doesn't cap workers. `hone --orchestrate` and the server keep the 300 s worker timeout.
   - An agent definition's `sandbox:` profile isn't applied to in-process workers.
-  - A worker asks again for a policy `ask` rule that the main agent was told "always" for.
+  - A worker for an agent name the planner made up gets all the session's tools, as the main agent has.
+  - A shell command keeps running after <kbd>Esc</kbd> or a worker timeout (also true for the main agent).
+  - Switching to Plan mode during a run doesn't stop its workers from writing.
 - Contract: `docs/plans/worker-tools-spec.md`.
 
 ### Fixed: `/plan` Run, Edit and planning; complex runs end once

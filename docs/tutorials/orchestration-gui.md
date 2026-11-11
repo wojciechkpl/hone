@@ -66,9 +66,13 @@ Each worker gets the tools its agent definition lists, from your
 session's tools: a `rust-expert` can read, search, edit and run commands;
 a `code-reviewer` can read, search and run commands. Workers follow your
 session's rules. A risky call (an edit, a command) asks you in the
-approval menu, as the main agent's do, one worker at a time. A tool you
-approved "always" or `/permit`-ted runs without asking. In Plan mode
-(<kbd>Shift</kbd>+<kbd>Tab</kbd>) workers only read. The planner itself has no tools.
+approval menu, as the main agent's do, one worker at a time; <kbd>x</kbd>
+there stops the whole run (<kbd>Esc</kbd> skips only that call). An
+"always" answer, to the main agent or to any worker, covers every worker
+and your later turns; a `/permit`-ted tool runs without asking. In Plan
+mode (<kbd>Shift</kbd>+<kbd>Tab</kbd>) workers only read. The approval
+rules and mode are taken when the run starts. The planner itself has no
+tools.
 
 The cost line shows two figures:
 
