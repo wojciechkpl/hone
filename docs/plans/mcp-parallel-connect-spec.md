@@ -1,6 +1,6 @@
 # MCP servers connect in parallel — spec
 
-Branch `fix/mcp-parallel-connect`. Contract for the TDD rounds: rows P1–P11.
+Branch `fix/mcp-parallel-connect`. Contract for the TDD rounds: rows P1–P13.
 
 ## Problem
 
@@ -65,6 +65,15 @@ gantt
 | P11 | **Killing a server kills what it started.** When hone kills an MCP server (failed or timed-out start, exhausted shutdown budget, drop, P10), it kills the server's whole process group, so a server started through a launcher (`npx -y …`, `uvx`, `sh -c …`) doesn't leave its real process running. After hone lets go of a server, nothing in its group keeps running. Unix only, like PR #90's process groups. |
 
 Since a stubborn server gets its 5 s shutdown budget, a failed `session resume` (P7) with one takes about 5 s to exit; that is expected.
+
+Not covered: a crash (panic, which aborts in release) or `kill -9`/OOM of hone. A server that ignores its input closing then keeps running.
+
+### Review round 3 (P12–P13)
+
+| Row | Behaviour |
+|---|---|
+| P12 | **A TUI exit shuts MCP servers down gracefully.** The TUI's exit guard (`KillCommandsOnExit`) kills only shell-command groups, through a new `hone_tools::kill_shell_commands()`. MCP servers are left to `main`'s `McpManager::shutdown()`: the notification, input closed, up to 5 s, then the group kill. So a server that cleans up when its input ends (closing a browser it started, saving state) still does. (Review round 3 M1, reproduced: since P10 the guard SIGKILLed every MCP group first, so the graceful shutdown found them dead.) |
+| P13 | **Abrupt exits stop MCP servers politely first.** `hone_tools::kill_running_commands()`, used by `exit_now`, the one-shot SIGINT/SIGTERM/SIGHUP handler and `honed`, still SIGKILLs shell-command groups at once. MCP groups (a server's `ProcessGroupGuard`) get SIGTERM first, and only those still alive about 1 s later get SIGKILL. It returns once every MCP group is gone or has been killed, after at most about 1 s plus the kill. Before this branch such a server got the terminal's SIGINT or the end of its input and could clean up; P10's plain SIGKILL took that away. The forced kills inside the client (failed start, exhausted budget) signal the group before the leader is reaped, so its pid stays reserved. |
 
 ## Out of scope
 
