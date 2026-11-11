@@ -28,7 +28,8 @@ export type PersistedMessage =
       result?: string;
       ts: number;
     }
-  | { kind: "error"; message: string; ts: number };
+  | { kind: "error"; message: string; ts: number }
+  | { kind: "info"; message: string; ts: number };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 

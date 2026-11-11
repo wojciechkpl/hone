@@ -38,7 +38,8 @@ type Bubble =
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string; done: boolean }
   | { kind: "tool"; id?: string; name: string; status: "running" | "done" | "error"; result?: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  | { kind: "info"; message: string };
 
 type ChatPanelProps = {
   onSlashCommand?: (cmd: string, arg: string) => { ok: boolean; reply?: string };
@@ -238,7 +239,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         // latter opens a dialog (a second dialog would answer the
         // *next* prompt). Leave a note in the chat instead.
         append({
-          kind: "error",
+          kind: "info",
           message: `approval requested: ${event.action || "approval_required"}${
             event.description ? ` - ${event.description}` : ""
           }`,
@@ -591,6 +592,8 @@ function bubbleToPersisted(b: Bubble, ts: number): PersistedMessage {
       };
     case "error":
       return { kind: "error", message: b.message, ts };
+    case "info":
+      return { kind: "info", message: b.message, ts };
   }
 }
 
@@ -610,6 +613,8 @@ function persistedToBubble(m: PersistedMessage): Bubble {
       };
     case "error":
       return { kind: "error", message: m.message };
+    case "info":
+      return { kind: "info", message: m.message };
   }
 }
 
@@ -838,6 +843,20 @@ const BubbleView: Component<{ bubble: Bubble }> = (props) => {
                   border: "1px solid var(--role-error)",
                   color: "var(--role-error)",
                   "border-radius": "8px",
+                  "max-width": "720px",
+                  "font-family": "var(--font-mono)",
+                  "font-size": "0.85em",
+                }}
+              >
+                {x.message}
+              </div>
+            );
+          case "info":
+            return (
+              <div
+                class="self-start px-3 py-2"
+                style={{
+                  color: "var(--text-secondary)",
                   "max-width": "720px",
                   "font-family": "var(--font-mono)",
                   "font-size": "0.85em",

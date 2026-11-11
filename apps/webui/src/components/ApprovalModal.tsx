@@ -74,6 +74,12 @@ export const ApprovalModal: Component = () => {
       <div
         role="dialog"
         aria-modal="true"
+        // Focus the container (never a button) on open and whenever the
+        // prompt changes, so Enter/Space can't hit a stale-focused button.
+        tabIndex={-1}
+        ref={(el) => {
+          createEffect(on(pending, (p) => { if (p) el.focus(); }));
+        }}
         style={{
           position: "fixed",
           inset: 0,
@@ -82,6 +88,7 @@ export const ApprovalModal: Component = () => {
           "align-items": "center",
           "justify-content": "center",
           "z-index": 100,
+          outline: "none",
         }}
         onClick={(e) => {
           // Click outside the dialog box dismisses with Skip.
