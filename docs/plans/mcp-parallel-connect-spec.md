@@ -1,6 +1,6 @@
 # MCP servers connect in parallel — spec
 
-Branch `fix/mcp-parallel-connect`. Contract for the TDD rounds: rows P1–P13.
+Branch `fix/mcp-parallel-connect`. Contract for the TDD rounds: rows P1–P15.
 
 ## Problem
 
@@ -74,6 +74,15 @@ Not covered: a crash (panic, which aborts in release) or `kill -9`/OOM of hone. 
 |---|---|
 | P12 | **A TUI exit shuts MCP servers down gracefully.** The TUI's exit guard (`KillCommandsOnExit`) kills only shell-command groups, through a new `hone_tools::kill_shell_commands()`. MCP servers are left to `main`'s `McpManager::shutdown()`: the notification, input closed, up to 5 s, then the group kill. So a server that cleans up when its input ends (closing a browser it started, saving state) still does. (Review round 3 M1, reproduced: since P10 the guard SIGKILLed every MCP group first, so the graceful shutdown found them dead.) |
 | P13 | **Abrupt exits stop MCP servers politely first.** `hone_tools::kill_running_commands()`, used by `exit_now`, the one-shot SIGINT/SIGTERM/SIGHUP handler and `honed`, still SIGKILLs shell-command groups at once. MCP groups (a server's `ProcessGroupGuard`) get SIGTERM first, and only those still alive about 1 s later get SIGKILL. It returns once every MCP group is gone or has been killed, after at most about 1 s plus the kill. Before this branch such a server got the terminal's SIGINT or the end of its input and could clean up; P10's plain SIGKILL took that away. The forced kills inside the client (failed start, exhausted budget) signal the group before the leader is reaped, so its pid stays reserved. |
+
+### Review round 4 (P14–P15)
+
+| Row | Behaviour |
+|---|---|
+| P14 | **The SIGTERM grace lasts while any group member is alive.** P13's wait ends when the server's whole group is gone, not when its leader exits. So a server started through a shell that doesn't `exec` it (`sh -c "cd DIR && server"`) still gets up to about 1 s to clean up after the shell itself has died. A group with no live member ends the wait at once, including one whose leader is an unreaped zombie. On macOS, `killpg(pgid, 0)` tells these apart: success means a live member, EPERM means only zombies, ESRCH means empty. On Linux it succeeds while any zombie remains, so there the wait still ends once the leader has exited; the docs advise `exec`-ing the server in a shell launcher. (Review round 4 S1, reproduced on macOS: the grace dropped to about 20 ms, and a detached browser leaked.) |
+| P15 | **No shell command outlives an abrupt exit.** `kill_running_commands()` kills shell-command groups again after the MCP wait, so a command the agent started during that wait (up to about 1 s, while hone keeps running) is killed too. (Review round 4 S2, reproduced.) |
+
+Pinned by tests too: a server that exits on SIGTERM ends the wait promptly (well under 1 s, on both OSes), and a server whose SIGTERM cleanup takes about 300 ms gets it.
 
 ## Out of scope
 
