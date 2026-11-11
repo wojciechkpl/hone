@@ -85,6 +85,13 @@ pub enum ProviderEvent {
         /// truncation happened in plain-text output.
         lost_tool_calls: Vec<String>,
     },
+    /// A fallback model took over because the requested one did not answer.
+    /// First event of the stream; `reason` is a sanitized one-line message.
+    ModelFallback {
+        requested: String,
+        fallback: String,
+        reason: String,
+    },
 }
 
 /// Events streamed from the agent loop to the UI layer.
@@ -186,6 +193,13 @@ pub enum AgentEvent {
     },
     /// Emitted at the end of a Plan-mode turn after the plan file is written.
     PlanSaved { path: std::path::PathBuf },
+    /// A fallback model took over a model call because the requested one did
+    /// not answer.
+    ModelFallback {
+        requested: String,
+        fallback: String,
+        reason: String,
+    },
 }
 
 /// Action sent from the TUI to the agent when step mode is active and the

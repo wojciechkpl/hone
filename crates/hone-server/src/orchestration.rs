@@ -123,6 +123,7 @@ fn make_sse_event(event: AgentEvent, id: u64) -> Event {
         AgentEvent::ToolCallPaused { .. } => "tool_call_paused",
         AgentEvent::ContextInjected { .. } => "context_injected",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
+        AgentEvent::ModelFallback { .. } => "model_fallback",
         _ => "unknown",
     };
     let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_owned());
@@ -359,6 +360,20 @@ pub async fn orchestrate_handler(
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    // N11 of docs/plans/fallback-notice-spec.md: a model fallback has its own SSE name
+    // (read from the frame's Debug output: the `event:` line is not otherwise reachable).
+    #[test]
+    fn n11_make_sse_event_names_a_model_fallback() {
+        let ev = AgentEvent::ModelFallback {
+            requested: "anthropic:claude-x".into(),
+            fallback: "openai:gpt-4o".into(),
+            reason: "overloaded".into(),
+        };
+        let frame = format!("{:?}", make_sse_event(ev, 3));
+        assert!(frame.contains("event: model_fallback"), "{frame}");
+        assert!(!frame.contains("event: unknown"), "{frame}");
+    }
 
     #[test]
     fn make_sse_event_serialises_plan_created() {

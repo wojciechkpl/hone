@@ -61,6 +61,18 @@ impl ModelDispatch {
 struct Pinned {
     inner: Arc<dyn ModelProvider>,
     model: ModelId,
+    /// The full model id, reported by `id()` so a fallback notice names models.
+    id: String,
+}
+
+impl Pinned {
+    fn new(inner: Arc<dyn ModelProvider>, model: ModelId) -> Self {
+        Self {
+            inner,
+            id: model.as_str().to_owned(),
+            model,
+        }
+    }
 }
 
 #[async_trait]
@@ -68,8 +80,10 @@ impl ModelProvider for Pinned {
     fn runs_own_tools(&self) -> bool {
         self.inner.runs_own_tools()
     }
+    /// The pinned model's full id (not the inner provider's), so a fallback
+    /// notice names models.
     fn id(&self) -> &str {
-        self.inner.id()
+        &self.id
     }
     fn display_name(&self) -> &str {
         self.inner.display_name()
@@ -134,10 +148,7 @@ impl ModelProvider for ModelDispatch {
                 continue;
             }
             if let Some(provider) = self.provider_for(model) {
-                members.push(Arc::new(Pinned {
-                    inner: Arc::clone(provider),
-                    model: model.clone(),
-                }));
+                members.push(Arc::new(Pinned::new(Arc::clone(provider), model.clone())));
             }
         }
         if members.is_empty() {
@@ -145,10 +156,7 @@ impl ModelProvider for ModelDispatch {
         }
         members.insert(
             0,
-            Arc::new(Pinned {
-                inner: Arc::clone(primary),
-                model: request.model.clone(),
-            }),
+            Arc::new(Pinned::new(Arc::clone(primary), request.model.clone())),
         );
         FallbackChain::new(members).complete(request).await
     }

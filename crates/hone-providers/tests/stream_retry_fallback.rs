@@ -140,6 +140,13 @@ fn usage(input: u32) -> ProviderEvent {
         cache_creation: 0,
     })
 }
+fn mf(requested: &str, fallback: &str, reason: &str) -> ProviderEvent {
+    ProviderEvent::ModelFallback {
+        requested: requested.to_owned(),
+        fallback: fallback.to_owned(),
+        reason: reason.to_owned(),
+    }
+}
 fn ok(events: Vec<ProviderEvent>) -> Call {
     Call::Events(events)
 }
@@ -211,7 +218,14 @@ async fn test_r8_member_failing_before_output_hands_over_to_the_next_member() {
 
     let events = events_of(&chain(vec![a, b]), request()).await;
 
-    assert_eq!(events, vec![tok("hello"), ProviderEvent::Done]);
+    assert_eq!(
+        events,
+        vec![
+            mf("a", "b", "Overloaded"),
+            tok("hello"),
+            ProviderEvent::Done
+        ]
+    );
     assert_eq!((count(&a_calls), count(&b_calls)), (1, 1));
 }
 
@@ -229,7 +243,15 @@ async fn test_r8_transient_request_errors_move_on() {
 
         let events = events_of(&chain(vec![a, b]), request()).await;
 
-        assert_eq!(events, vec![tok("b"), ProviderEvent::Done], "{spec:?}");
+        assert!(
+            matches!(
+                events.first(),
+                Some(ProviderEvent::ModelFallback { requested, fallback, .. })
+                    if requested == "a" && fallback == "b"
+            ),
+            "{spec:?}: {events:?}"
+        );
+        assert_eq!(events[1..], [tok("b"), ProviderEvent::Done], "{spec:?}");
         assert_eq!((count(&a_calls), count(&b_calls)), (1, 1), "{spec:?}");
     }
 }
@@ -255,7 +277,15 @@ async fn test_r8_usage_of_a_failed_member_is_passed_on_ahead_of_the_next_members
 
     let events = events_of(&chain(vec![a, b]), request()).await;
 
-    assert_eq!(events, vec![usage(10), tok("hi"), ProviderEvent::Done]);
+    assert_eq!(
+        events,
+        vec![
+            mf("a", "b", "Overloaded"),
+            usage(10),
+            tok("hi"),
+            ProviderEvent::Done
+        ]
+    );
 }
 
 #[tokio::test]
@@ -324,7 +354,10 @@ async fn test_r8_unavailable_member_is_still_skipped_without_being_called() {
 
     let events = events_of(&chain(vec![a, b]), request()).await;
 
-    assert_eq!(events, vec![tok("b"), ProviderEvent::Done]);
+    assert_eq!(
+        events,
+        vec![mf("a", "b", "offline"), tok("b"), ProviderEvent::Done]
+    );
     assert_eq!(count(&a_calls), 0);
 }
 
@@ -554,7 +587,10 @@ async fn test_r12_chain_control_an_interrupted_response_is_still_handed_over() {
 
     let events = events_of(&chain(vec![a, b]), request()).await;
 
-    assert_eq!(events, vec![tok("b"), ProviderEvent::Done]);
+    assert_eq!(
+        events,
+        vec![mf("a", "b", INTERRUPTED), tok("b"), ProviderEvent::Done]
+    );
     assert_eq!(count(&b_calls), 1);
 }
 
@@ -634,7 +670,11 @@ async fn test_e6_chain_hands_over_a_retryable_failure_of_any_kind() {
 
         let events = events_of(&chain(vec![a, b]), request()).await;
 
-        assert_eq!(events, vec![tok("b"), ProviderEvent::Done], "{kind:?}");
+        assert_eq!(
+            events,
+            vec![mf("a", "b", "failed"), tok("b"), ProviderEvent::Done],
+            "{kind:?}"
+        );
         assert_eq!(count(&b_calls), 1, "{kind:?}");
     }
 }
@@ -647,7 +687,10 @@ async fn test_e6_an_unclassified_error_that_looks_like_an_idle_timeout_is_handed
 
     let events = events_of(&chain(vec![a, b]), request()).await;
 
-    assert_eq!(events, vec![tok("b"), ProviderEvent::Done]);
+    assert_eq!(
+        events,
+        vec![mf("a", "b", TIMED_OUT), tok("b"), ProviderEvent::Done]
+    );
     assert_eq!(count(&b_calls), 1);
 }
 
@@ -770,7 +813,16 @@ async fn test_g5_chain_moves_on_when_a_member_got_no_response() {
 
     let events = events_of(&chain(vec![a, b]), request()).await;
 
-    assert_eq!(events, vec![tok("b"), ProviderEvent::Done]);
+    let reason = ProviderError::Http {
+        provider: "a".to_owned(),
+        status: 0,
+        body: "error sending request for url (http://x/)".to_owned(),
+    }
+    .to_string();
+    assert_eq!(
+        events,
+        vec![mf("a", "b", &reason), tok("b"), ProviderEvent::Done]
+    );
     assert_eq!((count(&a_calls), count(&b_calls)), (1, 1));
 }
 

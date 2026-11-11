@@ -1611,12 +1611,19 @@ async fn print_orchestrate_events<O: io::Write, E: io::Write>(
     out: &mut O,
     err: &mut E,
 ) {
+    let mut fallbacks = FallbackPrinter::default();
     while let Some(event) = rx.recv().await {
         match event {
             AgentEvent::Token { text } => {
+                fallbacks.wrote(&text);
                 let _ = write!(out, "{text}");
                 let _ = out.flush();
             }
+            AgentEvent::ModelFallback {
+                requested,
+                fallback,
+                reason,
+            } => fallbacks.event(err, &requested, &fallback, &reason),
             AgentEvent::PlanCreated {
                 goal,
                 subtask_count,
@@ -1625,6 +1632,7 @@ async fn print_orchestrate_events<O: io::Write, E: io::Write>(
                     out,
                     "\n[orchestrator] plan: {goal} ({subtask_count} subtasks)"
                 );
+                fallbacks.wrote("\n");
             }
             AgentEvent::WorkerStarted {
                 task_id,
@@ -1632,6 +1640,7 @@ async fn print_orchestrate_events<O: io::Write, E: io::Write>(
                 description,
             } => {
                 let _ = writeln!(out, "[{task_id}] starting {agent}: {description}");
+                fallbacks.wrote("\n");
             }
             AgentEvent::WorkerCompleted {
                 task_id,
@@ -1640,6 +1649,7 @@ async fn print_orchestrate_events<O: io::Write, E: io::Write>(
                 cost_usd,
             } => {
                 let _ = writeln!(out, "[{task_id}] {agent}: {status} (${cost_usd:.4})");
+                fallbacks.wrote("\n");
             }
             AgentEvent::Error { message } => {
                 let _ = writeln!(err, "\nerror: {message}");
@@ -1710,6 +1720,40 @@ async fn run_orchestrate(
 // Ensemble mode
 // ---------------------------------------------------------------------------
 
+/// Print `--ensemble` progress until the channel closes.
+///
+/// Tokens and the first `Error` are printed only until the first `Done` or
+/// `Error`; after that the channel is still read to its end, ignoring tokens
+/// and errors, so later candidates' fallback notices are printed.
+async fn print_ensemble_events<O: io::Write, E: io::Write>(
+    mut rx: mpsc::Receiver<AgentEvent>,
+    out: &mut O,
+    err: &mut E,
+) {
+    let mut fallbacks = FallbackPrinter::default();
+    let mut printing = true;
+    while let Some(event) = rx.recv().await {
+        match event {
+            AgentEvent::Token { text } if printing => {
+                fallbacks.wrote(&text);
+                let _ = write!(out, "{text}");
+                let _ = out.flush();
+            }
+            AgentEvent::ModelFallback {
+                requested,
+                fallback,
+                reason,
+            } => fallbacks.event(err, &requested, &fallback, &reason),
+            AgentEvent::Done { .. } => printing = false,
+            AgentEvent::Error { message } if printing => {
+                let _ = writeln!(err, "\nerror: {message}");
+                printing = false;
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Run a prompt through N parallel candidates with varied temperatures, then
 /// let a ranker agent pick the best response (MASAI Ranker pattern).
 async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result<()> {
@@ -1727,24 +1771,10 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
     // overall assistant persona.
     let ensemble = AgentEnsemble::new(base_config.clone(), temperatures);
 
-    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+    let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
     let printer = tokio::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            match event {
-                AgentEvent::Token { text } => {
-                    print!("{text}");
-                    use io::Write;
-                    let _ = io::stdout().flush();
-                }
-                AgentEvent::Done { .. } => break,
-                AgentEvent::Error { message } => {
-                    eprintln!("\nerror: {message}");
-                    break;
-                }
-                _ => {}
-            }
-        }
+        print_ensemble_events(rx, &mut io::stdout(), &mut io::stderr()).await;
     });
 
     let result = ensemble.run(prompt, tx).await?;
@@ -1791,13 +1821,20 @@ async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
 
     // Drain events and print tokens while the agent runs inline.
     let printer = tokio::spawn(async move {
+        let mut fallbacks = FallbackPrinter::default();
         while let Some(event) = rx.recv().await {
             match event {
                 AgentEvent::Token { text } => {
+                    fallbacks.wrote(&text);
                     print!("{text}");
                     use io::Write;
                     let _ = io::stdout().flush();
                 }
+                AgentEvent::ModelFallback {
+                    requested,
+                    fallback,
+                    reason,
+                } => fallbacks.event(&mut io::stderr(), &requested, &fallback, &reason),
                 AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     eprintln!("\nerror: {message}");
@@ -1818,13 +1855,20 @@ async fn run_one_shot_content(agent: AgentHandle, content: Content) -> Result<()
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
 
     let printer = tokio::spawn(async move {
+        let mut fallbacks = FallbackPrinter::default();
         while let Some(event) = rx.recv().await {
             match event {
                 AgentEvent::Token { text } => {
+                    fallbacks.wrote(&text);
                     print!("{text}");
                     use io::Write;
                     let _ = io::stdout().flush();
                 }
+                AgentEvent::ModelFallback {
+                    requested,
+                    fallback,
+                    reason,
+                } => fallbacks.event(&mut io::stderr(), &requested, &fallback, &reason),
                 AgentEvent::Done { .. } => break,
                 AgentEvent::Error { message } => {
                     eprintln!("\nerror: {message}");
@@ -1851,7 +1895,8 @@ async fn run_one_shot_content(agent: AgentHandle, content: Content) -> Result<()
 ///   "cost_usd": 0.0034,
 ///   "model": "openai:deepseek/deepseek-chat",
 ///   "success": true,
-///   "error": null
+///   "error": null,
+///   "fallbacks": [{"requested": "...", "fallback": "...", "reason": "...", "calls": 1}]
 /// }
 /// ```
 async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Result<()> {
@@ -1862,12 +1907,18 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
         let mut tool_calls: Vec<serde_json::Value> = Vec::new();
         let mut error: Option<String> = None;
         let mut current_tool: Option<String> = None;
+        let mut fallbacks = FallbackPrinter::default();
 
         while let Some(event) = rx.recv().await {
             match event {
                 AgentEvent::Token { text } => {
                     response.push_str(&text);
                 }
+                AgentEvent::ModelFallback {
+                    requested,
+                    fallback,
+                    reason,
+                } => fallbacks.event(&mut io::stderr(), &requested, &fallback, &reason),
                 AgentEvent::ToolCallStart { name, .. } => {
                     current_tool = Some(name);
                 }
@@ -1890,16 +1941,24 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
             }
         }
 
-        (response, tool_calls, error)
+        (response, tool_calls, error, fallbacks.log)
     });
 
     let turn_result = agent.run_turn(prompt, tx).await;
-    let (response, tool_calls, error) = collector.await.unwrap_or_default();
+    let (response, tool_calls, error, fallbacks) = collector.await.unwrap_or_default();
     // One fresh agent per run, so the session's spend is this run's spend,
     // including model calls of a turn that failed or was cancelled.
     let spend = agent.session_spend().await;
 
-    let output = json_mode_output(&turn_result, response, tool_calls, error, spend, model_id);
+    let output = json_mode_output(
+        &turn_result,
+        response,
+        tool_calls,
+        error,
+        spend,
+        model_id,
+        &fallbacks,
+    );
     println!("{}", serde_json::to_string_pretty(&output)?);
 
     if output["success"] != true {
@@ -1918,6 +1977,7 @@ fn json_mode_output(
     error: Option<String>,
     spend: (hone_proto::TokenUsage, f64),
     model_id: &str,
+    fallbacks: &FallbackLog,
 ) -> serde_json::Value {
     let (usage, cost_usd) = spend;
     serde_json::json!({
@@ -1932,6 +1992,7 @@ fn json_mode_output(
         "model": model_id,
         "success": turn.is_ok() && error.is_none(),
         "error": error,
+        "fallbacks": fallbacks.to_json(),
     })
 }
 
@@ -3108,6 +3169,100 @@ fn model_context_limit(model: &str) -> u32 {
     }
 }
 
+/// Remember the fallback model of a `ModelFallback` event for the running turn.
+fn note_turn_fallback(event: &AgentEvent, slot: &mut Option<String>) {
+    if let AgentEvent::ModelFallback { fallback, .. } = event {
+        *slot = Some(fallback.clone());
+    }
+}
+
+/// Forget the turn's fallback model once the turn has ended.
+fn end_turn_fallback(event: &AgentEvent, slot: &mut Option<String>) {
+    if matches!(event, AgentEvent::Done { .. } | AgentEvent::Error { .. }) {
+        *slot = None;
+    }
+}
+
+/// The `ModelFallback` events of a run, for the one-shot stderr line and the
+/// `--json` `fallbacks` array: one entry per (requested, fallback) pair, in
+/// first-seen order.
+#[derive(Default)]
+struct FallbackLog {
+    pairs: Vec<FallbackPair>,
+}
+
+/// One (requested, fallback) pair seen in a run.
+struct FallbackPair {
+    requested: String,
+    fallback: String,
+    /// The first reason seen for the pair.
+    reason: String,
+    /// Number of `ModelFallback` events for the pair.
+    calls: u32,
+}
+
+impl FallbackLog {
+    /// Record an event; returns the stderr line if this pair is new.
+    fn record(&mut self, requested: &str, fallback: &str, reason: &str) -> Option<String> {
+        if let Some(entry) = self
+            .pairs
+            .iter_mut()
+            .find(|p| p.requested == requested && p.fallback == fallback)
+        {
+            entry.calls += 1;
+            return None;
+        }
+        self.pairs.push(FallbackPair {
+            requested: requested.to_owned(),
+            fallback: fallback.to_owned(),
+            reason: reason.to_owned(),
+            calls: 1,
+        });
+        Some(format!(
+            "hone: {requested} failed ({reason}); switched to fallback {fallback}"
+        ))
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        self.pairs
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "requested": p.requested,
+                    "fallback": p.fallback,
+                    "reason": p.reason,
+                    "calls": p.calls,
+                })
+            })
+            .collect()
+    }
+}
+
+/// Prints the one-shot stderr line for each new fallback pair, on its own
+/// line even when stdout tokens ended mid-line.
+#[derive(Default)]
+struct FallbackPrinter {
+    log: FallbackLog,
+    mid_line: bool,
+}
+
+impl FallbackPrinter {
+    /// Note tokens written to stdout.
+    fn wrote(&mut self, text: &str) {
+        if !text.is_empty() {
+            self.mid_line = !text.ends_with('\n');
+        }
+    }
+
+    fn event<E: io::Write>(&mut self, err: &mut E, requested: &str, fallback: &str, reason: &str) {
+        if let Some(line) = self.log.record(requested, fallback, reason) {
+            let lead = if self.mid_line { "\n" } else { "" };
+            let _ = writeln!(err, "{lead}{line}");
+            self.mid_line = false;
+        }
+    }
+}
+
 fn record_outcome_for_event(
     event: &AgentEvent,
     adaptive: &Option<Arc<AdaptiveClassifier>>,
@@ -3240,6 +3395,9 @@ async fn run_tui(
     let mut current_turn_prompt = String::new();
     // The model the running turn was sent to (for outcome records).
     let mut current_turn_model: String = model_id.to_string();
+    // Model of the last `ModelFallback` of the running turn: the adaptive
+    // classifier records the turn under it, since it gave the answer.
+    let mut turn_fallback_model: Option<String> = None;
 
     // Install a SIGINT handler so the process shuts down cleanly when the
     // terminal sends Ctrl+C at the OS level (e.g. from a wrapper script).
@@ -3457,6 +3615,7 @@ async fn run_tui(
                                     ComplexityClassifier::classify(&effective_text)
                                 };
                                 current_tier = Some(tier);
+                                turn_fallback_model = None;
                                 current_turn_prompt = effective_text.chars().take(200).collect::<String>();
 
                                 // Apply per-run governance overrides set via /budget and /permit
@@ -3577,7 +3736,7 @@ async fn run_tui(
                                                 })
                                             }
                                         } else {
-                                            spawn_orchestrated_turn(base_config.clone(), effective_text, agent_tx.clone(), agent.clone())
+                                            spawn_orchestrated_turn(base_config_clone, effective_text, agent_tx.clone(), agent.clone())
                                         }
                                     }
                                 };
@@ -3631,7 +3790,9 @@ async fn run_tui(
             // Agent events from the provider task
             maybe_agent = agent_rx.recv() => {
                 if let Some(event) = maybe_agent {
-                    record_outcome_for_event(&event, &adaptive, &mut current_tier, current_turn_model.as_str(), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
+                    note_turn_fallback(&event, &mut turn_fallback_model);
+                    record_outcome_for_event(&event, &adaptive, &mut current_tier, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str()), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
+                    end_turn_fallback(&event, &mut turn_fallback_model);
                     app.handle_agent_event(event);
                     // When a turn completes, clear the abort handle and restore
                     // any follow-up message the user typed while waiting.
@@ -3654,15 +3815,19 @@ async fn run_tui(
 
         // Drain any remaining agent events that arrived during the select branch.
         while let Ok(event) = agent_rx.try_recv() {
+            note_turn_fallback(&event, &mut turn_fallback_model);
             record_outcome_for_event(
                 &event,
                 &adaptive,
                 &mut current_tier,
-                current_turn_model.as_str(),
+                turn_fallback_model
+                    .as_deref()
+                    .unwrap_or(current_turn_model.as_str()),
                 base_config.pricing.input_per_million,
                 base_config.pricing.output_per_million,
                 &current_turn_prompt,
             );
+            end_turn_fallback(&event, &mut turn_fallback_model);
             app.handle_agent_event(event);
         }
         // Mirror the post-select restore logic for the drain path: if the drain
@@ -3817,6 +3982,7 @@ fn chrono_like_timestamp() -> String {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -4933,6 +5099,7 @@ mod tests {
             Some("provider exploded".to_owned()),
             spend_100_50(),
             "mock:test",
+            &FallbackLog::default(),
         );
         assert_eq!(v["usage"]["input"], 100, "{v}");
         assert_eq!(v["usage"]["output"], 50, "{v}");
@@ -4948,7 +5115,15 @@ mod tests {
     fn test_u4_json_output_for_failed_turn_without_error_event_should_still_be_unsuccessful() {
         let turn: Result<hone_core::TurnResult, hone_core::AgentError> =
             Err(hone_core::AgentError::Cancelled);
-        let v = json_mode_output(&turn, String::new(), vec![], None, spend_100_50(), "m");
+        let v = json_mode_output(
+            &turn,
+            String::new(),
+            vec![],
+            None,
+            spend_100_50(),
+            "m",
+            &FallbackLog::default(),
+        );
         assert_eq!(v["success"], false, "{v}");
         assert_eq!(v["usage"]["input"], 100, "{v}");
     }
@@ -4962,7 +5137,15 @@ mod tests {
                 cost_usd: 0.0,
                 tool_calls_count: 0,
             });
-        let v = json_mode_output(&turn, "done".to_owned(), vec![], None, spend_100_50(), "m");
+        let v = json_mode_output(
+            &turn,
+            "done".to_owned(),
+            vec![],
+            None,
+            spend_100_50(),
+            "m",
+            &FallbackLog::default(),
+        );
         assert_eq!(v["success"], true, "{v}");
         assert_eq!(v["usage"]["input"], 100, "{v}");
         assert_eq!(v["usage"]["output"], 50, "{v}");
@@ -5037,6 +5220,359 @@ mod tests {
             end("ghost", serde_json::json!({"ok": true}), false), // no matching start
         ];
         assert_eq!(code_modifying_tools_that_ran(&events), vec!["write_file"]);
+    }
+
+    // ---- fallback notice (docs/plans/fallback-notice-spec.md: N7, N8, N10) ----
+    //
+    // Seams assumed:
+    //   FallbackLog::default(), FallbackLog::record(requested, fallback, reason)
+    //   json_mode_output(.., model_id, &FallbackLog) -> Value  (final parameter added; emits "fallbacks")
+    //   FallbackPrinter::default(), .wrote(&str), .event(&mut err, requested, fallback, reason)
+    //   note_turn_fallback(&AgentEvent, &mut Option<String>), end_turn_fallback(..)
+    // The `--ensemble` printer is not unit-testable as written (it owns stdout/stderr); it is
+    // covered by reading only.
+
+    fn mf_event(requested: &str, fallback: &str, reason: &str) -> AgentEvent {
+        AgentEvent::ModelFallback {
+            requested: requested.to_owned(),
+            fallback: fallback.to_owned(),
+            reason: reason.to_owned(),
+        }
+    }
+
+    fn done_event() -> AgentEvent {
+        AgentEvent::Done {
+            usage: hone_proto::TokenUsage::default(),
+            cost_usd: 0.0,
+            plan: None,
+        }
+    }
+
+    const NOTICE_LINE: &str = "hone: a:x failed (why); switched to fallback b:y";
+
+    #[test]
+    fn test_n7_printer_starts_the_line_on_a_new_one_after_a_token_without_newline() {
+        let mut p = FallbackPrinter::default();
+        let mut err: Vec<u8> = Vec::new();
+        p.wrote("abc");
+
+        p.event(&mut err, "a:x", "b:y", "why");
+
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            format!("\n{NOTICE_LINE}\n")
+        );
+    }
+
+    #[test]
+    fn test_n7_printer_adds_no_blank_line_after_a_token_ending_in_a_newline() {
+        let mut p = FallbackPrinter::default();
+        let mut err: Vec<u8> = Vec::new();
+        p.wrote("abc\n");
+
+        p.event(&mut err, "a:x", "b:y", "why");
+
+        assert_eq!(String::from_utf8(err).unwrap(), format!("{NOTICE_LINE}\n"));
+    }
+
+    #[test]
+    fn test_n7_printer_adds_no_blank_line_when_nothing_was_printed() {
+        let mut p = FallbackPrinter::default();
+        let mut err: Vec<u8> = Vec::new();
+
+        p.event(&mut err, "a:x", "b:y", "why");
+
+        assert_eq!(String::from_utf8(err).unwrap(), format!("{NOTICE_LINE}\n"));
+    }
+
+    #[test]
+    fn test_n7_printer_prints_a_pair_once() {
+        let mut p = FallbackPrinter::default();
+        let mut err: Vec<u8> = Vec::new();
+
+        p.event(&mut err, "a:x", "b:y", "why");
+        p.event(&mut err, "a:x", "b:y", "why again");
+        p.event(&mut err, "a:x", "c:z", "other");
+
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            format!("{NOTICE_LINE}\nhone: a:x failed (other); switched to fallback c:z\n")
+        );
+    }
+
+    async fn run_printer(events: Vec<AgentEvent>) -> (String, String) {
+        let (tx, rx) = mpsc::channel::<AgentEvent>(16);
+        let mut out: Vec<u8> = Vec::new();
+        let mut err: Vec<u8> = Vec::new();
+        for e in events {
+            tx.send(e).await.unwrap();
+        }
+        drop(tx);
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            print_orchestrate_events(rx, &mut out, &mut err),
+        )
+        .await
+        .expect("printer hung");
+        (
+            String::from_utf8(out).unwrap(),
+            String::from_utf8(err).unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_n7_orchestrate_printer_prints_a_pair_once_on_stderr_and_nothing_on_stdout() {
+        let (out, err) = run_printer(vec![
+            mf_event("a:x", "b:y", "why"),
+            AgentEvent::Token {
+                text: "hi\n".to_owned(),
+            },
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert_eq!(err, format!("{NOTICE_LINE}\n"));
+        assert_eq!(out, "hi\n", "stdout carries no notice");
+    }
+
+    #[tokio::test]
+    async fn test_n7_orchestrate_printer_adds_no_blank_line_after_a_worker_line() {
+        // The token leaves stdout mid-line; the worker line (writeln!) ends it.
+        let (out, err) = run_printer(vec![
+            AgentEvent::Token {
+                text: "abc".to_owned(),
+            },
+            AgentEvent::WorkerCompleted {
+                task_id: "t1".to_owned(),
+                agent: "coder".to_owned(),
+                status: "ok".to_owned(),
+                cost_usd: 0.0,
+            },
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert!(out.ends_with('\n'), "{out:?}");
+        assert_eq!(err, format!("{NOTICE_LINE}\n"), "no leading blank line");
+    }
+
+    #[tokio::test]
+    async fn test_n7_orchestrate_printer_starts_a_new_line_after_a_mid_line_token() {
+        let (_, err) = run_printer(vec![
+            AgentEvent::Token {
+                text: "abc".to_owned(),
+            },
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert_eq!(err, format!("\n{NOTICE_LINE}\n"));
+    }
+
+    fn failed_turn() -> Result<hone_core::TurnResult, hone_core::AgentError> {
+        Err(hone_core::AgentError::Cancelled)
+    }
+
+    #[test]
+    fn test_n8_json_output_has_an_empty_fallbacks_array_for_an_empty_log() {
+        let v = json_mode_output(
+            &failed_turn(),
+            String::new(),
+            vec![],
+            None,
+            spend_100_50(),
+            "m",
+            &FallbackLog::default(),
+        );
+
+        assert_eq!(v["fallbacks"], serde_json::json!([]), "{v}");
+        let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "cost_usd",
+                "error",
+                "fallbacks",
+                "model",
+                "response",
+                "success",
+                "tool_calls",
+                "usage"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_n8_json_output_lists_pairs_in_first_seen_order_with_counts_and_first_reason() {
+        let mut log = FallbackLog::default();
+        let _ = log.record("a:x", "b:y", "first reason");
+        let _ = log.record("a:x", "c:z", "other");
+        let _ = log.record("a:x", "b:y", "second reason");
+        let _ = log.record("a:x", "b:y", "third reason");
+
+        let v = json_mode_output(
+            &failed_turn(),
+            String::new(),
+            vec![],
+            None,
+            spend_100_50(),
+            "a:x",
+            &log,
+        );
+
+        assert_eq!(
+            v["fallbacks"],
+            serde_json::json!([
+                {"requested": "a:x", "fallback": "b:y", "reason": "first reason", "calls": 3},
+                {"requested": "a:x", "fallback": "c:z", "reason": "other", "calls": 1},
+            ])
+        );
+        assert_eq!(v["model"], "a:x", "model keeps its meaning");
+    }
+
+    #[test]
+    fn test_n10_a_fallback_then_done_records_the_fallback_model_then_clears_it() {
+        let mut slot: Option<String> = None;
+
+        note_turn_fallback(&mf_event("a:x", "b:y", "why"), &mut slot);
+        assert_eq!(slot.as_deref(), Some("b:y"));
+
+        end_turn_fallback(&done_event(), &mut slot);
+        assert_eq!(slot, None);
+    }
+
+    #[test]
+    fn test_n10_the_last_fallback_of_a_turn_wins() {
+        let mut slot: Option<String> = None;
+        note_turn_fallback(&mf_event("a:x", "b:y", "why"), &mut slot);
+        note_turn_fallback(&mf_event("a:x", "c:z", "why"), &mut slot);
+        assert_eq!(slot.as_deref(), Some("c:z"));
+    }
+
+    #[test]
+    fn test_n10_other_events_neither_set_nor_clear_the_slot() {
+        let mut slot: Option<String> = None;
+        let token = AgentEvent::Token {
+            text: "t".to_owned(),
+        };
+        note_turn_fallback(&token, &mut slot);
+        end_turn_fallback(&token, &mut slot);
+        assert_eq!(slot, None);
+
+        note_turn_fallback(&mf_event("a:x", "b:y", "why"), &mut slot);
+        note_turn_fallback(&token, &mut slot);
+        end_turn_fallback(&token, &mut slot);
+        assert_eq!(slot.as_deref(), Some("b:y"));
+    }
+
+    #[test]
+    fn test_n10_an_error_clears_the_slot() {
+        let mut slot = Some("b:y".to_owned());
+        end_turn_fallback(
+            &AgentEvent::Error {
+                message: "boom".to_owned(),
+            },
+            &mut slot,
+        );
+        assert_eq!(slot, None);
+    }
+
+    // N7 ensemble printer. Seam assumed (free fn in main.rs, extracted from `run_ensemble`):
+    //   async fn print_ensemble_events<O: io::Write, E: io::Write>(
+    //       rx: mpsc::Receiver<AgentEvent>, out: &mut O, err: &mut E)
+    // Tokens and an `Error` are printed only until the first `Done` or `Error`; afterwards the
+    // channel is read to its end, ignoring tokens and errors, so later notices still print.
+    async fn run_ensemble_printer(events: Vec<AgentEvent>) -> (String, String) {
+        let (tx, rx) = mpsc::channel::<AgentEvent>(16);
+        let mut out: Vec<u8> = Vec::new();
+        let mut err: Vec<u8> = Vec::new();
+        for e in events {
+            tx.send(e).await.unwrap();
+        }
+        drop(tx);
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            print_ensemble_events(rx, &mut out, &mut err),
+        )
+        .await
+        .expect("printer hung");
+        (
+            String::from_utf8(out).unwrap(),
+            String::from_utf8(err).unwrap(),
+        )
+    }
+
+    fn token_event(text: &str) -> AgentEvent {
+        AgentEvent::Token {
+            text: text.to_owned(),
+        }
+    }
+
+    fn error_event(message: &str) -> AgentEvent {
+        AgentEvent::Error {
+            message: message.to_owned(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_n7_ensemble_printer_prints_tokens_before_the_first_done_and_ignores_later_ones() {
+        let (out, err) = run_ensemble_printer(vec![
+            token_event("one "),
+            token_event("two"),
+            done_event(),
+            token_event(" late"),
+        ])
+        .await;
+
+        assert_eq!(out, "one two");
+        assert_eq!(err, "");
+    }
+
+    #[tokio::test]
+    async fn test_n7_ensemble_printer_prints_a_notice_after_the_first_done() {
+        let (out, err) = run_ensemble_printer(vec![
+            token_event("answer"),
+            done_event(),
+            mf_event("a:x", "b:y", "why"),
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert_eq!(out, "answer");
+        assert_eq!(err, format!("\n{NOTICE_LINE}\n"), "once, on its own line");
+    }
+
+    #[tokio::test]
+    async fn test_n7_ensemble_printer_does_not_print_an_error_after_done_but_prints_the_notice() {
+        let (out, err) = run_ensemble_printer(vec![
+            token_event("answer\n"),
+            done_event(),
+            error_event("candidate 2 failed"),
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert_eq!(out, "answer\n");
+        assert!(!err.contains("candidate 2 failed"), "{err}");
+        assert_eq!(err, format!("{NOTICE_LINE}\n"));
+    }
+
+    #[tokio::test]
+    async fn test_n7_ensemble_printer_prints_the_first_error_then_still_prints_later_notices() {
+        let (out, err) = run_ensemble_printer(vec![
+            error_event("first failure"),
+            token_event("ignored"),
+            error_event("second failure"),
+            mf_event("a:x", "b:y", "why"),
+        ])
+        .await;
+
+        assert_eq!(out, "");
+        assert!(err.starts_with("\nerror: first failure\n"), "{err:?}");
+        assert!(!err.contains("second failure"), "{err}");
+        assert!(!err.contains("ignored"), "{err}");
+        assert!(err.ends_with(&format!("{NOTICE_LINE}\n")), "{err:?}");
     }
 }
 

@@ -140,6 +140,7 @@ fn event_type(event: &AgentEvent) -> &'static str {
         AgentEvent::ToolCallPaused { .. } => "tool_call_paused",
         AgentEvent::ContextInjected { .. } => "context_injected",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
+        AgentEvent::ModelFallback { .. } => "model_fallback",
         _ => "unknown",
     }
 }
@@ -411,6 +412,17 @@ pub async fn run_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // N11 of docs/plans/fallback-notice-spec.md: a model fallback has its own SSE name.
+    #[test]
+    fn n11_event_type_names_a_model_fallback() {
+        let ev = AgentEvent::ModelFallback {
+            requested: "anthropic:claude-x".into(),
+            fallback: "openai:gpt-4o".into(),
+            reason: "overloaded".into(),
+        };
+        assert_eq!(event_type(&ev), "model_fallback");
+    }
 
     #[test]
     fn event_type_maps_all_variants() {

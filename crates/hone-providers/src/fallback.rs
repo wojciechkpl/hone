@@ -26,6 +26,90 @@ impl FallbackChain {
     }
 }
 
+/// Longest reason shown, in characters.
+const MAX_REASON_CHARS: usize = 200;
+
+/// Bidi and zero-width format characters, blanked like control characters.
+fn is_invisible_format(c: char) -> bool {
+    matches!(c,
+        '\u{061C}'
+        | '\u{200B}'..='\u{200F}'
+        | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}'
+        | '\u{2066}'..='\u{2069}'
+        | '\u{FEFF}')
+}
+
+/// Remove user info, query strings and fragments from every `scheme://` URL
+/// in `s`.
+///
+/// The authority (from after `://` to the first `/`, `?`, `#` or whitespace)
+/// loses everything through its last `@`. A `?` or `#` after the path starts a
+/// part removed up to the next whitespace; if that part ended with one of
+/// `) ] > " ' ,` that character is kept so surrounding text stays balanced.
+fn redact_urls(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find("://") {
+        let body_start = i + 3;
+        out.push_str(&rest[..body_start]);
+        let after = &rest[body_start..];
+        let auth_end = after
+            .find(|c: char| matches!(c, '/' | '?' | '#') || c.is_whitespace())
+            .unwrap_or(after.len());
+        let authority = &after[..auth_end];
+        out.push_str(
+            authority
+                .rfind('@')
+                .map_or(authority, |at| &authority[at + 1..]),
+        );
+        let path_end = after[auth_end..]
+            .find(|c: char| matches!(c, '?' | '#') || c.is_whitespace())
+            .map_or(after.len(), |n| auth_end + n);
+        out.push_str(&after[auth_end..path_end]);
+        if after[path_end..].starts_with(['?', '#']) {
+            let removed_end = after[path_end..]
+                .find(char::is_whitespace)
+                .map_or(after.len(), |n| path_end + n);
+            if let Some(last) = after[path_end..removed_end].chars().next_back() {
+                if matches!(last, ')' | ']' | '>' | '"' | '\'' | ',') {
+                    out.push(last);
+                }
+            }
+            rest = &after[removed_end..];
+        } else {
+            rest = &after[path_end..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Make a failure message safe to show on one line: control and bidi
+/// characters become spaces, whitespace runs collapse, URLs lose credentials
+/// and query strings, long text is cut with `…`.
+fn sanitize_reason(raw: &str) -> String {
+    let spaced: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_control() || is_invisible_format(c) {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let collapsed = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
+    let redacted = redact_urls(&collapsed);
+    if redacted.is_empty() {
+        return "unknown error".to_owned();
+    }
+    match redacted.char_indices().nth(MAX_REASON_CHARS) {
+        Some((cut, _)) => format!("{}…", redacted[..cut].trim_end()),
+        None => redacted,
+    }
+}
+
 #[async_trait]
 impl ModelProvider for FallbackChain {
     fn runs_own_tools(&self) -> bool {
@@ -55,10 +139,13 @@ impl ModelProvider for FallbackChain {
         // ahead of the events of the member that finally answers.
         let mut carried: Vec<ProviderEvent> = Vec::new();
         let mut last: Option<LastFailure> = None;
+        // Why the first member did not answer (the first failure is always its).
+        let mut first_reason: Option<String> = None;
 
-        for provider in &self.providers {
+        for (index, provider) in self.providers.iter().enumerate() {
             // Skip unavailable providers without even trying them.
             if let ProviderHealth::Unavailable { reason } = provider.health().await {
+                first_reason.get_or_insert_with(|| sanitize_reason(&reason));
                 last = Some(LastFailure::Request(ProviderError::Http {
                     provider: provider.id().to_owned(),
                     status: 503,
@@ -68,12 +155,26 @@ impl ModelProvider for FallbackChain {
             }
 
             match attempt(provider.as_ref(), request.clone()).await {
-                Attempt::Stream(stream) => return Ok(with_carried(carried, stream)),
+                Attempt::Stream(stream) => {
+                    if index > 0 {
+                        carried.insert(
+                            0,
+                            ProviderEvent::ModelFallback {
+                                requested: self.providers[0].id().to_owned(),
+                                fallback: provider.id().to_owned(),
+                                reason: first_reason.unwrap_or_else(|| sanitize_reason("")),
+                            },
+                        );
+                    }
+                    return Ok(with_carried(carried, stream));
+                }
                 Attempt::Failed(failure) => {
+                    first_reason.get_or_insert_with(|| sanitize_reason(&failure.message));
                     carried.extend(failure.usage);
                     last = Some(LastFailure::Stream(failure.message, failure.kind));
                 }
                 Attempt::Request(e) if hands_over(&e) => {
+                    first_reason.get_or_insert_with(|| sanitize_reason(&e.to_string()));
                     last = Some(LastFailure::Request(e));
                 }
                 Attempt::Request(e) => return Err(e),
