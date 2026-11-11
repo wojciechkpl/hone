@@ -1,6 +1,6 @@
 # MCP request timeout — spec
 
-Branch `fix/mcp-timeout`. Contract for the TDD rounds: rows T1–T9.
+Branch `fix/mcp-timeout`. Contract for the TDD rounds: rows T1–T10.
 
 ## Problem
 
@@ -61,6 +61,12 @@ sequenceDiagram
 | T7 | **The startup handshake gets more time.** `connect()` (`initialize` and the first `tools/list`) is bounded by a handshake timeout that defaults to the larger of the request timeout and 60 s, so an `npx -y <package>` server (every built-in marketplace entry) can download on its first start. `with_handshake_timeout(Duration)` overrides it; a request timeout of `0` means no handshake timeout either. Later requests keep `timeout_ms`. (Review S1: a cold `npx` start commonly takes over 10 s and would be killed and skipped.) |
 | T8 | **A cut multi-byte character can't fail a call.** Lines are read as bytes up to `\n` and decoded afterwards; a line that isn't valid UTF-8 is skipped like any other non-JSON line (T4). (Review S2, reproduced: a timeout inside "é" made the next call fail with `ConnectionFailed(InvalidData)`.) |
 | T9 | **Shutdown is quick for a server that exits on end of input.** `McpManager::shutdown()` (and the client's `shutdown`) closes the server's stdin before waiting, so a server that exits when its input ends is gone at once; the 5 s wait and kill remain the fallback. (Review follow-up, reproduced: every hone exit waited 5 s per MCP server, then killed it.) |
+
+### Handshake setting (T10)
+
+| Row | Behaviour |
+|---|---|
+| T10 | **`handshake_timeout_ms` in `mcp.json`.** An optional per-server field: when set, the manager uses it as the client's handshake timeout (`with_handshake_timeout`); `0` means no handshake timeout. When absent, T7's default applies (`max(timeout_ms, 60 000)`, none if `timeout_ms` is 0). Lets a user give a very slow first `npx` start more time, and a test bound a hung server's start. Existing configs parse unchanged. (The manager had no way to set the handshake bound, so T5's startup test couldn't bound a hung server once T7 raised the default.) |
 
 ## Out of scope
 
