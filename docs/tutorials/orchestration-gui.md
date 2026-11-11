@@ -43,12 +43,17 @@ result before paying for any worker.
 
 Three keys:
 
-- **r / Enter** — run the plan. The prompt replays through the normal
-  turn dispatch; each subtask spawns the right specialist.
-- **e** — restore the prompt to the input bar. Tweak it and submit
-  again (or `/plan` again).
+- **r / Enter** — run the plan shown: each subtask goes to its
+  specialist, then the results are merged. Hone doesn't plan again.
+  The run uses the settings a complex prompt would: the `[[routing]]`
+  complex model or your `/model`, and any `/budget` or `/permit`.
+- **e** — put the prompt back in the input bar, without `/plan`.
+  Tweak it and submit it as a normal prompt, or add `/plan` again.
 - **c / Esc** — cancel. Costs you only the lead-LLM call you already
   paid.
+
+The TUI keeps running while the lead plans: press **Esc** to stop it.
+`/plan` isn't accepted while a turn is running.
 
 The cost line shows two figures:
 

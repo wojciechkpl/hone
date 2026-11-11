@@ -56,7 +56,7 @@ sequenceDiagram
 
 ## Out of scope (follow-ups)
 
-- **Orchestrated workers ignore the TUI mode and approvals.** `Orchestrator::build_lead_config`/`build_worker_config` hard-code `AgentMode::Build` and `ToolApprovalPolicy::Auto` (`crates/hone-core/src/orchestrator.rs:788`, `:793`, `:846`, `:851`), so Complex turns and `/plan` Run neither stay read-only in Plan mode nor ask before writes or shell. Pre-existing; affects every orchestrated path.
+- **Orchestrated workers have no tools.** `Orchestrator::build_lead_config` and `build_worker_config` give the lead and every worker an empty `ToolRegistry` (`crates/hone-core/src/orchestrator.rs:772`, `:830`), so a Complex turn or `/plan` Run can't read or edit files: workers answer in text only. (Their hard-coded `AgentMode::Build` / `ToolApprovalPolicy::Auto` is moot without tools.) Pre-existing; affects every orchestrated path.
 - **Web UI Run plans again:** the `<DryRunCard>` Run sends `POST /orchestrate` without `dry_run`, which decomposes anew.
 - **Planning's fallback notices** are still dropped (the decompose drains its own events).
 - **Other drains in the Enter block:** a `!command` typed during a turn waits for the next Enter with text, like the plan actions did.

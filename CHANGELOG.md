@@ -137,6 +137,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: `/plan` Run, Edit and planning
+
+- **Before:**
+  - The plan overlay's keys did nothing until the next Enter with text typed. That Enter also sent the typed text as a turn.
+  - **Edit** didn't put the prompt back.
+  - **Run** sent the prompt through the normal path again, so the complexity classifier chose the tier anew. A simple verdict ran one agent and no workers; a complex one asked for a new plan, paying for it again, and possibly getting a different one.
+  - While the lead model planned, the TUI didn't redraw and ignored <kbd>Esc</kbd> and <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+- **Now:**
+  - **Run** (<kbd>r</kbd>/<kbd>Enter</kbd>) starts at once and runs the plan shown, without planning again (new `Orchestrator::run_plan`). It uses the settings of a complex prompt: the `[[routing]]` complex model or your `/model`, and any `/budget` or `/permit`.
+  - **Edit** (<kbd>e</kbd>) puts the prompt in the input bar, without `/plan`, with the cursor at the end.
+  - **Planning** runs in the background with the spinner showing; <kbd>Esc</kbd> stops it. `/plan` isn't accepted while a turn is running.
+- **Also fixed:** text put in the input bar by the TUI (Edit) left the cursor short of the end when it had non-ASCII characters, and the next keystroke could crash the TUI.
+- **Not yet:** orchestrated workers, including those of a `/plan` run, have no tools, so they can't read or edit files; they answer in text. The web UI's Run still plans again.
+- Contract: `docs/plans/plan-gate-spec.md`.
+
 ### Fallback notice: Hone says when a fallback model took over
 
 - **Before:** when a model in `fallback_models` took over a model call, nothing said so. The TUI showed the answer as the turn's model's, one-shot printed nothing, and `--json` named the model the run chose. `HONE_CACHE` stored the fallback's answer under the requested model and replayed it later, even once that model was back. The TUI's adaptive classifier recorded the turn under the model that didn't answer.
