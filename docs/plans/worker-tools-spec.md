@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W40.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W47.
 
 ## Problem
 
@@ -114,7 +114,7 @@ keeps building and testing after Esc. The TUI's post-turn test run
 |---|---|
 | W23 | **The shell tool's command ends with its call** (`hone-tools`). On unix each command runs in its own process group (the group the sandbox wrapper, `sh` and everything they start belong to), with stdin closed (`Stdio::null()`; today it is inherited despite `output()`'s docs, so in the TUI a command that reads stdin waits on the terminal until it times out). If the call ends before the command does — its future is dropped, or `timeout_ms` passes (still `ToolError::Timeout`) — the whole group gets `SIGKILL`, including grandchildren such as a backgrounded `(sleep 1; touch f) &`. A command that finishes normally is left alone, as now. Children are reaped (no zombies). Elsewhere, the direct child is killed. |
 | W24 | **The TUI's post-turn test run ends with its turn.** `test_loop`'s test command runs the same way (one shared helper), so <kbd>Esc</kbd> during the test run kills it. |
-| W25 | **hone's exit kills running commands.** A process-wide registry tracks running command groups; `hone_tools` exposes a function that kills them all. The TUI calls it when it exits (quit, <kbd>Ctrl</kbd>+<kbd>C</kbd>, SIGINT) and on SIGTERM and SIGHUP (which it now handles like SIGINT). One-shot runs (`hone "prompt"`, `--orchestrate`) handle SIGINT, SIGTERM and SIGHUP by killing running commands and exiting with 128 + the signal number. Without this, moving commands out of hone's process group (W23) would let them outlive hone, because the terminal's <kbd>Ctrl</kbd>+<kbd>C</kbd> and hangup no longer reach them. |
+| W25 | **hone's exit kills running commands.** A process-wide registry tracks running command groups; `hone_tools` exposes a function that kills them all. The TUI calls it when it exits (quit, <kbd>Ctrl</kbd>+<kbd>C</kbd>, SIGINT) and on SIGTERM and SIGHUP (which it now handles like SIGINT). One-shot runs (`hone "prompt"`, `--orchestrate`) handle SIGINT, SIGTERM and SIGHUP by killing running commands and exiting with 128 + the signal number (amended by W37: they re-raise the signal; and by W41: an ignored signal stays ignored). Without this, moving commands out of hone's process group (W23) would let them outlive hone, because the terminal's <kbd>Ctrl</kbd>+<kbd>C</kbd> and hangup no longer reach them. |
 
 ### Made-up agent names (W26, added at the user's request)
 
@@ -160,6 +160,18 @@ never ask.
 | W39 | **<kbd>Esc</kbd> stops the post-turn test run.** With the TUI idle, an empty input box, and the previous turn's task (the post-turn test run and any fix turns it starts) still running, <kbd>Esc</kbd> aborts that task — killing its test command (W24) — and says so in a system line. With text in the input box, <kbd>Esc</kbd> clears it, as now. (Review 3 S3: the test run started after the turn's `Done`, when <kbd>Esc</kbd> only cleared the input.) |
 | W40 | **Approval menu polish.** The key-hint footer stays visible however short the terminal (the argument lines are cut first) and long argument lines wrap; the worker line marks the planner-written description as quoted task text (e.g. in quotes and a muted style); the App forgets earlier workers' descriptions on `PlanCreated`. (Review 3 nits 6–8.) |
 
+### Review round 4 (W41–W47)
+
+| Row | Behaviour |
+|---|---|
+| W41 | **An ignored signal stays ignored.** `hone` (one-shot and TUI) and `honed` install a handler for SIGINT, SIGTERM or SIGHUP only if that signal isn't ignored when they start: under `nohup` (SIGHUP ignored) or as a background job (SIGINT ignored) the signal keeps being ignored, as before W25. One helper in `hone_tools` decides it (`sigaction` with a null new action, checking for `SIG_IGN`). (Review 4 S1: `nohup hone --orchestrate …` and `nohup honed` died on hangup.) |
+| W42 | **The approval menu always shows what a call touches.** Short identifying fields (`path`, `file_path`, `command`, `url`, `pattern`) are shown before the others, and every value is capped at a few wrapped rows with "… (N more chars)", so a long `content` or `new_string` can't push the target path out of view. (Review 4 S2: sorted keys put `content` before `path`; W40's wrapping then hid the path.) |
+| W43 | **The web dialog ignores clicks for 400 ms** after a prompt is shown and after each click, like the TUI's guard, so a human double-click can't answer the next worker's prompt. (Review 4 S3: the in-flight check only covered the same prompt.) |
+| W44 | **An `@agent` persona is restored even when its turn is aborted.** The inline wrapper's restore (system prompt and tools) also runs when the wrapper task is aborted — by <kbd>Esc</kbd> during the turn or W39's <kbd>Esc</kbd> during the post-turn work. (Review 4 S4.) |
+| W45 | **Esc really stops a running fix turn.** The post-turn task gives its fix turns an event channel it owns (as `spawn_agent_turn` does), so aborting it closes the channel and the agent cancels the fix turn, including its pending tool calls. W39's system line names what was stopped (the test run or a fix turn). (Review 4 S5: aborting only dropped the wait; the actor finished the fix turn.) |
+| W46 | **Web UI approval races.** The dialog opens only on `tool_call_paused` (`approval_required` is information, as in the TUI), so one server prompt never shows two dialogs; a failed answer keeps the dialog open for a retry unless the response is 2xx, 404 or 410; a closing stream resets the active run id only if it is still that run's. (Review 4 web 1–3.) |
+| W47 | **Server input checks** (older bugs W35 touches). A `request_id` on `/run` or `/orchestrate` must be 1–128 characters of `A-Z a-z 0-9 - _` (400 otherwise), because `/run` names its provenance file after it and `../` escaped the provenance directory. `max_workers` must be at least 1 (400 for 0, which panicked in `chunks(0)`). |
+
 ## What each entry point gets
 
 | Entry point | Tools a worker can use | Risky calls |
@@ -198,3 +210,7 @@ never ask.
 - **The planner's raw JSON** is shown as assistant text in the web UI (and the
   TUI) while an orchestrated run plans; workers' text runs together in one
   message.
+- **`honed` graceful shutdown** waits for a connected step-mode run's stream (also
+  `/run`'s); a client that disconnects leaves an orchestrated run starting its
+  remaining subtasks and merge; `/orchestrate` mints its own provenance session id,
+  so `/provenance/{request_id}/verify` doesn't find a step-mode orchestrated run.
