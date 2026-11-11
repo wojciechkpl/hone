@@ -76,6 +76,11 @@ fn spawn_child(
     // SAFETY: only async-signal-safe `signal` calls between fork and exec.
     unsafe {
         cmd.pre_exec(move || {
+            // Start from the defaults even if `cargo test` itself runs with
+            // signals ignored (a background job ignores SIGINT).
+            for s in [libc::SIGHUP, libc::SIGINT, libc::SIGTERM] {
+                libc::signal(s, libc::SIG_DFL);
+            }
             for s in &ignore {
                 libc::signal(*s, libc::SIG_IGN);
             }
