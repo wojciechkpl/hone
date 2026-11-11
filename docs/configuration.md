@@ -728,9 +728,9 @@ Run), taken from the session's tools.
 
 `tools:` takes tool names (`read_file`, `write_file`, `edit_file`, `multi_edit`, `glob`,
 `grep`, `shell`, `git_status`, `git_diff`, `git_commit`, `web_fetch`, ...). The short names
-`read`, `write` and `edit`, which the built-in agents use, mean `read_file`, `write_file`
-and `edit_file`. Other unknown names are dropped with only a log warning. An empty or
-missing `tools:` list keeps every tool.
+`read`, `write` and `edit` mean `read_file`, `write_file` and `edit_file`, unless a tool
+has that exact name (an MCP server's `write`, say), which then wins. Other unknown names
+are dropped with only a log warning. An empty or missing `tools:` list keeps every tool.
 
 ## Theme
 

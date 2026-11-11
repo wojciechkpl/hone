@@ -154,7 +154,7 @@ sequenceDiagram
     CLI->>CLI: same budget on the orchestrated run's config
     
     Note over App: Pending governance drained; the agent keeps<br/>the budget and permits for the rest of the session
-    Note over CLI: Workers take the agent's approval policy (with /permit),<br/>mode and "always" answers when the run starts; the lead has no tools.<br/>/budget caps only the lead's calls (workers use worker_budget)
+    Note over CLI: Workers take the agent's approval policy (with /permit)<br/>and mode when the run starts and share its "always" answers live;<br/>the lead has no tools. /budget caps only the lead's calls<br/>(workers use worker_budget)
 ```
 
 **Key types and functions:**
