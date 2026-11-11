@@ -7042,6 +7042,58 @@ mod tests {
             );
         }
     }
+
+    // ---- W26: a made-up agent name gets read-only tools ----
+
+    fn unknown_agent_plan() -> hone_core::TaskPlan {
+        let mut plan = one_task_plan();
+        plan.subtasks[0].agent = "made-up-agent".to_owned();
+        plan
+    }
+
+    async fn w26_worker_tools(allowed: &[&str]) -> Vec<Vec<String>> {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, provider, log, step_tx) = wt_session(dir.path(), None);
+        let allowed: Vec<String> = allowed.iter().map(|s| (*s).to_owned()).collect();
+        let narrowed = narrow_run_config_for_persona(config, &allowed);
+        let agent = AgentHandle::spawn(narrowed.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            narrowed,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(unknown_agent_plan()),
+        );
+        let events =
+            wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+        assert_eq!(wt_pauses(&events), 0, "{events:?}");
+        assert!(log.lock().unwrap().is_empty(), "the risky call must not run");
+        let seen = provider.worker_requests.lock().unwrap().clone();
+        assert!(!seen.is_empty());
+        seen
+    }
+
+    #[tokio::test]
+    async fn w26_unknown_agent_worker_should_get_read_only_tools_and_its_risky_call_is_not_found() {
+        for request in w26_worker_tools(&[]).await {
+            assert_eq!(
+                request,
+                vec!["glob".to_owned(), "grep".to_owned(), "read_file".to_owned()]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn w26_unknown_agent_worker_with_a_persona_should_get_only_what_both_allow() {
+        // Persona [read, shell]: narrowed to read_file + shell; the made-up
+        // agent then keeps only the read-only one.
+        for request in w26_worker_tools(&["read", "shell"]).await {
+            assert_eq!(request, vec!["read_file".to_owned()], "{request:?}");
+        }
+    }
+
 }
 
 // ---------------------------------------------------------------------------

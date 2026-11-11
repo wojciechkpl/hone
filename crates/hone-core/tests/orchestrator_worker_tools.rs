@@ -117,24 +117,152 @@ async fn test_w1_worker_when_agent_tools_list_is_empty_should_get_the_whole_sess
     );
 }
 
+// ---------------------------------------------------------------------------
+// W26: a worker for an agent name not in the registry gets read-only tools
+// ---------------------------------------------------------------------------
+
 #[tokio::test]
-async fn test_w1_worker_when_agent_name_is_unknown_should_get_the_whole_session_registry() {
+async fn test_w26_worker_when_agent_name_is_unknown_should_get_only_read_only_session_tools() {
     let dir = tempfile::tempdir().unwrap();
     let log = new_log();
-    let provider = ScriptedProvider::new(&["W1-UNKNOWN"]);
+    let provider = ScriptedProvider::new(&["W26-UNKNOWN"]);
     let config = lead_config(Arc::clone(&provider), session_tools(&log), dir.path());
 
-    let orch = Orchestrator::new(config, AgentRegistry::new(), 4);
-    run_plan_with_ui(
+    // `rust_expert` (typo) is not registered.
+    let orch = Orchestrator::new(config, builtin_registry(), 4);
+    let out = run_plan_with_ui(
         orch,
-        plan(vec![subtask("1", "W1-UNKNOWN", "no-such-agent")]),
+        plan(vec![subtask("1", "W26-UNKNOWN", "rust_expert")]),
         None,
         proceed_all(),
     )
     .await;
 
     assert_eq!(
-        provider.worker_tools("W1-UNKNOWN"),
+        provider.worker_tools("W26-UNKNOWN"),
+        sorted(&["read_file", "grep", "glob", "web_fetch"]),
+        "exactly the session's read-only tools"
+    );
+    // It still runs.
+    assert!(matches!(out.workers[0].status, WorkerStatus::Completed));
+    assert_eq!(out.workers[0].response, "done-W26-UNKNOWN");
+}
+
+#[tokio::test]
+async fn test_w26_worker_when_registry_is_empty_should_get_only_read_only_session_tools() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = new_log();
+    let provider = ScriptedProvider::new(&["W26-EMPTYREG"]);
+    let config = lead_config(Arc::clone(&provider), session_tools(&log), dir.path());
+
+    let orch = Orchestrator::new(config, AgentRegistry::new(), 4);
+    run_plan_with_ui(
+        orch,
+        plan(vec![subtask("1", "W26-EMPTYREG", "assistant")]),
+        None,
+        proceed_all(),
+    )
+    .await;
+
+    assert_eq!(
+        provider.worker_tools("W26-EMPTYREG"),
+        sorted(&["read_file", "grep", "glob", "web_fetch"])
+    );
+}
+
+#[tokio::test]
+async fn test_w26_worker_when_agent_name_is_unknown_should_not_run_or_ask_for_a_risky_call() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = new_log();
+    let provider = ScriptedProvider::new(&["W26-RISKY"]);
+    provider.script(
+        "W26-RISKY",
+        vec![
+            tool_call("k1", "shell", json!({ "cmd": "rm" })),
+            tool_call("k2", "edit_file", json!({})),
+            tool_call("k3", "read_file", json!({})),
+        ],
+    );
+    let (step_tx, step_rx) = step_channel();
+    let mut config = lead_config(Arc::clone(&provider), session_tools(&log), dir.path());
+    config.approval_policy = ask_risky();
+    config.step_rx = Some(step_rx);
+
+    let orch = Orchestrator::new(config, builtin_registry(), 4);
+    let out = run_plan_with_ui(
+        orch,
+        plan(vec![subtask("1", "W26-RISKY", "made-up-agent")]),
+        Some(step_tx),
+        proceed_all(),
+    )
+    .await;
+
+    assert!(
+        paused_ids(&out.events).is_empty(),
+        "no prompt: {:?}",
+        out.events
+    );
+    assert_eq!(invoked(&log), vec!["read_file".to_owned()]);
+    for id in ["k1", "k2"] {
+        let (result, is_error) = call_end(&out.events, id).expect("ToolCallEnd");
+        assert!(is_error);
+        assert!(
+            result["error"].as_str().unwrap().contains("not found"),
+            "{result}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_w26_worker_when_agent_name_is_unknown_in_plan_mode_should_stay_read_only_and_save_no_plan()
+ {
+    let dir = tempfile::tempdir().unwrap();
+    let log = new_log();
+    let provider = ScriptedProvider::new(&["W26-PLAN"]);
+    let mut config = lead_config(Arc::clone(&provider), session_tools(&log), dir.path());
+    config.mode = AgentMode::Plan;
+
+    let orch = Orchestrator::new(config, builtin_registry(), 4);
+    let out = run_plan_with_ui(
+        orch,
+        plan(vec![subtask("1", "W26-PLAN", "made-up-agent")]),
+        None,
+        proceed_all(),
+    )
+    .await;
+
+    assert_eq!(
+        provider.worker_tools("W26-PLAN"),
+        sorted(&["read_file", "grep", "glob", "web_fetch"])
+    );
+    assert!(
+        !out.events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::PlanSaved { .. }))
+    );
+    assert!(!dir.path().join(".hone/plans").exists());
+}
+
+#[tokio::test]
+async fn test_w26_worker_for_registered_agent_with_empty_tools_list_should_still_get_every_tool() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = new_log();
+    let provider = ScriptedProvider::new(&["W26-OPEN"]);
+    let config = lead_config(Arc::clone(&provider), session_tools(&log), dir.path());
+    let mut registry = AgentRegistry::new();
+    registry.register(custom_agent("open-agent", &[]));
+
+    let orch = Orchestrator::new(config, registry, 4);
+    run_plan_with_ui(
+        orch,
+        plan(vec![subtask("1", "W26-OPEN", "open-agent")]),
+        None,
+        proceed_all(),
+    )
+    .await;
+
+    assert_eq!(
+        provider.worker_tools("W26-OPEN"),
         sorted(&SESSION_TOOL_NAMES)
     );
 }
