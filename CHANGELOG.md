@@ -160,6 +160,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - `/budget` doesn't cap a plan's workers.
   - The web UI's Run still plans again.
   - In vim mode <kbd>Esc</kbd> doesn't stop planning or a turn.
+  - A complex run's cost reaches the session total only when it ends: the cost shown doesn't move during the run, and a run stopped with <kbd>Esc</kbd> adds nothing. (Before, each lead and worker call added its cost as it finished.)
 - Contract: `docs/plans/plan-gate-spec.md`.
 
 ### Fallback notice: Hone says when a fallback model took over

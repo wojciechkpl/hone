@@ -88,5 +88,6 @@ The reviewer approved round 2 with three low findings: with one terminal `Done`,
 - **Planning's lead-call cost** isn't added to the session cost total.
 - **Edit replaces the input bar's text,** including a follow-up typed while planning and restored when planning ended.
 - **`/budget` and `/permit` persist:** the docs called them per-run, but `SetBudgetLimit` and `ApproveTools` stay on the agent for the session. Docs now say so; making them per-run is a follow-up.
+- **Spend of a cancelled complex run** isn't added to the session cost: with one terminal `Done` (G14) and `BudgetProgress` no longer writing the cost (G20), the session cost moves only when the run ends, so Esc mid-run drops the spend so far, and the cost text doesn't move during the run. Each inner `Done` used to add its cost as it happened. A fix needs a non-terminal cost event (or worker costs counted at `WorkerCompleted` with the terminal `Done` carrying the rest).
 - **Status label after an orchestrated run:** `BudgetProgress` sets the mode label to `orchestrator i/n`, and nothing restores the agent mode label after the run (pre-existing).
 - **Other drains in the Enter block:** a `!command` typed during a turn waits for the next Enter with text, like the plan actions did.
