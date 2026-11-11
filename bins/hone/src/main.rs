@@ -6080,6 +6080,433 @@ mod tests {
         assert!(!err.contains("ignored"), "{err}");
         assert!(err.ends_with(&format!("{NOTICE_LINE}\n")), "{err:?}");
     }
+
+    // ---- worker tools W10-W12 (docs/plans/worker-tools-spec.md) ----
+
+    type WtLog = Arc<std::sync::Mutex<Vec<String>>>;
+
+    /// Records every execution by tool name.
+    struct WtTool {
+        name: &'static str,
+        read_only: bool,
+        log: WtLog,
+        command_subject: Option<&'static str>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_tools::Tool for WtTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn description(&self) -> &str {
+            "fake"
+        }
+        fn schema(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+        async fn call(
+            &self,
+            _input: hone_tools::ToolInput,
+            _ctx: &hone_tools::ToolContext,
+        ) -> Result<hone_tools::ToolOutput, hone_tools::ToolError> {
+            self.log.lock().unwrap().push(self.name.to_owned());
+            Ok(hone_tools::ToolOutput::new(serde_json::json!({ "ok": true })))
+        }
+        fn layer(&self) -> hone_proto::ToolLayer {
+            hone_proto::ToolLayer::Native
+        }
+        fn is_read_only(&self) -> bool {
+            self.read_only
+        }
+        fn subjects(
+            &self,
+            _input: &hone_tools::ToolInput,
+            _sctx: &hone_tools::SubjectContext,
+        ) -> hone_tools::ToolSubjects {
+            match self.command_subject {
+                Some(c) => hone_tools::ToolSubjects {
+                    subjects: vec![hone_config::policy::Subject::Command(c.to_owned())],
+                    unparsed: false,
+                    ..Default::default()
+                },
+                None => hone_tools::ToolSubjects::default(),
+            }
+        }
+    }
+
+    /// The tools of the `debugger` agent (`read, edit, write, shell, grep, glob`)
+    /// under their real names, plus one extra.
+    fn wt_tools(log: &WtLog, shell_subject: Option<&'static str>) -> ToolRegistry {
+        let mut b = ToolRegistry::builder();
+        for (name, ro) in [
+            ("read_file", true),
+            ("edit_file", false),
+            ("write_file", false),
+            ("shell", false),
+            ("grep", true),
+            ("glob", true),
+            ("git_commit", false),
+        ] {
+            b = b.register(Box::new(WtTool {
+                name,
+                read_only: ro,
+                log: Arc::clone(log),
+                command_subject: if name == "shell" { shell_subject } else { None },
+            }));
+        }
+        b.build()
+    }
+
+    /// Worker request 1 (no lead marker in the prompt): one `shell` call, id
+    /// `wt1`. Later worker requests: "ok". Lead merge: "merged". Records the
+    /// tool names of each worker request and an optional virtual-time delay.
+    struct WtProvider {
+        worker_requests: std::sync::Mutex<Vec<Vec<String>>>,
+        delay: Option<Duration>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for WtProvider {
+        fn id(&self) -> &str {
+            "wt-provider"
+        }
+        fn display_name(&self) -> &str {
+            "WT provider"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![]
+        }
+        async fn complete(
+            &self,
+            req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let text = req
+                .messages
+                .iter()
+                .map(|m| m.content.as_text())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let events = if text.contains("You are the lead agent. Based on") {
+                vec![
+                    hone_proto::ProviderEvent::Token {
+                        text: "merged".to_owned(),
+                    },
+                    hone_proto::ProviderEvent::Done,
+                ]
+            } else {
+                if let Some(d) = self.delay {
+                    tokio::time::sleep(d).await;
+                }
+                let n = {
+                    let mut w = self.worker_requests.lock().unwrap();
+                    let mut names: Vec<String> = req.tools.iter().map(|t| t.name.clone()).collect();
+                    names.sort();
+                    w.push(names);
+                    w.len()
+                };
+                if n == 1 {
+                    vec![
+                        hone_proto::ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
+                            id: "wt1".to_owned(),
+                            name: "shell".to_owned(),
+                            arguments: serde_json::json!({ "cmd": "cargo test" }),
+                        }),
+                        hone_proto::ProviderEvent::Done,
+                    ]
+                } else {
+                    vec![
+                        hone_proto::ProviderEvent::Token {
+                            text: "ok".to_owned(),
+                        },
+                        hone_proto::ProviderEvent::Done,
+                    ]
+                }
+            };
+            Ok(Box::pin(futures::stream::iter(events)))
+        }
+        fn estimate_tokens(&self, _m: &[Message]) -> u32 {
+            1
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    /// A TUI-like session: tools = `wt_tools`, `AskRisky`, a step channel.
+    /// Returns (config, provider, tool log, step sender).
+    fn wt_session(
+        dir: &std::path::Path,
+        delay: Option<Duration>,
+    ) -> (
+        AgentConfig,
+        Arc<WtProvider>,
+        WtLog,
+        mpsc::Sender<hone_proto::StepAction>,
+    ) {
+        let log: WtLog = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let provider = Arc::new(WtProvider {
+            worker_requests: std::sync::Mutex::new(Vec::new()),
+            delay,
+        });
+        let mut config = orch_config(Arc::clone(&provider) as _, dir);
+        config.tools = wt_tools(&log, None);
+        config.approval_policy = ToolApprovalPolicy::AskRisky {
+            always_allowed: vec![],
+        };
+        let (step_tx, step_rx) = mpsc::channel::<hone_proto::StepAction>(8);
+        config.step_rx = Some(Arc::new(tokio::sync::Mutex::new(step_rx)));
+        (config, provider, log, step_tx)
+    }
+
+    /// Drain the run's events, answering each `ToolCallPaused` with `answer`.
+    /// Gives up (panics) after 10 s of the tokio clock, e.g. on an unanswerable
+    /// pause that nobody expected.
+    async fn wt_drive(
+        rx: &mut mpsc::Receiver<AgentEvent>,
+        step_tx: &mpsc::Sender<hone_proto::StepAction>,
+        answer: hone_proto::StepAction,
+        limit: Duration,
+    ) -> Vec<AgentEvent> {
+        let mut events = Vec::new();
+        let drive = async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    step_tx.send(answer.clone()).await.unwrap();
+                }
+                events.push(e);
+            }
+        };
+        if tokio::time::timeout(limit, drive).await.is_err() {
+            panic!("orchestrated run did not finish; events so far: {events:?}");
+        }
+        events
+    }
+
+    fn wt_pauses(events: &[AgentEvent]) -> usize {
+        events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ToolCallPaused { .. }))
+            .count()
+    }
+
+    const WT_STEP_LIMIT: Duration = Duration::from_secs(10);
+
+    // W10 ---------------------------------------------------------------
+
+    #[tokio::test]
+    async fn w10_orchestrated_turn_when_agent_policy_changed_to_auto_should_run_workers_without_pause()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        // The config snapshot says AskRisky; the session has since moved on.
+        let agent = AgentHandle::spawn(config.clone());
+        agent.set_approval_policy(ToolApprovalPolicy::Auto).await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        assert_eq!(wt_pauses(&events), 0, "{events:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn w10_orchestrated_turn_when_tool_was_approved_always_should_not_pause_for_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        agent.approve_tools(vec!["shell".to_owned()]).await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        assert_eq!(wt_pauses(&events), 0, "{events:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn w10_orchestrated_turn_when_agent_mode_is_plan_should_give_workers_read_only_tools() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, provider, log, step_tx) = wt_session(dir.path(), None);
+        assert_eq!(config.mode, AgentMode::Build, "the snapshot is Build");
+        let agent = AgentHandle::spawn(config.clone());
+        agent.set_mode(AgentMode::Plan).await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        let first_worker_request = provider.worker_requests.lock().unwrap()[0].clone();
+        assert_eq!(
+            first_worker_request,
+            vec!["glob".to_owned(), "grep".to_owned(), "read_file".to_owned()],
+            "debugger's tools narrowed to the read-only ones"
+        );
+        assert!(log.lock().unwrap().is_empty(), "shell must not run in plan mode");
+        assert_eq!(wt_pauses(&events), 0);
+    }
+
+    #[tokio::test]
+    async fn w10_orchestrated_turn_when_agent_mode_is_auto_approve_should_run_workers_without_pause()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        agent.set_mode(AgentMode::AutoApprove).await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        assert_eq!(wt_pauses(&events), 0, "{events:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
+
+    // W12 ---------------------------------------------------------------
+
+    #[tokio::test]
+    async fn w12_worker_tool_calls_should_reach_the_tui_and_a_step_action_should_answer_the_pause() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        let pos = |pred: &dyn Fn(&AgentEvent) -> bool| events.iter().position(|e| pred(e));
+        let start = pos(&|e| matches!(e, AgentEvent::ToolCallStart { id, .. } if id == "wt1"));
+        let paused = pos(&|e| matches!(e, AgentEvent::ToolCallPaused { id, .. } if id == "wt1"));
+        let end = pos(&|e| matches!(e, AgentEvent::ToolCallEnd { id, is_error: false, .. } if id == "wt1"));
+        assert!(start.is_some() && paused.is_some() && end.is_some(), "{events:?}");
+        assert!(start < paused && paused < end, "{events:?}");
+        // Proceed ran the tool.
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+        // G14: still exactly one Done, last.
+        let dones = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Done { .. }))
+            .count();
+        assert_eq!(dones, 1, "{events:?}");
+        assert!(matches!(events.last(), Some(AgentEvent::Done { .. })), "{events:?}");
+    }
+
+    #[tokio::test]
+    async fn w12_worker_when_denied_in_the_tui_should_not_run_and_run_should_still_end_with_one_done()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(
+            &mut rx,
+            &step_tx,
+            hone_proto::StepAction::Deny("no".to_owned()),
+            WT_STEP_LIMIT,
+        )
+        .await;
+
+        assert_eq!(wt_pauses(&events), 1, "{events:?}");
+        assert!(log.lock().unwrap().is_empty());
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                AgentEvent::ToolCallEnd { id, is_error: true, .. } if id == "wt1"
+            )),
+            "{events:?}"
+        );
+        let dones = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Done { .. }))
+            .count();
+        assert_eq!(dones, 1, "{events:?}");
+    }
+
+    #[tokio::test]
+    async fn w12_worker_when_policy_asks_should_forward_approval_required_before_the_pause() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        config.tools = wt_tools(&log, Some("cargo test"));
+        // The session approves risky tools silently; a policy `ask` rule asks.
+        config.approval_policy = ToolApprovalPolicy::Auto;
+        let context =
+            hone_config::policy::PolicyContext::for_platform(dir.path().to_path_buf(), None);
+        let rules = vec![
+            hone_config::policy::PolicyRule::command("cargo *", hone_config::Decision::Ask)
+                .with_id("ask-cargo"),
+        ];
+        let compiled =
+            hone_config::policy::CompiledPolicy::compile(&context, &[], &rules, &[]).unwrap();
+        config.policy = Some(hone_core::PolicyConfig {
+            compiled: Arc::new(compiled),
+            context,
+            pre_approved: vec![],
+            builtins: false,
+        });
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        let approval = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::ApprovalRequired { .. }));
+        let paused = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::ToolCallPaused { .. }));
+        assert!(approval.is_some() && paused.is_some(), "{events:?}");
+        assert!(approval < paused, "{events:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
 }
 
 // ---------------------------------------------------------------------------
