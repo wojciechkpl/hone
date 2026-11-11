@@ -680,7 +680,8 @@ so you can copy or symlink an existing file.
 | `args` | `[]` | Arguments |
 | `env` | `{}` | Extra environment; values may reference `${VAR}` |
 | `disabled` | `false` | Skip this server at startup |
-| `timeout_ms` | `10000` | Per-request timeout: every call, tool calls included, gives up after it. The handshake at startup gets at least 60 s (for `npx` downloads). `0` means no timeout |
+| `timeout_ms` | `10000` | Per-request timeout: every call, tool calls included, gives up after it. `0` means no timeout |
+| `handshake_timeout_ms` | `timeout_ms` or 60000, whichever is larger | Timeout for the handshake at startup (an `npx -y …` server may download its package first). `0` means no timeout |
 
 The project file (`<cwd>/.hone/mcp.json`) wins over `~/.config/hone/mcp.json` when server
 names collide. A missing or malformed file, or a server that fails to start or doesn't

@@ -142,7 +142,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Before:** `timeout_ms` in `mcp.json` (documented as the per-request timeout, default 10 000 ms) was never applied, so a request to a stdio MCP server that didn't answer waited forever. Servers connect one after another at startup, so a server that hung during its handshake kept hone from starting. A tool call to a hung server waited until <kbd>Esc</kbd> (TUI) or <kbd>Ctrl</kbd>+<kbd>C</kbd>, and a `honed` worker waited indefinitely, with every other call to that server queued behind it. A line on a server's stdout that wasn't JSON (log output) failed the call.
 - **Now:**
   - Every request gives up after the server's `timeout_ms` with a timeout error. The model sees the error and the server stays connected; its late answer is skipped, so the next call gets its own result.
-  - The startup handshake gets at least 60 s (or `timeout_ms` if larger), so an `npx -y …` server can download its package on first start. A server that doesn't finish its handshake in that time is skipped at startup and its process is killed; the other servers still connect.
+  - The startup handshake gets at least 60 s (or `timeout_ms` if larger), so an `npx -y …` server can download its package on first start; a new `handshake_timeout_ms` setting changes that. A server that doesn't finish its handshake in that time is skipped at startup and its process is killed; the other servers still connect.
   - Lines that aren't JSON, or aren't valid UTF-8 (the rest of a reply cut off by a timeout), are skipped.
   - Exiting no longer waits 5 s per MCP server: hone closes a server's input first, so a server that exits at end of input stops at once.
   - `timeout_ms: 0` means no timeout.
