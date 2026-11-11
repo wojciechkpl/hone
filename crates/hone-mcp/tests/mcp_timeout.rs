@@ -11,7 +11,7 @@ use hone_mcp::{McpClient, McpError, StdioMcpClient};
 use serde_json::json;
 
 /// Modes (argv[1]): `silent` never answers `tools/call`, `tools/list` or
-/// `initialize`; `late` answers the first `tools/call` 600 ms late and later
+/// `initialize`; `late` answers the first `tools/call` 450 ms late and later
 /// calls at once; `slow` answers every request after 500 ms.
 const SERVER: &str = r#"
 import json, sys, time
@@ -38,7 +38,7 @@ for line in sys.stdin:
         tag = req["params"]["arguments"].get("tag", "?")
         if mode == "late" and first_call:
             first_call = False
-            time.sleep(0.6)
+            time.sleep(0.45)
         send({"jsonrpc": "2.0", "id": req["id"],
               "result": {"content": [{"type": "text", "text": "result-for-" + tag}]}})
     elif method == "tools/list":
@@ -137,7 +137,9 @@ async fn test_t3_call_after_a_timed_out_call_should_get_its_own_result() {
     let (client, _dir) = spawn("late").await;
     let client = client.with_request_timeout(ms(300));
 
-    // A times out (the server answers it after 600 ms).
+    // A times out at 300 ms; the server answers it late, at 450 ms, and then
+    // answers B at once. B (sent at ~300 ms, deadline ~600 ms) therefore has
+    // ~150 ms of margin: the late answer to A arrives while B waits.
     let a = bounded(client.call_tool("t", json!({ "tag": "A" }))).await;
     assert_timeout(a.expect_err("A times out"));
 
