@@ -287,8 +287,16 @@ flowchart LR
   tools outside Hone's permission rules, so with a CLI model as the session's model routing
   and fallback are not applied.
 - A routed or fallback model whose provider has no key is dropped with a warning.
-- Cost estimates use one flat rate for every model, and nothing tells you yet when a
-  fallback model answered.
+- **When a fallback takes over**, Hone says so:
+  - one-shot prints `hone: <model> failed (<reason>); switched to fallback <fallback>`
+    on stderr, once per pair per run;
+  - `--json` lists each pair in `"fallbacks"` with the reason and the number of calls it
+    took over (`[]` when none);
+  - the TUI shows one message per pair per prompt.
+
+  The reason is cut to 200 characters, and URLs in it lose their user info and query
+  string. `HONE_CACHE` never stores an answer a fallback gave.
+- Cost estimates use one flat rate for every model.
 - A turn routed to a model with a smaller context window (Ollama's default, for example)
   still gets the whole conversation, which the server may cut short.
 

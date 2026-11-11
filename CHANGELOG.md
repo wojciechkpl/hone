@@ -137,6 +137,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fallback notice: Hone says when a fallback model took over
+
+- **Before:** when a model in `fallback_models` took over a model call, nothing said so. The TUI showed the answer as the turn's model's, one-shot printed nothing, and `--json` named the model the run chose. `HONE_CACHE` stored the fallback's answer under the requested model and replayed it later, even once that model was back. The TUI's adaptive classifier recorded the turn under the model that didn't answer.
+- **Now** a new event, `ProviderEvent::ModelFallback { requested, fallback, reason }` (passed on as `AgentEvent::ModelFallback`), is the first event of a call that a fallback took over. `reason` says why the requested model didn't answer. It is cleaned before it is shown:
+  - control, bidi and zero-width characters are blanked;
+  - URLs lose their user info and query string, because the HTTP client's "no response" errors include the full request URL;
+  - it is cut at 200 characters.
+- **Where it shows:**
+  - **One-shot** (`hone "…"`, `--json`, `--orchestrate`, `--ensemble`): stderr gets `hone: <requested> failed (<reason>); switched to fallback <fallback>`, once per model pair per run.
+  - **`--json`:** a new `"fallbacks"` key, always present: `[]`, or one `{"requested", "fallback", "reason", "calls"}` entry per pair. `"model"` still names the model the run chose.
+  - **TUI:** one chat message per model pair per prompt you submit.
+  - **`honed`:** the event's SSE name is `model_fallback`.
+- **Related fixes:**
+  - `HONE_CACHE` no longer stores an answer a fallback model gave.
+  - The adaptive classifier records the turn under the fallback model that answered.
+  - A complex TUI prompt without `@agent` now runs with the turn's settings: the `[[routing]]` complex model, a `/model` pin, `/budget` and `/permit`. It used to run with the session's starting settings.
+- **Not yet:** a fallback inside the ensemble ranker, a `--distributed` worker or the `/plan` breakdown isn't reported. A fallback model that rejects the request outright (for example with a 400) shows its error with no notice.
+- Contract: `docs/plans/fallback-notice-spec.md`.
+
 ### Routing by complexity, fallback models, and `/model` across providers
 
 - **Before:** `[[routing]]` in `config.toml` was parsed and ignored, with a warning. Its example task names (`file_read`, `multi_file_edit`) were never produced by anything. The fallback wrappers (`FallbackChain`) weren't used by `hone`, and they didn't move on when a provider gave no answer at all. `/model` changed only the model name: `/model openai:gpt-4o` in an Anthropic session sent `gpt-4o` to Anthropic.
@@ -154,7 +173,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Tool order:** tool definitions are now sent sorted by name. Their order used to come from a hash map and changed from run to run, so identical sessions now send identical requests; this also helps providers' prompt caching. Requests therefore differ from earlier versions in tool order only.
 - **Not yet:**
   - Cost estimates still use one flat rate for every model.
-  - Nothing reports when a fallback model answered, and `--json` names the chosen model.
   - A turn routed to a model with a smaller context window gets the whole history, which the server may truncate.
 - Contract: `docs/plans/routing-fallback-spec.md`.
 
