@@ -145,6 +145,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - A server that doesn't finish its handshake in time is skipped at startup and its process is killed; the other servers still connect.
   - Lines that aren't JSON are skipped.
   - `timeout_ms: 0` means no timeout.
+  - An MCP server's process is killed when hone lets go of it (on exit or after a failed start). Before, a server that ignored its input closing was left running.
 - **Upgrading:** an MCP tool that legitimately runs longer than 10 s now times out; raise that server's `timeout_ms`.
 - Contract: `docs/plans/mcp-timeout-spec.md`.
 
