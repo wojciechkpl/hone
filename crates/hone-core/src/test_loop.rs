@@ -253,15 +253,23 @@ impl TestVerificationLoop {
 
     /// Execute one shell command and return (success, combined_output).
     async fn run_cmd(&self, cmd: &str) -> Result<(bool, String), AgentError> {
-        let output = tokio::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .current_dir(&self.working_dir)
-            .output()
-            .await
-            .map_err(|e| AgentError::CodeMode {
-                detail: format!("failed to run test command: {e}"),
-            })?;
+        // Ends with this call: dropping the future (Esc) kills the command's
+        // whole process group.
+        let mut command = std::process::Command::new("sh");
+        command.arg("-c").arg(cmd).current_dir(&self.working_dir);
+        let output =
+            hone_tools::run_command(command, None)
+                .await
+                .map_err(|e| AgentError::CodeMode {
+                    detail: match e {
+                        hone_tools::RunCommandError::Io(e) => {
+                            format!("failed to run test command: {e}")
+                        }
+                        hone_tools::RunCommandError::Timeout => {
+                            "failed to run test command: timed out".to_owned()
+                        }
+                    },
+                })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();

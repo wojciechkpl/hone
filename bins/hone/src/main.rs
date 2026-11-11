@@ -3096,6 +3096,10 @@ async fn run_selected_mode(
         return run_ensemble(&base_config, &prompt, n).await;
     }
 
+    if cli.plan.is_some() || cli.orchestrate || cli.prompt.is_some() {
+        install_one_shot_signal_handlers()?;
+    }
+
     // --plan: load a saved plan file and execute its plan_body as a one-shot prompt.
     if let Some(ref plan_path) = cli.plan {
         let plan = PlanModeStore::load(plan_path).await.map_err(|e| {
@@ -3224,6 +3228,58 @@ async fn os_signal(sigint: &mut tokio::signal::unix::Signal) {
 #[cfg(not(unix))]
 async fn os_signal(_sigint: &mut ()) {
     let _ = tokio::signal::ctrl_c().await;
+}
+
+/// Kills the commands the shell tool and the test loop still have running when
+/// dropped. They run in their own process groups, so neither the terminal's
+/// Ctrl+C nor its hangup reaches them; hone's exit has to (W25).
+struct KillCommandsOnExit;
+
+impl Drop for KillCommandsOnExit {
+    fn drop(&mut self) {
+        hone_tools::kill_running_commands();
+    }
+}
+
+/// Waits for the next SIGTERM or SIGHUP on unix; never completes elsewhere.
+#[cfg(unix)]
+async fn os_term_signal(signals: &mut (tokio::signal::unix::Signal, tokio::signal::unix::Signal)) {
+    tokio::select! {
+        _ = signals.0.recv() => {}
+        _ = signals.1.recv() => {}
+    }
+}
+
+#[cfg(not(unix))]
+async fn os_term_signal(_signals: &mut ()) {
+    std::future::pending::<()>().await;
+}
+
+/// One-shot runs (`-p`, `--plan`, `--orchestrate`): on SIGINT, SIGTERM or
+/// SIGHUP kill the running commands and exit with 128 + the signal number.
+/// Without this, commands in their own process groups would outlive hone.
+#[cfg(unix)]
+fn install_one_shot_signal_handlers() -> Result<()> {
+    use tokio::signal::unix::{SignalKind, signal};
+    for (kind, number) in [
+        (SignalKind::interrupt(), 2),
+        (SignalKind::terminate(), 15),
+        (SignalKind::hangup(), 1),
+    ] {
+        let mut sig =
+            signal(kind).map_err(|e| anyhow::anyhow!("failed to install signal handler: {e}"))?;
+        tokio::spawn(async move {
+            sig.recv().await;
+            hone_tools::kill_running_commands();
+            std::process::exit(128 + number);
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn install_one_shot_signal_handlers() -> Result<()> {
+    Ok(())
 }
 
 /// Return the context window size (in tokens) for a given model identifier.
@@ -3548,6 +3604,18 @@ async fn run_tui(
         .map_err(|e| anyhow::anyhow!("failed to install SIGINT handler: {e}"))?;
     #[cfg(not(unix))]
     let mut sigint = ();
+    // SIGTERM and SIGHUP end the TUI like SIGINT (W25).
+    #[cfg(unix)]
+    let mut term_signals = (
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .map_err(|e| anyhow::anyhow!("failed to install SIGTERM handler: {e}"))?,
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+            .map_err(|e| anyhow::anyhow!("failed to install SIGHUP handler: {e}"))?,
+    );
+    #[cfg(not(unix))]
+    let mut term_signals = ();
+    // Whatever way the loop ends, commands still running die with hone.
+    let _kill_commands_on_exit = KillCommandsOnExit;
 
     loop {
         if app.should_quit() {
@@ -3989,6 +4057,12 @@ async fn run_tui(
             // OS-level SIGINT (e.g. from a parent process or wrapper script).
             _ = os_signal(&mut sigint) => {
                 tracing::info!("SIGINT received, shutting down");
+                break;
+            }
+
+            // SIGTERM / SIGHUP (e.g. the terminal closed).
+            _ = os_term_signal(&mut term_signals) => {
+                tracing::info!("SIGTERM/SIGHUP received, shutting down");
                 break;
             }
         }
