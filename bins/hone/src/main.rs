@@ -7402,6 +7402,70 @@ mod tests {
 
         assert_eq!(restored.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
+
+    // ---- P12: the TUI exit guard leaves MCP servers for their graceful shutdown ----
+
+    #[tokio::test]
+    async fn p12_dropping_kill_commands_on_exit_should_leave_a_connected_mcp_server_running() {
+        use hone_mcp::McpClient;
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("server.py");
+        let pid_file = dir.path().join("server.pid");
+        std::fs::write(
+            &script,
+            r#"
+import json, os, sys
+open(sys.argv[1], "w").write(str(os.getpid()))
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    req = json.loads(line)
+    if "id" not in req:
+        continue
+    result = {"tools": []} if req.get("method") == "tools/list" else {}
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": result}) + "\n")
+    sys.stdout.flush()
+"#,
+        )
+        .unwrap();
+        let mut client = hone_mcp::StdioMcpClient::spawn(
+            "python3",
+            &[script.to_str().unwrap(), pid_file.to_str().unwrap()],
+        )
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(10), client.connect())
+            .await
+            .expect("handshake hung")
+            .expect("connects");
+        let pid = std::fs::read_to_string(&pid_file).unwrap().trim().to_owned();
+        let alive = |pid: &str| {
+            let out = std::process::Command::new("ps")
+                .args(["-o", "stat=", "-p", pid])
+                .output()
+                .unwrap();
+            let stat = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+            !stat.is_empty() && !stat.starts_with('Z')
+        };
+        assert!(alive(&pid), "the server runs before the guard drops");
+
+        // What the end of `run_tui` does; `main`'s McpManager::shutdown() comes
+        // after it and must still find the server alive to stop it gracefully.
+        drop(KillCommandsOnExit);
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let survived = alive(&pid);
+
+        let _ = client.shutdown().await;
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &pid])
+            .stderr(std::process::Stdio::null())
+            .status();
+        assert!(
+            survived,
+            "KillCommandsOnExit killed the MCP server: only shell commands may be killed there"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

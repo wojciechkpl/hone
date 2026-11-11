@@ -258,3 +258,8 @@ fn test_p10_sigterm_to_a_one_shot_run_should_stop_the_mcp_server_and_die_by_sigt
 fn test_p10_sighup_to_a_one_shot_run_should_stop_the_mcp_server_and_die_by_sighup() {
     signal_case(1, "SIGHUP");
 }
+
+#[test]
+fn test_p10_sigint_to_a_one_shot_run_should_stop_the_mcp_server_and_die_by_sigint() {
+    signal_case(2, "SIGINT");
+}

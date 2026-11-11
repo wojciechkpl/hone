@@ -166,3 +166,75 @@ async fn test_p11_exhausted_shutdown_budget_should_kill_the_launched_servers_who
 
     assert_gone_soon(&pid, "after shutdown").await;
 }
+
+/// The leader exits gracefully when its input ends, but a child it started
+/// keeps running. The group kill after a graceful shutdown must still get it.
+const LEADER_LEAVES_CHILD: &str = r#"
+import json, os, subprocess, sys
+leader_pid_file, child_pid_file = sys.argv[1], sys.argv[2]
+open(leader_pid_file, "w").write(str(os.getpid()))
+child = subprocess.Popen(["sleep", "60"])
+open(child_pid_file, "w").write(str(child.pid))
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    req = json.loads(line)
+    if "id" not in req:
+        continue
+    result = {"tools": []} if req.get("method") == "tools/list" else {}
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": result}) + "\n")
+    sys.stdout.flush()
+# End of input: exit at once, leaving `sleep` behind.
+"#;
+
+#[tokio::test]
+async fn test_p11_graceful_shutdown_should_still_kill_a_child_the_leader_left_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("leader.py");
+    let leader_pid_file = dir.path().join("leader.pid");
+    let child_pid_file = dir.path().join("child.pid");
+    std::fs::write(&script, LEADER_LEAVES_CHILD).unwrap();
+    let launcher_cmd = format!(
+        "python3 {} {} {}; true",
+        script.display(),
+        leader_pid_file.display(),
+        child_pid_file.display()
+    );
+    let config: McpConfig = serde_json::from_value(serde_json::json!({
+        "mcpServers": { "launched": {
+            "command": "sh", "args": ["-c", launcher_cmd], "timeout_ms": 10_000
+        } }
+    }))
+    .unwrap();
+    let manager = tokio::time::timeout(Duration::from_secs(10), McpManager::from_config(&config))
+        .await
+        .expect("startup hung");
+    assert_eq!(manager.server_count(), 1);
+    let child_pid = python_pid(&child_pid_file).await;
+    assert!(alive(&child_pid), "the child runs before shutdown");
+
+    tokio::time::timeout(Duration::from_secs(12), manager.shutdown())
+        .await
+        .expect("shutdown hung");
+
+    let gone_in_time = {
+        let mut gone = false;
+        for _ in 0..20 {
+            if !alive(&child_pid) {
+                gone = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        gone
+    };
+    let _ = std::process::Command::new("kill")
+        .args(["-9", &child_pid])
+        .stderr(std::process::Stdio::null())
+        .status();
+    assert!(
+        gone_in_time,
+        "the child the leader left running (pid {child_pid}) must be killed with its group"
+    );
+}
