@@ -4271,6 +4271,284 @@ mod tests {
         );
     }
 
+    // ---- /plan gate G7 + G14 (docs/plans/plan-gate-spec.md) ----
+
+    fn orch_config(
+        provider: Arc<dyn hone_providers::ModelProvider>,
+        dir: &std::path::Path,
+    ) -> AgentConfig {
+        use hone_core::RetryConfig;
+        use hone_sandbox::NullSandbox;
+        AgentConfig {
+            provider,
+            tools: ToolRegistry::new(),
+            sandbox: Arc::new(NullSandbox),
+            sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
+            system_prompt: "You are a lead orchestrator.".to_owned(),
+            model: ModelId::new("mock:test"),
+            max_tokens: None,
+            temperature: None,
+            budget_limit: None,
+            pricing: PricingEntry {
+                model: ModelId::new("mock:test"),
+                input_per_million: 1_000_000.0,
+                output_per_million: 1_000_000.0,
+                cache_read_per_million: None,
+                cache_creation_per_million: None,
+            },
+            working_dir: dir.to_path_buf(),
+            memory_store: None,
+            retry_config: RetryConfig::default(),
+            index: None,
+            inject_context: false,
+            skeleton_strategy: Default::default(),
+            egress_log: None,
+            approval_policy: ToolApprovalPolicy::Auto,
+            step_rx: None,
+            hooks: None,
+            skills: None,
+            embedder: None,
+            mode: AgentMode::Build,
+            policy: None,
+        }
+    }
+
+    /// Answers "ok" with usage 10 in / 5 out on every call; records each prompt.
+    struct UsageRecorder {
+        prompts: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for UsageRecorder {
+        fn id(&self) -> &str {
+            "usage-recorder"
+        }
+        fn display_name(&self) -> &str {
+            "Usage recorder"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![]
+        }
+        async fn complete(
+            &self,
+            req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let text = req
+                .messages
+                .iter()
+                .map(|m| m.content.as_text())
+                .collect::<Vec<_>>()
+                .join("\n");
+            self.prompts.lock().unwrap().push(text);
+            Ok(Box::pin(futures::stream::iter(vec![
+                hone_proto::ProviderEvent::Token {
+                    text: "ok".to_owned(),
+                },
+                hone_proto::ProviderEvent::Usage(hone_proto::TokenUsage {
+                    input: 10,
+                    output: 5,
+                    cache_read: 0,
+                    cache_creation: 0,
+                }),
+                hone_proto::ProviderEvent::Done,
+            ])))
+        }
+        fn estimate_tokens(&self, _: &[hone_proto::Message]) -> u32 {
+            1
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    /// Every call fails with a non-retryable HTTP error.
+    struct AlwaysFails;
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for AlwaysFails {
+        fn id(&self) -> &str {
+            "always-fails"
+        }
+        fn display_name(&self) -> &str {
+            "Always fails"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![]
+        }
+        async fn complete(
+            &self,
+            _req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            Err(hone_providers::ProviderError::Http {
+                provider: "always-fails".to_owned(),
+                status: 400,
+                body: "bad request".to_owned(),
+            })
+        }
+        fn estimate_tokens(&self, _: &[hone_proto::Message]) -> u32 {
+            1
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    fn one_task_plan() -> hone_core::TaskPlan {
+        hone_core::TaskPlan {
+            goal: "ship the shown plan".to_owned(),
+            subtasks: vec![hone_core::SubTask {
+                id: "1".to_owned(),
+                description: "do the one thing".to_owned(),
+                agent: "debugger".to_owned(),
+                context: String::new(),
+                depends_on: vec![],
+                acceptance_tests: vec![],
+                budget_usd: None,
+                scope: vec![],
+                requires_capabilities: vec![],
+            }],
+        }
+    }
+
+    async fn collect_events(rx: &mut tokio::sync::mpsc::Receiver<AgentEvent>) -> Vec<AgentEvent> {
+        let mut out = Vec::new();
+        while let Some(e) = rx.recv().await {
+            out.push(e);
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn g7_orchestrated_turn_with_a_plan_does_not_decompose_and_writes_history_back() {
+        use hone_proto::Role;
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(UsageRecorder {
+            prompts: std::sync::Mutex::new(Vec::new()),
+        });
+        let config = orch_config(Arc::clone(&provider) as _, dir.path());
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_string(),
+            tx,
+            agent.clone(),
+            Some(one_task_plan()),
+        );
+        let _ = collect_events(&mut rx).await;
+        tokio::task::yield_now().await;
+
+        let prompts = provider.prompts.lock().unwrap().clone();
+        assert!(
+            !prompts
+                .iter()
+                .any(|p| p.contains("You are a lead agent. Decompose")),
+            "a staged plan must not be decomposed again: {prompts:?}"
+        );
+        let messages = agent.get_messages().await;
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.role == Role::User && m.content.as_text().contains("ship it")),
+            "{messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.role == Role::Assistant && m.content.as_text().contains("ok")),
+            "{messages:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn g14_orchestrated_turn_ends_with_exactly_one_done_after_the_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(UsageRecorder {
+            prompts: std::sync::Mutex::new(Vec::new()),
+        });
+        let config = orch_config(provider as _, dir.path());
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_string(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = collect_events(&mut rx).await;
+
+        let dones: Vec<usize> = events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| matches!(e, AgentEvent::Done { .. }))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(dones.len(), 1, "exactly one Done: {events:?}");
+        assert_eq!(dones[0], events.len() - 1, "Done is the last event: {events:?}");
+        match &events[events.len() - 2] {
+            AgentEvent::Token { text } => {
+                assert!(text.contains("Orchestration complete"), "{text}")
+            }
+            other => panic!("summary Token must precede Done, got {other:?}"),
+        }
+        assert!(
+            !events.iter().any(|e| matches!(e, AgentEvent::Error { .. })),
+            "inner errors are not forwarded: {events:?}"
+        );
+        // Worker + merge ran (2 inner turns, 10 in / 5 out each); the final
+        // Done carries their sums. Priced at 1 USD per token.
+        match events.last().unwrap() {
+            AgentEvent::Done {
+                usage,
+                cost_usd,
+                plan,
+            } => {
+                assert!(plan.is_none());
+                assert_eq!(usage.input, 20, "{usage:?}");
+                assert_eq!(usage.output, 10, "{usage:?}");
+                assert!((cost_usd - 30.0).abs() < 1e-6, "cost {cost_usd}");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[tokio::test]
+    async fn g14_failed_orchestration_sends_exactly_one_error_and_no_done() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = orch_config(Arc::new(AlwaysFails), dir.path());
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<AgentEvent>(256);
+
+        // No staged plan: the decompose call hits the failing provider.
+        let _h = spawn_orchestrated_turn(config, "ship it".to_string(), tx, agent, None);
+        let events = collect_events(&mut rx).await;
+
+        let errors: Vec<&AgentEvent> = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .collect();
+        assert_eq!(errors.len(), 1, "exactly one Error: {events:?}");
+        match errors[0] {
+            AgentEvent::Error { message, .. } => {
+                assert!(message.starts_with("orchestration failed:"), "{message}")
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !events.iter().any(|e| matches!(e, AgentEvent::Done { .. })),
+            "no Done on failure: {events:?}"
+        );
+    }
+
     // ---- TUI approval wiring (docs/plans/tui-approval-fix-spec.md rows 6-8) ----
 
     /// Call 1: one tool call. Call 2+: text "done". (`MockProvider` repeats its tool

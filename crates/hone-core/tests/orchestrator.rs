@@ -759,3 +759,23 @@ async fn test_g6_run_still_decomposes_then_runs_the_plan() {
             .any(|e| matches!(e, hone_proto::AgentEvent::PlanCreated { .. }))
     );
 }
+
+#[tokio::test]
+async fn test_g18_run_plan_runs_a_dependency_after_its_prerequisite() {
+    let provider = Arc::new(RecordingProvider::new());
+    let mut orch = Orchestrator::new(
+        recording_config(Arc::clone(&provider)),
+        registry_with_debugger(),
+        4,
+    );
+    let (tx, _rx) = mpsc::channel(256);
+
+    // Plan: b depends on a (descriptions "do a" / "do b").
+    orch.run_plan(two_task_plan(), tx).await.expect("run_plan");
+
+    let calls = provider.calls();
+    let first = |needle: &str| calls.iter().position(|c| c.contains(needle));
+    let a = first("do a").expect("a's prompt");
+    let b = first("do b").expect("b's prompt");
+    assert!(a < b, "prerequisite a must be asked before b: {calls:?}");
+}

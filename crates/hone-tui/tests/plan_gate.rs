@@ -7,6 +7,8 @@
 //! API pinned here (new): `App::take_pending_plan_run() -> Option<PlanPreviewState>`,
 //! `PlanPreviewState::plan: hone_core::TaskPlan`, `App::plan_failed(&str)`.
 
+use std::time::{Duration, Instant};
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hone_core::{SubTask, TaskPlan};
 use hone_proto::AgentEvent;
@@ -74,6 +76,11 @@ fn waiting_app() -> App {
     app.handle_key(key(KeyCode::Enter));
     assert!(matches!(app.state(), AppState::WaitingForResponse));
     app
+}
+
+/// A time safely past the G13 guard (400 ms) for an overlay opened just before.
+fn settled() -> Instant {
+    Instant::now() + Duration::from_millis(600)
 }
 
 fn submit(app: &mut App, text: &str) {
@@ -192,7 +199,7 @@ fn test_g1_handle_key_with_overlay_open_runs_at_once_and_ignores_typed_text() {
     app.type_text("half-typed");
     app.set_plan_preview(preview("refactor auth"));
 
-    app.handle_key(key(KeyCode::Enter));
+    app.handle_key_at(key(KeyCode::Enter), settled());
 
     assert!(
         app.take_pending_plan_run().is_some(),
@@ -212,7 +219,7 @@ fn test_g1_handle_key_r_with_overlay_open_runs_at_once() {
     app.skip_splash();
     app.set_plan_preview(preview("refactor auth"));
 
-    app.handle_key(key(KeyCode::Char('r')));
+    app.handle_key_at(key(KeyCode::Char('r')), settled());
 
     assert!(app.take_pending_plan_run().is_some());
     assert!(matches!(app.state(), AppState::WaitingForResponse));
@@ -246,7 +253,7 @@ fn test_g2_edit_via_handle_key_with_overlay_open() {
     app.skip_splash();
     app.set_plan_preview(preview("refactor auth"));
 
-    app.handle_key(key(KeyCode::Char('e')));
+    app.handle_key_at(key(KeyCode::Char('e')), settled());
 
     assert_eq!(app.input().buffer, "refactor auth");
     assert!(!app.plan_preview_open);
