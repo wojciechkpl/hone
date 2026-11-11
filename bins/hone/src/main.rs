@@ -6420,7 +6420,7 @@ mod tests {
         );
         let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
 
-        let pos = |pred: &dyn Fn(&AgentEvent) -> bool| events.iter().position(|e| pred(e));
+        let pos = |pred: &dyn Fn(&AgentEvent) -> bool| events.iter().position(pred);
         let start = pos(&|e| matches!(e, AgentEvent::ToolCallStart { id, .. } if id == "wt1"));
         let paused = pos(&|e| matches!(e, AgentEvent::ToolCallPaused { id, .. } if id == "wt1"));
         let end = pos(&|e| matches!(e, AgentEvent::ToolCallEnd { id, is_error: false, .. } if id == "wt1"));
@@ -6562,6 +6562,223 @@ mod tests {
             "{events:?}"
         );
         assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
+
+    // ---- shared "always" W17 (docs/plans/worker-tools-spec.md) ----
+
+    /// Every model turn that is not a lead merge and does not follow a tool
+    /// result issues one `shell` call (fresh id); the turn after answers "ok".
+    struct W17Provider {
+        n: std::sync::Mutex<usize>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for W17Provider {
+        fn id(&self) -> &str {
+            "w17"
+        }
+        fn display_name(&self) -> &str {
+            "W17"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![]
+        }
+        async fn complete(
+            &self,
+            req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let text = req
+                .messages
+                .iter()
+                .map(|m| m.content.as_text())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let after_tool = req
+                .messages
+                .last()
+                .is_some_and(|m| m.role == hone_proto::Role::Tool);
+            let events = if text.contains("You are the lead agent. Based on") || after_tool {
+                vec![
+                    hone_proto::ProviderEvent::Token {
+                        text: "ok".to_owned(),
+                    },
+                    hone_proto::ProviderEvent::Done,
+                ]
+            } else {
+                let id = {
+                    let mut n = self.n.lock().unwrap();
+                    *n += 1;
+                    format!("w17-{n}")
+                };
+                vec![
+                    hone_proto::ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
+                        id,
+                        name: "shell".to_owned(),
+                        arguments: serde_json::json!({}),
+                    }),
+                    hone_proto::ProviderEvent::Done,
+                ]
+            };
+            Ok(Box::pin(futures::stream::iter(events)))
+        }
+        fn estimate_tokens(&self, _m: &[Message]) -> u32 {
+            1
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    /// `wt_session` with the W17 provider; `ask_rule` switches the session to
+    /// `Auto` approval plus a policy `ask` rule on the shell command.
+    fn w17_session(
+        dir: &std::path::Path,
+        ask_rule: bool,
+    ) -> (AgentConfig, WtLog, mpsc::Sender<hone_proto::StepAction>) {
+        let (mut config, _p, log, step_tx) = wt_session(dir, None);
+        config.provider = Arc::new(W17Provider {
+            n: std::sync::Mutex::new(0),
+        });
+        if ask_rule {
+            config.tools = wt_tools(&log, Some("cargo test"));
+            config.approval_policy = ToolApprovalPolicy::Auto;
+            let context =
+                hone_config::policy::PolicyContext::for_platform(dir.to_path_buf(), None);
+            let rules = vec![
+                hone_config::policy::PolicyRule::command("cargo *", hone_config::Decision::Ask)
+                    .with_id("ask-cargo"),
+            ];
+            let compiled =
+                hone_config::policy::CompiledPolicy::compile(&context, &[], &rules, &[]).unwrap();
+            config.policy = Some(hone_core::PolicyConfig {
+                compiled: Arc::new(compiled),
+                context,
+                pre_approved: vec![],
+                builtins: false,
+            });
+        }
+        (config, log, step_tx)
+    }
+
+    async fn w17_run(
+        config: &AgentConfig,
+        agent: &AgentHandle,
+        step_tx: &mpsc::Sender<hone_proto::StepAction>,
+        answer: hone_proto::StepAction,
+    ) -> Vec<AgentEvent> {
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _h = spawn_orchestrated_turn(
+            config.clone(),
+            "ship it".to_owned(),
+            tx,
+            agent.clone(),
+            Some(one_task_plan()),
+        );
+        wt_drive(&mut rx, step_tx, answer, WT_STEP_LIMIT).await
+    }
+
+    /// A plain (simple-tier) turn of the session agent, as the TUI runs it.
+    async fn w17_turn(
+        agent: &AgentHandle,
+        step_tx: &mpsc::Sender<hone_proto::StepAction>,
+        answer: hone_proto::StepAction,
+    ) -> Vec<AgentEvent> {
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _task = spawn_agent_turn(agent.clone(), "go".to_owned(), tx);
+        let mut events = Vec::new();
+        let collect = async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    step_tx.send(answer.clone()).await.unwrap();
+                }
+                let terminal = matches!(e, AgentEvent::Done { .. } | AgentEvent::Error { .. });
+                events.push(e);
+                if terminal {
+                    break;
+                }
+            }
+        };
+        tokio::time::timeout(WT_STEP_LIMIT, collect)
+            .await
+            .expect("turn hung");
+        events
+    }
+
+    fn w17_always() -> hone_proto::StepAction {
+        hone_proto::StepAction::ApproveAlways("shell".to_owned())
+    }
+
+    #[tokio::test]
+    async fn w17_workers_always_for_a_tool_should_cover_the_session_agents_next_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, log, step_tx) = w17_session(dir.path(), false);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let run = w17_run(&config, &agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&run), 1, "{run:?}");
+        let turn = w17_turn(&agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&turn), 0, "the worker's always covers the agent: {turn:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned(), "shell".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn w17_workers_always_should_cover_the_next_orchestrated_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, log, step_tx) = w17_session(dir.path(), false);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let first = w17_run(&config, &agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&first), 1);
+        let second = w17_run(&config, &agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&second), 0, "{second:?}");
+        assert_eq!(log.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn w17_agents_always_for_a_tool_should_cover_the_runs_workers() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, log, step_tx) = w17_session(dir.path(), false);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let turn = w17_turn(&agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&turn), 1, "{turn:?}");
+        let run = w17_run(&config, &agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&run), 0, "{run:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned(), "shell".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn w17_workers_always_for_a_policy_ask_rule_should_cover_the_session_agents_next_turn() {
+        let dir = std::fs::canonicalize(tempfile::tempdir().unwrap().keep()).unwrap();
+        let (config, log, step_tx) = w17_session(&dir, true);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let run = w17_run(&config, &agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&run), 1, "{run:?}");
+        let turn = w17_turn(&agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&turn), 0, "{turn:?}");
+        assert_eq!(log.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn w17_agents_always_for_a_policy_ask_rule_should_cover_the_runs_workers() {
+        let dir = std::fs::canonicalize(tempfile::tempdir().unwrap().keep()).unwrap();
+        let (config, log, step_tx) = w17_session(&dir, true);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let turn = w17_turn(&agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&turn), 1, "{turn:?}");
+        let run = w17_run(&config, &agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&run), 0, "{run:?}");
+        assert_eq!(log.lock().unwrap().len(), 2);
     }
 }
 

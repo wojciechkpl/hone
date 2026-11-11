@@ -4,7 +4,7 @@
 //! (including the tool names sent) and can emit tool calls per worker, fake
 //! tools that log their invocations, and a driver that plays the TUI side of
 //! the step channel.
-#![allow(dead_code, clippy::expect_used, clippy::unwrap_used)]
+#![allow(dead_code, clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -493,4 +493,131 @@ pub fn invoked(log: &InvocationLog) -> Vec<String> {
 
 pub fn new_log() -> InvocationLog {
     Arc::new(Mutex::new(Vec::new()))
+}
+
+// ---------------------------------------------------------------------------
+// Single-agent helpers (shared "always", W13-W16)
+// ---------------------------------------------------------------------------
+
+/// Answers the first request with `calls`, every later one with "done".
+pub struct CallsOnce {
+    calls: Vec<ToolCallRequest>,
+    n: Mutex<usize>,
+}
+
+impl CallsOnce {
+    pub fn new(calls: Vec<ToolCallRequest>) -> Arc<Self> {
+        Arc::new(Self {
+            calls,
+            n: Mutex::new(0),
+        })
+    }
+}
+
+#[async_trait]
+impl ModelProvider for CallsOnce {
+    fn id(&self) -> &str {
+        "calls-once"
+    }
+    fn display_name(&self) -> &str {
+        "Calls once"
+    }
+    fn supported_models(&self) -> Vec<ModelInfo> {
+        vec![]
+    }
+    async fn complete(
+        &self,
+        _request: CompletionRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
+        let first = {
+            let mut n = self.n.lock().unwrap();
+            *n += 1;
+            *n == 1
+        };
+        let events = if first {
+            let mut evs: Vec<ProviderEvent> = self
+                .calls
+                .iter()
+                .cloned()
+                .map(ProviderEvent::ToolCall)
+                .collect();
+            evs.push(ProviderEvent::Done);
+            evs
+        } else {
+            vec![
+                ProviderEvent::Token {
+                    text: "done".to_owned(),
+                },
+                ProviderEvent::Done,
+            ]
+        };
+        Ok(Box::pin(stream::iter(events)))
+    }
+    fn estimate_tokens(&self, _messages: &[Message]) -> u32 {
+        10
+    }
+    async fn health(&self) -> ProviderHealth {
+        ProviderHealth::Healthy
+    }
+}
+
+/// A permission policy with one command rule.
+pub fn rule_policy(
+    workdir: &Path,
+    pattern: &str,
+    decision: hone_config::Decision,
+    id: &str,
+) -> hone_core::PolicyConfig {
+    use hone_config::policy::{CompiledPolicy, PolicyContext, PolicyRule};
+    let context = PolicyContext::for_platform(workdir.to_path_buf(), None);
+    let rules = vec![PolicyRule::command(pattern, decision).with_id(id)];
+    let compiled = CompiledPolicy::compile(&context, &[], &rules, &[]).expect("policy compiles");
+    hone_core::PolicyConfig {
+        compiled: Arc::new(compiled),
+        context,
+        pre_approved: vec![],
+        builtins: false,
+    }
+}
+
+/// Run one turn of `agent`, answering each `ToolCallPaused` with the next of
+/// `answers` through `step_tx`. A prompt with no answer left is a test failure
+/// (the agent asked when it should not have). Gives up after 10 s.
+pub async fn run_agent_turn(
+    agent: &mut hone_core::Agent,
+    step_tx: &mpsc::Sender<StepAction>,
+    answers: Vec<StepAction>,
+) -> Vec<AgentEvent> {
+    let mut answers: std::collections::VecDeque<StepAction> = answers.into();
+    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+    let mut events = Vec::new();
+    {
+        let turn = agent.run_turn("go", tx);
+        tokio::pin!(turn);
+        let drive = async {
+            loop {
+                tokio::select! {
+                    biased;
+                    Some(e) = rx.recv() => {
+                        if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                            let a = answers
+                                .pop_front()
+                                .unwrap_or_else(|| panic!("unexpected extra prompt: {e:?}"));
+                            step_tx.send(a).await.unwrap();
+                        }
+                        events.push(e);
+                    }
+                    r = &mut turn => break r,
+                }
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), drive)
+            .await
+            .expect("turn hung")
+            .expect("turn should succeed");
+    }
+    while let Ok(e) = rx.try_recv() {
+        events.push(e);
+    }
+    events
 }
