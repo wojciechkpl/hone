@@ -2975,10 +2975,13 @@ async fn main() -> Result<()> {
                     }
                     Ok(None) => {
                         eprintln!("{} Session '{}' not found.", error_style("Error:"), name);
+                        // Stop the MCP servers first: `exit` runs no destructors.
+                        mcp_manager.shutdown().await;
                         std::process::exit(1);
                     }
                     Err(e) => {
                         eprintln!("{} Could not load session: {e}", error_style("Error:"));
+                        mcp_manager.shutdown().await;
                         std::process::exit(1);
                     }
                 }

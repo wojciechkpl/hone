@@ -509,8 +509,14 @@ impl StdioMcpClient {
         .await;
         if ended.is_err() {
             // Out of budget (also when it ran out writing the notification):
-            // forcibly kill the subprocess.
-            let _ = transport.process.kill().await;
+            // forcibly kill the subprocess. Signal first, then wait only briefly
+            // for the reap, so shutdown cannot hang here.
+            let _ = transport.process.start_kill();
+            let _ = tokio::time::timeout(
+                tokio::time::Duration::from_secs(1),
+                transport.process.wait(),
+            )
+            .await;
         }
         Ok(())
     }

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use hone_config::mcp::{McpConfig, McpServerConfig};
 use hone_tools::Tool;
 
@@ -27,16 +29,19 @@ impl McpManager {
     /// are driven in the caller's task, not detached: dropping this future drops,
     /// and so kills, every client still connecting.
     pub async fn from_config(config: &McpConfig) -> Self {
-        let connecting = config.mcp_servers.iter().filter_map(|(name, server_cfg)| {
+        let mut connecting = FuturesUnordered::new();
+        for (name, server_cfg) in &config.mcp_servers {
             if server_cfg.disabled {
                 tracing::info!(server = %name, "MCP server disabled, skipping");
-                return None;
+                continue;
             }
-            Some(async move { (name, Self::spawn_and_connect(name, server_cfg).await) })
-        });
+            connecting.push(async move { (name, Self::spawn_and_connect(name, server_cfg).await) });
+        }
 
+        // Each server is logged as it finishes. `connecting` lives in this
+        // task, so dropping `from_config` drops (and kills) the rest.
         let mut clients = HashMap::new();
-        for (name, result) in futures::future::join_all(connecting).await {
+        while let Some((name, result)) = connecting.next().await {
             match result {
                 Ok(client) => {
                     tracing::info!(
