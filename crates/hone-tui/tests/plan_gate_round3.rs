@@ -216,3 +216,60 @@ fn test_g21_refused_plan_leaves_only_the_refusal_not_the_planning_line() {
         "/plan: the previous turn is still finishing; try again when it's done"
     );
 }
+
+// ---------------------------------------------------------------- G19: every message
+
+/// Token, tool call start/end, Token: leaves two streaming assistant messages
+/// (a tool call does not end the first one).
+fn two_streaming_messages() -> App {
+    let mut app = busy_app();
+    app.handle_agent_event(tok("before the tool"));
+    app.handle_agent_event(AgentEvent::ToolCallStart {
+        id: "t1".into(),
+        name: "read".into(),
+        args: serde_json::Value::Null,
+    });
+    app.handle_agent_event(AgentEvent::ToolCallEnd {
+        id: "t1".into(),
+        result: serde_json::json!("contents"),
+        is_error: false,
+        duration_ms: 1,
+        cache_hit: false,
+    });
+    app.handle_agent_event(tok("after the tool"));
+    assert!(
+        streaming(&app).len() >= 2,
+        "premise: more than one message must be streaming, got {:?}",
+        streaming(&app)
+    );
+    app
+}
+
+#[test]
+fn test_g19_done_clears_streaming_on_every_message_not_only_the_last() {
+    let mut app = two_streaming_messages();
+
+    app.handle_agent_event(done(0.1));
+
+    assert!(streaming(&app).is_empty(), "{:?}", streaming(&app));
+}
+
+#[test]
+fn test_g19_error_clears_streaming_on_every_message_not_only_the_last() {
+    let mut app = two_streaming_messages();
+
+    app.handle_agent_event(AgentEvent::Error {
+        message: "boom".into(),
+    });
+
+    assert!(streaming(&app).is_empty(), "{:?}", streaming(&app));
+}
+
+#[test]
+fn test_g19_cancel_turn_clears_streaming_on_every_message_not_only_the_last() {
+    let mut app = two_streaming_messages();
+
+    app.cancel_turn();
+
+    assert!(streaming(&app).is_empty(), "{:?}", streaming(&app));
+}
