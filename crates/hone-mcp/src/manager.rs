@@ -107,6 +107,10 @@ impl McpManager {
             .await?
             .with_request_timeout(Duration::from_millis(cfg.timeout_ms));
 
+        if let Some(ms) = cfg.handshake_timeout_ms {
+            client = client.with_handshake_timeout(Duration::from_millis(ms));
+        }
+
         if let Err(e) = client.connect().await {
             // Do not leave a hung (or broken) server running.
             client.kill().await;
