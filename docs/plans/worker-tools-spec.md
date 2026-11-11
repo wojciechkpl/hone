@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W49.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W50.
 
 ## Problem
 
@@ -179,6 +179,12 @@ never ask.
 | W48 | **<kbd>Esc</kbd> kills the main agent's running command.** In the agent loop, a tool call's dispatch races the turn's event channel closing (biased to the close): when the caller goes away (<kbd>Esc</kbd> aborts the TUI's turn task and drops its receiver; a worker or fix turn is dropped), the dispatch future is dropped, so `run_command`'s guard kills the command's process group (W23) and the turn ends cancelled instead of waiting for the command. Applies to every tool call, so W45 also cancels mid-tool. (Review 5 F1, reproduced: the actor kept running `sh` for 3.8 s after <kbd>Esc</kbd> and its grandchild survived.) |
 | W49 | **Small approval-safety fixes.** In the TUI menu, identifying fields (`command`, `url`, …) get a larger cap than bulk fields (so a long command isn't cut after six rows); in the web dialog, focus moves to the dialog when a new prompt replaces the shown one (so <kbd>Enter</kbd>/<kbd>Space</kbd> can't approve it through the previously clicked button), and the `approval_required` note is an info note, not an error. The `signal_ignored` tests reset SIGHUP/SIGINT/SIGTERM to their defaults in the child before applying their own ignore list, so they pass when `cargo test` itself runs with signals ignored. (Review 5 nits.) |
 
+### Review round 6 (W50)
+
+| Row | Behaviour |
+|---|---|
+| W50 | **A cancelled call can't shift later results.** The stdio MCP client matches each response to its request by JSON-RPC `id` and skips any other line (a stale response from a call that was dropped mid-flight, or a notification), so after <kbd>Esc</kbd> during an MCP call (W48), a worker timeout or a stopped run, the server's next response still goes to the right call. A call cancelled mid-dispatch (W48) is recorded in the audit log as cancelled mid-call, since it may have partly run. After a mid-call cancel, the next turn on the same agent succeeds (the history has no orphan calls). (Review 6 B1, reproduced: after dropping call A, call B returned A's result and C returned B's.) |
+
 ## What each entry point gets
 
 | Entry point | Tools a worker can use | Risky calls |
@@ -221,3 +227,6 @@ never ask.
   `/run`'s); a client that disconnects leaves an orchestrated run starting its
   remaining subtasks and merge; `/orchestrate` mints its own provenance session id,
   so `/provenance/{request_id}/verify` doesn't find a step-mode orchestrated run.
+- **A write cancelled mid-call may still land** (`tokio::fs::write` finishes on its
+  blocking thread) and `multi_edit` may stop between files, while the call is
+  reported cancelled.
