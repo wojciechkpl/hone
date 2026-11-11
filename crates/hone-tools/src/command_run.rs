@@ -240,8 +240,30 @@ mod unix {
             .is_some_and(|map| map.remove(&pgid).is_some())
     }
 
-    /// Whether group `pgid` has no live member we care about: the group is
-    /// gone, or its leader (our child) has exited and only waits to be reaped.
+    /// Whether group `pgid` has no live member we care about.
+    ///
+    /// macOS: `killpg(pgid, 0)` returns ESRCH for an empty group and EPERM when
+    /// only zombies are left (a launcher's reaped-by-nobody leader), so either
+    /// means gone; it succeeds while any member is alive. A `waitid` shortcut on
+    /// the leader would be wrong here: a shell launcher's leader can exit while
+    /// its child, the real server, is still handling SIGTERM.
+    #[cfg(target_os = "macos")]
+    fn group_gone(pgid: i32) -> bool {
+        // SAFETY: `killpg(.., 0)` only checks existence.
+        let r = unsafe { libc::killpg(pgid, 0) };
+        r == -1
+            && matches!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::ESRCH | libc::EPERM)
+            )
+    }
+
+    /// Whether group `pgid` has no live member we care about (other unix).
+    ///
+    /// There `killpg(pgid, 0)` keeps succeeding while an unreaped zombie
+    /// remains, so a leader that exited and only waits to be reaped counts as
+    /// gone, checked with `waitid(.., WNOWAIT)` (reaps nothing).
+    #[cfg(not(target_os = "macos"))]
     fn group_gone(pgid: i32) -> bool {
         // SAFETY: `waitid` with WNOHANG|WNOWAIT only inspects our child's state
         // (it reaps nothing) and writes into a zeroed `siginfo_t` that lives for
@@ -338,6 +360,9 @@ mod unix {
                 kill_group(pgid);
             }
         }
+        // A command may have started while we waited (another task running
+        // under the grace period): kill those too, so none outlives the exit.
+        kill_shell();
     }
 }
 
