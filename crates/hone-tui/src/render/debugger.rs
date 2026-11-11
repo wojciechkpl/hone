@@ -16,6 +16,46 @@ use ratatui::{
 
 use crate::app::App;
 
+/// Rows a single argument value may take before it is cut.
+const ARG_VALUE_ROWS: usize = 6;
+
+/// Keys listed before the others: what the call touches or runs.
+const IDENTIFYING_KEYS: [&str; 5] = ["path", "file_path", "command", "url", "pattern"];
+
+/// Cut `text` to `cap` chars; the cut part is counted in a trailing note.
+fn capped(text: String, cap: usize) -> String {
+    let total = text.chars().count();
+    if total <= cap {
+        return text;
+    }
+    let mut out: String = text.chars().take(cap).collect();
+    out.push_str(&format!("\u{2026} ({} more chars)", total - cap));
+    out
+}
+
+/// The argument lines of the menu: one `key: value` line per field of an
+/// object (identifying keys first), each value capped at `cap` chars; anything
+/// else is shown as capped JSON.
+fn arg_lines(args: Option<&serde_json::Value>, cap: usize) -> Vec<String> {
+    let render = |v: &serde_json::Value| serde_json::to_string(v).unwrap_or_default();
+    match args {
+        Some(serde_json::Value::Object(map)) if !map.is_empty() => {
+            let first = IDENTIFYING_KEYS
+                .iter()
+                .filter_map(|k| map.get_key_value(*k));
+            let rest = map
+                .iter()
+                .filter(|(k, _)| !IDENTIFYING_KEYS.contains(&k.as_str()));
+            first
+                .chain(rest)
+                .map(|(k, v)| format!("  {k}: {}", capped(render(v), cap)))
+                .collect()
+        }
+        Some(v) => vec![format!("  {}", capped(render(v), cap))],
+        None => vec!["  {}".to_owned()],
+    }
+}
+
 /// Render the debugger overlay into `area`.
 ///
 /// This is called from `render/root.rs` at the very end (after all other
@@ -94,16 +134,13 @@ pub fn render_debugger(app: &App, frame: &mut Frame, area: Rect) {
     // Blank separator.
     lines.push(Line::from(""));
 
-    // Pretty-printed JSON args (capped at 20 lines).
-    let args_str = app
-        .debugger_paused_args
-        .as_ref()
-        .and_then(|v| serde_json::to_string_pretty(v).ok())
-        .unwrap_or_else(|| "{}".to_owned());
-
+    // Arguments: the fields that say what the call touches come first, and
+    // every value is capped at a few wrapped rows, so a long `content` can't
+    // push the target out of view.
     let text_style = Style::default().fg(theme.text_primary);
-    for arg_line in args_str.lines().take(20) {
-        lines.push(Line::from(Span::styled(arg_line.to_owned(), text_style)));
+    let cap = usize::from(inner.width.saturating_sub(4)).max(20) * ARG_VALUE_ROWS;
+    for arg_line in arg_lines(app.debugger_paused_args.as_ref(), cap) {
+        lines.push(Line::from(Span::styled(arg_line, text_style)));
     }
 
     // Footer with keybinding hints, pinned to the bottom row: the body above

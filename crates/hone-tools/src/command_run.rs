@@ -88,6 +88,23 @@ pub fn kill_commands_and_reraise(signal: i32) -> ! {
     std::process::exit(128 + signal)
 }
 
+/// Whether `signal` is ignored right now (`SIG_IGN`: SIGHUP under `nohup`, SIGINT
+/// for a background job). Asks the kernel with a null new action, so it changes
+/// nothing. Call it BEFORE installing a handler for that signal (tokio's handler
+/// hides the original disposition), and install none if it is ignored, so an
+/// ignored signal stays ignored. Always `false` off unix.
+pub fn signal_is_ignored(signal: i32) -> bool {
+    #[cfg(unix)]
+    {
+        unix::is_ignored(signal)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = signal;
+        false
+    }
+}
+
 #[cfg(unix)]
 use unix::GroupGuard;
 
@@ -177,6 +194,17 @@ mod unix {
             libc::sigaddset(&mut set, signal);
             libc::pthread_sigmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut());
             libc::raise(signal);
+        }
+    }
+
+    pub(super) fn is_ignored(signal: i32) -> bool {
+        // SAFETY: `sigaction` with a null new action only reads the current
+        // disposition into `old`, a zero-initialised, properly sized struct
+        // that lives for the whole call.
+        unsafe {
+            let mut old: libc::sigaction = std::mem::zeroed();
+            libc::sigaction(signal, std::ptr::null(), &mut old) == 0
+                && old.sa_sigaction == libc::SIG_IGN
         }
     }
 

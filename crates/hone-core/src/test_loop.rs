@@ -415,7 +415,21 @@ impl TestVerificationLoop {
                     let fix_prompt = format!(
                         "The tests failed with this output:\n\n{last_output}\n\nPlease fix the code to make the tests pass."
                     );
-                    handle.run_turn(&fix_prompt, events.clone()).await?;
+                    // The fix turn gets an event channel this future owns and
+                    // forwards it to the caller's. Dropping (aborting) the loop
+                    // closes it, so the agent actor cancels the fix turn,
+                    // pending tool calls included, instead of finishing it
+                    // while the caller's sender stays open.
+                    let (turn_tx, mut turn_rx) = mpsc::channel::<AgentEvent>(256);
+                    let forward = async {
+                        while let Some(event) = turn_rx.recv().await {
+                            if events.send(event).await.is_err() {
+                                break;
+                            }
+                        }
+                    };
+                    let (turn, ()) = tokio::join!(handle.run_turn(&fix_prompt, turn_tx), forward);
+                    turn?;
                 }
             }
 

@@ -124,6 +124,27 @@ pub(crate) fn load_run_policy(
     Ok(policy)
 }
 
+/// A `request_id` must be 1-128 characters of `A-Z a-z 0-9 - _`: `/run` names
+/// its provenance file after it, so anything else (`../`) could escape the
+/// provenance directory. `None` is fine.
+pub(crate) fn validate_request_id(request_id: Option<&str>) -> Result<(), (StatusCode, String)> {
+    let Some(id) = request_id else {
+        return Ok(());
+    };
+    let ok = (1..=128).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if ok {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::BAD_REQUEST,
+            "request_id must be 1-128 characters of A-Z a-z 0-9 - _".to_owned(),
+        ))
+    }
+}
+
 /// The step channel of a run, shared by the workers of an orchestrated run.
 pub(crate) type StepRx = Arc<tokio::sync::Mutex<mpsc::Receiver<hone_proto::StepAction>>>;
 
@@ -257,6 +278,10 @@ pub async fn run_handler(
     State(state): State<AppState>,
     Json(req): Json<RunRequest>,
 ) -> Result<axum::response::Response, (StatusCode, String)> {
+    // A `request_id` names the provenance file and the run registry entry:
+    // check it before it is used anywhere.
+    validate_request_id(req.request_id.as_deref())?;
+
     // ---- Step 1: validate working_dir against workspace_root --------------
     //
     // This MUST run before any agent setup so a malicious request can never

@@ -201,6 +201,17 @@ pub async fn orchestrate_handler(
     Query(dry_run_flag): Query<DryRunQuery>,
     Json(req): Json<OrchestrateRequest>,
 ) -> Result<axum::response::Response, (StatusCode, String)> {
+    // A dry run ignores the step-mode fields; otherwise check the id before it
+    // is used anywhere.
+    if !dry_run_flag.dry_run {
+        crate::execution::validate_request_id(req.request_id.as_deref())?;
+    }
+    if req.max_workers == Some(0) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "max_workers must be at least 1".to_owned(),
+        ));
+    }
     let working_dir = resolve_working_dir(req.working_dir.as_deref(), &state.workspace_root)?;
 
     let provider: Option<Arc<dyn ModelProvider>> = state.mock_provider.clone().or_else(|| {

@@ -1069,7 +1069,7 @@ impl App {
                     self.pending_stop_background = true;
                     self.messages.push(DisplayMessage::new(
                         DisplayRole::System,
-                        "Stopped the test run.".to_string(),
+                        "Stopped the post-turn test run and any fixes.".to_string(),
                     ));
                 } else if matches!(self.state, AppState::Idle) {
                     self.input.buffer.clear();

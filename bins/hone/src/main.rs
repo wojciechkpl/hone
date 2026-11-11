@@ -1282,12 +1282,34 @@ impl Drop for AbortOnDrop {
     }
 }
 
+/// Runs a future exactly once: awaited by [`RestoreOnDrop::run`] on the normal
+/// path, or spawned when the guard is dropped first (the task was aborted).
+struct RestoreOnDrop<F: std::future::Future<Output = ()> + Send + 'static>(Option<F>);
+
+impl<F: std::future::Future<Output = ()> + Send + 'static> RestoreOnDrop<F> {
+    async fn run(mut self) {
+        if let Some(f) = self.0.take() {
+            f.await;
+        }
+    }
+}
+
+impl<F: std::future::Future<Output = ()> + Send + 'static> Drop for RestoreOnDrop<F> {
+    fn drop(&mut self) {
+        if let Some(f) = self.0.take() {
+            tokio::spawn(f);
+        }
+    }
+}
+
 /// Forward `inner_rx` to `outer_tx` for an inline `@agent` turn, then run
-/// `after` (prompt/tool restore) when the inner stream ends normally.
+/// `after` (prompt/tool restore).
 ///
-/// If the wrapper is aborted or dropped, or the outer receiver goes away, the
-/// `inner` turn task is aborted (drop guard) so a pending approval prompt
-/// cannot outlive the UI that could answer it. `after` does not run then.
+/// `after` runs exactly once: when the inner stream ends, and also when the
+/// wrapper is aborted or dropped, or the outer receiver goes away (then it is
+/// spawned, so the persona never stays active). In those cases the `inner` turn
+/// task is aborted too (drop guard) so a pending approval prompt cannot outlive
+/// the UI that could answer it.
 fn spawn_inline_turn_wrapper<F>(
     inner: tokio::task::JoinHandle<()>,
     mut inner_rx: mpsc::Receiver<AgentEvent>,
@@ -1299,6 +1321,7 @@ where
 {
     tokio::spawn(async move {
         let _guard = AbortOnDrop(inner.abort_handle());
+        let restore = RestoreOnDrop(Some(after));
         loop {
             tokio::select! {
                 biased;
@@ -1313,7 +1336,7 @@ where
                 },
             }
         }
-        after.await;
+        restore.run().await;
     })
 }
 
@@ -3225,8 +3248,14 @@ async fn run_selected_mode(
 /// without needing `#[cfg(...)]` attributes inside the macro invocation,
 /// which the macro does not support.
 #[cfg(unix)]
-async fn os_signal(sigint: &mut tokio::signal::unix::Signal) {
-    sigint.recv().await;
+async fn os_signal(sigint: &mut Option<tokio::signal::unix::Signal>) {
+    match sigint {
+        Some(s) => {
+            s.recv().await;
+        }
+        // Ignored when hone started (a background job): stays ignored.
+        None => std::future::pending::<()>().await,
+    }
 }
 
 #[cfg(not(unix))]
@@ -3272,11 +3301,40 @@ fn drain_after_cancel(
 
 /// Waits for the next SIGTERM or SIGHUP on unix; never completes elsewhere.
 #[cfg(unix)]
-async fn os_term_signal(signals: &mut (tokio::signal::unix::Signal, tokio::signal::unix::Signal)) {
-    tokio::select! {
-        _ = signals.0.recv() => {}
-        _ = signals.1.recv() => {}
+async fn os_term_signal(
+    signals: &mut (
+        Option<tokio::signal::unix::Signal>,
+        Option<tokio::signal::unix::Signal>,
+    ),
+) {
+    async fn next(s: &mut Option<tokio::signal::unix::Signal>) {
+        match s {
+            Some(s) => {
+                s.recv().await;
+            }
+            None => std::future::pending::<()>().await,
+        }
     }
+    tokio::select! {
+        _ = next(&mut signals.0) => {}
+        _ = next(&mut signals.1) => {}
+    }
+}
+
+/// Install a tokio handler for `signal` unless it is ignored right now (see
+/// [`hone_tools::signal_is_ignored`]); must run before anything else installs
+/// one. `None` means: leave it ignored.
+#[cfg(unix)]
+fn handler_unless_ignored(
+    kind: tokio::signal::unix::SignalKind,
+    name: &str,
+) -> Result<Option<tokio::signal::unix::Signal>> {
+    if hone_tools::signal_is_ignored(kind.as_raw_value()) {
+        return Ok(None);
+    }
+    tokio::signal::unix::signal(kind)
+        .map(Some)
+        .map_err(|e| anyhow::anyhow!("failed to install {name} handler: {e}"))
 }
 
 #[cfg(not(unix))]
@@ -3284,9 +3342,11 @@ async fn os_term_signal(_signals: &mut ()) {
     std::future::pending::<()>().await;
 }
 
-/// One-shot runs (`-p`, `--plan`, `--orchestrate`, `--recipe`, `--ensemble`): on SIGINT, SIGTERM or
-/// SIGHUP kill the running commands and end the process by that signal.
-/// Without this, commands in their own process groups would outlive hone.
+/// One-shot runs (a positional prompt, `--plan`, `--orchestrate`, `--recipe`,
+/// `--ensemble`): on SIGINT, SIGTERM or SIGHUP kill the running commands and end
+/// the process by that signal. Without this, commands in their own process
+/// groups would outlive hone. A signal that was ignored at start (`nohup`,
+/// background job) gets no handler and stays ignored.
 #[cfg(unix)]
 fn install_one_shot_signal_handlers() -> Result<()> {
     use tokio::signal::unix::{SignalKind, signal};
@@ -3296,6 +3356,10 @@ fn install_one_shot_signal_handlers() -> Result<()> {
         (SignalKind::terminate(), 15),
         (SignalKind::hangup(), 1),
     ] {
+        // Decide before tokio installs its own handler.
+        if hone_tools::signal_is_ignored(number) {
+            continue;
+        }
         let mut sig =
             signal(kind).map_err(|e| anyhow::anyhow!("failed to install signal handler: {e}"))?;
         tokio::spawn(async move {
@@ -3630,17 +3694,15 @@ async fn run_tui(
     // platforms the `os_signal` helper calls `tokio::signal::ctrl_c()` directly
     // and the placeholder `()` value is never actually used.
     #[cfg(unix)]
-    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-        .map_err(|e| anyhow::anyhow!("failed to install SIGINT handler: {e}"))?;
+    let mut sigint =
+        handler_unless_ignored(tokio::signal::unix::SignalKind::interrupt(), "SIGINT")?;
     #[cfg(not(unix))]
     let mut sigint = ();
     // SIGTERM and SIGHUP end the TUI like SIGINT (W25).
     #[cfg(unix)]
     let mut term_signals = (
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .map_err(|e| anyhow::anyhow!("failed to install SIGTERM handler: {e}"))?,
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-            .map_err(|e| anyhow::anyhow!("failed to install SIGHUP handler: {e}"))?,
+        handler_unless_ignored(tokio::signal::unix::SignalKind::terminate(), "SIGTERM")?,
+        handler_unless_ignored(tokio::signal::unix::SignalKind::hangup(), "SIGHUP")?,
     );
     #[cfg(not(unix))]
     let mut term_signals = ();
