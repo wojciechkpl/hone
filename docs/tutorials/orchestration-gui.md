@@ -9,12 +9,13 @@ wired in both the TUI (`hone`) and the web UI (`honed` at `/ui`).
 | Command | What it does | Where |
 |---|---|---|
 | `/plan <prompt>` | Preview the orchestrator's decomposed plan + cost estimate **before** any worker runs. Pick Run / Edit / Cancel. | TUI + web UI |
-| `/budget <usd>` | Cap the next turn's spend (for an orchestrated run, only its merge call). Drains after one turn. | TUI |
-| `/permit <tool>` | Pre-approve a tool for the next run (skip the AskRisky pause for it). Drains after one turn. | TUI |
+| `/budget <usd>` | Set the agent's cost cap, from the next turn on (for an orchestrated run it caps only the lead's calls). | TUI |
+| `/permit <tool>` | Pre-approve a tool, from the next turn on (skip the AskRisky pause for it). | TUI |
 | `/workflows` | Open the **Workflows drawer**: list saved YAML recipes, fill in `{{var}}` template fields, click Run. | web UI |
 
-All four are intentionally **per-run** — they apply to the very next
-turn and then drain. Nothing persists to your config.
+`/budget` and `/permit` are picked up by the very next turn. The agent
+then keeps them for the rest of the session (they were meant to last
+one run; that is a known gap). Nothing is written to your config.
 
 ---
 
@@ -94,8 +95,9 @@ runtime budget check (`Cost::check_budget`) trips with
 ```
 
 For an orchestrated run (a `/plan` Run or a prompt classified complex)
-the cap reaches only the final merge call, not the workers, so it is
-not yet a ceiling for a plan.
+the cap reaches only the lead's calls, each on its own: the merge, and
+for a complex prompt the planning call too. It doesn't cap the workers,
+so it is not yet a ceiling for a plan.
 
 Validation rules:
 
@@ -103,8 +105,8 @@ Validation rules:
 - Finite only — `/budget inf`, `/budget nan` are rejected.
 - Integers and decimals both work — `/budget 5` is `Some(5.0)`.
 
-`/budget` drains after one turn. To set a permanent ceiling, edit
-your config TOML directly.
+The agent keeps the cap for the rest of the session. To set a ceiling
+for every session, edit your config TOML.
 
 ---
 

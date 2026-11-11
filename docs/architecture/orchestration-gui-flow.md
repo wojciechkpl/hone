@@ -124,7 +124,7 @@ sequenceDiagram
 
 ## Governance Overrides: `/budget` and `/permit`
 
-Both surfaces feed per-run governance flags into the turn dispatch:
+Both surfaces feed governance flags into the next turn's dispatch:
 
 ```mermaid
 %%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 25, "rankSpacing": 30, "padding": 8}, "sequence": {"actorMargin": 30, "messageMargin": 25, "boxMargin": 6}, "gantt": {"barHeight": 16, "barGap": 3}}}%%
@@ -153,8 +153,8 @@ sequenceDiagram
     CLI->>CLI: agent.set_budget_limit(Some(0.50)), agent.approve_tools(["shell"])
     CLI->>CLI: same budget and policy on the orchestrated run's config
     
-    Note over App: Governance drained — next turn has defaults
-    Note over CLI: The orchestrator's lead and workers have no tools,<br/>so /permit changes nothing for the run; /budget caps<br/>only its merge call (workers use worker_budget)
+    Note over App: Pending governance drained; the agent keeps<br/>the budget and permits for the rest of the session
+    Note over CLI: The orchestrator's lead and workers have no tools,<br/>so /permit changes nothing for the run; /budget caps<br/>only the lead's calls (workers use worker_budget)
 ```
 
 **Key types and functions:**
@@ -175,7 +175,7 @@ projected_cost_usd = lead_cost_usd + subtask_count × DEFAULT_WORKER_COST_USD
 
 Where `DEFAULT_WORKER_COST_USD = 0.05` (defined at `hone_core/src/lib.rs:89`).
 
-The lead cost is the real, measured cost from the decomposition LLM call. The worker estimates are heuristic (not measured) and based on the constant above. Users can override per-run with `/budget <usd>` (TUI) or `POST /orchestrate` with `total_budget_usd` (web UI).
+The lead cost is the real, measured cost from the decomposition LLM call. The worker estimates are heuristic (not measured) and based on the constant above. Users can set a cap with `/budget <usd>` (TUI; it doesn't cap orchestrator workers yet) or `POST /orchestrate` with `total_budget_usd` (web UI).
 
 ---
 

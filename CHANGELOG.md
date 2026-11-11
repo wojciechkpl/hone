@@ -153,7 +153,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - **Planning** runs in the background with the spinner showing; <kbd>Esc</kbd> stops it. `/plan` isn't accepted while a turn is running or still finishing.
   - **Complex runs** (a complex prompt or a `/plan` Run) end with one `Done`, carrying the whole run's usage and cost, so the TUI stays busy, and <kbd>Esc</kbd> stops the run, until it ends. A failed worker shows in the worker list, not as an error that ends the turn.
   - **`/model` reaches complex runs** when `[[routing]]` is off. They used the session's starting model.
-- **`/budget` and `/permit` with orchestrated runs** (unchanged, now documented): `/budget` caps only the final merge call, not the workers, and `/permit` changes nothing for them, since their lead and workers have no tools. A run uses both up like any turn, and passes them to the agent for later turns.
+- **`/budget` and `/permit` with orchestrated runs** (unchanged, now documented): `/budget` caps only the lead's calls (the merge, and for a complex prompt the planning call too), not the workers, and `/permit` changes nothing for them, since their lead and workers have no tools. A run picks both up like any turn and passes them to the agent, which keeps them for the rest of the session. The docs called them per-run; they now say so.
 - **Latent bug fixed:** `set_input_buffer` put the cursor short of the end of non-ASCII text, where the next keystroke could crash the TUI. Edit, now that it fills the input bar, would have hit it.
 - **Not yet:**
   - Orchestrated workers, including those of a `/plan` run, have no tools, so they can't read or edit files; they answer in text.

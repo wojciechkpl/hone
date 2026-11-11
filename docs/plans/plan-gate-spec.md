@@ -87,5 +87,6 @@ The reviewer approved round 2 with three low findings: with one terminal `Done`,
 - **Vim mode:** Esc never requests a cancel there (pre-existing), so "Esc stops it" doesn't hold in vim mode.
 - **Planning's lead-call cost** isn't added to the session cost total.
 - **Edit replaces the input bar's text,** including a follow-up typed while planning and restored when planning ended.
+- **`/budget` and `/permit` persist:** the docs called them per-run, but `SetBudgetLimit` and `ApproveTools` stay on the agent for the session. Docs now say so; making them per-run is a follow-up.
 - **Status label after an orchestrated run:** `BudgetProgress` sets the mode label to `orchestrator i/n`, and nothing restores the agent mode label after the run (pre-existing).
 - **Other drains in the Enter block:** a `!command` typed during a turn waits for the next Enter with text, like the plan actions did.
