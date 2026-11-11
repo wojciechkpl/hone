@@ -36,8 +36,10 @@ struct JsonRpcNotification {
 
 #[derive(Deserialize, Debug)]
 struct JsonRpcResponse {
-    #[allow(dead_code)]
     id: Option<u64>,
+    /// Set on notifications and server-to-client requests, which are not
+    /// responses to ours.
+    method: Option<String>,
     result: Option<Value>,
     error: Option<JsonRpcErrorObj>,
 }
@@ -96,7 +98,10 @@ impl TransportInner {
                 source: e,
             })?;
 
-        // Read lines until we get a non-empty one (skip blank lines / log output).
+        // Read lines until the response to THIS request: skip blank lines,
+        // notifications and responses with another id (e.g. the late reply to a
+        // call that was dropped by a timeout or a cancel), so a result is never
+        // handed to the wrong caller.
         loop {
             let mut response_line = String::new();
             let bytes = self
@@ -121,6 +126,16 @@ impl TransportInner {
             }
 
             let resp: JsonRpcResponse = serde_json::from_str(trimmed)?;
+
+            if resp.method.is_some() || resp.id != Some(id) {
+                tracing::debug!(
+                    server = server_name,
+                    expected = id,
+                    got = ?resp.id,
+                    "skipping a message that is not the response to this request"
+                );
+                continue;
+            }
 
             if let Some(err) = resp.error {
                 return Err(McpError::JsonRpc {

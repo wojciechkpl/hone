@@ -1085,6 +1085,39 @@ impl Agent {
         }
     }
 
+    /// Record calls whose dispatch was dropped because the caller went away: they
+    /// may have partly run, so the audit log says they were cancelled mid-call.
+    /// Flushed at once, because a cancelled turn never reaches the end-of-turn
+    /// flush.
+    async fn audit_cancelled_calls(&self, calls: &[ToolCallRequest], turn_trace: &TraceContext) {
+        let Some(log) = &self.config.egress_log else {
+            return;
+        };
+        let mut log = log.lock().await;
+        for call in calls {
+            let (span_id, parent_span_id) = turn_trace.child_span();
+            log.record(EgressEntry {
+                timestamp: now_rfc3339(),
+                tool: call.name.clone(),
+                arguments: call.arguments.clone(),
+                result_preview: "cancelled mid-call: the caller went away; the tool may have \
+                                 partly run"
+                    .to_owned(),
+                blocked: false,
+                block_reason: None,
+                injection_risk: None,
+                duration_ms: 0,
+                trace_id: turn_trace.trace_id.clone(),
+                span_id,
+                parent_span_id,
+                span_kind: SpanKind::ToolCall,
+            });
+        }
+        if let Err(e) = log.flush() {
+            tracing::warn!(error = %e, "failed to flush egress audit log");
+        }
+    }
+
     /// Run `call` through the permission policy (no policy: always proceed).
     async fn gate_call(
         &mut self,
@@ -1853,9 +1886,20 @@ impl Agent {
                     }
 
                     let ctx = self.tool_context();
-                    let live_results =
-                        dispatch_parallel(&self.config.tools, &ctx, live_batch, &events, redact)
-                            .await;
+                    let dispatched = live_batch.clone();
+                    // The caller went away (Esc) during a slow read-only call: drop
+                    // the batch (its tasks are aborted with the JoinSet), so the
+                    // actor is not held until the tools return.
+                    let live_results = tokio::select! {
+                        biased;
+                        () = events.closed() => None,
+                        r = dispatch_parallel(&self.config.tools, &ctx, live_batch, &events, redact) => Some(r),
+                    };
+                    let Some(live_results) = live_results else {
+                        self.audit_cancelled_calls(&dispatched, &turn_trace).await;
+                        self.cancel_pending_calls(&pending_tool_calls, redact, CANCELLED_REASON);
+                        return Err(AgentError::Cancelled);
+                    };
                     let mut live_iter = live_results.into_iter();
 
                     // Reconstitute final (call, result) pairs in original order.
@@ -2508,6 +2552,8 @@ impl Agent {
                                 r = dispatch => Some(r),
                             };
                             let Some(finished) = finished else {
+                                self.audit_cancelled_calls(std::slice::from_ref(call), &turn_trace)
+                                    .await;
                                 self.cancel_pending_calls(
                                     &pending_tool_calls,
                                     redact,
