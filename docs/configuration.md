@@ -722,15 +722,15 @@ model: sonnet
 You write concise release notes. Group changes by user impact...
 ```
 
-In the TUI, start a message with `@release-notes` to use it. `tools:` must use real tool
-names (`read_file`, `write_file`, `edit_file`, `multi_edit`, `glob`, `grep`, `shell`,
-`git_status`, `git_diff`, `git_commit`, `web_fetch`, ...); unknown names are dropped with
-only a log warning. An empty or missing `tools:` list keeps every tool.
+In the TUI, start a message with `@release-notes` to use it. The same list sets the tools
+the agent gets when the orchestrator runs it as a worker (a complex prompt or a `/plan`
+Run), taken from the session's tools.
 
-> [!WARNING]
-> The built-in personas list short names such as `read`, `edit` and `write`, which match
-> no tool. When `@persona` (or a distributed worker) applies their list, they keep only
-> `shell`, `grep` and `glob` and lose the file tools. This is a known bug.
+`tools:` takes tool names (`read_file`, `write_file`, `edit_file`, `multi_edit`, `glob`,
+`grep`, `shell`, `git_status`, `git_diff`, `git_commit`, `web_fetch`, ...). The short names
+`read`, `write` and `edit`, which the built-in agents use, mean `read_file`, `write_file`
+and `edit_file`. Other unknown names are dropped with only a log warning. An empty or
+missing `tools:` list keeps every tool.
 
 ## Theme
 

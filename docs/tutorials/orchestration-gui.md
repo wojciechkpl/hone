@@ -62,8 +62,13 @@ The TUI keeps running while the lead plans: press **Esc** to stop it
 (outside vim mode). `/plan` isn't accepted while a turn is running or
 still finishing.
 
-The plan's workers have no tools: they answer in text and don't read or
-edit files.
+Each worker gets the tools its agent definition lists, from your
+session's tools: a `rust-expert` can read, search, edit and run commands;
+a `code-reviewer` can read, search and run commands. Workers follow your
+session's rules. A risky call (an edit, a command) asks you in the
+approval menu, as the main agent's do, one worker at a time. A tool you
+approved "always" or `/permit`-ted runs without asking. In Plan mode
+(<kbd>Shift</kbd>+<kbd>Tab</kbd>) workers only read. The planner itself has no tools.
 
 The cost line shows two figures:
 
@@ -124,9 +129,9 @@ press `y` ten times.
 ... shell + edit_file fire without pausing.
 ```
 
-An orchestrated run (a `/plan` Run or a prompt classified complex)
-doesn't use tools: its lead and workers have none, so `/permit` changes
-nothing for it.
+`/permit` also covers the workers of an orchestrated run (a `/plan` Run
+or a prompt classified complex): a permitted tool runs without asking in
+every worker that has it.
 
 Notes:
 
@@ -203,8 +208,9 @@ A typical "I'm not sure what this is going to do" workflow:
 # Overlay shows: 4 subtasks, projected ~$0.20. Looks fine.
 > r
 
-# Orchestration runs. Lands four worker results into one merged response.
-# /budget + /permit drained — next turn is back to defaults.
+# Orchestration runs. Workers with `shell` run it without asking (the
+# /permit); other risky calls still ask. Four worker results are merged
+# into one response. The agent keeps /budget and /permit for the session.
 ```
 
 If the same prompt comes up often, save it as a workflow:

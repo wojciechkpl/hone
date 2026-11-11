@@ -137,6 +137,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: orchestrator workers get tools
+
+- **Before:** the specialist agents that carry out a complex prompt or a `/plan` Run (`rust-expert`, `code-reviewer`, …) had no tools. They couldn't read, search, edit or run anything, and answered in text from the subtask description alone. Separately, the built-in agent files list tools by short names (`read`, `write`, `edit`) that matched no tool, so an `@rust-expert` turn in the TUI and a `honed` distributed worker got only `shell`, `grep` and `glob`.
+- **Now:**
+  - Each worker gets the tools its agent definition lists, taken from the session's tools. An agent with no `tools:` list, or one not found, gets all of them. The lead, which plans and merges, still has none.
+  - A worker never gets more than the session's own agent has. It runs under the session's approval policy, mode, permission policy, sandbox, hooks and audit log.
+  - **In the TUI** a worker's risky call (an edit, a command) asks you in the approval menu, as the main agent's do. Workers running at the same time ask one at a time, and each answer goes to the worker that asked. "Always" answers and `/permit`s given earlier in the session apply to the workers. In Plan mode workers get read-only tools and write no plan files; in AutoApprove mode they don't pause.
+  - The TUI no longer stops a worker after 300 s; <kbd>Esc</kbd> stops the run.
+  - In an agent's `tools:` list, `read`, `write` and `edit` now mean `read_file`, `write_file` and `edit_file`. This also fixes `@agent` turns and `honed` workers.
+- **Per entry point:**
+  - `hone orchestrate`: workers run their tools without asking, as `hone -p` does. The permission policy applies.
+  - Web UI and `POST /orchestrate`: the server's run config is in Plan mode, so workers get read-only tools.
+- **Not yet:**
+  - Workers running at the same time can edit the same file, and one's `write_file` can overwrite the other's change.
+  - The approval menu doesn't say which worker is asking.
+  - An "always" answer to a worker's prompt covers only that worker: the other workers, and your later turns, ask again.
+  - No test run follows an orchestrated turn (simple and medium turns have one).
+  - `/budget` doesn't cap workers. `hone orchestrate` and the server keep the 300 s worker timeout.
+  - An agent definition's `sandbox:` profile isn't applied to in-process workers.
+  - A worker asks again for a policy `ask` rule that the main agent was told "always" for.
+- Contract: `docs/plans/worker-tools-spec.md`.
+
 ### Fixed: `/plan` Run, Edit and planning; complex runs end once
 
 - **Before:**
@@ -153,10 +175,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - **Planning** runs in the background with the spinner showing; <kbd>Esc</kbd> stops it. `/plan` isn't accepted while a turn is running or still finishing.
   - **Complex runs** (a complex prompt or a `/plan` Run) end with one `Done`, carrying the whole run's usage and cost, so the TUI stays busy, and <kbd>Esc</kbd> stops the run, until it ends. A failed worker shows in the worker list, not as an error that ends the turn.
   - **`/model` reaches complex runs** when `[[routing]]` is off. They used the session's starting model.
-- **`/budget` and `/permit` with orchestrated runs** (unchanged, now documented): `/budget` caps only the lead's calls (the merge, and for a complex prompt the planning call too), not the workers, and `/permit` changes nothing for them, since their lead and workers have no tools. A run picks both up like any turn and passes them to the agent, which keeps them for the rest of the session. The docs called them per-run; they now say so.
+- **`/budget` and `/permit` with orchestrated runs** (unchanged, now documented): `/budget` caps only the lead's calls (the merge, and for a complex prompt the planning call too), not the workers, and `/permit` changed nothing for them, since their lead and workers had no tools (workers now have tools; see "orchestrator workers get tools"). A run picks both up like any turn and passes them to the agent, which keeps them for the rest of the session. The docs called them per-run; they now say so.
 - **Latent bug fixed:** `set_input_buffer` put the cursor short of the end of non-ASCII text, where the next keystroke could crash the TUI. Edit, now that it fills the input bar, would have hit it.
 - **Not yet:**
-  - Orchestrated workers, including those of a `/plan` run, have no tools, so they can't read or edit files; they answer in text.
+  - Orchestrated workers, including those of a `/plan` run, had no tools (fixed in "orchestrator workers get tools").
   - `/budget` doesn't cap a plan's workers.
   - The web UI's Run still plans again.
   - In vim mode <kbd>Esc</kbd> doesn't stop planning or a turn.

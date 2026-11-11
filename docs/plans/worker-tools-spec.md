@@ -80,7 +80,7 @@ flowchart LR
 
 | Entry point | Tools a worker can use | Risky calls |
 |---|---|---|
-| TUI (complex prompt, `/plan` Run) | its agent's list, from the session's tools | asked in the TUI, one at a time; skipped in `/mode plan`; no pause in `auto` mode or once permitted |
+| TUI (complex prompt, `/plan` Run) | its agent's list, from the session's tools | asked in the TUI, one at a time; read-only tools in Plan mode; no pause in AutoApprove mode or once permitted |
 | `hone orchestrate` | its agent's list, from the session's tools | run without asking (the session is `Auto`, like `hone -p`); the permission policy applies |
 | Web UI / `POST /orchestrate` | read-only (`read_file`, `grep`, `glob`): the server's run config is in Plan mode | none |
 | `honed` distributed worker | unchanged (`AgentExecutor`), but W3 now gives it `read_file`, `edit_file`, `write_file` | unchanged |
@@ -93,6 +93,9 @@ flowchart LR
   `scope`.
 - **The approval menu doesn't say which worker asks** (`ToolCallPaused` has no
   agent field).
+- **An "always" answer to a worker's prompt covers only that worker**
+  (`approve_always` on its own config): sibling workers and the session's
+  later turns ask again.
 - **Worker tool output streams into one message** with the other workers'
   text, as today.
 - **No test run after an orchestrated turn** (`maybe_run_test_verification`
