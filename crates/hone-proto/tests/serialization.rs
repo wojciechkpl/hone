@@ -313,6 +313,7 @@ fn agent_event_variants_roundtrip() {
         AgentEvent::ApprovalRequired {
             action: "write_file".into(),
             description: "Write to /etc/passwd".into(),
+            worker: None,
         },
     ];
     for event in events {

@@ -35,12 +35,13 @@ pub mod relevance;
 pub mod retry;
 pub mod reviewer;
 pub mod self_refine;
+pub mod session_approvals;
 pub mod task_plan;
 pub mod test_loop;
 mod turn;
 
 #[allow(deprecated)]
-pub use agent::{Agent, AgentConfig, AgentHandle, is_read_only_tool};
+pub use agent::{Agent, AgentConfig, AgentHandle, RunSettings, is_read_only_tool};
 pub use agent_def::{AgentDef, AgentDefError};
 pub use agent_registry::{AgentRegistry, AllowlistRejection, filtered_registry};
 pub use audit::{AuditEntry, AuditError, AuditFilter, AuditKind, AuditLog, InMemoryAuditLog};
@@ -67,6 +68,7 @@ pub use metrics::{ContextMetrics, MetricsSnapshot};
 pub use orchestrator::Orchestrator;
 pub use plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
 pub use plan_store::PlanStore;
+pub use session_approvals::SessionApprovals;
 pub use hone_tools::policy_gate::{GateDecision, PolicyConfig, decide};
 pub use queue_client::{
     ClaimedTaskWire, CompletionRequestBody, PlanEvent, PlanStatusSnapshot, QueueClient,

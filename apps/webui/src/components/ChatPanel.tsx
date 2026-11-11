@@ -37,8 +37,9 @@ import type { AgentEvent } from "../types/events";
 type Bubble =
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string; done: boolean }
-  | { kind: "tool"; name: string; status: "running" | "done" | "error"; result?: string }
-  | { kind: "error"; message: string };
+  | { kind: "tool"; id?: string; name: string; status: "running" | "done" | "error"; result?: string }
+  | { kind: "error"; message: string }
+  | { kind: "info"; message: string };
 
 type ChatPanelProps = {
   onSlashCommand?: (cmd: string, arg: string) => { ok: boolean; reply?: string };
@@ -146,7 +147,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         break;
       }
       case "tool_call_start": {
-        append({ kind: "tool", name: event.name, status: "running" });
+        append({ kind: "tool", id: event.id, name: event.name, status: "running" });
         // Auto-open the file in the preview pane for any tool that
         // names a path. read_file / edit_file / write_file all carry
         // either `path` or `file_path`. Best-effort: if there's no
@@ -163,9 +164,20 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
       case "tool_call_end": {
         setBubbles(
           produce((arr) => {
-            const idx = arr.length - 1;
-            const last = arr[idx];
-            if (last?.kind === "tool") {
+            // Match by tool call id (parallel workers interleave starts);
+            // fall back to the last bubble for cards without an id
+            // (restored from older persisted sessions).
+            let target: Bubble | undefined;
+            for (let i = arr.length - 1; i >= 0; i--) {
+              const b = arr[i];
+              if (b?.kind === "tool" && b.id === event.id) {
+                target = b;
+                break;
+              }
+            }
+            target ??= arr[arr.length - 1];
+            const last = target;
+            if (last?.kind === "tool" && (last.id === undefined || last.id === event.id)) {
               last.status = event.is_error ? "error" : "done";
               last.result =
                 typeof event.result === "string"
@@ -187,6 +199,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
             toolId: event.id,
             name: event.name,
             args: event.args,
+            worker: event.worker,
           });
         }
         break;
@@ -221,17 +234,16 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         break;
       }
       case "approval_required": {
-        // Generic approval (rare today; emitted by some agents at
-        // session level rather than per tool call). Show a modal anyway
-        // — Skip / Deny still work.
-        if (activeRunId) {
-          setPendingApproval({
-            runId: activeRunId,
-            toolId: `req-${Date.now()}`,
-            name: event.action || "approval_required",
-            args: event.description,
-          });
-        }
+        // Informational only: a permission `ask` sends this and then a
+        // `tool_call_paused` for the same server prompt, and only the
+        // latter opens a dialog (a second dialog would answer the
+        // *next* prompt). Leave a note in the chat instead.
+        append({
+          kind: "info",
+          message: `approval requested: ${event.action || "approval_required"}${
+            event.description ? ` - ${event.description}` : ""
+          }`,
+        });
         break;
       }
       case "done": {
@@ -351,7 +363,8 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         onError: (e) => append({ kind: "error", message: e }),
         onClose: () => {
           setStreaming(false);
-          activeRunId = null;
+          // A late close from an older run must not clear a newer run's id.
+          if (activeRunId === runId) activeRunId = null;
         },
       },
     );
@@ -380,6 +393,19 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
     void touchSession(id, prompt.slice(0, 60));
 
     const body: OrchestrateRequest = { prompt };
+    let streamRunId: string | null = null;
+    if (!opts.dryRun && stepMode()) {
+      // Step mode: workers get tools and pause; answers go to
+      // POST /run/{request_id}/step under this run id.
+      const runId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      streamRunId = runId;
+      activeRunId = runId;
+      body.request_id = runId;
+      body.approval_policy = { AskRisky: { always_allowed: [] } };
+    }
     aborter = streamOrchestrate(
       baseUrl,
       null,
@@ -389,7 +415,7 @@ export const ChatPanel: Component<ChatPanelProps> = (props) => {
         onError: (e) => append({ kind: "error", message: e }),
         onClose: () => {
           setStreaming(false);
-          activeRunId = null;
+          if (activeRunId === streamRunId) activeRunId = null;
         },
       },
       { dryRun: !!opts.dryRun },
@@ -558,6 +584,7 @@ function bubbleToPersisted(b: Bubble, ts: number): PersistedMessage {
     case "tool":
       return {
         kind: "tool",
+        id: b.id,
         name: b.name,
         status: b.status,
         result: b.result,
@@ -565,6 +592,8 @@ function bubbleToPersisted(b: Bubble, ts: number): PersistedMessage {
       };
     case "error":
       return { kind: "error", message: b.message, ts };
+    case "info":
+      return { kind: "info", message: b.message, ts };
   }
 }
 
@@ -577,17 +606,20 @@ function persistedToBubble(m: PersistedMessage): Bubble {
     case "tool":
       return {
         kind: "tool",
+        id: m.id,
         name: m.name,
         status: m.status,
         result: m.result,
       };
     case "error":
       return { kind: "error", message: m.message };
+    case "info":
+      return { kind: "info", message: m.message };
   }
 }
 
 const ToolCardView: Component<{
-  card: { kind: "tool"; name: string; status: "running" | "done" | "error"; result?: string };
+  card: { kind: "tool"; id?: string; name: string; status: "running" | "done" | "error"; result?: string };
 }> = (props) => {
   // Long results collapse by default; the user can expand inline.
   const [expanded, setExpanded] = createSignal(false);
@@ -811,6 +843,20 @@ const BubbleView: Component<{ bubble: Bubble }> = (props) => {
                   border: "1px solid var(--role-error)",
                   color: "var(--role-error)",
                   "border-radius": "8px",
+                  "max-width": "720px",
+                  "font-family": "var(--font-mono)",
+                  "font-size": "0.85em",
+                }}
+              >
+                {x.message}
+              </div>
+            );
+          case "info":
+            return (
+              <div
+                class="self-start px-3 py-2"
+                style={{
+                  color: "var(--text-secondary)",
                   "max-width": "720px",
                   "font-family": "var(--font-mono)",
                   "font-size": "0.85em",

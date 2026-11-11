@@ -44,7 +44,13 @@ export type AgentEvent =
       plan?: DryRunPlan;
     }
   | { type: "error"; message: string }
-  | { type: "approval_required"; action: string; description: string }
+  | {
+      type: "approval_required";
+      action: string;
+      description: string;
+      /** Set when an orchestrator worker (not the main agent) is asking. */
+      worker?: { task_id: string; agent: string };
+    }
   | { type: "plan_created"; goal: string; subtask_count: number }
   | {
       type: "worker_started";
@@ -67,5 +73,12 @@ export type AgentEvent =
       workers_total: number;
     }
   | { type: "model_info"; context_window: number }
-  | { type: "tool_call_paused"; id: string; name: string; args: unknown }
+  | {
+      type: "tool_call_paused";
+      id: string;
+      name: string;
+      args: unknown;
+      /** Set when an orchestrator worker (not the main agent) is asking. */
+      worker?: { task_id: string; agent: string };
+    }
   | { type: "memory_recalled"; entries: Array<[string, string]> };

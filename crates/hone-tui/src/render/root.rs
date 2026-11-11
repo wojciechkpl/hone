@@ -35,6 +35,11 @@ pub fn render(app: &App, frame: &mut Frame) {
 
     if area.width < 80 || area.height < 24 {
         render_too_small(frame, area);
+        // A paused call waits for an answer: its menu must stay visible on a
+        // small terminal too (it draws within whatever area it has).
+        if app.debugger_open {
+            render_debugger(app, frame, area);
+        }
         return;
     }
 

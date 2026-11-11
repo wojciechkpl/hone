@@ -180,7 +180,10 @@ single-pattern path rule with an explicit read or write op, is remembered as a w
 >   the one `--step` adds, but never a permission rule: `deny` still refuses and `ask` still
 >   prompts.
 > - With `--step`, <kbd>a</kbd> approves once: `--step` keeps no allow-list.
-> - Orchestrated turns never prompt: the orchestrator's lead and worker agents have no tools.
+> - Orchestrated turns (a complex prompt, a `/plan` Run): the lead has no tools. Each worker gets
+>   the tools its agent definition lists, from the session's tools, and prompts here like the
+>   main agent, one worker at a time. <kbd>x</kbd> in the menu stops the whole turn.
+> - An "always" answer covers the main agent and every worker for the rest of the session.
 
 > [!WARNING]
 > After an edit runs (`write_file`, `edit_file`, `multi_edit`: approved, or in AutoApprove), the TUI runs the
@@ -298,6 +301,14 @@ are governed by permission rules, not by the OS sandbox.
 | Readable | system dirs (`/bin`, `/usr/bin`, `/usr/lib`, `/usr/share`, `/etc`, Homebrew prefixes), `~/.cache`, `~/.cargo`, `~/.rustup`, git config, the working dir | system dirs (`/bin`, `/usr/bin`, `/usr/lib`, `/usr/lib64`, `/usr/share`, `/lib`, `/lib64`, `/etc`, `/opt`, `/usr/local`), the same home entries, the working dir |
 | Network | denied | not restricted (Hone targets Landlock ABI v1, filesystem only) |
 | Kernel needed | — | 5.13+; on older kernels the command fails instead of running unsandboxed |
+
+On unix each `shell` command runs in its own process group with stdin closed. If its
+call ends early (<kbd>Esc</kbd>, a worker's timeout, the tool's `timeout_ms`, 30 s by
+default), Hone kills the whole group: the shell and everything it started. Hone also
+kills its running commands when it exits or is stopped by SIGINT, SIGTERM or SIGHUP
+(`honed` too). A command that starts its own session (`setsid`) escapes this, and so does
+every command if Hone is killed with `kill -9`. A command that needs the terminal (an ssh
+passphrase prompt) stops until its timeout.
 
 Add read-only roots (for a toolchain outside the defaults) with
 `HONE_SANDBOX_EXTRA_READ=/path/one:/path/two`. Relative paths, `/`, your home directory

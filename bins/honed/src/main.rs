@@ -493,12 +493,30 @@ async fn main() -> Result<()> {
     .with_graceful_shutdown(shutdown_signal())
     .await?;
 
+    // Commands run in their own process groups: end any that outlived the
+    // graceful shutdown (e.g. a request that was still running one).
+    hone_tools::kill_running_commands();
     tracing::info!("honed stopped");
     Ok(())
 }
 
 async fn shutdown_signal() {
+    // A signal ignored at start (`nohup` -> SIGHUP, a background job -> SIGINT)
+    // stays ignored: decide BEFORE any handler is installed (tokio's handler
+    // hides the original disposition).
+    #[cfg(unix)]
+    let (int_ignored, term_ignored, hup_ignored) = (
+        hone_tools::signal_is_ignored(2),
+        hone_tools::signal_is_ignored(15),
+        hone_tools::signal_is_ignored(1),
+    );
+    #[cfg(not(unix))]
+    let int_ignored = false;
+
     let ctrl_c = async {
+        if int_ignored {
+            std::future::pending::<()>().await;
+        }
         tokio::signal::ctrl_c()
             .await
             .expect("failed to install Ctrl+C handler");
@@ -506,14 +524,30 @@ async fn shutdown_signal() {
 
     #[cfg(unix)]
     let terminate = async {
+        if term_ignored {
+            std::future::pending::<()>().await;
+        }
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .expect("failed to install SIGTERM handler")
             .recv()
             .await;
     };
 
+    #[cfg(unix)]
+    let hangup = async {
+        if hup_ignored {
+            std::future::pending::<()>().await;
+        }
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+            .expect("failed to install SIGHUP handler")
+            .recv()
+            .await;
+    };
+
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
+    #[cfg(not(unix))]
+    let hangup = std::future::pending::<()>();
 
     tokio::select! {
         _ = ctrl_c => {
@@ -522,7 +556,12 @@ async fn shutdown_signal() {
         _ = terminate => {
             tracing::info!("SIGTERM received, shutting down gracefully");
         }
+        _ = hangup => {
+            tracing::info!("SIGHUP received, shutting down gracefully");
+        }
     }
+    // Commands started by running requests must not outlive the signal.
+    hone_tools::kill_running_commands();
 }
 
 /// Successful gate evaluation.

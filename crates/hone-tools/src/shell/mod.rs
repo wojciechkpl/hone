@@ -10,10 +10,9 @@ use hone_sandbox::{
     SandboxError, SandboxMode, SandboxPlatform, SandboxPolicy, SandboxPolicyBuilder,
 };
 use serde_json::{Value, json};
-use tokio::process::Command;
-use tokio::time::timeout;
 
 use crate::{
+    command_run::{RunCommandError, run_command},
     error::ToolError,
     traits::{Tool, ToolContext, ToolInput, ToolOutput},
 };
@@ -258,11 +257,9 @@ impl Tool for ShellTool {
             .unwrap_or(DEFAULT_TIMEOUT_MS)
             .min(MAX_TIMEOUT_MS);
 
-        // Build a std::process::Command first so we can pass it through
-        // restrict_child (which takes &mut std::process::Command).  The
-        // sandbox may rewrite the command entirely (e.g. prepend sandbox-exec),
-        // so we capture the final program and args afterwards and reconstruct a
-        // tokio::process::Command from them.
+        // Build a std::process::Command so it can pass through restrict_child
+        // (which takes &mut std::process::Command). The sandbox may rewrite it
+        // entirely (e.g. prepend sandbox-exec); the runner executes the result.
         let mut std_cmd = std::process::Command::new("sh");
         std_cmd.arg("-c").arg(&command);
 
@@ -315,23 +312,20 @@ impl Tool for ShellTool {
             });
         }
 
-        // Convert directly so `pre_exec` hooks and any program/arg rewrite done
-        // by the sandbox (e.g. Seatbelt's sandbox-exec) are preserved.
-        let mut cmd = Command::from(std_cmd);
-        cmd.current_dir(&ctx.working_dir)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+        // Keep the sandbox's `pre_exec` hooks and any program/arg rewrite
+        // (e.g. Seatbelt's sandbox-exec). The runner ends the whole command
+        // (its process group) with this call: on drop or timeout.
+        std_cmd.current_dir(&ctx.working_dir);
 
-        let duration = Duration::from_millis(timeout_ms);
-        let result = timeout(duration, cmd.output()).await;
+        let result = run_command(std_cmd, Some(Duration::from_millis(timeout_ms))).await;
 
         match result {
-            Err(_elapsed) => Err(ToolError::Timeout {
+            Err(RunCommandError::Timeout) => Err(ToolError::Timeout {
                 tool: "shell".to_string(),
                 duration_ms: timeout_ms,
             }),
-            Ok(Err(io_err)) => Err(ToolError::IoError(io_err)),
-            Ok(Ok(output)) => {
+            Err(RunCommandError::Io(io_err)) => Err(ToolError::IoError(io_err)),
+            Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
                 let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
                 let exit_code = output.status.code().unwrap_or(-1);

@@ -134,8 +134,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **`honed`:** a client that disconnects from a `POST /run` or `/orchestrate` stream now cancels the run at its next tool call, prompt or model call, instead of letting it finish. The spend of a `/run` is recorded in the governance totals however the run ends (finished, failed or cancelled); before, only finished runs were counted.
 - **CLI `--orchestrate`:** a failing worker no longer stops the printer, so the other workers and the merge still run.
 - **AutoApprove mode** (<kbd>Shift</kbd>+<kbd>Tab</kbd>) now does what its name says: it skips the write/shell approval prompt, including the one `--step` adds. It never skips a permission rule: `deny` still refuses and `ask` still prompts.
-- **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and <kbd>Esc</kbd> doesn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
+- **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and (until "shell commands stop when their call ends" below) <kbd>Esc</kbd> didn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
+
+### Fixed: shell commands stop when their call ends
+
+- **Before:** a command run by the `shell` tool kept running when its call ended early: <kbd>Esc</kbd>, a worker's timeout, a stopped orchestrated run, or the tool's own time limit (30 s by default, which reported a timeout while the command carried on). `cargo test` went on building and testing in the background, and a dev server kept its port. The test run that follows a TUI turn was the same. Commands also inherited hone's stdin, so in the TUI one that read input (`cat`, a password prompt) waited on the terminal until it timed out.
+- **Now** (unix):
+  - Each command runs in its own process group with stdin closed. When its call ends early, the whole group is killed: the shell, what it started, and what those started. A command that finishes normally is left alone.
+  - A turn no longer waits for a running tool call once it's cancelled: <kbd>Esc</kbd> during the main agent's `shell` call ends the turn at once and kills the command (before, the agent finished the call first; a worker or fix turn stopped likewise only between calls).
+  - The MCP client matches each response to its request by id. Before, it took the next line as the answer, so a call cut short (now on <kbd>Esc</kbd>, before only on a worker timeout or a stopped run) left that server answering one call behind for the rest of the session. A call cut short is recorded in the audit log, since it may have partly run. A server's own requests (`ping`, `roots/list`, …) get an answer instead of being taken as the reply, and an error the server returns with `id: null` (a request it couldn't parse) ends the call. MCP calls still have no timeout: `timeout_ms` in an MCP server's config isn't applied.
+  - The test run after a TUI turn works the same way. It starts after the turn ends, so <kbd>Esc</kbd> with an empty input box now stops it (and any fix turns it started) while the TUI is idle; with text in the box, <kbd>Esc</kbd> still clears it.
+  - hone kills its running commands when it exits: the TUI on quit, <kbd>Ctrl</kbd>+<kbd>C</kbd>, SIGINT, SIGTERM or SIGHUP; a one-shot run (`hone "prompt"`, `--plan`, `--orchestrate`, `--ensemble`, `--recipe`) on SIGINT, SIGTERM or SIGHUP, after which it dies by that signal as before, so a calling shell script still stops on <kbd>Ctrl</kbd>+<kbd>C</kbd>; `honed` when it shuts down, now also on SIGHUP. A signal that was ignored when hone or `honed` started stays ignored, so `nohup` still keeps a run going after you log out.
+  - <kbd>Esc</kbd> stopping the post-turn work also cancels a fix turn that's already running, and an `@agent` persona's prompt and tools are restored even when its turn is stopped.
+- **Not yet:** a command that starts its own session or process group (`setsid`, some daemons) escapes, and so does every command when hone is killed hard (`kill -9`). A command that needs the terminal (an ssh passphrase, a git credential prompt) now stops until its timeout, and <kbd>Ctrl</kbd>+<kbd>Z</kbd> in a one-shot run suspends hone but not its command. `!command` in the TUI, hooks and a recipe's `test_cmd` run as before. Elsewhere than unix, only the command's own process is killed.
+- Contract: `docs/plans/worker-tools-spec.md`, rows W23–W25, W37–W39, W41, W44, W45 and W48.
+
+### Fixed: orchestrator workers get tools
+
+- **Before:** the specialist agents that carry out a complex prompt or a `/plan` Run (`rust-expert`, `code-reviewer`, …) had no tools. They couldn't read, search, edit or run anything, and answered in text from the subtask description alone. Separately, the built-in agent files list tools by short names (`read`, `write`, `edit`) that matched no tool, so an `@rust-expert` turn in the TUI and a `honed` distributed worker got only `shell`, `grep` and `glob`.
+- **Now:**
+  - Each worker gets the tools its agent definition lists, taken from the session's tools. An agent with no `tools:` list gets all of them. A worker for an agent name the planner made up (not in the agent registry) gets only the read-only tools, and the name is logged as a warning. The lead, which plans and merges, still has none.
+  - A worker never gets more than the session's own agent has. It runs under the session's approval policy, mode, permission policy, sandbox and audit log. In an `@agent` turn with a `tools:` list, a complex prompt's workers choose only from that list.
+  - **In the TUI** a worker's risky call (an edit, a command) asks you in the approval menu, as the main agent's do. Workers running at the same time ask one at a time, and each answer goes to the worker that asked. The menu names the worker (its agent, subtask number and description); `ToolCallPaused` and `ApprovalRequired` carry a new optional `worker` field, absent for the main agent. A terminal smaller than 80×24 still shows a pending approval menu (it showed only "Terminal too small"); its key hints always show, long arguments wrap, and the planner-written description is shown in quotes. The fields that say what a call touches (`path`, `command`, …) are shown first and get more room; other long values are shortened, so a large `content` can't hide which file a write goes to. `/permit`s given earlier in the session apply to the workers. In Plan mode workers get read-only tools and write no plan files; in AutoApprove mode they don't pause. The approval policy and mode are taken when the run starts.
+  - **"Always" means the whole session.** An "always" answer, given to the main agent or to any worker, covers the main agent and every worker from then on, including a worker already waiting to ask. An "always" at a permission-policy `ask` prompt covers that rule's command the same way, and also skips the usual prompt for a risky tool for it. With `--step` every call still asks. Separate sessions don't share answers.
+  - <kbd>x</kbd> in the approval menu, with the input box empty, stops the current turn and denies the paused call. (<kbd>Esc</kbd> there skips only that call, and with several workers waiting the next one's menu opens at once.)
+  - The TUI no longer stops a worker after 300 s; <kbd>Esc</kbd> (with no menu open) or <kbd>x</kbd> stops the run. If the session's agent has stopped, a complex prompt fails with an error instead of starting workers.
+  - The built-in agent files now list real tool names (`read_file`, `write_file`, `edit_file`). In your own agent files `read`, `write` and `edit` now mean those tools, unless a tool has that exact name (an MCP tool called `write`, say). This also fixes `@agent` turns and `honed` workers.
+- **Per entry point:**
+  - `hone --orchestrate`: workers run their tools without asking, as a one-shot `hone "prompt"` does. The permission policy applies.
+  - Web UI and `POST /orchestrate`: by default the run config is in Plan mode, so workers get read-only tools and never ask. **New:** `POST /orchestrate` takes `request_id` and `approval_policy` with `/run`'s step-mode rules (400 without a `request_id`, 409 if it's in use). In step mode workers get their agent's tools and pause for approval, answered through `POST /run/{request_id}/step`, with no per-worker timeout. The web UI uses it when its step mode is on, and its approval dialog names the worker. `?dry_run=true` ignores both fields.
+  - **Web UI fixes found by running it with parallel workers:**
+    - A tool's result is matched to its card by call id. Before, it went to the last card, so one worker's output could land on another's card and a card could stay "running" forever.
+    - The approval dialog keeps a newer prompt. Before, it cleared itself after the answer's HTTP response, which could wipe out the next worker's prompt and leave that worker waiting.
+    - It ignores clicks for 400 ms after a prompt appears and after each click, as the TUI does, and while an answer is in flight. Before, a double-click on Allow could also approve the next worker's call, unseen.
+    - A permission-policy prompt opens one dialog (`approval_required` is shown as an info note; only `tool_call_paused` opens the dialog). A new prompt takes keyboard focus away from the button clicked for the last one. An answer that fails (other than 404 or 410) keeps the dialog open for a retry.
+  - **Server input checks:** a `request_id` on `/run` or `/orchestrate` must be 1–128 letters, digits, `-` or `_` (400 otherwise). `/run` names its provenance file after it, and an id with `../` could write outside the provenance directory. `max_workers: 0` on `/orchestrate` now gets 400 instead of crashing the request.
+- **Not yet:**
+  - Workers running at the same time can edit the same file, and one's `write_file` can overwrite the other's change.
+  - The desktop app (`apps/hone-desktop`) doesn't show which worker is asking.
+  - No test run follows an orchestrated turn (simple and medium turns have one).
+  - `/budget` doesn't cap workers. `hone --orchestrate` and the server keep the 300 s worker timeout.
+  - An agent definition's `sandbox:` profile isn't applied to in-process workers.
+  - Switching to Plan mode during a run doesn't stop its workers from writing.
+- Contract: `docs/plans/worker-tools-spec.md`.
 
 ### Fixed: `/plan` Run, Edit and planning; complex runs end once
 
@@ -153,10 +195,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - **Planning** runs in the background with the spinner showing; <kbd>Esc</kbd> stops it. `/plan` isn't accepted while a turn is running or still finishing.
   - **Complex runs** (a complex prompt or a `/plan` Run) end with one `Done`, carrying the whole run's usage and cost, so the TUI stays busy, and <kbd>Esc</kbd> stops the run, until it ends. A failed worker shows in the worker list, not as an error that ends the turn.
   - **`/model` reaches complex runs** when `[[routing]]` is off. They used the session's starting model.
-- **`/budget` and `/permit` with orchestrated runs** (unchanged, now documented): `/budget` caps only the lead's calls (the merge, and for a complex prompt the planning call too), not the workers, and `/permit` changes nothing for them, since their lead and workers have no tools. A run picks both up like any turn and passes them to the agent, which keeps them for the rest of the session. The docs called them per-run; they now say so.
+- **`/budget` and `/permit` with orchestrated runs** (unchanged, now documented): `/budget` caps only the lead's calls (the merge, and for a complex prompt the planning call too), not the workers, and `/permit` changed nothing for them, since their lead and workers had no tools (workers now have tools; see "orchestrator workers get tools"). A run picks both up like any turn and passes them to the agent, which keeps them for the rest of the session. The docs called them per-run; they now say so.
 - **Latent bug fixed:** `set_input_buffer` put the cursor short of the end of non-ASCII text, where the next keystroke could crash the TUI. Edit, now that it fills the input bar, would have hit it.
 - **Not yet:**
-  - Orchestrated workers, including those of a `/plan` run, have no tools, so they can't read or edit files; they answer in text.
+  - Orchestrated workers, including those of a `/plan` run, had no tools (fixed in "orchestrator workers get tools").
   - `/budget` doesn't cap a plan's workers.
   - The web UI's Run still plans again.
   - In vim mode <kbd>Esc</kbd> doesn't stop planning or a turn.

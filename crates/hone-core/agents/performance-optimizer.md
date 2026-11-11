@@ -1,7 +1,7 @@
 ---
 name: performance-optimizer
 description: Performance profiler and optimizer for database, API, memory, and rendering
-tools: [read, edit, write, shell, grep, glob]
+tools: [read_file, edit_file, write_file, shell, grep, glob]
 model: sonnet
 ---
 

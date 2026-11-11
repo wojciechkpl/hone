@@ -1282,12 +1282,34 @@ impl Drop for AbortOnDrop {
     }
 }
 
+/// Runs a future exactly once: awaited by [`RestoreOnDrop::run`] on the normal
+/// path, or spawned when the guard is dropped first (the task was aborted).
+struct RestoreOnDrop<F: std::future::Future<Output = ()> + Send + 'static>(Option<F>);
+
+impl<F: std::future::Future<Output = ()> + Send + 'static> RestoreOnDrop<F> {
+    async fn run(mut self) {
+        if let Some(f) = self.0.take() {
+            f.await;
+        }
+    }
+}
+
+impl<F: std::future::Future<Output = ()> + Send + 'static> Drop for RestoreOnDrop<F> {
+    fn drop(&mut self) {
+        if let Some(f) = self.0.take() {
+            tokio::spawn(f);
+        }
+    }
+}
+
 /// Forward `inner_rx` to `outer_tx` for an inline `@agent` turn, then run
-/// `after` (prompt/tool restore) when the inner stream ends normally.
+/// `after` (prompt/tool restore).
 ///
-/// If the wrapper is aborted or dropped, or the outer receiver goes away, the
-/// `inner` turn task is aborted (drop guard) so a pending approval prompt
-/// cannot outlive the UI that could answer it. `after` does not run then.
+/// `after` runs exactly once: when the inner stream ends, and also when the
+/// wrapper is aborted or dropped, or the outer receiver goes away (then it is
+/// spawned, so the persona never stays active). In those cases the `inner` turn
+/// task is aborted too (drop guard) so a pending approval prompt cannot outlive
+/// the UI that could answer it.
 fn spawn_inline_turn_wrapper<F>(
     inner: tokio::task::JoinHandle<()>,
     mut inner_rx: mpsc::Receiver<AgentEvent>,
@@ -1299,6 +1321,7 @@ where
 {
     tokio::spawn(async move {
         let _guard = AbortOnDrop(inner.abort_handle());
+        let restore = RestoreOnDrop(Some(after));
         loop {
             tokio::select! {
                 biased;
@@ -1313,7 +1336,7 @@ where
                 },
             }
         }
-        after.await;
+        restore.run().await;
     })
 }
 
@@ -1518,6 +1541,16 @@ fn spawn_medium_turn(
 // Agent turn dispatch — complex (orchestrator as spawned task)
 // ---------------------------------------------------------------------------
 
+/// The run config of an orchestrated turn under an inline `@agent` persona:
+/// `config` with its tools narrowed to the persona's `tools:` list, the same
+/// narrowing the persona's own turn gets. An empty list leaves it unchanged.
+fn narrow_run_config_for_persona(mut config: AgentConfig, allowed: &[String]) -> AgentConfig {
+    if !allowed.is_empty() {
+        config.tools = hone_core::filtered_registry(&config.tools, allowed);
+    }
+    config
+}
+
 fn spawn_orchestrated_turn(
     lead_config: AgentConfig,
     user_text: String,
@@ -1526,11 +1559,34 @@ fn spawn_orchestrated_turn(
     plan: Option<hone_core::TaskPlan>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        let mut lead_config = lead_config;
+        // A stopped agent fails closed: no lead or worker call is made.
+        let Some(settings) = agent.run_settings().await else {
+            let _ = tx
+                .send(AgentEvent::Error {
+                    message: "orchestration failed: the agent has stopped".to_owned(),
+                })
+                .await;
+            return;
+        };
+        // Workers run under the agent's current approval policy and mode
+        // ("always" answers, /permit, /mode). Read here, not in the UI loop,
+        // so the UI never waits on the actor. One round trip through the actor
+        // (the run waits if it is busy) gives a consistent snapshot.
+        lead_config.approval_policy = settings.approval_policy;
+        lead_config.mode = settings.mode;
+
         let registry = AgentRegistry::load_hierarchical(&lead_config.working_dir);
 
         let plan_store = PlanStore::default_for(&lead_config.working_dir);
-        let mut orchestrator =
-            Orchestrator::new(lead_config, registry, 4).with_plan_store(plan_store);
+        // No per-worker timeout: a worker may wait on an approval or a long
+        // build. Esc (or `x` in the approval menu) stops the run.
+        // The session's "always" answers cover every worker, and the
+        // workers' answers cover the session agent in turn.
+        let mut orchestrator = Orchestrator::new(lead_config, registry, 4)
+            .with_plan_store(plan_store)
+            .without_worker_timeout()
+            .with_session_approvals(settings.session_approvals);
 
         // The orchestrator's lead and worker turns each end in a `Done` (or an
         // `Error`) on this channel. Those belong to the inner turns: swallow
@@ -3032,6 +3088,17 @@ async fn run_selected_mode(
         })
         .collect();
 
+    // Every non-TUI mode that can run the shell tool kills its running
+    // commands when a signal ends it (the TUI does so on its own exit).
+    if cli.recipe.is_some()
+        || cli.ensemble.is_some()
+        || cli.plan.is_some()
+        || cli.orchestrate
+        || cli.prompt.is_some()
+    {
+        install_one_shot_signal_handlers()?;
+    }
+
     // --recipe <name>: run a built-in recipe and exit.
     if let Some(ref recipe_name) = cli.recipe {
         return run_recipe(agent.clone(), recipe_name, &recipe_vars).await;
@@ -3181,13 +3248,132 @@ async fn run_selected_mode(
 /// without needing `#[cfg(...)]` attributes inside the macro invocation,
 /// which the macro does not support.
 #[cfg(unix)]
-async fn os_signal(sigint: &mut tokio::signal::unix::Signal) {
-    sigint.recv().await;
+async fn os_signal(sigint: &mut Option<tokio::signal::unix::Signal>) {
+    match sigint {
+        Some(s) => {
+            s.recv().await;
+        }
+        // Ignored when hone started (a background job): stays ignored.
+        None => std::future::pending::<()>().await,
+    }
 }
 
 #[cfg(not(unix))]
 async fn os_signal(_sigint: &mut ()) {
     let _ = tokio::signal::ctrl_c().await;
+}
+
+/// Kills the commands the shell tool and the test loop still have running when
+/// dropped. They run in their own process groups, so neither the terminal's
+/// Ctrl+C nor its hangup reaches them; hone's exit has to (W25).
+struct KillCommandsOnExit;
+
+impl Drop for KillCommandsOnExit {
+    fn drop(&mut self) {
+        hone_tools::kill_running_commands();
+    }
+}
+
+/// Empty the agent event queue after a turn was cancelled, so no menu opens for
+/// the dead run. Each dropped `ToolCallPaused` is answered with `Deny` on the
+/// step channel, so whoever holds the step lock (e.g. a post-turn fix run that
+/// is not the cancelled task) is released instead of waiting forever; a dropped
+/// `Done` still counts its cost and tokens.
+fn drain_after_cancel(
+    app: &mut App,
+    rx: &mut mpsc::Receiver<AgentEvent>,
+    step_tx: Option<&mpsc::Sender<hone_proto::StepAction>>,
+) {
+    while let Ok(event) = rx.try_recv() {
+        match event {
+            AgentEvent::ToolCallPaused { .. } => {
+                if let Some(tx) = step_tx {
+                    let _ = tx.try_send(hone_proto::StepAction::Deny("turn cancelled".to_owned()));
+                }
+            }
+            AgentEvent::Done {
+                usage, cost_usd, ..
+            } => app.record_spend(usage.total(), cost_usd),
+            _ => {}
+        }
+    }
+}
+
+/// Waits for the next SIGTERM or SIGHUP on unix; never completes elsewhere.
+#[cfg(unix)]
+async fn os_term_signal(
+    signals: &mut (
+        Option<tokio::signal::unix::Signal>,
+        Option<tokio::signal::unix::Signal>,
+    ),
+) {
+    async fn next(s: &mut Option<tokio::signal::unix::Signal>) {
+        match s {
+            Some(s) => {
+                s.recv().await;
+            }
+            None => std::future::pending::<()>().await,
+        }
+    }
+    tokio::select! {
+        _ = next(&mut signals.0) => {}
+        _ = next(&mut signals.1) => {}
+    }
+}
+
+/// Install a tokio handler for `signal` unless it is ignored right now (see
+/// [`hone_tools::signal_is_ignored`]); must run before anything else installs
+/// one. `None` means: leave it ignored.
+#[cfg(unix)]
+fn handler_unless_ignored(
+    kind: tokio::signal::unix::SignalKind,
+    name: &str,
+) -> Result<Option<tokio::signal::unix::Signal>> {
+    if hone_tools::signal_is_ignored(kind.as_raw_value()) {
+        return Ok(None);
+    }
+    tokio::signal::unix::signal(kind)
+        .map(Some)
+        .map_err(|e| anyhow::anyhow!("failed to install {name} handler: {e}"))
+}
+
+#[cfg(not(unix))]
+async fn os_term_signal(_signals: &mut ()) {
+    std::future::pending::<()>().await;
+}
+
+/// One-shot runs (a positional prompt, `--plan`, `--orchestrate`, `--recipe`,
+/// `--ensemble`): on SIGINT, SIGTERM or SIGHUP kill the running commands and end
+/// the process by that signal. Without this, commands in their own process
+/// groups would outlive hone. A signal that was ignored at start (`nohup`,
+/// background job) gets no handler and stays ignored.
+#[cfg(unix)]
+fn install_one_shot_signal_handlers() -> Result<()> {
+    use tokio::signal::unix::{SignalKind, signal};
+    // The signal numbers are the same on every unix we target.
+    for (kind, number) in [
+        (SignalKind::interrupt(), 2),
+        (SignalKind::terminate(), 15),
+        (SignalKind::hangup(), 1),
+    ] {
+        // Decide before tokio installs its own handler.
+        if hone_tools::signal_is_ignored(number) {
+            continue;
+        }
+        let mut sig =
+            signal(kind).map_err(|e| anyhow::anyhow!("failed to install signal handler: {e}"))?;
+        tokio::spawn(async move {
+            sig.recv().await;
+            // Ends the process BY the signal, so a calling script stops too.
+            hone_tools::kill_commands_and_reraise(number);
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn install_one_shot_signal_handlers() -> Result<()> {
+    Ok(())
 }
 
 /// Return the context window size (in tokens) for a given model identifier.
@@ -3383,8 +3569,8 @@ async fn run_tui(
 ) -> Result<()> {
     let mut app = if vim { App::with_vim() } else { App::new() };
     // Wire step-mode sender into app so it can unblock the agent.
-    if let Some(tx) = step_tx {
-        app.set_step_tx(tx);
+    if let Some(tx) = &step_tx {
+        app.set_step_tx(tx.clone());
     }
 
     // Show which model is active in the status bar and set the context limit.
@@ -3508,15 +3694,29 @@ async fn run_tui(
     // platforms the `os_signal` helper calls `tokio::signal::ctrl_c()` directly
     // and the placeholder `()` value is never actually used.
     #[cfg(unix)]
-    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-        .map_err(|e| anyhow::anyhow!("failed to install SIGINT handler: {e}"))?;
+    let mut sigint =
+        handler_unless_ignored(tokio::signal::unix::SignalKind::interrupt(), "SIGINT")?;
     #[cfg(not(unix))]
     let mut sigint = ();
+    // SIGTERM and SIGHUP end the TUI like SIGINT (W25).
+    #[cfg(unix)]
+    let mut term_signals = (
+        handler_unless_ignored(tokio::signal::unix::SignalKind::terminate(), "SIGTERM")?,
+        handler_unless_ignored(tokio::signal::unix::SignalKind::hangup(), "SIGHUP")?,
+    );
+    #[cfg(not(unix))]
+    let mut term_signals = ();
+    // Whatever way the loop ends, commands still running die with hone.
+    let _kill_commands_on_exit = KillCommandsOnExit;
 
     loop {
         if app.should_quit() {
             break;
         }
+
+        // Tell the app whether the previous turn's task (post-turn test run,
+        // fix turns) still runs, so Esc can stop it while the UI is idle.
+        app.set_background_task_running(last_turn_task.as_ref().is_some_and(|t| !t.is_finished()));
 
         terminal.draw(|frame| root::render(&app, frame))?;
 
@@ -3610,6 +3810,9 @@ async fn run_tui(
                                 // Track whether we applied a filtered tool registry so we
                                 // can restore the base registry after the turn completes.
                                 let mut applied_tool_filter = false;
+                                // The persona's `tools:` list, kept so an orchestrated run
+                                // narrows its tools the same way (W18).
+                                let mut persona_tools: Vec<String> = Vec::new();
                                 if let Some(ref agent_name) = maybe_inline_agent {
                                     // Look up the agent definition and swap the prompt.
                                     let registry = AgentRegistry::load_hierarchical(app.working_dir());
@@ -3625,6 +3828,7 @@ async fn run_tui(
                                             );
                                             agent.set_tools(filtered).await;
                                             applied_tool_filter = true;
+                                            persona_tools = def.tools.clone();
                                         }
 
                                         tracing::info!(agent = %agent_name, "inline @agent persona active");
@@ -3714,11 +3918,15 @@ async fn run_tui(
                                 if matches!(tier, ComplexityTier::Complex) {
                                     base_config_clone.model = complex_model!();
                                 }
-                                // Mirror the per-run gov onto the orchestrated path's clone too —
+                                // Mirror the per-run budget onto the orchestrated path's clone too —
                                 // spawn_orchestrated_turn builds a disposable Orchestrator from this
-                                // clone and never sees the AgentHandle setters above.
+                                // clone. (The approval policy is not mirrored: the spawned task reads
+                                // it from the AgentHandle, which got the /permit changes.)
                                 pending_gov.clone().apply_to_budget(&mut base_config_clone.budget_limit);
-                                pending_gov.apply_to_policy(&mut base_config_clone.approval_policy);
+                                // An inline @agent's tool list narrows the run's tools too, so
+                                // its workers never have a tool the persona's turn doesn't.
+                                let base_config_clone =
+                                    narrow_run_config_for_persona(base_config_clone, &persona_tools);
                                 let agent_tx_clone = agent_tx.clone();
                                 let original_prompt = base_config.system_prompt.clone();
                                 let base_tools = base_config.tools.clone();
@@ -3850,7 +4058,6 @@ async fn run_tui(
                             }
                             let pending_gov = drain_governance!();
                             pending_gov.clone().apply_to_budget(&mut run_config.budget_limit);
-                            pending_gov.apply_to_policy(&mut run_config.approval_policy);
                             // The classifier didn't pick this tier: it records nothing.
                             current_tier = None;
                             turn_fallback_model = None;
@@ -3870,12 +4077,39 @@ async fn run_tui(
                         // Only act if there is actually a task to abort; without
                         // this guard, Escape during a shell escape would fire
                         // cancel_turn() spuriously and discard the shell output.
+                        // `x` in the approval menu also asks to deny the paused call.
+                        let deny_paused = app.take_pending_deny_paused();
                         if app.take_pending_cancel() {
                             if let Some(abort) = current_task_abort.take() {
                                 abort.abort();
+                                // Events the stopped run queued (e.g. another
+                                // worker's approval prompt) must not reach the
+                                // UI: they would open a menu for a dead run.
+                                drain_after_cancel(&mut app, &mut agent_rx, step_tx.as_ref());
                                 // A planning result arriving later is dropped.
                                 planning_id = None;
                                 app.cancel_turn();
+                            }
+                        }
+                        // Esc while idle with an empty input box: stop the previous
+                        // turn's task (the post-turn test run and any fix turns).
+                        // Aborting drops the test run's command future, which kills
+                        // the command. Only when idle, so a turn the user just
+                        // started is never aborted by it.
+                        if app.take_pending_stop_background()
+                            && matches!(app.state(), AppState::Idle)
+                        {
+                            if let Some(task) = last_turn_task.take() {
+                                task.abort();
+                            }
+                        }
+                        // After the abort: a denied worker cannot start another
+                        // call first, and a pause of another task is answered too.
+                        if deny_paused {
+                            if let Some(tx) = &step_tx {
+                                let _ = tx.try_send(hone_proto::StepAction::Deny(
+                                    "turn stopped by user".to_owned(),
+                                ));
                             }
                         }
 
@@ -3942,6 +4176,12 @@ async fn run_tui(
             // OS-level SIGINT (e.g. from a parent process or wrapper script).
             _ = os_signal(&mut sigint) => {
                 tracing::info!("SIGINT received, shutting down");
+                break;
+            }
+
+            // SIGTERM / SIGHUP (e.g. the terminal closed).
+            _ = os_term_signal(&mut term_signals) => {
+                tracing::info!("SIGTERM/SIGHUP received, shutting down");
                 break;
             }
         }
@@ -6079,6 +6319,1076 @@ mod tests {
         assert!(!err.contains("second failure"), "{err}");
         assert!(!err.contains("ignored"), "{err}");
         assert!(err.ends_with(&format!("{NOTICE_LINE}\n")), "{err:?}");
+    }
+
+    // ---- worker tools W10-W12 (docs/plans/worker-tools-spec.md) ----
+
+    type WtLog = Arc<std::sync::Mutex<Vec<String>>>;
+
+    /// Records every execution by tool name.
+    struct WtTool {
+        name: &'static str,
+        read_only: bool,
+        log: WtLog,
+        command_subject: Option<&'static str>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_tools::Tool for WtTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn description(&self) -> &str {
+            "fake"
+        }
+        fn schema(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+        async fn call(
+            &self,
+            _input: hone_tools::ToolInput,
+            _ctx: &hone_tools::ToolContext,
+        ) -> Result<hone_tools::ToolOutput, hone_tools::ToolError> {
+            self.log.lock().unwrap().push(self.name.to_owned());
+            Ok(hone_tools::ToolOutput::new(serde_json::json!({ "ok": true })))
+        }
+        fn layer(&self) -> hone_proto::ToolLayer {
+            hone_proto::ToolLayer::Native
+        }
+        fn is_read_only(&self) -> bool {
+            self.read_only
+        }
+        fn subjects(
+            &self,
+            _input: &hone_tools::ToolInput,
+            _sctx: &hone_tools::SubjectContext,
+        ) -> hone_tools::ToolSubjects {
+            match self.command_subject {
+                Some(c) => hone_tools::ToolSubjects {
+                    subjects: vec![hone_config::policy::Subject::Command(c.to_owned())],
+                    unparsed: false,
+                    ..Default::default()
+                },
+                None => hone_tools::ToolSubjects::default(),
+            }
+        }
+    }
+
+    /// The tools of the `debugger` agent (`read, edit, write, shell, grep, glob`)
+    /// under their real names, plus one extra.
+    fn wt_tools(log: &WtLog, shell_subject: Option<&'static str>) -> ToolRegistry {
+        let mut b = ToolRegistry::builder();
+        for (name, ro) in [
+            ("read_file", true),
+            ("edit_file", false),
+            ("write_file", false),
+            ("shell", false),
+            ("grep", true),
+            ("glob", true),
+            ("git_commit", false),
+        ] {
+            b = b.register(Box::new(WtTool {
+                name,
+                read_only: ro,
+                log: Arc::clone(log),
+                command_subject: if name == "shell" { shell_subject } else { None },
+            }));
+        }
+        b.build()
+    }
+
+    /// A worker request that does not follow a tool result issues one `shell`
+    /// call (ids `wt1`, `wt2`, ... in order); the request after it answers
+    /// "ok". Lead merge: "merged". Records the tool names of each worker
+    /// request, counts every request (lead included) and may delay answers
+    /// (virtual time).
+    struct WtProvider {
+        worker_requests: std::sync::Mutex<Vec<Vec<String>>>,
+        total_requests: std::sync::atomic::AtomicUsize,
+        calls_issued: std::sync::atomic::AtomicUsize,
+        delay: Option<Duration>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for WtProvider {
+        fn id(&self) -> &str {
+            "wt-provider"
+        }
+        fn display_name(&self) -> &str {
+            "WT provider"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![]
+        }
+        async fn complete(
+            &self,
+            req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let text = req
+                .messages
+                .iter()
+                .map(|m| m.content.as_text())
+                .collect::<Vec<_>>()
+                .join("\n");
+            self.total_requests
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let after_tool = req
+                .messages
+                .last()
+                .is_some_and(|m| m.role == hone_proto::Role::Tool);
+            let events = if text.contains("You are the lead agent. Based on") {
+                vec![
+                    hone_proto::ProviderEvent::Token {
+                        text: "merged".to_owned(),
+                    },
+                    hone_proto::ProviderEvent::Done,
+                ]
+            } else {
+                if let Some(d) = self.delay {
+                    tokio::time::sleep(d).await;
+                }
+                {
+                    let mut w = self.worker_requests.lock().unwrap();
+                    let mut names: Vec<String> = req.tools.iter().map(|t| t.name.clone()).collect();
+                    names.sort();
+                    w.push(names);
+                }
+                if !after_tool {
+                    let k = self
+                        .calls_issued
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                        + 1;
+                    vec![
+                        hone_proto::ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
+                            id: format!("wt{k}"),
+                            name: "shell".to_owned(),
+                            arguments: serde_json::json!({ "cmd": "cargo test" }),
+                        }),
+                        hone_proto::ProviderEvent::Done,
+                    ]
+                } else {
+                    vec![
+                        hone_proto::ProviderEvent::Token {
+                            text: "ok".to_owned(),
+                        },
+                        hone_proto::ProviderEvent::Done,
+                    ]
+                }
+            };
+            Ok(Box::pin(futures::stream::iter(events)))
+        }
+        fn estimate_tokens(&self, _m: &[Message]) -> u32 {
+            1
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    /// A TUI-like session: tools = `wt_tools`, `AskRisky`, a step channel.
+    /// Returns (config, provider, tool log, step sender).
+    fn wt_session(
+        dir: &std::path::Path,
+        delay: Option<Duration>,
+    ) -> (
+        AgentConfig,
+        Arc<WtProvider>,
+        WtLog,
+        mpsc::Sender<hone_proto::StepAction>,
+    ) {
+        let log: WtLog = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let provider = Arc::new(WtProvider {
+            worker_requests: std::sync::Mutex::new(Vec::new()),
+            total_requests: std::sync::atomic::AtomicUsize::new(0),
+            calls_issued: std::sync::atomic::AtomicUsize::new(0),
+            delay,
+        });
+        let mut config = orch_config(Arc::clone(&provider) as _, dir);
+        config.tools = wt_tools(&log, None);
+        config.approval_policy = ToolApprovalPolicy::AskRisky {
+            always_allowed: vec![],
+        };
+        let (step_tx, step_rx) = mpsc::channel::<hone_proto::StepAction>(8);
+        config.step_rx = Some(Arc::new(tokio::sync::Mutex::new(step_rx)));
+        (config, provider, log, step_tx)
+    }
+
+    /// Drain the run's events, answering each `ToolCallPaused` with `answer`.
+    /// Gives up (panics) after 10 s of the tokio clock, e.g. on an unanswerable
+    /// pause that nobody expected.
+    async fn wt_drive(
+        rx: &mut mpsc::Receiver<AgentEvent>,
+        step_tx: &mpsc::Sender<hone_proto::StepAction>,
+        answer: hone_proto::StepAction,
+        limit: Duration,
+    ) -> Vec<AgentEvent> {
+        let mut events = Vec::new();
+        let drive = async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    step_tx.send(answer.clone()).await.unwrap();
+                }
+                events.push(e);
+            }
+        };
+        if tokio::time::timeout(limit, drive).await.is_err() {
+            panic!("orchestrated run did not finish; events so far: {events:?}");
+        }
+        events
+    }
+
+    fn wt_pauses(events: &[AgentEvent]) -> usize {
+        events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ToolCallPaused { .. }))
+            .count()
+    }
+
+    const WT_STEP_LIMIT: Duration = Duration::from_secs(10);
+
+    // W10 ---------------------------------------------------------------
+
+    #[tokio::test]
+    async fn w10_orchestrated_turn_when_agent_policy_changed_to_auto_should_run_workers_without_pause()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        // The config snapshot says AskRisky; the session has since moved on.
+        let agent = AgentHandle::spawn(config.clone());
+        agent.set_approval_policy(ToolApprovalPolicy::Auto).await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        assert_eq!(wt_pauses(&events), 0, "{events:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn w10_orchestrated_turn_when_tool_was_approved_always_should_not_pause_for_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        agent.approve_tools(vec!["shell".to_owned()]).await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        assert_eq!(wt_pauses(&events), 0, "{events:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn w10_orchestrated_turn_when_agent_mode_is_plan_should_give_workers_read_only_tools() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, provider, log, step_tx) = wt_session(dir.path(), None);
+        assert_eq!(config.mode, AgentMode::Build, "the snapshot is Build");
+        let agent = AgentHandle::spawn(config.clone());
+        agent.set_mode(AgentMode::Plan).await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        let first_worker_request = provider.worker_requests.lock().unwrap()[0].clone();
+        assert_eq!(
+            first_worker_request,
+            vec!["glob".to_owned(), "grep".to_owned(), "read_file".to_owned()],
+            "debugger's tools narrowed to the read-only ones"
+        );
+        assert!(log.lock().unwrap().is_empty(), "shell must not run in plan mode");
+        assert_eq!(wt_pauses(&events), 0);
+    }
+
+    #[tokio::test]
+    async fn w10_orchestrated_turn_when_agent_mode_is_auto_approve_should_run_workers_without_pause()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        agent.set_mode(AgentMode::AutoApprove).await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        assert_eq!(wt_pauses(&events), 0, "{events:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
+
+    // W12 ---------------------------------------------------------------
+
+    #[tokio::test]
+    async fn w12_worker_tool_calls_should_reach_the_tui_and_a_step_action_should_answer_the_pause() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        let pos = |pred: &dyn Fn(&AgentEvent) -> bool| events.iter().position(pred);
+        let start = pos(&|e| matches!(e, AgentEvent::ToolCallStart { id, .. } if id == "wt1"));
+        let paused = pos(&|e| matches!(e, AgentEvent::ToolCallPaused { id, .. } if id == "wt1"));
+        let end = pos(&|e| matches!(e, AgentEvent::ToolCallEnd { id, is_error: false, .. } if id == "wt1"));
+        assert!(start.is_some() && paused.is_some() && end.is_some(), "{events:?}");
+        assert!(start < paused && paused < end, "{events:?}");
+        // Proceed ran the tool.
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+        // G14: still exactly one Done, last.
+        let dones = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Done { .. }))
+            .count();
+        assert_eq!(dones, 1, "{events:?}");
+        assert!(matches!(events.last(), Some(AgentEvent::Done { .. })), "{events:?}");
+    }
+
+    #[tokio::test]
+    async fn w12_worker_when_denied_in_the_tui_should_not_run_and_run_should_still_end_with_one_done()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(
+            &mut rx,
+            &step_tx,
+            hone_proto::StepAction::Deny("no".to_owned()),
+            WT_STEP_LIMIT,
+        )
+        .await;
+
+        assert_eq!(wt_pauses(&events), 1, "{events:?}");
+        assert!(log.lock().unwrap().is_empty());
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                AgentEvent::ToolCallEnd { id, is_error: true, .. } if id == "wt1"
+            )),
+            "{events:?}"
+        );
+        let dones = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Done { .. }))
+            .count();
+        assert_eq!(dones, 1, "{events:?}");
+    }
+
+    #[tokio::test]
+    async fn w12_worker_when_policy_asks_should_forward_approval_required_before_the_pause() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        config.tools = wt_tools(&log, Some("cargo test"));
+        // The session approves risky tools silently; a policy `ask` rule asks.
+        config.approval_policy = ToolApprovalPolicy::Auto;
+        let context =
+            hone_config::policy::PolicyContext::for_platform(dir.path().to_path_buf(), None);
+        let rules = vec![
+            hone_config::policy::PolicyRule::command("cargo *", hone_config::Decision::Ask)
+                .with_id("ask-cargo"),
+        ];
+        let compiled =
+            hone_config::policy::CompiledPolicy::compile(&context, &[], &rules, &[]).unwrap();
+        config.policy = Some(hone_core::PolicyConfig {
+            compiled: Arc::new(compiled),
+            context,
+            pre_approved: vec![],
+            builtins: false,
+        });
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        let approval = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::ApprovalRequired { .. }));
+        let paused = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::ToolCallPaused { .. }));
+        assert!(approval.is_some() && paused.is_some(), "{events:?}");
+        assert!(approval < paused, "{events:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
+
+    // W11 ---------------------------------------------------------------
+
+    #[tokio::test(start_paused = true)]
+    async fn w11_orchestrated_turn_should_not_time_out_a_slow_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        // 400 s per provider call: past the 300 s default worker timeout.
+        let (mut config, _provider, log, step_tx) =
+            wt_session(dir.path(), Some(Duration::from_secs(400)));
+        config.approval_policy = ToolApprovalPolicy::Auto;
+        let agent = AgentHandle::spawn(config.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(
+            &mut rx,
+            &step_tx,
+            hone_proto::StepAction::Proceed,
+            Duration::from_secs(86_400),
+        )
+        .await;
+
+        assert!(
+            !events.iter().any(|e| matches!(
+                e,
+                AgentEvent::WorkerCompleted { status, .. } if status == "timed_out"
+            )),
+            "no per-worker timeout in the TUI: {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                AgentEvent::WorkerCompleted { status, .. } if status == "completed"
+            )),
+            "{events:?}"
+        );
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned()]);
+    }
+
+    // ---- shared "always" W17 (docs/plans/worker-tools-spec.md) ----
+
+    /// Every model turn that is not a lead merge and does not follow a tool
+    /// result issues one `shell` call (fresh id); the turn after answers "ok".
+    struct W17Provider {
+        n: std::sync::Mutex<usize>,
+    }
+
+    #[async_trait::async_trait]
+    impl hone_providers::ModelProvider for W17Provider {
+        fn id(&self) -> &str {
+            "w17"
+        }
+        fn display_name(&self) -> &str {
+            "W17"
+        }
+        fn supported_models(&self) -> Vec<hone_proto::ModelInfo> {
+            vec![]
+        }
+        async fn complete(
+            &self,
+            req: hone_providers::CompletionRequest,
+        ) -> Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = hone_proto::ProviderEvent> + Send>>,
+            hone_providers::ProviderError,
+        > {
+            let text = req
+                .messages
+                .iter()
+                .map(|m| m.content.as_text())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let after_tool = req
+                .messages
+                .last()
+                .is_some_and(|m| m.role == hone_proto::Role::Tool);
+            let events = if text.contains("You are the lead agent. Based on") || after_tool {
+                vec![
+                    hone_proto::ProviderEvent::Token {
+                        text: "ok".to_owned(),
+                    },
+                    hone_proto::ProviderEvent::Done,
+                ]
+            } else {
+                let id = {
+                    let mut n = self.n.lock().unwrap();
+                    *n += 1;
+                    format!("w17-{n}")
+                };
+                vec![
+                    hone_proto::ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
+                        id,
+                        name: "shell".to_owned(),
+                        arguments: serde_json::json!({}),
+                    }),
+                    hone_proto::ProviderEvent::Done,
+                ]
+            };
+            Ok(Box::pin(futures::stream::iter(events)))
+        }
+        fn estimate_tokens(&self, _m: &[Message]) -> u32 {
+            1
+        }
+        async fn health(&self) -> hone_proto::ProviderHealth {
+            hone_proto::ProviderHealth::Healthy
+        }
+    }
+
+    /// `wt_session` with the W17 provider; `ask_rule` switches the session to
+    /// `Auto` approval plus a policy `ask` rule on the shell command.
+    fn w17_session(
+        dir: &std::path::Path,
+        ask_rule: bool,
+    ) -> (AgentConfig, WtLog, mpsc::Sender<hone_proto::StepAction>) {
+        let (mut config, _p, log, step_tx) = wt_session(dir, None);
+        config.provider = Arc::new(W17Provider {
+            n: std::sync::Mutex::new(0),
+        });
+        if ask_rule {
+            config.tools = wt_tools(&log, Some("cargo test"));
+            config.approval_policy = ToolApprovalPolicy::Auto;
+            let context =
+                hone_config::policy::PolicyContext::for_platform(dir.to_path_buf(), None);
+            let rules = vec![
+                hone_config::policy::PolicyRule::command("cargo *", hone_config::Decision::Ask)
+                    .with_id("ask-cargo"),
+            ];
+            let compiled =
+                hone_config::policy::CompiledPolicy::compile(&context, &[], &rules, &[]).unwrap();
+            config.policy = Some(hone_core::PolicyConfig {
+                compiled: Arc::new(compiled),
+                context,
+                pre_approved: vec![],
+                builtins: false,
+            });
+        }
+        (config, log, step_tx)
+    }
+
+    async fn w17_run(
+        config: &AgentConfig,
+        agent: &AgentHandle,
+        step_tx: &mpsc::Sender<hone_proto::StepAction>,
+        answer: hone_proto::StepAction,
+    ) -> Vec<AgentEvent> {
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _h = spawn_orchestrated_turn(
+            config.clone(),
+            "ship it".to_owned(),
+            tx,
+            agent.clone(),
+            Some(one_task_plan()),
+        );
+        wt_drive(&mut rx, step_tx, answer, WT_STEP_LIMIT).await
+    }
+
+    /// A plain (simple-tier) turn of the session agent, as the TUI runs it.
+    async fn w17_turn(
+        agent: &AgentHandle,
+        step_tx: &mpsc::Sender<hone_proto::StepAction>,
+        answer: hone_proto::StepAction,
+    ) -> Vec<AgentEvent> {
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let _task = spawn_agent_turn(agent.clone(), "go".to_owned(), tx);
+        let mut events = Vec::new();
+        let collect = async {
+            while let Some(e) = rx.recv().await {
+                if matches!(e, AgentEvent::ToolCallPaused { .. }) {
+                    step_tx.send(answer.clone()).await.unwrap();
+                }
+                let terminal = matches!(e, AgentEvent::Done { .. } | AgentEvent::Error { .. });
+                events.push(e);
+                if terminal {
+                    break;
+                }
+            }
+        };
+        tokio::time::timeout(WT_STEP_LIMIT, collect)
+            .await
+            .expect("turn hung");
+        events
+    }
+
+    fn w17_always() -> hone_proto::StepAction {
+        hone_proto::StepAction::ApproveAlways("shell".to_owned())
+    }
+
+    #[tokio::test]
+    async fn w17_workers_always_for_a_tool_should_cover_the_session_agents_next_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, log, step_tx) = w17_session(dir.path(), false);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let run = w17_run(&config, &agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&run), 1, "{run:?}");
+        let turn = w17_turn(&agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&turn), 0, "the worker's always covers the agent: {turn:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned(), "shell".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn w17_workers_always_should_cover_the_next_orchestrated_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, log, step_tx) = w17_session(dir.path(), false);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let first = w17_run(&config, &agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&first), 1);
+        let second = w17_run(&config, &agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&second), 0, "{second:?}");
+        assert_eq!(log.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn w17_agents_always_for_a_tool_should_cover_the_runs_workers() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, log, step_tx) = w17_session(dir.path(), false);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let turn = w17_turn(&agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&turn), 1, "{turn:?}");
+        let run = w17_run(&config, &agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&run), 0, "{run:?}");
+        assert_eq!(*log.lock().unwrap(), vec!["shell".to_owned(), "shell".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn w17_workers_always_for_a_policy_ask_rule_should_cover_the_session_agents_next_turn() {
+        let dir = std::fs::canonicalize(tempfile::tempdir().unwrap().keep()).unwrap();
+        let (config, log, step_tx) = w17_session(&dir, true);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let run = w17_run(&config, &agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&run), 1, "{run:?}");
+        let turn = w17_turn(&agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&turn), 0, "{turn:?}");
+        assert_eq!(log.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn w17_agents_always_for_a_policy_ask_rule_should_cover_the_runs_workers() {
+        let dir = std::fs::canonicalize(tempfile::tempdir().unwrap().keep()).unwrap();
+        let (config, log, step_tx) = w17_session(&dir, true);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let turn = w17_turn(&agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&turn), 1, "{turn:?}");
+        let run = w17_run(&config, &agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&run), 0, "{run:?}");
+        assert_eq!(log.lock().unwrap().len(), 2);
+    }
+
+    // ---- W19: a stopped agent fails closed (docs/plans/worker-tools-spec.md) ----
+
+    #[tokio::test]
+    async fn w19_orchestrated_turn_when_agent_has_stopped_should_send_one_error_and_call_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, provider, log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        agent.clone().shutdown().await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        let errors: Vec<&AgentEvent> = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .collect();
+        assert_eq!(errors.len(), 1, "exactly one Error: {events:?}");
+        match errors[0] {
+            AgentEvent::Error { message, .. } => {
+                assert!(message.contains("the agent has stopped"), "{message}")
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !events.iter().any(|e| matches!(e, AgentEvent::Done { .. })),
+            "no Done: {events:?}"
+        );
+        assert_eq!(
+            provider
+                .total_requests
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "no lead or worker call may start"
+        );
+        assert!(log.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn w19_orchestrated_turn_when_agent_has_stopped_and_no_plan_should_not_decompose_either() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, provider, _log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        agent.clone().shutdown().await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(config, "ship it".to_owned(), tx, agent, None);
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        let errors = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .count();
+        assert_eq!(errors, 1, "{events:?}");
+        assert_eq!(
+            provider
+                .total_requests
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
+    }
+
+    // ---- W18: an @agent persona's tool list reaches orchestrated runs ----
+    //
+    // Pins a small function the TUI loop must use for the Complex branch's
+    // config clone (`base_config_clone`) when an inline `@agent` with a `tools:`
+    // list is active:
+    //
+    //     fn narrow_run_config_for_persona(config: AgentConfig, allowed: &[String]) -> AgentConfig
+    //
+    // It returns `config` with `tools` = `filtered_registry(&config.tools, allowed)`
+    // (unchanged when `allowed` is empty). The tests then run the orchestrator on
+    // the result and look at the tool definitions the workers really send.
+
+    async fn w18_worker_tools(allowed: &[&str]) -> Vec<Vec<String>> {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, provider, _log, step_tx) = wt_session(dir.path(), None);
+        let allowed: Vec<String> = allowed.iter().map(|s| (*s).to_owned()).collect();
+        let narrowed = narrow_run_config_for_persona(config, &allowed);
+        let agent = AgentHandle::spawn(narrowed.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            narrowed,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let _ = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+        let seen = provider.worker_requests.lock().unwrap().clone();
+        assert!(!seen.is_empty(), "the worker must have called the provider");
+        seen
+    }
+
+    #[tokio::test]
+    async fn w18_persona_with_read_only_should_leave_workers_with_at_most_read_file() {
+        // The worker's own agent (debugger) lists read, edit, write, shell, grep, glob.
+        for request in w18_worker_tools(&["read"]).await {
+            assert_eq!(request, vec!["read_file".to_owned()], "{request:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn w18_persona_with_several_tools_should_intersect_with_the_workers_own_list() {
+        for request in w18_worker_tools(&["read", "shell", "git_commit"]).await {
+            // git_commit is in the persona's list but not the debugger's.
+            assert_eq!(
+                request,
+                vec!["read_file".to_owned(), "shell".to_owned()],
+                "{request:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn w18_persona_without_a_tools_list_should_not_narrow_workers() {
+        for request in w18_worker_tools(&[]).await {
+            assert_eq!(
+                request,
+                vec![
+                    "edit_file".to_owned(),
+                    "glob".to_owned(),
+                    "grep".to_owned(),
+                    "read_file".to_owned(),
+                    "shell".to_owned(),
+                    "write_file".to_owned()
+                ]
+            );
+        }
+    }
+
+    // ---- W26: a made-up agent name gets read-only tools ----
+
+    fn unknown_agent_plan() -> hone_core::TaskPlan {
+        let mut plan = one_task_plan();
+        plan.subtasks[0].agent = "made-up-agent".to_owned();
+        plan
+    }
+
+    async fn w26_worker_tools(allowed: &[&str]) -> Vec<Vec<String>> {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, provider, log, step_tx) = wt_session(dir.path(), None);
+        let allowed: Vec<String> = allowed.iter().map(|s| (*s).to_owned()).collect();
+        let narrowed = narrow_run_config_for_persona(config, &allowed);
+        let agent = AgentHandle::spawn(narrowed.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            narrowed,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(unknown_agent_plan()),
+        );
+        let events =
+            wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+        assert_eq!(wt_pauses(&events), 0, "{events:?}");
+        assert!(log.lock().unwrap().is_empty(), "the risky call must not run");
+        let seen = provider.worker_requests.lock().unwrap().clone();
+        assert!(!seen.is_empty());
+        seen
+    }
+
+    #[tokio::test]
+    async fn w26_unknown_agent_worker_should_get_read_only_tools_and_its_risky_call_is_not_found() {
+        for request in w26_worker_tools(&[]).await {
+            assert_eq!(
+                request,
+                vec!["glob".to_owned(), "grep".to_owned(), "read_file".to_owned()]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn w26_unknown_agent_worker_with_a_persona_should_get_only_what_both_allow() {
+        // Persona [read, shell]: narrowed to read_file + shell; the made-up
+        // agent then keeps only the read-only one.
+        for request in w26_worker_tools(&["read", "shell"]).await {
+            assert_eq!(request, vec!["read_file".to_owned()], "{request:?}");
+        }
+    }
+
+
+    // ---- W27 / W28 (AskRisky) in the TUI (docs/plans/worker-tools-spec.md) ----
+    //
+    // Pins a function the TUI loop's cancel path must use instead of
+    // `while agent_rx.try_recv().is_ok() {}`:
+    //
+    //     fn drain_after_cancel(
+    //         app: &mut App,
+    //         rx: &mut mpsc::Receiver<AgentEvent>,
+    //         step_tx: Option<&mpsc::Sender<hone_proto::StepAction>>,
+    //     )
+    //
+    // Synchronous. It empties `rx`; each dropped `ToolCallPaused` is answered
+    // with `StepAction::Deny("turn cancelled")` on `step_tx`; a dropped `Done`
+    // still updates the session's cost and token counts; no menu is left open.
+
+    #[tokio::test]
+    async fn w27_drain_after_cancel_should_deny_dropped_pauses_keep_done_costs_and_open_no_menu() {
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(16);
+        let (step_tx, mut step_rx) = mpsc::channel::<hone_proto::StepAction>(16);
+        let paused = |id: &str| AgentEvent::ToolCallPaused {
+            id: id.to_owned(),
+            name: "shell".to_owned(),
+            args: serde_json::json!({}),
+            worker: None,
+        };
+        let usage = hone_proto::TokenUsage {
+            input: 10,
+            output: 5,
+            cache_read: 0,
+            cache_creation: 0,
+        };
+        tx.send(paused("p1")).await.unwrap();
+        tx.send(AgentEvent::Done {
+            usage,
+            cost_usd: 0.5,
+            plan: None,
+        })
+        .await
+        .unwrap();
+        tx.send(paused("p2")).await.unwrap();
+        let mut app = App::new();
+
+        drain_after_cancel(&mut app, &mut rx, Some(&step_tx));
+
+        for _ in 0..2 {
+            assert!(
+                matches!(step_rx.try_recv(), Ok(hone_proto::StepAction::Deny(_))),
+                "each dropped pause is denied"
+            );
+        }
+        assert!(step_rx.try_recv().is_err(), "exactly two answers");
+        assert!(rx.try_recv().is_err(), "the queue is empty");
+        assert!((app.status().session_cost_usd - 0.5).abs() < 1e-9);
+        assert_eq!(app.status().token_count, usage.total());
+        assert!(!app.debugger_open, "no menu for the cancelled run");
+    }
+
+    #[tokio::test]
+    async fn w27_drain_after_cancel_should_release_a_task_waiting_on_the_step_channel() {
+        // A separate turn (like a post-turn fix run) is paused for approval and
+        // holds the step lock; its prompt sits in the queue being drained.
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _provider, log, step_tx) = wt_session(dir.path(), None);
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+        let turn = tokio::spawn(async move {
+            let mut agent = hone_core::Agent::new(config);
+            agent.run_turn("go", tx).await
+        });
+        // Wait for its ToolCallPaused to be queued.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while rx.len() < 3 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the turn should pause for approval");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let mut app = App::new();
+
+        drain_after_cancel(&mut app, &mut rx, Some(&step_tx));
+
+        tokio::time::timeout(Duration::from_secs(5), turn)
+            .await
+            .expect("the denied turn must be released, not wait forever")
+            .unwrap()
+            .unwrap();
+        assert!(log.lock().unwrap().is_empty(), "the denied call did not run");
+    }
+
+    // W28 under AskRisky (the TUI default); the W17 policy tests used Auto.
+
+    fn w17_risky_policy_session(
+        dir: &std::path::Path,
+    ) -> (AgentConfig, WtLog, mpsc::Sender<hone_proto::StepAction>) {
+        let (mut config, log, step_tx) = w17_session(dir, true);
+        config.approval_policy = ToolApprovalPolicy::AskRisky {
+            always_allowed: vec![],
+        };
+        (config, log, step_tx)
+    }
+
+    #[tokio::test]
+    async fn w28_ask_risky_workers_always_for_a_policy_rule_should_cover_the_agents_next_turn() {
+        let dir = std::fs::canonicalize(tempfile::tempdir().unwrap().keep()).unwrap();
+        let (config, log, step_tx) = w17_risky_policy_session(&dir);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let run = w17_run(&config, &agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&run), 1, "{run:?}");
+        let turn = w17_turn(&agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&turn), 0, "no menu of any kind: {turn:?}");
+        assert_eq!(log.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn w28_ask_risky_agents_always_for_a_policy_rule_should_cover_the_runs_workers() {
+        let dir = std::fs::canonicalize(tempfile::tempdir().unwrap().keep()).unwrap();
+        let (config, log, step_tx) = w17_risky_policy_session(&dir);
+        let agent = AgentHandle::spawn(config.clone());
+
+        let turn = w17_turn(&agent, &step_tx, w17_always()).await;
+        assert_eq!(wt_pauses(&turn), 1, "{turn:?}");
+        let run = w17_run(&config, &agent, &step_tx, hone_proto::StepAction::Proceed).await;
+
+        assert_eq!(wt_pauses(&run), 0, "no menu of any kind: {run:?}");
+        assert_eq!(log.lock().unwrap().len(), 2);
+    }
+
+    // ---- W44: the inline wrapper's restore also runs when it is aborted ----
+
+    #[tokio::test]
+    async fn w44_aborted_inline_wrapper_should_still_run_its_restore_exactly_once() {
+        let inner = tokio::spawn(std::future::pending::<()>());
+        let (_inner_tx, inner_rx) = mpsc::channel::<AgentEvent>(8);
+        let (outer_tx, _outer_rx) = mpsc::channel::<AgentEvent>(8);
+        let restored = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let flag = Arc::clone(&restored);
+        let wrapper = spawn_inline_turn_wrapper(inner, inner_rx, outer_tx, async move {
+            flag.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        // Let the wrapper start waiting for events.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        wrapper.abort();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while restored.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the persona restore must run when the wrapper is aborted");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(restored.load(std::sync::atomic::Ordering::SeqCst), 1, "once");
+    }
+
+    #[tokio::test]
+    async fn w44_inline_wrapper_ending_normally_should_run_its_restore_exactly_once() {
+        let (inner_tx, inner_rx) = mpsc::channel::<AgentEvent>(8);
+        let inner = tokio::spawn(async move { drop(inner_tx) });
+        let (outer_tx, _outer_rx) = mpsc::channel::<AgentEvent>(8);
+        let restored = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let flag = Arc::clone(&restored);
+        let wrapper = spawn_inline_turn_wrapper(inner, inner_rx, outer_tx, async move {
+            flag.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        tokio::time::timeout(Duration::from_secs(2), wrapper)
+            .await
+            .expect("wrapper ends")
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        assert_eq!(restored.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }
 

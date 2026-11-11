@@ -22,12 +22,14 @@ export type PersistedMessage =
   | { kind: "assistant"; text: string; ts: number }
   | {
       kind: "tool";
+      id?: string;
       name: string;
       status: "running" | "done" | "error";
       result?: string;
       ts: number;
     }
-  | { kind: "error"; message: string; ts: number };
+  | { kind: "error"; message: string; ts: number }
+  | { kind: "info"; message: string; ts: number };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 

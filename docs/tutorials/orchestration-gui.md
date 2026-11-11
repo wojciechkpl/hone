@@ -62,8 +62,19 @@ The TUI keeps running while the lead plans: press **Esc** to stop it
 (outside vim mode). `/plan` isn't accepted while a turn is running or
 still finishing.
 
-The plan's workers have no tools: they answer in text and don't read or
-edit files.
+Each worker gets the tools its agent definition lists, from your
+session's tools: a `rust-expert` can read, search, edit and run commands;
+a `code-reviewer` can read, search and run commands. A subtask the
+planner gives to an agent that doesn't exist runs with read-only tools. Workers follow your
+session's rules. A risky call (an edit, a command) asks you in the
+approval menu, as the main agent's do, one worker at a time, and the menu
+says which worker is asking; <kbd>x</kbd>
+there stops the whole run (<kbd>Esc</kbd> skips only that call). An
+"always" answer, to the main agent or to any worker, covers every worker
+and your later turns; a `/permit`-ted tool runs without asking. In Plan
+mode (<kbd>Shift</kbd>+<kbd>Tab</kbd>) workers only read. The approval
+rules and mode are taken when the run starts. The planner itself has no
+tools.
 
 The cost line shows two figures:
 
@@ -79,6 +90,12 @@ appears with the same Run / Edit / Cancel buttons. The web UI backs
 onto `POST /orchestrate?dry_run=true`; the TUI plans in-process. The
 web UI's Run sends the prompt to `POST /orchestrate` again, which plans
 anew.
+
+In the web UI, workers only read unless step mode is on (the **step**
+checkbox in the top bar, which makes chat turns ask before risky tools). With it on, the Run
+asks the server for step mode: workers get their agent's tools, and a
+risky call opens the approval dialog, which names the worker (agent,
+subtask number and description). Workers ask one at a time.
 
 ---
 
@@ -124,9 +141,9 @@ press `y` ten times.
 ... shell + edit_file fire without pausing.
 ```
 
-An orchestrated run (a `/plan` Run or a prompt classified complex)
-doesn't use tools: its lead and workers have none, so `/permit` changes
-nothing for it.
+`/permit` also covers the workers of an orchestrated run (a `/plan` Run
+or a prompt classified complex): a permitted tool runs without asking in
+every worker that has it.
 
 Notes:
 
@@ -203,8 +220,9 @@ A typical "I'm not sure what this is going to do" workflow:
 # Overlay shows: 4 subtasks, projected ~$0.20. Looks fine.
 > r
 
-# Orchestration runs. Lands four worker results into one merged response.
-# /budget + /permit drained — next turn is back to defaults.
+# Orchestration runs. Workers with `shell` run it without asking (the
+# /permit); other risky calls still ask. Four worker results are merged
+# into one response. The agent keeps /budget and /permit for the session.
 ```
 
 If the same prompt comes up often, save it as a workflow:

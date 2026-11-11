@@ -1,7 +1,7 @@
 ---
 name: debugger
 description: Systematic debugging specialist using scientific method
-tools: [read, edit, write, shell, grep, glob]
+tools: [read_file, edit_file, write_file, shell, grep, glob]
 model: sonnet
 ---
 

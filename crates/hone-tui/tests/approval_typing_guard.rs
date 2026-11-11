@@ -28,6 +28,7 @@ fn paused_event() -> AgentEvent {
         id: "c1".to_owned(),
         name: "write_file".to_owned(),
         args: serde_json::json!({}),
+        worker: None,
     }
 }
 

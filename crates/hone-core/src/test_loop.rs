@@ -253,15 +253,23 @@ impl TestVerificationLoop {
 
     /// Execute one shell command and return (success, combined_output).
     async fn run_cmd(&self, cmd: &str) -> Result<(bool, String), AgentError> {
-        let output = tokio::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .current_dir(&self.working_dir)
-            .output()
-            .await
-            .map_err(|e| AgentError::CodeMode {
-                detail: format!("failed to run test command: {e}"),
-            })?;
+        // Ends with this call: dropping the future (Esc) kills the command's
+        // whole process group.
+        let mut command = std::process::Command::new("sh");
+        command.arg("-c").arg(cmd).current_dir(&self.working_dir);
+        let output =
+            hone_tools::run_command(command, None)
+                .await
+                .map_err(|e| AgentError::CodeMode {
+                    detail: match e {
+                        hone_tools::RunCommandError::Io(e) => {
+                            format!("failed to run test command: {e}")
+                        }
+                        hone_tools::RunCommandError::Timeout => {
+                            "failed to run test command: timed out".to_owned()
+                        }
+                    },
+                })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
@@ -407,7 +415,21 @@ impl TestVerificationLoop {
                     let fix_prompt = format!(
                         "The tests failed with this output:\n\n{last_output}\n\nPlease fix the code to make the tests pass."
                     );
-                    handle.run_turn(&fix_prompt, events.clone()).await?;
+                    // The fix turn gets an event channel this future owns and
+                    // forwards it to the caller's. Dropping (aborting) the loop
+                    // closes it, so the agent actor cancels the fix turn,
+                    // pending tool calls included, instead of finishing it
+                    // while the caller's sender stays open.
+                    let (turn_tx, mut turn_rx) = mpsc::channel::<AgentEvent>(256);
+                    let forward = async {
+                        while let Some(event) = turn_rx.recv().await {
+                            if events.send(event).await.is_err() {
+                                break;
+                            }
+                        }
+                    };
+                    let (turn, ()) = tokio::join!(handle.run_turn(&fix_prompt, turn_tx), forward);
+                    turn?;
                 }
             }
 

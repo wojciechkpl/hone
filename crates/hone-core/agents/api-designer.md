@@ -1,7 +1,7 @@
 ---
 name: api-designer
 description: REST, GraphQL, and gRPC API designer with OpenAPI spec generation
-tools: [read, write, grep, glob, shell]
+tools: [read_file, write_file, grep, glob, shell]
 model: sonnet
 ---
 

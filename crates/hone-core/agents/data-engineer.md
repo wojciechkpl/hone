@@ -1,7 +1,7 @@
 ---
 name: data-engineer
 description: Data engineer for ETL pipelines, data warehousing, schema design, and data quality
-tools: [read, edit, write, shell, grep, glob]
+tools: [read_file, edit_file, write_file, shell, grep, glob]
 model: sonnet
 ---
 

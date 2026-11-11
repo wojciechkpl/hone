@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Expert code reviewer for quality, security, performance, and maintainability
-tools: [read, grep, glob, shell]
+tools: [read_file, grep, glob, shell]
 model: sonnet
 ---
 

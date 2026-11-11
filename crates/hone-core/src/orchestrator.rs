@@ -6,10 +6,11 @@ use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
 use crate::agent::{Agent, AgentConfig};
-use crate::agent_registry::AgentRegistry;
+use crate::agent_registry::{AgentRegistry, filtered_registry};
 use crate::checkpoint::CheckpointStore;
 use crate::error::AgentError;
 use crate::plan_store::PlanStore;
+use crate::session_approvals::SessionApprovals;
 use crate::task_plan::{OrchestratorResult, SubTask, TaskPlan, WorkerResult, WorkerStatus};
 use hone_proto::{AgentEvent, TokenUsage, ToolApprovalPolicy};
 
@@ -28,8 +29,9 @@ pub struct Orchestrator {
     total_budget: Option<f64>,
     plan_store: Option<PlanStore>,
     /// Per-worker timeout in seconds. Workers that exceed this are cancelled
-    /// and recorded as `WorkerStatus::TimedOut`. Defaults to 300 s.
-    worker_timeout_secs: u64,
+    /// and recorded as `WorkerStatus::TimedOut`. Defaults to 300 s; `None`
+    /// disables the timeout.
+    worker_timeout_secs: Option<u64>,
     /// Optional crash-recovery checkpoint store.
     checkpoint_store: Option<CheckpointStore>,
     /// When set, execute_plan dispatches subtasks through a remote honed
@@ -37,6 +39,8 @@ pub struct Orchestrator {
     queue_client: Option<Arc<crate::queue_client::QueueClient>>,
     /// Polling interval for distributed mode (default 500ms).
     distributed_poll_interval: std::time::Duration,
+    /// "Always" answers shared by every worker of this orchestrator.
+    session_approvals: Arc<SessionApprovals>,
 }
 
 impl Orchestrator {
@@ -49,11 +53,20 @@ impl Orchestrator {
             worker_budget: None,
             total_budget: None,
             plan_store: None,
-            worker_timeout_secs: DEFAULT_WORKER_TIMEOUT_SECS,
+            worker_timeout_secs: Some(DEFAULT_WORKER_TIMEOUT_SECS),
             checkpoint_store: None,
             queue_client: None,
             distributed_poll_interval: std::time::Duration::from_millis(500),
+            session_approvals: Arc::new(SessionApprovals::default()),
         }
+    }
+
+    /// Share `approvals` with every worker instead of the orchestrator's own,
+    /// so an "always" answer given to a worker also covers whoever else holds
+    /// them (e.g. the session agent in the TUI).
+    pub fn with_session_approvals(mut self, approvals: Arc<SessionApprovals>) -> Self {
+        self.session_approvals = approvals;
+        self
     }
 
     /// Override the per-worker budget (USD). Workers without a budget run unbounded.
@@ -92,7 +105,16 @@ impl Orchestrator {
     /// `WorkerStatus::TimedOut`.  The orchestrator then continues with the
     /// remaining tasks rather than aborting the whole run.
     pub fn with_worker_timeout(mut self, secs: u64) -> Self {
-        self.worker_timeout_secs = secs;
+        self.worker_timeout_secs = Some(secs);
+        self
+    }
+
+    /// Turn off the per-worker timeout.
+    ///
+    /// A worker then runs until it ends or the run is dropped. Used by the
+    /// TUI, where Esc stops the run and a worker may wait on an approval.
+    pub fn without_worker_timeout(mut self) -> Self {
+        self.worker_timeout_secs = None;
         self
     }
 
@@ -434,6 +456,7 @@ impl Orchestrator {
                     let task = task.clone();
                     let events = events.clone();
                     let worker_config = self.build_worker_config(&task);
+                    let approvals = Arc::clone(&self.session_approvals);
                     // Per-task budget from the plan overrides the default worker budget.
                     let effective_budget = task.budget_usd.or(self.worker_budget);
                     let timeout_secs = self.worker_timeout_secs;
@@ -458,9 +481,15 @@ impl Orchestrator {
                     let permit = sem.acquire_owned().await.expect("semaphore never closed");
 
                     set.spawn(async move {
-                        let result =
-                            run_worker(task, worker_config, effective_budget, timeout_secs, events)
-                                .await;
+                        let result = run_worker(
+                            task,
+                            worker_config,
+                            approvals,
+                            effective_budget,
+                            timeout_secs,
+                            events,
+                        )
+                        .await;
                         // Explicit drop documents the intent; the borrow-checker
                         // guarantees the permit is released here regardless.
                         drop(permit);
@@ -833,11 +862,43 @@ impl Orchestrator {
             }
         }
 
-        // Workers get a fresh empty tool registry — they are specialist agents
-        // focused on reasoning tasks. ToolRegistry does not implement Clone.
+        // A worker gets no more than the session has: the session's tools
+        // narrowed by its agent definition (an empty list = all of them; an
+        // unregistered agent = the read-only ones), run under the session's
+        // approval policy, step channel, mode, permission policy, sandbox,
+        // hooks and audit log. The agent definition's own `sandbox:` profile
+        // is deliberately not applied.
+        // A name that is not in the registry (a typo, a made-up agent) gets
+        // read-only tools only: nothing narrows it, so it must not have every
+        // tool. A registered agent with an empty list still gets all of them.
+        let (mut tools, unknown_agent) = match self.registry.get(&task.agent) {
+            Some(def) => (
+                filtered_registry(&self.lead_config.tools, &def.tools),
+                false,
+            ),
+            None => (self.lead_config.tools.clone(), true),
+        };
+        if unknown_agent {
+            tracing::warn!(
+                agent = %task.agent,
+                task_id = %task.id,
+                "worker for an unregistered agent: giving it read-only tools"
+            );
+            tools = crate::plan_mode::read_only_registry(&tools);
+        }
+        // In Plan mode a worker is read-only and must not write a plan file,
+        // so it runs in Build mode with a read-only registry.
+        let mode = match self.lead_config.mode {
+            crate::plan_mode::AgentMode::Plan => {
+                tools = crate::plan_mode::read_only_registry(&tools);
+                crate::plan_mode::AgentMode::Build
+            }
+            other => other,
+        };
+
         AgentConfig {
             provider: Arc::clone(&self.lead_config.provider),
-            tools: hone_tools::ToolRegistry::new(),
+            tools,
             sandbox: Arc::clone(&self.lead_config.sandbox),
             sandbox_policy: Arc::clone(&self.lead_config.sandbox_policy),
             system_prompt,
@@ -852,13 +913,13 @@ impl Orchestrator {
             index: None,
             inject_context: false,
             skeleton_strategy: Default::default(),
-            egress_log: None,
-            approval_policy: ToolApprovalPolicy::Auto,
-            step_rx: None,
-            hooks: None,
+            egress_log: self.lead_config.egress_log.clone(),
+            approval_policy: self.lead_config.approval_policy.clone(),
+            step_rx: self.lead_config.step_rx.clone(),
+            hooks: self.lead_config.hooks.clone(),
             skills: None,
             embedder: None,
-            mode: crate::plan_mode::AgentMode::Build,
+            mode,
             policy: self.lead_config.policy.clone(),
         }
     }
@@ -871,8 +932,9 @@ impl Orchestrator {
 async fn run_worker(
     task: SubTask,
     mut config: AgentConfig,
+    approvals: Arc<SessionApprovals>,
     worker_budget: Option<f64>,
-    timeout_secs: u64,
+    timeout_secs: Option<u64>,
     events: mpsc::Sender<AgentEvent>,
 ) -> WorkerResult {
     let task_id = task.id.clone();
@@ -884,11 +946,22 @@ async fn run_worker(
         config.budget_limit = worker_budget;
     }
 
-    let mut agent = Agent::new(config);
+    let mut agent = Agent::new(config)
+        .with_session_approvals(approvals)
+        .with_worker(hone_proto::WorkerRef {
+            task_id: task_id.clone(),
+            agent: agent_name.clone(),
+        });
     let prompt = format!("{}\n\n{}", task.description, task.context);
-    let timeout = Duration::from_secs(timeout_secs);
+    let turn_fut = agent.run_turn(&prompt, events.clone());
+    let outcome = match timeout_secs {
+        Some(secs) => tokio::time::timeout(Duration::from_secs(secs), turn_fut)
+            .await
+            .map_err(|_| secs),
+        None => Ok(turn_fut.await),
+    };
 
-    match tokio::time::timeout(timeout, agent.run_turn(&prompt, events.clone())).await {
+    match outcome {
         Ok(Ok(turn)) => {
             let cost = turn.cost_usd;
 
@@ -930,7 +1003,7 @@ async fn run_worker(
                 cost_usd: 0.0,
             }
         }
-        Err(_elapsed) => {
+        Err(timeout_secs) => {
             let msg = format!("exceeded {timeout_secs}s");
             tracing::warn!(
                 task_id = %task_id,

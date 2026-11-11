@@ -1,7 +1,7 @@
 ---
 name: documentation-agent
 description: Generates and maintains API docs, READMEs, architecture diagrams, and changelogs
-tools: [read, write, grep, glob, shell]
+tools: [read_file, write_file, grep, glob, shell]
 model: sonnet
 ---
 

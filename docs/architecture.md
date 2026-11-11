@@ -166,7 +166,7 @@ flowchart LR
 | Hooks | `hone-core/src/hooks.rs` | `UserPromptSubmit` and `PreToolUse` hook points exist; no binary loads hooks yet |
 | Permission gate | `hone-tools/src/policy_gate.rs` | One `decide` shared by the agent, `honed` and `hone-mcp-server` |
 | Read-before-edit | `hone-core/src/agent.rs` | An edit to a file the model hasn't read this turn gets a `read_file` first |
-| Approval policy | `hone-proto/src/step_action.rs` | `Auto` for headless runs. The TUI sets `AskRisky` (or `AlwaysAsk` with `--step`) and an approval channel on the running session agent (`wire_tui_approvals` in `bins/hone/src/main.rs`). A closed or missing channel refuses the call; a closed event stream cancels the turn. `AgentMode::AutoApprove` skips this pause, never the permission policy. Orchestrator lead and worker agents have no tools, so they never pause |
+| Approval policy | `hone-proto/src/step_action.rs` | `Auto` for headless runs. The TUI sets `AskRisky` (or `AlwaysAsk` with `--step`) and an approval channel on the running session agent (`wire_tui_approvals` in `bins/hone/src/main.rs`). A closed or missing channel refuses the call; a closed event stream cancels the turn. `AgentMode::AutoApprove` skips this pause, never the permission policy. Orchestrator workers take the session's approval policy, channel and mode when the run starts and ask one at a time; the lead has no tools. "Always" answers are shared by the session agent and its workers (`SessionApprovals`) |
 | Shell checks, sandbox | `hone-tools/src/shell/` | See [Permissions and sandbox](permissions-and-sandbox.md) |
 | Injection scan | `hone-core/src/injection_detector.rs` | Flagged results are prefixed with a warning telling the model to treat them as data |
 | Egress log | `hone-core/src/egress_log.rs` | JSONL at `.hone/audit.jsonl`; read with `hone trace` |
@@ -302,7 +302,7 @@ flowchart TD
 
 | Feature | Entry point | How it works |
 |---|---|---|
-| Orchestrator | `--orchestrate`, TUI complex tier, `/plan` preview, `honed /orchestrate` | Decompose, run subtasks with agents from the registry (up to 4 at a time, dependencies first, 5-minute timeout each), merge |
+| Orchestrator | `--orchestrate`, TUI complex tier, `/plan` preview, `honed /orchestrate` | Decompose, run subtasks with agents from the registry (up to 4 at a time, dependencies first, 5-minute timeout each, none in the TUI), merge. Workers get their agent's tools from the session's |
 | Distributed | `--orchestrate --distributed URL` | Subtasks go through a `honed` coordinator to remote workers |
 | Ensemble | `--ensemble N` | N candidates at different temperatures, then a ranker run; candidates run headless |
 | Complexity routing | TUI | Each message is classified as simple (one turn), medium (self-refine, 2 rounds) or complex (orchestrator). An adaptive classifier learns from past outcomes stored in memory. |

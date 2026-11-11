@@ -272,6 +272,7 @@ mod tests {
             AgentEvent::ApprovalRequired {
                 action: "x".into(),
                 description: "y".into(),
+                worker: None,
             },
             AgentEvent::PlanCreated {
                 goal: "z".into(),

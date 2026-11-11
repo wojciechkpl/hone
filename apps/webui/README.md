@@ -121,7 +121,9 @@ Served by `honed` at `/ui` via `rust-embed` (the build output lands in
 - New `<ApprovalModal>` — when **step** is enabled in the topbar,
   every `tool_call_paused` (and `approval_required`) event pops a
   centred modal with `Allow` / `Always allow` / `Skip` / `Deny`
-  buttons. POSTs the chosen `StepAction` to
+  buttons. When the request comes from an orchestrator worker (the
+  event carries `worker: { task_id, agent }`), the modal also names
+  the agent, subtask id and description. POSTs the chosen `StepAction` to
   `POST /run/{request_id}/step`.
 - New honed endpoint `GET /sessions` returns the list of session
   summaries (id + created_at + last_used). 2 integration tests.
