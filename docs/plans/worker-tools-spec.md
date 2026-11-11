@@ -1,6 +1,6 @@
 # Orchestrator workers get tools — spec
 
-Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W22.
+Branch `fix/worker-tools`. Contract for the TDD rounds: rows W1–W25.
 
 ## Problem
 
@@ -101,6 +101,21 @@ every worker of every orchestrated run, whichever of them asked. Today an
 | W21 | **A key in the approval menu stops the turn.** <kbd>x</kbd> in the approval menu denies the paused call, closes the menu and cancels the turn the way <kbd>Esc</kbd> does when no menu is open (an orchestrated run stops: its workers are dropped and no further menus open for it). The menu's key hints list it. Like the other letter keys, it counts only after the menu's 400 ms guard. (Review S4: with workers queued to ask, each <kbd>Esc</kbd> skipped one call and the next menu opened at once.) |
 | W22 | **The server's run config stays Plan mode.** A test pins that `POST /orchestrate` builds its run config in `AgentMode::Plan`, so its workers are read-only. (Review S5.) |
 
+### Commands end with their call (W23–W25, added at the user's request)
+
+Today a shell command keeps running when its tool call ends early: the shell
+tool runs `sh -c` through `Command::output()`, and dropping that future (Esc,
+a worker timeout, a stopped orchestrated run, or the tool's own `timeout_ms`)
+leaves the process and everything it started running. `sh -c "cargo test"`
+keeps building and testing after Esc. The TUI's post-turn test run
+(`test_loop` `run_cmd`) is the same.
+
+| Row | Behaviour |
+|---|---|
+| W23 | **The shell tool's command ends with its call** (`hone-tools`). On unix each command runs in its own process group (the group the sandbox wrapper, `sh` and everything they start belong to), with stdin closed as now. If the call ends before the command does — its future is dropped, or `timeout_ms` passes (still `ToolError::Timeout`) — the whole group gets `SIGKILL`, including grandchildren such as a backgrounded `(sleep 1; touch f) &`. A command that finishes normally is left alone, as now. Children are reaped (no zombies). Elsewhere, the direct child is killed. |
+| W24 | **The TUI's post-turn test run ends with its turn.** `test_loop`'s test command runs the same way (one shared helper), so <kbd>Esc</kbd> during the test run kills it. |
+| W25 | **hone's exit kills running commands.** A process-wide registry tracks running command groups; `hone_tools` exposes a function that kills them all. The TUI calls it when it exits (quit, <kbd>Ctrl</kbd>+<kbd>C</kbd>, SIGINT) and on SIGTERM and SIGHUP (which it now handles like SIGINT). One-shot runs (`-p`, `--orchestrate`) handle SIGINT, SIGTERM and SIGHUP by killing running commands and exiting with 128 + the signal number. Without this, moving commands out of hone's process group (W23) would let them outlive hone, because the terminal's <kbd>Ctrl</kbd>+<kbd>C</kbd> and hangup no longer reach them. |
+
 ## What each entry point gets
 
 | Entry point | Tools a worker can use | Risky calls |
@@ -129,7 +144,9 @@ every worker of every orchestrated run, whichever of them asked. Today an
 - **A worker for an agent name not in the registry** (a planner typo) gets the
   whole session registry, as the main agent has; least privilege would give it
   read-only tools (review N3).
-- **Shell commands keep running after Esc or a worker timeout**: the shell tool
-  doesn't kill its child on drop (review N4; also true for the main agent).
+- **Other commands hone runs** (`!command` in the TUI, hooks, a recipe's
+  `test_cmd`) still run as before; Esc doesn't stop a `!command`.
+- **A command that starts its own session or process group** (`setsid`,
+  some daemons) escapes the group kill.
 - **The approval policy and mode are taken when the run starts**: switching to
   Plan mode mid-run doesn't stop running workers from writing.
