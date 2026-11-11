@@ -122,3 +122,63 @@ fn test_w3_every_builtin_agent_should_get_all_the_tools_its_file_lists() {
         assert_eq!(got, expected, "agent {} (tools {:?})", def.name, def.tools);
     }
 }
+
+// ---------------------------------------------------------------------------
+// W20: an exact tool name wins over an alias
+// ---------------------------------------------------------------------------
+
+fn registry_of(names: &[&'static str]) -> hone_tools::ToolRegistry {
+    let log = new_log();
+    let mut b = hone_tools::ToolRegistry::builder();
+    for name in names {
+        b = b.register(Box::new(FakeTool {
+            name,
+            read_only: false,
+            command_subject: None,
+            log: log.clone(),
+        }));
+    }
+    b.build()
+}
+
+fn sorted_names(r: &hone_tools::ToolRegistry) -> Vec<String> {
+    let mut v: Vec<String> = r.names().into_iter().map(str::to_owned).collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn test_w20_filtered_registry_when_tool_named_write_exists_should_keep_it_not_write_file() {
+    let base = registry_of(&["write", "write_file", "read_file"]);
+
+    let out = filtered_registry(&base, &["write".to_owned()]);
+
+    assert_eq!(sorted_names(&out), vec!["write".to_owned()]);
+}
+
+#[test]
+fn test_w20_filtered_registry_when_exact_names_exist_for_read_and_edit_should_keep_those() {
+    let base = registry_of(&["read", "read_file", "edit", "edit_file"]);
+
+    let out = filtered_registry(&base, &["read".to_owned(), "edit".to_owned()]);
+
+    assert_eq!(sorted_names(&out), sorted(&["read", "edit"]));
+}
+
+#[test]
+fn test_w20_filtered_registry_when_no_exact_match_should_still_use_the_alias() {
+    let base = registry_of(&["write_file", "read_file"]);
+
+    let out = filtered_registry(&base, &["write".to_owned()]);
+
+    assert_eq!(sorted_names(&out), vec!["write_file".to_owned()]);
+}
+
+#[test]
+fn test_w20_filtered_registry_when_exact_and_alias_both_listed_should_keep_both_tools() {
+    let base = registry_of(&["write", "write_file"]);
+
+    let out = filtered_registry(&base, &["write".to_owned(), "write_file".to_owned()]);
+
+    assert_eq!(sorted_names(&out), sorted(&["write", "write_file"]));
+}

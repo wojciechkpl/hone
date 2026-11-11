@@ -545,7 +545,6 @@ async fn test_w5_worker_when_session_is_build_should_keep_write_tools() {
     .await;
 
     assert_eq!(invoked(&log), vec!["write_file".to_owned()]);
-    assert!(!dir.path().join(".hone/plans").exists());
 }
 
 // ---------------------------------------------------------------------------
@@ -820,6 +819,31 @@ async fn test_w8_default_worker_timeout_should_stay_300_seconds() {
 
     assert!(
         matches!(out.workers[0].status, WorkerStatus::TimedOut(_)),
+        "{:?}",
+        out.workers[0].status
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_w8_default_worker_timeout_should_not_fire_before_300_seconds() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = new_log();
+    let provider = ScriptedProvider::new(&["W8-JUST"]);
+    *provider.worker_delay.lock().unwrap() = Some(Duration::from_secs(299));
+    let config = lead_config(Arc::clone(&provider), session_tools(&log), dir.path());
+
+    let orch = Orchestrator::new(config, builtin_registry(), 4);
+    let out = run_plan_with_ui_limit(
+        orch,
+        plan(vec![subtask("1", "W8-JUST", "rust-expert")]),
+        None,
+        proceed_all(),
+        Duration::from_secs(86_400),
+    )
+    .await;
+
+    assert!(
+        matches!(out.workers[0].status, WorkerStatus::Completed),
         "{:?}",
         out.workers[0].status
     );

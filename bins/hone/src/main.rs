@@ -6176,11 +6176,15 @@ mod tests {
         b.build()
     }
 
-    /// Worker request 1 (no lead marker in the prompt): one `shell` call, id
-    /// `wt1`. Later worker requests: "ok". Lead merge: "merged". Records the
-    /// tool names of each worker request and an optional virtual-time delay.
+    /// A worker request that does not follow a tool result issues one `shell`
+    /// call (ids `wt1`, `wt2`, ... in order); the request after it answers
+    /// "ok". Lead merge: "merged". Records the tool names of each worker
+    /// request, counts every request (lead included) and may delay answers
+    /// (virtual time).
     struct WtProvider {
         worker_requests: std::sync::Mutex<Vec<Vec<String>>>,
+        total_requests: std::sync::atomic::AtomicUsize,
+        calls_issued: std::sync::atomic::AtomicUsize,
         delay: Option<Duration>,
     }
 
@@ -6208,6 +6212,12 @@ mod tests {
                 .map(|m| m.content.as_text())
                 .collect::<Vec<_>>()
                 .join("\n");
+            self.total_requests
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let after_tool = req
+                .messages
+                .last()
+                .is_some_and(|m| m.role == hone_proto::Role::Tool);
             let events = if text.contains("You are the lead agent. Based on") {
                 vec![
                     hone_proto::ProviderEvent::Token {
@@ -6219,17 +6229,20 @@ mod tests {
                 if let Some(d) = self.delay {
                     tokio::time::sleep(d).await;
                 }
-                let n = {
+                {
                     let mut w = self.worker_requests.lock().unwrap();
                     let mut names: Vec<String> = req.tools.iter().map(|t| t.name.clone()).collect();
                     names.sort();
                     w.push(names);
-                    w.len()
-                };
-                if n == 1 {
+                }
+                if !after_tool {
+                    let k = self
+                        .calls_issued
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                        + 1;
                     vec![
                         hone_proto::ProviderEvent::ToolCall(hone_proto::ToolCallRequest {
-                            id: "wt1".to_owned(),
+                            id: format!("wt{k}"),
                             name: "shell".to_owned(),
                             arguments: serde_json::json!({ "cmd": "cargo test" }),
                         }),
@@ -6268,6 +6281,8 @@ mod tests {
         let log: WtLog = Arc::new(std::sync::Mutex::new(Vec::new()));
         let provider = Arc::new(WtProvider {
             worker_requests: std::sync::Mutex::new(Vec::new()),
+            total_requests: std::sync::atomic::AtomicUsize::new(0),
+            calls_issued: std::sync::atomic::AtomicUsize::new(0),
             delay,
         });
         let mut config = orch_config(Arc::clone(&provider) as _, dir);
@@ -6786,6 +6801,144 @@ mod tests {
 
         assert_eq!(wt_pauses(&run), 0, "{run:?}");
         assert_eq!(log.lock().unwrap().len(), 2);
+    }
+
+    // ---- W19: a stopped agent fails closed (docs/plans/worker-tools-spec.md) ----
+
+    #[tokio::test]
+    async fn w19_orchestrated_turn_when_agent_has_stopped_should_send_one_error_and_call_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, provider, log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        agent.clone().shutdown().await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            config,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        let errors: Vec<&AgentEvent> = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .collect();
+        assert_eq!(errors.len(), 1, "exactly one Error: {events:?}");
+        match errors[0] {
+            AgentEvent::Error { message, .. } => {
+                assert!(message.contains("the agent has stopped"), "{message}")
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !events.iter().any(|e| matches!(e, AgentEvent::Done { .. })),
+            "no Done: {events:?}"
+        );
+        assert_eq!(
+            provider
+                .total_requests
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "no lead or worker call may start"
+        );
+        assert!(log.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn w19_orchestrated_turn_when_agent_has_stopped_and_no_plan_should_not_decompose_either() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, provider, _log, step_tx) = wt_session(dir.path(), None);
+        let agent = AgentHandle::spawn(config.clone());
+        agent.clone().shutdown().await;
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(config, "ship it".to_owned(), tx, agent, None);
+        let events = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+
+        let errors = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .count();
+        assert_eq!(errors, 1, "{events:?}");
+        assert_eq!(
+            provider
+                .total_requests
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
+    }
+
+    // ---- W18: an @agent persona's tool list reaches orchestrated runs ----
+    //
+    // Pins a small function the TUI loop must use for the Complex branch's
+    // config clone (`base_config_clone`) when an inline `@agent` with a `tools:`
+    // list is active:
+    //
+    //     fn narrow_run_config_for_persona(config: AgentConfig, allowed: &[String]) -> AgentConfig
+    //
+    // It returns `config` with `tools` = `filtered_registry(&config.tools, allowed)`
+    // (unchanged when `allowed` is empty). The tests then run the orchestrator on
+    // the result and look at the tool definitions the workers really send.
+
+    async fn w18_worker_tools(allowed: &[&str]) -> Vec<Vec<String>> {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, provider, _log, step_tx) = wt_session(dir.path(), None);
+        let allowed: Vec<String> = allowed.iter().map(|s| (*s).to_owned()).collect();
+        let narrowed = narrow_run_config_for_persona(config, &allowed);
+        let agent = AgentHandle::spawn(narrowed.clone());
+        let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+
+        let _h = spawn_orchestrated_turn(
+            narrowed,
+            "ship it".to_owned(),
+            tx,
+            agent,
+            Some(one_task_plan()),
+        );
+        let _ = wt_drive(&mut rx, &step_tx, hone_proto::StepAction::Proceed, WT_STEP_LIMIT).await;
+        let seen = provider.worker_requests.lock().unwrap().clone();
+        assert!(!seen.is_empty(), "the worker must have called the provider");
+        seen
+    }
+
+    #[tokio::test]
+    async fn w18_persona_with_read_only_should_leave_workers_with_at_most_read_file() {
+        // The worker's own agent (debugger) lists read, edit, write, shell, grep, glob.
+        for request in w18_worker_tools(&["read"]).await {
+            assert_eq!(request, vec!["read_file".to_owned()], "{request:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn w18_persona_with_several_tools_should_intersect_with_the_workers_own_list() {
+        for request in w18_worker_tools(&["read", "shell", "git_commit"]).await {
+            // git_commit is in the persona's list but not the debugger's.
+            assert_eq!(
+                request,
+                vec!["read_file".to_owned(), "shell".to_owned()],
+                "{request:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn w18_persona_without_a_tools_list_should_not_narrow_workers() {
+        for request in w18_worker_tools(&[]).await {
+            assert_eq!(
+                request,
+                vec![
+                    "edit_file".to_owned(),
+                    "glob".to_owned(),
+                    "grep".to_owned(),
+                    "read_file".to_owned(),
+                    "shell".to_owned(),
+                    "write_file".to_owned()
+                ]
+            );
+        }
     }
 }
 

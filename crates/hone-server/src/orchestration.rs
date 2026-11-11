@@ -429,4 +429,28 @@ mod tests {
         assert!(json.contains("budget_progress"));
         assert!(json.contains("\"workers_completed\":2"));
     }
+
+    // W22 of docs/plans/worker-tools-spec.md: the server's run config is Plan
+    // mode, so its workers (which follow the config's mode) are read-only.
+    #[test]
+    fn w22_orchestrate_run_config_is_plan_mode_with_read_only_workers() {
+        let provider: Arc<dyn ModelProvider> =
+            Arc::new(hone_providers::MockProvider::new(vec!["x".into()]));
+        let config = build_lead_agent_config(
+            provider,
+            ModelId::new("mock:test"),
+            std::path::PathBuf::from("."),
+            None,
+        );
+
+        assert_eq!(config.mode, AgentMode::Plan);
+        // What a Plan-mode worker is left with: the read-only tools only.
+        let mut names: Vec<String> = hone_core::read_only_registry(&config.tools)
+            .names()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["glob", "grep", "read_file"]);
+    }
 }
