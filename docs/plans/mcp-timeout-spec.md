@@ -51,7 +51,7 @@ sequenceDiagram
 | T2 | **The timeout comes from `mcp.json`.** The manager gives each client its server's `timeout_ms` (default 10 000). A client built directly (`StdioMcpClient::spawn` / `spawn_with_name`) has no timeout unless one is set with a builder such as `with_request_timeout(Duration)`. `timeout_ms: 0` means no timeout. |
 | T3 | **The client stays usable after a timeout.** The timed-out request's late response is skipped by id (PR #90 W50), so the next call to the same server gets its own result. |
 | T4 | **Non-JSON lines are skipped.** A line on the server's stdout that doesn't parse as JSON (log output, or the rest of a line whose read was dropped by a timeout or a cancel) is skipped and logged at debug level instead of failing the call; the wait stays bounded by T1. |
-| T5 | **A hung server can't block startup.** A server whose `initialize` doesn't answer within its timeout is skipped at startup with the existing "failed to start, skipping" warning, and its process is killed (not left running). The other servers still connect. |
+| T5 | **A hung server can't block startup.** A server whose `initialize` doesn't answer within its timeout (the handshake timeout since T7) is skipped at startup with the existing "failed to start, skipping" warning, and its process is killed (not left running). The other servers still connect. |
 | T6 | **Docs.** `docs/configuration.md` describes what `timeout_ms` bounds and `0`; the CHANGELOG says the setting is now applied (a long-running MCP tool may need a larger value). |
 
 ### Review round 1 (T7–T9)
