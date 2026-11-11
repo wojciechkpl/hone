@@ -3802,34 +3802,34 @@ async fn run_tui(
                             if last_turn_task.as_ref().is_some_and(|t| !t.is_finished()) {
                                 app.refuse_plan();
                             } else {
-                            // /plan decomposes with the model a Complex turn would use.
-                            let mut plan_config = base_config.clone();
-                            plan_config.model = complex_model!();
-                            let working_dir = app.working_dir().to_path_buf();
-                            let id = next_planning_id;
-                            next_planning_id += 1;
-                            planning_id = Some(id);
-                            let tx = plan_tx.clone();
-                            let watcher_tx = tx.clone();
-                            let task = tokio::spawn(async move {
-                                let result = dispatch_plan_decompose(plan_config, working_dir, &plan_prompt)
-                                    .await
-                                    .map(|(plan, cost, _usage)| (plan, cost))
-                                    .map_err(|e| e.to_string());
-                                let _ = tx.send((id, plan_prompt, result)).await;
-                            });
-                            // Esc cancels planning through the usual cancel path.
-                            current_task_abort = Some(task.abort_handle());
-                            // A task that ends without sending (a panic) must not
-                            // leave the spinner running. An aborted one carries a
-                            // stale id, so its message is dropped.
-                            tokio::spawn(async move {
-                                if task.await.is_err() {
-                                    let _ = watcher_tx
-                                        .send((id, String::new(), Err("planning stopped unexpectedly".to_owned())))
-                                        .await;
-                                }
-                            });
+                                // /plan decomposes with the model a Complex turn would use.
+                                let mut plan_config = base_config.clone();
+                                plan_config.model = complex_model!();
+                                let working_dir = app.working_dir().to_path_buf();
+                                let id = next_planning_id;
+                                next_planning_id += 1;
+                                planning_id = Some(id);
+                                let tx = plan_tx.clone();
+                                let watcher_tx = tx.clone();
+                                let task = tokio::spawn(async move {
+                                    let result = dispatch_plan_decompose(plan_config, working_dir, &plan_prompt)
+                                        .await
+                                        .map(|(plan, cost, _usage)| (plan, cost))
+                                        .map_err(|e| e.to_string());
+                                    let _ = tx.send((id, plan_prompt, result)).await;
+                                });
+                                // Esc cancels planning through the usual cancel path.
+                                current_task_abort = Some(task.abort_handle());
+                                // A task that ends without sending (a panic) must not
+                                // leave the spinner running. An aborted one carries a
+                                // stale id, so its message is dropped.
+                                tokio::spawn(async move {
+                                    if task.await.is_err() {
+                                        let _ = watcher_tx
+                                            .send((id, String::new(), Err("planning stopped unexpectedly".to_owned())))
+                                            .await;
+                                    }
+                                });
                             }
                         }
 

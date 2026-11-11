@@ -398,9 +398,7 @@ impl App {
         for msg in &mut self.messages {
             msg.is_active = false;
         }
-        if let Some(msg) = self.messages.last_mut() {
-            msg.is_streaming = false;
-        }
+        self.end_all_streaming();
         self.status.active_tool = None;
         self.state = AppState::Idle;
         // A menu for the cancelled turn must not outlive it.
@@ -1365,8 +1363,29 @@ impl App {
         self.pending_plan_run.take()
     }
 
+    /// End a streaming assistant message before a System line is pushed.
+    fn end_streaming_assistant(&mut self) {
+        if let Some(last) = self.messages.last_mut() {
+            if last.is_streaming && matches!(last.role, DisplayRole::Assistant) {
+                last.is_streaming = false;
+            }
+        }
+    }
+
+    /// Clear `is_streaming` on every message.
+    fn end_all_streaming(&mut self) {
+        for msg in &mut self.messages {
+            msg.is_streaming = false;
+        }
+    }
+
     /// Refuse `/plan` because the previous turn's task is still finishing.
     pub fn refuse_plan(&mut self) {
+        if self.messages.last().is_some_and(|m| {
+            matches!(m.role, DisplayRole::System) && m.content.starts_with("Planning: ")
+        }) {
+            self.messages.pop();
+        }
         self.push_error("/plan: the previous turn is still finishing; try again when it's done");
         self.state = AppState::Idle;
         self.turn_start = None;
@@ -2460,12 +2479,8 @@ impl App {
                 }
                 self.pending_active_agent = None;
 
-                // Mark the last streaming message as complete.
-                if let Some(last) = self.messages.last_mut() {
-                    if last.is_streaming {
-                        last.is_streaming = false;
-                    }
-                }
+                // The turn is over: no message is still streaming.
+                self.end_all_streaming();
                 self.status.token_count += usage.total();
                 self.status.session_cost_usd += cost_usd;
                 self.status.active_tool = None;
@@ -2498,6 +2513,7 @@ impl App {
                         ledger.active_agent_failed = true;
                     }
                 }
+                self.end_all_streaming();
                 self.messages
                     .push(DisplayMessage::new(DisplayRole::Error, message.clone()));
                 self.status.provider_status = ProviderStatus::Error(message.clone());
@@ -2535,6 +2551,7 @@ impl App {
                 goal,
                 subtask_count,
             } => {
+                self.end_streaming_assistant();
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::System,
                     format!("Orchestrating: {goal} ({subtask_count} subtasks)"),
@@ -2546,6 +2563,7 @@ impl App {
                 agent,
                 description,
             } => {
+                self.end_streaming_assistant();
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::System,
                     format!("[{task_id}] {agent}: {description}"),
@@ -2569,6 +2587,7 @@ impl App {
                 status,
                 cost_usd,
             } => {
+                self.end_streaming_assistant();
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::System,
                     format!("[{task_id}] {agent}: {status} (${cost_usd:.4})"),
@@ -2587,12 +2606,13 @@ impl App {
             }
 
             AgentEvent::BudgetProgress {
-                spent_usd,
+                spent_usd: _,
                 budget_usd,
                 workers_completed,
                 workers_total,
             } => {
-                self.status.session_cost_usd = spent_usd;
+                // The session total is summed from `Done` events; `spent_usd`
+                // is the run's own total and is not assigned to it.
                 if budget_usd.is_some() {
                     self.status.budget_usd = budget_usd;
                 }
