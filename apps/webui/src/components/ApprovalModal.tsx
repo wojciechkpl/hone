@@ -1,5 +1,5 @@
-import { Show, type Component } from "solid-js";
-import { usePendingApproval, setPendingApproval } from "../lib/step";
+import { Show, createSignal, type Component } from "solid-js";
+import { usePendingApproval, setPendingApproval, type PendingApproval } from "../lib/step";
 import { postJson } from "../lib/api";
 import { useWorkers } from "../lib/orchestrator";
 
@@ -10,9 +10,15 @@ type StepAction =
   | { ApproveAlways: string }
   | { Deny: string };
 
+// The prompt whose answer is currently in flight. Buttons are disabled
+// and further clicks ignored until that POST settles, so a double-click
+// can't answer the *next* worker's prompt unseen.
+const [sendingFor, setSendingFor] = createSignal<PendingApproval | null>(null);
+
 async function send(action: StepAction): Promise<void> {
   const p = usePendingApproval()();
-  if (!p) return;
+  if (!p || sendingFor() === p) return;
+  setSendingFor(p);
   try {
     const resp = await postJson(`/run/${encodeURIComponent(p.runId)}/step`, action, null);
     if (!resp.ok) {
@@ -20,13 +26,20 @@ async function send(action: StepAction): Promise<void> {
     }
   } catch (err) {
     console.warn(`step failed: ${err}`);
+    // Network failure: leave the prompt up and re-enable so the user can retry.
+    if (sendingFor() === p) setSendingFor(null);
+    return;
   }
-  setPendingApproval(null);
+  // The next worker's prompt may already have arrived; clear only the
+  // one we answered.
+  if (usePendingApproval()() === p) setPendingApproval(null);
+  if (sendingFor() === p) setSendingFor(null);
 }
 
 export const ApprovalModal: Component = () => {
   const pending = usePendingApproval();
   const workers = useWorkers();
+  const busy = () => sendingFor() === pending();
   const description = () => {
     const w = pending()?.worker;
     return w ? workers().find((x) => x.task_id === w.task_id)?.description : undefined;
@@ -112,19 +125,21 @@ export const ApprovalModal: Component = () => {
             {prettyArgs(pending()!.args)}
           </pre>
           <div class="flex" style={{ gap: "8px", "flex-wrap": "wrap", "justify-content": "flex-end" }}>
-            <button onClick={() => send({ Deny: "user denied" })} title="Reject this tool call">
+            <button disabled={busy()} onClick={() => send({ Deny: "user denied" })} title="Reject this tool call">
               Deny
             </button>
-            <button onClick={() => send("Skip")} title="Skip — agent proceeds without this tool">
+            <button disabled={busy()} onClick={() => send("Skip")} title="Skip — agent proceeds without this tool">
               Skip
             </button>
             <button
+              disabled={busy()}
               onClick={() => send({ ApproveAlways: pending()!.name })}
               title="Allow this tool name for the rest of the session"
             >
               Always allow
             </button>
             <button
+              disabled={busy()}
               onClick={() => send("Proceed")}
               style={{ "border-color": "var(--accent-hot)", color: "var(--accent-hot)" }}
             >
