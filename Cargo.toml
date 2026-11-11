@@ -37,6 +37,7 @@ keywords = ["ai", "coding-agent", "terminal", "llm", "tools"]
 categories = ["command-line-utilities", "development-tools"]
 
 [workspace.dependencies]
+libc = "0.2"
 # Internal crates (path for local dev, version for crates.io publish)
 hone-cache = { version = "0.1.0", path = "crates/hone-cache" }
 hone-proto = { version = "0.1.0", path = "crates/hone-proto" }

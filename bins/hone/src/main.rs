@@ -3065,6 +3065,17 @@ async fn run_selected_mode(
         })
         .collect();
 
+    // Every non-TUI mode that can run the shell tool kills its running
+    // commands when a signal ends it (the TUI does so on its own exit).
+    if cli.recipe.is_some()
+        || cli.ensemble.is_some()
+        || cli.plan.is_some()
+        || cli.orchestrate
+        || cli.prompt.is_some()
+    {
+        install_one_shot_signal_handlers()?;
+    }
+
     // --recipe <name>: run a built-in recipe and exit.
     if let Some(ref recipe_name) = cli.recipe {
         return run_recipe(agent.clone(), recipe_name, &recipe_vars).await;
@@ -3091,10 +3102,6 @@ async fn run_selected_mode(
         };
 
         return run_ensemble(&base_config, &prompt, n).await;
-    }
-
-    if cli.plan.is_some() || cli.orchestrate || cli.prompt.is_some() {
-        install_one_shot_signal_handlers()?;
     }
 
     // --plan: load a saved plan file and execute its plan_body as a one-shot prompt.
@@ -3277,12 +3284,13 @@ async fn os_term_signal(_signals: &mut ()) {
     std::future::pending::<()>().await;
 }
 
-/// One-shot runs (`-p`, `--plan`, `--orchestrate`): on SIGINT, SIGTERM or
-/// SIGHUP kill the running commands and exit with 128 + the signal number.
+/// One-shot runs (`-p`, `--plan`, `--orchestrate`, `--recipe`, `--ensemble`): on SIGINT, SIGTERM or
+/// SIGHUP kill the running commands and end the process by that signal.
 /// Without this, commands in their own process groups would outlive hone.
 #[cfg(unix)]
 fn install_one_shot_signal_handlers() -> Result<()> {
     use tokio::signal::unix::{SignalKind, signal};
+    // The signal numbers are the same on every unix we target.
     for (kind, number) in [
         (SignalKind::interrupt(), 2),
         (SignalKind::terminate(), 15),
@@ -3292,8 +3300,8 @@ fn install_one_shot_signal_handlers() -> Result<()> {
             signal(kind).map_err(|e| anyhow::anyhow!("failed to install signal handler: {e}"))?;
         tokio::spawn(async move {
             sig.recv().await;
-            hone_tools::kill_running_commands();
-            std::process::exit(128 + number);
+            // Ends the process BY the signal, so a calling script stops too.
+            hone_tools::kill_commands_and_reraise(number);
         });
     }
     Ok(())
@@ -3643,6 +3651,10 @@ async fn run_tui(
         if app.should_quit() {
             break;
         }
+
+        // Tell the app whether the previous turn's task (post-turn test run,
+        // fix turns) still runs, so Esc can stop it while the UI is idle.
+        app.set_background_task_running(last_turn_task.as_ref().is_some_and(|t| !t.is_finished()));
 
         terminal.draw(|frame| root::render(&app, frame))?;
 
@@ -4015,6 +4027,18 @@ async fn run_tui(
                                 // A planning result arriving later is dropped.
                                 planning_id = None;
                                 app.cancel_turn();
+                            }
+                        }
+                        // Esc while idle with an empty input box: stop the previous
+                        // turn's task (the post-turn test run and any fix turns).
+                        // Aborting drops the test run's command future, which kills
+                        // the command. Only when idle, so a turn the user just
+                        // started is never aborted by it.
+                        if app.take_pending_stop_background()
+                            && matches!(app.state(), AppState::Idle)
+                        {
+                            if let Some(task) = last_turn_task.take() {
+                                task.abort();
                             }
                         }
                         // After the abort: a denied worker cannot start another

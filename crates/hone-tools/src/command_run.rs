@@ -58,9 +58,13 @@ pub async fn run_command(
         },
         None => wait.await.map_err(RunCommandError::Io),
     };
-    // The command ended by itself: leave its leftovers alone.
-    if let Some(g) = guard.as_mut() {
-        g.disarm();
+    // The command ended by itself: leave its leftovers alone. After a failed
+    // wait the child's state is unknown, so the guard stays armed and kills
+    // the group when it drops.
+    if result.is_ok() {
+        if let Some(g) = guard.as_mut() {
+            g.disarm();
+        }
     }
     result
 }
@@ -70,6 +74,18 @@ pub async fn run_command(
 pub fn kill_running_commands() {
     #[cfg(unix)]
     unix::kill_all();
+}
+
+/// For a one-shot run that received `signal` (SIGINT, SIGTERM, SIGHUP): kill
+/// the running commands, then restore the signal's default action and raise it
+/// again, so the process ends *by* the signal (a calling shell script sees it,
+/// as it would without the handler). `exit(128 + signal)` is only the fallback
+/// if raising returns (and the only behaviour off unix).
+pub fn kill_commands_and_reraise(signal: i32) -> ! {
+    kill_running_commands();
+    #[cfg(unix)]
+    unix::reraise(signal);
+    std::process::exit(128 + signal)
 }
 
 #[cfg(unix)]
@@ -144,6 +160,23 @@ mod unix {
             .as_mut()
         {
             set.remove(&pgid);
+        }
+    }
+
+    /// Reset `signal` to its default action, unblock it and raise it. Returns
+    /// only if that failed.
+    pub(super) fn reraise(signal: i32) {
+        // SAFETY: plain libc calls on integers and a stack-allocated, properly
+        // initialised `sigset_t`; no Rust invariants are involved. Each result
+        // is ignored on purpose: on failure we fall through to the caller's
+        // `exit` fallback.
+        unsafe {
+            libc::signal(signal, libc::SIG_DFL);
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            libc::sigaddset(&mut set, signal);
+            libc::pthread_sigmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut());
+            libc::raise(signal);
         }
     }
 

@@ -493,6 +493,9 @@ async fn main() -> Result<()> {
     .with_graceful_shutdown(shutdown_signal())
     .await?;
 
+    // Commands run in their own process groups: end any that outlived the
+    // graceful shutdown (e.g. a request that was still running one).
+    hone_tools::kill_running_commands();
     tracing::info!("honed stopped");
     Ok(())
 }
@@ -512,8 +515,18 @@ async fn shutdown_signal() {
             .await;
     };
 
+    #[cfg(unix)]
+    let hangup = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+            .expect("failed to install SIGHUP handler")
+            .recv()
+            .await;
+    };
+
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
+    #[cfg(not(unix))]
+    let hangup = std::future::pending::<()>();
 
     tokio::select! {
         _ = ctrl_c => {
@@ -522,7 +535,12 @@ async fn shutdown_signal() {
         _ = terminate => {
             tracing::info!("SIGTERM received, shutting down gracefully");
         }
+        _ = hangup => {
+            tracing::info!("SIGHUP received, shutting down gracefully");
+        }
     }
+    // Commands started by running requests must not outlive the signal.
+    hone_tools::kill_running_commands();
 }
 
 /// Successful gate evaluation.

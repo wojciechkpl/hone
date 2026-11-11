@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
 };
 
 use crate::app::App;
@@ -72,8 +72,10 @@ pub fn render_debugger(app: &App, frame: &mut Frame, area: Rect) {
         let mut text = format!("  Worker: {} ({})", w.agent, w.task_id);
         if let Some(d) = app.worker_descriptions.get(&w.task_id) {
             let d = d.split_whitespace().collect::<Vec<_>>().join(" ");
-            text.push_str(" \u{2014} ");
+            // The description is planner-written task text: show it quoted.
+            text.push_str(" \u{2014} \u{201c}");
             text.push_str(&d);
+            text.push('\u{201d}');
         }
         let width = usize::from(inner.width);
         if text.chars().count() > width {
@@ -104,26 +106,23 @@ pub fn render_debugger(app: &App, frame: &mut Frame, area: Rect) {
         lines.push(Line::from(Span::styled(arg_line.to_owned(), text_style)));
     }
 
-    // Blank separator before footer.
-    lines.push(Line::from(""));
-
-    // Footer with keybinding hints.
+    // Footer with keybinding hints, pinned to the bottom row: the body above
+    // is cut first when the terminal is short, so the hints always show.
     let footer_style = Style::default().fg(theme.text_muted);
-    lines.push(Line::from(Span::styled(
+    let footer = Paragraph::new(Line::from(Span::styled(
         "  y/Enter proceed  a always  n deny  s skip  x stop turn  Esc skip",
         footer_style,
     )));
 
-    // Split inner area: all lines go into the top, footer pinned to bottom.
-    // We simply render all lines via a Paragraph; scrolling is not needed for
-    // a short overlay.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(0)])
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(inner);
 
-    let para = Paragraph::new(lines);
+    // Long argument lines wrap rather than being cut.
+    let para = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(para, chunks[0]);
+    frame.render_widget(footer, chunks[1]);
 }
 
 #[cfg(test)]

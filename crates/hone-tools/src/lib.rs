@@ -14,7 +14,9 @@ mod subjects;
 mod traits;
 pub mod web;
 
-pub use command_run::{RunCommandError, kill_running_commands, run_command};
+pub use command_run::{
+    RunCommandError, kill_commands_and_reraise, kill_running_commands, run_command,
+};
 pub use error::ToolError;
 pub use memory::MemoryReadTool;
 pub use handoff::HandoffTool;

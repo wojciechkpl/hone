@@ -131,6 +131,12 @@ pub struct App {
     /// Set by `x` in the approval menu: after aborting the turn the loop
     /// answers the paused call with `Deny` (see `take_pending_deny_paused`).
     pub(crate) pending_deny_paused: bool,
+    /// Whether the previous turn's task (post-turn test run, fix turns) still
+    /// runs; told by the loop (`set_background_task_running`).
+    pub(crate) background_task_running: bool,
+    /// Set by Esc when idle with an empty input box and a background task
+    /// running (`take_pending_stop_background`).
+    pub(crate) pending_stop_background: bool,
     /// Message typed while a turn was active; restored to the input box on Done.
     pub(crate) queued_message: Option<String>,
 
@@ -287,6 +293,8 @@ impl App {
             focus_msg_index: None,
             pending_cancel: false,
             pending_deny_paused: false,
+            background_task_running: false,
+            pending_stop_background: false,
             queued_message: None,
             history: PromptHistory::load(),
             history_search_open: false,
@@ -397,6 +405,18 @@ impl App {
     /// The event loop calls `cancel_turn()` after aborting the task.
     pub fn request_cancel(&mut self) {
         self.pending_cancel = true;
+    }
+
+    /// The loop tells the app whether the previous turn's task (the post-turn
+    /// test run and any fix turns) is still running.
+    pub fn set_background_task_running(&mut self, running: bool) {
+        self.background_task_running = running;
+    }
+
+    /// Drain the request (set by Esc when idle, with an empty input box and a
+    /// background task running) to abort that task.
+    pub fn take_pending_stop_background(&mut self) -> bool {
+        std::mem::take(&mut self.pending_stop_background)
     }
 
     /// Add the spend of a turn that was dropped before the UI saw its `Done`
@@ -1040,6 +1060,17 @@ impl App {
             KeyCode::Esc => {
                 if matches!(self.state, AppState::WaitingForResponse) {
                     self.request_cancel();
+                } else if matches!(self.state, AppState::Idle)
+                    && self.input.buffer.is_empty()
+                    && self.background_task_running
+                {
+                    // Nothing to clear: stop the previous turn's task (post-turn
+                    // test run, fix turns) that is still running.
+                    self.pending_stop_background = true;
+                    self.messages.push(DisplayMessage::new(
+                        DisplayRole::System,
+                        "Stopped the test run.".to_string(),
+                    ));
                 } else if matches!(self.state, AppState::Idle) {
                     self.input.buffer.clear();
                     self.input.cursor_position = 0;
@@ -2587,6 +2618,9 @@ impl App {
                 subtask_count,
             } => {
                 self.end_streaming_assistant();
+                // A new plan: earlier runs' subtask descriptions are stale
+                // (task ids repeat across runs).
+                self.worker_descriptions.clear();
                 self.messages.push(DisplayMessage::new(
                     DisplayRole::System,
                     format!("Orchestrating: {goal} ({subtask_count} subtasks)"),
