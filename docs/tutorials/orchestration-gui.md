@@ -91,8 +91,8 @@ onto `POST /orchestrate?dry_run=true`; the TUI plans in-process. The
 web UI's Run sends the prompt to `POST /orchestrate` again, which plans
 anew.
 
-In the web UI, workers only read unless step mode is on (the settings
-toggle that makes `/run` ask before risky tools). With it on, the Run
+In the web UI, workers only read unless step mode is on (the **step**
+checkbox in the top bar, which makes chat turns ask before risky tools). With it on, the Run
 asks the server for step mode: workers get their agent's tools, and a
 risky call opens the approval dialog, which names the worker (agent,
 subtask number and description). Workers ask one at a time.
