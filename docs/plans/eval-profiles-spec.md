@@ -84,6 +84,13 @@ flowchart LR
 |---|---|
 | F31 | **Suite integrity.** A tasks file may set `[eval] integrity = ["<dir>", …]` (paths relative to the tasks file). The runner hashes those directories before the first run and after every check; on any change it marks the current and remaining runs `infra_error` ("suite modified during the run") and the report flags the run as untrustworthy. |
 
+### Final review (F32–F33)
+
+| Row | Behaviour |
+|---|---|
+| F32 | **Every run is checked, whatever its status.** The integrity hash is recomputed after every run (pass, fail, timeout, agent error, interrupted) and once more at the end of the eval; a change marks the run where it was found and the remaining runs `infra_error` and sets `integrity_violated`. |
+| F33 | **The integrity hash is robust and cheap.** The eval's own output directory and the system temp dir are excluded from hashing; `--check` errors if an integrity directory contains the output directory. The hash covers each file's path, size, mtime (ns) and content, so a change that's reverted before the next hash is still detected through mtime; a symlink inside an integrity directory is hashed by its target's content when the target lies under an integrity directory. Files are hashed streaming (no whole-file reads) on a blocking thread. `docs/eval.md` says checks must not write inside integrity directories. |
+
 ## Testing notes
 
 - **F1/F2/F8** through `EvalRunner` with a scripted mock provider that calls tools (`write_file` then reply), a temp tasks dir, and a success check (`test -f out.txt`). Check isolation: two runs of a task that appends to a file each see the original.
