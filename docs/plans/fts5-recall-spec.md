@@ -41,6 +41,21 @@ Found while implementing G1–G7.
 | G9 | **The index doesn't depend on row numbers.** The FTS5 table stores the memory `id` (unindexed) and is kept in sync by triggers keyed on `id`, so a `VACUUM` or any rowid renumbering can't misalign it. Opening a store whose index disagrees with `memories` (count or ids) rebuilds it. |
 | G10 | **Decay weight scales the score, as `bm25` does.** The `fts5` score is `-bm25() × weight`, so a decayed memory ranks below an equally matching fresh one, and G3's top-result parity holds on a corpus with mixed weights. |
 
+### Review round 1 (G11–G19)
+
+Review measured that G9's id-keyed table makes every trigger delete scan the whole FTS table: the daily decay on open took 25.7 s at 10,000 memories (quadratic; other processes' writes timed out meanwhile), single writes took 11–44 ms at 50,000, and concurrent opens failed 1 time in 6 on trigger re-creation.
+
+| Row | Behaviour |
+|---|---|
+| G11 | **Writes cost the same at any store size.** The FTS table is keyed through a mapping table (`memory id → FTS rowid`, unique on both), so triggers delete by FTS rowid; the update trigger fires only when `content` or `description` change, not on `weight`. Measured bounds (release, tests may use generous margins): `record`, replace and `forget` of one memory stay under 5 ms at 50,000 memories; a decay pass over 10,000 memories (opening with the daily decay due) finishes in under 1 s. Rowid renumbering of `memories` still can't misalign the index (G9). |
+| G12 | **Concurrent opens never fail.** All FTS setup (table, mapping table, triggers, consistency check and rebuild) runs inside one `BEGIN IMMEDIATE` transaction, and triggers are created only when missing or when their stored SQL differs from the current definition, not dropped and recreated on every open. Two stores opening the same database at the same time both succeed, every time. |
+| G13 | **`fts5` and `bm25` agree on what a word is.** Both tokenizers split on non-(Unicode letter or digit), lowercase, and fold diacritics the same way (NFD, combining marks removed, so `kąt`→`kat` and `café`→`cafe` in both; `ł` stays `ł` in both, as in unicode61). The FTS5 query keeps tokens of 2 or more characters that aren't stop words, removes duplicates, and when there are more than 32 keeps the 32 rarest (by document frequency in the index), not the first 32. G3's top-result parity holds on queries with 2-letter words, accents and prompts longer than 32 words. |
+| G14 | **Reindexing is atomic.** `hone memory reindex` / `reindex_fts` rebuilds inside one transaction; a concurrent recall never sees an empty or doubled index. |
+| G15 | **Encrypted recall is cheaper.** `EncryptedStore`'s inner store doesn't maintain an FTS index (its content is ciphertext), and ranked recall doesn't load embeddings for the whole corpus, only for the memories it returns. |
+| G16 | **Forgotten text leaves the index.** The FTS table uses `secure-delete`, so a forgotten memory's tokens are no longer present in the index's stored data. |
+| G17 | **Failures fall back, visibly.** A recaller error is logged as a warning and the turn falls back to `bm25`; `fts5` on a store with no index uses `bm25` (with real scores). `hone strategies` shows the encrypted fallback as chosen by `--encrypted-memory`. |
+| G18 | **Docs match.** Spec row G1 and test headers describe the mapping-table design; `docs/configuration.md` notes that `memory.db` then needs an SQLite build with FTS5 for external tools that write to it. |
+
 ## Testing notes
 
 - **G1/G2/G7** on temp SQLite stores: inserts, updates (`record` is `INSERT OR REPLACE`), `forget`, reopening an old database without the FTS table, FTS5 syntax in prompts, 6,000-row corpora.
