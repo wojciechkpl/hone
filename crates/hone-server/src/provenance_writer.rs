@@ -94,6 +94,24 @@ impl EventMapper {
                     is_error: *is_error,
                 }]
             }
+            AgentEvent::ContextAssembled { receipt } => {
+                let receipt_sha256 = hone_proto::canonical_json_sha256(
+                    &serde_json::to_value(receipt).unwrap_or(serde_json::Value::Null),
+                );
+                vec![ProvenanceEvent::ContextAssembled {
+                    receipt_sha256,
+                    strategies: receipt
+                        .blocks
+                        .iter()
+                        .map(|b| b.strategy.name.clone())
+                        .collect(),
+                    sources: receipt
+                        .blocks
+                        .iter()
+                        .flat_map(|b| b.sources.iter().map(|s| s.source.clone()))
+                        .collect(),
+                }]
+            }
             _ => Vec::new(),
         }
     }
@@ -423,6 +441,8 @@ mod tests {
             dropped: vec![],
             compaction: vec![],
             tools_offered: vec![],
+            history_len: 0,
+            history_root: String::new(),
         }
     }
 

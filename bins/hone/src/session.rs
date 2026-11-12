@@ -19,7 +19,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use hone_proto::Message;
+use hone_proto::{ContextReceipt, Message};
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -35,11 +35,24 @@ pub struct SessionMeta {
     pub message_count: usize,
 }
 
+/// A context receipt as stored with a session. `run` numbers the processes that
+/// saved to the session (turn numbers restart when a session is resumed), and
+/// `seq` orders the receipts within a run.
+#[derive(Debug, Clone)]
+pub struct StoredReceipt {
+    pub run: u32,
+    pub seq: u32,
+    pub receipt: ContextReceipt,
+}
+
 // ── Session store ─────────────────────────────────────────────────────────────
 
 /// Handle to the sessions SQLite database.
 pub struct SessionStore {
     pool: SqlitePool,
+    /// Per session id: the run this store instance writes receipts to, and how
+    /// many receipts it has stored there.
+    receipt_runs: tokio::sync::Mutex<std::collections::HashMap<String, (u32, usize)>>,
 }
 
 impl SessionStore {
@@ -65,7 +78,124 @@ impl SessionStore {
         .await
         .context("failed to create cli_sessions table")?;
 
-        Ok(Self { pool })
+        // Context receipts, keyed by the session id (a rename keeps them; a
+        // delete removes them). Created in place for databases made before.
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS context_receipts (
+                session_id TEXT NOT NULL REFERENCES cli_sessions(id) ON DELETE CASCADE,
+                run        INTEGER NOT NULL,
+                seq        INTEGER NOT NULL,
+                turn       INTEGER NOT NULL,
+                call       INTEGER NOT NULL,
+                receipt    TEXT NOT NULL,
+                PRIMARY KEY (session_id, run, seq)
+            )",
+        )
+        .execute(&pool)
+        .await
+        .context("failed to create context_receipts table")?;
+
+        Ok(Self {
+            pool,
+            receipt_runs: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+        })
+    }
+
+    /// Store the agent's context receipts (`AgentHandle::get_context_receipts`,
+    /// oldest first) with the session. The first call of this store instance for
+    /// a session starts a new run (`max(run) + 1`) and stores them all; later
+    /// calls store only the receipts beyond those already stored. Errors when the
+    /// session does not exist.
+    pub async fn append_context_receipts(
+        &self,
+        session_name: &str,
+        receipts: &[ContextReceipt],
+    ) -> Result<()> {
+        let id = self
+            .session_id(session_name)
+            .await?
+            .with_context(|| format!("session '{session_name}' not found"))?;
+
+        let mut runs = self.receipt_runs.lock().await;
+        let (run, stored) = match runs.get(&id) {
+            Some(&state) => state,
+            None => {
+                let (max_run,): (i64,) = sqlx::query_as(
+                    "SELECT COALESCE(MAX(run), 0) FROM context_receipts WHERE session_id = ?",
+                )
+                .bind(&id)
+                .fetch_one(&self.pool)
+                .await
+                .context("failed to read the receipt runs")?;
+                (max_run as u32 + 1, 0)
+            }
+        };
+
+        let mut tx = self.pool.begin().await?;
+        for (index, receipt) in receipts.iter().enumerate().skip(stored) {
+            let json = serde_json::to_string(receipt).context("failed to serialize a receipt")?;
+            sqlx::query(
+                "INSERT INTO context_receipts (session_id, run, seq, turn, call, receipt)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&id)
+            .bind(run as i64)
+            .bind(index as i64 + 1)
+            .bind(receipt.turn as i64)
+            .bind(receipt.call as i64)
+            .bind(json)
+            .execute(&mut *tx)
+            .await
+            .context("failed to store a context receipt")?;
+        }
+        tx.commit().await?;
+        runs.insert(id, (run, receipts.len().max(stored)));
+        Ok(())
+    }
+
+    /// Every stored receipt of the session, ordered by `(run, seq)`. Empty for an
+    /// unknown session or one without receipts.
+    pub async fn list_context_receipts(&self, session_name: &str) -> Result<Vec<StoredReceipt>> {
+        let rows: Vec<(i64, i64, String)> = sqlx::query_as(
+            "SELECT r.run, r.seq, r.receipt
+             FROM context_receipts r JOIN cli_sessions s ON s.id = r.session_id
+             WHERE s.name = ?
+             ORDER BY r.run, r.seq",
+        )
+        .bind(session_name)
+        .fetch_all(&self.pool)
+        .await
+        .with_context(|| format!("failed to read the receipts of session '{session_name}'"))?;
+        rows.into_iter()
+            .map(|(run, seq, json)| {
+                Ok(StoredReceipt {
+                    run: run as u32,
+                    seq: seq as u32,
+                    receipt: serde_json::from_str(&json).context("bad stored receipt")?,
+                })
+            })
+            .collect()
+    }
+
+    /// The id of the session called `name`, if there is one.
+    async fn session_id(&self, name: &str) -> Result<Option<String>> {
+        let row: Option<(String,)> = sqlx::query_as("SELECT id FROM cli_sessions WHERE name = ?")
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await
+            .with_context(|| format!("failed to look up session '{name}'"))?;
+        Ok(row.map(|(id,)| id))
+    }
+
+    /// The name of the most recently updated session, if any.
+    pub async fn latest_session_name(&self) -> Result<Option<String>> {
+        let row: Option<(String,)> = sqlx::query_as(
+            "SELECT name FROM cli_sessions ORDER BY updated_at DESC, rowid DESC LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to find the latest session")?;
+        Ok(row.map(|(n,)| n))
     }
 
     /// Save (insert or replace) a named session.
@@ -159,6 +289,15 @@ impl SessionStore {
 
     /// Delete a named session.  Returns an error when the session does not exist.
     pub async fn delete_session(&self, name: &str) -> Result<()> {
+        // Receipts first (the foreign key would cascade, but only when enabled).
+        sqlx::query(
+            "DELETE FROM context_receipts
+             WHERE session_id IN (SELECT id FROM cli_sessions WHERE name = ?)",
+        )
+        .bind(name)
+        .execute(&self.pool)
+        .await
+        .with_context(|| format!("failed to delete the receipts of session '{name}'"))?;
         let rows_affected = sqlx::query("DELETE FROM cli_sessions WHERE name = ?")
             .bind(name)
             .execute(&self.pool)
@@ -402,6 +541,8 @@ mod tests {
             dropped: vec![],
             compaction: vec![],
             tools_offered: vec!["read_file".to_owned()],
+            history_len: 0,
+            history_root: String::new(),
         }
     }
 

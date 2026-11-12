@@ -627,6 +627,9 @@ pub struct Agent {
     /// Hashes of the non-system messages of the previous receipt (for the incremental
     /// `History` listing).
     receipt_history: std::collections::HashSet<String>,
+    /// The context receipts of this agent's life, oldest first (newest
+    /// `MAX_KEPT_RECEIPTS` at most).
+    receipts: Vec<hone_proto::ContextReceipt>,
     metrics: Arc<ContextMetrics>,
     /// Per-turn guard state (reset at the top of each `run_turn` call).
     guards: TurnGuards,
@@ -667,6 +670,9 @@ pub(crate) const RECALL_LIMIT: usize = 5;
 /// The RRF constant `k` for fusing BM25 and semantic recall.
 pub(crate) const RECALL_RRF_K: usize = 60;
 
+/// How many context receipts an agent keeps (the newest).
+const MAX_KEPT_RECEIPTS: usize = 10_000;
+
 impl Agent {
     pub fn new(mut config: AgentConfig) -> Self {
         let metrics = Arc::new(ContextMetrics::new());
@@ -704,6 +710,7 @@ impl Agent {
             turn_count: 0,
             receipt_info: TurnContextInfo::default(),
             receipt_history: std::collections::HashSet::new(),
+            receipts: Vec::new(),
             metrics,
             guards: TurnGuards::default(),
             error_event_sent: false,
@@ -788,6 +795,35 @@ impl Agent {
     /// Snapshot of all context management metrics accumulated so far.
     pub fn metrics_snapshot(&self) -> MetricsSnapshot {
         self.metrics.snapshot()
+    }
+
+    /// Keep `receipt` for `get_context_receipts`, and add its audit line when an
+    /// egress log is configured: span kind `context`, the receipt as arguments,
+    /// the sum of the blocks' durations, the turn's trace and span as parent.
+    async fn keep_receipt(&mut self, receipt: &hone_proto::ContextReceipt, trace: &TraceContext) {
+        self.receipts.push(receipt.clone());
+        if self.receipts.len() > MAX_KEPT_RECEIPTS {
+            let excess = self.receipts.len() - MAX_KEPT_RECEIPTS;
+            self.receipts.drain(..excess);
+        }
+        if let Some(log) = &self.config.egress_log {
+            let (span_id, parent_span_id) = trace.child_span();
+            let entry = EgressEntry {
+                timestamp: now_rfc3339(),
+                tool: "context_assembled".to_owned(),
+                arguments: serde_json::to_value(receipt).unwrap_or(serde_json::Value::Null),
+                result_preview: String::new(),
+                blocked: false,
+                block_reason: None,
+                injection_risk: None,
+                duration_ms: receipt.blocks.iter().map(|b| u64::from(b.duration_ms)).sum(),
+                trace_id: trace.trace_id.clone(),
+                span_id,
+                parent_span_id,
+                span_kind: SpanKind::Context,
+            };
+            log.lock().await.record(entry);
+        }
     }
 
     /// Names of the skills whose triggers match `prompt` (for context receipts).
@@ -1577,6 +1613,7 @@ impl Agent {
                     &message_hashes,
                     &mut self.receipt_history,
                 );
+                self.keep_receipt(&receipt, &turn_trace).await;
                 let _ = events.send(AgentEvent::ContextAssembled { receipt }).await;
             }
 
@@ -3292,6 +3329,10 @@ enum AgentCommand {
     GetMessages {
         reply: oneshot::Sender<Vec<Message>>,
     },
+    /// Return the context receipts kept so far, oldest first.
+    GetContextReceipts {
+        reply: oneshot::Sender<Vec<hone_proto::ContextReceipt>>,
+    },
     /// Replace the agent's system prompt (for inline @agent persona dispatch).
     SetSystemPrompt {
         prompt: String,
@@ -3426,6 +3467,9 @@ impl AgentHandle {
                     }
                     AgentCommand::GetMessages { reply } => {
                         let _ = reply.send(agent.messages());
+                    }
+                    AgentCommand::GetContextReceipts { reply } => {
+                        let _ = reply.send(agent.receipts.clone());
                     }
                     AgentCommand::SetSystemPrompt { prompt } => {
                         agent.config.system_prompt = prompt;
@@ -3588,6 +3632,21 @@ impl AgentHandle {
         if self
             .cmd_tx
             .send(AgentCommand::GetMessages { reply: tx })
+            .await
+            .is_err()
+        {
+            return Vec::new();
+        }
+        rx.await.unwrap_or_default()
+    }
+
+    /// The context receipts of this agent's life (one per model call), oldest
+    /// first; the newest 10,000 at most. Used by the session save.
+    pub async fn get_context_receipts(&self) -> Vec<hone_proto::ContextReceipt> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .cmd_tx
+            .send(AgentCommand::GetContextReceipts { reply: tx })
             .await
             .is_err()
         {

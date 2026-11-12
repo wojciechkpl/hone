@@ -56,6 +56,8 @@ fn receipt(turn: u32, call: u32, prefix12: &str) -> ContextReceipt {
         dropped: vec![],
         compaction: vec![],
         tools_offered: vec![],
+        history_len: 0,
+        history_root: String::new(),
     }
 }
 

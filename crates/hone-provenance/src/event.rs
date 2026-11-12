@@ -10,6 +10,13 @@ pub enum ProvenanceEvent {
     ToolCall { name: String, arguments: Value },
     ToolResult { name: String, result: Value, is_error: bool },
     SessionEnd { reason: String },
+    /// What one model call was given (a context receipt, by reference: its
+    /// hash, the strategy names and every source, in order).
+    ContextAssembled {
+        receipt_sha256: String,
+        strategies: Vec<String>,
+        sources: Vec<hone_proto::SourceRef>,
+    },
 }
 
 /// One entry in the chain. `prev_hash` links to the previous entry; the
