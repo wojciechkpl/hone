@@ -275,28 +275,37 @@ async fn build_memory_store_fails_with_wrong_passphrase() {
             .expect("record");
     }
 
-    // Re-open with a wrong passphrase.
+    // Re-open with a wrong passphrase: G25, it fails at open and changes nothing.
     let sqlite2 = SqliteStore::open_with_decay_interval(&db_path, 0)
         .await
         .expect("reopen sqlite");
-    let store2: Arc<dyn MemoryStore> = build_memory_store(sqlite2, Some("wrong-passphrase"))
+    let err = build_memory_store(sqlite2, Some("wrong-passphrase"))
         .await
-        .expect("build with wrong passphrase must succeed (salt sentinel is present)");
+        .err()
+        .expect("building with a wrong passphrase must be an error");
+    assert!(
+        err.to_string().to_lowercase().contains("passphrase"),
+        "the error names the passphrase: {err}"
+    );
 
-    // Recall must fail because the ciphertext cannot be decrypted with the wrong key.
-    let result = store2
+    // The right passphrase still recalls the data (nothing was changed).
+    let sqlite3 = SqliteStore::open_with_decay_interval(&db_path, 0)
+        .await
+        .expect("reopen sqlite again");
+    let store3: Arc<dyn MemoryStore> = build_memory_store(sqlite3, Some("hunter2"))
+        .await
+        .expect("the right passphrase opens it");
+    let got = store3
         .recall(&MemoryQuery {
             text: String::new(),
             limit: 10,
             kind: None,
         })
-        .await;
-
+        .await
+        .expect("recall");
     assert!(
-        result.is_err(),
-        "recall through an EncryptedStore opened with the wrong passphrase must return Err; \
-         got Ok({:?})",
-        result.ok()
+        got.iter().any(|m| m.content == "sensitive content"),
+        "the data is intact: {got:?}"
     );
 }
 

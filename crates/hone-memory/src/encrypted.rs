@@ -693,42 +693,55 @@ mod tests {
 
     #[tokio::test]
     async fn test_wrong_passphrase_fails() {
-        let inner = InMemoryStore::new();
-        let store = EncryptedStore::new(inner, "correct-passphrase")
-            .await
-            .expect("create encrypted store");
+        // G25: a wrong passphrase fails at open and changes nothing; the right one still
+        // recalls the data.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("memory.db");
+        {
+            let inner = crate::SqliteStore::open_without_fts(&path).await.unwrap();
+            let store = EncryptedStore::new(inner, "correct-passphrase")
+                .await
+                .expect("create encrypted store");
+            store
+                .record(Memory {
+                    id: "m1".to_string(),
+                    content: "secret data".to_string(),
+                    tags: vec![],
+                    weight: 1.0,
+                    created_at: 1000,
+                    decay_at: None,
+                    kind: crate::types::MemoryKind::Conversation,
+                    description: None,
+                    embedding: None,
+                })
+                .await
+                .unwrap();
+        }
 
-        store
-            .record(Memory {
-                id: "m1".to_string(),
-                content: "secret data".to_string(),
-                tags: vec![],
-                weight: 1.0,
-                created_at: 1000,
-                decay_at: None,
-                kind: crate::types::MemoryKind::Conversation,
-                description: None,
-                embedding: None,
-            })
+        let inner = crate::SqliteStore::open_without_fts(&path).await.unwrap();
+        let err = EncryptedStore::new(inner, "wrong-passphrase")
             .await
-            .unwrap();
+            .err()
+            .expect("a wrong passphrase must fail at open");
+        assert!(
+            err.to_string().to_lowercase().contains("passphrase"),
+            "the error says why: {err}"
+        );
 
-        // Create a new store wrapping the same inner but with wrong passphrase.
-        // This must succeed (salt sentinel is present, key is derived) but
-        // recall must fail because the ciphertext was encrypted with a different key.
-        let wrong_store = EncryptedStore::new(store.inner, "wrong-passphrase")
+        let inner = crate::SqliteStore::open_without_fts(&path).await.unwrap();
+        let right = EncryptedStore::new(inner, "correct-passphrase")
             .await
-            .expect("create store");
-
-        let result = wrong_store
+            .expect("the right passphrase still opens it");
+        let got = right
             .recall(&MemoryQuery {
                 text: String::new(),
                 limit: 10,
                 kind: None,
             })
-            .await;
-
-        assert!(result.is_err(), "wrong passphrase should fail decryption");
+            .await
+            .unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].content, "secret data");
     }
 
     #[test]
