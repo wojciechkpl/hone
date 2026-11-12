@@ -28,13 +28,16 @@ function hide(id) { document.getElementById(id).classList.add('hidden'); }
 let lastStartError = null;
 
 // Run a daemon start command; remember why it failed instead of dropping it.
+// Returns the daemon status the command reports, or null if it failed.
 async function startDaemon(command, args) {
   try {
-    await invoke(command, args);
+    const status = await invoke(command, args);
     lastStartError = null;
+    return status;
   } catch (e) {
     lastStartError = String(e);
     console.warn(e);
+    return null;
   }
 }
 
@@ -1544,13 +1547,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   const state = loadState();
-  if (!state.mode) {
+  // The Rust side decides from the saved choice and the active profile in
+  // desktop.json, and starts the managed daemon when either says so (a no-op
+  // for an external daemon). The wizard shows only when neither chose one.
+  const booted = await startDaemon('daemon_boot', { savedMode: state.mode || null });
+  const chosen = state.mode || lastStartError || (booted && booted.mode !== 'none');
+  if (!chosen) {
     show('wizard');
   } else {
     show('home');
-    // Starts the managed daemon when the saved choice (or the active profile)
-    // says so; a no-op for an external daemon.
-    await startDaemon('daemon_boot', { savedMode: state.mode });
     refreshDaemon();
   }
 
