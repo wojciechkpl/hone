@@ -267,3 +267,74 @@ async fn test_m3_exclusion_should_apply_to_enumeration_too() {
         .unwrap();
     assert_eq!(ids(&got), ["feedback"]);
 }
+
+// ---- M10: listing keeps the embedding -------------------------------------------
+//
+// The BM25 corpus query may leave `embedding` out (M8), but enumeration (an empty
+// query, used by listings, the memory index and `GET /memory`) must still return
+// it. For a non-empty query either is acceptable and not pinned.
+
+fn with_embedding(mut m: Memory, e: Vec<f32>) -> Memory {
+    m.embedding = Some(e);
+    m
+}
+
+#[tokio::test]
+async fn test_m10_empty_query_enumeration_should_return_the_stored_embedding() {
+    let store = SqliteStore::in_memory().await.unwrap();
+    store
+        .record(with_embedding(
+            mem("with", "has a vector", MemoryKind::Feedback, 2),
+            vec![0.25, -0.5, 1.0],
+        ))
+        .await
+        .unwrap();
+    store
+        .record(mem("without", "no vector", MemoryKind::Feedback, 1))
+        .await
+        .unwrap();
+
+    let got = store.recall(&q("", 10, None)).await.unwrap();
+
+    let with = got.iter().find(|m| m.id == "with").unwrap();
+    assert_eq!(with.embedding.as_deref(), Some(&[0.25, -0.5, 1.0][..]));
+    let without = got.iter().find(|m| m.id == "without").unwrap();
+    assert!(without.embedding.is_none());
+}
+
+#[tokio::test]
+async fn test_m10_enumeration_with_a_kind_filter_should_return_the_embedding_too() {
+    let store = SqliteStore::in_memory().await.unwrap();
+    store
+        .record(with_embedding(
+            mem("with", "has a vector", MemoryKind::User, 1),
+            vec![1.0, 2.0],
+        ))
+        .await
+        .unwrap();
+
+    let got = store.recall(&q("", 10, Some(MemoryKind::User))).await.unwrap();
+
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].embedding.as_deref(), Some(&[1.0, 2.0][..]));
+}
+
+#[tokio::test]
+async fn test_m10_enumeration_with_exclusions_should_return_the_embedding_too() {
+    let store = SqliteStore::in_memory().await.unwrap();
+    store
+        .record(with_embedding(
+            mem("with", "has a vector", MemoryKind::Feedback, 1),
+            vec![3.0],
+        ))
+        .await
+        .unwrap();
+
+    let got = store
+        .recall_excluding(&q("", 10, None), &[MemoryKind::Outcome])
+        .await
+        .unwrap();
+
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].embedding.as_deref(), Some(&[3.0][..]));
+}
