@@ -166,11 +166,15 @@ impl Default for ContextConfig {
 /// compaction gives a similar benefit without full context reset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskPhase {
-    /// Mostly read tools: read_file, grep, glob, git_status.
+    /// Mostly read tools: read_file, grep, glob, git_status, git_diff,
+    /// list_dir, web_fetch, MCP tools, and any `shell` call that is not a test
+    /// run.
     Exploration,
-    /// Write tools appear: write_file, edit_file, multi_edit, shell (writes).
+    /// A write tool appears: write_file, edit_file, multi_edit, apply_patch
+    /// (alias apply_diff).
     Editing,
-    /// Test execution: shell with test commands.
+    /// Test execution: a `shell` call that runs a test suite (see
+    /// [`classify_tool_call`]).
     Verification,
 }
 
@@ -189,17 +193,24 @@ impl PhaseTracker {
         }
     }
 
-    /// Observe a tool call and return the new phase if a transition occurred.
+    /// Observe a tool call by name only and return the new phase if a
+    /// transition occurred.
+    #[cfg(test)]
     fn observe_tool(&mut self, tool_name: &str) -> Option<(TaskPhase, TaskPhase)> {
+        self.observe_kind(classify_by_name(tool_name))
+    }
+
+    /// Observe an already classified tool call.
+    fn observe_kind(&mut self, kind: ToolPhaseKind) -> Option<(TaskPhase, TaskPhase)> {
         let old = self.current_phase;
 
-        if is_test_tool(tool_name) {
+        if kind == ToolPhaseKind::Test {
             self.consecutive_read_tools = 0;
             if old != TaskPhase::Verification {
                 self.current_phase = TaskPhase::Verification;
                 return Some((old, TaskPhase::Verification));
             }
-        } else if is_write_tool(tool_name) {
+        } else if kind == ToolPhaseKind::Write {
             self.consecutive_read_tools = 0;
             if old == TaskPhase::Exploration {
                 self.current_phase = TaskPhase::Editing;
@@ -223,15 +234,103 @@ impl PhaseTracker {
     }
 }
 
-fn is_write_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "write_file" | "edit_file" | "multi_edit" | "apply_diff"
-    )
+/// How the phase tracker sees a tool call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolPhaseKind {
+    /// Anything that is not a write or a test run (also unknown and MCP tools).
+    Read,
+    /// `write_file`, `edit_file`, `multi_edit`, `apply_patch` (alias `apply_diff`).
+    Write,
+    /// A test run: the legacy name `run_tests`, or a `shell` call that runs a
+    /// test runner.
+    Test,
 }
 
-fn is_test_tool(name: &str) -> bool {
-    name == "run_tests"
+/// Classify by tool name alone (`shell` is a read without its arguments).
+fn classify_by_name(name: &str) -> ToolPhaseKind {
+    match name {
+        "write_file" | "edit_file" | "multi_edit" | "apply_patch" | "apply_diff" => {
+            ToolPhaseKind::Write
+        }
+        "run_tests" => ToolPhaseKind::Test,
+        _ => ToolPhaseKind::Read,
+    }
+}
+
+/// Classify a tool call for phase tracking, using its arguments: a `shell` call
+/// whose `command` string runs a test runner in any segment is a test run.
+pub fn classify_tool_call(name: &str, args: &serde_json::Value) -> ToolPhaseKind {
+    if name == "shell" {
+        let runs_tests = args
+            .get("command")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(command_runs_tests);
+        return if runs_tests {
+            ToolPhaseKind::Test
+        } else {
+            ToolPhaseKind::Read
+        };
+    }
+    classify_by_name(name)
+}
+
+/// Whether any segment of a shell command line (split on `&&`, `||`, `;`, `|`
+/// and newlines) runs a test runner. Leading `NAME=value` assignments and the
+/// wrappers `env`, `time`, `uv run`, `poetry run`, `pdm run`, `npx`, `bunx`,
+/// `pnpm exec` and `bundle exec` are skipped before matching.
+fn command_runs_tests(command: &str) -> bool {
+    command.split(['\n', ';', '|', '&']).any(segment_runs_tests)
+}
+
+fn segment_runs_tests(segment: &str) -> bool {
+    let mut tokens: Vec<&str> = segment.split_whitespace().collect();
+    // Drop assignments and wrappers until the real command starts.
+    loop {
+        match tokens.as_slice() {
+            [t, ..] if is_assignment(t) => {
+                tokens.remove(0);
+            }
+            ["env" | "time" | "npx" | "bunx", ..] => {
+                tokens.remove(0);
+            }
+            ["uv" | "poetry" | "pdm", "run", ..]
+            | ["pnpm", "exec", ..]
+            | ["bundle", "exec", ..] => {
+                tokens.drain(..2);
+            }
+            _ => break,
+        }
+    }
+    match tokens.as_slice() {
+        ["cargo", "test" | "nextest", ..] => true,
+        [
+            "pytest" | "py.test" | "jest" | "vitest" | "ctest" | "rspec" | "phpunit" | "tox"
+            | "nox",
+            ..,
+        ] => true,
+        ["python" | "python3", "-m", "pytest" | "unittest", ..] => true,
+        ["npm" | "pnpm", "test", ..] => true,
+        ["npm" | "pnpm", "run", script, ..] => script.starts_with("test"),
+        [
+            "yarn" | "bun" | "deno" | "go" | "mvn" | "gradle" | "./gradlew" | "make" | "flutter"
+            | "dart" | "mix" | "swift" | "dotnet",
+            "test",
+            ..,
+        ] => true,
+        _ => false,
+    }
+}
+
+/// `NAME=value` (a shell variable assignment before a command).
+fn is_assignment(token: &str) -> bool {
+    match token.split_once('=') {
+        Some((name, _)) => {
+            !name.is_empty()
+                && !name.starts_with(|c: char| c.is_ascii_digit())
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }
+        None => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +391,20 @@ impl ContextManager {
     /// occurs (e.g., exploration → editing), exploration results are
     /// aggressively compacted.
     pub fn notify_tool_call(&mut self, tool_name: &str) {
-        if let Some((from, to)) = self.phase_tracker.observe_tool(tool_name) {
+        let kind = classify_by_name(tool_name);
+        self.notify_kind(kind);
+    }
+
+    /// Like [`notify_tool_call`](Self::notify_tool_call), but classified with
+    /// the call's arguments, so a `shell` call that runs a test suite counts as
+    /// a test run.
+    pub fn notify_tool_use(&mut self, tool_name: &str, args: &serde_json::Value) {
+        let kind = classify_tool_call(tool_name, args);
+        self.notify_kind(kind);
+    }
+
+    fn notify_kind(&mut self, kind: ToolPhaseKind) {
+        if let Some((from, to)) = self.phase_tracker.observe_kind(kind) {
             if from == TaskPhase::Exploration
                 && (to == TaskPhase::Editing || to == TaskPhase::Verification)
             {

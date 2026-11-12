@@ -51,7 +51,7 @@ pub use code_mode::{CodeModeOutput, CodeModeRunner};
 pub use complexity::{ComplexityClassifier, ComplexityTier};
 pub use context::{
     CONTEXT_WINDOW_ENV, ContextConfig, ContextManager, MAX_CONTEXT_WINDOW, MIN_CONTEXT_WINDOW,
-    TaskPhase, parse_context_window,
+    TaskPhase, ToolPhaseKind, classify_tool_call, parse_context_window,
 };
 pub use context_injector::{
     ContextInjector, InjectionResult, RetrievalConfidence, SkeletonStrategy,
