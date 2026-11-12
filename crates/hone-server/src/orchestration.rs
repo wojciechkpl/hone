@@ -501,4 +501,26 @@ mod tests {
         names.sort();
         assert_eq!(names, vec!["glob", "grep", "read_file"]);
     }
+
+    fn cr9_receipt(turn: u32, call: u32) -> hone_proto::ContextReceipt {
+        hone_proto::ContextReceipt {
+            turn,
+            call,
+            model: "mock:test".to_owned(),
+            request_sha256: "ab".repeat(32),
+            blocks: vec![],
+            dropped: vec![],
+            compaction: vec![],
+            tools_offered: vec!["read_file".to_owned()],
+        }
+    }
+
+    // CR9 of docs/plans/context-receipts-spec.md: a context receipt has its own SSE name.
+    #[test]
+    fn cr9_make_sse_event_names_a_context_assembled_event() {
+        let ev = AgentEvent::ContextAssembled { receipt: cr9_receipt(1, 1) };
+        let frame = format!("{:?}", make_sse_event(ev, 3));
+        assert!(frame.contains("event: context_assembled"), "{frame}");
+        assert!(!frame.contains("event: unknown"), "{frame}");
+    }
 }

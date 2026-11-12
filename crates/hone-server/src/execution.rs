@@ -505,4 +505,24 @@ mod tests {
         // Event::data is not directly inspectable, but construction must not panic.
         let _ = sse;
     }
+
+    fn cr9_receipt(turn: u32, call: u32) -> hone_proto::ContextReceipt {
+        hone_proto::ContextReceipt {
+            turn,
+            call,
+            model: "mock:test".to_owned(),
+            request_sha256: "ab".repeat(32),
+            blocks: vec![],
+            dropped: vec![],
+            compaction: vec![],
+            tools_offered: vec!["read_file".to_owned()],
+        }
+    }
+
+    // CR9 of docs/plans/context-receipts-spec.md: a context receipt has its own SSE name.
+    #[test]
+    fn cr9_event_type_names_a_context_assembled_event() {
+        let ev = AgentEvent::ContextAssembled { receipt: cr9_receipt(1, 1) };
+        assert_eq!(event_type(&ev), "context_assembled");
+    }
 }

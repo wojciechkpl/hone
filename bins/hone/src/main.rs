@@ -7832,4 +7832,52 @@ mod tui_panic_restore_tests {
             std::time::Duration::from_secs(5)
         ));
     }
+
+    // CR9 of docs/plans/context-receipts-spec.md. Seam (pure fn in main.rs; `run_json_mode`
+    // collects the `ContextAssembled` events and calls it on the report before printing):
+    //   fn attach_context(report: serde_json::Value, receipts: &[hone_proto::ContextReceipt])
+    //       -> serde_json::Value
+    // Adds `"context": [receipt, ...]` in call order (always present, `[]` when none) and
+    // leaves every other field unchanged.
+    fn cr9_receipt(turn: u32, call: u32) -> hone_proto::ContextReceipt {
+        hone_proto::ContextReceipt {
+            turn,
+            call,
+            model: "mock:test".to_owned(),
+            request_sha256: "ab".repeat(32),
+            blocks: vec![],
+            dropped: vec![],
+            compaction: vec![],
+            tools_offered: vec![],
+        }
+    }
+
+    #[test]
+    fn test_cr9_json_report_should_carry_the_receipts_in_call_order() {
+        let report = serde_json::json!({ "response": "hi", "success": true });
+        let out = attach_context(report, &[cr9_receipt(1, 1), cr9_receipt(1, 2), cr9_receipt(2, 1)]);
+        let calls: Vec<(u64, u64)> = out["context"]
+            .as_array()
+            .expect("a context array")
+            .iter()
+            .map(|r| (r["turn"].as_u64().unwrap(), r["call"].as_u64().unwrap()))
+            .collect();
+        assert_eq!(calls, [(1, 1), (1, 2), (2, 1)]);
+        assert_eq!(out["response"], "hi", "other fields are untouched");
+        assert_eq!(out["success"], true);
+    }
+
+    #[test]
+    fn test_cr9_json_report_should_have_an_empty_context_array_without_receipts() {
+        let out = attach_context(serde_json::json!({ "response": "hi" }), &[]);
+        assert_eq!(out["context"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn test_cr9_attached_receipts_should_deserialise_back() {
+        let out = attach_context(serde_json::json!({}), &[cr9_receipt(3, 4)]);
+        let back: hone_proto::ContextReceipt =
+            serde_json::from_value(out["context"][0].clone()).unwrap();
+        assert_eq!((back.turn, back.call), (3, 4));
+    }
 }
