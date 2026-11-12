@@ -510,11 +510,37 @@ impl SqliteStore {
 
         scored.sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
 
-        let results = scored
+        let mut results: Vec<Memory> = scored
             .into_iter()
             .take(query.limit)
             .map(|(_, m)| m)
             .collect();
+
+        // The corpus was read without the embedding column; load the vectors of
+        // the memories actually returned, in one bound query.
+        if !results.is_empty() {
+            let marks: Vec<String> = (1..=results.len()).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "SELECT id, embedding FROM memories WHERE id IN ({})",
+                marks.join(", ")
+            );
+            let mut q = sqlx::query(&sql);
+            for m in &results {
+                q = q.bind(&m.id);
+            }
+            let rows = q.fetch_all(&self.pool).await.map_err(to_io_err)?;
+            let mut by_id: std::collections::HashMap<String, Vec<f32>> = rows
+                .iter()
+                .filter_map(|row| {
+                    let id: String = row.try_get("id").ok()?;
+                    let bytes: Vec<u8> = row.try_get::<Option<Vec<u8>>, _>("embedding").ok()??;
+                    Some((id, bytes_to_embedding(&bytes)))
+                })
+                .collect();
+            for m in &mut results {
+                m.embedding = by_id.remove(&m.id);
+            }
+        }
 
         Ok(results)
     }
