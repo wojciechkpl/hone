@@ -528,12 +528,12 @@ async fn test_s7_phase_true_should_compact_when_a_write_follows_reads_a() {
         no_inject: true,
         ..Default::default()
     };
+    // Six reads then an edit: r1 is older than the recent window (4 for `mock:test`),
+    // so phase compaction summarises it.
     let rounds = || {
-        vec![
-            vec![read("r1")],
-            vec![read("r2")],
-            vec![call("e1", "edit_file", json!({ "tag": "e1" }))],
-        ]
+        let mut r: Vec<_> = (1..=6).map(|i| vec![read(&format!("r{i}"))]).collect();
+        r.push(vec![call("e1", "edit_file", json!({ "tag": "e1" }))]);
+        r
     };
 
     let off = run(
