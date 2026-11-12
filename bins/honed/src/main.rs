@@ -10,6 +10,7 @@ use hone_server::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    hone_tools::install_panic_cleanup();
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();

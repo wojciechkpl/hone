@@ -107,6 +107,44 @@ pub fn kill_running_commands() {
     unix::kill_all();
 }
 
+/// Whether a panic on this thread ends hone: always with `panic = "abort"`,
+/// otherwise only on the main thread (a thread or task panic is contained).
+#[doc(hidden)]
+pub fn panic_ends_process() -> bool {
+    cfg!(panic = "abort") || std::thread::current().name() == Some("main")
+}
+
+/// The panic hook's cleanup: stop every registered group like
+/// [`kill_running_commands`], but wait at most `lock_wait` for the registry
+/// (the panicking thread may hold it). Returns `false`, having stopped nothing,
+/// if the registry stayed locked. Runs once; concurrent callers wait for it and
+/// return `true`. Off unix: `true`, does nothing.
+#[doc(hidden)]
+pub fn stop_groups_on_panic(lock_wait: Duration) -> bool {
+    #[cfg(unix)]
+    {
+        unix::stop_on_panic(lock_wait)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = lock_wait;
+        true
+    }
+}
+
+/// Install a panic hook that runs the previous hook first, then, when the
+/// panic ends hone ([`panic_ends_process`]), calls [`stop_groups_on_panic`]
+/// with a 100 ms registry wait, so no command or MCP server outlives a crash.
+pub fn install_panic_cleanup() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        prev(info);
+        if panic_ends_process() {
+            stop_groups_on_panic(Duration::from_millis(100));
+        }
+    }));
+}
+
 /// Kill only the shell-command groups (commands, test runs), with `SIGKILL`,
 /// and leave registered MCP groups running, for an exit that goes on to shut
 /// the MCP servers down gracefully itself. A no-op off unix.
@@ -154,7 +192,7 @@ mod unix {
     use std::time::{Duration, Instant};
 
     /// Running groups: group id -> is it an MCP server group (else a command).
-    static RUNNING: Mutex<Option<HashMap<i32, bool>>> = Mutex::new(None);
+    pub(super) static RUNNING: Mutex<Option<HashMap<i32, bool>>> = Mutex::new(None);
 
     /// How long an abrupt exit waits for MCP groups to leave after `SIGTERM`.
     const TERM_GRACE: Duration = Duration::from_secs(1);
@@ -329,40 +367,107 @@ mod unix {
         }
     }
 
+    /// SIGKILL the command groups in `map` and return the MCP groups. Callers
+    /// hold the registry lock only for this call.
+    fn kill_shell_in(map: &Option<HashMap<i32, bool>>) -> Vec<i32> {
+        let mut mcp_groups = Vec::new();
+        if let Some(map) = map {
+            for (&pgid, &mcp) in map {
+                if mcp {
+                    mcp_groups.push(pgid);
+                } else {
+                    kill_group(pgid);
+                }
+            }
+        }
+        mcp_groups
+    }
+
     pub(super) fn kill_all() {
-        kill_shell();
-        // MCP groups: SIGTERM, wait (without the lock) until they are gone, then
-        // SIGKILL what is left and deregister, so a later guard drop does not
-        // signal a reused group id.
-        let mcp_groups: Vec<i32> = RUNNING
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .map(|map| {
-                map.iter()
-                    .filter(|(_, mcp)| **mcp)
-                    .map(|(p, _)| *p)
-                    .collect()
-            })
-            .unwrap_or_default();
+        let mcp_groups = kill_shell_in(&RUNNING.lock().unwrap_or_else(PoisonError::into_inner));
+        stop_mcp(&mcp_groups, None);
+    }
+
+    /// Run `f` on the registry. `wait: None` blocks for the lock (poison is
+    /// ignored); `Some(d)` polls for at most `d` and returns `None` if the
+    /// registry stayed locked (a panicking thread may hold it for good).
+    fn with_registry<R>(
+        wait: Option<Duration>,
+        f: impl FnOnce(&mut Option<HashMap<i32, bool>>) -> R,
+    ) -> Option<R> {
+        let Some(wait) = wait else {
+            return Some(f(&mut RUNNING
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)));
+        };
+        let deadline = Instant::now() + wait;
+        loop {
+            match RUNNING.try_lock() {
+                Ok(mut map) => return Some(f(&mut map)),
+                Err(std::sync::TryLockError::Poisoned(e)) => return Some(f(&mut e.into_inner())),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if Instant::now() >= deadline {
+                        return None;
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+        }
+    }
+
+    /// MCP groups: SIGTERM, wait (without the lock) until they are gone, then
+    /// SIGKILL what is left and deregister, so a later guard drop does not
+    /// signal a reused group id. With `wait: Some(d)` (the panic path) every
+    /// registry access waits at most `d`: if the registry stays locked the
+    /// group is still SIGKILLed, just not deregistered. After one such timeout
+    /// the remaining accesses only try once, so the waits don't add up.
+    fn stop_mcp(mcp_groups: &[i32], mut wait: Option<Duration>) {
         if mcp_groups.is_empty() {
             return;
         }
-        for &pgid in &mcp_groups {
+        for &pgid in mcp_groups {
             signal_group(pgid, libc::SIGTERM);
         }
         let deadline = Instant::now() + TERM_GRACE;
         while Instant::now() < deadline && !mcp_groups.iter().all(|&p| group_gone(p)) {
             std::thread::sleep(Duration::from_millis(20));
         }
-        for &pgid in &mcp_groups {
-            if unregister(pgid) {
+        for &pgid in mcp_groups {
+            let registered = with_registry(wait, |m| {
+                m.as_mut().is_some_and(|m| m.remove(&pgid).is_some())
+            });
+            if registered.is_none() {
+                wait = Some(Duration::ZERO);
+            }
+            if registered != Some(false) {
                 kill_group(pgid);
             }
         }
         // A command may have started while we waited (another task running
         // under the grace period): kill those too, so none outlives the exit.
-        kill_shell();
+        with_registry(wait, |m| {
+            kill_shell_in(m);
+        });
+    }
+
+    /// Serialises panic cleanups; `true` once one has finished.
+    static PANIC_CLEANUP: Mutex<bool> = Mutex::new(false);
+
+    /// The panic hook's body. Waits at most `lock_wait` for the registry (the
+    /// panicking thread may hold it itself); on timeout returns `false`, stops
+    /// nothing and latches nothing. The cleanup runs once; other callers block
+    /// until it is done and return `true`.
+    pub(super) fn stop_on_panic(lock_wait: Duration) -> bool {
+        let mut done = PANIC_CLEANUP.lock().unwrap_or_else(PoisonError::into_inner);
+        if *done {
+            return true;
+        }
+        let Some(mcp_groups) = with_registry(Some(lock_wait), |m| kill_shell_in(m)) else {
+            return false;
+        };
+        stop_mcp(&mcp_groups, Some(lock_wait));
+        *done = true;
+        true
     }
 }
 
@@ -376,4 +481,202 @@ impl GroupGuard {
     }
     fn disarm(&mut self) {}
     fn kill(&mut self) {}
+}
+
+#[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod panic_lock_tests {
+    //! C4 of `docs/plans/panic-stops-processes-spec.md`: the panic hook's body,
+    //! `stop_groups_on_panic(lock_wait) -> bool`, cannot hang when the group
+    //! registry is locked, even by the panicking thread itself. These need the
+    //! registry lock, so they live in the crate: they take `unix::RUNNING`
+    //! directly (the implementer must make it `pub(super)`). Neither test may
+    //! see the cleanup succeed, so the "ran once" state (if any) stays unset.
+    use super::*;
+    use std::os::unix::process::CommandExt;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    /// The tests share the process-wide registry.
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn sleeper() -> (std::process::Child, ProcessGroupGuard) {
+        let child = std::process::Command::new("sleep")
+            .arg("300")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let guard = ProcessGroupGuard::new(child.id());
+        (child, guard)
+    }
+
+    #[test]
+    fn test_c4_registry_locked_by_another_thread_should_skip_cleanup_within_a_second() {
+        let _s = SERIAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (mut child, mut guard) = sleeper();
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let _held = unix::RUNNING
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            locked_tx.send(()).unwrap();
+            std::thread::sleep(Duration::from_millis(1500));
+        });
+        locked_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        let start = Instant::now();
+        let ran = stop_groups_on_panic(Duration::from_millis(100));
+        let took = start.elapsed();
+        let still_running = child.try_wait().unwrap().is_none();
+
+        holder.join().unwrap();
+        guard.kill();
+        let _ = child.wait();
+        assert!(!ran, "the registry was unavailable: nothing was stopped");
+        assert!(
+            took < Duration::from_secs(1),
+            "waited {took:?} for the lock"
+        );
+        assert!(still_running, "a skipped cleanup must not kill anything");
+    }
+
+    #[test]
+    fn test_c4_registry_locked_by_the_calling_thread_should_skip_cleanup_within_a_second() {
+        let _s = SERIAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (mut child, mut guard) = sleeper();
+
+        let held = unix::RUNNING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let start = Instant::now();
+        let ran = stop_groups_on_panic(Duration::from_millis(100));
+        let took = start.elapsed();
+        drop(held);
+        let still_running = child.try_wait().unwrap().is_none();
+
+        guard.kill();
+        let _ = child.wait();
+        assert!(!ran, "the registry was unavailable: nothing was stopped");
+        assert!(
+            took < Duration::from_secs(1),
+            "hung {took:?} on our own lock"
+        );
+        assert!(still_running, "a skipped cleanup must not kill anything");
+    }
+
+    // ---- C8: two panics at once cannot hang hone ---------------------------
+    //
+    // The scenario can deadlock for good today, and a stuck thread would hold
+    // the registry for the rest of this test binary, so it runs in a child
+    // process (this same test binary, filtered to `c8_scenario`) with a bounded
+    // wait. The child test is a no-op unless the parent set `C8_DIR_ENV`.
+
+    const C8_DIR_ENV: &str = "HONE_C8_CHILD_DIR";
+
+    fn ps_alive(pid: &str) -> bool {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", pid])
+            .output()
+            .unwrap();
+        let stat = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        !stat.is_empty() && !stat.starts_with('Z')
+    }
+
+    /// Child side. Thread A's cleanup is in the SIGTERM grace; thread B
+    /// "panicked while holding the registry" (it locks `RUNNING`, then calls the
+    /// hook body) and keeps the lock until both calls were seen. Both calls must
+    /// return within a few seconds and the SIGTERM-ignoring server must be gone
+    /// (SIGKILLed even though the registry stayed locked).
+    #[test]
+    fn c8_scenario_child_only_runs_under_the_parent() {
+        let Some(dir) = std::env::var_os(C8_DIR_ENV) else {
+            return;
+        };
+        let dir = std::path::PathBuf::from(dir);
+        let mut server = std::process::Command::new("sh")
+            .args(["-c", "trap '' TERM; exec sleep 300"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = server.id();
+        std::fs::write(dir.join("server.pid"), pid.to_string()).unwrap();
+        std::mem::forget(ProcessGroupGuard::new(pid));
+        std::thread::sleep(Duration::from_millis(300)); // `trap` and `exec` ran
+
+        let (tx, rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let tx_a = tx.clone();
+        std::thread::spawn(move || {
+            let r = stop_groups_on_panic(Duration::from_millis(100));
+            let _ = tx_a.send(("A", r));
+        });
+        std::thread::sleep(Duration::from_millis(300));
+        std::thread::spawn(move || {
+            let _held = unix::RUNNING
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let r = stop_groups_on_panic(Duration::from_millis(100));
+            let _ = tx.send(("B", r));
+            let _ = release_rx.recv_timeout(Duration::from_secs(15));
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut got = Vec::new();
+        while got.len() < 2 {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match rx.recv_timeout(left) {
+                Ok(m) => got.push(m),
+                Err(_) => break,
+            }
+        }
+        let gone = !ps_alive(&pid.to_string());
+        let _ = release_tx.send(());
+        // SAFETY: killing the group we created above (pid > 1).
+        unsafe {
+            libc::killpg(pid as i32, libc::SIGKILL);
+        }
+        let _ = server.wait();
+        assert_eq!(got.len(), 2, "DEADLOCK: only {got:?} returned within 5 s");
+        assert!(gone, "the SIGTERM-ignoring server must be SIGKILLed anyway");
+    }
+
+    #[test]
+    fn test_c8_second_panic_while_holding_the_registry_should_not_deadlock_the_cleanup() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("child.log");
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["c8_scenario", "--test-threads=1", "--nocapture"])
+            .env(C8_DIR_ENV, dir.path())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::fs::File::create(&log).unwrap())
+            .stderr(std::fs::File::options().append(true).open(&log).unwrap())
+            .spawn()
+            .unwrap();
+        let start = Instant::now();
+        let status = loop {
+            if let Some(s) = child.try_wait().unwrap() {
+                break Some(s);
+            }
+            if start.elapsed() > Duration::from_secs(25) {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        // Never leak the server, whatever happened.
+        if let Ok(pid) = std::fs::read_to_string(dir.path().join("server.pid")) {
+            let _ = std::process::Command::new("kill")
+                .args(["-9", pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+        let out = std::fs::read_to_string(&log).unwrap_or_default();
+        let status = status.unwrap_or_else(|| panic!("scenario hung; log:\n{out}"));
+        assert!(status.success(), "scenario failed; log:\n{out}");
+    }
 }

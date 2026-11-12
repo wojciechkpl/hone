@@ -137,6 +137,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and (until "shell commands stop when their call ends" below) <kbd>Esc</kbd> didn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: a panic stops MCP servers and commands, and restores the TUI terminal
+
+- **Before:** a panic in `hone` or `honed` (release builds abort on panic) left MCP servers and running shell commands behind, since they run in their own process groups. A panic in the TUI also left the terminal in raw mode on the alternate screen.
+- **Now:**
+  - A panic that ends Hone stops them as a normal exit does: commands get SIGKILL, servers get SIGTERM and then SIGKILL after about 1 s. A panic that Hone survives (in a thread or a task) stops nothing.
+  - If a panic happens while the TUI is running, the terminal is restored before the panic message is printed.
+  - `kill -9`, the OOM killer, and a crash that isn't a panic (a segfault, a stack overflow, an abort from C code) still leave a server that ignores its input closing running.
+- Contract: `docs/plans/panic-stops-processes-spec.md`.
+
 ### Fixed: MCP servers start and stop in parallel
 
 - **Before:** hone started MCP servers one after another and waited for each one's handshake before starting the next, so startup took the sum of their start times. A hung server held up the rest by its whole handshake timeout (60 s by default), and several `npx -y …` servers downloaded their packages one at a time. Exit stopped servers one after another too, giving each one that ignored its input closing 5 s. The message hone sends a server at exit had no time limit, so a server that had stopped reading could keep hone from exiting at all.
