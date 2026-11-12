@@ -1111,10 +1111,12 @@ fn build_agent_config(
         max_tokens: None,
         temperature: None,
         budget_limit: session_limit_usd,
+        // The fallback when an agent has no price lookup. Real prices come from
+        // `price_lookup` (the default table and `[pricing]`), set on the agent.
         pricing: PricingEntry {
             model: model_id.clone(),
-            input_per_million: 3.0,
-            output_per_million: 15.0,
+            input_per_million: 0.0,
+            output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
         },
@@ -1962,6 +1964,7 @@ async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
     });
 
     let result = agent.run_turn(prompt, tx).await;
+    note_unpriced(&agent).await;
     finish_one_shot(result, printer).await
 }
 
@@ -1996,6 +1999,7 @@ async fn run_one_shot_content(agent: AgentHandle, content: Content) -> Result<()
     });
 
     let result = agent.run_turn_content(content, tx).await;
+    note_unpriced(&agent).await;
     finish_one_shot(result, printer).await
 }
 
@@ -2066,8 +2070,9 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
     // One fresh agent per run, so the session's spend is this run's spend,
     // including model calls of a turn that failed or was cancelled.
     let spend = agent.session_spend().await;
+    let cost_known = !note_unpriced(&agent).await;
 
-    let output = json_mode_output(
+    let mut output = json_mode_output(
         &turn_result,
         response,
         tool_calls,
@@ -2076,6 +2081,7 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
         model_id,
         &fallbacks,
     );
+    output["cost_known"] = serde_json::json!(cost_known);
     let output = attach_context(output, &receipts);
     println!("{}", serde_json::to_string_pretty(&output)?);
 
@@ -3041,6 +3047,8 @@ async fn main() -> Result<()> {
     apply_policy_flags(&mut base_config, &cli.approve);
 
     let agent = AgentHandle::spawn(base_config.clone());
+    let prices = price_lookup(&eff.pricing);
+    agent.set_price_lookup(Arc::clone(&prices)).await;
 
     // Session resume: load history into the freshly spawned agent.
     let is_resume = matches!(
@@ -3109,6 +3117,7 @@ async fn main() -> Result<()> {
             dispatch,
             pinned: pinned_choice,
         }),
+        prices,
     )
     .await;
 
@@ -3160,6 +3169,7 @@ async fn run_selected_mode(
     session_name: Option<String>,
     no_clarify: bool,
     routing: Option<TuiRouting>,
+    prices: hone_core::PriceLookup,
 ) -> Result<()> {
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -3311,6 +3321,7 @@ async fn run_selected_mode(
         cli.vim,
         step_tx,
         routing,
+        prices,
     )
     .await;
 
@@ -3612,6 +3623,37 @@ impl FallbackPrinter {
     }
 }
 
+/// Prices by model: `PricingTable::default_table()` with the user's
+/// `[pricing."provider:model"]` entries on top. `None` = no price.
+fn price_lookup(user_entries: &[PricingEntry]) -> hone_core::PriceLookup {
+    let mut table = hone_providers::PricingTable::default_table();
+    for entry in user_entries {
+        table.insert(entry.clone());
+    }
+    Arc::new(move |model: &ModelId| table.get(model).cloned())
+}
+
+/// `(input, output)` rates per million tokens of `model`; zero without a price.
+fn rates_for(lookup: &hone_core::PriceLookup, model: &str) -> (f64, f64) {
+    lookup(&ModelId::new(model)).map_or((0.0, 0.0), |p| {
+        (p.input_per_million, p.output_per_million)
+    })
+}
+
+/// The stderr note for a model without a price.
+fn unpriced_note(model: &str) -> String {
+    format!("hone: no price for {model}; its usage isn't counted towards cost or [budget]")
+}
+
+/// Print one stderr note per unpriced model of the session; true when any.
+async fn note_unpriced(agent: &AgentHandle) -> bool {
+    let models = agent.unpriced_models().await;
+    for m in &models {
+        eprintln!("{}", unpriced_note(m));
+    }
+    !models.is_empty()
+}
+
 fn record_outcome_for_event(
     event: &AgentEvent,
     adaptive: &Option<Arc<AdaptiveClassifier>>,
@@ -3670,6 +3712,7 @@ async fn run_tui(
     vim: bool,
     step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
     routing: Option<TuiRouting>,
+    prices: hone_core::PriceLookup,
 ) -> Result<()> {
     let mut app = if vim { App::with_vim() } else { App::new() };
     // Wire step-mode sender into app so it can unblock the agent.
@@ -3790,6 +3833,7 @@ async fn run_tui(
     // Model of the last `ModelFallback` of the running turn: the adaptive
     // classifier records the turn under it, since it gave the answer.
     let mut turn_fallback_model: Option<String> = None;
+    let mut noted_unpriced: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Install a SIGINT handler so the process shuts down cleanly when the
     // terminal sends Ctrl+C at the OS level (e.g. from a wrapper script).
@@ -4242,9 +4286,18 @@ async fn run_tui(
             maybe_agent = agent_rx.recv() => {
                 if let Some(event) = maybe_agent {
                     note_turn_fallback(&event, &mut turn_fallback_model);
-                    record_outcome_for_event(&event, &adaptive, &mut current_tier, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str()), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
+                    record_outcome_for_event(&event, &adaptive, &mut current_tier, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str()), rates_for(&prices, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str())).0, rates_for(&prices, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str())).1, &current_turn_prompt);
                     end_turn_fallback(&event, &mut turn_fallback_model);
+                    let turn_done = matches!(event, AgentEvent::Done { .. });
                     app.handle_agent_event(event);
+                    if turn_done {
+                        // Once per unpriced model: its usage costs nothing.
+                        for m in agent.unpriced_models().await {
+                            if noted_unpriced.insert(m.clone()) {
+                                app.push_system_message(unpriced_note(&m));
+                            }
+                        }
+                    }
                     // When a turn completes, clear the abort handle and restore
                     // any follow-up message the user typed while waiting.
                     if matches!(app.state(), AppState::Idle | AppState::Error(_)) {
@@ -4300,8 +4353,20 @@ async fn run_tui(
                 turn_fallback_model
                     .as_deref()
                     .unwrap_or(current_turn_model.as_str()),
-                base_config.pricing.input_per_million,
-                base_config.pricing.output_per_million,
+                rates_for(
+                    &prices,
+                    turn_fallback_model
+                        .as_deref()
+                        .unwrap_or(current_turn_model.as_str()),
+                )
+                .0,
+                rates_for(
+                    &prices,
+                    turn_fallback_model
+                        .as_deref()
+                        .unwrap_or(current_turn_model.as_str()),
+                )
+                .1,
                 &current_turn_prompt,
             );
             end_turn_fallback(&event, &mut turn_fallback_model);

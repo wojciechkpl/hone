@@ -42,7 +42,7 @@ pub mod test_loop;
 mod turn;
 
 #[allow(deprecated)]
-pub use agent::{Agent, AgentConfig, AgentHandle, RunSettings, is_read_only_tool};
+pub use agent::{Agent, AgentConfig, AgentHandle, PriceLookup, RunSettings, is_read_only_tool};
 pub use agent_def::{AgentDef, AgentDefError};
 pub use agent_registry::{AgentRegistry, AllowlistRejection, filtered_registry};
 pub use audit::{AuditEntry, AuditError, AuditFilter, AuditKind, AuditLog, InMemoryAuditLog};

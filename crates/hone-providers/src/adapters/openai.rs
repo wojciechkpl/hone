@@ -337,6 +337,31 @@ pub fn parse_sse_chunk(
     events
 }
 
+/// Feeds one `data:` payload to [`parse_sse_chunk`] for the stream reader. A
+/// `Done` from a `finish_reason` chunk is held back (`held_done`) so the usage
+/// chunk that OpenAI-compatible servers send after it (`choices: []`) still
+/// precedes the single final `Done`, emitted at `[DONE]` or at the end of the
+/// stream.
+fn feed_chunk(
+    data: &str,
+    tool_states: &mut HashMap<usize, ToolCallState>,
+    held_done: &mut bool,
+    out: &mut Vec<ProviderEvent>,
+) {
+    let end_marker = data == "[DONE]";
+    for event in parse_sse_chunk(data, tool_states) {
+        if matches!(event, ProviderEvent::Done) {
+            *held_done = true;
+        } else {
+            out.push(event);
+        }
+    }
+    if end_marker && *held_done {
+        *held_done = false;
+        out.push(ProviderEvent::Done);
+    }
+}
+
 /// The message of an in-band `error` value (an object with `message`, or a string).
 fn in_band_error_message(err: &Value) -> String {
     err["message"]
@@ -444,8 +469,16 @@ impl ModelProvider for OpenAiProvider {
                 HashMap::<usize, ToolCallState>::new(),
                 super::http_common::Utf8Decoder::default(),
                 super::http_common::StreamProgress::default(),
+                false,
             ),
-            |(mut byte_stream, mut buffer, mut tool_states, mut decoder, mut progress)| async move {
+            |(
+                mut byte_stream,
+                mut buffer,
+                mut tool_states,
+                mut decoder,
+                mut progress,
+                mut held_done,
+            )| async move {
                 loop {
                     if progress.should_stop() {
                         return None;
@@ -458,8 +491,7 @@ impl ModelProvider for OpenAiProvider {
                         buffer.drain(..pos + 1);
 
                         if let Some(data) = line.strip_prefix("data: ") {
-                            let parsed = parse_sse_chunk(data, &mut tool_states);
-                            emitted.extend(parsed);
+                            feed_chunk(data, &mut tool_states, &mut held_done, &mut emitted);
                         }
                     }
                     progress.observe(&mut emitted);
@@ -467,7 +499,14 @@ impl ModelProvider for OpenAiProvider {
                     if !emitted.is_empty() {
                         return Some((
                             stream::iter(emitted),
-                            (byte_stream, buffer, tool_states, decoder, progress),
+                            (
+                                byte_stream,
+                                buffer,
+                                tool_states,
+                                decoder,
+                                progress,
+                                held_done,
+                            ),
                         ));
                     }
 
@@ -487,16 +526,32 @@ impl ModelProvider for OpenAiProvider {
                             for line in remaining.lines() {
                                 let line = line.trim();
                                 if let Some(data) = line.strip_prefix("data: ") {
-                                    let parsed = parse_sse_chunk(data, &mut tool_states);
-                                    final_events.extend(parsed);
+                                    feed_chunk(
+                                        data,
+                                        &mut tool_states,
+                                        &mut held_done,
+                                        &mut final_events,
+                                    );
                                 }
+                            }
+                            if held_done {
+                                // A finish chunk with no `[DONE]` after it.
+                                held_done = false;
+                                final_events.push(ProviderEvent::Done);
                             }
                             progress.observe(&mut final_events);
                             final_events.extend(progress.end_events("openai", cause));
                             if !final_events.is_empty() {
                                 return Some((
                                     stream::iter(final_events),
-                                    (byte_stream, buffer, tool_states, decoder, progress),
+                                    (
+                                        byte_stream,
+                                        buffer,
+                                        tool_states,
+                                        decoder,
+                                        progress,
+                                        held_done,
+                                    ),
                                 ));
                             }
                             return None;
