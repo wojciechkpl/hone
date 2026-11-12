@@ -80,3 +80,13 @@ Doc notes for PR C's user docs: receipts are local diagnostics. Message hashes a
 - Strategy selection by config (PR D); until then `params_sha256` hashes built-in parameters.
 - Showing receipts in the TUI or desktop app.
 - `hone memory blame`.
+
+## Review round 1 for PR C (CR20–CR24)
+
+| Row | Behaviour |
+|---|---|
+| CR20 | **`hone trace` doesn't count receipts as tools.** `hone trace stats` and `hone trace list` skip audit lines with `span_kind: "context"` in tool counts and tool tables, and show them as a separate "model calls" count per session and in total. |
+| CR21 | **Receipts are stored by ordinal, not position.** Each agent numbers its receipts 1, 2, 3, … for its whole life and has an id. `AgentHandle::context_receipts_after(ordinal) -> ReceiptBatch { agent_id, items: Vec<(u64, ContextReceipt)> }` returns the kept receipts with ordinals above `ordinal`. `SessionStore::append_context_receipts` takes a `ReceiptBatch`; a run is one (process, session, agent id), so a new agent saving under the same session starts a new run, and `seq` is the ordinal. When the agent has dropped receipts that were never stored (the 10,000 cap), the first stored `seq` jumps and a warning is logged; later receipts are still stored. `get_context_receipts()` stays. |
+| CR22 | **Concurrent first saves don't collide.** The new run number is computed and the rows inserted in one `BEGIN IMMEDIATE` transaction, so two processes first-saving the same session get runs N and N+1, and neither loses its receipts. |
+| CR23 | **`hone context show` only reads.** It opens the sessions database read-only, doesn't create tables (a database without the receipts table shows the "no context receipts" note), and resolves the session by id without loading its messages. |
+| CR24 | **User docs.** A "Context receipts" section in `docs/configuration.md` (or its own page linked from the README) says what receipts record, where they're stored (`sessions.db`, `.hone/audit.jsonl` with `--audit`, `honed` provenance), how runs and turns are numbered (a new run per process; `hone --session NAME` replaces the session's messages, so older runs' message refs may no longer match), and the privacy notes: receipts hold ids, paths and hashes, never text; hashes are unsalted, so short messages can be confirmed by guessing; paths are as indexed; don't share audit logs from private work. Docs only. |
