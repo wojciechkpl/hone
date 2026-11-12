@@ -182,6 +182,21 @@ if [ -z "$only" ]; then
   fi
 fi
 
+# T25: when a `hone` binary is on PATH, the suite must load under `hone eval` (including
+# `[eval] integrity = ["checks", "reference"]`); `--check` validates without running anything.
+if [ -z "$only" ]; then
+  if command -v hone >/dev/null 2>&1; then
+    if (cd "$work" && hone eval "$tasks" --check) >"$work/hone-check.out" 2>&1; then
+      echo "OK    hone eval --check accepts the suite ($(tail -1 "$work/hone-check.out"))"
+    else
+      echo "FAIL  hone eval --check rejects the suite: $(tail -3 "$work/hone-check.out" | tr '\n' ' ')"
+      echo "x" >>"$work/failed"
+    fi
+  else
+    echo "NOTE  hone is not on PATH: skipping the hone eval --check test"
+  fi
+fi
+
 # T24 self-test: the launcher's sweep removes a stale read-only bundle and keeps a fresh one
 if [ -z "$only" ]; then
   mkdir -p "$work/tmp/evalchk.stale/checks" "$work/tmp/evalchk.fresh"

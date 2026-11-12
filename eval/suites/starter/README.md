@@ -72,7 +72,7 @@ changed (a hash manifest in `checks/data/`).
 ## Verify the suite (no model)
 
 ```sh
-sh eval/suites/starter/verify.sh            # every task
+sh eval/suites/starter/verify.sh            # every task (also `hone eval ... --check` when hone is on PATH)
 sh eval/suites/starter/verify.sh c01-py-fix-median m02-mem-staging-port
 ```
 
@@ -101,6 +101,11 @@ This calls a real model: it costs API money, or local-model time (for example Ol
 workstation). Three repeats of 20 tasks under two profiles is 120 agent runs. Start with
 `--repeats 1` and a few tasks, and use `hone eval ... --check` first to validate the files without
 a model call.
+
+The tasks file declares `[eval] integrity = ["checks", "reference"]`: `hone eval` hashes those
+directories before the run and re-checks them after every run, and a change invalidates the run.
+Run it from the repository root (output goes to `./eval-runs`); an `--output` directory inside
+`checks/` or `reference/` is rejected.
 
 ## What the runner must provide
 
