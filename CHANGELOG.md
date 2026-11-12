@@ -18,6 +18,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - The README's desktop quick start uses `cargo install --path bins/honed --locked`, sets `ANTHROPIC_API_KEY`, says what to expect and what to do if the pill is red, and names where things are saved.
 - Contract: `docs/plans/desktop-sidecar-autostart-spec.md`.
 
+### Fixed: on Linux, the SIGTERM grace lasts through a shell launcher
+
+- **Before:** on Linux, once the first process of an MCP server's group (the shell in `sh -c "cd DIR && server"`) had exited, hone counted the whole group as gone. A server behind such a launcher got SIGKILL about 20 ms after SIGTERM, in the middle of its cleanup. macOS was already right.
+- **Now:** on Linux, hone reads `/proc` to see whether any process of the group is still alive, and waits up to the 1 s for it. If `/proc` can't be read, the old rule applies. `exec` in a launcher is still good practice, no longer needed for the grace.
+- Contract: `docs/plans/linux-launcher-grace-spec.md`.
+
 ### Fixed: `honed` drains with its tools, then stops MCP servers gracefully
 
 - **Before:** the first SIGINT, SIGTERM or SIGHUP killed every running shell command and sent every MCP server SIGTERM at once, and only then began waiting for open requests, with no time limit. A worker's running task lost its tools mid-task, and the task stayed claimed until its lease ran out. A request held open (an SSE stream, a run waiting for approval) kept `honed` running for as long as it stayed open. MCP servers never got a graceful shutdown.

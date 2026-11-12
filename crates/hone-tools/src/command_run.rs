@@ -278,7 +278,9 @@ mod unix {
             .is_some_and(|map| map.remove(&pgid).is_some())
     }
 
-    /// Whether group `pgid` has no live member we care about.
+    /// Drop from `pending` every group that is gone. Each group is checked at
+    /// most until it is seen gone (an empty group can't regain members), and
+    /// the `/proc` scan, where used, runs at most once per call.
     ///
     /// macOS: `killpg(pgid, 0)` returns ESRCH for an empty group and EPERM when
     /// only zombies are left (a launcher's reaped-by-nobody leader), so either
@@ -286,40 +288,128 @@ mod unix {
     /// the leader would be wrong here: a shell launcher's leader can exit while
     /// its child, the real server, is still handling SIGTERM.
     #[cfg(target_os = "macos")]
-    fn group_gone(pgid: i32) -> bool {
-        // SAFETY: `killpg(.., 0)` only checks existence.
-        let r = unsafe { libc::killpg(pgid, 0) };
-        r == -1
-            && matches!(
-                std::io::Error::last_os_error().raw_os_error(),
-                Some(libc::ESRCH | libc::EPERM)
-            )
+    fn retain_live_groups(pending: &mut Vec<i32>) {
+        pending.retain(|&pgid| {
+            // SAFETY: `killpg(.., 0)` only checks existence.
+            let r = unsafe { libc::killpg(pgid, 0) };
+            !(r == -1
+                && matches!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::ESRCH | libc::EPERM)
+                ))
+        });
     }
 
-    /// Whether group `pgid` has no live member we care about (other unix).
+    /// Drop from `pending` every group that is gone (other unix).
     ///
     /// There `killpg(pgid, 0)` keeps succeeding while an unreaped zombie
-    /// remains, so a leader that exited and only waits to be reaped counts as
-    /// gone, checked with `waitid(.., WNOWAIT)` (reaps nothing).
+    /// remains, so the leader's exit is checked with `waitid(.., WNOWAIT)`
+    /// (reaps nothing). On Linux a leader that exited does not mean the group
+    /// is gone: a shell launcher's leader can exit while its child, the real
+    /// server, is still handling SIGTERM, so `/proc` says whether any member
+    /// is alive; it is scanned lazily, once per call, for all groups. Where
+    /// `/proc` can't be read, and on the BSDs, an exited leader counts as gone.
     #[cfg(not(target_os = "macos"))]
-    fn group_gone(pgid: i32) -> bool {
-        // SAFETY: `waitid` with WNOHANG|WNOWAIT only inspects our child's state
-        // (it reaps nothing) and writes into a zeroed `siginfo_t` that lives for
-        // the call; `killpg(.., 0)` only checks existence.
-        unsafe {
-            let mut info: libc::siginfo_t = std::mem::zeroed();
-            let r = libc::waitid(
-                libc::P_PID,
-                pgid as libc::id_t,
-                &mut info,
-                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
-            );
-            if r == 0 && info.si_signo == libc::SIGCHLD {
-                return true; // the leader exited (a zombie nobody reaped yet)
+    fn retain_live_groups(pending: &mut Vec<i32>) {
+        #[cfg(target_os = "linux")]
+        let mut scan: Option<Option<std::collections::HashSet<i32>>> = None;
+        pending.retain(|&pgid| {
+            // SAFETY: `waitid` with WNOHANG|WNOWAIT only inspects our child's
+            // state (it reaps nothing) and writes into a zeroed `siginfo_t`
+            // that lives for the call; `killpg(.., 0)` only checks existence.
+            unsafe {
+                let mut info: libc::siginfo_t = std::mem::zeroed();
+                let r = libc::waitid(
+                    libc::P_PID,
+                    pgid as libc::id_t,
+                    &mut info,
+                    libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                );
+                if r == 0 && info.si_signo == libc::SIGCHLD {
+                    // The leader exited (a zombie nobody reaped yet).
+                    #[cfg(target_os = "linux")]
+                    {
+                        let live =
+                            scan.get_or_insert_with(|| live_pgrps(std::path::Path::new("/proc")));
+                        return !group_gone_after_leader_exit(
+                            live.as_ref().map(|set| set.contains(&pgid)),
+                        );
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    return false;
+                }
+                !(libc::killpg(pgid, 0) == -1
+                    && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH))
             }
-            libc::killpg(pgid, 0) == -1
-                && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        });
+    }
+
+    /// Whether a group whose leader has exited is gone, given the `/proc` scan
+    /// result (`None`: `/proc` unreadable). Only a scan that found a live
+    /// member keeps the group alive.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))] // only tests use it there
+    pub(super) fn group_gone_after_leader_exit(scan: Option<bool>) -> bool {
+        scan != Some(true)
+    }
+
+    /// The process groups that have a live member (any state but `Z` or `X`,
+    /// except that a `Z` whose `num_threads` is above 1 still runs threads),
+    /// by reading `<proc_root>/<pid>/stat` as bytes (`comm` is cut to 15 bytes
+    /// by the kernel and may split a UTF-8 character). `None` if `proc_root`
+    /// can't be read; entries that can't be read or parsed are skipped. The
+    /// fields after the LAST `)` are `state ppid pgrp ...` (the command name
+    /// may hold parentheses and spaces).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))] // only tests use it there
+    fn live_pgrps(proc_root: &std::path::Path) -> Option<std::collections::HashSet<i32>> {
+        let entries = std::fs::read_dir(proc_root).ok()?;
+        let mut live = std::collections::HashSet::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_digit()) {
+                continue;
+            }
+            let Ok(stat) = std::fs::read(entry.path().join("stat")) else {
+                continue;
+            };
+            let Some(close) = stat.iter().rposition(|&b| b == b')') else {
+                continue;
+            };
+            let mut fields = stat[close + 1..]
+                .split(|b| b.is_ascii_whitespace())
+                .filter(|f| !f.is_empty());
+            // Field 3 is the state; field 20 (`num_threads`) is the 18th.
+            let (Some(state), Some(_ppid), Some(pgrp)) =
+                (fields.next(), fields.next(), fields.next())
+            else {
+                continue;
+            };
+            let Some(pgrp) = std::str::from_utf8(pgrp)
+                .ok()
+                .and_then(|s| s.parse::<i32>().ok())
+            else {
+                continue;
+            };
+            let alive = match state {
+                b"X" => false,
+                b"Z" => fields
+                    .nth(14)
+                    .and_then(|f| std::str::from_utf8(f).ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .is_some_and(|threads| threads > 1),
+                _ => true,
+            };
+            if alive {
+                live.insert(pgrp);
+            }
         }
+        Some(live)
+    }
+
+    /// Whether some process of group `pgid` is alive; see [`live_pgrps`].
+    #[cfg(test)]
+    pub(super) fn group_has_live_member(proc_root: &std::path::Path, pgid: i32) -> Option<bool> {
+        live_pgrps(proc_root).map(|set| set.contains(&pgid))
     }
 
     /// Reset `signal` to its default action, unblock it and raise it. Returns
@@ -429,7 +519,12 @@ mod unix {
             signal_group(pgid, libc::SIGTERM);
         }
         let deadline = Instant::now() + TERM_GRACE;
-        while Instant::now() < deadline && !mcp_groups.iter().all(|&p| group_gone(p)) {
+        let mut pending = mcp_groups.to_vec();
+        while Instant::now() < deadline {
+            retain_live_groups(&mut pending);
+            if pending.is_empty() {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(20));
         }
         for &pgid in mcp_groups {
@@ -678,5 +773,268 @@ mod panic_lock_tests {
         let out = std::fs::read_to_string(&log).unwrap_or_default();
         let status = status.unwrap_or_else(|| panic!("scenario hung; log:\n{out}"));
         assert!(status.success(), "scenario failed; log:\n{out}");
+    }
+}
+
+#[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod proc_scan_tests {
+    //! L3 of `docs/plans/linux-launcher-grace-spec.md`: the `/proc` scan that
+    //! says whether a process group still has a live member, fed with a fake
+    //! `/proc` tree so it runs on every OS.
+    //!
+    //! API required: `unix::group_has_live_member(proc_root: &Path, pgid: i32)
+    //! -> Option<bool>` (`pub(super)` in the `unix` module, compiled on every
+    //! unix). Reads `<proc_root>/<pid>/stat` for every numeric entry; fields are
+    //! parsed after the LAST `)`: `<state> <ppid> <pgrp> ...`.
+    //! `Some(true)`: a process of group `pgid` whose state is not `Z` or `X`
+    //! exists; `Some(false)`: the root was read and there is none; `None`: the
+    //! root cannot be read. Entries that are not numbers, or whose `stat` cannot
+    //! be read or parsed, are skipped.
+    use super::unix::{group_gone_after_leader_exit, group_has_live_member};
+    use std::path::Path;
+
+    const PGID: i32 = 500;
+
+    fn stat(root: &Path, entry: &str, comm: &str, state: &str, pgrp: i32) {
+        let dir = root.join(entry);
+        std::fs::create_dir_all(&dir).unwrap();
+        // pid (comm) state ppid pgrp session tty_nr ...
+        std::fs::write(
+            dir.join("stat"),
+            format!("{entry} ({comm}) {state} 1 {pgrp} {pgrp} 0 -1 4194560 100 0 0 0 0 0 0 0 20 0 1 0 1 1000 100 18446744073709551615\n"),
+        )
+        .unwrap();
+    }
+
+    fn raw(root: &Path, entry: &str, content: &str) {
+        let dir = root.join(entry);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("stat"), content).unwrap();
+    }
+
+    #[test]
+    fn test_l3_member_in_a_live_state_should_count() {
+        for state in ["S", "R", "D", "T"] {
+            let root = tempfile::tempdir().unwrap();
+            stat(root.path(), "600", "server", state, PGID);
+            assert_eq!(
+                group_has_live_member(root.path(), PGID),
+                Some(true),
+                "state {state}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_l3_zombie_or_dead_members_only_should_not_count() {
+        for state in ["Z", "X"] {
+            let root = tempfile::tempdir().unwrap();
+            stat(root.path(), "500", "sh", state, PGID);
+            stat(root.path(), "600", "server", state, PGID);
+            assert_eq!(
+                group_has_live_member(root.path(), PGID),
+                Some(false),
+                "state {state}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_l3_zombie_leader_with_a_live_child_should_count() {
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "500", "sh", "Z", PGID);
+        stat(root.path(), "600", "server", "S", PGID);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+    }
+
+    #[test]
+    fn test_l3_members_of_other_groups_only_should_not_count() {
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "700", "other", "S", 501);
+        stat(root.path(), "701", "other", "R", 1);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l3_empty_proc_should_report_no_member() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l3_command_name_with_spaces_and_parentheses_should_parse_after_the_last_paren() {
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "600", "a) (b", "S", PGID);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "600", "a) (b", "Z", PGID);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l3_command_name_that_looks_like_fields_should_not_confuse_the_parse() {
+        // A naive whitespace split would read "S 1 500" out of the name.
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "600", "x) S 1 500 (y", "S", 9);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "600", "x) Z 1 9 (y", "S", PGID);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+    }
+
+    #[test]
+    fn test_l3_truncated_or_garbage_stat_should_be_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        raw(root.path(), "601", "garbage");
+        raw(root.path(), "602", "");
+        raw(root.path(), "603", "603 (x) S 1");
+        raw(root.path(), "604", "604 (unterminated S 1 500 500");
+        raw(root.path(), "605", "605 (x) S 1 notanumber 500");
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+
+        // ... and they do not hide a real member.
+        stat(root.path(), "600", "server", "S", PGID);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+    }
+
+    #[test]
+    fn test_l3_entry_without_a_readable_stat_should_be_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("601")).unwrap(); // vanished: no stat
+        std::fs::create_dir_all(root.path().join("602").join("stat")).unwrap(); // a directory
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l3_non_numeric_entries_should_be_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "self", "server", "S", PGID);
+        stat(root.path(), "thread-self", "server", "S", PGID);
+        stat(root.path(), "12ab", "server", "S", PGID);
+        std::fs::write(root.path().join("uptime"), "1 2").unwrap();
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l3_missing_proc_root_should_report_unknown() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(
+            group_has_live_member(&root.path().join("no-such-proc"), PGID),
+            None
+        );
+    }
+
+    // ---- L5-L7 (review round 1) -------------------------------------------------
+    //
+    // API required (in `mod unix`, `pub(super)`, compiled on every unix):
+    //   fn group_gone_after_leader_exit(scan: Option<bool>) -> bool
+    // where `scan` is `group_has_live_member`'s result once the leader has exited.
+    // `group_has_live_member` additionally: reads `stat` as BYTES (L5), and counts
+    // a `Z` entry whose `num_threads` (field 20, counting `pid` as field 1) is
+    // above 1 as alive (L6).
+
+    /// A full-length `stat` line (fields up to `starttime`), as bytes, with the
+    /// comm bytes and `num_threads` (field 20) given.
+    fn full_stat(pid: &str, comm: &[u8], state: &str, pgrp: i32, threads: u32) -> Vec<u8> {
+        let mut line = format!("{pid} (").into_bytes();
+        line.extend_from_slice(comm);
+        // fields 3..: state ppid pgrp session tty tpgid flags minflt cminflt majflt
+        // cmajflt utime stime cutime cstime priority nice num_threads(20) ...
+        line.extend_from_slice(
+            format!(") {state} 1 {pgrp} {pgrp} 0 -1 4194560 100 0 0 0 0 0 0 0 20 0 {threads} 0 1 1000 100\n")
+                .as_bytes(),
+        );
+        line
+    }
+
+    fn write_bytes(root: &Path, entry: &str, bytes: &[u8]) {
+        let dir = root.join(entry);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("stat"), bytes).unwrap();
+    }
+
+    #[test]
+    #[allow(invalid_from_utf8)] // the bytes are invalid on purpose
+    fn test_l5_command_name_that_is_not_utf8_should_not_hide_a_live_member() {
+        // "се" + the first byte of "р": Linux cut comm in the middle of a character.
+        let comm = [0xd1, 0x81, 0xd0, 0xb5, 0xd1];
+        assert!(std::str::from_utf8(&comm).is_err());
+        let root = tempfile::tempdir().unwrap();
+        write_bytes(root.path(), "600", &full_stat("600", &comm, "S", PGID, 1));
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+    }
+
+    #[test]
+    fn test_l5_non_utf8_name_should_still_respect_state_and_group() {
+        let comm = [0xff, 0xfe, 0x28, 0x29, 0x20]; // invalid bytes, "()" and a space
+        let root = tempfile::tempdir().unwrap();
+        write_bytes(root.path(), "600", &full_stat("600", &comm, "Z", PGID, 1));
+        write_bytes(root.path(), "601", &full_stat("601", &comm, "S", 501, 1));
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+        write_bytes(root.path(), "602", &full_stat("602", &comm, "R", PGID, 1));
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+    }
+
+    #[test]
+    fn test_l6_zombie_main_thread_with_running_threads_should_count_as_alive() {
+        for threads in [2, 5] {
+            let root = tempfile::tempdir().unwrap();
+            write_bytes(
+                root.path(),
+                "600",
+                &full_stat("600", b"server", "Z", PGID, threads),
+            );
+            assert_eq!(
+                group_has_live_member(root.path(), PGID),
+                Some(true),
+                "num_threads {threads}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_l6_true_zombie_with_one_thread_should_stay_dead() {
+        let root = tempfile::tempdir().unwrap();
+        write_bytes(root.path(), "600", &full_stat("600", b"sh", "Z", PGID, 1));
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l6_threaded_zombie_of_another_group_should_not_count() {
+        let root = tempfile::tempdir().unwrap();
+        write_bytes(root.path(), "600", &full_stat("600", b"x", "Z", 501, 4));
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l6_zombie_without_a_thread_count_should_keep_counting_as_dead() {
+        let root = tempfile::tempdir().unwrap();
+        // Short: no field 20 at all.
+        raw(root.path(), "600", "600 (sh) Z 1 500 500 0 -1");
+        // Field 20 is not a number.
+        raw(
+            root.path(),
+            "601",
+            "601 (sh) Z 1 500 500 0 -1 4194560 100 0 0 0 0 0 0 0 20 0 many 0 1",
+        );
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l7_fallback_should_count_the_group_gone_unless_the_scan_found_a_live_member() {
+        assert!(
+            group_gone_after_leader_exit(None),
+            "/proc unreadable: old rule, gone"
+        );
+        assert!(
+            group_gone_after_leader_exit(Some(false)),
+            "no live member: gone"
+        );
+        assert!(
+            !group_gone_after_leader_exit(Some(true)),
+            "a live member keeps the wait going"
+        );
     }
 }
