@@ -68,6 +68,16 @@ flowchart LR
 |---|---|
 | F25 | **A check's processes die with it.** The runner starts each success check in its own process group, kills the group when the check times out and after it finishes, so a check (or code it runs) that leaves background processes behind leaves nothing running. |
 
+### Review round 2 (F26–F30)
+
+| Row | Behaviour |
+|---|---|
+| F26 | **A task inside a larger repository gets only its own files.** When the task directory is a subdirectory of a git repository or worktree (not its root), the copy gets a fresh git repository with the task's files committed as one initial commit, so the agent sees the same thing wherever the suite is checked out; a task directory that is a repository root keeps its own history (F12). |
+| F27 | **It builds on Windows.** Signal handling in `eval_cmd.rs` is `#[cfg(unix)]`, with a `ctrl_c` fallback elsewhere. |
+| F28 | **The SHA is current.** The build script re-runs when the resolved branch ref changes (`refs/heads/<branch>` or `packed-refs`), not only `HEAD`. The manifest's `git_sha` field is removed (`hone_git_sha` and `suite_git_sha` remain). |
+| F29 | **Interrupted runs are complete in the report.** Runs that never started because of an interrupt are listed as `interrupted` in the manifest's outcomes. Config error text keeps newlines readable (escaped control characters except `\n`, rendered as separate indented lines). |
+| F30 | **Limits are documented.** `docs/eval.md` says a check that starts a new session (`setsid`) escapes the process-group kill, and that a copied `.git` directory's `core.worktree` is cleared and submodules aren't linked in copies. The copy clears `core.worktree` in a copied `.git/config`. |
+
 ## Testing notes
 
 - **F1/F2/F8** through `EvalRunner` with a scripted mock provider that calls tools (`write_file` then reply), a temp tasks dir, and a success check (`test -f out.txt`). Check isolation: two runs of a task that appends to a file each see the original.
