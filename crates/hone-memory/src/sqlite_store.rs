@@ -433,7 +433,7 @@ impl SqliteStore {
             format!("WHERE {}", conditions.join(" AND "))
         };
         let sql = format!(
-            "SELECT id, content, tags, weight, created_at, decay_at, kind, description, embedding
+            "SELECT id, content, tags, weight, created_at, decay_at, kind, description
              FROM memories
              {where_clause}
              ORDER BY created_at DESC

@@ -19,8 +19,10 @@ pub struct SqliteIndex {
 /// At most this many tokens of a query are used.
 const MAX_QUERY_TOKENS: usize = 16;
 
-/// Rows read per token: enough for ranking to pick the best few, bounded.
-const MAX_ROWS_PER_TOKEN: i64 = 2000;
+/// Rows read per search: a small multiple of `limit`, bounded.
+const FETCH_FACTOR: usize = 8;
+const MIN_FETCH: usize = 200;
+const MAX_FETCH: usize = 2000;
 
 const STOP_WORDS: &[&str] = &[
     "the", "and", "for", "are", "but", "not", "you", "all", "any", "can", "had", "her", "was",
@@ -207,88 +209,105 @@ impl SqliteIndex {
 
     /// Search symbols by name, for a plain-English prompt or an identifier.
     ///
-    /// The query is split into word tokens (see [`query_tokens`]); a symbol
-    /// matches if its name contains any token (case-insensitive). Results are
-    /// ranked by the number of distinct tokens the name contains, then exact >
-    /// prefix > substring match, then shorter name, and cut to `limit`. A query
-    /// with no usable token returns nothing.
+    /// The query is split into word tokens (see [`query_tokens`]): letters,
+    /// digits and `_`, lower-cased. Words under 3 characters and common English
+    /// stop words are not searched, and only the first 16 tokens are used. A
+    /// symbol matches if its name contains any token (case-insensitive).
+    ///
+    /// Results are ranked by the number of distinct tokens the name contains,
+    /// then exact > prefix > substring match, then shorter name, and cut to
+    /// `limit`. `score` follows that order and never increases down the list:
+    /// `(tokens matched - 1)` plus the tier (exact 1.0, prefix 0.8, substring
+    /// 0.5), so a single-token query scores as it always did. A query with no
+    /// usable token returns nothing.
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, IndexError> {
         let tokens = query_tokens(query);
         if tokens.is_empty() || limit == 0 {
             return Ok(Vec::new());
         }
 
-        // One bound `LIKE` per token. Per token the shortest names come first
-        // (they rank best), and the fetch is capped so a very common token
-        // cannot read the whole table.
-        let mut seen = std::collections::HashSet::new();
-        let mut ranked: Vec<(usize, SearchResult)> = Vec::new();
+        // ONE query: a bound `LIKE` per token, summed into `matched`, so names
+        // that contain more tokens come first. Only placeholders are built into
+        // the SQL. A small multiple of `limit` is read; the tier and the
+        // shorter-name order are applied in Rust among equal `matched`.
+        let like = |i: usize| format!("name LIKE ?{i} ESCAPE '\\'");
+        let matched_expr = (1..=tokens.len())
+            .map(|i| format!("({})", like(i)))
+            .collect::<Vec<_>>()
+            .join(" + ");
+        let where_expr = (1..=tokens.len())
+            .map(like)
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        let sql = format!(
+            "SELECT name, kind, file_path, line, col, {matched_expr} AS matched
+             FROM index_symbols
+             WHERE {where_expr}
+             ORDER BY matched DESC, length(name), name
+             LIMIT ?{}",
+            tokens.len() + 1
+        );
+        let fetch = limit
+            .saturating_mul(FETCH_FACTOR)
+            .clamp(MIN_FETCH, MAX_FETCH);
+        let mut q = sqlx::query(&sql);
         for token in &tokens {
-            let pattern = format!("%{}%", escape_like(token));
-            let rows = sqlx::query(
-                "SELECT rowid AS rid, name, kind, file_path, line, col
-                 FROM index_symbols
-                 WHERE name LIKE ? ESCAPE '\\' COLLATE NOCASE
-                 ORDER BY length(name), name
-                 LIMIT ?",
-            )
-            .bind(&pattern)
-            .bind(MAX_ROWS_PER_TOKEN)
+            q = q.bind(format!("%{}%", escape_like(token)));
+        }
+        let rows = q
+            .bind(fetch as i64)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-            for row in &rows {
-                let Ok(rid) = row.try_get::<i64, _>("rid") else {
-                    continue;
-                };
-                if !seen.insert(rid) {
-                    continue;
-                }
-                let (Ok(name), Ok(kind_str), Ok(file_path), Ok(line), Ok(col)) = (
-                    row.try_get::<String, _>("name"),
-                    row.try_get::<String, _>("kind"),
-                    row.try_get::<String, _>("file_path"),
-                    row.try_get::<i64, _>("line"),
-                    row.try_get::<i64, _>("col"),
-                ) else {
-                    continue;
-                };
-                let Some(kind) = str_to_kind(&kind_str) else {
-                    continue;
-                };
-                let name_lower = name.to_lowercase();
-                let matched = tokens
-                    .iter()
-                    .filter(|t| name_lower.contains(t.as_str()))
-                    .count();
-                let score = tokens
-                    .iter()
-                    .filter(|t| name_lower.contains(t.as_str()))
-                    .map(|t| {
-                        if name_lower == **t {
-                            SCORE_EXACT
-                        } else if name_lower.starts_with(t.as_str()) {
-                            SCORE_PREFIX
-                        } else {
-                            SCORE_SUBSTRING
-                        }
-                    })
-                    .fold(SCORE_SUBSTRING, f64::max);
-                ranked.push((
-                    matched,
-                    SearchResult {
-                        symbol: Symbol {
-                            name,
-                            kind,
-                            file: std::path::PathBuf::from(file_path),
-                            line: line as u32,
-                            col: col as u32,
-                        },
-                        score,
-                    },
-                ));
+        let mut ranked: Vec<(usize, SearchResult)> = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let (Ok(name), Ok(kind_str), Ok(file_path), Ok(line), Ok(col)) = (
+                row.try_get::<String, _>("name"),
+                row.try_get::<String, _>("kind"),
+                row.try_get::<String, _>("file_path"),
+                row.try_get::<i64, _>("line"),
+                row.try_get::<i64, _>("col"),
+            ) else {
+                continue;
+            };
+            let Some(kind) = str_to_kind(&kind_str) else {
+                continue;
+            };
+            let name_lower = name.to_lowercase();
+            let hits: Vec<&String> = tokens
+                .iter()
+                .filter(|t| name_lower.contains(t.as_str()))
+                .collect();
+            if hits.is_empty() {
+                continue;
             }
+            let tier = hits
+                .iter()
+                .map(|t| {
+                    if name_lower == **t {
+                        SCORE_EXACT
+                    } else if name_lower.starts_with(t.as_str()) {
+                        SCORE_PREFIX
+                    } else {
+                        SCORE_SUBSTRING
+                    }
+                })
+                .fold(SCORE_SUBSTRING, f64::max);
+            let matched = hits.len();
+            ranked.push((
+                matched,
+                SearchResult {
+                    symbol: Symbol {
+                        name,
+                        kind,
+                        file: std::path::PathBuf::from(file_path),
+                        line: line as u32,
+                        col: col as u32,
+                    },
+                    score: (matched - 1) as f64 + tier,
+                },
+            ));
         }
 
         ranked.sort_by(|(ca, a), (cb, b)| {

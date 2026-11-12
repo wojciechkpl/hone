@@ -654,6 +654,10 @@ pub struct Agent {
     context_window_override: Option<u32>,
 }
 
+/// Candidates asked of the semantic recall: more than the 5 used, because
+/// `Outcome` logs are dropped afterwards and must not leave fewer than 5.
+const SEMANTIC_RECALL_FETCH: usize = 20;
+
 impl Agent {
     pub fn new(mut config: AgentConfig) -> Self {
         let metrics = Arc::new(ContextMetrics::new());
@@ -805,13 +809,14 @@ impl Agent {
             if let Some(embedder) = &self.config.embedder {
                 match embedder.embed(query).await {
                     Ok(query_vec) => store
-                        .recall_semantic(&query_vec, 5)
+                        .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
                         .await
                         .map(|scored| {
                             scored
                                 .into_iter()
                                 .map(|s| s.memory)
                                 .filter(|m| m.kind != hone_memory::MemoryKind::Outcome)
+                                .take(5)
                                 .collect()
                         })
                         .unwrap_or_default(),
