@@ -67,6 +67,15 @@ Review measured that G9's id-keyed table makes every trigger delete scan the who
 | G23 | **The parity claim matches what's built.** For prompts with more than 32 distinct usable tokens, `fts5` uses the 32 rarest and `bm25` all of them, so their top results may differ; the spec and docs say so. |
 | G24 | **Small fixes.** `hone strategies` names the encrypted fallback's origin `--encrypted-memory`; `bm25::tokenize` uses the shared folding tokenizer (its doc stays true); doc comments and test headers describe the mapping-table design. |
 
+### Review round 3 (G25–G28)
+
+| Row | Behaviour |
+|---|---|
+| G25 | **A wrong passphrase never changes the database.** `EncryptedStore::new` verifies the passphrase before any migration or write: by a key-check value stored with the salt sentinel (written on first use, or created from a successful trial decryption of an existing `enc:v1` row), or, if neither exists, by trial-decrypting an `enc:v1` row. A wrong passphrase returns an error and modifies nothing. Opening wrong-then-right leaves every embedding intact. |
+| G26 | **Sealed vectors are recognised reliably.** The embedding blob starts with an 8-byte magic (`E1 48 4F 4E 45 56 31 00`, "\xE1HONEV1\0") instead of one byte. The one-time migration reads `id, embedding` directly and decides by magic plus a successful trial decryption, so a legacy plaintext vector that happens to start with `0xE1` is still re-encrypted. Blobs from earlier builds of this branch (1-byte marker) still decrypt. |
+| G27 | **Older binaries degrade safely, and the docs say exactly how.** The sealed blob's length is chosen so an older Hone's embedding decoder rejects it (treating the memory as having no embedding) rather than reading a bogus vector — verified against `main`'s decoder; if no such length exists, the CHANGELOG states precisely what an older binary does (a debug build may panic in semantic recall; a release build scores those memories 0) and recommends not downgrading. |
+| G28 | **Small fixes.** `hone strategies` maps the encrypted-memory fallback's origin explicitly (not "any flag on `memory.recaller`"); `docs/configuration.md` notes that encrypted semantic recall scores the newest 1,024 memories and that opening an encrypted store reads every row once (the migration check). |
+
 ## Testing notes
 
 - **G1/G2/G7** on temp SQLite stores: inserts, updates (`record` is `INSERT OR REPLACE`), `forget`, reopening an old database without the FTS table, FTS5 syntax in prompts, 6,000-row corpora.
