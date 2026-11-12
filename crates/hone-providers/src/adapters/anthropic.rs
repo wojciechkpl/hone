@@ -194,7 +194,9 @@ fn convert_tool_cached(tool: &ToolSchema) -> Value {
 }
 
 /// Builds the Anthropic API request body from a `CompletionRequest`.
-/// Returns `(body, system_message)` where `system_message` is extracted separately.
+///
+/// Every non-empty system message becomes one text block of the top-level
+/// `system` array, in request order; no system message appears in `messages`.
 pub fn build_request_body(request: &CompletionRequest) -> Value {
     // Every system message (Anthropic takes them as the top-level `system`
     // field), in request order, one text block each. Empty ones are skipped.
