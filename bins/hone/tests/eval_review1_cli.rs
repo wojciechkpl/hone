@@ -228,3 +228,21 @@ fn test_f22_two_profiles_with_ablate_should_exit_2() {
     assert_eq!(out.status.code(), Some(2), "{}", text(&out.stdout));
     assert!(text(&out.stderr).contains("ablate"), "{}", text(&out.stderr));
 }
+
+// ---- F29 (review round 2): config error text stays readable ----------------------------------------
+
+#[test]
+fn test_f29_a_typo_key_error_should_span_several_lines_without_literal_backslash_n() {
+    let e = Env::with_ollama();
+    let t = e.tasks(&format!("{VALID}\n[[tasks]]\nid = \"t3\"\nprompt = \"p\"\nsuccess_check = \"true\"\ntimout_secs = 5\n"));
+
+    let out = e.run(None, &t, &["--check"]);
+
+    assert_eq!(out.status.code(), Some(2));
+    let err = text(&out.stderr);
+    assert!(err.contains("timout_secs") && err.contains("tasks.toml"), "{err}");
+    assert!(!err.contains("\\n"), "no literal backslash-n: {err}");
+    assert!(err.lines().count() >= 2, "the toml error's source excerpt is rendered as separate lines: {err:?}");
+    let bad: Vec<u8> = out.stderr.iter().copied().filter(|b| (*b < 0x20 && *b != b'\n') || *b == 0x7f).collect();
+    assert!(bad.is_empty(), "other control bytes stay escaped: {bad:?}");
+}

@@ -4,7 +4,7 @@
 //! `hone eval` process whose agent is running a long shell command.
 //!
 //! Setup (no network): a tiny Ollama-protocol server on 127.0.0.1 answers EVERY model
-//! request with a `shell` tool call `sleep <N>` (311 for the SIGINT test, 312 for SIGTERM, so
+//! request with a `shell` tool call `sleep <N>` (4311 for the SIGINT test, 4312 for SIGTERM, 4313 for the F29 test; unusual numbers so other `sleep N` processes on the machine cannot collide, so
 //! the two tests can run in parallel), so the agent of the single task sits in
 //! that command. `TMPDIR` points at a test directory, so the run's working-directory copy
 //! (`$TMPDIR/hone-eval-*`) is observable. The tests wait (polling, up to 60 s) until the
@@ -100,6 +100,10 @@ struct Setup {
 }
 
 fn start(secs: u32) -> Setup {
+    start_with(secs, "")
+}
+
+fn start_with(secs: u32, extra_tasks: &str) -> Setup {
     assert!(!sleeping(secs), "harness: no stray `sleep {secs}` before the test");
     let url = mock_server(secs);
     let tmp = tempfile::tempdir().unwrap();
@@ -116,7 +120,7 @@ fn start(secs: u32) -> Setup {
     std::fs::write(dir.join("proj/data.txt"), "data\n").unwrap();
     std::fs::write(
         dir.join("tasks.toml"),
-        "model = \"ollama:m\"\n\n[[tasks]]\nid = \"t\"\nprompt = \"sleep\"\nsuccess_check = \"true\"\nworking_dir = \"proj\"\ntimeout_secs = 600\n",
+        format!("model = \"ollama:m\"\n\n[[tasks]]\nid = \"t\"\nprompt = \"sleep\"\nsuccess_check = \"true\"\nworking_dir = \"proj\"\ntimeout_secs = 600\n{extra_tasks}"),
     )
     .unwrap();
     let child = Command::new(env!("CARGO_BIN_EXE_hone"))
@@ -186,10 +190,42 @@ fn interrupt(signal: &str, expected_code: i32, secs: u32) {
 
 #[test]
 fn test_f14_sigint_should_clean_up_and_exit_130() {
-    interrupt("INT", 130, 311);
+    interrupt("INT", 130, 4311);
 }
 
 #[test]
 fn test_f14_sigterm_should_clean_up_and_exit_143() {
-    interrupt("TERM", 143, 312);
+    interrupt("TERM", 143, 4312);
+}
+
+// F29 (review round 2): runs that never started because of an interrupt are still listed.
+//
+// Pinned: the manifest's `outcomes` (status -> count) counts one `interrupted` per PLANNED run
+// that did not finish: the one in flight and the one that never started.
+#[test]
+fn test_f29_an_interrupted_run_should_list_every_planned_run_in_the_manifest() {
+    let secs = 4313;
+    let second = "\n[[tasks]]\nid = \"t2\"\nprompt = \"never starts\"\nsuccess_check = \"true\"\nworking_dir = \"proj\"\ntimeout_secs = 600\n";
+    let mut s = start_with(secs, second);
+    wait_for("the first task's sleep", || sleeping(secs));
+
+    let kill = Command::new("kill").arg("-INT").arg(s.child.id().to_string()).status().unwrap();
+    assert!(kill.success());
+    let mut status = None;
+    wait_for("hone eval to exit", || {
+        status = s.child.try_wait().unwrap();
+        status.is_some()
+    });
+
+    assert_eq!(status.unwrap().code(), Some(130));
+    let runs: Vec<PathBuf> = std::fs::read_dir(&s.out).unwrap().map(|d| d.unwrap().path()).collect();
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    let manifest: Value = serde_json::from_str(&std::fs::read_to_string(runs[0].join("manifest.json")).unwrap()).unwrap();
+    // `outcomes` is the manifest's status -> count map: both planned runs, the one that was
+    // running and the one that never started, are counted as interrupted.
+    assert_eq!(
+        manifest["outcomes"]["interrupted"], 2,
+        "both planned runs are counted, the one that never started included: {}",
+        manifest["outcomes"]
+    );
 }
