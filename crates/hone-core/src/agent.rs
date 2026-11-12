@@ -28,6 +28,13 @@ use crate::memory_format::format_memory_body;
 use crate::memory_worthy::MemoryCandidate;
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
+/// What one gathered source returned this turn.
+struct GatheredSource {
+    name: String,
+    once: bool,
+    extras: Vec<ExtraBlock>,
+}
+
 use crate::receipts::{ExtraBlock, InjectionInfo, RecallInfo, TurnContextInfo};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
@@ -633,7 +640,7 @@ pub struct Agent {
     receipt_history: std::collections::HashSet<String>,
     /// Blocks of gathered context sources, in source order: `Once` sources are
     /// gathered before the first model call and kept; `EachTurn` ones every turn.
-    extra_blocks: Vec<(String, Option<ExtraBlock>)>,
+    extra_blocks: Vec<(String, bool, Vec<ExtraBlock>)>,
     /// Names of the `Once` sources already gathered.
     once_gathered: HashSet<String>,
     /// The context receipts of this agent's life, oldest first (newest
@@ -873,61 +880,112 @@ impl Agent {
     /// model call of the session (the result is kept), `EachTurn` sources on every
     /// turn. A source that fails or adds nothing leaves no block. The text is
     /// redacted like injected skeletons.
-    async fn gather_context_sources(&mut self, prompt: &str) {
+    async fn gather_context_sources(&self, prompt: &str) -> Vec<GatheredSource> {
         let strategies = Arc::clone(&self.strategies);
-        let mut due: Vec<usize> = Vec::new();
-        for (i, (name, src)) in strategies.gatherable().enumerate() {
-            let once = src.cadence() == crate::strategy::Cadence::Once;
-            if !(once && self.once_gathered.contains(name)) {
-                due.push(i);
-            }
-        }
+        let due: Vec<(String, Arc<dyn crate::strategy::ContextSource>)> = strategies
+            .gatherable()
+            .filter(|(name, src)| {
+                !(src.cadence() == crate::strategy::Cadence::Once
+                    && self.once_gathered.contains(name))
+            })
+            .map(|(name, src)| (name.clone(), Arc::clone(src)))
+            .collect();
         if due.is_empty() {
-            return;
+            return Vec::new();
         }
         let history = self.context.messages();
         let budget_tokens = self.context.max_context_tokens();
         let redact = self.redacting();
-        for (i, (name, src)) in strategies.gatherable().enumerate() {
-            if !due.contains(&i) {
-                continue;
+        let turn = self.turn_count;
+        let working_dir = self.config.working_dir.clone();
+        // All due sources at once, each under its own deadline.
+        futures::future::join_all(due.iter().map(|(name, src)| {
+            let history = &history;
+            let working_dir = &working_dir;
+            async move {
+                let view = crate::strategy::TurnView {
+                    prompt,
+                    turn,
+                    history,
+                    working_dir,
+                    budget_tokens,
+                };
+                let gathered = tokio::time::timeout(src.deadline(), src.gather(&view)).await;
+                let blocks = match gathered {
+                    Ok(Ok(blocks)) => blocks,
+                    Ok(Err(e)) => {
+                        tracing::debug!(source = %name, error = %e, "context source failed; skipped");
+                        Vec::new()
+                    }
+                    Err(_) => {
+                        tracing::debug!(source = %name, "context source missed its deadline; skipped");
+                        Vec::new()
+                    }
+                };
+                // One system message per block, each keeping its own slot.
+                let extras: Vec<ExtraBlock> = blocks
+                    .into_iter()
+                    .map(|b| ExtraBlock {
+                        slot: b.slot,
+                        strategy: src.id().clone(),
+                        text: redacted_text(redact, &b.text),
+                        sources: b.sources,
+                    })
+                    .collect();
+                GatheredSource {
+                    name: name.clone(),
+                    once: src.cadence() == crate::strategy::Cadence::Once,
+                    extras,
+                }
             }
-            let view = crate::strategy::TurnView {
-                prompt,
-                turn: self.turn_count,
-                history: &history,
-                working_dir: &self.config.working_dir,
-                budget_tokens,
+        }))
+        .await
+    }
+
+    /// Gather the due context sources and recall memories at the same time. A
+    /// closed events channel (the listener is gone) stops the wait.
+    async fn gather_and_recall(
+        &mut self,
+        prompt: &str,
+        events: &mpsc::Sender<AgentEvent>,
+    ) -> Result<(String, Vec<(String, String)>, RecallInfo), AgentError> {
+        let (gathered, recalled) = {
+            let this = &*self;
+            let work = async {
+                tokio::join!(
+                    this.gather_context_sources(prompt),
+                    this.fetch_relevant_memories(prompt)
+                )
             };
-            let blocks = src.gather(&view).await.unwrap_or_default();
-            if src.cadence() == crate::strategy::Cadence::Once {
-                self.once_gathered.insert(name.clone());
+            tokio::select! {
+                r = work => r,
+                () = events.closed() => return Err(AgentError::Cancelled),
             }
-            // One system message per source; its blocks are joined.
-            let block = blocks.into_iter().reduce(|mut a, b| {
-                a.text.push_str("\n\n");
-                a.text.push_str(&b.text);
-                a.sources.extend(b.sources);
-                a
-            });
-            let extra = block.map(|b| ExtraBlock {
-                slot: b.slot,
-                strategy: src.id().clone(),
-                text: redacted_text(redact, &b.text),
-                sources: b.sources,
-            });
-            match self.extra_blocks.iter_mut().find(|(n, _)| n == name) {
-                Some(slot) => slot.1 = extra,
-                None => self.extra_blocks.push((name.clone(), extra)),
+        };
+        self.store_gathered(gathered);
+        Ok(recalled)
+    }
+
+    /// Keep what `gather_context_sources` returned.
+    fn store_gathered(&mut self, gathered: Vec<GatheredSource>) {
+        for g in gathered {
+            if g.once {
+                self.once_gathered.insert(g.name.clone());
+            }
+            match self.extra_blocks.iter_mut().find(|(n, _, _)| *n == g.name) {
+                Some(slot) => slot.2 = g.extras,
+                None => self.extra_blocks.push((g.name, g.once, g.extras)),
             }
         }
     }
 
-    /// The gathered blocks that have text, in source order.
+    /// The gathered blocks that have text: `Once` sources first, then `EachTurn`
+    /// ones (so the cached prefix stays stable), each in source order.
     fn active_extras(&self) -> Vec<ExtraBlock> {
-        self.extra_blocks
-            .iter()
-            .filter_map(|(_, b)| b.clone())
+        let once = self.extra_blocks.iter().filter(|(_, o, _)| *o);
+        let each = self.extra_blocks.iter().filter(|(_, o, _)| !*o);
+        once.chain(each)
+            .flat_map(|(_, _, blocks)| blocks.iter().cloned())
             .collect()
     }
 
@@ -1488,9 +1546,8 @@ impl Agent {
         };
 
         // Fetch memories before adding the user message so the query is clean.
-        self.gather_context_sources(user_input).await;
         let (memories, memory_entries, recall_info) =
-            self.fetch_relevant_memories(user_input).await;
+            self.gather_and_recall(user_input, &events).await?;
         // Inputs of this turn's context receipts.
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
@@ -1633,7 +1690,13 @@ impl Agent {
                     0
                 } else {
                     estimate_text_tokens(&skills_block)
-                };
+                }
+                // Gathered source blocks are part of every request too.
+                + self
+                    .active_extras()
+                    .iter()
+                    .map(|e| estimate_text_tokens(&e.text))
+                    .sum::<u32>();
             if !context_emergency && self.context.is_over_ratio(0.95, extra_tokens) {
                 context_emergency = true;
                 tracing::warn!(
@@ -3195,9 +3258,8 @@ impl Agent {
         self.cost.check_budget(self.config.budget_limit)?;
         let cost_before_turn = self.cost.total_usd();
 
-        self.gather_context_sources(&text_for_memory).await;
         let (memories, memory_entries, recall_info) =
-            self.fetch_relevant_memories(&text_for_memory).await;
+            self.gather_and_recall(&text_for_memory, &events).await?;
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
             skills: if self.strategies.has_source("skills") {

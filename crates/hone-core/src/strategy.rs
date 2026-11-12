@@ -111,6 +111,11 @@ pub struct TurnRecord {
 pub trait ContextSource: Send + Sync {
     fn id(&self) -> &StrategyId;
     fn cadence(&self) -> Cadence;
+    /// How long the agent waits for `gather` before skipping the source for
+    /// this turn.
+    fn deadline(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(5)
+    }
     async fn gather(&self, view: &TurnView<'_>) -> Result<Vec<ContextBlock>, StrategyError>;
 }
 
@@ -246,6 +251,9 @@ impl ContextSource for EnvSnapshotSource {
     }
     fn cadence(&self) -> Cadence {
         Cadence::Once
+    }
+    fn deadline(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.timeout_secs + 1)
     }
     async fn gather(&self, view: &TurnView<'_>) -> Result<Vec<ContextBlock>, StrategyError> {
         // Never fails: a snapshot that gathers nothing adds no block.
@@ -440,7 +448,9 @@ impl StrategyRegistry {
             "env-snapshot",
             Origin::Builtin,
             Arc::new(|params, _deps| {
-                let timeout_secs = params["timeout_secs"].as_u64().unwrap_or(15);
+                let timeout_secs = params["timeout_secs"]
+                    .as_u64()
+                    .unwrap_or(hone_config::strategy::DEFAULT_ENV_TIMEOUT_SECS);
                 Ok(Arc::new(EnvSnapshotSource {
                     id: id(
                         Slot::Environment,
