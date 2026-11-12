@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use hone_core::queue_client::{CompletionRequestBody, QueueClient};
@@ -159,10 +160,18 @@ impl WorkerPool {
     /// Spawn the poll loop. Returns a JoinHandle the caller can `.abort()` on
     /// shutdown.
     pub fn spawn(self) -> JoinHandle<()> {
-        tokio::spawn(async move { self.run_loop().await })
+        tokio::spawn(async move { self.run_loop(None).await })
     }
 
-    async fn run_loop(self) {
+    /// Like [`spawn`](Self::spawn), but when the channel holds `true` (only an
+    /// explicit `true`: a dropped sender changes nothing) the pool stops
+    /// claiming. A task already running finishes and is reported with
+    /// `complete`; then the loop ends. An idle pool ends at once.
+    pub fn spawn_with_shutdown(self, shutdown: watch::Receiver<bool>) -> JoinHandle<()> {
+        tokio::spawn(async move { self.run_loop(Some(shutdown)).await })
+    }
+
+    async fn run_loop(self, mut shutdown: Option<watch::Receiver<bool>>) {
         // Fire heartbeat immediately on startup so tests see at least one call.
         if let Err(e) = self
             .client
@@ -185,6 +194,11 @@ impl WorkerPool {
 
         loop {
             tokio::select! {
+                biased;
+                () = stop_requested(&mut shutdown) => {
+                    tracing::info!("worker pool: stop requested, no longer claiming");
+                    break;
+                }
                 _ = heartbeat_ticker.tick() => {
                     if let Err(e) = self
                         .client
@@ -233,6 +247,22 @@ impl WorkerPool {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Resolves when the channel holds `true`; never if there is none or its
+/// sender is gone without having sent `true`.
+async fn stop_requested(shutdown: &mut Option<watch::Receiver<bool>>) {
+    let Some(rx) = shutdown else {
+        return std::future::pending().await;
+    };
+    loop {
+        if *rx.borrow_and_update() {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            return std::future::pending().await;
         }
     }
 }

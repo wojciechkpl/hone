@@ -75,6 +75,15 @@ async fn main() -> Result<()> {
         println!(
             "  HONE_WORKER_MEMORY_DB      Path to a SQLite memory file (enables memory read tool)"
         );
+        println!(
+            "  HONE_SHUTDOWN_GRACE_SECS   Seconds the first SIGINT/SIGTERM/SIGHUP waits for running work"
+        );
+        println!(
+            "                             (requests, a worker task) before dropping it (default 20; 0 = no wait)."
+        );
+        println!(
+            "                             Then MCP servers shut down gracefully. A second signal stops at once."
+        );
         println!();
         println!("Endpoints:");
         println!("  POST   /sessions           Create a new session");
@@ -266,7 +275,8 @@ async fn main() -> Result<()> {
     //   HONE_DISTRIBUTED_DB         coordinator (queue + reaper)
     //   HONE_WORKER_COORDINATOR     worker (poll-claim-execute loop)
     //   both env vars               coordinator + worker on same machine
-    let _worker_handle: Option<tokio::task::JoinHandle<()>> =
+    let mut worker_mcp: Option<hone_mcp::McpManager> = None;
+    let worker_shutdown: Option<hone_server::WorkerShutdown> =
         if let Ok(coordinator_url) = std::env::var("HONE_WORKER_COORDINATOR") {
             let worker_id = std::env::var("HONE_WORKER_ID").unwrap_or_else(|_| {
                 hostname::get()
@@ -381,6 +391,8 @@ async fn main() -> Result<()> {
                         tracing::info!(
                             "worker MCP enabled with config at: {mcp_config_path}"
                         );
+                        // Kept for the graceful shutdown after the drain.
+                        worker_mcp = Some(mcp_manager);
                     }
 
                     // HONE_WORKER_MEMORY_DB — memory read tool backed by SQLite.
@@ -454,7 +466,9 @@ async fn main() -> Result<()> {
                         "worker pool spawned: id={worker_id}, capabilities={:?}, coordinator={coordinator_url}",
                         capabilities
                     );
-                    Some(pool.spawn())
+                    let (stop, stop_rx) = tokio::sync::watch::channel(false);
+                    let handle = pool.spawn_with_shutdown(stop_rx);
+                    Some(hone_server::WorkerShutdown { stop, handle })
                 }
             }
         } else {
@@ -488,83 +502,99 @@ async fn main() -> Result<()> {
     let addr = format!("{bind_host}:{port}");
     tracing::info!("honed listening on {addr}");
 
+    let grace = hone_server::parse_shutdown_grace(
+        std::env::var("HONE_SHUTDOWN_GRACE_SECS").ok().as_deref(),
+    );
+    // Decide which signals are ignored and install the handlers now, before
+    // anything else can; they stay installed for the second signal.
+    let signals = Signals::install();
+
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(
+    hone_server::serve_until_shutdown(
         listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        app,
+        shutdown_signal(signals),
+        hone_server::ShutdownOptions {
+            grace,
+            worker: worker_shutdown,
+            mcp: worker_mcp,
+        },
     )
-    .with_graceful_shutdown(shutdown_signal())
     .await?;
 
-    // Commands run in their own process groups: end any that outlived the
-    // graceful shutdown (e.g. a request that was still running one).
-    hone_tools::kill_running_commands();
     tracing::info!("honed stopped");
     Ok(())
 }
 
-async fn shutdown_signal() {
-    // A signal ignored at start (`nohup` -> SIGHUP, a background job -> SIGINT)
-    // stays ignored: decide BEFORE any handler is installed (tokio's handler
-    // hides the original disposition).
-    #[cfg(unix)]
-    let (int_ignored, term_ignored, hup_ignored) = (
-        hone_tools::signal_is_ignored(2),
-        hone_tools::signal_is_ignored(15),
-        hone_tools::signal_is_ignored(1),
-    );
-    #[cfg(not(unix))]
-    let int_ignored = false;
+/// SIGINT, SIGTERM and SIGHUP, minus the ones that were ignored at start
+/// (`nohup` -> SIGHUP, a background job -> SIGINT): those stay ignored.
+/// One forwarding task per signal keeps its handler installed for good, so a
+/// second delivery is seen too.
+struct Signals {
+    rx: tokio::sync::mpsc::UnboundedReceiver<(i32, &'static str)>,
+}
 
-    let ctrl_c = async {
-        if int_ignored {
-            std::future::pending::<()>().await;
+impl Signals {
+    /// Must run BEFORE any handler is installed (tokio's handler hides the
+    /// original disposition). Needs a running runtime.
+    fn install() -> Self {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        #[cfg(unix)]
+        for (num, name, kind) in [
+            (2, "SIGINT", tokio::signal::unix::SignalKind::interrupt()),
+            (15, "SIGTERM", tokio::signal::unix::SignalKind::terminate()),
+            (1, "SIGHUP", tokio::signal::unix::SignalKind::hangup()),
+        ] {
+            if hone_tools::signal_is_ignored(num) {
+                continue;
+            }
+            match tokio::signal::unix::signal(kind) {
+                Ok(mut stream) => {
+                    let tx = tx.clone();
+                    tokio::spawn(async move {
+                        while stream.recv().await.is_some() {
+                            if tx.send((num, name)).is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+                Err(e) => tracing::warn!("failed to install the {name} handler: {e}"),
+            }
         }
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
+        #[cfg(not(unix))]
+        tokio::spawn(async move {
+            while tokio::signal::ctrl_c().await.is_ok() {
+                if tx.send((2, "SIGINT")).is_err() {
+                    break;
+                }
+            }
+        });
+        Self { rx }
+    }
 
-    #[cfg(unix)]
-    let terminate = async {
-        if term_ignored {
-            std::future::pending::<()>().await;
-        }
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(unix)]
-    let hangup = async {
-        if hup_ignored {
-            std::future::pending::<()>().await;
-        }
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-            .expect("failed to install SIGHUP handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-    #[cfg(not(unix))]
-    let hangup = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {
-            tracing::info!("SIGINT received, shutting down gracefully");
-        }
-        _ = terminate => {
-            tracing::info!("SIGTERM received, shutting down gracefully");
-        }
-        _ = hangup => {
-            tracing::info!("SIGHUP received, shutting down gracefully");
+    /// The next signal: its number and name. Pending forever if none can arrive.
+    async fn next(&mut self) -> (i32, &'static str) {
+        match self.rx.recv().await {
+            Some(sig) => sig,
+            None => std::future::pending().await,
         }
     }
-    // Commands started by running requests must not outlive the signal.
-    hone_tools::kill_running_commands();
+}
+
+/// Resolves at the first signal. A second one, during the drain or the MCP
+/// shutdown, stops everything at once and ends `honed` by that signal.
+async fn shutdown_signal(mut signals: Signals) {
+    let (_, first) = signals.next().await;
+    tracing::info!("{first} received, shutting down gracefully (send a signal again to force)");
+    tokio::spawn(async move {
+        let (num, name) = signals.next().await;
+        tracing::warn!("{name} received after {first}, stopping at once");
+        // Blocks up to the SIGTERM grace for MCP servers: keep it off the
+        // async threads.
+        let _ =
+            tokio::task::spawn_blocking(move || hone_tools::kill_commands_and_reraise(num)).await;
+    });
 }
 
 /// Successful gate evaluation.

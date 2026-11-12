@@ -690,8 +690,10 @@ waits only for the slowest one: a server that hangs delays it by its handshake t
 while the others connect. On exit, servers are stopped in parallel; each gets up to 5 s
 before it is killed. On unix each server runs in its own process group, and when Hone
 kills a server the whole group goes, so a server started through `npx` or `sh -c` doesn't
-leave its real process behind. When Hone stops on an error, or a one-shot run or `honed`
-gets SIGINT, SIGTERM or SIGHUP, each group gets SIGTERM, then SIGKILL if it is still
+leave its real process behind. `honed` shuts its worker's servers down gracefully after
+it has drained running work (see "Shutting down `honed`" under the environment variables).
+When Hone stops on an error, or a one-shot run (or `honed`, on a second signal) gets
+SIGINT, SIGTERM or SIGHUP, each group gets SIGTERM, then SIGKILL if it is still
 running 1 s later (the TUI takes the graceful path). A panic that ends Hone does the
 same, for servers and running commands. `kill -9`, the OOM killer, and a crash that is
 not a panic (a segfault, a stack overflow, an abort from C code) still leave a server that
@@ -874,6 +876,9 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 | `HONE_WORKER_COORDINATOR` | Run as a worker that polls this coordinator URL |
 | `HONE_WORKER_ID`, `HONE_WORKER_CAPABILITIES` | Worker id (default: hostname) and comma-separated tags |
 | `HONE_WORKER_LSP_LANGS`, `HONE_WORKER_MCP_CONFIG`, `HONE_WORKER_MEMORY_DB` | Optional LSP languages, MCP config and memory file for the worker |
+| `HONE_SHUTDOWN_GRACE_SECS` | How long the first SIGINT, SIGTERM or SIGHUP waits for running work. Whole seconds, default 20; `0` waits for nothing; an invalid value logs a warning and uses 20 |
+
+**Shutting down `honed`.** The first SIGINT, SIGTERM or SIGHUP stops `honed` accepting connections and a worker claiming tasks. Requests and a worker task that are already running keep going, with their shell commands and MCP servers, for at most `HONE_SHUTDOWN_GRACE_SECS`; what is still running after that is dropped (a dropped worker task is requeued when its lease runs out). Then the worker's MCP servers shut down gracefully (up to 5 s, all at once), anything still running is stopped, and `honed` exits 0. A second signal during any of this stops everything at once (commands get SIGKILL, MCP servers SIGTERM and then SIGKILL after about 1 s) and ends `honed` by that signal. A signal that was ignored at start (`nohup` leaves SIGHUP ignored) stays ignored. A worker whose coordinator is the same `honed` keeps accepting connections until its task is done, so it can report its result, and then stops accepting; the one limit covers both. The limit, up to 1 s for an aborted worker, and 5 s for MCP servers fit inside a 30 s stop timeout, which is the Kubernetes default; with another grace, keep the supervisor's stop timeout above the grace plus 6 s. Docker defaults to 10 s, which is below the 20 s default grace: raise it (`docker stop --time`, `--stop-timeout`, or `stop_grace_period` in Compose) or lower `HONE_SHUTDOWN_GRACE_SECS`. systemd's default `KillMode=control-group` sends SIGTERM to every process in the unit, MCP servers and commands included, which defeats draining with tools working: use `KillMode=mixed` (SIGTERM to `honed` only, SIGKILL to the rest at the end).
 
 </details>
 

@@ -3049,6 +3049,7 @@ dependencies = [
  "hone-server",
  "hone-tools",
  "hostname",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
