@@ -53,6 +53,15 @@ Review reproduced, auto-approved and with no injection: a `memory_write` near-du
 | W19 | **Line and paragraph separators are collapsed too.** `one_line` treats U+2028, U+2029 and U+0085 like control characters. |
 | W20 | **Dedup looks for the model's own match.** When the best near-duplicate is a memory the tool may not update, the tool's own best same-kind, same-project match above the threshold is used (updated) if there is one, so the model's duplicates don't accumulate. |
 
+### Review round 3 (W21–W24)
+
+| Row | Behaviour |
+|---|---|
+| W21 | **The skeleton counts only when it carries repository text.** The turn-1 skeleton marks the context untrusted only when it lists at least one repository entry or symbol; an empty one (an empty directory) doesn't. The docs and the PR text say plainly that, inside a project with the default context, every `memory_write` asks and headless runs don't write. |
+| W22 | **Project visibility is filtered in the store, before the corpus cap.** `MemoryStore` gains `recall_visible(query, exclude, project)` (default: recall then filter, for other stores); `SqliteStore` excludes, in SQL and before its 5,000-row corpus window, rows tagged `source:tool` without the current `project:<id>` tag; `EncryptedStore` does the same on its plaintext tags. Recall is one pass, and a project's memory older than 6,000 other-project tool memories is still found. The over-fetch retry loop is removed. |
+| W23 | **The dedup fallback scans only candidates.** When the best near-duplicate isn't updatable, the search for the tool's own match reads only `source:tool` memories of the same kind and project, through a store query. |
+| W24 | **Two more untrusted inputs.** A memory index that lists any `(model-written)` entry marks the context untrusted; an unknown tool's error result counts as a tool result (W16's "any tool result"). |
+
 ## Testing notes
 
 - **W2/W3/W6** through a real agent with the scripted provider calling `memory_write`, on an `InMemoryStore`/temp `SqliteStore`; dedup with a near-duplicate.
