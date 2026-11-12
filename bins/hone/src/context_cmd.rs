@@ -72,14 +72,30 @@ fn render_receipt(out: &mut String, run: u32, r: &ContextReceipt) {
     let _ = writeln!(
         out,
         "run {run} turn {} call {}  {}  request {hash}",
-        r.turn, r.call, r.model
+        r.turn,
+        r.call,
+        esc(&r.model)
     );
+    let listed: usize = r
+        .blocks
+        .iter()
+        .filter(|b| b.slot == hone_proto::Slot::History)
+        .map(|b| b.sources.len())
+        .sum();
+    if r.history_len > 0 || listed > 0 {
+        let root: String = r.history_root.chars().take(12).collect();
+        let _ = writeln!(
+            out,
+            "  history: {} messages ({listed} new listed), root {root}",
+            r.history_len
+        );
+    }
     for b in &r.blocks {
         let _ = writeln!(
             out,
             "  {} [{}] {} tokens",
             slot_name(b.slot),
-            b.strategy.name,
+            esc(&b.strategy.name),
             b.tokens
         );
         for s in &b.sources {
@@ -110,12 +126,26 @@ fn render_receipt(out: &mut String, run: u32, r: &ContextReceipt) {
             let _ = writeln!(
                 out,
                 "    {}: {} -> {derived}",
-                c.strategy.name,
+                esc(&c.strategy.name),
                 replaced.join(", ")
             );
         }
     }
     out.push('\n');
+}
+
+/// `text` with control characters (C0, DEL, C1) shown as `\u{1b}`-style escapes,
+/// so a receipt string can't move the cursor, retitle the terminal or forge lines.
+fn esc(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c.is_control() {
+            let _ = write!(out, "\\u{{{:x}}}", u32::from(c));
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn slot_name(slot: hone_proto::Slot) -> String {
@@ -130,19 +160,22 @@ fn source_label(source: &SourceRef) -> String {
     let short = |h: &str| h.chars().take(12).collect::<String>();
     match source {
         SourceRef::Memory { id, version } => match version {
-            Some(v) => format!("memory {id} v{v}"),
-            None => format!("memory {id}"),
+            Some(v) => format!("memory {} v{v}", esc(id)),
+            None => format!("memory {}", esc(id)),
         },
-        SourceRef::File { path, .. } => format!("file {}", path.display()),
+        SourceRef::File { path, .. } => format!("file {}", esc(&path.display().to_string())),
         SourceRef::Message { index, sha256 } => format!("message #{index} {}", short(sha256)),
         SourceRef::ToolResult { call_id, sha256 } => {
-            format!("tool_result {call_id} {}", short(sha256))
+            format!("tool_result {} {}", esc(call_id), short(sha256))
         }
-        SourceRef::Skill { name } => format!("skill {name}"),
-        SourceRef::Command { argv, .. } => format!("command {}", argv.join(" ")),
+        SourceRef::Skill { name } => format!("skill {}", esc(name)),
+        SourceRef::Command { argv, .. } => format!(
+            "command {}",
+            argv.iter().map(|a| esc(a)).collect::<Vec<_>>().join(" ")
+        ),
         SourceRef::Chunk {
             index, chunk_id, ..
-        } => format!("chunk {index}/{chunk_id}"),
-        SourceRef::Opaque { plugin, note } => format!("{plugin}: {note}"),
+        } => format!("chunk {}/{}", esc(index), esc(chunk_id)),
+        SourceRef::Opaque { plugin, note } => format!("{}: {}", esc(plugin), esc(note)),
     }
 }

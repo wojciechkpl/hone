@@ -47,12 +47,93 @@ pub struct StoredReceipt {
 
 // ── Session store ─────────────────────────────────────────────────────────────
 
+/// Per (session id, agent id): the run a store instance writes receipts to, and
+/// the last ordinal it has stored there.
+type ReceiptRuns = std::collections::HashMap<(String, String), (u32, u64)>;
+
 /// Handle to the sessions SQLite database.
 pub struct SessionStore {
     pool: SqlitePool,
     /// Per (session id, agent id): the run this store instance writes receipts
     /// to, and the last ordinal it has stored there.
-    receipt_runs: tokio::sync::Mutex<std::collections::HashMap<(String, String), (u32, u64)>>,
+    receipt_runs: std::sync::Arc<tokio::sync::Mutex<ReceiptRuns>>,
+}
+
+async fn lookup_session_id(pool: &SqlitePool, name: &str) -> Result<Option<String>> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT id FROM cli_sessions WHERE name = ?")
+        .bind(name)
+        .fetch_optional(pool)
+        .await
+        .with_context(|| format!("failed to look up session '{name}'"))?;
+    Ok(row.map(|(id,)| id))
+}
+
+/// The body of [`SessionStore::append_context_receipts`].
+async fn append_receipts(
+    pool: &SqlitePool,
+    runs: &tokio::sync::Mutex<ReceiptRuns>,
+    session_name: &str,
+    batch: &hone_core::ReceiptBatch,
+) -> Result<()> {
+    let id = lookup_session_id(pool, session_name)
+        .await?
+        .with_context(|| format!("session '{session_name}' not found"))?;
+    let mut runs = runs.lock().await;
+    let key = (id.clone(), batch.agent_id.clone());
+    let known = runs.get(&key).copied();
+    let stored = known.map_or(0, |(_, last)| last);
+    let fresh: Vec<&(u64, ContextReceipt)> =
+        batch.items.iter().filter(|(o, _)| *o > stored).collect();
+    let Some(first) = fresh.first().map(|(o, _)| *o) else {
+        return Ok(());
+    };
+    if first > stored + 1 {
+        tracing::warn!(
+            session = session_name,
+            from = stored + 1,
+            to = first - 1,
+            "context receipts were dropped by the agent's cap before they were stored"
+        );
+    }
+
+    // Dropping the transaction (an error below) rolls it back.
+    let mut tx = pool
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .context("failed to start the receipt transaction")?;
+    let run = match known {
+        Some((run, _)) => run,
+        None => {
+            let (max_run,): (i64,) = sqlx::query_as(
+                "SELECT COALESCE(MAX(run), 0) FROM context_receipts WHERE session_id = ?",
+            )
+            .bind(&id)
+            .fetch_one(&mut *tx)
+            .await
+            .context("failed to read the receipt runs")?;
+            max_run as u32 + 1
+        }
+    };
+    for (ordinal, receipt) in &fresh {
+        let json = serde_json::to_string(receipt).context("failed to serialize a receipt")?;
+        sqlx::query(
+            "INSERT INTO context_receipts (session_id, run, seq, turn, call, receipt)
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(run as i64)
+        .bind(*ordinal as i64)
+        .bind(receipt.turn as i64)
+        .bind(receipt.call as i64)
+        .bind(json)
+        .execute(&mut *tx)
+        .await
+        .context("failed to store a context receipt")?;
+    }
+    tx.commit().await.context("failed to commit the receipts")?;
+    let last = fresh.last().map_or(stored, |(o, _)| *o);
+    runs.insert(key, (run, last));
+    Ok(())
 }
 
 impl SessionStore {
@@ -97,12 +178,12 @@ impl SessionStore {
 
         Ok(Self {
             pool,
-            receipt_runs: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            receipt_runs: std::sync::Arc::new(tokio::sync::Mutex::new(ReceiptRuns::new())),
         })
     }
 
     /// Store the agent's context receipts (`AgentHandle::context_receipts_after`)
-    /// with the session. A run is one (store instance, session, agent id): its
+    /// with the session. A run is one (process, session, agent): its
     /// first batch starts a new run (`max(run) + 1`), `seq` is the receipts'
     /// ordinal, and only ordinals above what that run already holds are stored,
     /// so repeated or overlapping batches don't duplicate. A gap (the agent's cap
@@ -110,93 +191,23 @@ impl SessionStore {
     /// The run number and the rows are written in one `BEGIN IMMEDIATE`
     /// transaction, so concurrent first saves from two stores get distinct runs.
     /// Errors when the session does not exist.
+    ///
+    /// The work runs in its own task, so a caller that drops the future part-way
+    /// cannot leave a connection inside the transaction.
     pub async fn append_context_receipts(
         &self,
         session_name: &str,
         batch: &hone_core::ReceiptBatch,
     ) -> Result<()> {
-        let id = self
-            .session_id(session_name)
-            .await?
-            .with_context(|| format!("session '{session_name}' not found"))?;
-
-        let mut runs = self.receipt_runs.lock().await;
-        let key = (id.clone(), batch.agent_id.clone());
-        let known = runs.get(&key).copied();
-        let stored = known.map_or(0, |(_, last)| last);
-        let fresh: Vec<&(u64, ContextReceipt)> =
-            batch.items.iter().filter(|(o, _)| *o > stored).collect();
-        let Some(first) = fresh.first().map(|(o, _)| *o) else {
-            return Ok(());
-        };
-        if first > stored + 1 {
-            tracing::warn!(
-                session = session_name,
-                from = stored + 1,
-                to = first - 1,
-                "context receipts were dropped by the agent's cap before they were stored"
-            );
-        }
-
-        let mut conn = self
-            .pool
-            .acquire()
+        let pool = self.pool.clone();
+        let runs = std::sync::Arc::clone(&self.receipt_runs);
+        let name = session_name.to_owned();
+        let batch = batch.clone();
+        tokio::spawn(async move { append_receipts(&pool, &runs, &name, &batch).await })
             .await
-            .context("failed to get a database connection")?;
-        sqlx::query("BEGIN IMMEDIATE")
-            .execute(&mut *conn)
-            .await
-            .context("failed to start the receipt transaction")?;
-        let result: Result<u32> = async {
-            let run = match known {
-                Some((run, _)) => run,
-                None => {
-                    let (max_run,): (i64,) = sqlx::query_as(
-                        "SELECT COALESCE(MAX(run), 0) FROM context_receipts WHERE session_id = ?",
-                    )
-                    .bind(&id)
-                    .fetch_one(&mut *conn)
-                    .await
-                    .context("failed to read the receipt runs")?;
-                    max_run as u32 + 1
-                }
-            };
-            for (ordinal, receipt) in &fresh {
-                let json =
-                    serde_json::to_string(receipt).context("failed to serialize a receipt")?;
-                sqlx::query(
-                    "INSERT INTO context_receipts (session_id, run, seq, turn, call, receipt)
-                     VALUES (?, ?, ?, ?, ?, ?)",
-                )
-                .bind(&id)
-                .bind(run as i64)
-                .bind(*ordinal as i64)
-                .bind(receipt.turn as i64)
-                .bind(receipt.call as i64)
-                .bind(json)
-                .execute(&mut *conn)
-                .await
-                .context("failed to store a context receipt")?;
-            }
-            Ok(run)
-        }
-        .await;
-        match result {
-            Ok(run) => {
-                sqlx::query("COMMIT")
-                    .execute(&mut *conn)
-                    .await
-                    .context("failed to commit the receipts")?;
-                let last = fresh.last().map_or(stored, |(o, _)| *o);
-                runs.insert(key, (run, last));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
-                Err(e)
-            }
-        }
+            .context("the receipt writer task failed")?
     }
+
 
     /// Open the sessions database read-only: no creation, no schema changes.
     /// For `hone context show`.
@@ -210,7 +221,7 @@ impl SessionStore {
             .with_context(|| format!("failed to open sessions db at {}", path.display()))?;
         Ok(Self {
             pool,
-            receipt_runs: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            receipt_runs: std::sync::Arc::new(tokio::sync::Mutex::new(ReceiptRuns::new())),
         })
     }
 
@@ -268,12 +279,7 @@ impl SessionStore {
 
     /// The id of the session called `name`, if there is one.
     async fn session_id(&self, name: &str) -> Result<Option<String>> {
-        let row: Option<(String,)> = sqlx::query_as("SELECT id FROM cli_sessions WHERE name = ?")
-            .bind(name)
-            .fetch_optional(&self.pool)
-            .await
-            .with_context(|| format!("failed to look up session '{name}'"))?;
-        Ok(row.map(|(id,)| id))
+        lookup_session_id(&self.pool, name).await
     }
 
     /// The name of the most recently updated session, if any.

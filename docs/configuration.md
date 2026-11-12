@@ -815,7 +815,7 @@ hone context show --json               # [{run, seq, receipt}, …]
 - `honed` streams them as `context_assembled` events and adds a `context_assembled` entry to each run's provenance chain.
 - With `--audit`, each receipt is also one line of `.hone/audit.jsonl` (`span_kind: "context"`). `hone trace` counts these as model calls, not tools.
 
-**Runs and turns.** Each process that saves to a session starts a new *run*, and turn numbers restart in each run. `hone --session NAME "prompt"` starts with an empty history and then saves over the session's messages, so an older run's message hashes may not match the messages the session holds now.
+**Runs and turns.** Each process that saves to a session, for each agent it saves from, starts a new *run*, and turn numbers restart in each run. `hone --session NAME "prompt"` starts with an empty history and then saves over the session's messages, so an older run's message hashes may not match the messages the session holds now.
 
 **Privacy.** Receipts hold ids, paths, names, scores and hashes, never message, memory or file text. They are still diagnostics for your own machine:
 - Message hashes are unsalted SHA-256, so someone holding a receipt can confirm a short or common message ("yes", "continue") by guessing it.
@@ -826,7 +826,7 @@ Don't attach audit logs or receipts from private work to public bug reports.
 
 **What the request hash covers.** `request_sha256` covers the messages and the names of the tools offered, not tool schemas or sampling parameters.
 
-**Reading history refs.** A receipt lists only the history messages that are new or changed since the agent's previous receipt, plus `history_len` and `history_root` (a hash over every message hash, in request order). A message identical to one sent earlier isn't listed again, and messages that only moved aren't relisted, so the full ordered history can't be rebuilt from receipts alone: check `history_root` against the session's transcript.
+**Reading history refs.** A receipt lists only the history messages that are new or changed since the agent's previous receipt, so a message identical to one sent earlier isn't listed again and messages that only moved aren't relisted. `hone context show` prints each receipt's history as `history: 5 messages (2 new listed), root e09db7e7317a`: the number of non-system messages in the request, how many of them are listed, and the first 12 hex digits of `history_root`. The root is the SHA-256 of the newline-joined hashes of those messages, in request order; `--json` gives it in full. It is for tools that hold the transcript to verify against, not something to check by hand.
 
 ## Environment variables
 
