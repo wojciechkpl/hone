@@ -1430,11 +1430,6 @@ impl Agent {
         let mut doom_loop_warned = false;
         // 1-based count of model calls made this turn (for context receipts).
         let mut model_call: u32 = 0;
-        // Tool calls of the current round that feed the phase tracker, applied
-        // at the start of the next iteration, after the round's results are in
-        // the history: the newest results then sit inside the recent window and
-        // only older ones are compacted.
-        let mut pending_phase: Vec<(String, serde_json::Value)> = Vec::new();
 
         // We loop so that tool call → model follow-up cycles are handled
         // transparently.
@@ -1442,10 +1437,6 @@ impl Agent {
             // Nobody is listening any more: stop before spending another model call.
             if events.is_closed() {
                 return Err(AgentError::Cancelled);
-            }
-
-            for (name, args) in pending_phase.drain(..) {
-                self.context.notify_tool_use(&name, &args);
             }
 
             // --- Pre-LLM safety checks ----------------------------------
@@ -2050,9 +2041,8 @@ impl Agent {
                             tool_calls_count += 1;
                             tracing::debug!(tool_name = %call.name, "tool dispatched (parallel)");
                             // Phase tracking: once per call that really ran, in
-                            // call order; applied once the round's results are
-                            // in the history (see `pending_phase`).
-                            pending_phase.push((call.name.clone(), call.arguments.clone()));
+                            // call order, before its result enters the history.
+                            self.context.notify_tool_use(&call.name, &call.arguments);
 
                             // Guard: record successful read_file calls so we know
                             // which files have been read before any subsequent
@@ -2702,7 +2692,7 @@ impl Agent {
                     // Phase tracking: the call ran (even if it returned a tool
                     // error); a cancelled one returned above and does not count.
                     if tool_found {
-                        pending_phase.push((call.name.clone(), call.arguments.clone()));
+                        self.context.notify_tool_use(&call.name, &call.arguments);
                     }
 
                     match result {
