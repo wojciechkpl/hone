@@ -409,8 +409,31 @@ pub struct DocHit {
 impl Fts5DocsRetriever {
     /// Like [`Retriever::retrieve`], with the location of each hit.
     pub async fn retrieve_located(&self, query: &str, k: usize) -> Result<Vec<DocHit>, IndexError> {
-        use hone_memory::fts_query::{match_expression, query_tokens};
-        let Some(expr) = match_expression(&query_tokens(query)) else {
+        // The shared tokenizer; with more than 32 tokens the rarest 32 by the
+        // number of chunks holding them in this index.
+        use hone_memory::fts_query::{MAX_QUERY_TOKENS, match_expression, query_tokens, rarest};
+        let mut tokens = query_tokens(query);
+        if tokens.len() > MAX_QUERY_TOKENS {
+            let mut frequency = Vec::with_capacity(tokens.len());
+            for token in &tokens {
+                let n: i64 = sqlx::query_scalar(
+                    "SELECT count(*) FROM doc_chunks_fts WHERE doc_chunks_fts MATCH ?1",
+                )
+                .bind(format!("\"{token}\""))
+                .fetch_one(&self.pool)
+                .await
+                .map_err(db_err)?;
+                frequency.push(n as u64);
+            }
+            // A token no chunk holds matches nothing: it never takes a slot.
+            let (kept, freq): (Vec<String>, Vec<u64>) = tokens
+                .into_iter()
+                .zip(frequency)
+                .filter(|(_, n)| *n > 0)
+                .unzip();
+            tokens = rarest(kept, &freq);
+        }
+        let Some(expr) = match_expression(&tokens) else {
             return Ok(Vec::new());
         };
         let root = self.root.lock().map(|r| r.clone()).unwrap_or_default();
