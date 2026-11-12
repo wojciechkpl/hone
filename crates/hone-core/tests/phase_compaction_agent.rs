@@ -6,12 +6,15 @@
 //! structural summary, while results inside the recent window stay verbatim.
 //!
 //! No new API: it observes `Agent::messages()` and `Agent::metrics_snapshot()`.
-//! The model name `mock:claude-test` gives a recent window of 3 messages
-//! (`ContextConfig::for_model`), and no middle-zone reordering.
+//! The model name `mock:claude-test` gives a recent window of 3 (`ContextConfig::for_model`),
+//! and no middle-zone reordering. Since K10 the window counts the newest 3 tool
+//! RESULTS, not messages. Since K11 compaction is opt-in: this binary turns
+//! `HONE_PHASE_COMPACTION=1` on once, before the first agent is built. The default
+//! (off) is tested in `phase_compaction_default_off.rs`, a separate binary.
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -133,7 +136,13 @@ fn read(id: &str) -> ToolCallRequest {
     call(id, "read_file", json!({ "tag": id }))
 }
 
+static ENV: Once = Once::new();
+
 fn agent_with(rounds: Vec<Vec<ToolCallRequest>>, hooks: Option<HookRegistry>) -> Agent {
+    ENV.call_once(|| {
+        // SAFETY: runs once, before any agent in this binary is built.
+        unsafe { std::env::set_var("HONE_PHASE_COMPACTION", "1") };
+    });
     let mut b = ToolRegistry::builder();
     for (name, read_only) in [
         ("read_file", true),
@@ -218,12 +227,14 @@ fn is_verbatim(text: &str, id: &str) -> bool {
 
 #[tokio::test]
 async fn test_k4_edit_after_reads_should_summarise_old_results_and_keep_recent_ones() {
-    // u, a(read r1), t(r1), a(read r2), t(r2), a(edit e1) -> edit is dispatched with
-    // the last three messages (t r2, a edit, and a r2) protected.
+    // Four reads then an edit: the newest three tool results (r2, r3, r4) are
+    // protected, r1 is not.
     let mut agent = agent_with(
         vec![
             vec![read("r1")],
             vec![read("r2")],
+            vec![read("r3")],
+            vec![read("r4")],
             vec![call("e1", "edit_file", json!({ "tag": "e1" }))],
         ],
         None,
@@ -235,11 +246,47 @@ async fn test_k4_edit_after_reads_should_summarise_old_results_and_keep_recent_o
         is_summary(&result_text(&agent, "r1")),
         "the old read is summarised"
     );
-    assert!(
-        is_verbatim(&result_text(&agent, "r2"), "r2"),
-        "a result inside the recent window is unchanged"
-    );
+    for id in ["r2", "r3", "r4"] {
+        assert!(
+            is_verbatim(&result_text(&agent, id), id),
+            "{id}: a result inside the newest three tool results is unchanged"
+        );
+    }
     assert_eq!(agent.metrics_snapshot().phase_transitions, 1);
+}
+
+#[tokio::test]
+async fn test_k10_a_read_of_the_edit_target_should_survive_compaction() {
+    // Reads of a.rs (r1) and b.rs (r2) are both outside the newest three; the edit
+    // targets a.rs, so only r2 is compacted. The tool results are plain text, so the
+    // path can only come from the read call's arguments.
+    let read_of = |id: &str, path: &str| call(id, "read_file", json!({ "path": path, "tag": id }));
+    let mut agent = agent_with(
+        vec![
+            vec![read_of("r1", "src/a.rs")],
+            vec![read_of("r2", "src/b.rs")],
+            vec![read_of("r3", "src/c.rs")],
+            vec![read_of("r4", "src/d.rs")],
+            vec![read_of("r5", "src/e.rs")],
+            vec![call(
+                "e1",
+                "edit_file",
+                json!({ "path": "src/a.rs", "tag": "e1" }),
+            )],
+        ],
+        None,
+    );
+
+    run(&mut agent).await;
+
+    assert!(
+        is_verbatim(&result_text(&agent, "r1"), "r1"),
+        "the read of the edit target stays verbatim"
+    );
+    assert!(
+        is_summary(&result_text(&agent, "r2")),
+        "an unrelated old read is compacted"
+    );
 }
 
 #[tokio::test]
@@ -248,6 +295,8 @@ async fn test_k4_apply_patch_should_compact_like_edit_file() {
         vec![
             vec![read("r1")],
             vec![read("r2")],
+            vec![read("r3")],
+            vec![read("r4")],
             vec![call("p1", "apply_patch", json!({ "tag": "p1" }))],
         ],
         None,
@@ -265,6 +314,8 @@ async fn test_k4_shell_test_run_should_compact_but_a_plain_shell_call_should_not
         vec![
             vec![read("r1")],
             vec![read("r2")],
+            vec![read("r3")],
+            vec![read("r4")],
             vec![call(
                 "s1",
                 "shell",
@@ -284,6 +335,8 @@ async fn test_k4_shell_test_run_should_compact_but_a_plain_shell_call_should_not
         vec![
             vec![read("r1")],
             vec![read("r2")],
+            vec![read("r3")],
+            vec![read("r4")],
             vec![call(
                 "s1",
                 "shell",
@@ -366,6 +419,7 @@ async fn test_k1_a_denied_write_should_not_count_but_a_later_allowed_one_should(
             vec![read("r2")],
             vec![call("e1", "edit_file", json!({ "tag": "e1" }))],
             vec![read("r3")],
+            vec![read("r4")],
             vec![call("p1", "apply_patch", json!({ "tag": "p1" }))],
         ],
         Some(deny_edit_hook()),
@@ -422,6 +476,8 @@ async fn test_k1_calls_should_feed_the_tracker_in_call_order() {
         vec![
             vec![read("r1")],
             vec![read("r2")],
+            vec![read("r3")],
+            vec![read("r4")],
             vec![
                 call("e1", "edit_file", json!({ "tag": "e1" })),
                 read("b1"),

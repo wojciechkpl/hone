@@ -281,3 +281,154 @@ fn test_k4_three_reads_after_verification_should_return_to_exploration() {
     }
     assert_eq!(ctx.current_phase(), TaskPhase::Exploration);
 }
+
+// ---- K3a: the matcher on real commands (review round 1) ---------------------------------
+
+#[test]
+fn test_k3a_separators_inside_quotes_should_not_split_a_command() {
+    for cmd in [
+        r#"git commit -am "fix test; cargo test passes""#,
+        "echo 'step 1; pytest -q'",
+        r#"echo "a && cargo test""#,
+        "echo 'a | pytest'",
+        "git commit -m 'run cargo test || fix'",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Read, "{cmd:?}");
+    }
+    // a real separator next to quoted text still splits
+    for cmd in [
+        r#"git commit -am "fix; done" && cargo test"#,
+        r#"cd "my dir" && cargo test"#,
+        "echo 'a;b'; pytest -q",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Test, "{cmd:?}");
+    }
+}
+
+#[test]
+fn test_k3a_shell_dash_c_should_be_matched_on_its_quoted_script() {
+    for cmd in [
+        r#"bash -c "cargo test -p foo""#,
+        "sh -c 'cd x && pytest'",
+        r#"zsh -c "npm test""#,
+        "bash -c 'FOO=1 cargo nextest run'",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Test, "{cmd:?}");
+    }
+    for cmd in [
+        r#"bash -c "echo cargo test""#,
+        "sh -c 'cargo build'",
+        r#"zsh -c "ls tests""#,
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Read, "{cmd:?}");
+    }
+}
+
+#[test]
+fn test_k3a_timeout_nice_and_stdbuf_wrappers_should_be_skipped() {
+    for cmd in [
+        "timeout 600 cargo test",
+        "timeout 10m pytest -x",
+        "nice cargo test",
+        "nice -n 10 pytest",
+        "stdbuf -oL cargo test",
+        "stdbuf -o0 -e0 pytest",
+        "time timeout 60 nice -n 5 cargo test",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Test, "{cmd:?}");
+    }
+}
+
+#[test]
+fn test_k3a_runner_launcher_options_should_be_skipped() {
+    for cmd in [
+        "npx --yes jest",
+        "npx -y jest --ci",
+        "bunx --bun vitest",
+        "uv run --with pytest pytest",
+        "uv run --frozen pytest -q",
+        "uv run --with pytest python -m pytest",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Test, "{cmd:?}");
+    }
+}
+
+#[test]
+fn test_k3a_path_qualified_runners_should_match_by_basename() {
+    for cmd in [
+        ".venv/bin/pytest -q",
+        "./node_modules/.bin/jest",
+        "/usr/local/bin/cargo test",
+        "python3.12 -m pytest",
+        "python3.11 -m unittest discover",
+        "./.venv/bin/python -m pytest",
+        "/usr/bin/env pytest",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Test, "{cmd:?}");
+    }
+    for cmd in [
+        ".venv/bin/pip install pytest",
+        "./scripts/build.sh",
+        "python3.12 script.py",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Read, "{cmd:?}");
+    }
+}
+
+#[test]
+fn test_k3a_script_runners_should_match_test_scripts() {
+    for cmd in [
+        "npm t",
+        "npm test -- --watch",
+        "npm run test:unit",
+        "yarn test --ci",
+        "yarn run test:e2e",
+        "pnpm test",
+        "pnpm run test:unit",
+        "bun run test:unit",
+        "bun run test",
+        "cargo t",
+        "cargo t -p foo",
+        "just test",
+        "bazel test //...",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Test, "{cmd:?}");
+    }
+    for cmd in [
+        "npm run build",
+        "yarn build",
+        "yarn run lint",
+        "pnpm run build",
+        "bun run build",
+        "just build",
+        "bazel build //...",
+        "cargo b",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Read, "{cmd:?}");
+    }
+}
+
+#[test]
+fn test_k3a_a_runner_that_only_builds_or_lists_tests_should_be_a_read() {
+    for cmd in [
+        "cargo test --no-run",
+        "cargo test --no-run -p foo",
+        "cargo test -- --list",
+        "cargo test -p foo -- --list --format terse",
+        "pytest --collect-only",
+        "pytest --collect-only -q tests/",
+        "pytest --co",
+        "cd app && cargo test --no-run",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Read, "{cmd:?}");
+    }
+    // a later segment that runs the tests wins over a listing one
+    assert_eq!(
+        kind_of_shell("cargo test --no-run && cargo test"),
+        ToolPhaseKind::Test
+    );
+    assert_eq!(
+        kind_of_shell("pytest --collect-only; pytest -x"),
+        ToolPhaseKind::Test
+    );
+}
