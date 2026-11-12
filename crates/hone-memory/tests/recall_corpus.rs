@@ -338,3 +338,65 @@ async fn test_m10_enumeration_with_exclusions_should_return_the_embedding_too() 
     assert_eq!(got.len(), 1);
     assert_eq!(got[0].embedding.as_deref(), Some(&[3.0][..]));
 }
+
+// ---- M11: a ranked (searched) recall returns the embedding too ---------------------
+//
+// Supersedes the M10 note that a non-empty query may omit it: `GET /memory?q=`
+// (the memory panel's search) reports `has_embedding` from what `recall` returns.
+
+async fn store_with_one_vector() -> SqliteStore {
+    let store = SqliteStore::in_memory().await.unwrap();
+    store
+        .record(with_embedding(
+            mem("with", "the quokka enclosure needs repainting", MemoryKind::Feedback, 2),
+            vec![0.25, -0.5, 1.0],
+        ))
+        .await
+        .unwrap();
+    store
+        .record(mem("without", "the quokka feeding schedule", MemoryKind::Feedback, 1))
+        .await
+        .unwrap();
+    store
+}
+
+#[tokio::test]
+async fn test_m11_ranked_recall_should_return_the_stored_embedding() {
+    let store = store_with_one_vector().await;
+
+    let got = store.recall(&q("quokka", 10, None)).await.unwrap();
+
+    assert_eq!(got.len(), 2);
+    let with = got.iter().find(|m| m.id == "with").unwrap();
+    assert_eq!(with.embedding.as_deref(), Some(&[0.25, -0.5, 1.0][..]));
+    let without = got.iter().find(|m| m.id == "without").unwrap();
+    assert!(without.embedding.is_none(), "no vector stored, none returned");
+}
+
+#[tokio::test]
+async fn test_m11_ranked_recall_with_a_kind_filter_should_return_the_embedding() {
+    let store = store_with_one_vector().await;
+
+    let got = store
+        .recall(&q("quokka", 10, Some(MemoryKind::Feedback)))
+        .await
+        .unwrap();
+
+    let with = got.iter().find(|m| m.id == "with").unwrap();
+    assert_eq!(with.embedding.as_deref(), Some(&[0.25, -0.5, 1.0][..]));
+}
+
+#[tokio::test]
+async fn test_m11_ranked_recall_excluding_should_return_the_embedding() {
+    let store = store_with_one_vector().await;
+
+    let got = store
+        .recall_excluding(&q("quokka", 10, None), &[MemoryKind::Outcome])
+        .await
+        .unwrap();
+
+    let with = got.iter().find(|m| m.id == "with").unwrap();
+    assert_eq!(with.embedding.as_deref(), Some(&[0.25, -0.5, 1.0][..]));
+    let without = got.iter().find(|m| m.id == "without").unwrap();
+    assert!(without.embedding.is_none());
+}
