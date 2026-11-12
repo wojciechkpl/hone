@@ -2564,6 +2564,17 @@ fn tui_panic_restore<W: io::Write>(out: &mut W, ends_process: bool) -> bool {
     true
 }
 
+/// The hook's entry point: like [`tui_panic_restore`] on a locked stdout, and
+/// hands the lock back when it restored, so the hook can keep the draw loop
+/// from writing frames over the restored screen.
+fn tui_panic_restore_locked(ends_process: bool) -> Option<io::StdoutLock<'static>> {
+    if !ends_process || !tui_running() {
+        return None;
+    }
+    let mut lock = io::stdout().lock();
+    tui_panic_restore(&mut lock, ends_process).then_some(lock)
+}
+
 /// Panic hooks: group cleanup innermost (it runs last, after the message),
 /// with the terminal restore on top so the message lands on a usable screen.
 fn install_panic_hooks() {
@@ -2572,8 +2583,17 @@ fn install_panic_hooks() {
     std::panic::set_hook(Box::new(move |info| {
         // The TUI draws on stdout, so the restore sequences go there; the
         // message (inner hook) goes to stderr.
-        tui_panic_restore(&mut io::stdout(), hone_tools::panic_ends_process());
+        let held = tui_panic_restore_locked(hone_tools::panic_ends_process());
         inner(info);
+        // Keep stdout locked past the message so the draw loop (still running
+        // on the main thread during the group cleanup) writes no more frames.
+        // With panic=abort the process ends with the lock held; otherwise the
+        // unwind goes on and the lock is released.
+        if cfg!(panic = "abort") {
+            std::mem::forget(held);
+        } else {
+            drop(held);
+        }
     }));
 }
 

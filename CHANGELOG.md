@@ -143,7 +143,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Now:**
   - A panic that ends Hone stops them as a normal exit does: commands get SIGKILL, servers get SIGTERM and then SIGKILL after about 1 s. A panic that Hone survives (in a thread or a task) stops nothing.
   - If a panic happens while the TUI is running, the terminal is restored before the panic message is printed.
-  - `kill -9`, the OOM killer, and a crash that isn't a panic (a segfault, a stack overflow) still leave servers behind.
+  - `kill -9`, the OOM killer, and a crash that isn't a panic (a segfault, a stack overflow, an abort from C code) still leave a server that ignores its input closing running.
 - Contract: `docs/plans/panic-stops-processes-spec.md`.
 
 ### Fixed: MCP servers start and stop in parallel

@@ -109,6 +109,7 @@ pub fn kill_running_commands() {
 
 /// Whether a panic on this thread ends hone: always with `panic = "abort"`,
 /// otherwise only on the main thread (a thread or task panic is contained).
+#[doc(hidden)]
 pub fn panic_ends_process() -> bool {
     cfg!(panic = "abort") || std::thread::current().name() == Some("main")
 }
@@ -118,6 +119,7 @@ pub fn panic_ends_process() -> bool {
 /// (the panicking thread may hold it). Returns `false`, having stopped nothing,
 /// if the registry stayed locked. Runs once; concurrent callers wait for it and
 /// return `true`. Off unix: `true`, does nothing.
+#[doc(hidden)]
 pub fn stop_groups_on_panic(lock_wait: Duration) -> bool {
     #[cfg(unix)]
     {
@@ -383,13 +385,42 @@ mod unix {
 
     pub(super) fn kill_all() {
         let mcp_groups = kill_shell_in(&RUNNING.lock().unwrap_or_else(PoisonError::into_inner));
-        stop_mcp(&mcp_groups);
+        stop_mcp(&mcp_groups, None);
+    }
+
+    /// Run `f` on the registry. `wait: None` blocks for the lock (poison is
+    /// ignored); `Some(d)` polls for at most `d` and returns `None` if the
+    /// registry stayed locked (a panicking thread may hold it for good).
+    fn with_registry<R>(
+        wait: Option<Duration>,
+        f: impl FnOnce(&mut Option<HashMap<i32, bool>>) -> R,
+    ) -> Option<R> {
+        let Some(wait) = wait else {
+            return Some(f(&mut RUNNING
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)));
+        };
+        let deadline = Instant::now() + wait;
+        loop {
+            match RUNNING.try_lock() {
+                Ok(mut map) => return Some(f(&mut map)),
+                Err(std::sync::TryLockError::Poisoned(e)) => return Some(f(&mut e.into_inner())),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if Instant::now() >= deadline {
+                        return None;
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+        }
     }
 
     /// MCP groups: SIGTERM, wait (without the lock) until they are gone, then
     /// SIGKILL what is left and deregister, so a later guard drop does not
-    /// signal a reused group id.
-    fn stop_mcp(mcp_groups: &[i32]) {
+    /// signal a reused group id. With `wait: Some(d)` (the panic path) every
+    /// registry access waits at most `d`: if the registry stays locked the
+    /// group is still SIGKILLed, just not deregistered.
+    fn stop_mcp(mcp_groups: &[i32], wait: Option<Duration>) {
         if mcp_groups.is_empty() {
             return;
         }
@@ -401,13 +432,18 @@ mod unix {
             std::thread::sleep(Duration::from_millis(20));
         }
         for &pgid in mcp_groups {
-            if unregister(pgid) {
+            let registered = with_registry(wait, |m| {
+                m.as_mut().is_some_and(|m| m.remove(&pgid).is_some())
+            });
+            if registered != Some(false) {
                 kill_group(pgid);
             }
         }
         // A command may have started while we waited (another task running
         // under the grace period): kill those too, so none outlives the exit.
-        kill_shell();
+        with_registry(wait, |m| {
+            kill_shell_in(m);
+        });
     }
 
     /// Serialises panic cleanups; `true` once one has finished.
@@ -435,7 +471,7 @@ mod unix {
                 }
             }
         };
-        stop_mcp(&mcp_groups);
+        stop_mcp(&mcp_groups, Some(lock_wait));
         *done = true;
         true
     }
