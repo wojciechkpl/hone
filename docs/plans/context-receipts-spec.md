@@ -63,17 +63,17 @@ Doc notes for PR C's user docs: receipts are local diagnostics. Message hashes a
 
 | Row | Behaviour |
 |---|---|
-| CR11 | **The CLI stores receipts with the session.** The session store gains a `context_receipts` table (session name, turn, call, receipt JSON), written when the session is saved. Old databases upgrade in place. |
-| CR12 | **`hone context show [--session NAME] [--turn N] [--json]`.** Prints, per call: turn/call, model, request hash prefix, each block (slot, strategy, tokens, sources with scores), dropped sources, and compaction steps. Default session: the most recent. `--json` prints the stored receipts. An unknown session or turn is an error with exit code 1. |
-| CR13 | **Audit log.** With `--audit`/`HONE_AUDIT_LOG=1`, each receipt adds one `.hone/audit.jsonl` line with a new `SpanKind::Context`, its parent the turn span, carrying the receipt. |
-| CR14 | **`honed` provenance.** `ProvenanceEvent::ContextAssembled { receipt_sha256, strategies, sources }` is appended to a run's chain for each receipt, where `strategies` are the block strategy names and `sources` the source refs. Existing chains still verify; the variant is a pure addition. |
+| CR11 | **The agent keeps its receipts, and the CLI stores them with the session.**<br>• `AgentHandle::get_context_receipts().await -> Vec<ContextReceipt>` returns the receipts of this agent's life in order, like `get_messages`. The agent keeps at most the newest 10,000.<br>• The CLI session store gains a `context_receipts` table: session id, `run`, `seq`, `turn`, `call`, receipt JSON. A run is one process saving to that session: the first save of a process takes `run = max(run) + 1` for the session, and later saves in the same process append only receipts not yet stored (`seq` increasing). Turn numbers restart on resume, so `run` keeps them apart.<br>• Deleting a session deletes its receipts. Old databases gain the table in place. |
+| CR12 | **`hone context show [--session NAME] [--run R] [--turn N] [--json]`.**<br>• Prints, per call: run/turn/call, model, the first 12 hex digits of the request hash, each block (slot, strategy, tokens, sources with scores), dropped sources, and compaction steps.<br>• Defaults: the most recently updated session; all runs; `--turn` without `--run` means the latest run.<br>• `--json` prints the stored receipts as a JSON array, each with its `run` and `seq`.<br>• An unknown session, run or turn exits with code 1 and a message on stderr. A session with no receipts prints a one-line note and exits 0. |
+| CR13 | **Audit log.** With `--audit`/`HONE_AUDIT_LOG=1`, each receipt adds one `.hone/audit.jsonl` line: `span_kind: "context"`, `tool: "context_assembled"`, `arguments`: the receipt, `result_preview: ""`, `blocked: false`, `duration_ms`: the sum of the blocks' durations, the turn's `trace_id`, and the turn span as `parent_span_id`. `EgressEntry` gains no fields. |
+| CR14 | **`honed` provenance.** `ProvenanceEvent::ContextAssembled { receipt_sha256, strategies, sources }` is appended to a run's chain for each `ContextAssembled` event: `receipt_sha256` is `sha256_hex` of the receipt's compact key-sorted JSON, `strategies` the block strategy names in order, `sources` every block's source refs in order. Existing chains (without the variant) still parse and verify, and a chain with it verifies. |
 
 ## Testing notes
 
 - **CR1–CR8, CR10** through a real `Agent` with a scripted mock provider that records the requests it receives. Compare `request_sha256` with a hash computed from the recorded request. Use an `InMemoryStore` with seeded memories, a skill registry with one trigger, and a context config small enough to force compression and trimming.
 - **CR3 byte-identity:** record requests for a fixed scripted session and compare with a golden JSON fixture captured from the base branch (generate the fixture before implementing).
 - **CR9** in `bins/hone` (the `--json` builder) and `hone-server` (event-name maps).
-- **CR11–CR14** in their crates; CR12 runs the binary against a temp `HOME`.
+- **CR11–CR14** in their crates. CR11 and CR12 run the `hone` binary against a temp `HOME` with a scripted provider where one exists, or exercise the store and the `context show` renderer directly.
 
 ## Out of scope
 
