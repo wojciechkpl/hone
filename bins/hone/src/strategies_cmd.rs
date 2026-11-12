@@ -91,11 +91,13 @@ fn slots(sel: &StrategySelection) -> Vec<Slot> {
             params: json!({
                 "phase": sel.graduated_phase.value,
                 "budget_ratio": sel.budget_ratio.value.map_or(Value::Null, float),
+                "budget_cap": sel.budget_cap.value.map_or(Value::Null, float),
             }),
             origin: sel.compactor.origin.label(),
             param_origins: origins(&[
                 ("phase", sel.graduated_phase.origin.label()),
                 ("budget_ratio", sel.budget_ratio.origin.label()),
+                ("budget_cap", sel.budget_cap.origin.label()),
             ]),
         },
         Slot {

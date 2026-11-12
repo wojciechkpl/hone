@@ -1668,7 +1668,9 @@ impl Agent {
                 let skills_at =
                     (!skills_block.is_empty()).then_some(if memories.is_empty() { 1 } else { 2 });
                 self.receipt_info.trim_only = self.context.trim_only();
-                self.receipt_info.phase_compaction = self.context.phase_compaction();
+                // trim-only never runs phase compaction.
+                self.receipt_info.phase_compaction =
+                    self.context.phase_compaction() && !self.receipt_info.trim_only;
                 let receipt = crate::receipts::build_receipt(
                     self.turn_count,
                     model_call,
