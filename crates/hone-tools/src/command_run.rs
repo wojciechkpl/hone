@@ -419,8 +419,9 @@ mod unix {
     /// SIGKILL what is left and deregister, so a later guard drop does not
     /// signal a reused group id. With `wait: Some(d)` (the panic path) every
     /// registry access waits at most `d`: if the registry stays locked the
-    /// group is still SIGKILLed, just not deregistered.
-    fn stop_mcp(mcp_groups: &[i32], wait: Option<Duration>) {
+    /// group is still SIGKILLed, just not deregistered. After one such timeout
+    /// the remaining accesses only try once, so the waits don't add up.
+    fn stop_mcp(mcp_groups: &[i32], mut wait: Option<Duration>) {
         if mcp_groups.is_empty() {
             return;
         }
@@ -435,6 +436,9 @@ mod unix {
             let registered = with_registry(wait, |m| {
                 m.as_mut().is_some_and(|m| m.remove(&pgid).is_some())
             });
+            if registered.is_none() {
+                wait = Some(Duration::ZERO);
+            }
             if registered != Some(false) {
                 kill_group(pgid);
             }
@@ -458,18 +462,8 @@ mod unix {
         if *done {
             return true;
         }
-        let deadline = Instant::now() + lock_wait;
-        let mcp_groups = loop {
-            match RUNNING.try_lock() {
-                Ok(map) => break kill_shell_in(&map),
-                Err(std::sync::TryLockError::Poisoned(e)) => break kill_shell_in(&e.into_inner()),
-                Err(std::sync::TryLockError::WouldBlock) => {
-                    if Instant::now() >= deadline {
-                        return false;
-                    }
-                    std::thread::sleep(Duration::from_millis(2));
-                }
-            }
+        let Some(mcp_groups) = with_registry(Some(lock_wait), |m| kill_shell_in(m)) else {
+            return false;
         };
         stop_mcp(&mcp_groups, Some(lock_wait));
         *done = true;

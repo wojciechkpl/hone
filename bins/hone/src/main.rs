@@ -7722,7 +7722,9 @@ mod tui_panic_restore_tests {
     static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn lock() -> std::sync::MutexGuard<'static, ()> {
-        SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        SERIAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     #[test]
@@ -7758,7 +7760,10 @@ mod tui_panic_restore_tests {
         let mut out: Vec<u8> = Vec::new();
         let restored = tui_panic_restore(&mut out, true);
         assert!(!restored);
-        assert!(out.is_empty(), "one-shot, honed, before/after the TUI: {out:?}");
+        assert!(
+            out.is_empty(),
+            "one-shot, honed, before/after the TUI: {out:?}"
+        );
     }
 
     #[test]
@@ -7769,7 +7774,10 @@ mod tui_panic_restore_tests {
         let restored = tui_panic_restore(&mut out, false);
         set_tui_running(false);
         assert!(!restored);
-        assert!(out.is_empty(), "a caught task panic must not wreck the TUI: {out:?}");
+        assert!(
+            out.is_empty(),
+            "a caught task panic must not wreck the TUI: {out:?}"
+        );
     }
 
     // ---- C7: stdout stays locked after the restore --------------------------
@@ -7794,7 +7802,10 @@ mod tui_panic_restore_tests {
         let blocked = !other_thread_can_lock_stdout(std::time::Duration::from_millis(200));
         drop(held);
         let freed = other_thread_can_lock_stdout(std::time::Duration::from_secs(5));
-        assert!(blocked, "a TUI frame could still be written after the restore");
+        assert!(
+            blocked,
+            "a TUI frame could still be written after the restore"
+        );
         assert!(freed, "dropping the lock (debug build) frees stdout");
     }
 
@@ -7817,6 +7828,8 @@ mod tui_panic_restore_tests {
         let held = tui_panic_restore_locked(false);
         set_tui_running(false);
         assert!(held.is_none());
-        assert!(other_thread_can_lock_stdout(std::time::Duration::from_secs(5)));
+        assert!(other_thread_can_lock_stdout(
+            std::time::Duration::from_secs(5)
+        ));
     }
 }
