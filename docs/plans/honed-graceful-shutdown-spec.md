@@ -50,6 +50,15 @@ sequenceDiagram
 | D5 | **A second signal stops `honed` at once.** A second SIGINT, SIGTERM or SIGHUP during the drain or the MCP shutdown makes `honed` stop everything with `kill_running_commands()`: commands get SIGKILL, MCP servers get SIGTERM, then SIGKILL after about 1 s. `honed` then ends *by* that signal (`kill_commands_and_reraise`), as a one-shot `hone` run does. A signal that was ignored when `honed` started stays ignored for the second signal too: `nohup` leaves SIGHUP ignored, a background job leaves SIGINT ignored. |
 | D6 | **Docs.** `honed --help` lists `HONE_SHUTDOWN_GRACE_SECS`. The `honed` and MCP parts of the docs describe the shutdown order: drain with tools working, then a graceful MCP shutdown, a second signal to force it. The CHANGELOG has an entry. |
 
+### Review round 1 (D7–D8)
+
+| Row | Behaviour |
+|---|---|
+| D7 | **A worker whose coordinator is the same `honed` can report its result.** When `honed` runs a worker pool, the first signal doesn't close the listener straight away. It keeps accepting connections while the worker finishes its running task. Then it stops accepting and drains the HTTP requests in whatever remains of the drain limit (D3); the limit covers both phases together. So a worker whose coordinator is this same process can still send its `complete` before the listener closes. This is the "coordinator + worker on the same machine" mode: `HONE_DISTRIBUTED_DB` with `HONE_WORKER_COORDINATOR` pointing at itself.<br><br>Without a worker pool nothing changes: the listener closes at the signal (D2). If the server ends by itself, the worker is still stopped and awaited, within the limit, before D4.<br><br>(Review S1, reproduced: the co-located worker's `complete` failed with a connection error, the result was lost and the task stayed leased. It would have run again after the lease expired. A separate coordinator recorded it.) |
+| D8 | **The drain limit really cuts open responses, and requests still see the client address.**<br>• At the limit, a client holding an open response (an SSE stream that never ends) sees its stream end within about 1 s of the limit, while the runtime is still running. So it is the cut that ends the stream, not the process exiting.<br>• At the limit, the worker task is aborted and awaited (bounded, about 1 s) before D4 starts.<br>• Handlers still get `ConnectInfo<SocketAddr>` with the peer's address. The rate limiter keys on it.<br><br>(Review S2: removing the cut passed every test.) |
+
+Not pinned, by design: a `claim` already in flight when the signal arrives still runs its task and reports it. There is no release API, and dropping it would orphan the lease until it expires.
+
 ## Testing notes
 
 - **The `honed` binary has no test seams for a model or a coordinator.** The worker's provider is the real Anthropic/OpenAI API at its default URL. So test the behaviour at library level in `hone-server`, where the shutdown logic should live.

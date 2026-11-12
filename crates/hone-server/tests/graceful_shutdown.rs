@@ -60,6 +60,7 @@
 //! it, so every test takes `SERIAL`.
 
 use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -67,9 +68,13 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use axum::Json;
 use axum::Router;
+use axum::extract::ConnectInfo;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::response::sse::{Event, Sse};
-use axum::routing::get;
+use axum::routing::{get, post};
 use hone_core::queue_client::QueueClient;
 use hone_core::task_plan::SubTask;
 use hone_server::{
@@ -697,4 +702,324 @@ async fn test_d4_command_left_running_should_be_stopped_before_serve_returns() {
     let gone = !ps_alive(&pid);
     bg.abort();
     assert!(gone, "kill_running_commands runs after the drain");
+}
+
+// ---- D7: a co-located worker can report its result ---------------------------
+
+/// The coordinator routes a worker's `QueueClient` uses, served by the same
+/// app that `serve_until_shutdown` serves: heartbeat, claim (one task, then
+/// nothing) and `complete` (counted).
+fn coordinator_app() -> (Router, Arc<AtomicUsize>) {
+    let complete_hits = Arc::new(AtomicUsize::new(0));
+    let hits = complete_hits.clone();
+    let claimed = Arc::new(AtomicBool::new(false));
+    let app = Router::new()
+        .route(
+            "/distributed/workers/worker-test/heartbeat",
+            post(|| async { StatusCode::NO_CONTENT }),
+        )
+        .route(
+            "/distributed/workers/worker-test/claim",
+            post(move || {
+                let claimed = claimed.clone();
+                async move {
+                    if claimed.swap(true, Ordering::SeqCst) {
+                        StatusCode::NO_CONTENT.into_response()
+                    } else {
+                        Json(claimed_task_json("task-abc")).into_response()
+                    }
+                }
+            }),
+        )
+        .route(
+            "/distributed/workers/worker-test/results/task-abc",
+            post(move || {
+                let hits = hits.clone();
+                async move {
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    StatusCode::NO_CONTENT
+                }
+            }),
+        );
+    (app, complete_hits)
+}
+
+fn pool_for(base: &str, executor: Arc<dyn TaskExecutor>) -> WorkerPool {
+    let client = Arc::new(QueueClient::new(base.to_owned(), "test-token"));
+    WorkerPool::new(client, "worker-test", vec![], executor)
+        .with_poll_interval(Duration::from_millis(10))
+        .with_heartbeat_interval(Duration::from_millis(50))
+        .with_lease_secs(60)
+}
+
+#[tokio::test]
+async fn test_d7_worker_with_this_server_as_coordinator_should_report_its_result_after_the_signal()
+{
+    let _s = SERIAL.lock().await;
+    let (app, complete_hits) = coordinator_app();
+    let (listener, base) = bind().await;
+    let executor = SlowExecutor::new(Duration::from_millis(700));
+    let (stop, rx) = watch::channel(false);
+    let handle = pool_for(&base, executor.clone()).spawn_with_shutdown(rx);
+    let (signal, mut serving) = serve(
+        listener,
+        app,
+        ShutdownOptions {
+            grace: Duration::from_secs(10),
+            worker: Some(WorkerShutdown { stop, handle }),
+            mcp: None,
+        },
+    );
+    tokio::time::timeout(Duration::from_secs(5), executor.started.notified())
+        .await
+        .expect("the task never started");
+    signal.send(()).unwrap();
+
+    let report = finishes_within(&mut serving, Duration::from_secs(10))
+        .await
+        .unwrap();
+    assert_eq!(
+        complete_hits.load(Ordering::SeqCst),
+        1,
+        "the listener closed before the worker could post `complete`"
+    );
+    assert_eq!(executor.finished.load(Ordering::SeqCst), 1);
+    assert!(report.drained);
+}
+
+#[tokio::test]
+async fn test_d7_listener_should_close_once_the_worker_has_finished_while_requests_still_drain() {
+    let _s = SERIAL.lock().await;
+    let (app, complete_hits) = coordinator_app();
+    let app = app.route(
+        "/slow",
+        get(|| async {
+            tokio::time::sleep(Duration::from_millis(3500)).await;
+            "done"
+        }),
+    );
+    let (listener, base) = bind().await;
+    let addr = base.trim_start_matches("http://").to_owned();
+    let executor = SlowExecutor::new(Duration::from_millis(300));
+    let (stop, rx) = watch::channel(false);
+    let handle = pool_for(&base, executor.clone()).spawn_with_shutdown(rx);
+    let (signal, mut serving) = serve(
+        listener,
+        app,
+        ShutdownOptions {
+            grace: Duration::from_secs(15),
+            worker: Some(WorkerShutdown { stop, handle }),
+            mcp: None,
+        },
+    );
+    let slow_url = format!("{base}/slow");
+    let req = tokio::spawn(async move { reqwest::get(slow_url).await });
+    tokio::time::timeout(Duration::from_secs(5), executor.started.notified())
+        .await
+        .expect("the task never started");
+    signal.send(()).unwrap();
+
+    // The worker reports; then the listener stops accepting while /slow runs.
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while complete_hits.load(Ordering::SeqCst) == 0 {
+        assert!(Instant::now() < deadline, "complete never arrived");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let deadline = Instant::now() + Duration::from_millis(1500);
+    let mut refused = false;
+    while Instant::now() < deadline {
+        if tokio::net::TcpStream::connect(&addr).await.is_err() {
+            refused = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let report = finishes_within(&mut serving, Duration::from_secs(15))
+        .await
+        .unwrap();
+    let resp = req.await.unwrap().expect("the running request was cut");
+    assert!(refused, "the listener must close once the worker is done");
+    assert_eq!(resp.status(), 200);
+    assert!(report.drained);
+}
+
+#[tokio::test]
+async fn test_d7_limit_should_be_shared_by_the_worker_phase_and_the_http_phase() {
+    let _s = SERIAL.lock().await;
+    let coord = Coordinator::start(Some(claimed_task_json("task-abc"))).await;
+    let executor = SlowExecutor::new(Duration::from_secs(60));
+    let (stop, rx) = watch::channel(false);
+    let handle = coord.pool(executor.clone()).spawn_with_shutdown(rx);
+    tokio::time::timeout(Duration::from_secs(5), executor.started.notified())
+        .await
+        .expect("the task never started");
+    let app = Router::new().route(
+        "/events",
+        get(|| async { Sse::new(futures::stream::pending::<Result<Event, Infallible>>()) }),
+    );
+    let (listener, base) = bind().await;
+    let (signal, mut serving) = serve(
+        listener,
+        app,
+        ShutdownOptions {
+            grace: Duration::from_secs(1),
+            worker: Some(WorkerShutdown { stop, handle }),
+            mcp: None,
+        },
+    );
+    let resp = reqwest::get(format!("{base}/events")).await.unwrap();
+    signal.send(()).unwrap();
+    let start = Instant::now();
+    let report = finishes_within(&mut serving, Duration::from_secs(6))
+        .await
+        .unwrap();
+    let took = start.elapsed();
+    drop(resp);
+    assert!(!report.drained);
+    assert!(
+        took < Duration::from_millis(1800),
+        "one 1 s limit covers both phases, took {took:?}"
+    );
+}
+
+// ---- D8: the limit really cuts; handlers see the client address ---------------
+
+#[tokio::test]
+async fn test_d8_open_stream_should_end_for_the_client_soon_after_the_limit() {
+    let _s = SERIAL.lock().await;
+    let app = Router::new().route(
+        "/events",
+        get(|| async { Sse::new(futures::stream::pending::<Result<Event, Infallible>>()) }),
+    );
+    let (listener, base) = bind().await;
+    let (signal, serving) = serve(
+        listener,
+        app,
+        ShutdownOptions {
+            grace: Duration::from_millis(500),
+            ..Default::default()
+        },
+    );
+    let mut resp = reqwest::get(format!("{base}/events")).await.unwrap();
+    assert_eq!(resp.status(), 200);
+    signal.send(()).unwrap();
+
+    // The test runtime keeps running: only the cut can end the stream.
+    let start = Instant::now();
+    let ended = tokio::time::timeout(Duration::from_millis(2500), async {
+        loop {
+            match resp.chunk().await {
+                Ok(Some(_)) => continue,
+                Ok(None) | Err(_) => break,
+            }
+        }
+    })
+    .await;
+    let took = start.elapsed();
+    serving.abort();
+    assert!(
+        ended.is_ok(),
+        "the stream was still open {took:?} after the signal (limit 500 ms)"
+    );
+}
+
+#[tokio::test]
+async fn test_d8_handlers_should_get_the_peer_address_as_connect_info() {
+    let _s = SERIAL.lock().await;
+    let app = Router::new().route(
+        "/whoami",
+        get(|ConnectInfo(addr): ConnectInfo<SocketAddr>| async move { addr.ip().to_string() }),
+    );
+    let (listener, base) = bind().await;
+    let (signal, mut serving) = serve(listener, app, ShutdownOptions::default());
+    let body = reqwest::get(format!("{base}/whoami"))
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    signal.send(()).unwrap();
+    finishes_within(&mut serving, Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert_eq!(body, "127.0.0.1");
+}
+
+/// Its drop is slow, so "the aborted worker task was awaited before the MCP
+/// shutdown" is observable without racing: the MCP server sees its input close
+/// only after the slow drop has finished.
+struct DropStamp(Arc<std::sync::Mutex<Option<std::time::SystemTime>>>);
+
+impl Drop for DropStamp {
+    fn drop(&mut self) {
+        std::thread::sleep(Duration::from_millis(600));
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(std::time::SystemTime::now());
+    }
+}
+
+struct StuckExecutor {
+    started: Arc<Notify>,
+    dropped_at: Arc<std::sync::Mutex<Option<std::time::SystemTime>>>,
+}
+
+#[async_trait]
+impl TaskExecutor for StuckExecutor {
+    async fn execute(&self, _task: &SubTask) -> ExecutionOutcome {
+        let _stamp = DropStamp(self.dropped_at.clone());
+        self.started.notify_one();
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        ExecutionOutcome::completed("never")
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_d8_aborted_worker_task_should_be_gone_before_the_mcp_shutdown_starts() {
+    let _s = SERIAL.lock().await;
+    let dir = tempfile::tempdir().unwrap();
+    let _reaper = PidReaper(vec![dir.path().join("server.pid")]);
+    let mcp = mcp_manager(dir.path()).await;
+    let coord = Coordinator::start(Some(claimed_task_json("task-abc"))).await;
+    let started = Arc::new(Notify::new());
+    let dropped_at = Arc::new(std::sync::Mutex::new(None));
+    let executor = Arc::new(StuckExecutor {
+        started: started.clone(),
+        dropped_at: dropped_at.clone(),
+    });
+    let (stop, rx) = watch::channel(false);
+    let handle = coord.pool(executor).spawn_with_shutdown(rx);
+    tokio::time::timeout(Duration::from_secs(5), started.notified())
+        .await
+        .expect("the task never started");
+
+    let (listener, _base) = bind().await;
+    let (signal, mut serving) = serve(
+        listener,
+        Router::new(),
+        ShutdownOptions {
+            grace: Duration::from_millis(300),
+            worker: Some(WorkerShutdown { stop, handle }),
+            mcp: Some(mcp),
+        },
+    );
+    signal.send(()).unwrap();
+    finishes_within(&mut serving, Duration::from_secs(15))
+        .await
+        .unwrap();
+
+    let dropped = *dropped_at
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let dropped = dropped.expect("the worker task was not dropped by the time serve returned");
+    let closed = std::fs::metadata(dir.path().join("stdin-closed"))
+        .expect("the MCP server was not shut down gracefully")
+        .modified()
+        .unwrap();
+    assert!(
+        closed >= dropped,
+        "the MCP shutdown started while the aborted worker task was still being dropped"
+    );
 }
