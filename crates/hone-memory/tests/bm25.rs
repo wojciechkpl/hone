@@ -25,8 +25,12 @@ fn tokenize_strips_empty_and_whitespace_only() {
 
 #[test]
 fn tokenize_handles_unicode_alphanumeric() {
-    let tokens = tokenize("café résumé");
-    assert_eq!(tokens, vec!["café", "résumé"]);
+    // G24 (fts5 spec, review round 2): `tokenize` is the shared folding tokenizer, so Latin
+    // diacritics are folded (`café` -> `cafe`, as in `recall_fts5`); `ł` stays; other scripts
+    // are kept whole (no jamo decomposition, kana voicing marks stay).
+    let tokens = tokenize("café résumé kąt łódź");
+    assert_eq!(tokens, vec!["cafe", "resume", "kat", "łodz"]);
+    assert_eq!(tokenize("한국어 パス バス"), vec!["한국어", "パス", "バス"]);
 }
 
 // ---------------------------------------------------------------------------

@@ -152,6 +152,16 @@ fn test_g17_strategies_should_show_the_encrypted_fallback_as_chosen_by_the_flag(
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     let shown = text(&out.stdout);
     assert!(shown.contains("--encrypted-memory"), "the text output names the flag: {shown}");
+    // G24: the recaller block itself names the flag as what chose the fallback.
+    let block: Vec<&str> = shown
+        .lines()
+        .skip_while(|l| !l.starts_with("memory.recaller"))
+        .take_while(|l| !l.trim().is_empty())
+        .collect();
+    assert!(
+        block.iter().any(|l| l.contains("chosen by") && l.contains("--encrypted-memory")),
+        "`chosen by: --encrypted-memory` in the memory.recaller block: {block:?}"
+    );
 }
 
 async fn seed(db: &Path, n: usize) {
