@@ -377,3 +377,75 @@ impl GroupGuard {
     fn disarm(&mut self) {}
     fn kill(&mut self) {}
 }
+
+#[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod panic_lock_tests {
+    //! C4 of `docs/plans/panic-stops-processes-spec.md`: the panic hook's body,
+    //! `stop_groups_on_panic(lock_wait) -> bool`, cannot hang when the group
+    //! registry is locked, even by the panicking thread itself. These need the
+    //! registry lock, so they live in the crate: they take `unix::RUNNING`
+    //! directly (the implementer must make it `pub(super)`). Neither test may
+    //! see the cleanup succeed, so the "ran once" state (if any) stays unset.
+    use super::*;
+    use std::os::unix::process::CommandExt;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    /// The tests share the process-wide registry.
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn sleeper() -> (std::process::Child, ProcessGroupGuard) {
+        let child = std::process::Command::new("sleep")
+            .arg("300")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let guard = ProcessGroupGuard::new(child.id());
+        (child, guard)
+    }
+
+    #[test]
+    fn test_c4_registry_locked_by_another_thread_should_skip_cleanup_within_a_second() {
+        let _s = SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (mut child, mut guard) = sleeper();
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let _held = unix::RUNNING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            locked_tx.send(()).unwrap();
+            std::thread::sleep(Duration::from_millis(1500));
+        });
+        locked_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        let start = Instant::now();
+        let ran = stop_groups_on_panic(Duration::from_millis(100));
+        let took = start.elapsed();
+        let still_running = child.try_wait().unwrap().is_none();
+
+        holder.join().unwrap();
+        guard.kill();
+        let _ = child.wait();
+        assert!(!ran, "the registry was unavailable: nothing was stopped");
+        assert!(took < Duration::from_secs(1), "waited {took:?} for the lock");
+        assert!(still_running, "a skipped cleanup must not kill anything");
+    }
+
+    #[test]
+    fn test_c4_registry_locked_by_the_calling_thread_should_skip_cleanup_within_a_second() {
+        let _s = SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (mut child, mut guard) = sleeper();
+
+        let held = unix::RUNNING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let start = Instant::now();
+        let ran = stop_groups_on_panic(Duration::from_millis(100));
+        let took = start.elapsed();
+        drop(held);
+        let still_running = child.try_wait().unwrap().is_none();
+
+        guard.kill();
+        let _ = child.wait();
+        assert!(!ran, "the registry was unavailable: nothing was stopped");
+        assert!(took < Duration::from_secs(1), "hung {took:?} on our own lock");
+        assert!(still_running, "a skipped cleanup must not kill anything");
+    }
+}

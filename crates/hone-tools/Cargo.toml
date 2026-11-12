@@ -45,5 +45,12 @@ async-trait = { workspace = true }
 proptest = { workspace = true }
 futures = { workspace = true }
 
+# C1-C4 of docs/plans/panic-stops-processes-spec.md: the children panic on their
+# real main thread, so the test re-executes itself and has its own main().
+[[test]]
+name = "panic_cleanup"
+path = "tests/panic_cleanup.rs"
+harness = false
+
 [lints]
 workspace = true

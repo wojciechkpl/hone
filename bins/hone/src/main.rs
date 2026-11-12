@@ -7614,3 +7614,76 @@ mod approve_flag_tests {
         assert!(Cli::try_parse_from(["hone", "--approve"]).is_err());
     }
 }
+
+/// C5 of `docs/plans/panic-stops-processes-spec.md`: the TUI gives the terminal
+/// back when a panic that ends hone happens while it is running. The wiring
+/// (flag set after `enable_raw_mode`, cleared after the normal restore, hook
+/// chained on top of `hone_tools::install_panic_cleanup()` and calling
+/// `hone_tools::panic_ends_process()`) is checked by hand; these pin the flag
+/// and the restore sequence.
+///
+/// API required (in this file):
+/// - `fn set_tui_running(running: bool)` / `fn tui_running() -> bool`: the
+///   process-wide "TUI running" flag, false at start.
+/// - `fn tui_panic_restore<W: std::io::Write>(out: &mut W, ends_process: bool) -> bool`:
+///   when the flag is set AND `ends_process`, switches raw mode off (an error,
+///   e.g. no tty, is ignored), writes the restore sequence to `out` (bracketed
+///   paste off, mouse capture off, leave the alternate screen, show the cursor)
+///   and returns true; otherwise writes nothing and returns false.
+#[cfg(test)]
+mod tui_panic_restore_tests {
+    use super::*;
+
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock() -> std::sync::MutexGuard<'static, ()> {
+        SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[test]
+    fn test_c5_tui_running_flag_should_start_false_and_follow_set() {
+        let _g = lock();
+        set_tui_running(false);
+        assert!(!tui_running());
+        set_tui_running(true);
+        assert!(tui_running());
+        set_tui_running(false);
+        assert!(!tui_running());
+    }
+
+    #[test]
+    fn test_c5_panic_ending_hone_while_tui_runs_should_write_the_full_restore_sequence() {
+        let _g = lock();
+        set_tui_running(true);
+        let mut out: Vec<u8> = Vec::new();
+        let restored = tui_panic_restore(&mut out, true);
+        set_tui_running(false);
+        let s = String::from_utf8(out).unwrap();
+        assert!(restored);
+        assert!(s.contains("\x1b[?2004l"), "bracketed paste off: {s:?}");
+        assert!(s.contains("\x1b[?1000l"), "mouse capture off: {s:?}");
+        assert!(s.contains("\x1b[?1049l"), "alternate screen left: {s:?}");
+        assert!(s.contains("\x1b[?25h"), "cursor shown: {s:?}");
+    }
+
+    #[test]
+    fn test_c5_panic_when_tui_is_not_running_should_write_nothing() {
+        let _g = lock();
+        set_tui_running(false);
+        let mut out: Vec<u8> = Vec::new();
+        let restored = tui_panic_restore(&mut out, true);
+        assert!(!restored);
+        assert!(out.is_empty(), "one-shot, honed, before/after the TUI: {out:?}");
+    }
+
+    #[test]
+    fn test_c5_panic_that_does_not_end_hone_should_leave_the_terminal_alone() {
+        let _g = lock();
+        set_tui_running(true);
+        let mut out: Vec<u8> = Vec::new();
+        let restored = tui_panic_restore(&mut out, false);
+        set_tui_running(false);
+        assert!(!restored);
+        assert!(out.is_empty(), "a caught task panic must not wreck the TUI: {out:?}");
+    }
+}
