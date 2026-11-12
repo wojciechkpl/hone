@@ -278,7 +278,9 @@ mod unix {
             .is_some_and(|map| map.remove(&pgid).is_some())
     }
 
-    /// Whether group `pgid` has no live member we care about.
+    /// Drop from `pending` every group that is gone. Each group is checked at
+    /// most until it is seen gone (an empty group can't regain members), and
+    /// the `/proc` scan, where used, runs at most once per call.
     ///
     /// macOS: `killpg(pgid, 0)` returns ESRCH for an empty group and EPERM when
     /// only zombies are left (a launcher's reaped-by-nobody leader), so either
@@ -286,81 +288,128 @@ mod unix {
     /// the leader would be wrong here: a shell launcher's leader can exit while
     /// its child, the real server, is still handling SIGTERM.
     #[cfg(target_os = "macos")]
-    fn group_gone(pgid: i32) -> bool {
-        // SAFETY: `killpg(.., 0)` only checks existence.
-        let r = unsafe { libc::killpg(pgid, 0) };
-        r == -1
-            && matches!(
-                std::io::Error::last_os_error().raw_os_error(),
-                Some(libc::ESRCH | libc::EPERM)
-            )
+    fn retain_live_groups(pending: &mut Vec<i32>) {
+        pending.retain(|&pgid| {
+            // SAFETY: `killpg(.., 0)` only checks existence.
+            let r = unsafe { libc::killpg(pgid, 0) };
+            !(r == -1
+                && matches!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::ESRCH | libc::EPERM)
+                ))
+        });
     }
 
-    /// Whether group `pgid` has no live member we care about (other unix).
+    /// Drop from `pending` every group that is gone (other unix).
     ///
     /// There `killpg(pgid, 0)` keeps succeeding while an unreaped zombie
     /// remains, so the leader's exit is checked with `waitid(.., WNOWAIT)`
     /// (reaps nothing). On Linux a leader that exited does not mean the group
     /// is gone: a shell launcher's leader can exit while its child, the real
     /// server, is still handling SIGTERM, so `/proc` says whether any member
-    /// is alive ([`group_has_live_member`]). Where `/proc` can't be read, and
-    /// on the BSDs, an exited leader counts as gone.
+    /// is alive; it is scanned lazily, once per call, for all groups. Where
+    /// `/proc` can't be read, and on the BSDs, an exited leader counts as gone.
     #[cfg(not(target_os = "macos"))]
-    fn group_gone(pgid: i32) -> bool {
-        // SAFETY: `waitid` with WNOHANG|WNOWAIT only inspects our child's state
-        // (it reaps nothing) and writes into a zeroed `siginfo_t` that lives for
-        // the call; `killpg(.., 0)` only checks existence.
-        unsafe {
-            let mut info: libc::siginfo_t = std::mem::zeroed();
-            let r = libc::waitid(
-                libc::P_PID,
-                pgid as libc::id_t,
-                &mut info,
-                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
-            );
-            if r == 0 && info.si_signo == libc::SIGCHLD {
-                // The leader exited (a zombie nobody reaped yet).
-                #[cfg(target_os = "linux")]
-                return group_has_live_member(std::path::Path::new("/proc"), pgid) != Some(true);
-                #[cfg(not(target_os = "linux"))]
-                return true;
+    fn retain_live_groups(pending: &mut Vec<i32>) {
+        #[cfg(target_os = "linux")]
+        let mut scan: Option<Option<std::collections::HashSet<i32>>> = None;
+        pending.retain(|&pgid| {
+            // SAFETY: `waitid` with WNOHANG|WNOWAIT only inspects our child's
+            // state (it reaps nothing) and writes into a zeroed `siginfo_t`
+            // that lives for the call; `killpg(.., 0)` only checks existence.
+            unsafe {
+                let mut info: libc::siginfo_t = std::mem::zeroed();
+                let r = libc::waitid(
+                    libc::P_PID,
+                    pgid as libc::id_t,
+                    &mut info,
+                    libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                );
+                if r == 0 && info.si_signo == libc::SIGCHLD {
+                    // The leader exited (a zombie nobody reaped yet).
+                    #[cfg(target_os = "linux")]
+                    {
+                        let live =
+                            scan.get_or_insert_with(|| live_pgrps(std::path::Path::new("/proc")));
+                        return !group_gone_after_leader_exit(
+                            live.as_ref().map(|set| set.contains(&pgid)),
+                        );
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    return false;
+                }
+                !(libc::killpg(pgid, 0) == -1
+                    && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH))
             }
-            libc::killpg(pgid, 0) == -1
-                && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-        }
+        });
     }
 
-    /// Whether some process of group `pgid` is alive (any state but `Z` or
-    /// `X`), by reading `<proc_root>/<pid>/stat`. `None` if `proc_root` can't
-    /// be read; entries that can't be read or parsed are skipped. The fields
-    /// after the LAST `)` are `state ppid pgrp ...` (the command name may hold
-    /// parentheses and spaces).
-    #[cfg_attr(target_os = "macos", allow(dead_code))] // only tests use it there
-    pub(super) fn group_has_live_member(proc_root: &std::path::Path, pgid: i32) -> Option<bool> {
+    /// Whether a group whose leader has exited is gone, given the `/proc` scan
+    /// result (`None`: `/proc` unreadable). Only a scan that found a live
+    /// member keeps the group alive.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))] // only tests use it there
+    pub(super) fn group_gone_after_leader_exit(scan: Option<bool>) -> bool {
+        scan != Some(true)
+    }
+
+    /// The process groups that have a live member (any state but `Z` or `X`,
+    /// except that a `Z` whose `num_threads` is above 1 still runs threads),
+    /// by reading `<proc_root>/<pid>/stat` as bytes (`comm` is cut to 15 bytes
+    /// by the kernel and may split a UTF-8 character). `None` if `proc_root`
+    /// can't be read; entries that can't be read or parsed are skipped. The
+    /// fields after the LAST `)` are `state ppid pgrp ...` (the command name
+    /// may hold parentheses and spaces).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))] // only tests use it there
+    fn live_pgrps(proc_root: &std::path::Path) -> Option<std::collections::HashSet<i32>> {
         let entries = std::fs::read_dir(proc_root).ok()?;
+        let mut live = std::collections::HashSet::new();
         for entry in entries.flatten() {
             let name = entry.file_name();
             let Some(name) = name.to_str() else { continue };
             if name.is_empty() || !name.bytes().all(|b| b.is_ascii_digit()) {
                 continue;
             }
-            let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+            let Ok(stat) = std::fs::read(entry.path().join("stat")) else {
                 continue;
             };
-            let Some((_, rest)) = stat.rsplit_once(')') else {
+            let Some(close) = stat.iter().rposition(|&b| b == b')') else {
                 continue;
             };
-            let mut fields = rest.split_whitespace();
+            let mut fields = stat[close + 1..]
+                .split(|b| b.is_ascii_whitespace())
+                .filter(|f| !f.is_empty());
+            // Field 3 is the state; field 20 (`num_threads`) is the 18th.
             let (Some(state), Some(_ppid), Some(pgrp)) =
                 (fields.next(), fields.next(), fields.next())
             else {
                 continue;
             };
-            if pgrp.parse::<i32>().ok() == Some(pgid) && state != "Z" && state != "X" {
-                return Some(true);
+            let Some(pgrp) = std::str::from_utf8(pgrp)
+                .ok()
+                .and_then(|s| s.parse::<i32>().ok())
+            else {
+                continue;
+            };
+            let alive = match state {
+                b"X" => false,
+                b"Z" => fields
+                    .nth(14)
+                    .and_then(|f| std::str::from_utf8(f).ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .is_some_and(|threads| threads > 1),
+                _ => true,
+            };
+            if alive {
+                live.insert(pgrp);
             }
         }
-        Some(false)
+        Some(live)
+    }
+
+    /// Whether some process of group `pgid` is alive; see [`live_pgrps`].
+    #[cfg(test)]
+    pub(super) fn group_has_live_member(proc_root: &std::path::Path, pgid: i32) -> Option<bool> {
+        live_pgrps(proc_root).map(|set| set.contains(&pgid))
     }
 
     /// Reset `signal` to its default action, unblock it and raise it. Returns
@@ -470,7 +519,12 @@ mod unix {
             signal_group(pgid, libc::SIGTERM);
         }
         let deadline = Instant::now() + TERM_GRACE;
-        while Instant::now() < deadline && !mcp_groups.iter().all(|&p| group_gone(p)) {
+        let mut pending = mcp_groups.to_vec();
+        while Instant::now() < deadline {
+            retain_live_groups(&mut pending);
+            if pending.is_empty() {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(20));
         }
         for &pgid in mcp_groups {
