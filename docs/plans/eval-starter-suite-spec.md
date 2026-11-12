@@ -56,3 +56,15 @@ Review reproduced that 19 of 20 checks pass without the task being solved: agent
 | T15 | **Every reproduced forgery is a guarded self-test:** exit at import (Python, Node), `process::exit` in a Rust solution, a probe output forged from inputs, a stdlib shadow in the copy's cwd, and rewriting check files. `verify.sh` must see each rejected. |
 | T16 | **Probes only test stated behaviour.** c05's `chunk([1], 1.5)` and c02's underscore case are dropped from the probes or stated in the task prompt and tests; every probe case is implied by the prompt or the visible tests. |
 | T17 | **Residual risk is documented.** The README says eval agents run in a copy but aren't sandboxed from reading the rest of the disk, so a determined agent could find the suite; it recommends running suites from a location the model isn't told about and treating results as measurements, not proofs. |
+
+## Review round 4 (T18–T22)
+
+Review reproduced that agent code running as the same user finds the suite through its parent process (the judge's command line names it; the outer shell's environment holds `EVAL_SUITE_DIR`), then reads expectations from `checks/specs/` or rewrites `judge.py` so every later task passes; and that a process escaping into its own session hangs a check (the judge waits for pipe EOF with no deadline).
+
+| Row | Behaviour |
+|---|---|
+| T18 | **Expectations reveal nothing.** Spec files store, per case, a salted SHA-256 of the canonical expected result (salt per case, stored beside it), not the result itself; the judge hashes the child's canonical output and compares. Reading a spec gives no answer. |
+| T19 | **The judge doesn't name the suite.** Each check copies its judge and assets into a private temp directory and `exec`s the judge from there with `EVAL_SUITE_DIR` removed from the environment (`exec env -u EVAL_SUITE_DIR …`), so no process an agent child can inspect carries the suite path in its argv or environment. |
+| T20 | **Tampering invalidates the run.** `verify.sh`, and `hone eval` when the tasks file sets `[eval] integrity = ["checks", "reference"]` (the starter suite does), record a hash of those directories before the run and re-check after every check; any change marks the remaining and the current runs `infra_error` with "suite modified during the run". |
+| T21 | **Escaped processes can't hang a check.** After the direct child exits or times out, the judge stops reading (closes its pipe ends, or drains with a short deadline) and every `communicate`/wait has a timeout; a check whose solution leaves a session-escaped process holding the pipes finishes within its timeout plus 2 s. |
+| T22 | **New self-tests and an honest limit.** The ancestor-`ps` forgery, the judge rewrite and a pipe-holding session escape are self-tests that must be rejected (the rewrite detected by T20). The README states the remaining limit: agent code running as your user can read any file your user can, including `reference/`; run suites on a machine or account where that matters, or treat results as measurements of cooperative models, not proofs. |
