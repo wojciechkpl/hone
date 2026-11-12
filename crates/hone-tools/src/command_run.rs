@@ -299,8 +299,12 @@ mod unix {
     /// Whether group `pgid` has no live member we care about (other unix).
     ///
     /// There `killpg(pgid, 0)` keeps succeeding while an unreaped zombie
-    /// remains, so a leader that exited and only waits to be reaped counts as
-    /// gone, checked with `waitid(.., WNOWAIT)` (reaps nothing).
+    /// remains, so the leader's exit is checked with `waitid(.., WNOWAIT)`
+    /// (reaps nothing). On Linux a leader that exited does not mean the group
+    /// is gone: a shell launcher's leader can exit while its child, the real
+    /// server, is still handling SIGTERM, so `/proc` says whether any member
+    /// is alive ([`group_has_live_member`]). Where `/proc` can't be read, and
+    /// on the BSDs, an exited leader counts as gone.
     #[cfg(not(target_os = "macos"))]
     fn group_gone(pgid: i32) -> bool {
         // SAFETY: `waitid` with WNOHANG|WNOWAIT only inspects our child's state
@@ -315,11 +319,48 @@ mod unix {
                 libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
             );
             if r == 0 && info.si_signo == libc::SIGCHLD {
-                return true; // the leader exited (a zombie nobody reaped yet)
+                // The leader exited (a zombie nobody reaped yet).
+                #[cfg(target_os = "linux")]
+                return group_has_live_member(std::path::Path::new("/proc"), pgid) != Some(true);
+                #[cfg(not(target_os = "linux"))]
+                return true;
             }
             libc::killpg(pgid, 0) == -1
                 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
         }
+    }
+
+    /// Whether some process of group `pgid` is alive (any state but `Z` or
+    /// `X`), by reading `<proc_root>/<pid>/stat`. `None` if `proc_root` can't
+    /// be read; entries that can't be read or parsed are skipped. The fields
+    /// after the LAST `)` are `state ppid pgrp ...` (the command name may hold
+    /// parentheses and spaces).
+    #[cfg_attr(target_os = "macos", allow(dead_code))] // only tests use it there
+    pub(super) fn group_has_live_member(proc_root: &std::path::Path, pgid: i32) -> Option<bool> {
+        let entries = std::fs::read_dir(proc_root).ok()?;
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_digit()) {
+                continue;
+            }
+            let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+                continue;
+            };
+            let Some((_, rest)) = stat.rsplit_once(')') else {
+                continue;
+            };
+            let mut fields = rest.split_whitespace();
+            let (Some(state), Some(_ppid), Some(pgrp)) =
+                (fields.next(), fields.next(), fields.next())
+            else {
+                continue;
+            };
+            if pgrp.parse::<i32>().ok() == Some(pgid) && state != "Z" && state != "X" {
+                return Some(true);
+            }
+        }
+        Some(false)
     }
 
     /// Reset `signal` to its default action, unblock it and raise it. Returns
