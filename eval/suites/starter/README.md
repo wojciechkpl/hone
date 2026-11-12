@@ -87,7 +87,7 @@ spelling variants and rejects a pasted copy of the notes, and the context tasks 
 (legacy copies, docs, look-alike helpers) that contain the prompt's words. `verify.sh` also runs
 known cheats (`checks/cheats/<id>/<name>/`, must fail), correct alternative solutions
 (`checks/alt/<id>/<name>/`, must pass) and a "tests deleted" run, printed as `OK` lines. Every check
-run is capped at `VERIFY_TIMEOUT` seconds (default 60).
+run is capped at `VERIFY_TIMEOUT` seconds (default 60); a timed-out check is killed with its whole process group, and `verify.sh` self-tests that no background sleeper survives.
 
 ## Run it under two profiles
 

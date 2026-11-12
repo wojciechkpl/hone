@@ -64,31 +64,41 @@ done
 
 fail() { echo "FAIL  $1: $2"; failures=$((failures + 1)); }
 
-killtree() { # pid: kill it and everything below it
-  # the parent first, so it can't react to its children dying (the watchdog would
-  # otherwise mark a timeout when it is itself being cancelled)
-  kids=$(pgrep -P "$1" 2>/dev/null)
-  kill -KILL "$1" 2>/dev/null
-  for child in $kids; do killtree "$child"; done
-  return 0
+# T11. Each check (and its watchdog) runs as the leader of its own process group, started with
+# perl's setpgrp or python's os.setpgrp (job control `set -m` is unavailable in a script without a
+# terminal, e.g. dash in a container). A timeout kills the check's group; when the check ends first
+# the watchdog's group is killed and the check's group is swept for background leftovers, so a
+# check that starts sleepers leaves nothing running. Without perl and python3 it falls back to
+# killing the process tree (best effort).
+if command -v perl >/dev/null 2>&1; then
+  grouped() { exec perl -e 'setpgrp(0, 0); exec @ARGV or die "exec: $!"' "$@"; }
+elif command -v python3 >/dev/null 2>&1; then
+  grouped() { exec python3 -c 'import os, sys; os.setpgrp(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"; }
+else
+  grouped() { exec "$@"; }
+fi
+
+kill_group() { # leader pid: its whole group, then the pid itself
+  kill -KILL -- "-$1" 2>/dev/null || /bin/kill -KILL -- "-$1" 2>/dev/null || true
+  kill -KILL "$1" 2>/dev/null || true
+  # fallback without groups: its children
+  for child in $(pgrep -P "$1" 2>/dev/null); do kill_group "$child"; done
 }
 
-# Runs a check with a time limit, without GNU timeout (not on macOS): the check runs in
-# the background, a watchdog kills its process tree when the time is up.
 run_check() { # dir command
   rm -f "$work/timed_out"
-  ( cd "$1" && EVAL_SUITE_DIR="$suite" exec sh -c "$2" ) >"$work/check.out" 2>&1 </dev/null &
+  ( cd "$1" && EVAL_SUITE_DIR="$suite" grouped sh -c "$2" ) >"$work/check.out" 2>&1 </dev/null &
   check_pid=$!
   (
-    sleep "${VERIFY_TIMEOUT:-60}"
-    : >"$work/timed_out"
-    killtree "$check_pid"
+    grouped sh -c 'sleep "$1"; : >"$2"; kill -KILL -- "-$3" 2>/dev/null || /bin/kill -KILL -- "-$3" 2>/dev/null; kill -KILL "$3" 2>/dev/null' \
+      watchdog "${VERIFY_TIMEOUT:-60}" "$work/timed_out" "$check_pid"
   ) >/dev/null 2>&1 &
   watchdog_pid=$!
   wait "$check_pid" 2>/dev/null
   status=$?
-  killtree "$watchdog_pid"
+  kill_group "$watchdog_pid"
   wait "$watchdog_pid" 2>/dev/null
+  kill_group "$check_pid"
   if [ -f "$work/timed_out" ]; then
     echo "the check did not finish within ${VERIFY_TIMEOUT:-60}s and was killed" >>"$work/check.out"
     return 124
@@ -113,6 +123,30 @@ overlay() { # dir: apply a solution (its .remove list first) on $copy
   cp -R "$1/." "$copy/"
   rm -f "$copy/.remove"
 }
+
+# T11 self-test: a check that starts background sleepers must leave nothing running, both when
+# it is killed by the timeout and when it ends by itself.
+leftovers() { ps -axo command 2>/dev/null | grep -c '[s]leep 31[123]'; }
+if [ -z "$only" ]; then
+  mkdir -p "$work/wd-selftest"
+  VERIFY_TIMEOUT=2 run_check "$work/wd-selftest" '( sleep 311 ) & sh -c "sleep 312" & sleep 313'
+  if ! timed_out; then
+    echo "FAIL  watchdog: a hanging check was not killed by the timeout"
+    echo "x" >>"$work/failed"
+  elif [ "$(leftovers)" != 0 ]; then
+    echo "FAIL  watchdog: $(leftovers) sleeper(s) left running after a timeout"
+    echo "x" >>"$work/failed"
+  else
+    echo "OK    watchdog: a timed-out check leaves nothing running"
+  fi
+  VERIFY_TIMEOUT=30 run_check "$work/wd-selftest" '( sleep 311 ) & sh -c "sleep 312" & exit 0'
+  if [ "$(leftovers)" != 0 ]; then
+    echo "FAIL  watchdog: $(leftovers) background process(es) left after a check ended"
+    echo "x" >>"$work/failed"
+  else
+    echo "OK    watchdog: a finished check leaves no background process"
+  fi
+fi
 
 printf '%s\n' "$list" | while IFS="$US" read -r id wd chk fx prompt; do
   [ -n "$id" ] || continue

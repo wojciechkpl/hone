@@ -1,0 +1,104 @@
+{
+ "module": "stats",
+ "cases": [
+  {
+   "fn": "median",
+   "args": [
+    [
+     7
+    ]
+   ],
+   "expect": 7
+  },
+  {
+   "fn": "median",
+   "args": [
+    [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   ],
+   "expect": 3.5
+  },
+  {
+   "fn": "median",
+   "args": [
+    [
+     -5,
+     -1
+    ]
+   ],
+   "expect": -3
+  },
+  {
+   "fn": "median",
+   "args": [
+    [
+     3,
+     1,
+     2,
+     2
+    ]
+   ],
+   "expect": 2
+  },
+  {
+   "fn": "median",
+   "args": [
+    [
+     0.5,
+     1.5
+    ]
+   ],
+   "expect": 1.0
+  },
+  {
+   "fn": "median",
+   "args": [
+    [
+     9,
+     1,
+     5,
+     3,
+     7
+    ]
+   ],
+   "expect": 5
+  },
+  {
+   "fn": "median",
+   "args": [
+    []
+   ],
+   "raises": "ValueError"
+  },
+  {
+   "fn": "mean",
+   "args": [
+    [
+     2,
+     4,
+     9
+    ]
+   ],
+   "expect": 5.0
+  },
+  {
+   "fn": "mode",
+   "args": [
+    [
+     5,
+     5,
+     3,
+     3,
+     9
+    ]
+   ],
+   "expect": 3
+  }
+ ]
+}

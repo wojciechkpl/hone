@@ -8,6 +8,7 @@ set -e
 export PYTHONDONTWRITEBYTECODE=1
 python3 - <<'PY'
 import glob
+import os
 import re
 import sys
 import unicodedata
@@ -25,8 +26,13 @@ except FileNotFoundError:
     print("summary.md is missing")
     sys.exit(1)
 
-notes = sum(len(open(p, encoding="utf-8").read()) for p in glob.glob("notes/*.md"))
-if notes and len(raw) > notes // 2:
+# The cap comes from the suite's pristine notes, not from the agent's copy (it could delete them).
+suite = os.environ["EVAL_SUITE_DIR"]
+notes = sum(len(open(p, encoding="utf-8").read()) for p in glob.glob(f"{suite}/n01-summarise-notes/notes/*.md"))
+if not notes:
+    print("the suite's notes are missing")
+    sys.exit(1)
+if len(raw) > notes // 2:
     print(f"summary.md is {len(raw)} bytes; a summary must be at most half of the notes ({notes // 2})")
     sys.exit(1)
 

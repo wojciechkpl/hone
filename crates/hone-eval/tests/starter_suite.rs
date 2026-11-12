@@ -56,6 +56,21 @@ fn test_t5_every_starter_task_check_should_fail_before_and_pass_with_the_referen
         }
     }
 
+    // T12: no task is skipped for a toolchain that is installed.
+    for tool in ["python3", "node", "cargo"] {
+        let installed = Command::new(tool).arg("--version").output().is_ok_and(|o| o.status.success());
+        if installed {
+            let skipped: Vec<&str> = text
+                .lines()
+                .filter(|l| l.starts_with("SKIP ") && l.contains(tool))
+                .collect();
+            assert!(skipped.is_empty(), "{tool} is installed but tasks were skipped: {skipped:?}");
+        }
+    }
+    // T11: the watchdog self-test ran and passed.
+    assert!(text.contains("OK    watchdog: a timed-out check leaves nothing running"), "{text}");
+    assert!(text.contains("OK    watchdog: a finished check leaves no background process"), "{text}");
+
     // The anti-cheating self-tests ran: deleted tests and the known cheats are rejected,
     // the alternative correct solutions accepted.
     for expected in [
@@ -63,9 +78,17 @@ fn test_t5_every_starter_task_check_should_fail_before_and_pass_with_the_referen
         "OK    c03-py-refactor-discount/constant-only",
         "OK    c03-py-refactor-discount/one-minus-rate",
         "OK    n01-summarise-notes/cat-notes",
+        "OK    n01-summarise-notes/delete-notes",
+        "OK    c01-py-fix-median/shadow-unittest-module",
+        "OK    c01-py-fix-median/disarm-asserts",
     ] {
         if Command::new("python3").arg("--version").output().is_ok_and(|o| o.status.success()) {
             assert!(text.contains(expected), "missing '{expected}' in:\n{text}");
         }
+    }
+
+    if Command::new("cargo").arg("--version").output().is_ok_and(|o| o.status.success()) {
+        assert!(text.contains("OK    c07-rs-fix-kvparse/cargo-runner-true"), "{text}");
+        assert!(text.contains("OK    c07-rs-fix-kvparse/build-rs-rewrites-tests"), "{text}");
     }
 }

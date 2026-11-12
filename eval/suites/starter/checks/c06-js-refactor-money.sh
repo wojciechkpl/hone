@@ -1,14 +1,14 @@
 # requires: node
-# Success check for c06-js-refactor-money. Runs in the task's working-directory copy.
-# The project's own tests are restored from checks/data/c06-js-refactor-money/ before they run, so
-# editing, weakening or deleting them gets no credit.
+# Success check for c06-js-refactor-money. Runs in the task's working-directory copy (the agent's files).
+# T7-T9: only the allowlisted solution files are copied into a fresh directory next to the
+# pristine tests and project files (checks/data/c06-js-refactor-money/); the tests run there, isolated, and
+# a held-out probe in a separate process imports only the solution.
 set -e
-export PYTHONDONTWRITEBYTECODE=1
-cp -R "$EVAL_SUITE_DIR/checks/data/c06-js-refactor-money/." .
-node --test 2>&1 || exit 1
-# Behaviour: whatever binding is called formatMoney must be what the three
-# functions format with. Swap it at run time and look at their output.
-node - <<'JS'
+. "$EVAL_SUITE_DIR/checks/lib/fresh.sh"
+fresh_begin c06-js-refactor-money
+fresh_take report.js
+(cd "$FRESH" && node --test) 2>&1 || exit 1
+(cd "$FRESH" && node - <<'JS'
 const fs = require('node:fs');
 let src = fs.readFileSync('report.js', 'utf8');
 if (!/(function\s+formatMoney\s*\(|\b(?:const|let|var)\s+formatMoney\s*=)/.test(src)) {
@@ -34,3 +34,4 @@ if (bad.length) {
 }
 console.log('ok');
 JS
+)

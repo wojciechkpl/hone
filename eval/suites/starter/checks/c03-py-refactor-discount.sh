@@ -1,17 +1,19 @@
 # requires: python3
-# Success check for c03-py-refactor-discount. Runs in the task's working-directory copy.
-# The project's own tests are restored from checks/data/c03-py-refactor-discount/ before they run, so
-# editing, weakening or deleting them gets no credit.
+# Success check for c03-py-refactor-discount. Runs in the task's working-directory copy (the agent's files).
+# T7-T9: only the allowlisted solution files are copied into a fresh directory next to the
+# pristine tests and project files (checks/data/c03-py-refactor-discount/); the tests run there, isolated, and
+# a held-out probe in a separate process imports only the solution.
 set -e
-export PYTHONDONTWRITEBYTECODE=1
-cp -R "$EVAL_SUITE_DIR/checks/data/c03-py-refactor-discount/." .
-rm -f conftest.py sitecustomize.py usercustomize.py
-python3 -m unittest -q 2>&1 || exit 1
-# Structure and behaviour: the three functions must go through apply_discount(price).
-# Replacing apply_discount with a different rule must change what they return.
-python3 - <<'PY'
+. "$EVAL_SUITE_DIR/checks/lib/fresh.sh"
+fresh_begin c03-py-refactor-discount
+fresh_take pricing.py
+(cd "$FRESH" && py_isolated -m unittest discover -s . -t . -p 'test_*.py' -q) 2>&1 || exit 1
+# Structure and behaviour: the three functions must go through the module-level binding
+# apply_discount (looked up when they are called). Replacing it with a different rule must
+# change what they return.
+py_isolated - "$FRESH" <<'PY'
 import sys
-sys.path.insert(0, ".")
+sys.path.insert(0, sys.argv[1])
 import pricing
 
 for name in ("apply_discount", "member_price", "bundle_price", "clearance_price"):
