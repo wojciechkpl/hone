@@ -166,11 +166,15 @@ impl Default for ContextConfig {
 /// compaction gives a similar benefit without full context reset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskPhase {
-    /// Mostly read tools: read_file, grep, glob, git_status.
+    /// Mostly read tools: read_file, grep, glob, git_status, git_diff,
+    /// list_dir, web_fetch, MCP tools, and any `shell` call that is not a test
+    /// run.
     Exploration,
-    /// Write tools appear: write_file, edit_file, multi_edit, shell (writes).
+    /// A write tool appears: write_file, edit_file, multi_edit, apply_patch
+    /// (alias apply_diff).
     Editing,
-    /// Test execution: shell with test commands.
+    /// Test execution: a `shell` call that runs a test suite (see
+    /// [`classify_tool_call`]).
     Verification,
 }
 
@@ -189,17 +193,24 @@ impl PhaseTracker {
         }
     }
 
-    /// Observe a tool call and return the new phase if a transition occurred.
+    /// Observe a tool call by name only and return the new phase if a
+    /// transition occurred.
+    #[cfg(test)]
     fn observe_tool(&mut self, tool_name: &str) -> Option<(TaskPhase, TaskPhase)> {
+        self.observe_kind(classify_by_name(tool_name))
+    }
+
+    /// Observe an already classified tool call.
+    fn observe_kind(&mut self, kind: ToolPhaseKind) -> Option<(TaskPhase, TaskPhase)> {
         let old = self.current_phase;
 
-        if is_test_tool(tool_name) {
+        if kind == ToolPhaseKind::Test {
             self.consecutive_read_tools = 0;
             if old != TaskPhase::Verification {
                 self.current_phase = TaskPhase::Verification;
                 return Some((old, TaskPhase::Verification));
             }
-        } else if is_write_tool(tool_name) {
+        } else if kind == ToolPhaseKind::Write {
             self.consecutive_read_tools = 0;
             if old == TaskPhase::Exploration {
                 self.current_phase = TaskPhase::Editing;
@@ -223,15 +234,289 @@ impl PhaseTracker {
     }
 }
 
-fn is_write_tool(name: &str) -> bool {
+/// How the phase tracker sees a tool call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolPhaseKind {
+    /// Anything that is not a write or a test run (also unknown and MCP tools).
+    Read,
+    /// `write_file`, `edit_file`, `multi_edit`, `apply_patch` (alias `apply_diff`).
+    Write,
+    /// A test run: the legacy name `run_tests`, or a `shell` call that runs a
+    /// test runner.
+    Test,
+}
+
+/// Classify by tool name alone (`shell` is a read without its arguments).
+fn classify_by_name(name: &str) -> ToolPhaseKind {
+    match name {
+        "write_file" | "edit_file" | "multi_edit" | "apply_patch" | "apply_diff" => {
+            ToolPhaseKind::Write
+        }
+        "run_tests" => ToolPhaseKind::Test,
+        _ => ToolPhaseKind::Read,
+    }
+}
+
+/// Classify a tool call for phase tracking, using its arguments: a `shell` call
+/// whose `command` string runs a test runner in any segment is a test run.
+pub fn classify_tool_call(name: &str, args: &serde_json::Value) -> ToolPhaseKind {
+    if name == "shell" {
+        let runs_tests = args
+            .get("command")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(command_runs_tests);
+        return if runs_tests {
+            ToolPhaseKind::Test
+        } else {
+            ToolPhaseKind::Read
+        };
+    }
+    classify_by_name(name)
+}
+
+/// Whether any segment of a shell command line runs a test runner.
+///
+/// The line is split on `&&`, `||`, `;`, `|`, `&` and newlines outside quotes.
+/// Leading `NAME=value` assignments and the wrappers `env`, `time`, `timeout`,
+/// `nice`, `stdbuf`, `uv run`, `poetry run`, `pdm run`, `npx`, `bunx`,
+/// `pnpm exec` and `bundle exec` are skipped, `sh|bash|zsh -c '<script>'` is
+/// matched on its script, and path-qualified runners match by basename. A runner
+/// invocation that only builds or lists tests (`--no-run`, `-- --list`,
+/// `--collect-only`, `--co`) is not a test run.
+fn command_runs_tests(command: &str) -> bool {
+    shell_segments(command)
+        .iter()
+        .any(|tokens| segment_runs_tests(tokens))
+}
+
+/// Split a command line into segments of unquoted tokens. Separators inside
+/// single or double quotes do not split; a backslash escapes the next char
+/// outside single quotes.
+fn shell_segments(command: &str) -> Vec<Vec<String>> {
+    let mut segments: Vec<Vec<String>> = Vec::new();
+    let mut tokens: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut in_token = false;
+    let mut quote: Option<char> = None;
+    let mut chars = command.chars();
+
+    while let Some(c) = chars.next() {
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None;
+                } else if c == '\\' && q == '"' {
+                    match chars.next() {
+                        Some(n) if matches!(n, '"' | '\\' | '$' | '`') => cur.push(n),
+                        Some(n) => {
+                            cur.push('\\');
+                            cur.push(n);
+                        }
+                        None => cur.push('\\'),
+                    }
+                } else {
+                    cur.push(c);
+                }
+            }
+            None => match c {
+                '\'' | '"' => {
+                    quote = Some(c);
+                    in_token = true;
+                }
+                '\\' => {
+                    if let Some(n) = chars.next() {
+                        cur.push(n);
+                        in_token = true;
+                    }
+                }
+                '\n' | ';' | '|' | '&' => {
+                    if in_token {
+                        tokens.push(std::mem::take(&mut cur));
+                        in_token = false;
+                    }
+                    if !tokens.is_empty() {
+                        segments.push(std::mem::take(&mut tokens));
+                    }
+                }
+                c if c.is_whitespace() => {
+                    if in_token {
+                        tokens.push(std::mem::take(&mut cur));
+                        in_token = false;
+                    }
+                }
+                c => {
+                    cur.push(c);
+                    in_token = true;
+                }
+            },
+        }
+    }
+    if in_token {
+        tokens.push(cur);
+    }
+    if !tokens.is_empty() {
+        segments.push(tokens);
+    }
+    segments
+}
+
+fn basename(token: &str) -> &str {
+    token.rsplit('/').next().unwrap_or(token)
+}
+
+/// `python`, `python3`, `python3.12`.
+fn is_python(name: &str) -> bool {
+    name.strip_prefix("python")
+        .is_some_and(|rest| rest.chars().all(|c| c.is_ascii_digit() || c == '.'))
+}
+
+/// `uv run` options that take a separate value.
+fn uv_option_takes_value(opt: &str) -> bool {
     matches!(
-        name,
-        "write_file" | "edit_file" | "multi_edit" | "apply_diff"
+        opt,
+        "--with"
+            | "--with-requirements"
+            | "--with-editable"
+            | "--python"
+            | "-p"
+            | "--directory"
+            | "--project"
+            | "--extra"
+            | "--group"
+            | "--env-file"
+            | "--package"
     )
 }
 
-fn is_test_tool(name: &str) -> bool {
-    name == "run_tests"
+fn segment_runs_tests(tokens: &[String]) -> bool {
+    let t: Vec<&str> = tokens.iter().map(String::as_str).collect();
+    let mut i = 0;
+    // Drop assignments and wrappers until the real command starts.
+    while i < t.len() {
+        let name = basename(t[i]);
+        if is_assignment(t[i]) {
+            i += 1;
+            continue;
+        }
+        match name {
+            "time" => i += 1,
+            "env" => {
+                i += 1;
+                while let Some(opt) = t.get(i).filter(|s| s.starts_with('-')) {
+                    i += if matches!(*opt, "-u" | "--unset" | "-C" | "--chdir") {
+                        2
+                    } else {
+                        1
+                    };
+                }
+            }
+            "timeout" => {
+                i += 1;
+                while let Some(opt) = t.get(i).filter(|s| s.starts_with('-')) {
+                    i += if matches!(*opt, "-s" | "-k" | "--signal" | "--kill-after") {
+                        2
+                    } else {
+                        1
+                    };
+                }
+                i += 1; // the duration
+            }
+            "nice" => {
+                i += 1;
+                if t.get(i) == Some(&"-n") {
+                    i += 2;
+                } else if t.get(i).is_some_and(|s| s.starts_with('-')) {
+                    i += 1;
+                }
+            }
+            "stdbuf" | "npx" | "bunx" => {
+                i += 1;
+                while t.get(i).is_some_and(|s| s.starts_with('-')) {
+                    i += 1;
+                }
+            }
+            "uv" if t.get(i + 1) == Some(&"run") => {
+                i += 2;
+                while let Some(opt) = t.get(i).filter(|s| s.starts_with('-')) {
+                    i += if !opt.contains('=') && uv_option_takes_value(opt) {
+                        2
+                    } else {
+                        1
+                    };
+                }
+            }
+            "poetry" | "pdm" if t.get(i + 1) == Some(&"run") => i += 2,
+            "pnpm" | "bundle" if t.get(i + 1) == Some(&"exec") => i += 2,
+            "sh" | "bash" | "zsh" => {
+                // `sh [flags] -c '<script>'` (also `-lc`, `-ec`): match the script.
+                let mut j = i + 1;
+                while let Some(flag) = t.get(j).filter(|f| f.starts_with('-')) {
+                    if !flag.starts_with("--") && flag.ends_with('c') {
+                        return t
+                            .get(j + 1)
+                            .is_some_and(|script| command_runs_tests(script));
+                    }
+                    j += 1;
+                }
+                return false;
+            }
+            _ => break,
+        }
+    }
+    let rest = &t[i.min(t.len())..];
+    let Some(first) = rest.first() else {
+        return false;
+    };
+    if only_lists_tests(rest) {
+        return false;
+    }
+    let runner = basename(first);
+    let arg = |n: usize| rest.get(n).copied();
+    match runner {
+        "cargo" => matches!(arg(1), Some("test" | "nextest" | "t")),
+        "pytest" | "py.test" | "jest" | "vitest" | "ctest" | "rspec" | "phpunit" | "tox"
+        | "nox" => true,
+        r if is_python(r) => arg(1) == Some("-m") && matches!(arg(2), Some("pytest" | "unittest")),
+        "make" => rest[1..]
+            .iter()
+            .find(|a| !a.starts_with('-'))
+            .is_some_and(|target| target.starts_with("test") || *target == "check"),
+        "npm" => match arg(1) {
+            Some("t") => true,
+            Some("run" | "run-script") => arg(2).is_some_and(|s| s.starts_with("test")),
+            Some(s) => s.starts_with("test"),
+            None => false,
+        },
+        "yarn" | "pnpm" | "bun" => match arg(1) {
+            Some("run") => arg(2).is_some_and(|s| s.starts_with("test")),
+            Some(s) => s.starts_with("test"),
+            None => false,
+        },
+        "deno" | "go" | "mvn" | "gradle" | "gradlew" | "flutter" | "dart" | "mix" | "swift"
+        | "dotnet" | "just" | "bazel" => arg(1) == Some("test"),
+        _ => false,
+    }
+}
+
+/// `--no-run`, `--collect-only`, `--co`, or `--list` after a bare `--`.
+fn only_lists_tests(tokens: &[&str]) -> bool {
+    let after_dashes = tokens.iter().position(|t| *t == "--");
+    tokens.iter().enumerate().any(|(n, t)| {
+        matches!(*t, "--no-run" | "--collect-only" | "--co" | "-list")
+            || (*t == "--list" && after_dashes.is_some_and(|d| n > d))
+    })
+}
+
+/// `NAME=value` (a shell variable assignment before a command).
+fn is_assignment(token: &str) -> bool {
+    match token.split_once('=') {
+        Some((name, _)) => {
+            !name.is_empty()
+                && !name.starts_with(|c: char| c.is_ascii_digit())
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }
+        None => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +533,7 @@ pub struct ContextManager {
     metrics: Option<Arc<ContextMetrics>>,
     content_hashes: HashMap<u64, usize>,
     phase_tracker: PhaseTracker,
+    phase_compaction: bool,
 }
 
 impl ContextManager {
@@ -262,6 +548,7 @@ impl ContextManager {
             metrics: None,
             content_hashes: HashMap::new(),
             phase_tracker: PhaseTracker::new(),
+            phase_compaction: phase_compaction_from_env(),
         }
     }
 
@@ -277,7 +564,15 @@ impl ContextManager {
             metrics: None,
             content_hashes: HashMap::new(),
             phase_tracker: PhaseTracker::new(),
+            phase_compaction: phase_compaction_from_env(),
         }
+    }
+
+    /// Turn compaction on phase transitions on or off, overriding
+    /// `HONE_PHASE_COMPACTION` (read when the manager was built).
+    pub fn with_phase_compaction(mut self, enabled: bool) -> Self {
+        self.phase_compaction = enabled;
+        self
     }
 
     /// Attach a metrics sink. Trim and compression events will be recorded on it.
@@ -292,11 +587,31 @@ impl ContextManager {
     /// occurs (e.g., exploration → editing), exploration results are
     /// aggressively compacted.
     pub fn notify_tool_call(&mut self, tool_name: &str) {
-        if let Some((from, to)) = self.phase_tracker.observe_tool(tool_name) {
+        let kind = classify_by_name(tool_name);
+        self.notify_kind(kind, &[]);
+    }
+
+    /// Like [`notify_tool_call`](Self::notify_tool_call), but classified with
+    /// the call's arguments, so a `shell` call that runs a test suite counts as
+    /// a test run.
+    pub fn notify_tool_use(&mut self, tool_name: &str, args: &serde_json::Value) {
+        let kind = classify_tool_call(tool_name, args);
+        let targets = if kind == ToolPhaseKind::Write {
+            write_targets(tool_name, args)
+        } else {
+            Vec::new()
+        };
+        self.notify_kind(kind, &targets);
+    }
+
+    fn notify_kind(&mut self, kind: ToolPhaseKind, targets: &[String]) {
+        if let Some((from, to)) = self.phase_tracker.observe_kind(kind) {
             if from == TaskPhase::Exploration
                 && (to == TaskPhase::Editing || to == TaskPhase::Verification)
             {
-                self.force_compress_exploration_results();
+                if self.phase_compaction {
+                    self.force_compress_exploration_results(targets);
+                }
                 if let Some(m) = &self.metrics {
                     m.record_phase_transition();
                 }
@@ -448,7 +763,10 @@ impl ContextManager {
                         // Already structural summary at this age — skip.
                         continue;
                     } else {
-                        structural_summary(&text)
+                        structural_summary(
+                            &text,
+                            self.call_paths_for(i).first().map(String::as_str),
+                        )
                     };
 
                     self.messages[i].content = Content::Text(compressed);
@@ -461,25 +779,63 @@ impl ContextManager {
         }
     }
 
-    /// Force-compress all exploration tool results outside the recent window.
-    /// Called on phase transitions (exploration → editing/verification).
-    fn force_compress_exploration_results(&mut self) {
-        let protected_from = self
-            .messages
-            .len()
-            .saturating_sub(self.config.recent_window);
+    /// Force-compress exploration tool results. Called on phase transitions
+    /// (exploration → editing/verification) when phase compaction is enabled.
+    ///
+    /// The newest `recent_window` tool results stay verbatim, and so does any
+    /// result of a read of one of `targets` (the paths the triggering write
+    /// changes).
+    fn force_compress_exploration_results(&mut self, targets: &[String]) {
+        let tool_idx: Vec<usize> = (0..self.messages.len())
+            .filter(|&i| matches!(self.messages[i].role, Role::Tool))
+            .collect();
+        let older = tool_idx.len().saturating_sub(self.config.recent_window);
 
-        for i in 0..protected_from {
-            if matches!(self.messages[i].role, Role::Tool) {
-                let text = self.messages[i].content.as_text().to_string();
-                if !is_already_compressed(&text) && text.len() > 200 {
-                    self.messages[i].content = Content::Text(structural_summary(&text));
-                    if let Some(m) = &self.metrics {
-                        m.record_compression();
-                    }
-                }
+        for &i in &tool_idx[..older] {
+            let text = self.messages[i].content.as_text().to_string();
+            if is_already_compressed(&text) || text.len() <= 200 {
+                continue;
+            }
+            if !targets.is_empty() && self.read_path_matches(i, &text, targets) {
+                continue;
+            }
+            let path = self.call_paths_for(i).into_iter().next();
+            self.messages[i].content = Content::Text(structural_summary(&text, path.as_deref()));
+            if let Some(m) = &self.metrics {
+                m.record_compression();
             }
         }
+    }
+
+    /// `path` / `file_path` arguments of the assistant tool call the tool
+    /// result at `idx` answers.
+    fn call_paths_for(&self, idx: usize) -> Vec<String> {
+        let Some(id) = self.messages[idx].tool_call_id.as_deref() else {
+            return Vec::new();
+        };
+        self.messages[..idx]
+            .iter()
+            .rev()
+            .flat_map(|m| m.tool_calls.iter())
+            .find(|c| c.id == id)
+            .map(|c| call_paths(&c.arguments))
+            .unwrap_or_default()
+    }
+
+    /// Whether the tool result at `idx` read one of `targets`: its path comes
+    /// from the result JSON's `path`, or from the arguments of the assistant
+    /// tool call with the same id.
+    fn read_path_matches(&self, idx: usize, text: &str, targets: &[String]) -> bool {
+        let hit = |p: &str| targets.iter().any(|t| same_file(t, p));
+        if let Some(path) = result_json(text).and_then(|v| {
+            v.get("path")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        }) && hit(&path)
+        {
+            return true;
+        }
+        self.call_paths_for(idx).iter().any(|p| hit(p))
     }
 
     /// Record metadata about a message we are about to drop.
@@ -706,6 +1062,86 @@ pub fn estimate_text_tokens(text: &str) -> u32 {
     tokens + 4 // per-message framing overhead, matching `estimate_message_tokens`
 }
 
+/// Whether `HONE_PHASE_COMPACTION` enables compaction on phase transitions
+/// (`1`, `true` or `on`). Read each time a manager is built.
+fn phase_compaction_from_env() -> bool {
+    std::env::var("HONE_PHASE_COMPACTION").is_ok_and(|v| matches!(v.trim(), "1" | "true" | "on"))
+}
+
+/// Two paths name the same file when, after stripping a leading `./`, they are
+/// equal or one ends with `/` followed by the other (whole components).
+fn same_file(a: &str, b: &str) -> bool {
+    let (a, b) = (normalize_path(a), normalize_path(b));
+    let ends = |long: &str, short: &str| {
+        long.len() > short.len()
+            && long.ends_with(short)
+            && long.as_bytes()[long.len() - short.len() - 1] == b'/'
+    };
+    a == b || ends(a, b) || ends(b, a)
+}
+
+fn normalize_path(p: &str) -> &str {
+    p.strip_prefix("./").unwrap_or(p)
+}
+
+/// `path` / `file_path` arguments of a tool call.
+fn call_paths(args: &serde_json::Value) -> Vec<String> {
+    ["path", "file_path"]
+        .iter()
+        .filter_map(|k| args.get(*k).and_then(serde_json::Value::as_str))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Paths a write call targets: `path` / `file_path`, and for `apply_patch` the
+/// `--- a/…` / `+++ b/…` header paths of its `patch` argument.
+fn write_targets(name: &str, args: &serde_json::Value) -> Vec<String> {
+    let mut paths = call_paths(args);
+    if name == "multi_edit"
+        && let Some(edits) = args.get("edits").and_then(serde_json::Value::as_array)
+    {
+        for edit in edits {
+            paths.extend(call_paths(edit));
+        }
+    }
+    if matches!(name, "apply_patch" | "apply_diff") {
+        let patches = ["diff", "patch"]
+            .iter()
+            .filter_map(|k| args.get(*k).and_then(serde_json::Value::as_str));
+        for line in patches.flat_map(str::lines) {
+            let Some(rest) = line
+                .strip_prefix("--- ")
+                .or_else(|| line.strip_prefix("+++ "))
+            else {
+                continue;
+            };
+            let path = rest.split('\t').next().unwrap_or(rest).trim();
+            let path = path
+                .strip_prefix("a/")
+                .or_else(|| path.strip_prefix("b/"))
+                .unwrap_or(path);
+            if !path.is_empty() && path != "/dev/null" {
+                paths.push(path.to_owned());
+            }
+        }
+    }
+    paths.iter().map(|p| normalize_path(p).to_owned()).collect()
+}
+
+/// A tool result that is a JSON object (as `read_file` returns).
+fn result_json(text: &str) -> Option<serde_json::Value> {
+    if !text.trim_start().starts_with('{') {
+        return None;
+    }
+    serde_json::from_str(text).ok()
+}
+
+/// The longest prefix of `text` that is at most `max_bytes` and ends on a char
+/// boundary.
+fn prefix(text: &str, max_bytes: usize) -> &str {
+    &text[..safe_char_boundary(text, max_bytes)]
+}
+
 // ---------------------------------------------------------------------------
 // Graduated compression helpers
 // ---------------------------------------------------------------------------
@@ -724,9 +1160,12 @@ fn is_already_compressed(text: &str) -> bool {
 /// - Test output: PASS/FAIL lines + first error
 /// - Grep results: file:line paths
 /// - Default: first 200 chars
-fn structural_summary(text: &str) -> String {
+fn structural_summary(text: &str, call_path: Option<&str>) -> String {
     let len = text.len();
-    let sample = &text[..500.min(len)];
+    if let Some(summary) = file_read_summary(text, call_path) {
+        return summary;
+    }
+    let sample = prefix(text, 500);
 
     if looks_like_test_output(sample) {
         let lines: Vec<&str> = text.lines().collect();
@@ -757,7 +1196,7 @@ fn structural_summary(text: &str) -> String {
             return format!(
                 "[tool result summarized, {} chars: {}...]",
                 len,
-                &text[..200.min(len)]
+                prefix(text, 200)
             );
         }
         format!(
@@ -798,7 +1237,7 @@ fn structural_summary(text: &str) -> String {
             return format!(
                 "[tool result summarized, {} chars: {}...]",
                 len,
-                &text[..200.min(len)]
+                prefix(text, 200)
             );
         }
         format!(
@@ -828,23 +1267,121 @@ fn structural_summary(text: &str) -> String {
             path_strings.join("\n")
         )
     } else {
-        let safe_end = safe_char_boundary(text, 200);
         format!(
             "[tool result summarized, {} chars: {}...]",
             len,
-            &text[..safe_end]
+            prefix(text, 200)
         )
     }
+}
+
+/// Summary of a JSON file-read result (`{"content": "...", "path": "..."}`):
+/// the path, the line count and up to 40 declaration lines of `content`.
+fn file_read_summary(text: &str, call_path: Option<&str>) -> Option<String> {
+    let value = result_json(text)?;
+    let content = value.get("content")?.as_str()?;
+    let path = value
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .or(call_path);
+    let num = |k: &str| value.get(k).and_then(serde_json::Value::as_u64);
+
+    let decls: Vec<String> = content
+        .lines()
+        .filter_map(|l| {
+            let (n, code) = split_line_number(l);
+            is_declaration(code).then(|| match n {
+                Some(n) => format!("{n}: {code}"),
+                None => code.to_owned(),
+            })
+        })
+        .collect();
+
+    let range = match (num("start_line"), num("end_line"), num("total_lines")) {
+        (Some(s), Some(e), Some(t)) => format!("lines {s}\u{2013}{e} of {t}"),
+        _ => format!("{} lines", content.lines().count()),
+    };
+    let truncated = if value.get("truncated").and_then(serde_json::Value::as_bool) == Some(true) {
+        " (truncated)"
+    } else {
+        ""
+    };
+    let head = match path {
+        Some(p) => format!("file {p}, {range}{truncated}"),
+        None => format!("file, {range}{truncated}"),
+    };
+    let len = text.len();
+    Some(if decls.is_empty() {
+        format!(
+            "[tool result summarized, {len} chars, {head}: {}... (re-read before editing)]",
+            prefix(content, 200)
+        )
+    } else {
+        let n = decls.len();
+        let count = match n {
+            1 => "1 declaration".to_owned(),
+            2..=40 => format!("{n} declarations"),
+            _ => format!("first 40 of {n} declarations"),
+        };
+        let kept = decls
+            .iter()
+            .take(40)
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        format!(
+            "[tool result summarized, {len} chars, {head}, {count}:\n{}\n(re-read before editing)]",
+            kept.join("\n")
+        )
+    })
+}
+
+/// Split a `read_file` line of the form `"   42 | code"` into its number and
+/// the trimmed code; other lines come back trimmed with no number.
+fn split_line_number(line: &str) -> (Option<u64>, &str) {
+    let t = line.trim_start();
+    let digits = t.bytes().take_while(u8::is_ascii_digit).count();
+    if digits > 0
+        && let Some(rest) = t[digits..].strip_prefix(" | ")
+        && let Ok(n) = t[..digits].parse()
+    {
+        return (Some(n), rest.trim());
+    }
+    (None, t.trim())
+}
+
+/// Whether a trimmed line starts a declaration in a common language.
+fn is_declaration(t: &str) -> bool {
+    [
+        "fn ",
+        "async fn ",
+        "struct ",
+        "enum ",
+        "impl ",
+        "impl<",
+        "trait ",
+        "mod ",
+        "class ",
+        "def ",
+        "async def ",
+        "function ",
+        "interface ",
+        "type ",
+        "export ",
+        "pub ",
+        "pub(",
+    ]
+    .iter()
+    .any(|k| t.starts_with(k))
 }
 
 /// Produce a one-liner description for very old tool results.
 fn tool_oneliner(text: &str) -> String {
     let len = text.len();
-    let descriptor = if looks_like_test_output(&text[..500.min(len)]) {
+    let descriptor = if looks_like_test_output(prefix(text, 500)) {
         let pass = text.matches("PASS").count() + text.matches(" ok").count();
         let fail = text.matches("FAIL").count() + text.matches("FAILED").count();
         format!("test output ({pass} passed, {fail} failed)")
-    } else if looks_like_code(&text[..500.min(len)]) {
+    } else if looks_like_code(prefix(text, 500)) {
         let fns = text
             .lines()
             .filter(|l| {
@@ -856,7 +1393,7 @@ fn tool_oneliner(text: &str) -> String {
             })
             .count();
         format!("code ({fns} functions)")
-    } else if looks_like_grep_result(&text[..500.min(len)]) {
+    } else if looks_like_grep_result(prefix(text, 500)) {
         let matches = text.lines().filter(|l| l.contains(':')).count();
         format!("grep ({matches} matches)")
     } else {
@@ -1066,7 +1603,7 @@ mod tests {
     #[test]
     fn test_structural_summary_on_code() {
         let code = "use std::io;\n\npub fn main() {\n    println!(\"hello\");\n}\n\nstruct Foo {\n    bar: i32,\n}\n";
-        let summary = structural_summary(code);
+        let summary = structural_summary(code, None);
         assert!(summary.contains("pub fn main"));
         assert!(summary.contains("struct Foo"));
         assert!(summary.contains("summarized"));
@@ -1075,7 +1612,7 @@ mod tests {
     #[test]
     fn test_structural_summary_on_test_output() {
         let output = "running 5 tests\ntest foo ... ok\ntest bar ... FAILED\ntest baz ... ok\n\ntest result: FAILED. 4 passed; 1 failed;\n";
-        let summary = structural_summary(output);
+        let summary = structural_summary(output, None);
         assert!(summary.contains("FAILED"));
         assert!(summary.contains("test result"));
     }
@@ -1269,7 +1806,7 @@ mod tests {
         let mut config = ContextConfig::default();
         config.recent_window = 1;
         config.advertised_context_length = 1_000_000;
-        let mut ctx = ContextManager::with_config(config);
+        let mut ctx = ContextManager::with_config(config).with_phase_compaction(true);
 
         // Add exploration tool results
         ctx.add_message(Message::user("find the bug"));
@@ -1285,6 +1822,13 @@ mod tests {
         // Add padding to push tool result out of recent window
         ctx.add_message(Message::user("ok fix it"));
         ctx.add_message(Message::assistant("Sure, writing now."));
+        // The window counts tool results: one newer result takes the only slot.
+        ctx.add_message(Message {
+            role: Role::Tool,
+            content: Content::Text("short".to_string()),
+            tool_calls: vec![],
+            tool_call_id: Some("tc2".to_string()),
+        });
 
         // Trigger phase transition
         ctx.notify_tool_call("write_file");

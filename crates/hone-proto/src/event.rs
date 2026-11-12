@@ -197,7 +197,11 @@ pub enum AgentEvent {
     ContextInjected {
         strategy: String,
         tokens_used: u32,
-        /// (file_path, bm25_score) pairs from tier-2 BM25 retrieval.
+        /// (file_path, score) pairs from the tier-2 code-index search, best
+        /// first. The score is the index's name-match score (tokens matched plus
+        /// an exact/prefix/substring tier), not a BM25 score; the field keeps
+        /// its name so the wire format does not change. Empty when tier 2 did
+        /// not fire.
         bm25_hits: Vec<(String, f32)>,
         /// "High", "Medium", or "Low"
         confidence: String,

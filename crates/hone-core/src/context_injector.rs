@@ -104,6 +104,18 @@ impl SkeletonStrategy {
             _ => None,
         }
     }
+
+    /// The CLI spelling: the inverse of [`from_str`](Self::from_str)
+    /// (`flat`, `dependency_graph`, `call_graph`, `hybrid`, `adaptive`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Flat => "flat",
+            Self::DependencyGraph => "dependency_graph",
+            Self::CallGraph => "call_graph",
+            Self::Hybrid => "hybrid",
+            Self::Adaptive => "adaptive",
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -147,12 +159,14 @@ pub struct InjectionResult {
     pub context_block: String,
     /// Estimated token count of `context_block`.
     pub tokens_used: u32,
-    /// Confidence level determined from BM25 retrieval.
+    /// Confidence level determined from the gap between the top index match scores.
     pub confidence: RetrievalConfidence,
     /// Suggested exploration budget (tool call soft cap).
     pub exploration_budget: u32,
-    /// (file_path, bm25_score) pairs from tier-2 BM25 retrieval.
-    /// Empty when confidence was Low (tier-2 did not fire).
+    /// (file_path, score) pairs from the tier-2 code-index search, best first.
+    /// The score is the index's name-match score (tokens matched plus an
+    /// exact/prefix/substring tier), not a BM25 score; the field keeps its name
+    /// so the wire format does not change. Empty when tier 2 did not fire.
     pub bm25_hits: Vec<(String, f32)>,
 }
 

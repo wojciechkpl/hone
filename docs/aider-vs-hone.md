@@ -10,6 +10,12 @@ Research date: 2026-04-21. Aider inspected from the full source checkout at
 `benchmarks/aider-repo/` (main branch). Hone inspected from the working tree
 on branch `main`.
 
+> **Correction (2026-11-12).** This comparison assumed hone had a pgvector
+> semantic index. None was ever built: `hone-index` stores tree-sitter
+> symbols in SQLite, and `docs/architecture.md` lists the vector index as
+> deferred. Claims below are corrected inline; see
+> `docs/research/pluggable-context-memory-2026-11.md` §3.2.
+
 ---
 
 ## 1. Executive summary
@@ -28,7 +34,7 @@ tool-calling loop (read/write/edit/grep/shell/LSP/MCP), with adaptive model
 tiering, prompt caching, skeleton-first context strategy, TDD verification,
 self-refine, and a live agent rail surfacing each ensemble member. Where
 aider is a chat-with-files tool, hone is a Claude-Code-style agentic coder
-with richer infrastructure (pgvector RAG, MCP, sandbox, encrypted memory) and
+with richer infrastructure (a tree-sitter symbol index, MCP, sandbox, encrypted memory) and
 a more polished TUI.
 
 **Aider wins on:** raw edit-apply robustness, ranked repo-map via tree-sitter
@@ -40,13 +46,13 @@ session, and lint/test feedback loops that surface errors back to the model.
 **Hone wins on:** Rust performance and parallelism, agentic tool-calling,
 adaptive complexity-based tier selection, prompt caching with multiple
 breakpoints, MCP, TUI polish (agent rail, session switcher, prompt mirror,
-command palette, vim mode, review mode, TDD mode), pgvector semantic RAG,
+command palette, vim mode, review mode, TDD mode), a tree-sitter symbol index,
 encrypted memory, sandbox, and provider breadth (Anthropic, OpenAI, Ollama,
 Gemini CLI, Claude CLI).
 
 The porting candidates worth hone's time: (1) aider's multi-strategy fuzzy
 edit-applier, (2) ranked tree-sitter + PageRank repo map as a complement to
-pgvector, (3) `AI!`/`AI?` inline trigger comments, (4) lint/test reflection
+the symbol index, (3) `AI!`/`AI?` inline trigger comments, (4) lint/test reflection
 loop, (5) `/save` + `/load` session-as-commands for reproducibility.
 
 ---
@@ -58,10 +64,10 @@ loop, (5) `/save` + `/load` session-as-commands for reproducibility.
 | Language / runtime | Python 3, `litellm` for provider fan-out, `prompt_toolkit` for REPL, `rich` for rendering. | Rust 2024 workspace, `reqwest` + `tokio`, `ratatui` for TUI. |
 | IO model | Blocking REPL (`Commands.run` dispatches on each input). Streaming via `litellm.completion(..., stream=True)`. `benchmarks/aider-repo/aider/coders/base_coder.py:1419` | Fully async agent loop (`Agent::run_turn`). Streaming events over `mpsc` channels. `crates/hone-core/src/agent.rs` |
 | Chat entry-point | Single `Coder` subclass per run; mode switching via `/chat-mode` raises `SwitchCoder` exception. `benchmarks/aider-repo/aider/commands.py:138` | Single `Agent` handle; ensemble and review modes via orchestrator. `crates/hone-core/src/orchestrator.rs`, `crates/hone-core/src/ensemble.rs` |
-| Context strategy | "In-chat" file set: user runs `/add` → full file contents are rebuilt into the prompt every turn as `ChatChunks.chat_files`; other files summarised via repo-map. `benchmarks/aider-repo/aider/coders/chat_chunks.py` | ContextManager with start/middle/recent zones, BM25 mid-zone reordering, hierarchical skeleton strategy for large repos, pgvector semantic retrieval. `crates/hone-core/src/context.rs`, `crates/hone-core/src/hierarchical_skeleton.rs`, `crates/hone-index/src/` |
+| Context strategy | "In-chat" file set: user runs `/add` → full file contents are rebuilt into the prompt every turn as `ChatChunks.chat_files`; other files summarised via repo-map. `benchmarks/aider-repo/aider/coders/chat_chunks.py` | ContextManager with start/middle/recent zones, BM25 mid-zone reordering, hierarchical skeleton strategy for large repos, symbol-name retrieval from the index (no semantic retrieval). `crates/hone-core/src/context.rs`, `crates/hone-core/src/hierarchical_skeleton.rs`, `crates/hone-index/src/` |
 | Primary edit strategy | **Multiple, model-selected**: `diff` (SEARCH/REPLACE), `udiff`, `whole`, `patch` (OpenAI's `*** Begin Patch` format), plus function-call variants. Model chooses by subclass. `benchmarks/aider-repo/aider/coders/__init__.py` | Single native edit tool: `edit_file` with unique-match enforcement, plus `multi_edit` and `write_file`. Model drives via tool-use. `crates/hone-tools/src/file/edit.rs` |
 | Edit-apply resilience | Cascade of fuzzy strategies: exact → strip trailing whitespace → relative indent → diff-match-patch (`diff_match_patch`). `benchmarks/aider-repo/aider/coders/search_replace.py:541-562` | Strict exact-match with uniqueness check; returns `applied: false` when `old_str` not found; errors when ambiguous. No fuzzy fallback. `crates/hone-tools/src/file/edit.rs:71-101` |
-| Repo map | Tree-sitter tag extraction + PageRank on symbol graph, personalised on mentioned idents/files, cached in SQLite via `diskcache`. `benchmarks/aider-repo/aider/repomap.py:470-545` | SQLite-backed symbol index (tree-sitter) plus pgvector semantic search; no PageRank ranking. `crates/hone-index/src/parser.rs`, `crates/hone-index/src/sqlite_index.rs` |
+| Repo map | Tree-sitter tag extraction + PageRank on symbol graph, personalised on mentioned idents/files, cached in SQLite via `diskcache`. `benchmarks/aider-repo/aider/repomap.py:470-545` | SQLite-backed symbol index (tree-sitter); no semantic search and no PageRank ranking. `crates/hone-index/src/parser.rs`, `crates/hone-index/src/sqlite_index.rs` |
 | Model support | Everything `litellm` supports (100+ providers via one abstraction). Per-model metadata drives edit-format + token limits. `benchmarks/aider-repo/aider/models.py` | Anthropic HTTP, OpenAI HTTP, Ollama, Gemini CLI, Claude CLI. Each adapter hand-written. `crates/hone-providers/src/adapters/` |
 | Test integration | `/test` runs `self.test_cmd`; on failure, stderr is fed back as `reflected_message`. `benchmarks/aider-repo/aider/commands.py:993`, `aider/coders/base_coder.py:1616-1625` | TDD mode as a first-class verification loop; `test_loop.rs` orchestrates red-green cycles. `crates/hone-core/src/test_loop.rs`, `crates/hone-tui/src/tdd_mode.rs` |
 | Git integration | Auto-commits after every edit; generates commit message via weak model; rich attribution (`--attribute-author`, `--attribute-committer`, `--attribute-co-authored-by`); `/undo` reverts last aider commit. `benchmarks/aider-repo/aider/repo.py:131-318` | Auto-commit + undo stack; per-file commit; branch/checkout/redo helpers as tools. No author-attribution flags. `crates/hone-tools/src/git/auto_commit.rs`, `crates/hone-tools/src/git/undo_stack.rs` |
@@ -212,7 +218,7 @@ loop, (5) `/save` + `/load` session-as-commands for reproducibility.
 
 5. **MCP + semantic index + sandbox + encrypted memory.**
    Aider has none of these. Hone has first-class MCP client support,
-   pgvector-backed semantic code search with a multi-repo index, a sandbox
+   a tree-sitter symbol index in SQLite (no semantic search), a sandbox
    crate for isolated command exec, and an encrypted SQLite memory store.
    These are table stakes for a "production-ready" coding agent in 2026 and
    aider has consciously stayed out of that space.
@@ -319,13 +325,13 @@ PageRank, personalised on the idents/filenames mentioned in the current
 turn. Render the top-k ranked definitions as a `TreeContext`-style
 snippet packed into a token budget.
 
-**Why it matters.** Hone's current retrieval is pgvector (semantic
-nearest-neighbour) + SQLite symbol search. Both are excellent at "find me
-code that looks/sounds like X" but they don't answer "what's structurally
+**Why it matters.** Hone's current retrieval is SQLite symbol search
+(there is no pgvector or other semantic search). It is good at "find me
+code named like X" but they don't answer "what's structurally
 important to this change". PageRank-on-symbol-graph is a different signal:
 files that *define things other files call* bubble up. This is why aider's
 repo map is the single most-cited reason people recommend it for large
-repos. Adding it alongside (not replacing) pgvector gives hone a genuinely
+repos. Adding it alongside (not replacing) the symbol index gives hone a genuinely
 better retrieval story.
 
 **Where in hone.** New `crates/hone-index/src/repo_map.rs` next to
@@ -508,7 +514,7 @@ losing its architectural identity:
 3. **Build P5 (`/save` + `/load`).** Cheap, purely additive, immediately
    useful for the benchmarks/ workflow. ~2 days.
 4. **Evaluate P2 (PageRank repo map).** Only if benchmark results show
-   the current pgvector + symbol index is missing structurally
+   the current symbol index is missing structurally
    important files. If yes, commit to the full tree-sitter grammar port.
    ~3-4 weeks.
 5. **Evaluate P3 (`AI!` triggers).** Only if there's clear user demand.

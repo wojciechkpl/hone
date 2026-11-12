@@ -11,7 +11,7 @@
 - Memory encryption (AES-256-GCM with Argon2id)
 - Cross-session learning (AdaptiveClassifier)
 - Multi-agent budget tracking with rollback
-- Semantic index with PostgreSQL+pgvector (optional; in-memory fallback when unavailable)
+- Code index: tree-sitter symbols in SQLite, searched by name (no PostgreSQL or pgvector; corrected 2026-11-12)
 
 ---
 

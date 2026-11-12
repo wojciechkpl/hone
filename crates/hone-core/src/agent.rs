@@ -1295,6 +1295,14 @@ impl Agent {
                     .await;
 
                 if !injection.context_block.is_empty() {
+                    let _ = events
+                        .send(AgentEvent::ContextInjected {
+                            strategy: self.config.skeleton_strategy.as_str().to_string(),
+                            tokens_used: injection.tokens_used,
+                            bm25_hits: injection.bm25_hits.clone(),
+                            confidence: injection.confidence.label().to_string(),
+                        })
+                        .await;
                     tracing::debug!(
                         confidence = ?injection.confidence,
                         tokens = injection.tokens_used,
@@ -1938,6 +1946,9 @@ impl Agent {
                         if !policy_blocked.contains(&call.id) {
                             tool_calls_count += 1;
                             tracing::debug!(tool_name = %call.name, "tool dispatched (parallel)");
+                            // Phase tracking: once per call that really ran, in
+                            // call order, before its result enters the history.
+                            self.context.notify_tool_use(&call.name, &call.arguments);
 
                             // Guard: record successful read_file calls so we know
                             // which files have been read before any subsequent
@@ -2546,6 +2557,7 @@ impl Agent {
 
                     let dispatch_start = std::time::Instant::now();
                     let tool = self.config.tools.get(&call.name).map(Arc::clone);
+                    let tool_found = tool.is_some();
                     let ctx = self.tool_context();
                     let result = match tool {
                         None => Err(AgentError::ToolNotFound {
@@ -2583,6 +2595,11 @@ impl Agent {
                         }
                     };
                     let duration_ms = dispatch_start.elapsed().as_millis() as u64;
+                    // Phase tracking: the call ran (even if it returned a tool
+                    // error); a cancelled one returned above and does not count.
+                    if tool_found {
+                        self.context.notify_tool_use(&call.name, &call.arguments);
+                    }
 
                     match result {
                         Ok(output) => {
