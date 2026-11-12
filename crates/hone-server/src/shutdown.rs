@@ -22,7 +22,7 @@ use tokio::task::JoinHandle;
 use tower::ServiceExt as _;
 
 /// Default drain limit, in seconds.
-const DEFAULT_GRACE_SECS: u64 = 25;
+const DEFAULT_GRACE_SECS: u64 = 20;
 
 /// A worker pool to stop (see `WorkerPool::spawn_with_shutdown`).
 pub struct WorkerShutdown {
@@ -59,7 +59,7 @@ pub struct ShutdownReport {
 }
 
 /// Parse `HONE_SHUTDOWN_GRACE_SECS`: whole seconds >= 0. `None` or an invalid
-/// value gives 25 s (the invalid case logs a warning).
+/// value gives 20 s (the invalid case logs a warning).
 pub fn parse_shutdown_grace(raw: Option<&str>) -> Duration {
     let default = Duration::from_secs(DEFAULT_GRACE_SECS);
     let Some(raw) = raw else {
@@ -197,6 +197,10 @@ fn register(_conns: &SharedConnections, _stream: &TcpStream) -> Option<u64> {
 /// Abort the worker task and wait (at most a second) until it is really gone,
 /// so nothing of it runs while the MCP servers shut down.
 async fn abort_and_wait(w: &mut WorkerShutdown) {
+    // Polling a finished JoinHandle again would panic.
+    if w.handle.is_finished() {
+        return;
+    }
     w.handle.abort();
     let _ = tokio::time::timeout(Duration::from_secs(1), &mut w.handle).await;
 }
@@ -320,11 +324,12 @@ where
             }
             if !drained {
                 tracing::warn!("shutdown: drain limit reached, dropping open work");
+                // Cut first: a worker stuck in blocking code must not delay it.
+                drop(serve);
+                cut_all(&conns);
                 if let Some(w) = worker.as_mut() {
                     abort_and_wait(w).await;
                 }
-                drop(serve);
-                cut_all(&conns);
                 if let Ok(r) = &mut result {
                     r.drained = false;
                 }

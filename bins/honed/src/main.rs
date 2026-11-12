@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
             "  HONE_SHUTDOWN_GRACE_SECS   Seconds the first SIGINT/SIGTERM/SIGHUP waits for running work"
         );
         println!(
-            "                             (requests, a worker task) before dropping it (default 25; 0 = no wait)."
+            "                             (requests, a worker task) before dropping it (default 20; 0 = no wait)."
         );
         println!(
             "                             Then MCP servers shut down gracefully. A second signal stops at once."
