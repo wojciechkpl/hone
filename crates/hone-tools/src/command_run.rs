@@ -680,3 +680,154 @@ mod panic_lock_tests {
         assert!(status.success(), "scenario failed; log:\n{out}");
     }
 }
+
+#[cfg(all(test, unix))]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod proc_scan_tests {
+    //! L3 of `docs/plans/linux-launcher-grace-spec.md`: the `/proc` scan that
+    //! says whether a process group still has a live member, fed with a fake
+    //! `/proc` tree so it runs on every OS.
+    //!
+    //! API required: `unix::group_has_live_member(proc_root: &Path, pgid: i32)
+    //! -> Option<bool>` (`pub(super)` in the `unix` module, compiled on every
+    //! unix). Reads `<proc_root>/<pid>/stat` for every numeric entry; fields are
+    //! parsed after the LAST `)`: `<state> <ppid> <pgrp> ...`.
+    //! `Some(true)`: a process of group `pgid` whose state is not `Z` or `X`
+    //! exists; `Some(false)`: the root was read and there is none; `None`: the
+    //! root cannot be read. Entries that are not numbers, or whose `stat` cannot
+    //! be read or parsed, are skipped.
+    use super::unix::group_has_live_member;
+    use std::path::Path;
+
+    const PGID: i32 = 500;
+
+    fn stat(root: &Path, entry: &str, comm: &str, state: &str, pgrp: i32) {
+        let dir = root.join(entry);
+        std::fs::create_dir_all(&dir).unwrap();
+        // pid (comm) state ppid pgrp session tty_nr ...
+        std::fs::write(
+            dir.join("stat"),
+            format!("{entry} ({comm}) {state} 1 {pgrp} {pgrp} 0 -1 4194560 100 0 0 0 0 0 0 0 20 0 1 0 1 1000 100 18446744073709551615\n"),
+        )
+        .unwrap();
+    }
+
+    fn raw(root: &Path, entry: &str, content: &str) {
+        let dir = root.join(entry);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("stat"), content).unwrap();
+    }
+
+    #[test]
+    fn test_l3_member_in_a_live_state_should_count() {
+        for state in ["S", "R", "D", "T"] {
+            let root = tempfile::tempdir().unwrap();
+            stat(root.path(), "600", "server", state, PGID);
+            assert_eq!(
+                group_has_live_member(root.path(), PGID),
+                Some(true),
+                "state {state}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_l3_zombie_or_dead_members_only_should_not_count() {
+        for state in ["Z", "X"] {
+            let root = tempfile::tempdir().unwrap();
+            stat(root.path(), "500", "sh", state, PGID);
+            stat(root.path(), "600", "server", state, PGID);
+            assert_eq!(
+                group_has_live_member(root.path(), PGID),
+                Some(false),
+                "state {state}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_l3_zombie_leader_with_a_live_child_should_count() {
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "500", "sh", "Z", PGID);
+        stat(root.path(), "600", "server", "S", PGID);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+    }
+
+    #[test]
+    fn test_l3_members_of_other_groups_only_should_not_count() {
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "700", "other", "S", 501);
+        stat(root.path(), "701", "other", "R", 1);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l3_empty_proc_should_report_no_member() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l3_command_name_with_spaces_and_parentheses_should_parse_after_the_last_paren() {
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "600", "a) (b", "S", PGID);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "600", "a) (b", "Z", PGID);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l3_command_name_that_looks_like_fields_should_not_confuse_the_parse() {
+        // A naive whitespace split would read "S 1 500" out of the name.
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "600", "x) S 1 500 (y", "S", 9);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "600", "x) Z 1 9 (y", "S", PGID);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+    }
+
+    #[test]
+    fn test_l3_truncated_or_garbage_stat_should_be_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        raw(root.path(), "601", "garbage");
+        raw(root.path(), "602", "");
+        raw(root.path(), "603", "603 (x) S 1");
+        raw(root.path(), "604", "604 (unterminated S 1 500 500");
+        raw(root.path(), "605", "605 (x) S 1 notanumber 500");
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+
+        // ... and they do not hide a real member.
+        stat(root.path(), "600", "server", "S", PGID);
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+    }
+
+    #[test]
+    fn test_l3_entry_without_a_readable_stat_should_be_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("601")).unwrap(); // vanished: no stat
+        std::fs::create_dir_all(root.path().join("602").join("stat")).unwrap(); // a directory
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l3_non_numeric_entries_should_be_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        stat(root.path(), "self", "server", "S", PGID);
+        stat(root.path(), "thread-self", "server", "S", PGID);
+        stat(root.path(), "12ab", "server", "S", PGID);
+        std::fs::write(root.path().join("uptime"), "1 2").unwrap();
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l3_missing_proc_root_should_report_unknown() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(
+            group_has_live_member(&root.path().join("no-such-proc"), PGID),
+            None
+        );
+    }
+}

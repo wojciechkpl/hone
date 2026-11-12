@@ -194,11 +194,12 @@ fn direct_args(dir: &Path, script: &Path, mode: &str, delay: &str) -> Vec<String
     ]
 }
 
-/// P14 (macOS): through `sh -c "cd DIR && server"` bash 3.2 does not exec the
-/// server, so it is a grandchild. The grace must last while any group member is
-/// alive, so a server that needs 300 ms for its SIGTERM cleanup still gets it
-/// after the shell itself has died. (On Linux the leader shortcut stays.)
-#[cfg(target_os = "macos")]
+/// P14 / L1: through a shell launcher that does not exec the server, the server
+/// is a grandchild. The grace must last while any group member is alive, so a
+/// server that needs 300 ms for its SIGTERM cleanup still gets it after the
+/// shell itself has died. The trailing `; true` makes sure no shell (dash, bash
+/// 3.2) execs the last command by itself. Runs on macOS and on Linux (L1 of
+/// `docs/plans/linux-launcher-grace-spec.md`).
 #[tokio::test]
 async fn test_p14_sigterm_grace_should_last_through_a_shell_launcher_that_does_not_exec() {
     let _g = SERIAL.lock().await;
@@ -206,7 +207,7 @@ async fn test_p14_sigterm_grace_should_last_through_a_shell_launcher_that_does_n
     let script = dir.path().join("server.py");
     std::fs::write(&script, DELAY_SERVER).unwrap();
     let launcher = format!(
-        "cd {} && python3 {} {} polite 0.3",
+        "cd {} && python3 {} {} polite 0.3; true",
         dir.path().display(),
         script.display(),
         dir.path().display()
@@ -279,7 +280,7 @@ async fn test_p15_a_command_started_during_the_mcp_wait_should_not_outlive_the_c
     drop(manager);
 }
 
-/// Pins the zombie shortcut (Linux) and the EPERM rule (macOS): a direct server
+/// L2 / pins the zombie rule (Linux) and the EPERM rule (macOS): a direct server
 /// that exits on SIGTERM makes the call return at once, not after the grace.
 #[tokio::test]
 async fn test_p14_a_direct_server_that_exits_on_sigterm_should_end_the_call_quickly() {
