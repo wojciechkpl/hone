@@ -48,6 +48,16 @@ The review reproduced that probes ran repository-controlled code (`.yarnrc` `yar
 | E19 | **Once blocks stay ahead of EachTurn blocks** in the prompt regardless of their order in `sources`, so the cached prefix stays stable. |
 | E20 | **Small fixes.** The default timeout is one constant used everywhere; a gathered source's every block keeps its own slot in receipts. |
 
+### Review round 2 (E21–E25)
+
+| Row | Behaviour |
+|---|---|
+| E21 | **The probes' temp dir is never in the repository.** The parent for the probe directory is canonicalised; if `TMPDIR` is relative or resolves inside the working directory, the OS default temp location is used instead (`/tmp` on unix). Probes get that absolute directory as `TMPDIR`. |
+| E22 | **Interrupts stop probes.** Probe process groups are registered with Hone's running-command registry for as long as they run, so SIGINT, SIGTERM and every other exit path that stops commands (`kill_running_commands`) also stop probes. |
+| E23 | **The listing is data, not prose.** The top-level entries are rendered as one JSON array of strings (`Top-level entries (JSON): ["Cargo.toml","src/",…]`), each name escaped and cut as in E12, so a file name can't read as an instruction line in the system message. |
+| E24 | **Running from home or root keeps the user's toolchains.** The "PATH entry inside the working directory" filter applies only when the working directory is neither `$HOME` nor `/` (nor an ancestor of `$HOME`); in those cases PATH entries are filtered only for being relative or empty. |
+| E25 | **`~` replaces the home prefix before lines are cut**, so a long line still shows `~`. |
+
 ## Testing notes
 
 - **E2/E3/E4** with a temp working directory and a `PATH` pointing at a temp dir of fake executables (scripts that print a version, sleep past the timeout, or exit non-zero). Pin a constructor that takes the probe list or the `PATH` so tests don't depend on the machine.
