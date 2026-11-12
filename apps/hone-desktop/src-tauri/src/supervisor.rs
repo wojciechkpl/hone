@@ -54,6 +54,18 @@ pub struct SidecarInfo {
     pub bearer_token: Option<String>,
 }
 
+impl Drop for SidecarSupervisor {
+    /// Never leave a `honed` behind: kill and reap the child if it is still
+    /// running. A child already reaped (by `shutdown`, or a failed `start`) is
+    /// left alone, so no signal goes to a reused pid.
+    fn drop(&mut self) {
+        if let Ok(None) = self.child.try_wait() {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
+}
+
 /// How many of the child's last stderr lines are kept.
 const STDERR_LINES: usize = 20;
 

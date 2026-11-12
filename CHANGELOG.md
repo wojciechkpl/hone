@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - If the saved choice is "manage the daemon for me" (or the active profile is a sidecar), the app starts `honed` at launch. An external profile, or no saved choice, starts nothing. A sidecar that is already running is not started twice.
   - A failed start shows the reason in the top-bar pill (tooltip) and in the Daemon panel, at launch, from the wizard and from **Start**: `honed` not on `PATH` (with how to install it), its exit status and last error lines if it exits early (reported at once, not after the 5 s health wait), or that it did not become healthy in time.
   - A `honed` that fails to start is killed and reaped before the error is returned.
+  - The managed `honed` now stops when the app quits by any route (Cmd+Q, the app menu, the tray), not only through the tray's Quit. Closing the window still just hides it.
   - `app.withGlobalTauri` is on, so the page really reaches the app. Opened in a plain browser, the page shows a banner ("not running inside the Hone desktop app") and does not pretend the daemon is down.
   - The README's desktop quick start uses `cargo install --path bins/honed --locked`, sets `ANTHROPIC_API_KEY`, says what to expect and what to do if the pill is red, and names where things are saved.
 - Contract: `docs/plans/desktop-sidecar-autostart-spec.md`.
