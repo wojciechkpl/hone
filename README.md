@@ -198,6 +198,11 @@ See [routing and fallback](docs/configuration.md#routing-and-fallback).
   - A server that hangs at startup is skipped.
   - All servers start and stop in parallel.
   - Every way Hone ends stops them: a normal exit, an error, a signal or a panic. Servers get SIGTERM first, so they can clean up. Only `kill -9` or a crash that isn't a panic can still leave one running.
+- **`honed` shuts down gracefully.** On SIGTERM, running requests and a worker's current task finish with their tools still working, and the result is reported to the coordinator. This includes a coordinator and worker in one `honed`.
+  - The wait lasts at most `HONE_SHUTDOWN_GRACE_SECS` (default 20 s). After that, open connections are cut.
+  - Then MCP servers stop gracefully.
+  - A second signal stops everything at once.
+  - See [shutting down `honed`](docs/configuration.md#environment-variables).
 
 ### Also new
 
