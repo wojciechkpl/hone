@@ -79,6 +79,7 @@ impl EvalReport {
                 TaskStatus::Fail => "FAIL",
                 TaskStatus::Timeout => "TIMEOUT",
                 TaskStatus::AgentError => "AGENT_ERROR",
+                TaskStatus::InfraError => "INFRA_ERROR",
             };
             md.push_str(&format!(
                 "| {} | {} | {} | {:.4} |\n",

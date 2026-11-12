@@ -16,6 +16,10 @@ pub struct TaskSpec {
     #[serde(default = "default_working_dir")]
     pub working_dir: String,
     pub budget_usd: Option<f64>,
+    /// JSONL file of memories (relative to the tasks file) loaded into the run's
+    /// fresh memory store.
+    #[serde(default)]
+    pub memory_fixture: Option<String>,
 }
 
 fn default_timeout() -> u64 {
@@ -34,6 +38,10 @@ pub enum EvalConfigError {
     Toml(String),
     #[error("duplicate task id: {0}")]
     DuplicateId(String),
+    /// A problem in a tasks file's `[profiles.*]` or `[eval]` tables, or in a
+    /// profile or ablation named on the command line.
+    #[error("{0}")]
+    Invalid(String),
 }
 
 impl EvalConfig {
