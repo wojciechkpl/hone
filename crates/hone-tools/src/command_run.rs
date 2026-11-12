@@ -737,7 +737,7 @@ mod proc_scan_tests {
     //! exists; `Some(false)`: the root was read and there is none; `None`: the
     //! root cannot be read. Entries that are not numbers, or whose `stat` cannot
     //! be read or parsed, are skipped.
-    use super::unix::group_has_live_member;
+    use super::unix::{group_gone_after_leader_exit, group_has_live_member};
     use std::path::Path;
 
     const PGID: i32 = 500;
@@ -869,6 +869,117 @@ mod proc_scan_tests {
         assert_eq!(
             group_has_live_member(&root.path().join("no-such-proc"), PGID),
             None
+        );
+    }
+
+    // ---- L5-L7 (review round 1) -------------------------------------------------
+    //
+    // API required (in `mod unix`, `pub(super)`, compiled on every unix):
+    //   fn group_gone_after_leader_exit(scan: Option<bool>) -> bool
+    // where `scan` is `group_has_live_member`'s result once the leader has exited.
+    // `group_has_live_member` additionally: reads `stat` as BYTES (L5), and counts
+    // a `Z` entry whose `num_threads` (field 20, counting `pid` as field 1) is
+    // above 1 as alive (L6).
+
+    /// A full-length `stat` line (fields up to `starttime`), as bytes, with the
+    /// comm bytes and `num_threads` (field 20) given.
+    fn full_stat(pid: &str, comm: &[u8], state: &str, pgrp: i32, threads: u32) -> Vec<u8> {
+        let mut line = format!("{pid} (").into_bytes();
+        line.extend_from_slice(comm);
+        // fields 3..: state ppid pgrp session tty tpgid flags minflt cminflt majflt
+        // cmajflt utime stime cutime cstime priority nice num_threads(20) ...
+        line.extend_from_slice(
+            format!(") {state} 1 {pgrp} {pgrp} 0 -1 4194560 100 0 0 0 0 0 0 0 20 0 {threads} 0 1 1000 100\n")
+                .as_bytes(),
+        );
+        line
+    }
+
+    fn write_bytes(root: &Path, entry: &str, bytes: &[u8]) {
+        let dir = root.join(entry);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("stat"), bytes).unwrap();
+    }
+
+    #[test]
+    fn test_l5_command_name_that_is_not_utf8_should_not_hide_a_live_member() {
+        // "се" + the first byte of "р": Linux cut comm in the middle of a character.
+        let comm = [0xd1, 0x81, 0xd0, 0xb5, 0xd1];
+        assert!(std::str::from_utf8(&comm).is_err());
+        let root = tempfile::tempdir().unwrap();
+        write_bytes(root.path(), "600", &full_stat("600", &comm, "S", PGID, 1));
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+    }
+
+    #[test]
+    fn test_l5_non_utf8_name_should_still_respect_state_and_group() {
+        let comm = [0xff, 0xfe, 0x28, 0x29, 0x20]; // invalid bytes, "()" and a space
+        let root = tempfile::tempdir().unwrap();
+        write_bytes(root.path(), "600", &full_stat("600", &comm, "Z", PGID, 1));
+        write_bytes(root.path(), "601", &full_stat("601", &comm, "S", 501, 1));
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+        write_bytes(root.path(), "602", &full_stat("602", &comm, "R", PGID, 1));
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(true));
+    }
+
+    #[test]
+    fn test_l6_zombie_main_thread_with_running_threads_should_count_as_alive() {
+        for threads in [2, 5] {
+            let root = tempfile::tempdir().unwrap();
+            write_bytes(
+                root.path(),
+                "600",
+                &full_stat("600", b"server", "Z", PGID, threads),
+            );
+            assert_eq!(
+                group_has_live_member(root.path(), PGID),
+                Some(true),
+                "num_threads {threads}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_l6_true_zombie_with_one_thread_should_stay_dead() {
+        let root = tempfile::tempdir().unwrap();
+        write_bytes(root.path(), "600", &full_stat("600", b"sh", "Z", PGID, 1));
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l6_threaded_zombie_of_another_group_should_not_count() {
+        let root = tempfile::tempdir().unwrap();
+        write_bytes(root.path(), "600", &full_stat("600", b"x", "Z", 501, 4));
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l6_zombie_without_a_thread_count_should_keep_counting_as_dead() {
+        let root = tempfile::tempdir().unwrap();
+        // Short: no field 20 at all.
+        raw(root.path(), "600", "600 (sh) Z 1 500 500 0 -1");
+        // Field 20 is not a number.
+        raw(
+            root.path(),
+            "601",
+            "601 (sh) Z 1 500 500 0 -1 4194560 100 0 0 0 0 0 0 0 20 0 many 0 1",
+        );
+        assert_eq!(group_has_live_member(root.path(), PGID), Some(false));
+    }
+
+    #[test]
+    fn test_l7_fallback_should_count_the_group_gone_unless_the_scan_found_a_live_member() {
+        assert!(
+            group_gone_after_leader_exit(None),
+            "/proc unreadable: old rule, gone"
+        );
+        assert!(
+            group_gone_after_leader_exit(Some(false)),
+            "no live member: gone"
+        );
+        assert!(
+            !group_gone_after_leader_exit(Some(true)),
+            "a live member keeps the wait going"
         );
     }
 }

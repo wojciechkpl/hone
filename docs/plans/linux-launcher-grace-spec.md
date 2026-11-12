@@ -39,6 +39,15 @@ flowchart LR
 | L3 | **The `/proc` reading is robust.**<br>• A command name containing spaces or parentheses parses correctly: fields are read after the *last* `)` in `stat`.<br>• A process that vanishes during the scan, or whose `stat` can't be read or parsed, is skipped.<br>• If `/proc` itself can't be read (not mounted, a restricted sandbox), the check falls back to the old rule: the leader has exited, so the group counts as gone.<br>• Other non-macOS unix systems (the BSDs) keep the old rule. |
 | L4 | **Docs.** `docs/configuration.md` no longer says that on Linux the grace ends when a shell launcher exits. `exec` stays as good practice, not a requirement. The CHANGELOG has an entry. |
 
+### Review round 1 (L5–L8)
+
+| Row | Behaviour |
+|---|---|
+| L5 | **A command name that isn't valid UTF-8 doesn't hide a live member.** Linux cuts `comm` to 15 bytes, which can split a multi-byte character (a server binary or script with a non-ASCII name). The `stat` line is read as bytes, split at the last `)` byte, and only the ASCII fields after it are parsed. Such a process is found like any other.<br><br>(Review S1, reproduced on Linux: a live `sleep` copied to `/tmp/серверный` got a truncated comm, its `stat` failed UTF-8 decoding, and the scan returned `Some(false)`.) |
+| L6 | **A process whose main thread has exited but whose other threads are running counts as alive.** Its `stat` state is `Z` but `num_threads` (field 20) is above 1. A true zombie has `num_threads` 1 (reproduced). |
+| L7 | **The fallback is pinned.** "Leader exited, `/proc` unreadable" means gone, and "leader exited, scan found no live member" means gone. Only a scan that found a live member keeps the wait going. Pin this with a small pure function and a unit test. (Review nit: inverting the mapping passed every test.) |
+| L8 | **The scan stays cheap, and builds stay warning-free.**<br>• While waiting, at most one `/proc` scan runs per wait tick, whatever the number of groups.<br>• A group already seen gone isn't checked again: an empty group can't regain members.<br>• The dead-code allowance covers every non-Linux unix, not only macOS.<br><br>This row isn't pinned by tests. (Review nits: about 5.7 ms per scan with about 2000 processes, repeated per group and per tick.) |
+
 ## Testing notes
 
 - **L3 on every OS.** The scan takes the `/proc` root as a parameter, so unit tests can feed it a fake tree in a temp dir. Cover:
