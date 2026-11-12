@@ -54,6 +54,23 @@ flowchart LR
 | S9 | **The CLI and `honed` apply the selection.** The one-shot CLI, the TUI and `honed`'s executor build the selection from config, env and flags and call `with_strategies`. Today `honed` turns injection off; that stays its default (its built-in default `sources` omit `skeleton`), but its config can now turn it on. |
 | S10 | **`hone strategies [--json] [--check]`.** Prints each slot: the active strategy, its parameters, its origin, and what chose it (flag, env var name, file path or default), plus any warnings. `--json` prints the same as one object. `--check` prints nothing on success and exits 0; on an invalid config it prints the error and exits 2. |
 
+### Review round 1 (S11–S22)
+
+| Row | Behaviour |
+|---|---|
+| S11 | **A project file can't raise the budget.** A project `budget_ratio` is a cap: the effective ratio is `min(user value or the per-model default, project value)`, applied where the model is known (`with_strategies`), so `budget_ratio = 0.6` in a project lowers nothing and raises nothing on a model whose default is 0.5. A higher project value is reported as ignored, with a warning naming the file. |
+| S12 | **Config errors never echo raw control characters.** An invalid value is shown escaped (Rust `{:?}`-style, control characters as `\u{…}`), truncated to 80 characters, in every config error and warning, from any file, env var or flag. A project file can't write terminal escapes or forge `hone:` lines on stderr. |
+| S13 | **`--ensemble` uses the selection.** `AgentEnsemble::with_strategies` applies the resolved strategies to every candidate and the ranker, so `writer = "off"`, the recaller, sources, budget, compactor and injection settings hold there too. |
+| S14 | **`writer = "off"` stops all memory writes, including outcome logs.** With `writer = "off"`, the TUI's (and any other path's) after-turn `Outcome` records aren't written. |
+| S15 | **`exclude_kinds` is validated like other names.** An unknown kind is a config error from `hone-config` naming the file and key and listing the valid kinds, before any MCP server, language server or model call starts. The registry is built before LSP/MCP startup; a registry build error exits through the same cleanup path as other startup errors, so no MCP server is left running. |
+| S16 | **`hone strategies` shows every parameter's origin.** Each parameter (not just each slot) shows what chose it (flag, env var name, file path, default), and each slot shows its registry origin (built-in, feature, plugin). Floats print as written (`0.4`, `0.9`, `0.6`), in text and `--json`. |
+| S17 | **`trim-only` stops compaction, not phase tracking.** The tracker and the `phase_transitions` metric still run under `trim-only` (PR A K11); only the compaction is skipped. |
+| S18 | **One parser for `HONE_PHASE_COMPACTION`.** The selection and agents built without strategies parse it the same way: trimmed, case-insensitive `1`/`true`/`on`. |
+| S19 | **`top_k` is at least 1.** `top_k = 0` is a config error (use `recaller = "none"` to turn recall off), from any file. |
+| S20 | **Dropped project sources are reported.** A source in a project file's `sources` that the user's sources don't include is dropped with a warning naming the file. `honed` prints its config warnings to stderr at startup regardless of `RUST_LOG`. |
+| S21 | **Receipts name the compactor and writer correctly.** The `History` block's strategy is the active compactor (`graduated` or `trim-only`) with params `{"phase":bool}`; writer strategy ids use their own slot (`memory.writer`), not `Recall`. The injection params stay `{"gap_threshold":…,"max_tokens":…}` (they replace PR B's `{"strategy":…}`, which never shipped). |
+| S22 | **Docs.** `docs/configuration.md` documents `[context]`, `[memory]`, their keys and defaults, the project-file narrowing rules, the precedence order and `hone strategies`; the stale note saying `[memory]` tables are rejected is removed. The CHANGELOG notes that an unknown `HONE_SKELETON_STRATEGY` / `--skeleton-strategy` now exits 2 instead of falling back to `adaptive`. Docs only; no test. |
+
 ## Testing notes
 
 - **S1–S4** in `hone-config` (parsing, precedence, trust) and as CLI-level tests for exit codes.
