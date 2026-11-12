@@ -68,3 +68,19 @@ Review reproduced that agent code running as the same user finds the suite throu
 | T20 | **Tampering invalidates the run.** `verify.sh`, and `hone eval` when the tasks file sets `[eval] integrity = ["checks", "reference"]` (the starter suite does), record a hash of those directories before the run and re-check after every check; any change marks the remaining and the current runs `infra_error` with "suite modified during the run". |
 | T21 | **Escaped processes can't hang a check.** After the direct child exits or times out, the judge stops reading (closes its pipe ends, or drains with a short deadline) and every `communicate`/wait has a timeout; a check whose solution leaves a session-escaped process holding the pipes finishes within its timeout plus 2 s. |
 | T22 | **New self-tests and an honest limit.** The ancestor-`ps` forgery, the judge rewrite and a pipe-holding session escape are self-tests that must be rejected (the rewrite detected by T20). The README states the remaining limit: agent code running as your user can read any file your user can, including `reference/`; run suites on a machine or account where that matters, or treat results as measurements of cooperative models, not proofs. |
+
+### Review round 4 (T23–T26)
+
+Review found:
+- **The suite won't load.** `hone eval` rejects the suite on this branch: the `[eval] integrity` key is PR F's F31, and this branch predates it.
+- **Small answer spaces can be guessed.** A solution that finds the judge's bundle path (from `ps`) reads the salted expectation hashes and brute-forces small answer spaces: 8,001 numeric candidates passed c01 under the real `hone eval`. The `ancestor-ps` self-test only read the hashes and never tried this.
+- **Escaped processes outlive the run.** They're reparented to PID 1 when they start a new session.
+- **A read-only bundle can be left behind.** It stays in `$TMPDIR` when the judge doesn't finish.
+- **Output files are shared between children.** A child's escaped process could append to the next child's output.
+
+| Row | Behaviour |
+|---|---|
+| T23 | **The judge leaves nothing on disk for solution code to read.** Before starting any solution process, the judge loads every spec, salt, hash and probe input it needs into memory and deletes its bundle. A solution that walks its ancestors finds no bundle and no expectations. The `ancestor-ps` self-test now also brute-forces: it finds the judge's argv, tries to read the specs, and must find nothing. The README and the spec say the guarantee precisely. Hashes stop copying answers. With the bundle gone before solution code runs, the only remaining same-user route is the suite's reference solutions, which is the documented T22 limit. |
+| T24 | **Nothing is left behind, and nothing is shared between children.** The launcher sweeps `evalchk.*` bundles older than an hour in `$TMPDIR`; T23 removes a bundle early in the normal path. Each solution child gets its own fresh stdout and stderr files (`mkstemp`), so an escaped process holding an earlier child's descriptor can't write into a later child's output. The README says that a process that starts its own session escapes the group kill and can outlive the run. |
+| T25 | **The suite loads under `hone eval`.** The branch is rebased onto PR F's final head, which includes F31–F34. `hone eval eval/suites/starter/tasks.toml --check` exits 0 and accepts `[eval] integrity = ["checks", "reference"]`. `verify.sh` runs that check when a `hone` binary is on `PATH`, and skips it otherwise. |
+| T26 | **The claim matches the guarantee.** The README's PR summary text says that verdicts come from a judge that never runs solution code and keeps its expectations off disk while solution code runs. Suite files are integrity-checked by `hone eval`. Solution code runs as your user, so it can read the suite's reference solutions. Results are measurements of cooperative models, not proofs. |
