@@ -24,6 +24,10 @@
       <button id="palette-trigger" class="ghost">Cmd+K</button>
     </header>
 
+    <div id="no-tauri-banner" class="banner hidden" role="alert">
+      This page is not running inside the Hone desktop app, so daemon controls are unavailable. Open it with the app (<code>cargo run -p hone-desktop</code>).
+    </div>
+
     <div id="daemon-menu" class="daemon-menu hidden" role="dialog" aria-label="Daemon switcher">
       <div class="daemon-menu-head">Daemons</div>
       <ul id="daemon-menu-list" class="daemon-menu-list"></ul>

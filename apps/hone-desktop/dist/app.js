@@ -1,5 +1,7 @@
 // Tauri 2 exposes invoke + event listening at window.__TAURI__.
 const tauri = window.__TAURI__ || null;
+// False in a plain browser tab: no command reaches the app there.
+const inTauri = !!(tauri && tauri.core && tauri.core.invoke);
 const invoke = (tauri && tauri.core && tauri.core.invoke) ? tauri.core.invoke : async () => ({ stub: true });
 const listen = (tauri && tauri.event && tauri.event.listen) ? tauri.event.listen : async () => () => {};
 
@@ -45,6 +47,13 @@ async function refreshDaemon() {
   const dot = document.getElementById('daemon-dot');
   const label = document.getElementById('daemon-label');
   const info = document.getElementById('daemon-info');
+  if (!inTauri) {
+    // Not the desktop app: the daemon is neither up nor down as far as we know.
+    dot.className = 'dot dot--unknown';
+    label.textContent = 'not running inside the Hone app';
+    if (info) info.textContent = 'This page is not running inside the Hone desktop app, so daemon controls are unavailable.';
+    return;
+  }
   try {
     const status = await invoke('daemon_status');
     // Prefix the topbar label with the active profile name when known.
@@ -1545,6 +1554,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (chatState.activeRunId && payload.run_id !== chatState.activeRunId) return;
     handleAgentEvent(payload.event || {});
   });
+
+  if (!inTauri) show('no-tauri-banner');
 
   const state = loadState();
   // The Rust side decides from the saved choice and the active profile in
