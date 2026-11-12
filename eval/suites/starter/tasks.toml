@@ -121,28 +121,28 @@ timeout_secs = 300
 
 [[tasks]]
 id = "x01-ctx-free-shipping"
-prompt = "Customers whose order total is above 100 euros should not be charged for shipping, but at the moment everyone still pays the flat rate. Fix this. Change only what is needed."
+prompt = "Big baskets are supposed to get free delivery, but customers who order for more than 100 euros are still charged for it. Above 100 euros the delivery charge should be zero; at 100 or less nothing changes. Fix this. Change only what is needed."
 success_check = "sh \"$EVAL_SUITE_DIR/checks/x01-ctx-free-shipping.sh\""
 working_dir = "x01-ctx-free-shipping"
 timeout_secs = 420
 
 [[tasks]]
 id = "x02-ctx-long-names"
-prompt = "Player names that are too long overflow the layout on the leaderboard page. Names longer than 12 characters should be cut so that the result is 12 characters long, ending with the ellipsis character …. Shorter names stay as they are. Change only what is needed."
+prompt = "On the leaderboard page, long player handles spill out of their column. A handle of more than 12 characters should be shortened to exactly 12 characters, the last one being the ellipsis character …. Shorter handles stay as they are. Change only what is needed."
 success_check = "sh \"$EVAL_SUITE_DIR/checks/x02-ctx-long-names.sh\""
 working_dir = "x02-ctx-long-names"
 timeout_secs = 420
 
 [[tasks]]
 id = "x03-ctx-blank-timeout"
-prompt = "The app crashes at startup when the request timeout is left blank in the settings file. A blank timeout should mean the default of 30 seconds. Fix it. Change only what is needed."
+prompt = "The app blows up on startup when the request timeout entry in the settings file is empty. An empty entry should mean the standard 30 seconds. Fix it. Change only what is needed."
 success_check = "sh \"$EVAL_SUITE_DIR/checks/x03-ctx-blank-timeout.sh\""
 working_dir = "x03-ctx-blank-timeout"
 timeout_secs = 420
 
 [[tasks]]
 id = "x04-ctx-invoice-order"
-prompt = "The monthly invoice export lists the oldest invoice first, but the accountants want the newest invoice at the top. Fix this for the export only. Change only what is needed."
+prompt = "In the monthly invoice export the latest bill is at the bottom, but the accountants want it at the top. Fix this for the export only. Change only what is needed."
 success_check = "sh \"$EVAL_SUITE_DIR/checks/x04-ctx-invoice-order.sh\""
 working_dir = "x04-ctx-invoice-order"
 timeout_secs = 420

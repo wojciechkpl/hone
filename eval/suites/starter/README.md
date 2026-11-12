@@ -64,10 +64,10 @@ changed (a hash manifest in `checks/data/`).
 
 | Task | Project | Behaviour |
 |---|---|---|
-| `x01-ctx-free-shipping` | Python, 60 files | orders above 100 euros ship free |
+| `x01-ctx-free-shipping` | Python, 62 files | orders above 100 euros ship free |
 | `x02-ctx-long-names` | JavaScript, 55 files | leaderboard names cut to 12 characters with an ellipsis |
 | `x03-ctx-blank-timeout` | Python, 48 files | a blank timeout in the settings means 30 seconds |
-| `x04-ctx-invoice-order` | JavaScript, 44 files | the invoice export lists the newest first |
+| `x04-ctx-invoice-order` | JavaScript, 47 files | the invoice export lists the newest first |
 
 ## Verify the suite (no model)
 
@@ -79,6 +79,15 @@ sh eval/suites/starter/verify.sh c01-py-fix-median m02-mem-staging-port
 One line per task: `PASS`, `FAIL` or `SKIP` (a toolchain from the check's `# requires:` line is
 missing). It exits non-zero on any `FAIL`. The Rust test `crates/hone-eval/tests/starter_suite.rs`
 runs it.
+
+Each check is built to resist shortcuts: the c01-c08 checks restore the project's own tests from
+`checks/data/<id>/` before running them (so deleting or weakening tests earns nothing), the
+refactor checks look at behaviour (swap the helper and see the callers change), `n01` normalises
+spelling variants and rejects a pasted copy of the notes, and the context tasks carry decoy files
+(legacy copies, docs, look-alike helpers) that contain the prompt's words. `verify.sh` also runs
+known cheats (`checks/cheats/<id>/<name>/`, must fail), correct alternative solutions
+(`checks/alt/<id>/<name>/`, must pass) and a "tests deleted" run, printed as `OK` lines. Every check
+run is capped at `VERIFY_TIMEOUT` seconds (default 60).
 
 ## Run it under two profiles
 

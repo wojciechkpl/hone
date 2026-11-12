@@ -9,7 +9,17 @@
 # `# requires:` line of its check) is reported as SKIP, never as PASS.
 #
 # usage: sh verify.sh [task-id ...]     (default: every task)
-# env:   VERIFY_KEEP=1 keeps the temp copies; VERIFY_VERBOSE=1 prints the check output.
+# env:   VERIFY_KEEP=1 keeps the temp copies; VERIFY_VERBOSE=1 prints the check output;
+#        VERIFY_TIMEOUT=SECONDS caps every single check run (default 60). A check that
+#        runs over is killed (with its child processes) and the task FAILs.
+#
+# Besides the original/reference pair, every task is also run against:
+#   - "tests deleted": when checks/data/<id>/ holds the project's pristine tests, the copy
+#     with those files removed must still FAIL (the check restores them itself);
+#   - checks/cheats/<id>/<name>/ overlays on the untouched task: the check must FAIL;
+#   - checks/alt/<id>/<name>/ overlays on the untouched task (other correct solutions):
+#     the check must PASS.
+# These print as "OK    <id>/<name>" lines, not as task lines.
 #
 # A reference directory may hold a `.remove` file: one path per line, removed from the
 # copy before the overlay (for tasks whose solution renames files).
@@ -54,8 +64,54 @@ done
 
 fail() { echo "FAIL  $1: $2"; failures=$((failures + 1)); }
 
+killtree() { # pid: kill it and everything below it
+  # the parent first, so it can't react to its children dying (the watchdog would
+  # otherwise mark a timeout when it is itself being cancelled)
+  kids=$(pgrep -P "$1" 2>/dev/null)
+  kill -KILL "$1" 2>/dev/null
+  for child in $kids; do killtree "$child"; done
+  return 0
+}
+
+# Runs a check with a time limit, without GNU timeout (not on macOS): the check runs in
+# the background, a watchdog kills its process tree when the time is up.
 run_check() { # dir command
-  ( cd "$1" && EVAL_SUITE_DIR="$suite" sh -c "$2" ) >"$work/check.out" 2>&1
+  rm -f "$work/timed_out"
+  ( cd "$1" && EVAL_SUITE_DIR="$suite" exec sh -c "$2" ) >"$work/check.out" 2>&1 </dev/null &
+  check_pid=$!
+  (
+    sleep "${VERIFY_TIMEOUT:-60}"
+    : >"$work/timed_out"
+    killtree "$check_pid"
+  ) >/dev/null 2>&1 &
+  watchdog_pid=$!
+  wait "$check_pid" 2>/dev/null
+  status=$?
+  killtree "$watchdog_pid"
+  wait "$watchdog_pid" 2>/dev/null
+  if [ -f "$work/timed_out" ]; then
+    echo "the check did not finish within ${VERIFY_TIMEOUT:-60}s and was killed" >>"$work/check.out"
+    return 124
+  fi
+  return "$status"
+}
+
+timed_out() { [ -f "$work/timed_out" ]; }
+
+fresh_copy() { # (re)creates $copy as the untouched working dir
+  rm -rf "$copy"
+  mkdir -p "$copy"
+  cp -R "$suite/$wd/." "$copy/"
+}
+
+overlay() { # dir: apply a solution (its .remove list first) on $copy
+  if [ -f "$1/.remove" ]; then
+    while IFS= read -r path; do
+      [ -n "$path" ] && rm -f "$copy/$path"
+    done <"$1/.remove"
+  fi
+  cp -R "$1/." "$copy/"
+  rm -f "$copy/.remove"
 }
 
 printf '%s\n' "$list" | while IFS="$US" read -r id wd chk fx prompt; do
@@ -107,9 +163,7 @@ for n, line in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
   fi
 
   copy="$work/$id"
-  rm -rf "$copy"
-  mkdir -p "$copy"
-  cp -R "$suite/$wd/." "$copy/"
+  fresh_copy
 
   if run_check "$copy" "$chk"; then
     echo "FAIL  $id: the check passes on the untouched task"
@@ -117,15 +171,14 @@ for n, line in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
     echo "x" >>"$work/failed"
     continue
   fi
+  if timed_out; then
+    echo "FAIL  $id: the check timed out on the untouched task"
+    echo "x" >>"$work/failed"
+    continue
+  fi
   before=$(tail -3 "$work/check.out" | tr '\n' ' ' | cut -c1-110)
 
-  if [ -f "$ref/.remove" ]; then
-    while IFS= read -r path; do
-      [ -n "$path" ] && rm -f "$copy/$path"
-    done <"$ref/.remove"
-  fi
-  cp -R "$ref/." "$copy/"
-  rm -f "$copy/.remove"
+  overlay "$ref"
 
   if run_check "$copy" "$chk"; then
     echo "PASS  $id   (fails before: $before)"
@@ -134,7 +187,44 @@ for n, line in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
     echo "FAIL  $id: the check fails with the reference solution"
     sed 's/^/        /' "$work/check.out" | tail -15
     echo "x" >>"$work/failed"
+    continue
   fi
+
+  # Cheats must fail, other correct solutions must pass.
+  extra_fail() { echo "FAIL  $id/$1: $2"; echo "x" >>"$work/failed"; }
+  pristine="$suite/checks/data/$id"
+  if [ -d "$pristine" ]; then
+    fresh_copy
+    (cd "$pristine" && find . -type f) | while IFS= read -r f; do rm -f "$copy/$f"; done
+    if run_check "$copy" "$chk" && ! timed_out; then
+      extra_fail tests-deleted "the check passes when the project's tests are deleted"
+    else
+      echo "OK    $id/tests-deleted (fails as it should)"
+    fi
+  fi
+  for dir in "$suite/checks/cheats/$id"/*/; do
+    [ -d "$dir" ] || continue
+    name=$(basename "$dir")
+    fresh_copy
+    overlay "$dir"
+    if run_check "$copy" "$chk" || timed_out; then
+      extra_fail "$name" "the check accepts this cheat"
+    else
+      echo "OK    $id/$name (cheat rejected)"
+    fi
+  done
+  for dir in "$suite/checks/alt/$id"/*/; do
+    [ -d "$dir" ] || continue
+    name=$(basename "$dir")
+    fresh_copy
+    overlay "$dir"
+    if run_check "$copy" "$chk"; then
+      echo "OK    $id/$name (alternative solution accepted)"
+    else
+      extra_fail "$name" "the check rejects a correct alternative solution"
+      sed 's/^/        /' "$work/check.out" | tail -10
+    fi
+  done
 done
 
 # the loop above runs in a subshell: count through marker files

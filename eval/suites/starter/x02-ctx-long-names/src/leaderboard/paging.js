@@ -9,3 +9,5 @@ function normalizeCoupon(value) {
 }
 
 module.exports = { lookupToken, normalizeCoupon };
+
+// Long handles are clipped by the stylesheet, not here.

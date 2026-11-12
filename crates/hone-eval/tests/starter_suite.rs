@@ -36,4 +36,36 @@ fn test_t5_every_starter_task_check_should_fail_before_and_pass_with_the_referen
     let reported = text.lines().filter(|l| l.starts_with("PASS ") || l.starts_with("SKIP ")).count();
     assert_eq!(reported, declared, "every task is reported as PASS or SKIP:\n{text}");
     assert!(!text.lines().any(|l| l.starts_with("FAIL ")), "{text}");
+
+    // Not vacuous: a group whose toolchain is installed must actually PASS, so a script
+    // that skips everything cannot satisfy this test. (c01-c03, m*, n*, x01, x03 need
+    // python3; c04-c06, x02, x04 need node; c07-c08 need cargo.)
+    for (tool, task) in [
+        ("python3", "c01-py-fix-median"),
+        ("python3", "n01-summarise-notes"),
+        ("python3", "x01-ctx-free-shipping"),
+        ("node", "c04-js-fix-flatten"),
+        ("cargo", "c07-rs-fix-kvparse"),
+    ] {
+        let installed = Command::new(tool).arg("--version").output().is_ok_and(|o| o.status.success());
+        if installed {
+            assert!(
+                text.lines().any(|l| l.starts_with(&format!("PASS  {task} "))),
+                "{tool} is installed, so {task} must PASS (not skip):\n{text}"
+            );
+        }
+    }
+
+    // The anti-cheating self-tests ran: deleted tests and the known cheats are rejected,
+    // the alternative correct solutions accepted.
+    for expected in [
+        "OK    c01-py-fix-median/tests-deleted",
+        "OK    c03-py-refactor-discount/constant-only",
+        "OK    c03-py-refactor-discount/one-minus-rate",
+        "OK    n01-summarise-notes/cat-notes",
+    ] {
+        if Command::new("python3").arg("--version").output().is_ok_and(|o| o.status.success()) {
+            assert!(text.contains(expected), "missing '{expected}' in:\n{text}");
+        }
+    }
 }

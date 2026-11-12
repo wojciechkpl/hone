@@ -38,6 +38,7 @@
   "app/settings/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "app/settings/defaults.py": "794bb510b0ad7ed7bc5f01dd699a914b72b2854ee817cfbdba8334690940bec7",
   "app/settings/env.py": "6bf533b46ced24d6a4f53b7f34af6fd58910933f5e3ac661c84feb18b3b6e0c3",
+  "app/settings/legacy_v1_loader.py": "415c02b7b5508610e65d8cda05efecd4a7ab3a53bbc65da4d1b22100d1a9c571",
   "app/settings/loader.py": "25916f3bb526b2a57cc8011cbbb780de850d6eb0cf85cbce1acb01c2df9d1b3b",
   "app/settings/overrides.py": "7cbf5b81ca60e2cb618a96aa2c24c21fcabd3c178ef9e9cd8f5c0be9ae4084d6",
   "app/settings/schema.py": "0ceb80e5c52faf3af78a86cf46d42f260674a194ead42132f0a3b4dc56eed73f",
@@ -47,7 +48,8 @@
   "app/utils/ids.py": "558d8ff35f93b5b327513a8a02e754351668db72c4ab9dcdb6ee28a7b8c0bd9c",
   "app/utils/numbers.py": "078e3f2d7fed14cee1c04fccb31d96efbab17c42d9b105a3a635cdbb8d3761f6",
   "app/utils/paths.py": "153953eb19abd78addbe614e49d7fe813eaa0b62a38e7c4f9cea287c5e4be8df",
-  "app/utils/strings.py": "268ccc989731dc66f3ef45ab6509947fc9a6921f66164dcddee5c14b5772d490"
+  "app/utils/strings.py": "268ccc989731dc66f3ef45ab6509947fc9a6921f66164dcddee5c14b5772d490",
+  "docs/settings.md": "f73cc763342fe278369c120de05f1921f495246df6d2013f9fad728a0c2b2f72"
  },
  "target": [
   "app/settings/loader.py"

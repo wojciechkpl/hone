@@ -1,5 +1,6 @@
 {
  "files": {
+  "docs/leaderboard.md": "bfbebccdb7847062e5a3b326f5c5ff342a9b70a6aa02f4448667c1d253d2d3a2",
   "package.json": "b0eed187c9e6bf305b721cfe94181541ac03dd2fe3fd5400aab5e094e6572e20",
   "src/analytics/dashboards.js": "e20c06b3802aaca13119c4e0ebb040c0d82a9d8c844a33e5cac8064374122a13",
   "src/analytics/events.js": "b78c957f68a93aef6d45c9c1c3c96bcd92444a78b42fa78a35f31a42f3af4a48",
@@ -25,11 +26,12 @@
   "src/leaderboard/cache.js": "8ffca35a3beb6c6101760898079698eb9d3384a9ff35e5128c118eaf12d7dbe0",
   "src/leaderboard/format.js": "a9a76e5eccedbf5cef324dc6d64800f589717417b97121ba89f8fba214fb62b4",
   "src/leaderboard/history.js": "d0eaac9e251a073160b7dc82efe946c6262769ae221f72c9c6e4cad33dca0d56",
-  "src/leaderboard/paging.js": "913d3f91246303f9c11763a8646bd1b5995e1dff256e59c0212b3692ca21bea0",
+  "src/leaderboard/paging.js": "904fdd2f9a343519d192616d41cc37b6049cde18a8c65aa663ad60b72a876e4f",
   "src/leaderboard/ranking.js": "53ccab35dc431f492ff918cd3e469848e6f442b761ef60a665ab79f20dcf8fac",
-  "src/leaderboard/render.js": "1b37866fb7d9869d5a3248f439c7bafbbd14cf1d7a3222a13da064615b31cf3c",
+  "src/leaderboard/render.js": "32ee96656beb151f53ec4a91ac332dd40b421a806d6d9fba314500fa4e0da690",
   "src/leaderboard/scores.js": "709d327734f632ea93b11c139d8a5c1a62277f50f6a0d9f1f178ba925343e42a",
   "src/leaderboard/seasons.js": "9fca07c1791e8984053a7ec6b574a190eef9c2929fbef229840da342462b36d9",
+  "src/legacy/v1/leaderboard_names.js": "df7d770d0078db31e18e6aa0a1194cc35b36af1b2d113181533413c5c7129ab0",
   "src/notifications/digest.js": "6de8011932bfb7cdc161f58d8f7460b1d6e67a5feeb39afe454f1b3f8ede2072",
   "src/notifications/email.js": "3f5c5cf2d9d0e286421158754aaf72924c06d7fc11483c6a25344212ef3266bb",
   "src/notifications/preferences.js": "f3eed7559458f8521695bde1e2ae16f91acca2d93b5dfb93742c3813ac84ab5f",

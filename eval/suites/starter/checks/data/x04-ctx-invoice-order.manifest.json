@@ -1,5 +1,6 @@
 {
  "files": {
+  "docs/billing-export.md": "e73e5b53d0323e667b4f7d9bd46cfef6bf6fc2a48d47305fae6c5ac8de5eb328",
   "package.json": "c2dda68323bf39bad20bf6c48ed0ca52e8e55b6325dfc042ba65b0934760f29e",
   "src/admin/audit.js": "ed5c3d8e73a606eb35e6b8439afa483d5d523aef544252411152ec38037a88b5",
   "src/admin/backups.js": "f02a1db02b1e55dc8d87af2539f0f6c88c305a191a23689b555d2b24ec782fd5",
@@ -21,6 +22,7 @@
   "src/billing/export/schedule.js": "057fab89dc3802060aae07a432282c88e0251cccf67a8b6e14fca7f81e700af5",
   "src/billing/export/writer.js": "c4739f08a0a04f8ad378b877f10893e5e2ed62bbd1649a319f3b4664f5859130",
   "src/billing/invoices.js": "509608c3b4d6f35ba62abba1de38a07f71eb429acba1e1c5a94ff61c7b96332a",
+  "src/billing/legacy/export_v1.js": "1464e19740eebfb2e3c5b625d62d7e32b73559b9828891fa2ebc528c538e3ad5",
   "src/billing/payments.js": "8ebe28c866dc6bce594e6c346945f9756ccaa85687bf919ead9705681769d89a",
   "src/billing/plans.js": "c053ce2e315d4996fc29ae28cb95463bf9d4c5951a651ec7addc2957587109dc",
   "src/billing/refunds.js": "7af30daded72bee3ced3e528b2e705935dfd5daa9ad52db27893662ac745d883",
@@ -40,6 +42,7 @@
   "src/reports/charts.js": "cb33fc2a28a1e164514f5cf88bc02b1a25290e8903ab9b89957e3cbe5227a0df",
   "src/reports/exports.js": "41d61989acf32c85e3dc11455e25b4d68d91b5dc6a7e2e89957a8aa9a0038bf4",
   "src/reports/filters.js": "962c8e51659f74a7348d03d82bd0e7f5c9aa69a713a96b32df893625416cb62d",
+  "src/reports/invoice_summary.js": "85306046158ce2a63e92dd228c67a870b341f47671d856b291fcddb6db0c8ea5",
   "src/reports/pdf.js": "752d54fe4bebccd80eb3862f38ddec3cc23f97f81e34f1153c53752bf2d9dbde",
   "src/reports/schedules.js": "857b530ac716f6b2a3868d3b964f5cd9825b2592b6b69629739b73f112abb1a8",
   "src/reports/sorting.js": "286bd68de9e964750c73a3dfef4ebacc76d94637114c9ae7ede9e59085d682ea",
