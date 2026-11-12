@@ -584,9 +584,11 @@ The first-run wizard asks **Manage daemon for me** (sidecar) vs
 **Connect to an existing daemon** (external URL + bearer token). Pick the
 first and the app starts `honed` for you, now and on every later launch.
 
-You should see a green pill in the top bar: `sidecar @ http://127.0.0.1:<port>`.
-If it is red, it says why (for example `honed` not found on `PATH`, or its
-exit status and last error lines). Then:
+You should see a green pill in the top bar, such as
+`local sidecar · sidecar @ http://127.0.0.1:<port>` (the profile name comes
+first). If starting the daemon failed, the pill is red, reads "daemon failed
+to start", and its tooltip and the **Daemon** panel say why (for example
+`honed` not found on `PATH`, or its exit status and last error lines). Then:
 
 - fix the cause (install `honed`, set `ANTHROPIC_API_KEY` in the terminal you
   launched from) and press **Daemon → Start**;
