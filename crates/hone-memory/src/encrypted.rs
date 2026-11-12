@@ -45,8 +45,9 @@ use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
 /// decrypt all records, generate a new random salt, and re-encrypt.
 pub const LEGACY_SALT: &[u8] = b"hone-memory-v1-salt";
 
-/// Reserved memory ID used to persist the per-store random salt.
-const SALT_SENTINEL_ID: &str = "__encrypted_store_salt__";
+/// Reserved memory ID used to persist the per-store random salt. `SqliteStore`
+/// never forgets or expires it: without it every encrypted memory is unreadable.
+pub const SALT_SENTINEL_ID: &str = "__encrypted_store_salt__";
 
 /// Argon2 version marker.  If the KDF parameters are ever changed (e.g., to
 /// increase memory cost), bump this string and add detection logic in
@@ -140,14 +141,31 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
             .map_err(|e| MemoryError::Io(std::io::Error::other(format!("utf8: {e}"))))
     }
 
+    /// Content and description are stored as `enc:v1:` ciphertext.
     fn encrypt_memory(&self, mut memory: Memory) -> Result<Memory, MemoryError> {
         memory.content = self.encrypt_content(&memory.content)?;
+        memory.description = memory
+            .description
+            .take()
+            .map(|d| self.encrypt_content(&d))
+            .transpose()?;
         Ok(memory)
     }
 
+    /// Decrypt content and description; a plaintext description (written before
+    /// descriptions were encrypted) is returned as it is.
     fn decrypt_memory(&self, mut memory: Memory) -> Result<Memory, MemoryError> {
         if memory.content.starts_with("enc:v1:") {
             memory.content = self.decrypt_content(&memory.content)?;
+        }
+        if let Some(d) = memory
+            .description
+            .as_deref()
+            .filter(|d| d.starts_with("enc:v1:"))
+        {
+            if let Ok(plain) = self.decrypt_content(d) {
+                memory.description = Some(plain);
+            }
         }
         Ok(memory)
     }

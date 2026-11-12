@@ -863,6 +863,9 @@ Don't attach audit logs or receipts from private work to public bug reports.
 
 **Reading history refs.** A receipt lists only the history messages that are new or changed since the agent's previous receipt, so a message identical to one sent earlier isn't listed again and messages that only moved aren't relisted. `hone context show` prints each receipt's history as `history: 5 messages (2 new listed), root e09db7e7317a`: the number of non-system messages in the request, how many of them are listed, and the first 12 hex digits of `history_root`. The root is the SHA-256 of the newline-joined hashes of those messages, in request order; `--json` gives it in full. It is for tools that hold the transcript to verify against, not something to check by hand.
 
+
+**What `--encrypted-memory` encrypts.** The content of every memory and, for memories saved after this change, their description (AES-256-GCM, key from `HONE_MEMORY_PASSPHRASE`). It does not encrypt tags, kind, timestamps or weight, and descriptions written by earlier versions stay in plain text (Hone does not rewrite them). The salt that the key derives from is stored in a reserved record, which `hone memory forget` and the daily decay leave alone; with an older version of Hone, don't run `hone memory forget` on an encrypted database, because it could delete that record and make every memory unreadable.
+
 ## Environment variables
 
 <details open>
