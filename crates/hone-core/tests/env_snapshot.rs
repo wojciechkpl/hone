@@ -26,9 +26,10 @@
 //! # Environment
 //! OS: <std::env::consts::OS> <ARCH>[ (kernel <uname -r>)]
 //! Working directory: <working_dir as given>
-//! Top-level entries:
-//!   <name>[/]            one per line, sorted, dirs suffixed, hidden skipped
-//!   … and N more         after 50 entries (U+2026)
+//! Top-level entries (JSON): ["<name>[/]", .., "… and N more"]
+//!                        ONE line (E23): a JSON array of strings, sorted, dirs suffixed,
+//!                        hidden skipped, at most 50 names then a last string `… and N more`
+//!                        (U+2026; `… and more` when reading stopped at 5,000 entries)
 //! Toolchains:
 //!   <program>: <first line of its output, at most 120 chars>   probe-list order
 //! Memory: <N> GiB        (omitted when it cannot be read)
@@ -109,6 +110,15 @@ fn gone_within(pid: &str, limit: Duration) -> bool {
     !alive(pid)
 }
 
+/// The strings of the `Top-level entries (JSON):` line, parsed as the JSON array it must be.
+fn entries(text: &str) -> Vec<String> {
+    let line = text
+        .lines()
+        .find_map(|l| l.strip_prefix("Top-level entries (JSON): "))
+        .unwrap_or_else(|| panic!("no `Top-level entries (JSON):` line in:\n{text}"));
+    serde_json::from_str(line).unwrap_or_else(|e| panic!("not a JSON array of strings ({e}): {line}"))
+}
+
 fn lines(text: &str) -> Vec<&str> {
     text.lines().collect()
 }
@@ -135,8 +145,8 @@ async fn test_e2_block_should_have_the_documented_header_and_line_order() {
     let os = format!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
     assert!(lines(t)[1].starts_with(&os), "{}", lines(t)[1]);
     assert_eq!(lines(t)[2], format!("Working directory: {}", f.work.display()));
-    assert!(pos(t, "Working directory:") < pos(t, "Top-level entries:"));
-    assert!(pos(t, "Top-level entries:") < pos(t, "Toolchains:"));
+    assert!(pos(t, "Working directory:") < pos(t, "Top-level entries (JSON):"));
+    assert!(pos(t, "Top-level entries (JSON):") < pos(t, "Toolchains:"));
     if t.contains("\nMemory:") {
         assert!(pos(t, "Toolchains:") < pos(t, "Memory:"), "Memory comes last:\n{t}");
         let mem = lines(t)[pos(t, "Memory:")];
@@ -158,9 +168,7 @@ async fn test_e2_top_level_entries_should_be_sorted_skip_hidden_and_mark_directo
 
     let b = f.snapshot(15).gather().await.unwrap();
 
-    let start = pos(&b.text, "Top-level entries:");
-    let entries: Vec<&str> = lines(&b.text)[start + 1..start + 5].to_vec();
-    assert_eq!(entries, ["  a.txt", "  b.txt", "  src/", "  target/"]);
+    assert_eq!(entries(&b.text), ["a.txt", "b.txt", "src/", "target/"]);
     assert!(!b.text.contains(".git") && !b.text.contains(".env") && !b.text.contains(".hidden"));
 }
 
@@ -174,12 +182,13 @@ async fn test_e2_listing_should_stop_at_fifty_entries_and_count_the_rest() {
 
     let b = f.snapshot(15).gather().await.unwrap();
 
-    let start = pos(&b.text, "Top-level entries:");
-    let listed = &lines(&b.text)[start + 1..start + 51];
-    assert!(listed.iter().all(|l| l.starts_with("  file_")), "{listed:?}");
-    assert_eq!(listed[0], "  file_00.txt");
-    assert_eq!(listed[49], "  file_49.txt");
-    assert_eq!(lines(&b.text)[start + 51], "  … and 10 more");
+    let all = entries(&b.text);
+    let listed = &all[..50];
+    assert!(listed.iter().all(|l| l.starts_with("file_")), "{listed:?}");
+    assert_eq!(listed[0], "file_00.txt");
+    assert_eq!(listed[49], "file_49.txt");
+    assert_eq!(all.len(), 51);
+    assert_eq!(all[50], "… and 10 more");
     assert!(!b.text.contains("file_50.txt"));
 }
 
@@ -355,7 +364,7 @@ async fn test_e4_an_unreadable_working_directory_should_not_fail_the_snapshot() 
         .expect("the OS line is still there");
 
     assert!(b.text.starts_with("# Environment\nOS: "));
-    assert!(!b.text.contains("Top-level entries:"), "{}", b.text);
+    assert!(!b.text.contains("Top-level entries"), "{}", b.text);
 }
 
 // ---- E7: sources ---------------------------------------------------------------------------------------
