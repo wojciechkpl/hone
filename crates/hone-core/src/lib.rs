@@ -9,6 +9,7 @@ mod code_mode;
 pub mod complexity;
 mod context;
 mod receipts;
+pub mod strategy;
 pub mod context_injector;
 mod cost;
 pub mod doom_loop;

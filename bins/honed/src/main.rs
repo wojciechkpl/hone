@@ -446,11 +446,22 @@ async fn main() -> Result<()> {
                             std::process::exit(2);
                         }
                     };
+                    // `[context]` / `[memory]` from the user's and the project's
+                    // config.toml, with honed's default of no skeleton injection.
+                    let strategies = match build_strategies(&working_dir) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("honed: {e}");
+                            hone_tools::kill_running_commands();
+                            std::process::exit(2);
+                        }
+                    };
                     let executor = Arc::new(
                         hone_server::AgentTaskExecutor::new(
                             registry, base_tools, provider, model, pricing, working_dir,
                         )
-                        .with_policy(policy),
+                        .with_policy(policy)
+                        .with_strategies(strategies),
                     );
                     let client = Arc::new(hone_core::queue_client::QueueClient::new(
                         coordinator_url.clone(),
@@ -524,6 +535,46 @@ async fn main() -> Result<()> {
 
     tracing::info!("honed stopped");
     Ok(())
+}
+
+/// Resolve the context strategies for the worker's agents: the user's
+/// `~/.config/hone/config.toml` and the working directory's `.hone/config.toml`
+/// (which can only narrow), the environment, and honed's default of no skeleton
+/// injection (a config can turn it on). Warnings go to stderr.
+fn build_strategies(
+    working_dir: &Path,
+) -> Result<Arc<hone_core::strategy::ResolvedStrategies>, String> {
+    use hone_config::resolve::ConfigLayer;
+    let user = match std::env::var("HOME") {
+        Ok(home) => {
+            ConfigLayer::load(&Path::new(&home).join(".config/hone/config.toml"))
+                .map_err(|e| e.to_string())?
+        }
+        Err(_) => None,
+    };
+    let project = ConfigLayer::load_project(working_dir).map_err(|e| e.to_string())?;
+    let flags = hone_config::strategy::Flags {
+        daemon: true,
+        ..Default::default()
+    };
+    let selection = hone_config::strategy::StrategySelection::from_sources(
+        user.as_ref(),
+        project.as_ref(),
+        &|k| std::env::var(k).ok(),
+        &flags,
+    )
+    .map_err(|e| e.to_string())?;
+    for w in &selection.warnings {
+        tracing::warn!("{}: {}", w.path.display(), w.message);
+    }
+    let deps = hone_core::strategy::StrategyDeps {
+        working_dir: Some(working_dir.to_path_buf()),
+        ..Default::default()
+    };
+    hone_core::strategy::StrategyRegistry::with_builtins()
+        .build(&selection, &deps)
+        .map(Arc::new)
+        .map_err(|e| e.to_string())
 }
 
 /// SIGINT, SIGTERM and SIGHUP, minus the ones that were ignored at start

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use futures::StreamExt;
 use hone_index::SqliteIndex;
-use hone_memory::{Memory, MemoryQuery, MemoryStore};
+use hone_memory::{Memory, MemoryStore};
 use hone_proto::{
     AgentEvent, Content, Message, ModelId, PricingEntry, ProviderEvent, StepAction, TokenUsage,
     ToolApprovalPolicy, ToolCallRequest, WorkerRef,
@@ -17,6 +17,8 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
+use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
+use crate::strategy::{RecallerKind, ResolvedStrategies, WriterKind};
 use crate::context::{ContextManager, estimate_text_tokens};
 use crate::context_injector::{ContextInjector, SkeletonStrategy};
 use crate::cost::CostAccumulator;
@@ -25,10 +27,9 @@ use crate::error::AgentError;
 use crate::hooks::{HookEvent, HookOutcome, HookRegistry};
 use crate::injection_detector::InjectionDetector;
 use crate::memory_format::format_memory_body;
-use crate::memory_worthy::{MemoryCandidate, classify_turn};
+use crate::memory_worthy::MemoryCandidate;
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
-use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
 use crate::session_approvals::SessionApprovals;
@@ -622,6 +623,9 @@ pub struct Agent {
     cost: CostAccumulator,
     /// Monotonically increasing counter of completed turns this session.
     turn_count: u32,
+    /// The strategies this agent runs with (derived from `AgentConfig` unless
+    /// set with `with_strategies`).
+    strategies: Arc<ResolvedStrategies>,
     /// Inputs of the current turn's context receipts (recall, skills, injection).
     receipt_info: TurnContextInfo,
     /// Hashes of the non-system messages of the previous receipt (for the incremental
@@ -669,8 +673,6 @@ pub struct Agent {
 /// Candidates asked of the semantic recall: more than the 5 used, because
 /// `Outcome` logs are dropped afterwards and must not leave fewer than 5.
 pub(crate) const SEMANTIC_RECALL_FETCH: usize = 20;
-/// Memories recalled per turn.
-pub(crate) const RECALL_LIMIT: usize = 5;
 /// The RRF constant `k` for fusing BM25 and semantic recall.
 pub(crate) const RECALL_RRF_K: usize = 60;
 
@@ -707,11 +709,16 @@ impl Agent {
             config.tools = read_only_registry(&base_tools);
         }
 
+        let strategies = Arc::new(ResolvedStrategies::derived(
+            config.inject_context,
+            config.skeleton_strategy,
+        ));
         Self {
             config,
             context,
             cost: CostAccumulator::new(),
             turn_count: 0,
+            strategies,
             receipt_info: TurnContextInfo::default(),
             receipt_history: std::collections::HashSet::new(),
             receipts: Vec::new(),
@@ -728,6 +735,18 @@ impl Agent {
             worker: None,
             context_window_override,
         }
+    }
+
+    /// Run with the strategies the selection resolved (context sources, skeleton,
+    /// compactor, budget, recaller, writer) instead of the ones derived from
+    /// `AgentConfig`'s `inject_context` and `skeleton_strategy`.
+    pub fn with_strategies(mut self, strategies: Arc<ResolvedStrategies>) -> Self {
+        self.context.set_trim_only(strategies.trim_only);
+        if let Some(ratio) = strategies.budget_ratio {
+            self.context.set_budget_ratio(ratio);
+        }
+        self.strategies = strategies;
+        self
     }
 
     /// Use `approvals` as this agent's session approvals instead of its own, so
@@ -856,84 +875,98 @@ impl Agent {
             return (String::new(), vec![], RecallInfo::default());
         };
 
-        let memory_query = MemoryQuery {
-            text: query.to_string(),
-            limit: RECALL_LIMIT,
-            kind: None,
-        };
-
-        // BM25 (existing path)
-        // Outcome logs record the task text and would match it: leave them out.
-        let bm25_memories = match store
-            .recall_excluding(&memory_query, &[hone_memory::MemoryKind::Outcome])
-            .await
-        {
-            Ok(m) => m,
-            Err(_) => Vec::new(),
-        };
-
-        // Semantic (when embedder present)
-        let mut embedder_ran = false;
-        let semantic_memories: Vec<hone_memory::Memory> =
-            if let Some(embedder) = &self.config.embedder {
-                match embedder.embed(query).await {
-                    Ok(query_vec) => {
-                        embedder_ran = true;
-                        store
-                            .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
-                            .await
-                            .map(|scored| {
-                                scored
-                                    .into_iter()
-                                    .map(|s| s.memory)
-                                    .filter(|m| m.kind != hone_memory::MemoryKind::Outcome)
-                                    .collect()
-                            })
-                            .unwrap_or_default()
-                    }
-                    Err(_) => Vec::new(),
-                }
-            } else {
-                Vec::new()
-            };
+        let strategies = Arc::clone(&self.strategies);
+        let top_k = strategies.top_k;
+        let exclude = strategies.exclude_kinds.clone();
+        if strategies.recaller_kind == RecallerKind::None || !strategies.has_source("recall") {
+            return (String::new(), vec![], RecallInfo::default());
+        }
 
         // Candidates fetched and then cut, for the context receipt.
         let mut cut_ids: Vec<String> = Vec::new();
-        // An embedder was configured and ran for this query (even if it found nothing).
-        let semantic = embedder_ran;
-        let mut semantic_memories = semantic_memories;
-        if semantic_memories.len() > RECALL_LIMIT {
-            cut_ids.extend(
-                semantic_memories
-                    .split_off(RECALL_LIMIT)
-                    .into_iter()
-                    .map(|m| m.id),
-            );
-        }
+        let mut semantic = false;
+        let mut custom: Option<hone_proto::StrategyId> = None;
 
-        // Fuse via RRF when both signals are present; otherwise use whichever is non-empty
-        let final_memories: Vec<hone_memory::Memory> = if !semantic_memories.is_empty() {
-            let bm25_ids: Vec<String> = bm25_memories.iter().map(|m| m.id.clone()).collect();
-            let semantic_ids: Vec<String> =
-                semantic_memories.iter().map(|m| m.id.clone()).collect();
-            let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], RECALL_RRF_K);
-            cut_ids.extend(fused_ids.iter().skip(RECALL_LIMIT).cloned());
-            let mut by_id: std::collections::HashMap<String, hone_memory::Memory> =
-                std::collections::HashMap::new();
-            for m in bm25_memories
-                .into_iter()
-                .chain(semantic_memories.into_iter())
-            {
-                by_id.entry(m.id.clone()).or_insert(m);
-            }
-            fused_ids
-                .into_iter()
-                .take(RECALL_LIMIT)
-                .filter_map(|id| by_id.remove(&id))
-                .collect()
-        } else {
-            bm25_memories
+        // The recaller: the built-in BM25 recall, or a registered one. Outcome
+        // logs (by default) record the task text and would match it: the
+        // exclusion is applied inside the store, before its cap.
+        let recall_query = crate::strategy::RecallQuery {
+            text: query,
+            k: top_k,
+            exclude_kinds: &exclude,
+            scope: None,
         };
+        let bm25_memories: Vec<hone_memory::Memory> = match strategies
+            .recaller
+            .recall(store.as_ref(), &recall_query)
+            .await
+        {
+            Ok(found) => found.into_iter().map(|s| s.memory).collect(),
+            Err(_) => Vec::new(),
+        };
+
+        let final_memories: Vec<hone_memory::Memory> =
+            if strategies.recaller_kind == RecallerKind::Custom {
+                custom = Some(strategies.recaller.id().clone());
+                bm25_memories
+            } else {
+                // Semantic (when embedder present)
+                let mut embedder_ran = false;
+                let semantic_memories: Vec<hone_memory::Memory> =
+                    if let Some(embedder) = &self.config.embedder {
+                        match embedder.embed(query).await {
+                            Ok(query_vec) => {
+                                embedder_ran = true;
+                                store
+                                    .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
+                                    .await
+                                    .map(|scored| {
+                                        scored
+                                            .into_iter()
+                                            .map(|s| s.memory)
+                                            .filter(|m| !exclude.contains(&m.kind))
+                                            .collect()
+                                    })
+                                    .unwrap_or_default()
+                            }
+                            Err(_) => Vec::new(),
+                        }
+                    } else {
+                        Vec::new()
+                    };
+
+                // An embedder was configured and ran for this query (even if it found nothing).
+                semantic = embedder_ran;
+                let mut semantic_memories = semantic_memories;
+                if semantic_memories.len() > top_k {
+                    cut_ids.extend(semantic_memories.split_off(top_k).into_iter().map(|m| m.id));
+                }
+
+                // Fuse via RRF when both signals are present; otherwise use whichever is non-empty
+                if !semantic_memories.is_empty() {
+                    let bm25_ids: Vec<String> =
+                        bm25_memories.iter().map(|m| m.id.clone()).collect();
+                    let semantic_ids: Vec<String> =
+                        semantic_memories.iter().map(|m| m.id.clone()).collect();
+                    let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], RECALL_RRF_K);
+                    cut_ids.extend(fused_ids.iter().skip(top_k).cloned());
+                    let mut by_id: std::collections::HashMap<String, hone_memory::Memory> =
+                        std::collections::HashMap::new();
+                    for m in bm25_memories
+                        .into_iter()
+                        .chain(semantic_memories.into_iter())
+                    {
+                        by_id.entry(m.id.clone()).or_insert(m);
+                    }
+                    fused_ids
+                        .into_iter()
+                        .take(top_k)
+                        .filter_map(|id| by_id.remove(&id))
+                        .collect()
+                } else {
+                    bm25_memories
+                }
+            };
 
         if final_memories.is_empty() {
             return (String::new(), vec![], RecallInfo::default());
@@ -941,6 +974,12 @@ impl Agent {
         let info = RecallInfo {
             ids: final_memories.iter().map(|m| m.id.clone()).collect(),
             semantic,
+            top_k,
+            exclude: exclude
+                .iter()
+                .map(|k| crate::strategy::kind_name(*k).to_owned())
+                .collect(),
+            custom,
             dropped: cut_ids
                 .into_iter()
                 .filter(|id| !final_memories.iter().any(|m| &m.id == id))
@@ -1363,9 +1402,10 @@ impl Agent {
         // Compute skills block using the original user prompt (before context
         // injection prefixes it with file skeletons).  The raw intent is a better
         // trigger signal than the augmented effective_input.
+        let skills_on = self.strategies.has_source("skills");
         let skills_block = match &self.config.skills {
-            Some(reg) => reg.render_for_prompt(user_input),
-            None => String::new(),
+            Some(reg) if skills_on => reg.render_for_prompt(user_input),
+            _ => String::new(),
         };
 
         // Fetch memories before adding the user message so the query is clean.
@@ -1374,7 +1414,11 @@ impl Agent {
         // Inputs of this turn's context receipts.
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
-            skills: self.matched_skill_names(user_input),
+            skills: if self.strategies.has_source("skills") {
+                self.matched_skill_names(user_input)
+            } else {
+                Vec::new()
+            },
             injection: None,
         };
         if !memory_entries.is_empty() {
@@ -1388,9 +1432,12 @@ impl Agent {
         // Proactive context injection — runs on the first turn only and only
         // when explicitly enabled via `inject_context`.
         let effective_input: std::borrow::Cow<'_, str> =
-            if self.turn_count == 1 && self.config.inject_context {
-                let mut injector =
-                    ContextInjector::with_defaults().with_strategy(self.config.skeleton_strategy);
+            if self.turn_count == 1 && self.strategies.has_source("skeleton") {
+                let mut injector = ContextInjector::new(
+                    self.strategies.skeleton_max_tokens,
+                    self.strategies.skeleton_gap_threshold,
+                )
+                .with_strategy(self.strategies.skeleton);
                 let index_ref = self.config.index.as_deref();
                 let injection = injector
                     .inject(user_input, &self.config.working_dir, index_ref)
@@ -1399,7 +1446,7 @@ impl Agent {
                 if !injection.context_block.is_empty() {
                     let _ = events
                         .send(AgentEvent::ContextInjected {
-                            strategy: self.config.skeleton_strategy.as_str().to_string(),
+                            strategy: self.strategies.skeleton.as_str().to_string(),
                             tokens_used: injection.tokens_used,
                             bm25_hits: injection.bm25_hits.clone(),
                             confidence: injection.confidence.label().to_string(),
@@ -1414,7 +1461,9 @@ impl Agent {
                     // Skeletons and snippets can carry secret-shaped names or text.
                     let block = redacted_text(self.redacting(), &injection.context_block);
                     self.receipt_info.injection = Some(InjectionInfo {
-                        strategy: self.config.skeleton_strategy.as_str().to_string(),
+                        strategy: self.strategies.skeleton.as_str().to_string(),
+                        max_tokens: self.strategies.skeleton_max_tokens,
+                        gap_threshold: self.strategies.skeleton_gap_threshold,
                         // The text actually sent.
                         tokens: estimate_text_tokens(&block),
                         hits: injection.bm25_hits.clone(),
@@ -2936,8 +2985,16 @@ impl Agent {
 
         // Persist memory (fire-and-forget). The classifier gates writes:
         // noisy turns return None and write nothing.
-        if let Some(candidate) = classify_turn(user_text, &response_text) {
-            self.record_memory(candidate).await;
+        if self.strategies.writer_kind != WriterKind::Off {
+            let record = crate::strategy::TurnRecord {
+                turn: self.turn_count,
+                user_text: user_text.to_owned(),
+                response_text: response_text.clone(),
+            };
+            let strategies = Arc::clone(&self.strategies);
+            for candidate in strategies.writer.propose(&record).await {
+                self.record_memory(candidate).await;
+            }
         }
 
         // Flush egress audit log to disk (errors are logged but not fatal).
@@ -3040,7 +3097,11 @@ impl Agent {
             self.fetch_relevant_memories(&text_for_memory).await;
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
-            skills: self.matched_skill_names(&text_for_memory),
+            skills: if self.strategies.has_source("skills") {
+                self.matched_skill_names(&text_for_memory)
+            } else {
+                Vec::new()
+            },
             injection: None,
         };
         if !memory_entries.is_empty() {
@@ -3056,9 +3117,10 @@ impl Agent {
 
         // run_turn_content is multimodal — skills are matched against the text
         // portion only (image bytes don't drive trigger regexes).
+        let skills_on = self.strategies.has_source("skills");
         let skills_block = match &self.config.skills {
-            Some(reg) => reg.render_for_prompt(&text_for_memory),
-            None => String::new(),
+            Some(reg) if skills_on => reg.render_for_prompt(&text_for_memory),
+            _ => String::new(),
         };
         self.run_turn_inner(
             &text_for_memory,
@@ -3444,6 +3506,15 @@ impl AgentHandle {
 
     /// Spawn an agent actor task and return a handle to it.
     pub fn spawn(config: AgentConfig) -> Self {
+        Self::spawn_with_strategies(config, None)
+    }
+
+    /// Like [`spawn`](Self::spawn), with the strategies a selection resolved
+    /// (see [`Agent::with_strategies`]).
+    pub fn spawn_with_strategies(
+        config: AgentConfig,
+        strategies: Option<Arc<ResolvedStrategies>>,
+    ) -> Self {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<AgentCommand>(32);
         let context_tokens_cache = Arc::new(AtomicU32::new(0));
         let tokens_writer = Arc::clone(&context_tokens_cache);
@@ -3453,6 +3524,9 @@ impl AgentHandle {
         tokio::spawn(async move {
             let mut agent = Agent::new(config);
             agent.receipt_agent_id = actor_agent_id;
+            if let Some(strategies) = strategies {
+                agent = agent.with_strategies(strategies);
+            }
             while let Some(cmd) = cmd_rx.recv().await {
                 match cmd {
                     AgentCommand::RunTurn {

@@ -559,6 +559,8 @@ pub struct ContextManager {
     /// Hash of each stored message (parallel to `messages`), filled lazily and
     /// reset when a message is rewritten.
     hashes: Vec<Option<String>>,
+    /// Only drop-oldest trimming (no dedup, graduated or phase compaction).
+    trim_only: bool,
 }
 
 impl ContextManager {
@@ -576,6 +578,7 @@ impl ContextManager {
             phase_compaction: phase_compaction_from_env(),
             compaction_log: Vec::new(),
             hashes: Vec::new(),
+            trim_only: false,
         }
     }
 
@@ -594,6 +597,7 @@ impl ContextManager {
             phase_compaction: phase_compaction_from_env(),
             compaction_log: Vec::new(),
             hashes: Vec::new(),
+            trim_only: false,
         }
     }
 
@@ -608,6 +612,19 @@ impl ContextManager {
     pub fn with_metrics(mut self, metrics: Arc<ContextMetrics>) -> Self {
         self.metrics = Some(metrics);
         self
+    }
+
+    /// Keep only drop-oldest trimming (needed to fit the budget): no tool-result
+    /// dedup, no graduated compression and no phase compaction.
+    pub fn set_trim_only(&mut self, trim_only: bool) {
+        self.trim_only = trim_only;
+    }
+
+    /// Use `ratio` of the advertised window as the token budget instead of the
+    /// per-model ratio.
+    pub fn set_budget_ratio(&mut self, ratio: f32) {
+        self.config.effective_budget_ratio = ratio;
+        self.max_context_tokens = self.config.effective_budget();
     }
 
     /// Notify the context manager about a tool call (for phase tracking).
@@ -634,6 +651,9 @@ impl ContextManager {
     }
 
     fn notify_kind(&mut self, kind: ToolPhaseKind, targets: &[String]) {
+        if self.trim_only {
+            return;
+        }
         if let Some((from, to)) = self.phase_tracker.observe_kind(kind) {
             if from == TaskPhase::Exploration
                 && (to == TaskPhase::Editing || to == TaskPhase::Verification)
@@ -692,7 +712,7 @@ impl ContextManager {
         // Dedup: for Tool messages with substantial content, check whether we
         // have already seen identical content.  If so, replace the incoming
         // message with a one-line pointer instead of storing the full text again.
-        let message = if matches!(message.role, Role::Tool) {
+        let message = if matches!(message.role, Role::Tool) && !self.trim_only {
             let text = message.content.as_text();
             if text.len() > 500 {
                 let hash = hash_content(&text);
@@ -746,8 +766,10 @@ impl ContextManager {
     /// 4. Flush a synthetic "[session history: …]" system message so the model
     ///    knows context was compacted.
     fn trim_to_budget(&mut self) {
-        // Step 1: graduated compression — runs unconditionally.
-        self.compress_old_tool_results();
+        // Step 1: graduated compression — runs unconditionally (unless trim-only).
+        if !self.trim_only {
+            self.compress_old_tool_results();
+        }
 
         if self.total_tokens() <= self.max_context_tokens {
             return;

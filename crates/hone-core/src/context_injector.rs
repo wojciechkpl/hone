@@ -274,15 +274,13 @@ pub struct ContextInjector {
 impl ContextInjector {
     /// Create an injector with explicit limits and strategy.
     pub fn new(max_injection_tokens: u32, confidence_threshold: f32) -> Self {
-        let strategy = std::env::var("HONE_SKELETON_STRATEGY")
-            .ok()
-            .and_then(|v| SkeletonStrategy::from_str(&v))
-            .unwrap_or_default();
+        // The strategy comes from the selection (`hone_config::strategy`), not
+        // from the environment: callers pick it with `with_strategy`.
         Self {
             max_injection_tokens,
             confidence_threshold,
             skeleton_cache: None,
-            strategy,
+            strategy: SkeletonStrategy::default(),
         }
     }
 
@@ -291,7 +289,7 @@ impl ContextInjector {
         Self::new(2_000, 0.4)
     }
 
-    /// Override the skeleton strategy, ignoring the env var.
+    /// Set the skeleton strategy.
     pub fn with_strategy(mut self, strategy: SkeletonStrategy) -> Self {
         self.strategy = strategy;
         self
