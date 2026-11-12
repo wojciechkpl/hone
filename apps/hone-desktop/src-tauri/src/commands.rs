@@ -119,8 +119,12 @@ fn start_in_slot(
     health_timeout: Duration,
 ) -> Result<StartOutcome, SupervisorError> {
     let mut slot = slot.lock();
-    if slot.is_some() {
-        return Ok(StartOutcome::AlreadyRunning);
+    if let Some(sup) = slot.as_mut() {
+        if sup.is_alive() {
+            return Ok(StartOutcome::AlreadyRunning);
+        }
+        // Its honed has exited (is_alive reaped it): replace it.
+        *slot = None;
     }
     let sup = SidecarSupervisor::start(honed_path, std::env::vars(), health_timeout)?;
     *slot = Some(sup);
@@ -218,11 +222,18 @@ fn ensure_named_profile(cfg: &mut DesktopConfig, name: &str, mode: DaemonMode) {
     }
 }
 
+/// Stop a supervisor on a blocking thread: it can take about 5 s.
+async fn stop_blocking(sup: SidecarSupervisor) -> Result<(), SupervisorError> {
+    tokio::task::spawn_blocking(move || sup.shutdown())
+        .await
+        .map_err(|e| SupervisorError::Io(std::io::Error::other(e.to_string())))?
+}
+
 #[tauri::command]
 pub async fn daemon_stop(state: tauri::State<'_, DaemonState>) -> Result<DaemonStatus, String> {
     let taken = { state.sidecar.lock().take() };
     if let Some(sup) = taken {
-        sup.shutdown().map_err(supervisor_err)?;
+        stop_blocking(sup).await.map_err(supervisor_err)?;
     }
     daemon_status(state).await
 }
@@ -286,6 +297,7 @@ pub async fn remove_daemon(
     state: tauri::State<'_, DaemonState>,
     name: String,
 ) -> Result<(), String> {
+    let mut stopping = None;
     {
         let mut cfg = state.cfg.lock();
         let was_active = cfg.active.as_deref() == Some(&name);
@@ -297,12 +309,12 @@ pub async fn remove_daemon(
         // If we removed the active profile and it was a sidecar, stop the
         // supervised child. Best-effort.
         if was_active {
-            let taken = state.sidecar.lock().take();
-            if let Some(sup) = taken {
-                let _ = sup.shutdown();
-            }
+            stopping = state.sidecar.lock().take();
             *state.external.lock() = None;
         }
+    }
+    if let Some(sup) = stopping {
+        let _ = stop_blocking(sup).await;
     }
     Ok(())
 }
@@ -315,6 +327,7 @@ pub async fn switch_daemon(
     state: tauri::State<'_, DaemonState>,
     name: String,
 ) -> Result<DaemonStatus, String> {
+    let prev_sidecar;
     {
         let mut cfg = state.cfg.lock();
         cfg.set_active(&name)?;
@@ -324,10 +337,7 @@ pub async fn switch_daemon(
             .active_profile()
             .map(|p| p.mode.clone())
             .unwrap_or_default();
-        let prev_sidecar = state.sidecar.lock().take();
-        if let Some(sup) = prev_sidecar {
-            let _ = sup.shutdown();
-        }
+        prev_sidecar = state.sidecar.lock().take();
         match mode {
             DaemonMode::External { url, token } => {
                 *state.external.lock() = Some(ExternalDaemon { url, token });
@@ -339,6 +349,9 @@ pub async fn switch_daemon(
             }
         }
         cfg.save().map_err(|e| format!("save failed: {e}"))?;
+    }
+    if let Some(sup) = prev_sidecar {
+        let _ = stop_blocking(sup).await;
     }
     daemon_status(state).await
 }
@@ -1613,5 +1626,116 @@ http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(!alive(&pid), "the sidecar outlived the app state");
+    }
+
+    // ---- G4: Start revives a crashed daemon -----------------------------------------
+
+    /// Starts the healthy fake, kills it from outside and waits until the
+    /// supervisor in the slot sees the exit. Returns the dead pid.
+    fn crash_the_sidecar(state: &DaemonState, dir: &Path) -> String {
+        let pid = std::fs::read_to_string(dir.join("pid"))
+            .unwrap()
+            .trim()
+            .to_owned();
+        let _ = std::process::Command::new("kill").args(["-9", &pid]).status();
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            let alive = state.sidecar.lock().as_mut().is_some_and(|s| s.is_alive());
+            if !alive {
+                return pid;
+            }
+            assert!(std::time::Instant::now() < deadline, "the killed child never ended");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn revived(state: &DaemonState, dir: &Path, dead_pid: &str) {
+        assert_eq!(starts(dir), 2, "a second honed was launched");
+        let new_pid = std::fs::read_to_string(dir.join("pid")).unwrap();
+        assert_ne!(new_pid.trim(), dead_pid);
+        assert!(alive(new_pid.trim()), "the new honed is running");
+        let info_pid = state.sidecar.lock().as_ref().map(|s| s.info().pid.to_string());
+        assert_eq!(info_pid.as_deref(), Some(new_pid.trim()), "the slot holds the new one");
+    }
+
+    #[test]
+    fn test_g4_start_should_replace_a_supervisor_whose_honed_crashed() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+        assert_eq!(
+            start_sidecar(&state, Some(honed.clone()), HEALTH).unwrap(),
+            StartOutcome::Started
+        );
+        let dead = crash_the_sidecar(&state, dir.path());
+
+        let out = start_sidecar(&state, Some(honed), HEALTH).unwrap();
+
+        assert_eq!(out, StartOutcome::Started, "not AlreadyRunning for a dead honed");
+        revived(&state, dir.path(), &dead);
+    }
+
+    #[test]
+    fn test_g4_async_start_should_replace_a_supervisor_whose_honed_crashed() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+        start_sidecar(&state, Some(honed.clone()), HEALTH).unwrap();
+        let dead = crash_the_sidecar(&state, dir.path());
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let st = state.clone();
+        let out = rt
+            .block_on(async move {
+                tokio::spawn(async move { start_sidecar_async(&st, Some(honed), HEALTH).await })
+                    .await
+            })
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(out, StartOutcome::Started);
+        revived(&state, dir.path(), &dead);
+    }
+
+    #[test]
+    fn test_g4_boot_should_replace_a_supervisor_whose_honed_crashed() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+        start_sidecar(&state, Some(honed.clone()), HEALTH).unwrap();
+        let dead = crash_the_sidecar(&state, dir.path());
+
+        let out =
+            boot_sidecar_if_wanted(&state, Some("sidecar"), Some(honed), HEALTH).unwrap();
+
+        assert_eq!(out, Some(StartOutcome::Started));
+        revived(&state, dir.path(), &dead);
+    }
+
+    #[test]
+    fn test_g4_start_should_still_report_already_running_for_a_live_honed() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+        start_sidecar(&state, Some(honed.clone()), HEALTH).unwrap();
+        let pid = std::fs::read_to_string(dir.path().join("pid")).unwrap();
+
+        let out = start_sidecar(&state, Some(honed), HEALTH).unwrap();
+
+        assert_eq!(out, StartOutcome::AlreadyRunning);
+        assert_eq!(starts(dir.path()), 1);
+        assert!(alive(pid.trim()));
     }
 }

@@ -32,7 +32,10 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
                 if let Some(state) = app.try_state::<DaemonState>() {
                     let taken = { state.sidecar.lock().take() };
                     if let Some(sup) = taken {
-                        let _ = sup.shutdown();
+                        // Up to about 5 s: not on the event-loop thread.
+                        std::thread::spawn(move || {
+                            let _ = sup.shutdown();
+                        });
                     }
                 }
             }

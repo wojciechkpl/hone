@@ -28,6 +28,8 @@ function hide(id) { document.getElementById(id).classList.add('hidden'); }
 // The reason the last attempt to start the managed daemon failed (a string),
 // or null. Shown in the pill (tooltip) and the Daemon panel.
 let lastStartError = null;
+// True while the launch-time start runs: the pill reads "starting daemon…".
+let daemonStarting = false;
 
 // Run a daemon start command; remember why it failed instead of dropping it.
 // Returns the daemon status the command reports, or null if it failed.
@@ -47,6 +49,11 @@ async function refreshDaemon() {
   const dot = document.getElementById('daemon-dot');
   const label = document.getElementById('daemon-label');
   const info = document.getElementById('daemon-info');
+  if (inTauri && daemonStarting) {
+    dot.className = 'dot dot--unknown';
+    label.textContent = 'starting daemon…';
+    return;
+  }
   if (!inTauri) {
     // Not the desktop app: the daemon is neither up nor down as far as we know.
     dot.className = 'dot dot--unknown';
@@ -147,6 +154,7 @@ function renderDaemonProfileRow(profile, activeName) {
     switchBtn.addEventListener('click', async () => {
       try {
         await invoke('switch_daemon', { name: profile.name });
+        lastStartError = null;
         closeDaemonMenu();
         refreshDaemon();
       } catch (err) { appendErrorBubble(`switch failed: ${err}`); }
@@ -1557,19 +1565,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (!inTauri) show('no-tauri-banner');
 
-  const state = loadState();
-  // The Rust side decides from the saved choice and the active profile in
-  // desktop.json, and starts the managed daemon when either says so (a no-op
-  // for an external daemon). The wizard shows only when neither chose one.
-  const booted = await startDaemon('daemon_boot', { savedMode: state.mode || null });
-  const chosen = state.mode || lastStartError || (booted && booted.mode !== 'none');
-  if (!chosen) {
-    show('wizard');
-  } else {
-    show('home');
-    refreshDaemon();
-  }
-
   document.querySelectorAll('.wizard-card').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const mode = btn.dataset.mode;
@@ -1589,6 +1584,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const token = document.getElementById('external-token').value.trim() || null;
     if (!url) return;
     saveState({ mode: 'external', url, token });
+    lastStartError = null;
     try { await invoke('daemon_set_external', { url, token }); } catch (err) { console.warn(err); }
     hide('wizard'); show('home'); refreshDaemon();
   });
@@ -1598,6 +1594,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshDaemon();
   });
   document.getElementById('btn-stop').addEventListener('click', async () => {
+    lastStartError = null;
     try { await invoke('daemon_stop'); } catch (e) { console.warn(e); }
     refreshDaemon();
   });
@@ -1674,7 +1671,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const PALETTE_ITEMS = [
     { id: 'refresh', label: 'Refresh daemon status', run: refreshDaemon },
     { id: 'start', label: 'Start managed honed sidecar', run: async () => { await startDaemon('daemon_start'); refreshDaemon(); } },
-    { id: 'stop',  label: 'Stop managed honed sidecar', run: async () => { await invoke('daemon_stop'); refreshDaemon(); } },
+    { id: 'stop',  label: 'Stop managed honed sidecar', run: async () => { lastStartError = null; await invoke('daemon_stop'); refreshDaemon(); } },
     { id: 'cancel', label: 'Cancel current run', run: cancelRun },
     { id: 'cost-reset', label: 'Reset session cost meter', run: () => cost.reset() },
     { id: 'reset', label: 'Reset onboarding (re-show wizard)', run: () => { localStorage.removeItem(STATE_KEY); location.reload(); } },
@@ -1706,4 +1703,49 @@ document.addEventListener('DOMContentLoaded', async () => {
       closePalette();
     }
   });
+
+  // Last, once every listener is registered, so the window answers clicks at
+  // once. The Rust side decides from the saved choice and the active profile in
+  // desktop.json, and starts the managed daemon when either says so (a no-op
+  // for an external daemon). The wizard shows only when neither chose one.
+  const state = loadState();
+  if (state.mode) {
+    // A choice is saved: show home now and let the start run in the
+    // background; the pill reads "starting daemon…" until it finishes.
+    show('home');
+    daemonStarting = true;
+    refreshDaemon();
+    await startDaemon('daemon_boot', { savedMode: state.mode });
+    daemonStarting = false;
+    refreshDaemon();
+  } else {
+    // Nothing saved in local storage. An active profile in desktop.json (for
+    // example after "Reset onboarding") still means a daemon was chosen: show
+    // home now and start it in the background. Without one, daemon_boot starts
+    // nothing and returns at once, so wait for it to choose wizard or home.
+    let active = null;
+    try {
+      const list = await invoke('list_daemons');
+      // Like the Rust side, fall back to the first profile when none is
+      // marked active (only a hand-edited desktop.json gets there).
+      const first = list && Array.isArray(list.daemons) && list.daemons[0];
+      active = (list && list.active) || (first && first.name) || null;
+    } catch (_) {}
+    if (active) {
+      show('home');
+      daemonStarting = true;
+      refreshDaemon();
+      await startDaemon('daemon_boot', { savedMode: null });
+      daemonStarting = false;
+      refreshDaemon();
+    } else {
+      const booted = await startDaemon('daemon_boot', { savedMode: null });
+      if (lastStartError || (booted && booted.mode !== 'none')) {
+        show('home');
+      } else {
+        show('wizard');
+      }
+      refreshDaemon();
+    }
+  }
 });

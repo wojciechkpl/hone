@@ -592,7 +592,8 @@ to start", and its tooltip and the **Daemon** panel say why (for example
 
 - fix the cause (install `honed`, set `ANTHROPIC_API_KEY` in the terminal you
   launched from) and press **Daemon → Start**;
-- or press <kbd>Cmd</kbd>+<kbd>K</kbd> → "Reset onboarding" to see the wizard again.
+- or, to start over with the wizard, remove the daemon profile in the top-bar
+  daemon menu, then press <kbd>Cmd</kbd>+<kbd>K</kbd> → "Reset onboarding".
 
 The choice is saved in the app's local storage, so later launches skip the
 wizard. The daemon profiles live in `desktop.json` under the OS config
