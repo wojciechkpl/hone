@@ -630,6 +630,10 @@ pub struct Agent {
     /// The context receipts of this agent's life, oldest first (newest
     /// `MAX_KEPT_RECEIPTS` at most).
     receipts: Vec<hone_proto::ContextReceipt>,
+    /// Receipts dropped by the cap so far (ordinal of `receipts[0]` is this + 1).
+    receipts_dropped: u64,
+    /// Identifies this agent's receipt ordinals (UUID v7).
+    receipt_agent_id: String,
     metrics: Arc<ContextMetrics>,
     /// Per-turn guard state (reset at the top of each `run_turn` call).
     guards: TurnGuards,
@@ -711,6 +715,8 @@ impl Agent {
             receipt_info: TurnContextInfo::default(),
             receipt_history: std::collections::HashSet::new(),
             receipts: Vec::new(),
+            receipts_dropped: 0,
+            receipt_agent_id: uuid::Uuid::now_v7().to_string(),
             metrics,
             guards: TurnGuards::default(),
             error_event_sent: false,
@@ -805,6 +811,7 @@ impl Agent {
         if self.receipts.len() > MAX_KEPT_RECEIPTS {
             let excess = self.receipts.len() - MAX_KEPT_RECEIPTS;
             self.receipts.drain(..excess);
+            self.receipts_dropped += excess as u64;
         }
         if let Some(log) = &self.config.egress_log {
             let (span_id, parent_span_id) = trace.child_span();
@@ -3333,6 +3340,11 @@ enum AgentCommand {
     GetContextReceipts {
         reply: oneshot::Sender<Vec<hone_proto::ContextReceipt>>,
     },
+    /// Return the kept receipts with ordinals above `after`.
+    GetContextReceiptsAfter {
+        after: u64,
+        reply: oneshot::Sender<crate::ReceiptBatch>,
+    },
     /// Replace the agent's system prompt (for inline @agent persona dispatch).
     SetSystemPrompt {
         prompt: String,
@@ -3470,6 +3482,21 @@ impl AgentHandle {
                     }
                     AgentCommand::GetContextReceipts { reply } => {
                         let _ = reply.send(agent.receipts.clone());
+                    }
+                    AgentCommand::GetContextReceiptsAfter { after, reply } => {
+                        let first = agent.receipts_dropped + 1;
+                        let items = agent
+                            .receipts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, r)| (first + i as u64, r))
+                            .filter(|(o, _)| *o > after)
+                            .map(|(o, r)| (o, r.clone()))
+                            .collect();
+                        let _ = reply.send(crate::ReceiptBatch {
+                            agent_id: agent.receipt_agent_id.clone(),
+                            items,
+                        });
                     }
                     AgentCommand::SetSystemPrompt { prompt } => {
                         agent.config.system_prompt = prompt;
@@ -3653,6 +3680,28 @@ impl AgentHandle {
             return Vec::new();
         }
         rx.await.unwrap_or_default()
+    }
+
+    /// The kept context receipts with ordinals above `ordinal` (1-based for the
+    /// agent's whole life), with the agent's id.
+    pub async fn context_receipts_after(&self, ordinal: u64) -> crate::ReceiptBatch {
+        let (tx, rx) = oneshot::channel();
+        let empty = || crate::ReceiptBatch {
+            agent_id: String::new(),
+            items: Vec::new(),
+        };
+        if self
+            .cmd_tx
+            .send(AgentCommand::GetContextReceiptsAfter {
+                after: ordinal,
+                reply: tx,
+            })
+            .await
+            .is_err()
+        {
+            return empty();
+        }
+        rx.await.unwrap_or_else(|_| empty())
     }
 
     /// Replace the agent's active system prompt.

@@ -2196,13 +2196,35 @@ async fn auto_save_session(agent: &AgentHandle, name: Option<&str>) {
         tracing::warn!("auto-save session failed: {e}");
     } else {
         tracing::info!(name = %resolved_name, messages = messages.len(), "session auto-saved");
-        let receipts = agent.get_context_receipts().await;
-        if !receipts.is_empty() {
-            if let Err(e) = store
-                .append_context_receipts(&resolved_name, &receipts)
-                .await
-            {
-                tracing::warn!("saving context receipts failed: {e}");
+        // Last stored ordinal per (agent id, session name) in this process.
+        static STORED: std::sync::Mutex<Vec<(String, String, u64)>> =
+            std::sync::Mutex::new(Vec::new());
+        let find = |agent_id: &str| {
+            STORED.lock().ok().and_then(|v| {
+                v.iter()
+                    .find(|(a, n, _)| a == agent_id && *n == resolved_name)
+                    .map(|(_, _, o)| *o)
+            })
+        };
+        // The agent id isn't known before asking; ask for everything after 0
+        // only when nothing is tracked, else after the tracked ordinal.
+        let probe = agent.context_receipts_after(u64::MAX).await;
+        let after = find(&probe.agent_id).unwrap_or(0);
+        let batch = agent.context_receipts_after(after).await;
+        if let Some(last) = batch.items.last().map(|(o, _)| *o) {
+            match store.append_context_receipts(&resolved_name, &batch).await {
+                Ok(()) => {
+                    if let Ok(mut v) = STORED.lock() {
+                        match v
+                            .iter_mut()
+                            .find(|(a, n, _)| *a == batch.agent_id && *n == resolved_name)
+                        {
+                            Some(e) => e.2 = last,
+                            None => v.push((batch.agent_id.clone(), resolved_name.clone(), last)),
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!("saving context receipts failed: {e}"),
             }
         }
     }
@@ -2248,18 +2270,14 @@ async fn cmd_context_show(
         "no saved sessions (no database at {})",
         path.display()
     );
-    let store = session::SessionStore::open(&path).await?;
-    let name = match session {
-        Some(n) => n.to_owned(),
-        None => store
-            .latest_session_name()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("no saved sessions"))?,
+    let store = session::SessionStore::open_read_only(&path).await?;
+    let name = match store.resolve_session_name(session).await? {
+        Some(n) => n,
+        None => match session {
+            Some(n) => anyhow::bail!("session '{n}' not found"),
+            None => anyhow::bail!("no saved sessions"),
+        },
     };
-    anyhow::ensure!(
-        store.load_session(&name).await?.is_some(),
-        "session '{name}' not found"
-    );
     let stored = store.list_context_receipts(&name).await?;
     print!("{}", context_cmd::render_context_show(&stored, run, turn, json)?);
     Ok(())

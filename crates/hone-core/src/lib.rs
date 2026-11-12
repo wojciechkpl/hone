@@ -42,6 +42,16 @@ pub mod test_loop;
 mod turn;
 
 #[allow(deprecated)]
+/// Context receipts with their per-agent ordinals (see
+/// `AgentHandle::context_receipts_after`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReceiptBatch {
+    /// Identifies the agent the ordinals belong to.
+    pub agent_id: String,
+    /// `(ordinal, receipt)`, ordinals 1-based and ascending.
+    pub items: Vec<(u64, hone_proto::ContextReceipt)>,
+}
+
 pub use agent::{Agent, AgentConfig, AgentHandle, RunSettings, is_read_only_tool};
 pub use agent_def::{AgentDef, AgentDefError};
 pub use agent_registry::{AgentRegistry, AllowlistRejection, filtered_registry};
