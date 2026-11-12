@@ -44,3 +44,15 @@ Review reproduced six ways to pass coding checks without fixing anything, all th
 | T10 | **Every cheat above is a guarded self-test.** Each becomes a `checks/cheats/<id>/<name>/` entry that `verify.sh` must see rejected. |
 | T11 | **The watchdog kills the whole check.** Each check runs in its own process group (where available) and a timeout kills the group, or the watchdog is awaited rather than killed mid-recursion; a check that spawns background sleepers leaves nothing running after a timeout, on macOS and Linux (dash). |
 | T12 | **n01's size cap uses the suite's notes.** The cap is computed from the pristine `n01-summarise-notes/notes/`, not the agent's copy. The README notes that c03/c06 helpers must be module-level bindings looked up at call time, and T5 requires 0 skipped tasks for every installed toolchain. |
+
+## Review round 3 (T13–T17)
+
+Review reproduced that 19 of 20 checks pass without the task being solved: agent code exits 0 at import or load (`os._exit(0)`, `process.exit(0)`, `std::process::exit(0)`), shadows a stdlib module used by a `python3 -` check from the copy's cwd, or forges the probe's output from the expected values passed in argv; and agent code under the probe learned the suite path and rewrote `checks/lib/probe_compare.py`.
+
+| Row | Behaviour |
+|---|---|
+| T13 | **No pass is ever taken from a process that runs agent code.** Each check's verdict comes from a parent that runs no agent code (`python3 -I`, or sh/coreutils), with its cwd outside the copy. Agent code runs only in a child that gets inputs on stdin and prints one JSON output per case; the parent requires an output for every case and compares against expectations the child never sees (not in its argv, environment, cwd or files it can reach). The project's own tests (unittest, `node --test`, `cargo test`) still run but are advisory: a failing test fails the check, a passing one proves nothing on its own. |
+| T14 | **Check assets are private and read-only.** Before running, each check copies what it needs (probe inputs, comparison script, pristine tests) into a fresh private temp directory made read-only, and expected values are kept only in the parent process (or as hashes in files the child can't read). The suite's path never appears in a child's argv, environment or cwd. |
+| T15 | **Every reproduced forgery is a guarded self-test:** exit at import (Python, Node), `process::exit` in a Rust solution, a probe output forged from inputs, a stdlib shadow in the copy's cwd, and rewriting check files. `verify.sh` must see each rejected. |
+| T16 | **Probes only test stated behaviour.** c05's `chunk([1], 1.5)` and c02's underscore case are dropped from the probes or stated in the task prompt and tests; every probe case is implied by the prompt or the visible tests. |
+| T17 | **Residual risk is documented.** The README says eval agents run in a copy but aren't sandboxed from reading the rest of the disk, so a determined agent could find the suite; it recommends running suites from a location the model isn't told about and treating results as measurements, not proofs. |
