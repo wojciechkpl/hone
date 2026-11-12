@@ -32,6 +32,18 @@ flowchart LR
 | K6 | **Event docs say what the scores are.** The doc comments on `ContextInjected.bm25_hits` and `InjectionResult.bm25_hits` say they are index match scores, not BM25. The field name stays, so the wire format doesn't change. |
 | K7 | **Docs stop claiming pgvector.** `docs/research/competitive-analysis-2026-05.md` and `docs/aider-vs-hone.md` gain a dated correction note, and their table cells and sentences that state pgvector exists are corrected. So are `docs/benchmarks.md`, `docs/ml-intern-vs-hone.md` and the two `docs/changelog.md` entries (annotated, not rewritten). Plans that propose pgvector stay as history, marked superseded. `docs/architecture.md` and the README are already right. Docs only; no test. |
 
+### Review round 1 (K3 amended, K8–K11)
+
+The review reproduced a panic and a content loss, and listed matcher misses.
+
+| Row | Behaviour |
+|---|---|
+| K3a | **The test-command matcher handles real commands.** In addition to K3:<br>• splitting ignores separators inside single or double quotes (`git commit -am "fix test; cargo test passes"` and `echo 'step 1; pytest -q'` are not tests);<br>• `sh -c`, `bash -c` and `zsh -c` are matched on their quoted script;<br>• the wrappers also include `timeout <duration>`, `nice` (with `-n N`) and `stdbuf` (with its options), and `npx`/`bunx` options such as `--yes`, and `uv run`'s options such as `--with pytest`;<br>• a path-qualified runner matches by its basename (`.venv/bin/pytest -q`, `./node_modules/.bin/jest`), and `python3.12 -m pytest` matches like `python3 -m pytest`;<br>• script runners: `npm t`, `npm test…`, `npm run test…`, `yarn test…`, `yarn run test…`, `pnpm test…`, `pnpm run test…`, `bun run test…` (a script name starting with `test`, such as `test:unit`), `cargo t`, `just test`, `bazel test`;<br>• a runner invocation that only builds or lists tests is a read: `cargo test --no-run`, `cargo test -- --list`, `pytest --collect-only`, `pytest --co`. |
+| K8 | **Summaries never split a UTF-8 character.** `structural_summary`, `tool_oneliner` and every helper that previews a tool result cut text at a character boundary. A tool result with multi-byte characters (for example Polish text) across byte 200 or byte 500 is summarised without a panic, on the phase path and on the age-based path. The age-based path panics on `main` today, so this fixes an existing crash. |
+| K9 | **A summarised file read keeps its path and structure.** When a tool result is a JSON object with a string `content` field (as `read_file` returns), its structural summary names the `path` (when present) and the number of lines, then keeps the structural lines of `content` (declarations such as `fn`, `struct`, `enum`, `impl`, `trait`, `class`, `def`, `function`, `interface`, `type`, `export`, `pub`), at most 40, instead of the first 200 characters of escaped JSON. Other results are summarised as today. |
+| K10 | **Phase compaction keeps what the edit needs.** When a write triggers phase compaction:<br>• results of reads of any path the write targets (`path` or `file_path` in its arguments; for `apply_patch`, the paths in its patch headers) are not compacted;<br>• the protected recent window counts the newest `recent_window` tool results, not messages.<br>The age-based path is unchanged. |
+| K11 | **Phase compaction is off by default, until measured.** The phase tracker always runs (K1–K3), but it compacts only when `HONE_PHASE_COMPACTION` is `1`, `true` or `on`. PR D maps this to `[context.graduated] phase`. Whether to turn it on by default is decided from a `harness-compare` run. |
+
 ## Testing notes
 
 - **K2/K3** are unit tests on the classifier: each runner, each wrapper, the separators, and the negative examples.
@@ -44,6 +56,6 @@ flowchart LR
 
 ## Out of scope
 
-- Turning compaction off by config. The compactor becomes selectable in PR D (`[context] compactor`).
+- Choosing the compactor in `config.toml` (PR D).
 - Renaming the `bm25_hits` field.
 - Re-running `harness-compare`. K4 changes what the model sees, so the `hone-inject` arm should be re-run before and after #101 and this PR. That uses model API spend, so it waits for the user.
