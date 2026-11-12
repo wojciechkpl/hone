@@ -29,9 +29,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed: encrypted memory format (`--encrypted-memory`)
 
 - A memory's content stays `enc:v1:<base64>`, as before, so older binaries read it.
-- An embedding is stored in the `embedding` column as an encrypted binary blob: the marker byte `0xE1`, a 12-byte nonce, the AES-256-GCM ciphertext of the little-endian f32s, and up to 3 zero bytes of padding. A memory without an embedding has a NULL column. An older binary treats the blob as an unusable vector (it does not fail).
+- An embedding is stored in the `embedding` column as an encrypted binary blob: an 8-byte magic (`E1 48 4F 4E 45 56 31 00`), a 12-byte nonce, and the AES-256-GCM ciphertext of the little-endian f32s. A memory without an embedding has a NULL column.
+- **Older binaries and sealed vectors.** An older Hone decodes the column as little-endian f32s whatever its length, so it reads a sealed blob as a vector of the original dimension plus 9, and does not treat the memory as having no embedding. A debug build of it panics in semantic recall (`cosine_similarity` asserts equal dimensions); a release build scores those memories 0. Nothing is corrupted, but do not downgrade to a build older than this one while the database holds embeddings.
 - Vectors are decrypted only for the memories a recall returns or a semantic recall scores.
-- Rows written as `enc:v2:` by earlier builds of this branch still decrypt; `enc:v1` rows with a plaintext vector are re-encrypted once, when the database is opened with the passphrase.
+- Rows written as `enc:v2:` by earlier builds of this branch still decrypt; `enc:v1` rows with a plaintext vector (including one whose first byte happens to be `0xE1`) are re-encrypted once, when the database is opened with the passphrase. Blobs with the earlier 1-byte marker still decrypt.
+- **A wrong passphrase changes nothing.** Opening verifies the passphrase first (a key-check value stored with the salt sentinel, or a trial decryption of an encrypted row for databases that have none yet) and fails before any migration or write.
 - An encrypted database never gets an FTS5 index: opening it removes any FTS5 tables and triggers.
 
 ### Fixed: memory recall finds older memories, skips outcome logs, and code search understands prompts

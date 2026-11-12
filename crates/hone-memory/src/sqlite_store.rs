@@ -187,8 +187,13 @@ fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
     row_to_memory_with(row, false)
 }
 
-/// First byte of an encrypted embedding blob (see `EncryptedStore`).
-const ENCRYPTED_EMBEDDING_MARKER: u8 = 0xE1;
+/// Whether an embedding column value is an encrypted blob of `EncryptedStore`:
+/// its 8-byte magic, or the 1-byte marker earlier builds of it used.
+fn looks_sealed(bytes: &[u8]) -> bool {
+    bytes.len() >= 32
+        && (bytes.starts_with(&[0xE1, 0x48, 0x4F, 0x4E, 0x45, 0x56, 0x31, 0x00])
+            || bytes.first() == Some(&0xE1))
+}
 
 /// `keep_encrypted_embedding`: a row of an encrypted store (`enc:` content)
 /// whose embedding column holds an encrypted blob reports no embedding in
@@ -220,10 +225,7 @@ fn row_to_memory_with(
         .ok()
         .flatten()
         .filter(|bytes| {
-            keep_encrypted_embedding
-                || !(content.starts_with("enc:")
-                    && bytes.first() == Some(&ENCRYPTED_EMBEDDING_MARKER)
-                    && bytes.len() >= 32)
+            keep_encrypted_embedding || !(content.starts_with("enc:") && looks_sealed(bytes))
         })
         .map(|bytes| bytes_to_embedding(&bytes));
 
