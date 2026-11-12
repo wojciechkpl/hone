@@ -863,9 +863,12 @@ with `source:`, `call:`, `project:` or `__` are refused: the runtime sets those 
   still asks you whenever anything but your own words is in the conversation, in this turn
   or an earlier one: a result of **any** tool except `memory_write` itself (file, shell,
   web, git, symbol search, `memory_read`, screenshots, LSP, MCP and every future tool), a
-  HONE.md section, the injected repository skeleton, a block gathered by a context source, a
-  recalled model-written memory, or a matched skill. Only a conversation holding none of
-  these follows the normal policy. The prompt of an update shows the memory it replaces
+  HONE.md section, the injected repository skeleton (when it lists at least one file or
+  symbol; an empty directory injects none), a block gathered by a context source, a memory
+  index or recall that includes a model-written memory, an unknown tool's error, or a matched
+  skill. Only a conversation holding none of these follows the normal policy. In practice,
+  inside a project with the default context (the skeleton is injected on turn 1) every
+  `memory_write` asks, and headless runs don't write. The prompt of an update shows the memory it replaces
   (`replaces`). With nobody to ask (headless) the write is refused, and the error names
   what is in the conversation.
 - **Permission rules** see the call as the command `memory_write`:

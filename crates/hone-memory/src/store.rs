@@ -52,6 +52,15 @@ pub fn trigram_jaccard(a: &str, b: &str) -> f64 {
     intersection as f64 / union as f64
 }
 
+/// True unless `tags` mark a model-written memory (`source:tool`) of a project
+/// other than `project` (the id in `project:<id>`).
+pub fn visible_in_project(tags: &[String], project: &str) -> bool {
+    let wanted = format!("project:{project}");
+    !tags.iter().any(|t| t == "source:tool")
+        || !tags.iter().any(|t| t.starts_with("project:"))
+        || tags.iter().any(|t| *t == wanted)
+}
+
 // ---------------------------------------------------------------------------
 // Trait definition
 // ---------------------------------------------------------------------------
@@ -80,6 +89,34 @@ pub trait MemoryStore: Send + Sync {
     ) -> Result<Vec<Memory>, MemoryError> {
         let mut found = self.recall(query).await?;
         found.retain(|m| !exclude.contains(&m.kind));
+        Ok(found)
+    }
+
+    /// Like [`recall_excluding`](Self::recall_excluding), and when `project` is
+    /// `Some(id)` a memory the model wrote (`source:tool`) that is tagged with a
+    /// project (`project:<x>`) is returned only when `<x>` is `id`. Memories that
+    /// are not tagged `source:tool`, or carry no project tag, are never affected.
+    /// The default recalls without the cap, filters, then caps; a store that caps its candidates
+    /// (`SqliteStore`) overrides it to filter BEFORE the cap.
+    async fn recall_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let Some(project) = project else {
+            return self.recall_excluding(query, exclude).await;
+        };
+        // Rank without the cap, filter, then cap, so invisible memories can't
+        // use up the slots.
+        let uncapped = MemoryQuery {
+            text: query.text.clone(),
+            limit: usize::MAX,
+            kind: query.kind,
+        };
+        let mut found = self.recall_excluding(&uncapped, exclude).await?;
+        found.retain(|m| visible_in_project(&m.tags, project));
+        found.truncate(query.limit);
         Ok(found)
     }
 

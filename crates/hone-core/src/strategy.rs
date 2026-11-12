@@ -97,6 +97,8 @@ pub struct RecallQuery<'a> {
     pub text: &'a str,
     pub k: usize,
     pub exclude_kinds: &'a [MemoryKind],
+    /// The project id (`project:<id>` without the prefix): a memory the model
+    /// wrote in another project is not recalled.
     pub scope: Option<&'a str>,
 }
 
@@ -310,7 +312,9 @@ impl Recaller for Bm25Recaller {
             limit: q.k,
             kind: None,
         };
-        let found = store.recall_excluding(&query, q.exclude_kinds).await?;
+        let found = store
+            .recall_visible(&query, q.exclude_kinds, q.scope)
+            .await?;
         Ok(found
             .into_iter()
             .map(|memory| ScoredMemory { memory, score: 0.0 })

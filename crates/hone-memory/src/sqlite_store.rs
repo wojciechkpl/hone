@@ -403,6 +403,7 @@ impl SqliteStore {
         &self,
         query: &MemoryQuery,
         exclude: &[MemoryKind],
+        project: Option<&str>,
     ) -> Result<Vec<Memory>, MemoryError> {
         let fetch_limit = if query.text.is_empty() {
             query.limit
@@ -426,6 +427,24 @@ impl SqliteStore {
                 })
                 .collect();
             conditions.push(format!("kind NOT IN ({})", marks.join(", ")));
+        }
+        // A model-written memory of another project is dropped here, before the
+        // corpus window. Tags are a JSON array, so a tag is matched as its quoted
+        // JSON string; `\` escapes the LIKE wildcards in the project id.
+        let project_pattern = project.map(|id| {
+            let quoted = serde_json::to_string(&format!("project:{id}")).unwrap_or_default();
+            let escaped = quoted
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            format!("%{escaped}%")
+        });
+        if project_pattern.is_some() {
+            n += 1;
+            conditions.push(format!(
+                "NOT (tags LIKE '%\"source:tool\"%' AND tags LIKE '%\"project:%' \
+                 AND tags NOT LIKE ?{n} ESCAPE '\\')"
+            ));
         }
         let where_clause = if conditions.is_empty() {
             String::new()
@@ -453,6 +472,9 @@ impl SqliteStore {
         }
         for kind in exclude {
             q = q.bind(kind_to_str(*kind));
+        }
+        if let Some(pattern) = &project_pattern {
+            q = q.bind(pattern);
         }
         let rows = q
             .bind(fetch_limit.min(i64::MAX as usize) as i64)
@@ -577,7 +599,7 @@ impl MemoryStore for SqliteStore {
     }
 
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_with_exclusions(query, &[]).await
+        self.recall_with_exclusions(query, &[], None).await
     }
 
     async fn recall_excluding(
@@ -585,7 +607,16 @@ impl MemoryStore for SqliteStore {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
     ) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_with_exclusions(query, exclude).await
+        self.recall_with_exclusions(query, exclude, None).await
+    }
+
+    async fn recall_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        self.recall_with_exclusions(query, exclude, project).await
     }
 
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
@@ -846,7 +877,11 @@ mod tests {
         let store = SqliteStore::in_memory().await.expect("in_memory");
         let emb = vec![0.1_f32, 0.2, 0.3];
         store
-            .record(make_memory_with_embedding("id-emb", "content with embedding", emb.clone()))
+            .record(make_memory_with_embedding(
+                "id-emb",
+                "content with embedding",
+                emb.clone(),
+            ))
             .await
             .expect("record");
 
@@ -924,7 +959,10 @@ mod tests {
 
         // Query aligned with "alpha".
         let query = vec![1.0_f32, 0.0, 0.0, 0.0];
-        let results = store.recall_semantic(&query, 1).await.expect("recall_semantic");
+        let results = store
+            .recall_semantic(&query, 1)
+            .await
+            .expect("recall_semantic");
 
         assert_eq!(results.len(), 1, "expected exactly 1 result");
         assert_eq!(
