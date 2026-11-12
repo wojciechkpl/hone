@@ -747,6 +747,10 @@ impl Agent {
         if let Some(ratio) = strategies.budget_ratio {
             self.context.set_budget_ratio(ratio);
         }
+        // A project file's ratio only ever lowers: min(user or per-model, cap).
+        if let Some(cap) = strategies.budget_cap {
+            self.context.cap_budget_ratio(cap);
+        }
         self.strategies = strategies;
         self
     }
@@ -1426,6 +1430,7 @@ impl Agent {
                 Vec::new()
             },
             injection: None,
+            ..TurnContextInfo::default()
         };
         if !memory_entries.is_empty() {
             let _ = events
@@ -1662,6 +1667,8 @@ impl Agent {
                 let recall_at = (!memories.is_empty()).then_some(1);
                 let skills_at =
                     (!skills_block.is_empty()).then_some(if memories.is_empty() { 1 } else { 2 });
+                self.receipt_info.trim_only = self.context.trim_only();
+                self.receipt_info.phase_compaction = self.context.phase_compaction();
                 let receipt = crate::receipts::build_receipt(
                     self.turn_count,
                     model_call,
@@ -3109,6 +3116,7 @@ impl Agent {
                 Vec::new()
             },
             injection: None,
+            ..TurnContextInfo::default()
         };
         if !memory_entries.is_empty() {
             let _ = events

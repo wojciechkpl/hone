@@ -436,7 +436,7 @@ impl StrategyRegistry {
             Origin::Builtin,
             Arc::new(|_p, _d| {
                 Ok(Arc::new(TriggersWriter {
-                    id: id(Slot::Recall, "triggers", &serde_json::json!({})),
+                    id: id(Slot::MemoryWriter, "triggers", &serde_json::json!({})),
                 }) as Arc<dyn MemoryWriter>)
             }),
         );
@@ -445,7 +445,7 @@ impl StrategyRegistry {
             Origin::Builtin,
             Arc::new(|_p, _d| {
                 Ok(Arc::new(NoWriter {
-                    id: id(Slot::Recall, "off", &serde_json::json!({})),
+                    id: id(Slot::MemoryWriter, "off", &serde_json::json!({})),
                 }) as Arc<dyn MemoryWriter>)
             }),
         );
@@ -578,6 +578,7 @@ impl StrategyRegistry {
             trim_only: sel.compactor.value == "trim-only",
             graduated_phase: sel.graduated_phase.value,
             budget_ratio: sel.budget_ratio.value,
+            budget_cap: sel.budget_cap.value,
             recaller,
             recaller_kind,
             top_k: sel.top_k.value,
@@ -642,6 +643,8 @@ pub struct ResolvedStrategies {
     pub(crate) trim_only: bool,
     pub(crate) graduated_phase: bool,
     pub(crate) budget_ratio: Option<f32>,
+    /// A project file's cap on the budget ratio (see `StrategySelection::budget_cap`).
+    pub(crate) budget_cap: Option<f32>,
     pub(crate) recaller: Arc<dyn Recaller>,
     pub(crate) recaller_kind: RecallerKind,
     pub(crate) top_k: usize,
@@ -651,6 +654,11 @@ pub struct ResolvedStrategies {
 }
 
 impl ResolvedStrategies {
+    /// The active memory writer's id (slot `memory_writer`).
+    pub fn writer_id(&self) -> &StrategyId {
+        self.writer.id()
+    }
+
     /// Whether the source `name` is on.
     pub fn has_source(&self, name: &str) -> bool {
         self.sources.iter().any(|s| s == name)
@@ -677,6 +685,7 @@ impl ResolvedStrategies {
             trim_only: false,
             graduated_phase: false,
             budget_ratio: None,
+            budget_cap: None,
             recaller: Arc::new(Bm25Recaller {
                 id: id(Slot::Recall, "bm25", &recall_params(5, &exclude)),
             }),
@@ -684,7 +693,7 @@ impl ResolvedStrategies {
             top_k: 5,
             exclude_kinds: exclude,
             writer: Arc::new(TriggersWriter {
-                id: id(Slot::Recall, "triggers", &serde_json::json!({})),
+                id: id(Slot::MemoryWriter, "triggers", &serde_json::json!({})),
             }),
             writer_kind: WriterKind::Triggers,
         }

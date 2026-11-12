@@ -1889,7 +1889,12 @@ async fn print_ensemble_events<O: io::Write, E: io::Write>(
 
 /// Run a prompt through N parallel candidates with varied temperatures, then
 /// let a ranker agent pick the best response (MASAI Ranker pattern).
-async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result<()> {
+async fn run_ensemble(
+    base_config: &AgentConfig,
+    strategies: Arc<hone_core::strategy::ResolvedStrategies>,
+    prompt: &str,
+    n: u32,
+) -> Result<()> {
     // Temperature ladder: diverse but bounded.  We only use as many slots as
     // requested, so `--ensemble 2` picks the first two entries.
     const TEMPS: [f32; 5] = [0.0, 0.3, 0.5, 0.7, 0.9];
@@ -1902,7 +1907,7 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
     // the same system prompt; the ranker prompt is assembled by the ensemble
     // from the candidate responses, so the system prompt here just sets the
     // overall assistant persona.
-    let ensemble = AgentEnsemble::new(base_config.clone(), temperatures);
+    let ensemble = AgentEnsemble::new(base_config.clone(), temperatures).with_strategies(strategies);
 
     let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
@@ -2747,17 +2752,18 @@ async fn main() -> Result<()> {
                         std::process::exit(2);
                     }
                 };
-                if let Err(e) = hone_core::strategy::StrategyRegistry::with_builtins()
-                    .build(&sel, &hone_core::strategy::StrategyDeps::default())
+                let registry = hone_core::strategy::StrategyRegistry::with_builtins();
+                if let Err(e) = registry.build(&sel, &hone_core::strategy::StrategyDeps::default())
                 {
                     eprintln!("hone: config error: {e}");
                     std::process::exit(2);
                 }
                 if !*check {
+                    let listed = registry.list();
                     if *json {
-                        print!("{}", strategies_cmd::render_json(&sel));
+                        print!("{}", strategies_cmd::render_json(&sel, &listed));
                     } else {
-                        print!("{}", strategies_cmd::render_text(&sel));
+                        print!("{}", strategies_cmd::render_text(&sel, &listed));
                     }
                 }
                 return Ok(());
@@ -2854,6 +2860,22 @@ async fn main() -> Result<()> {
     // The `[context]` / `[memory]` choices: flag, env var, project file, user
     // file, default. A broken value stops here with exit 2, before any model call.
     let strategy_selection = settings::load_strategy_selection_or_exit(&strategy_flags(&cli));
+    // Build the registry now, before any language server or MCP server starts, so
+    // a failure exits (2) with nothing left running. The built-ins do not need the
+    // memory store or the index at build time.
+    let resolved_strategies = match hone_core::strategy::StrategyRegistry::with_builtins().build(
+        &strategy_selection,
+        &hone_core::strategy::StrategyDeps {
+            working_dir: std::env::current_dir().ok(),
+            ..Default::default()
+        },
+    ) {
+        Ok(r) => Arc::new(r),
+        Err(e) => {
+            eprintln!("hone: config error: {e}");
+            std::process::exit(2);
+        }
+    };
     let hone_md = load_hone_md();
 
     // Initialise SQLite persistence (non-blocking; errors are warnings only).
@@ -3152,22 +3174,6 @@ async fn main() -> Result<()> {
         "MCP manager initialised"
     );
 
-    // Resolve the strategies against the registry: an unregistered name stops
-    // here with exit 2.
-    let resolved_strategies = match hone_core::strategy::StrategyRegistry::with_builtins().build(
-        &strategy_selection,
-        &hone_core::strategy::StrategyDeps {
-            memory_store: memory_store.clone(),
-            index: index.clone(),
-            working_dir: std::env::current_dir().ok(),
-        },
-    ) {
-        Ok(r) => Arc::new(r),
-        Err(e) => {
-            eprintln!("hone: config error: {e}");
-            std::process::exit(2);
-        }
-    };
     let resolved_skeleton =
         SkeletonStrategy::from_str(&strategy_selection.skeleton.value).unwrap_or_default();
 
@@ -3260,6 +3266,7 @@ async fn main() -> Result<()> {
             dispatch,
             pinned: pinned_choice,
         }),
+        Arc::clone(&resolved_strategies),
     )
     .await;
 
@@ -3311,6 +3318,7 @@ async fn run_selected_mode(
     session_name: Option<String>,
     no_clarify: bool,
     routing: Option<TuiRouting>,
+    resolved_strategies: Arc<hone_core::strategy::ResolvedStrategies>,
 ) -> Result<()> {
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -3366,7 +3374,7 @@ async fn run_selected_mode(
             }
         };
 
-        return run_ensemble(&base_config, &prompt, n).await;
+        return run_ensemble(&base_config, Arc::clone(&resolved_strategies), &prompt, n).await;
     }
 
     // --plan: load a saved plan file and execute its plan_body as a one-shot prompt.
@@ -3462,6 +3470,7 @@ async fn run_selected_mode(
         cli.vim,
         step_tx,
         routing,
+        Arc::clone(&resolved_strategies),
     )
     .await;
 
@@ -3821,6 +3830,7 @@ async fn run_tui(
     vim: bool,
     step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
     routing: Option<TuiRouting>,
+    strategies: Arc<hone_core::strategy::ResolvedStrategies>,
 ) -> Result<()> {
     let mut app = if vim { App::with_vim() } else { App::new() };
     // Wire step-mode sender into app so it can unblock the agent.
@@ -3933,7 +3943,7 @@ async fn run_tui(
     let adaptive: Option<Arc<AdaptiveClassifier>> = base_config
         .memory_store
         .as_ref()
-        .map(|store| Arc::new(AdaptiveClassifier::new(Arc::clone(store))));
+        .map(|store| Arc::new(AdaptiveClassifier::with_strategies(Arc::clone(store), &strategies)));
     let mut current_tier: Option<ComplexityTier> = None;
     let mut current_turn_prompt = String::new();
     // The model the running turn was sent to (for outcome records).

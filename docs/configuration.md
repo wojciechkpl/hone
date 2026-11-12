@@ -242,6 +242,41 @@ session_limit_usd = 2.0
 
 </details>
 
+### Context and memory strategies
+
+`[context]` and `[memory]` choose what goes into the prompt and how memories are recalled and
+written. Without them Hone behaves as before. `hone strategies` shows what is active
+([below](#hone-strategies)).
+
+| Key | Default | Effect | In the project file |
+|---|---|---|---|
+| `[context] sources` | `["memory-index", "recall", "skills", "skeleton"]` | Which context sources are on. The prompt order stays fixed whatever the list's order | intersected with the user's list; a name the user doesn't have is dropped with a warning |
+| `[context] compactor` | `"graduated"` | `graduated` (tool-result dedup, graduated compression, trimming) or `trim-only` (only the trimming needed to fit the budget) | allowed |
+| `[context] budget_ratio` | the per-model ratio | Fraction of the model's context window to use (above 0, at most 1) | a cap: the effective ratio is the smaller of your value (or the model's default) and the project's; a higher value is ignored with a warning |
+| `[context.skeleton] use` | `"adaptive"` | `adaptive`, `flat`, `dependency-graph`, `call-graph` or `hybrid` | allowed |
+| `[context.skeleton] max_tokens` | `2000` | Token budget of the injected block | can only lower it |
+| `[context.skeleton] gap_threshold` | `0.4` | Score gap (0–1) above which code snippets are injected | can only raise it |
+| `[context.graduated] phase` | `false` | Compact older tool results when the task moves from reading to editing or testing | can only set `false` |
+| `[memory] recaller` | `"bm25"` | `bm25` or `none` (no recall) | can only set `none` |
+| `[memory] top_k` | `5` | Memories recalled per turn, at least 1 (use `recaller = "none"` to turn recall off) | can only lower it |
+| `[memory] exclude_kinds` | `["outcome"]` | Memory kinds never recalled: `conversation`, `user`, `feedback`, `project`, `reference`, `outcome` | can only add kinds |
+| `[memory] writer` | `"triggers"` | `triggers` (trigger phrases) or `off`. `off` stops every memory write, outcome logs included | can only set `off` |
+
+**Precedence,** highest first: a command-line flag, an environment variable, the project
+file, the user file, the default. `--skeleton-strategy` and `HONE_SKELETON_STRATEGY` set
+`[context.skeleton] use`; `--no-inject` and `HONE_NO_INJECTION=1` remove `skeleton` from
+`sources`; `HONE_PHASE_COMPACTION` (`1`, `true` or `on`, any case) sets
+`[context.graduated] phase`. An unknown name or an out-of-range value is a config error that
+names the file (or the variable or flag) and the key, and Hone exits 2 before any model call.
+Invalid values are shown escaped and cut to 80 characters.
+
+<a id="hone-strategies"></a>
+**`hone strategies [--json] [--check]`** prints each slot with the active strategy, its
+parameters, what chose each parameter (flag, `env:NAME`, `file:<path>` or `default`) and where
+the strategy is registered from, then any warnings. `--check` prints nothing and exits 0 when
+the config is valid, otherwise prints the error and exits 2. `honed` reads the same tables for
+its worker's agents; its default leaves out `skeleton`, and a config can turn it on.
+
 ### Routing and fallback
 
 Hone sorts every prompt as **simple**, **medium** or **complex** (short single-file fixes
@@ -974,8 +1009,10 @@ ollama pull llama3.2      # with `ollama serve` running
 
 A `config.toml` failed to parse, has a key Hone doesn't know, or has an invalid value. The
 message names the file and the line. Compare it with the [schema](#schema). Older docs
-showed `[agent]`, `[memory]` and `[pricing]` tables: Hone never read them, and they are now
-rejected, so delete them. `hone configure` still works and rewrites the user file.
+showed `[agent]` and `[pricing]` tables: Hone never read them, and they are rejected, so
+delete them. (`[context]` and `[memory]` are real tables now; see
+[context and memory strategies](#context-and-memory-strategies).) `hone configure` still
+works and rewrites the user file.
 
 </details>
 

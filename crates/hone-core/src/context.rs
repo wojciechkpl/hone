@@ -626,6 +626,24 @@ impl ContextManager {
         self.trim_only = trim_only;
     }
 
+    /// Whether only trimming is on.
+    pub fn trim_only(&self) -> bool {
+        self.trim_only
+    }
+
+    /// Whether compaction on phase transitions is on.
+    pub fn phase_compaction(&self) -> bool {
+        self.phase_compaction
+    }
+
+    /// Lower the budget ratio to at most `cap` (a project file's `budget_ratio`):
+    /// `min(current ratio, cap)`, never higher.
+    pub fn cap_budget_ratio(&mut self, cap: f32) {
+        if cap < self.config.effective_budget_ratio {
+            self.set_budget_ratio(cap);
+        }
+    }
+
     /// Use `ratio` of the advertised window as the token budget instead of the
     /// per-model ratio.
     pub fn set_budget_ratio(&mut self, ratio: f32) {
@@ -657,14 +675,13 @@ impl ContextManager {
     }
 
     fn notify_kind(&mut self, kind: ToolPhaseKind, targets: &[String]) {
-        if self.trim_only {
-            return;
-        }
+        // The tracker and the transition metric always run; only the compaction
+        // is skipped under trim-only.
         if let Some((from, to)) = self.phase_tracker.observe_kind(kind) {
             if from == TaskPhase::Exploration
                 && (to == TaskPhase::Editing || to == TaskPhase::Verification)
             {
-                if self.phase_compaction {
+                if self.phase_compaction && !self.trim_only {
                     self.force_compress_exploration_results(targets);
                 }
                 if let Some(m) = &self.metrics {
@@ -1245,7 +1262,8 @@ pub fn estimate_text_tokens(text: &str) -> u32 {
 /// Whether `HONE_PHASE_COMPACTION` enables compaction on phase transitions
 /// (`1`, `true` or `on`). Read each time a manager is built.
 fn phase_compaction_from_env() -> bool {
-    std::env::var("HONE_PHASE_COMPACTION").is_ok_and(|v| matches!(v.trim(), "1" | "true" | "on"))
+    std::env::var("HONE_PHASE_COMPACTION")
+        .is_ok_and(|v| hone_config::strategy::phase_env_enabled(&v))
 }
 
 /// Two paths name the same file when, after stripping a leading `./`, they are

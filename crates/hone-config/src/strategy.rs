@@ -84,6 +84,26 @@ pub const RECALLER_NAMES: &[&str] = &["bm25", "none"];
 /// Valid `[memory] writer` names.
 pub const WRITER_NAMES: &[&str] = &["triggers", "off"];
 
+/// Valid `[memory] exclude_kinds` entries (any case).
+pub const KIND_NAMES: &[&str] = &[
+    "conversation",
+    "user",
+    "feedback",
+    "project",
+    "reference",
+    "outcome",
+];
+
+/// Whether `HONE_PHASE_COMPACTION` turns phase compaction on: trimmed,
+/// case-insensitive `1`, `true` or `on`. The one parser, used by the selection
+/// and by agents built without one.
+pub fn phase_env_enabled(raw: &str) -> bool {
+    matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "on"
+    )
+}
+
 /// The default skeleton token budget.
 pub const DEFAULT_MAX_TOKENS: u32 = 2000;
 /// The default tier-2 score-gap threshold.
@@ -158,6 +178,9 @@ pub struct StrategySelection {
     pub graduated_phase: Chosen<bool>,
     /// `None` = the per-model table.
     pub budget_ratio: Chosen<Option<f32>>,
+    /// A project file's `budget_ratio` when the user set none: a cap, applied
+    /// as `min(per-model default, cap)` where the model is known.
+    pub budget_cap: Chosen<Option<f32>>,
     pub recaller: Chosen<String>,
     pub top_k: Chosen<usize>,
     pub exclude_kinds: Chosen<Vec<String>>,
@@ -173,9 +196,26 @@ fn invalid(path: impl Into<PathBuf>, reason: String) -> ConfigError {
     }
 }
 
+/// Longest part of an invalid value that is echoed in an error.
+const MAX_ECHO_CHARS: usize = 80;
+
+/// An invalid value as it may appear in a message: cut to 80 characters and
+/// escaped (`{:?}` style: control characters become `\u{..}`), so a file, an
+/// environment variable or a flag cannot write terminal escapes or forge log
+/// lines through an error.
+fn show(value: &str) -> String {
+    let cut: String = value.chars().take(MAX_ECHO_CHARS).collect();
+    let mut shown = format!("{cut:?}");
+    if value.chars().count() > MAX_ECHO_CHARS {
+        shown.push('…');
+    }
+    shown
+}
+
 fn unknown(key: &str, got: &str, valid: &[&str]) -> String {
     format!(
-        "{key} = \"{got}\" is not a known strategy; valid names: {}",
+        "{key} = {} is not a known strategy; valid names: {}",
+        show(got),
         valid.join(", ")
     )
 }
@@ -244,12 +284,27 @@ fn validate(layer: &ConfigLayer) -> Result<(), ConfigError> {
         if let Some(n) = &m.writer {
             check_one(path, "memory.writer", n, WRITER_NAMES)?;
         }
+        if m.top_k == Some(0) {
+            return Err(invalid(
+                path,
+                "memory.top_k = 0 must be at least 1 (use recaller = \"none\" to turn recall off)"
+                    .to_owned(),
+            ));
+        }
+        for kind in m.exclude_kinds.iter().flatten() {
+            if !KIND_NAMES.contains(&kind.to_ascii_lowercase().as_str()) {
+                return Err(invalid(
+                    path,
+                    format!(
+                        "memory.exclude_kinds has {} which is not a memory kind; valid kinds: {}",
+                        show(kind),
+                        KIND_NAMES.join(", ")
+                    ),
+                ));
+            }
+        }
     }
     Ok(())
-}
-
-fn truthy(v: &str) -> bool {
-    matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "on")
 }
 
 impl StrategySelection {
@@ -281,6 +336,7 @@ impl StrategySelection {
             compactor: Chosen::default_of("graduated".to_owned()),
             graduated_phase: Chosen::default_of(false),
             budget_ratio: Chosen::default_of(None),
+            budget_cap: Chosen::default_of(None),
             recaller: Chosen::default_of("bm25".to_owned()),
             top_k: Chosen::default_of(DEFAULT_TOP_K),
             exclude_kinds: Chosen::default_of(vec!["outcome".to_owned()]),
@@ -383,6 +439,17 @@ impl StrategySelection {
 
         if let Some(c) = &layer.config.context {
             if let Some(s) = &c.sources {
+                let dropped: Vec<&String> = s
+                    .iter()
+                    .filter(|n| !self.sources.value.contains(n))
+                    .collect();
+                if !dropped.is_empty() {
+                    let names: Vec<&str> = dropped.iter().map(|n| n.as_str()).collect();
+                    warnings.push(format!(
+                        "context.sources: {} not in the sources the user has on; ignored (a project file can only narrow the list)",
+                        names.join(", ")
+                    ));
+                }
                 let kept: Vec<String> = self
                     .sources
                     .value
@@ -402,19 +469,29 @@ impl StrategySelection {
                 };
             }
             if let Some(r) = c.budget_ratio {
-                let narrower = match self.budget_ratio.value {
-                    Some(cur) => r < cur,
-                    None => r <= MAX_MODEL_BUDGET_RATIO,
-                };
-                if narrower {
-                    self.budget_ratio = Chosen {
-                        value: Some(r),
-                        origin: origin(),
-                    };
-                } else if self.budget_ratio.value != Some(r) {
-                    warnings.push(format!(
+                match self.budget_ratio.value {
+                    // The user chose a ratio: a project can only lower it.
+                    Some(cur) if r < cur => {
+                        self.budget_ratio = Chosen {
+                            value: Some(r),
+                            origin: origin(),
+                        };
+                    }
+                    Some(cur) if r > cur => warnings.push(format!(
                         "context.budget_ratio = {r} is higher than the current limit; ignored (a project file can only lower it)"
-                    ));
+                    )),
+                    Some(_) => {}
+                    // No user value: the per-model default is not known here, so
+                    // the project value is a cap, applied where the model is.
+                    None if r <= MAX_MODEL_BUDGET_RATIO => {
+                        self.budget_cap = Chosen {
+                            value: Some(r),
+                            origin: origin(),
+                        };
+                    }
+                    None => warnings.push(format!(
+                        "context.budget_ratio = {r} is higher than any model's default; ignored (a project file can only lower the budget)"
+                    )),
                 }
             }
             if let Some(s) = &c.skeleton {
@@ -472,7 +549,8 @@ impl StrategySelection {
                     };
                 } else {
                     warnings.push(format!(
-                        "memory.recaller = \"{n}\" ignored: a project file can only turn recall off (\"none\")"
+                        "memory.recaller = {} ignored: a project file can only turn recall off (\"none\")",
+                        show(n)
                     ));
                 }
             }
@@ -484,7 +562,8 @@ impl StrategySelection {
                     };
                 } else {
                     warnings.push(format!(
-                        "memory.writer = \"{n}\" ignored: a project file can only turn the writer off (\"off\")"
+                        "memory.writer = {} ignored: a project file can only turn the writer off (\"off\")",
+                        show(n)
                     ));
                 }
             }
@@ -569,7 +648,7 @@ impl StrategySelection {
 
         if let Some(raw) = env("HONE_PHASE_COMPACTION") {
             self.graduated_phase = Chosen {
-                value: truthy(&raw),
+                value: phase_env_enabled(&raw),
                 origin: Origin::Env("HONE_PHASE_COMPACTION".to_owned()),
             };
         }

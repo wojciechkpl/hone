@@ -47,6 +47,10 @@ pub(crate) struct TurnContextInfo {
     pub recall: RecallInfo,
     pub skills: Vec<String>,
     pub injection: Option<InjectionInfo>,
+    /// The active compactor: `trim-only`, else `graduated` (with phase compaction
+    /// as `phase_compaction`).
+    pub trim_only: bool,
+    pub phase_compaction: bool,
 }
 
 fn strategy(slot: Slot, name: &str, params: &serde_json::Value) -> StrategyId {
@@ -224,8 +228,12 @@ pub(crate) fn build_receipt(
     if history_len > 0 {
         blocks.push(block(
             Slot::History,
-            "history",
-            &serde_json::json!({}),
+            if info.trim_only {
+                "trim-only"
+            } else {
+                "graduated"
+            },
+            &serde_json::json!({ "phase": info.phase_compaction }),
             history_tokens,
             sources,
             0,

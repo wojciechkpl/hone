@@ -565,7 +565,9 @@ fn build_strategies(
     )
     .map_err(|e| e.to_string())?;
     for w in &selection.warnings {
-        tracing::warn!("{}: {}", w.path.display(), w.message);
+        // Straight to stderr: a tracing subscriber with no `RUST_LOG` prints nothing
+        // at this level, and a repository's ignored values should be seen.
+        eprintln!("honed: warning: {}: {}", w.path.display(), w.message);
     }
     let deps = hone_core::strategy::StrategyDeps {
         working_dir: Some(working_dir.to_path_buf()),
