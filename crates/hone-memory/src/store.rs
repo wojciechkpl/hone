@@ -83,6 +83,33 @@ pub trait MemoryStore: Send + Sync {
         Ok(found)
     }
 
+    /// Insert `memory` only when no memory has its id. Returns whether it was
+    /// inserted. Atomic in stores that can be shared by several processes (the
+    /// default is a lookup then a write, which is not).
+    async fn record_if_absent(&self, memory: Memory) -> Result<bool, MemoryError> {
+        if self.recall_by_id(&memory.id).await?.is_some() {
+            return Ok(false);
+        }
+        self.record(memory).await?;
+        Ok(true)
+    }
+
+    /// Whether any memory (but the encryption salt record) holds `enc:v1:`
+    /// content, i.e. was written by an `EncryptedStore`. The default scans a
+    /// listing; stores with a query override it.
+    async fn has_encrypted_rows(&self) -> Result<bool, MemoryError> {
+        let all = self
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: usize::MAX / 2,
+                kind: None,
+            })
+            .await?;
+        Ok(all.iter().any(|m| {
+            m.id != crate::encrypted::SALT_SENTINEL_ID && m.content.starts_with("enc:v1:")
+        }))
+    }
+
     /// O(log n) (or better) exact lookup by `id`. Returns `None` when no
     /// memory has that id. Implementations MUST NOT do a full table scan.
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError>;

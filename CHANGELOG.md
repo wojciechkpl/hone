@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - **Before:** `hone memory forget` (and the daily decay) could delete the record that holds an encrypted store's salt, which made every encrypted memory permanently unreadable. A memory's `description` (the first 80 characters of your message, for trigger-phrase memories) was stored in plain text.
 - **Now:** the salt record is never forgotten or expired, and is not counted in the number of memories forgotten. New memories' descriptions are encrypted (`enc:v1:`) and decrypted on read. Descriptions written by earlier versions stay in plain text until you re-save the memory.
+- The salt record is found by id, so stores with more than 10,000 memories open and a new salt is never written over an existing one.
 - If an encrypted database was written by an older version, don't run `hone memory forget` on it with that older version.
 
 ### Fixed: memory recall finds older memories, skips outcome logs, and code search understands prompts

@@ -589,6 +589,41 @@ impl MemoryStore for SqliteStore {
         self.recall_with_exclusions(query, exclude).await
     }
 
+    async fn record_if_absent(&self, memory: Memory) -> Result<bool, MemoryError> {
+        let tags_json = serde_json::to_string(&memory.tags)?;
+        let embedding_bytes = memory.embedding.as_deref().map(embedding_to_bytes);
+        let inserted = sqlx::query(
+            "INSERT OR IGNORE INTO memories
+             (id, content, tags, weight, created_at, decay_at, kind, description, embedding)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        )
+        .bind(&memory.id)
+        .bind(&memory.content)
+        .bind(&tags_json)
+        .bind(memory.weight)
+        .bind(memory.created_at as i64)
+        .bind(memory.decay_at.map(|t| t as i64))
+        .bind(kind_to_str(memory.kind))
+        .bind(&memory.description)
+        .bind(embedding_bytes)
+        .execute(&self.pool)
+        .await
+        .map_err(to_io_err)?
+        .rows_affected();
+        Ok(inserted > 0)
+    }
+
+    async fn has_encrypted_rows(&self) -> Result<bool, MemoryError> {
+        let found: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM memories WHERE content LIKE 'enc:v1:%' AND id != ?1 LIMIT 1",
+        )
+        .bind(SALT_SENTINEL_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+        Ok(found.is_some())
+    }
+
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
         let row = sqlx::query(
             "SELECT id, content, tags, weight, created_at, decay_at, kind, description, embedding
