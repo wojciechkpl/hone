@@ -38,7 +38,7 @@ fn trigrams(text: &str) -> HashSet<[char; 3]> {
 /// Jaccard similarity between the trigram sets of `a` and `b`.
 ///
 /// Returns a value in `[0.0, 1.0]`.  Returns `0.0` when both sets are empty.
-fn trigram_jaccard(a: &str, b: &str) -> f64 {
+pub fn trigram_jaccard(a: &str, b: &str) -> f64 {
     let set_a = trigrams(a);
     let set_b = trigrams(b);
     if set_a.is_empty() && set_b.is_empty() {

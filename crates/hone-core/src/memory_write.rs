@@ -41,7 +41,7 @@ fn one_line(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut pending = false;
     for c in text.chars() {
-        if c.is_control() {
+        if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
             pending = true;
             continue;
         }
@@ -54,15 +54,48 @@ fn one_line(text: &str) -> String {
     out
 }
 
-/// The `project:<id>` tag for work in `working_dir`: a hash of the git
-/// top-level directory when inside a repository, else of the canonical
-/// directory. Stable across runs (FNV-1a, not the std hasher).
+/// The repository root (or common git dir for a worktree) that identifies the
+/// project of `dir`, if there is one. A `.git` located at `$HOME` is ignored.
+fn project_root(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME").and_then(|h| std::fs::canonicalize(h).ok());
+    for d in dir.ancestors() {
+        if home.as_deref() == Some(d) {
+            continue;
+        }
+        let git = d.join(".git");
+        if git.is_dir() {
+            return Some(std::fs::canonicalize(&git).unwrap_or(git));
+        }
+        if git.is_file() {
+            return Some(resolve_gitfile(d, &git).unwrap_or_else(|| d.to_path_buf()));
+        }
+    }
+    None
+}
+
+/// Follow a worktree's `.git` file (`gitdir: <path>`) to the repository's
+/// common git directory (the `commondir` file), without running git.
+fn resolve_gitfile(
+    base: &std::path::Path,
+    git_file: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    let text = std::fs::read_to_string(git_file).ok()?;
+    let target = text.lines().find_map(|l| l.strip_prefix("gitdir:"))?.trim();
+    let gitdir = base.join(target); // absolute targets replace `base`
+    let gitdir = std::fs::canonicalize(gitdir).ok()?;
+    match std::fs::read_to_string(gitdir.join("commondir")) {
+        Ok(c) => std::fs::canonicalize(gitdir.join(c.trim())).ok(),
+        Err(_) => Some(gitdir),
+    }
+}
+
+/// The `project:<id>` tag for work in `working_dir`: a hash of the
+/// repository's git directory (a worktree resolves to its repository's common
+/// git dir, so a checkout and its worktrees share one project), else of the
+/// canonical directory. Stable across runs (FNV-1a, not the std hasher).
 pub(crate) fn project_tag(working_dir: &std::path::Path) -> String {
     let dir = std::fs::canonicalize(working_dir).unwrap_or_else(|_| working_dir.to_path_buf());
-    let root = dir
-        .ancestors()
-        .find(|d| d.join(".git").exists())
-        .unwrap_or(&dir);
+    let root = project_root(&dir).unwrap_or(dir);
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for b in root.to_string_lossy().as_bytes() {
         hash ^= u64::from(*b);

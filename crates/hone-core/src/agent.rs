@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use futures::StreamExt;
 use hone_index::SqliteIndex;
-use hone_memory::{Memory, MemoryStore};
+use hone_memory::{Memory, MemoryQuery, MemoryStore};
 use hone_proto::{
     AgentEvent, Content, Message, ModelId, PricingEntry, ProviderEvent, StepAction, TokenUsage,
-    ToolApprovalPolicy, ToolCallRequest, ToolLayer, WorkerRef,
+    ToolApprovalPolicy, ToolCallRequest, WorkerRef,
 };
 use hone_providers::{CompletionRequest, ContextWindowTable, ModelProvider, ProviderError};
 use hone_sandbox::{Sandbox, SandboxPolicy};
@@ -695,6 +695,10 @@ pub struct Agent {
 /// Candidates asked of the semantic recall: more than the 5 used, because
 /// `Outcome` logs are dropped afterwards and must not leave fewer than 5.
 pub(crate) const SEMANTIC_RECALL_FETCH: usize = 20;
+
+/// Most candidates recall asks a store for while looking for memories visible
+/// in the current project.
+const RECALL_OVERFETCH_MAX: usize = 4096;
 /// The RRF constant `k` for fusing BM25 and semantic recall.
 pub(crate) const RECALL_RRF_K: usize = 60;
 
@@ -1004,6 +1008,9 @@ impl Agent {
     /// Keep what `gather_context_sources` returned.
     fn store_gathered(&mut self, gathered: Vec<GatheredSource>) {
         for g in gathered {
+            if g.extras.iter().any(|e| !e.text.is_empty()) {
+                self.note_untrusted_label(&format!("context source {}", g.name));
+            }
             if g.once {
                 self.once_gathered.insert(g.name.clone());
             }
@@ -1072,17 +1079,32 @@ impl Agent {
         let project = crate::memory_write::project_tag(&self.config.working_dir);
         let in_project =
             |m: &hone_memory::Memory| crate::memory_write::visible_in_project(&m.tags, &project);
-        let bm25_memories: Vec<hone_memory::Memory> = match strategies
-            .recaller
-            .recall(store.as_ref(), &recall_query)
-            .await
-        {
-            Ok(found) => found
-                .into_iter()
-                .map(|s| s.memory)
-                .filter(|m| in_project(m))
-                .collect(),
-            Err(_) => Vec::new(),
+        // The project filter applies BEFORE the cap: when the candidates the
+        // recaller returned were cut at k and other projects' memories took
+        // slots, ask for more until k visible ones are found or the store has
+        // no more.
+        let bm25_memories: Vec<hone_memory::Memory> = {
+            let mut k = top_k.max(1);
+            loop {
+                let q = crate::strategy::RecallQuery {
+                    text: recall_query.text,
+                    k,
+                    exclude_kinds: recall_query.exclude_kinds,
+                    scope: recall_query.scope,
+                };
+                let found: Vec<hone_memory::Memory> =
+                    match strategies.recaller.recall(store.as_ref(), &q).await {
+                        Ok(found) => found.into_iter().map(|s| s.memory).collect(),
+                        Err(_) => Vec::new(),
+                    };
+                let returned = found.len();
+                let visible: Vec<hone_memory::Memory> =
+                    found.into_iter().filter(|m| in_project(m)).collect();
+                if visible.len() >= top_k || returned < k || k >= RECALL_OVERFETCH_MAX {
+                    break visible.into_iter().take(top_k).collect();
+                }
+                k = (k * 4).min(RECALL_OVERFETCH_MAX);
+            }
         };
 
         let final_memories: Vec<hone_memory::Memory> = if strategies.recaller_kind
@@ -1098,17 +1120,26 @@ impl Agent {
                     match embedder.embed(query).await {
                         Ok(query_vec) => {
                             embedder_ran = true;
-                            store
-                                .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
-                                .await
-                                .map(|scored| {
-                                    scored
-                                        .into_iter()
-                                        .map(|s| s.memory)
-                                        .filter(|m| !exclude.contains(&m.kind) && in_project(m))
-                                        .collect()
-                                })
-                                .unwrap_or_default()
+                            let mut limit = SEMANTIC_RECALL_FETCH;
+                            loop {
+                                let scored = store
+                                    .recall_semantic(&query_vec, limit)
+                                    .await
+                                    .unwrap_or_default();
+                                let returned = scored.len();
+                                let visible: Vec<hone_memory::Memory> = scored
+                                    .into_iter()
+                                    .map(|s| s.memory)
+                                    .filter(|m| !exclude.contains(&m.kind) && in_project(m))
+                                    .collect();
+                                if visible.len() >= SEMANTIC_RECALL_FETCH
+                                    || returned < limit
+                                    || limit >= RECALL_OVERFETCH_MAX
+                                {
+                                    break visible;
+                                }
+                                limit = (limit * 4).min(RECALL_OVERFETCH_MAX);
+                            }
                         }
                         Err(_) => Vec::new(),
                     }
@@ -1150,6 +1181,12 @@ impl Agent {
 
         if final_memories.is_empty() {
             return (String::new(), vec![], RecallInfo::default());
+        }
+        if final_memories
+            .iter()
+            .any(|m| crate::memory_write::is_model_written(&m.tags))
+        {
+            self.note_untrusted_label("recalled model-written memory");
         }
         let info = RecallInfo {
             ids: final_memories.iter().map(|m| m.id.clone()).collect(),
@@ -1246,12 +1283,8 @@ impl Agent {
         };
 
         // R6: check for a near-duplicate and upsert instead of inserting twice.
-        let existing = store
-            .find_similar(&body, 0.8)
-            .await
-            .ok()
-            .flatten()
-            .filter(|m| Self::updatable_by_model(m, candidate.kind, model_project));
+        let existing =
+            Self::find_updatable(store.as_ref(), &body, candidate.kind, model_project).await;
 
         if let Some(existing) = existing {
             let mut tags = existing.tags;
@@ -1319,12 +1352,37 @@ impl Agent {
         let store = self.config.memory_store.as_ref()?;
         let v = crate::memory_write::validate(args).ok()?;
         let project = crate::memory_write::project_tag(&self.config.working_dir);
-        store
-            .find_similar(&v.content, 0.8)
+        Self::find_updatable(store.as_ref(), &v.content, v.kind, Some(&project)).await
+    }
+
+    /// The best near-duplicate (similarity >= 0.8) the write may update. When
+    /// the overall best match is one the model may not update, the best match
+    /// among the memories it may update is used instead.
+    async fn find_updatable(
+        store: &dyn MemoryStore,
+        body: &str,
+        kind: hone_memory::MemoryKind,
+        model_project: Option<&str>,
+    ) -> Option<Memory> {
+        let best = store.find_similar(body, 0.8).await.ok().flatten()?;
+        if Self::updatable_by_model(&best, kind, model_project) {
+            return Some(best);
+        }
+        model_project?;
+        let all = store
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: usize::MAX,
+                kind: None,
+            })
             .await
-            .ok()
-            .flatten()
-            .filter(|m| Self::updatable_by_model(m, v.kind, Some(&project)))
+            .ok()?;
+        all.into_iter()
+            .filter(|m| Self::updatable_by_model(m, kind, model_project))
+            .map(|m| (hone_memory::trigram_jaccard(body, &m.content), m))
+            .filter(|(score, _)| *score >= 0.8)
+            .max_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(_, m)| m)
     }
 
     /// Apply a `memory_write` call: validate, check the session cap, write
@@ -1433,28 +1491,21 @@ impl Agent {
         self.context.add_message(message);
     }
 
-    /// True for tools whose results carry content the user didn't write: files,
-    /// command output, the web, LSP servers and MCP servers.
-    fn is_untrusted_source(&self, tool: &str) -> bool {
-        matches!(
-            tool,
-            "read_file" | "grep" | "glob" | "shell" | "web_fetch" | "web_search"
-        ) || tool.starts_with("lsp_")
-            || self
-                .config
-                .tools
-                .get(tool)
-                .is_some_and(|t| t.layer() == ToolLayer::Mcp)
-    }
-
-    /// Remember that a result of `tool` is in context, when it is untrusted content.
+    /// Remember that content the user didn't write is in context. Deny by
+    /// default: a result of any tool except `memory_write`'s own counts, and so
+    /// do the other non-conversation blocks (`note_untrusted_label`).
     fn note_untrusted_source(&self, tool: &str) {
-        if !self.is_untrusted_source(tool) {
+        if tool == crate::memory_write::NAME {
             return;
         }
+        self.note_untrusted_label(tool);
+    }
+
+    /// Remember a named piece of non-conversation context (skeleton, skill, ...).
+    fn note_untrusted_label(&self, label: &str) {
         if let Ok(mut seen) = self.untrusted_sources.lock() {
-            if !seen.iter().any(|t| t == tool) {
-                seen.push(tool.to_owned());
+            if !seen.iter().any(|t| t == label) {
+                seen.push(label.to_owned());
             }
         }
     }
@@ -1752,6 +1803,9 @@ impl Agent {
             Some(reg) if skills_on => reg.render_for_prompt(user_input),
             _ => String::new(),
         };
+        if !skills_block.is_empty() {
+            self.note_untrusted_label("skill");
+        }
 
         // Fetch memories before adding the user message so the query is clean.
         let (memories, memory_entries, recall_info) =
@@ -1806,6 +1860,7 @@ impl Agent {
                     );
                     // Skeletons and snippets can carry secret-shaped names or text.
                     let block = redacted_text(self.redacting(), &injection.context_block);
+                    self.note_untrusted_label("repository skeleton");
                     self.receipt_info.injection = Some(InjectionInfo {
                         strategy: self.strategies.skeleton.as_str().to_string(),
                         max_tokens: self.strategies.skeleton_max_tokens,
@@ -3562,6 +3617,9 @@ impl Agent {
             Some(reg) if skills_on => reg.render_for_prompt(&text_for_memory),
             _ => String::new(),
         };
+        if !skills_block.is_empty() {
+            self.note_untrusted_label("skill");
+        }
         self.run_turn_inner(
             &text_for_memory,
             memories,

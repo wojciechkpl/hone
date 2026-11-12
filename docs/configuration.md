@@ -847,22 +847,27 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 
 With a `tool` writer the model gets `memory_write(kind, content, tags?)`: `kind` is `user`,
 `feedback`, `project` or `reference`; `content` is 1 to 2000 characters, stored as one line
-(newlines and other control characters become single spaces); at most 8 tags. Tags starting
+(newlines, other control characters and the Unicode line and paragraph separators become single spaces); at most 8 tags. Tags starting
 with `source:`, `call:`, `project:` or `__` are refused: the runtime sets those itself.
 
 - **It only updates its own memories.** A near-duplicate of a memory the model wrote, of the
   same kind and in the same project, is updated; anything else (yours, a trigger's, an
   import) is never changed, and a new memory is added instead.
 - **Provenance.** Each write is tagged `source:tool`, `project:<id>` (a hash of the git
-  top-level, or of the working directory) and `call:<id>` (the newest 5 are kept). The tags
+  repository, or of the working directory; a checkout and its git worktrees are one project,
+  and a `.git` in your home directory is ignored) and `call:<id>` (the newest 5 are kept). The tags
   are stored unencrypted even with `--encrypted-memory`; the content is encrypted.
   Recall and the memory index show a model-written memory with a `(model-written)` prefix,
   and only in its own project. Memories of yours are shown everywhere.
-- **Approval.** Under `--yes`, auto-approve or a session "always", a write still asks you
-  whenever file, shell, web, LSP or MCP results (or a HONE.md section) are in the
-  conversation, in this turn or an earlier one. The prompt of an update shows the memory it
-  replaces (`replaces`). With nobody to ask (headless) the write is refused, and the
-  error names the source. A conversation with none of those follows the normal policy.
+- **Approval, deny by default.** Under `--yes`, auto-approve or a session "always", a write
+  still asks you whenever anything but your own words is in the conversation, in this turn
+  or an earlier one: a result of **any** tool except `memory_write` itself (file, shell,
+  web, git, symbol search, `memory_read`, screenshots, LSP, MCP and every future tool), a
+  HONE.md section, the injected repository skeleton, a block gathered by a context source, a
+  recalled model-written memory, or a matched skill. Only a conversation holding none of
+  these follows the normal policy. The prompt of an update shows the memory it replaces
+  (`replaces`). With nobody to ask (headless) the write is refused, and the error names
+  what is in the conversation.
 - **Permission rules** see the call as the command `memory_write`:
 
   ```toml
@@ -872,8 +877,9 @@ with `source:`, `call:`, `project:` or `__` are refused: the runtime sets those 
   ```
 
   A broad `command = "*"` rule covers it too.
-- **Limit.** 20 successful writes per agent (one process). Switching sessions in the TUI
-  starts a new agent, which starts a new count.
+- **Limit.** 20 successful writes per agent. Loading another session's history
+  into the same agent (the TUI's session switch) resets the count; the untrusted-content
+  record is kept.
 - **When it shows up.** The memory index in the system prompt is built at start, so a new
   memory reaches it on the next start. Recall finds it from the next turn.
 - If an MCP server offers a tool also called `memory_write`, the built-in one replaces it
