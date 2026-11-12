@@ -585,11 +585,11 @@ impl Signals {
 /// Resolves at the first signal. A second one, during the drain or the MCP
 /// shutdown, stops everything at once and ends `honed` by that signal.
 async fn shutdown_signal(mut signals: Signals) {
-    let (_, name) = signals.next().await;
-    tracing::info!("{name} received, shutting down gracefully (send it again to force)");
+    let (_, first) = signals.next().await;
+    tracing::info!("{first} received, shutting down gracefully (send a signal again to force)");
     tokio::spawn(async move {
         let (num, name) = signals.next().await;
-        tracing::warn!("{name} received again, stopping at once");
+        tracing::warn!("{name} received after {first}, stopping at once");
         // Blocks up to the SIGTERM grace for MCP servers: keep it off the
         // async threads.
         let _ =

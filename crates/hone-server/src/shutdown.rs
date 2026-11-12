@@ -194,15 +194,24 @@ fn register(_conns: &SharedConnections, _stream: &TcpStream) -> Option<u64> {
     None
 }
 
+/// Abort the worker task and wait (at most a second) until it is really gone,
+/// so nothing of it runs while the MCP servers shut down.
+async fn abort_and_wait(w: &mut WorkerShutdown) {
+    w.handle.abort();
+    let _ = tokio::time::timeout(Duration::from_secs(1), &mut w.handle).await;
+}
+
 // ---- serve_until_shutdown ----------------------------------------------------
 
 /// Serve `app` on `listener` until `shutdown` resolves. Then, in this order:
 ///
-/// 1. stop accepting connections and tell the worker pool to stop claiming;
-/// 2. drain: wait for open responses and the worker task, together at most
+/// 1. tell the worker pool to stop claiming. Without a worker, stop accepting
+///    connections too; with one, keep accepting until its task is done (a
+///    co-located worker reports its result to this server), then stop;
+/// 2. drain: wait for the worker task and open responses, in all at most
 ///    `options.grace` (zero: no drain). At the limit the worker task is
-///    aborted and open responses are dropped. No process group is touched
-///    meanwhile, so tools keep working;
+///    aborted (and awaited, briefly) and open connections are cut. No
+///    process group is touched meanwhile, so tools keep working;
 /// 3. shut the MCP servers down gracefully;
 /// 4. stop every process group still registered
 ///    ([`hone_tools::kill_running_commands`]).
@@ -239,6 +248,7 @@ where
     });
 
     let (stop_serving, stopped) = tokio::sync::oneshot::channel::<()>();
+    let mut stop_serving = Some(stop_serving);
     let mut serve = Box::pin(
         axum::serve(listener, make_service)
             .with_graceful_shutdown(async move {
@@ -253,44 +263,65 @@ where
         r = &mut serve => Some(r),
         () = &mut shutdown => None,
     };
+    // One limit covers every phase below.
+    let deadline = tokio::time::Instant::now() + grace;
+    if let Some(w) = &worker {
+        let _ = w.stop.send(true);
+    }
 
     let mut result = Ok(ShutdownReport { drained: true });
     match early {
         Some(r) => {
-            // The server ended by itself: nothing to drain.
+            // The server ended by itself: stop the worker, within the limit.
             if let Err(e) = r {
                 result = Err(e);
             }
+            if let Some(w) = worker.as_mut() {
+                let finished = !grace.is_zero()
+                    && tokio::time::timeout_at(deadline, &mut w.handle)
+                        .await
+                        .is_ok();
+                if !finished {
+                    abort_and_wait(w).await;
+                    if let Ok(r) = &mut result {
+                        r.drained = false;
+                    }
+                }
+            }
         }
         None => {
-            let _ = stop_serving.send(());
-            if let Some(w) = &worker {
-                let _ = w.stop.send(true);
-            }
-            let drained = if grace.is_zero() {
-                false
-            } else {
+            let mut served: Option<io::Result<()>> = None;
+            let drained = !grace.is_zero() && {
                 let drain = async {
-                    let served = (&mut serve).await;
+                    // Phase 1, only with a worker: it may need this server (a
+                    // co-located coordinator) to report its result, so keep
+                    // accepting until it is done.
                     if let Some(w) = worker.as_mut() {
-                        let _ = (&mut w.handle).await;
-                    }
-                    served
-                };
-                match tokio::time::timeout(grace, drain).await {
-                    Ok(served) => {
-                        if let Err(e) = served {
-                            result = Err(e);
+                        tokio::select! {
+                            _ = &mut w.handle => {}
+                            r = &mut serve => {
+                                served = Some(r);
+                                let _ = (&mut w.handle).await;
+                            }
                         }
-                        true
                     }
-                    Err(_) => false,
-                }
+                    // Phase 2: stop accepting, let open responses finish.
+                    if served.is_none() {
+                        if let Some(tx) = stop_serving.take() {
+                            let _ = tx.send(());
+                        }
+                        served = Some((&mut serve).await);
+                    }
+                };
+                tokio::time::timeout_at(deadline, drain).await.is_ok()
             };
+            if let Some(Err(e)) = served {
+                result = Err(e);
+            }
             if !drained {
                 tracing::warn!("shutdown: drain limit reached, dropping open work");
-                if let Some(w) = &worker {
-                    w.handle.abort();
+                if let Some(w) = worker.as_mut() {
+                    abort_and_wait(w).await;
                 }
                 drop(serve);
                 cut_all(&conns);

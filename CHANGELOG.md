@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - **Before:** the first SIGINT, SIGTERM or SIGHUP killed every running shell command and sent every MCP server SIGTERM at once, and only then began waiting for open requests, with no time limit. A worker's running task lost its tools mid-task, and the task stayed claimed until its lease ran out. A request held open (an SSE stream, a run waiting for approval) kept `honed` running for as long as it stayed open. MCP servers never got a graceful shutdown.
 - **Now:**
-  - The first signal stops `honed` accepting connections and a worker claiming tasks. Running requests and a running worker task finish with their commands and MCP servers, and the task is reported to the coordinator as usual.
+  - The first signal stops `honed` accepting connections and a worker claiming tasks. Running requests and a running worker task finish with their commands and MCP servers, and the task is reported to the coordinator as usual. A worker whose coordinator is the same `honed` keeps accepting connections until its task is done, so it can report its result; then the listener closes.
   - The wait is limited by `HONE_SHUTDOWN_GRACE_SECS` (default 25; `0` means no wait; an invalid value logs a warning). When it passes, a worker task still running is dropped (the coordinator requeues it) and open responses are closed.
   - Then the worker's MCP servers shut down gracefully (up to 5 s, all at once), anything still running is stopped, and `honed` exits 0.
   - A second signal stops everything at once and ends `honed` by that signal. A signal that was ignored at start stays ignored.
