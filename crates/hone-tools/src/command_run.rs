@@ -956,6 +956,7 @@ mod proc_scan_tests {
     }
 
     #[test]
+    #[allow(invalid_from_utf8)] // the bytes are invalid on purpose
     fn test_l5_command_name_that_is_not_utf8_should_not_hide_a_live_member() {
         // "се" + the first byte of "р": Linux cut comm in the middle of a character.
         let comm = [0xd1, 0x81, 0xd0, 0xb5, 0xd1];
