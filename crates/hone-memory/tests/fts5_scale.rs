@@ -217,8 +217,12 @@ async fn test_g12_triggers_should_be_left_alone_unless_their_sql_differs() {
         .collect();
     assert_eq!(names.len(), 1, "harness: one delete trigger: {names:?}");
     // An outdated definition: it forgets to delete from the index.
-    sqlx::query(&format!("DROP TRIGGER \"{}\"", names[0])).execute(&pool).await.unwrap();
-    sqlx::query(&format!("CREATE TRIGGER \"{}\" AFTER DELETE ON memories BEGIN SELECT 1; END", names[0])).execute(&pool).await.unwrap();
+    // Both statements on ONE connection: on two pooled connections the second could still
+    // have the old schema cached and report the dropped trigger as existing.
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query(&format!("DROP TRIGGER \"{}\"", names[0])).execute(&mut *conn).await.unwrap();
+    sqlx::query(&format!("CREATE TRIGGER \"{}\" AFTER DELETE ON memories BEGIN SELECT 1; END", names[0])).execute(&mut *conn).await.unwrap();
+    drop(conn);
     pool.close().await;
 
     let store = SqliteStore::open_with_decay_interval(&path, NEVER).await.unwrap();
@@ -292,5 +296,8 @@ async fn test_g16_a_forgotten_memorys_tokens_should_not_remain_in_the_fts_shadow
     store.forget(&MemoryFilter::Tag("private".to_owned())).await.unwrap();
 
     assert!(!index_data_contains(&path, b"quokkasecretword").await, "the forgotten token is gone from the index data");
-    assert!(index_data_contains(&path, b"alpacas").await, "other memories stay indexed");
+    // FTS5 prefix-compresses its term dictionary, so a neighbour's literal bytes can't be
+    // searched for; check through the index instead.
+    let got: Vec<String> = store.recall_fts5(&q("alpacas", 5, None), &[]).await.unwrap().into_iter().map(|s| s.memory.id).collect();
+    assert_eq!(got, ["other"], "other memories stay indexed");
 }
