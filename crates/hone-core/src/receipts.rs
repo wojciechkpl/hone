@@ -72,6 +72,8 @@ pub(crate) struct TurnContextInfo {
 #[derive(Debug, Clone)]
 pub(crate) struct RetrievalInfo {
     pub strategy: StrategyId,
+    /// Tokens of the section prefixed to the user message.
+    pub tokens: u32,
     pub sources: Vec<ScoredSource>,
     pub dropped: Vec<SourceRef>,
 }
@@ -126,7 +128,6 @@ pub(crate) fn build_receipt(
     tool_names: &[String],
     recall_at: Option<usize>,
     skills_at: Option<usize>,
-    retrieval_at: Option<usize>,
     info: &TurnContextInfo,
     extras: &[ExtraBlock],
     compaction: Vec<CompactionStep>,
@@ -215,11 +216,11 @@ pub(crate) fn build_receipt(
         ));
     }
 
-    if let (Some(at), Some(r)) = (retrieval_at, &info.retrieval) {
+    if let Some(r) = &info.retrieval {
         blocks.push(BlockReceipt {
             slot: Slot::Retrieval,
             strategy: r.strategy.clone(),
-            tokens: tokens_of(at),
+            tokens: r.tokens,
             sources: r.sources.clone(),
             duration_ms: 0,
         });

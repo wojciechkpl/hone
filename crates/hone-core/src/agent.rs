@@ -999,6 +999,7 @@ impl Agent {
             .as_ref()
             .map(|o| crate::receipts::RetrievalInfo {
                 strategy: o.id.clone(),
+                tokens: estimate_text_tokens(&o.text),
                 sources: o.sources.clone(),
                 dropped: o.dropped.clone(),
             })
@@ -1656,6 +1657,13 @@ impl Agent {
                 std::borrow::Cow::Borrowed(user_input)
             };
 
+        // Retrieved documents: quoted data at the front of the turn's user
+        // message (stored with it, so later requests stay byte-identical).
+        let effective_input: std::borrow::Cow<'_, str> = match &self.retrieval_turn {
+            Some(r) => std::borrow::Cow::Owned(format!("{}\n\n{effective_input}", r.text)),
+            None => effective_input,
+        };
+
         self.context
             .add_message(Message::user(effective_input.as_ref()));
 
@@ -1738,11 +1746,7 @@ impl Agent {
                     .active_extras()
                     .iter()
                     .map(|e| estimate_text_tokens(&e.text))
-                    .sum::<u32>()
-                + self
-                    .retrieval_turn
-                    .as_ref()
-                    .map_or(0, |r| estimate_text_tokens(&r.text));
+                    .sum::<u32>();
             if !context_emergency && self.context.is_over_ratio(0.95, extra_tokens) {
                 context_emergency = true;
                 tracing::warn!(
@@ -1843,25 +1847,6 @@ impl Agent {
                 }
             }
 
-            // Retrieved documents: after the skills block.
-            let retrieval_at = self.retrieval_turn.as_ref().map(|r| {
-                let at = (shift
-                    + 1
-                    + usize::from(!memories.is_empty())
-                    + usize::from(!skills_block.is_empty()))
-                .min(messages.len());
-                messages.insert(
-                    at,
-                    Message {
-                        role: hone_proto::Role::System,
-                        content: hone_proto::Content::Text(r.text.clone()),
-                        tool_calls: vec![],
-                        tool_call_id: None,
-                    },
-                );
-                at
-            });
-
             let mut request = CompletionRequest::new(self.config.model.clone(), messages);
             request.temperature = self.config.temperature;
             request.max_tokens = self.config.max_tokens;
@@ -1893,7 +1878,6 @@ impl Agent {
                     &tool_names,
                     recall_at,
                     skills_at,
-                    retrieval_at,
                     &self.receipt_info,
                     &extras,
                     self.context.drain_compaction_log(),
@@ -3326,6 +3310,8 @@ impl Agent {
 
         let (memories, memory_entries, recall_info) =
             self.gather_and_recall(&text_for_memory, &events).await?;
+        // The caller owns a multimodal message's content: no documents are added to it.
+        self.retrieval_turn = None;
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
             skills: if self.strategies.has_source("skills") {

@@ -59,8 +59,13 @@ impl Default for MarkdownChunker {
     }
 }
 
-/// `(level, title)` of an ATX heading line.
+/// `(level, title)` of an ATX heading line (indented at most 3 spaces).
 fn heading_of(line: &str) -> Option<(usize, &str)> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    if indent > 3 {
+        return None;
+    }
+    let line = &line[indent..];
     let hashes = line.bytes().take_while(|b| *b == b'#').count();
     if !(1..=6).contains(&hashes) {
         return None;
@@ -77,6 +82,70 @@ fn heading_of(line: &str) -> Option<(usize, &str)> {
     }
 }
 
+/// `(character, length)` of a code fence line (3+ backticks or tildes, indented
+/// at most 3 spaces).
+fn fence_of(line: &str) -> Option<(char, usize)> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    if indent > 3 {
+        return None;
+    }
+    let t = &line[indent..];
+    let c = t.chars().next().filter(|c| *c == '`' || *c == '~')?;
+    let n = t.chars().take_while(|x| *x == c).count();
+    (n >= 3).then_some((c, n))
+}
+
+/// Whether `line` closes a fence of `(c, len)`: the same character, at least as
+/// long, nothing else.
+fn closes_fence(line: &str, c: char, len: usize) -> bool {
+    match fence_of(line) {
+        Some((fc, n)) if fc == c && n >= len => line.trim().chars().all(|x| x == c),
+        _ => false,
+    }
+}
+
+/// The level of a setext underline (`===` is 1, `---` is 2).
+fn setext_level(line: &str) -> Option<usize> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    let t = line.trim();
+    if indent > 3 || t.len() < 3 {
+        return None;
+    }
+    if t.chars().all(|c| c == '=') {
+        Some(1)
+    } else if t.chars().all(|c| c == '-') {
+        Some(2)
+    } else {
+        None
+    }
+}
+
+/// A thematic break (`---`, `***`, `___`).
+fn is_thematic_break(line: &str) -> bool {
+    let t = line.trim();
+    t.len() >= 3
+        && ["-", "*", "_"]
+            .iter()
+            .any(|m| t.chars().all(|c| c.to_string() == *m))
+}
+
+/// The line index where the body starts after front matter: `---` (YAML) or
+/// `+++` (TOML) on the first line, closed within 100 lines.
+fn front_matter_end(lines: &[&str]) -> usize {
+    let Some(first) = lines.first().map(|l| l.trim_end()) else {
+        return 0;
+    };
+    if first != "---" && first != "+++" {
+        return 0;
+    }
+    lines
+        .iter()
+        .take(100)
+        .skip(1)
+        .position(|l| l.trim_end() == first)
+        .map_or(0, |close| close + 2)
+}
+
 impl Chunker for MarkdownChunker {
     fn id(&self) -> &StrategyId {
         &self.id
@@ -84,48 +153,53 @@ impl Chunker for MarkdownChunker {
 
     fn chunk(&self, doc: &Document) -> Vec<Chunk> {
         let lines: Vec<&str> = doc.text.lines().collect();
+        let first = front_matter_end(&lines);
 
-        // Front matter: `---` on the first line up to the next `---` line.
-        let mut first = 0;
-        if lines.first().is_some_and(|l| l.trim_end() == "---") {
-            if let Some(close) = lines.iter().skip(1).position(|l| l.trim_end() == "---") {
-                first = close + 2;
-            }
-        }
-
-        // Section boundaries: (start line index, heading level and title).
-        let mut starts: Vec<(usize, Option<(usize, String)>)> = vec![(first, None)];
-        let mut fence: Option<char> = None;
-        for (i, line) in lines.iter().enumerate().skip(first) {
-            let t = line.trim_start();
-            let marker = if t.starts_with("```") {
-                Some('`')
-            } else if t.starts_with("~~~") {
-                Some('~')
-            } else {
-                None
-            };
-            if let Some(m) = marker {
-                match fence {
-                    None => fence = Some(m),
-                    Some(open) if open == m => fence = None,
-                    Some(_) => {}
+        // Section boundaries: (start line index, heading (level, title) and the
+        // number of lines the heading takes).
+        type Start = (usize, Option<(usize, String, usize)>);
+        let mut starts: Vec<Start> = vec![(first, None)];
+        let mut fence: Option<(char, usize)> = None;
+        let mut i = first;
+        while i < lines.len() {
+            let line = lines[i];
+            if let Some((c, len)) = fence {
+                if closes_fence(line, c, len) {
+                    fence = None;
                 }
+                i += 1;
                 continue;
             }
-            if fence.is_some() {
+            if let Some(f) = fence_of(line) {
+                fence = Some(f);
+                i += 1;
                 continue;
             }
             if let Some((level, title)) = heading_of(line) {
-                starts.push((i, Some((level, title.to_owned()))));
+                starts.push((i, Some((level, title.to_owned(), 1))));
+                i += 1;
+                continue;
             }
+            // Setext: a text line starting a paragraph, then `===` or `---`.
+            let paragraph_start = i == first || is_blank(lines[i - 1]);
+            if paragraph_start
+                && !is_blank(line)
+                && line.len() - line.trim_start_matches(' ').len() < 4
+            {
+                if let Some(level) = lines.get(i + 1).and_then(|l| setext_level(l)) {
+                    starts.push((i, Some((level, line.trim().to_owned(), 2))));
+                    i += 2;
+                    continue;
+                }
+            }
+            i += 1;
         }
 
         let mut path: Vec<(usize, String)> = Vec::new();
         let mut chunks = Vec::new();
         for (n, (start, head)) in starts.iter().enumerate() {
             let end = starts.get(n + 1).map_or(lines.len(), |(s, _)| *s);
-            if let Some((level, title)) = head {
+            if let Some((level, title, _)) = head {
                 while path.last().is_some_and(|(l, _)| l >= level) {
                     path.pop();
                 }
@@ -152,9 +226,17 @@ impl Chunker for MarkdownChunker {
             while e > s && is_blank(lines[e - 1]) {
                 e -= 1;
             }
-            // A bare heading has no text of its own.
-            let body_from = if head.is_some() { s + 1 } else { s };
-            if lines[body_from.min(e)..e].iter().all(|l| is_blank(l)) {
+            // A bare heading has no text of its own (nor does a preamble of
+            // only thematic breaks).
+            let body_from = match head {
+                Some((_, _, heading_lines)) => s + heading_lines,
+                None => s,
+            };
+            let body = &lines[body_from.min(e)..e];
+            if body
+                .iter()
+                .all(|l| is_blank(l) || (head.is_none() && is_thematic_break(l)))
+            {
                 continue;
             }
             // Pieces of at most 60 lines, split at blank lines where possible.

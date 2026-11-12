@@ -826,6 +826,7 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 |---|---|---|
 | `~/.local/share/hone/memory.db` | Long-term memory (SQLite) | `--ephemeral`, `HONE_DISABLE_PERSISTENT_STORES=1` |
 | `~/.local/share/hone/index.db` | Symbol index of `.rs` and `.py` files in the working dir | same |
+| `~/.local/share/hone/docs.db` | Document index (see below): chunks of the markdown and text files of each working directory | same |
 | `~/.local/share/hone/sessions.db` | Conversations from one-shot runs (saved under a generated name unless you pass `--session`) and their [context receipts](#context-receipts); `honed` sessions (`HONE_SESSION_DB` overrides) | `--ephemeral`; `HONE_EPHEMERAL` for `honed` |
 | `~/.local/share/hone/tool-cache.db` | Cache of read-only tool results | `HONE_TOOL_CACHE=0` |
 | `<cwd>/.hone/audit.jsonl` | Egress audit log of every tool call, plus one `context` line per model call | off unless `--audit` or `HONE_AUDIT_LOG=1` |
@@ -835,6 +836,8 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 | `<project root>/.hone/specs/` | Output of `hone spec` | |
 
 **`memory.db` and FTS5.** Hone keeps a full-text index of the memories in `memory.db` (FTS5 tables `memories_fts` and `memories_fts_map`, kept in sync by triggers on `memories`, and used by `recaller = "fts5"`). A tool that writes to `memory.db` directly needs an SQLite build with FTS5, or the triggers fail; deleting the FTS tables and triggers is safe, Hone rebuilds them on the next open (`hone memory reindex` rebuilds on demand). With `--encrypted-memory` the database holds ciphertext and has no FTS5 index (opening it removes any FTS5 tables and triggers). For prompts with more than 32 distinct words, `recaller = "fts5"` searches the 32 rarest and `bm25` all of them, so the two can rank differently. With `--encrypted-memory`, semantic recall scores only the newest 1,024 memories (their vectors are decrypted for it). Their vectors are kept sealed in the table `memory_vectors_sealed`, not in `memories.embedding`, and opening the database moves any vector an older Hone left in that column into it (once).
+
+**`docs.db`.** When `retrieval` is among your `[context] sources`, Hone indexes the `*.md`, `*.markdown`, `*.txt`, `*.rst` and `*.org` files of the working directory (respecting `.gitignore` files up to the repository root, `.git/info/exclude`, your global git excludes and `.honeignore`) into `docs.db`. It holds **plain-text copies** of the indexed documents' text, so keep it as private as the files themselves. Working directories not synced for 30 days are removed from it when it is opened. To delete everything it holds, remove the file (`rm ~/.local/share/hone/docs.db`); Hone recreates it. Retrieved excerpts are added to your message as quoted data (not as system instructions).
 
 ## Context receipts
 

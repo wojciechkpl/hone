@@ -124,6 +124,8 @@ pub const DEFAULT_RETRIEVAL_TOP_K: usize = 3;
 /// The default `[retrieval] max_tokens`.
 pub const DEFAULT_RETRIEVAL_MAX_TOKENS: u32 = 1200;
 /// The default `[retrieval.fixed]` window and overlap, in lines.
+/// The accepted range of `[retrieval.fixed] lines`.
+pub const FIXED_LINES_RANGE: std::ops::RangeInclusive<usize> = 1..=400;
 pub const DEFAULT_FIXED_LINES: usize = 40;
 pub const DEFAULT_FIXED_OVERLAP: usize = 5;
 /// The default `[context.env-snapshot] timeout_secs`.
@@ -318,7 +320,7 @@ fn check_one(path: &Path, key: &str, got: &str, valid: &[&str]) -> Result<String
 }
 
 /// Validate one layer's names and ranges (any file, trusted or not).
-fn validate(layer: &ConfigLayer) -> Result<(), ConfigError> {
+fn validate(layer: &ConfigLayer, trusted: bool) -> Result<(), ConfigError> {
     let path = &layer.path;
     let cfg = &layer.config;
     if let Some(c) = &cfg.context {
@@ -420,6 +422,34 @@ fn validate(layer: &ConfigLayer) -> Result<(), ConfigError> {
         if let Some(n) = &r.chunker {
             check_one(path, "retrieval.chunker", n, CHUNKER_NAMES)?;
         }
+        // A project file's `[retrieval.fixed]` is ignored, so it isn't checked.
+        if let Some(f) = r.fixed.as_ref().filter(|_| trusted) {
+            if let Some(l) = f.lines {
+                if !FIXED_LINES_RANGE.contains(&l) {
+                    return Err(invalid(
+                        path,
+                        format!(
+                            "retrieval.fixed.lines = {l} must be between {} and {}",
+                            FIXED_LINES_RANGE.start(),
+                            FIXED_LINES_RANGE.end()
+                        ),
+                    ));
+                }
+            }
+            // At most half the window (against the default window when `lines` is not set here).
+            let lines = f.lines.unwrap_or(DEFAULT_FIXED_LINES);
+            if let Some(o) = f.overlap {
+                if o > lines / 2 {
+                    return Err(invalid(
+                        path,
+                        format!(
+                            "retrieval.fixed.overlap = {o} must be between 0 and lines / 2 ({})",
+                            lines / 2
+                        ),
+                    ));
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -436,8 +466,11 @@ impl StrategySelection {
         env: &dyn Fn(&str) -> Option<String>,
         flags: &Flags,
     ) -> Result<StrategySelection, ConfigError> {
-        for layer in [user, project].into_iter().flatten() {
-            validate(layer)?;
+        if let Some(layer) = user {
+            validate(layer, true)?;
+        }
+        if let Some(layer) = project {
+            validate(layer, false)?;
         }
 
         let default_sources: Vec<String> = DEFAULT_SOURCES
@@ -757,19 +790,11 @@ impl StrategySelection {
                     origin: origin(),
                 };
             }
-            if let Some(f) = &r.fixed {
-                if let Some(l) = f.lines {
-                    self.retrieval_fixed_lines = Chosen {
-                        value: l.max(1),
-                        origin: origin(),
-                    };
-                }
-                if let Some(o) = f.overlap {
-                    self.retrieval_fixed_overlap = Chosen {
-                        value: o,
-                        origin: origin(),
-                    };
-                }
+            if r.fixed.is_some() {
+                warnings.push(
+                    "retrieval.fixed ignored: a project file cannot set the fixed chunker's window"
+                        .to_owned(),
+                );
             }
         }
         if let Some(m) = &layer.config.memory {
