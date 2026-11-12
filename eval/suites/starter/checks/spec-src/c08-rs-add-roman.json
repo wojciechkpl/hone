@@ -1,0 +1,141 @@
+{
+ "runtime": "rust-roman",
+ "advisory": "rust",
+ "assets": [
+  "rs_roman_probe.rs"
+ ],
+ "base": "checks/data/c08-rs-add-roman",
+ "take": [
+  {
+   "tree": "src",
+   "glob": "*.rs",
+   "skip": [
+    "src/bin/"
+   ]
+  }
+ ],
+ "add": {
+  "src/bin/probe.rs": "rs_roman_probe.rs"
+ },
+ "cases": [
+  {
+   "fn": "to_roman",
+   "args": [
+    1
+   ],
+   "expect": "I"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    4
+   ],
+   "expect": "IV"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    9
+   ],
+   "expect": "IX"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    1994
+   ],
+   "expect": "MCMXCIV"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    3999
+   ],
+   "expect": "MMMCMXCIX"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    0
+   ],
+   "expect": null
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    4000
+   ],
+   "expect": null
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    2
+   ],
+   "expect": "II"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    3
+   ],
+   "expect": "III"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    14
+   ],
+   "expect": "XIV"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    40
+   ],
+   "expect": "XL"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    58
+   ],
+   "expect": "LVIII"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    90
+   ],
+   "expect": "XC"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    400
+   ],
+   "expect": "CD"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    444
+   ],
+   "expect": "CDXLIV"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    2024
+   ],
+   "expect": "MMXXIV"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    3888
+   ],
+   "expect": "MMMDCCCLXXXVIII"
+  }
+ ]
+}

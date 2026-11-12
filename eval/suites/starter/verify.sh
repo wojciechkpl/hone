@@ -29,6 +29,7 @@
 suite=$(cd "$(dirname "$0")" && pwd)
 tasks="$suite/tasks.toml"
 failures=0
+integrity_check=1
 passed=0
 skipped=0
 only="$*"
@@ -36,8 +37,36 @@ only="$*"
 [ -f "$tasks" ] || { echo "FAIL: $tasks is missing"; exit 1; }
 
 work=$(mktemp -d)
-cleanup() { [ -n "$VERIFY_KEEP" ] || rm -rf "$work"; }
+cleanup() { chmod -R u+w "$work" 2>/dev/null; [ -n "$VERIFY_KEEP" ] || rm -rf "$work"; }
 trap cleanup EXIT
+
+# T20: a hash of checks/ and reference/ (the directories tasks.toml declares in [eval] integrity)
+# before the run and after every check; any change fails the run ("suite modified during the run").
+integrity_hash() {
+  python3 -I -B -c '
+import hashlib, os, sys
+root, h = sys.argv[1], hashlib.sha256()
+for d in sys.argv[2:]:
+    for dirpath, dirnames, filenames in os.walk(os.path.join(root, d)):
+        dirnames.sort()
+        for f in sorted(filenames):
+            p = os.path.join(dirpath, f)
+            h.update(os.path.relpath(p, root).encode() + b"\0")
+            try:
+                h.update(hashlib.sha256(open(p, "rb").read()).digest())
+            except OSError:
+                h.update(b"unreadable")
+print(h.hexdigest())
+' "$suite" checks reference
+}
+integrity_base=$(integrity_hash)
+mkdir -p "$work/tmp"
+
+# T18: checks/specs/ is generated from checks/spec-src/ (plaintext, maintainers only)
+if ! python3 -I -B "$suite/checks/lib/make_specs.py" --check >"$work/specs.out" 2>&1; then
+  echo "FAIL  $(cat "$work/specs.out")"
+  failures=$((failures + 1))
+fi
 
 # id, working_dir, success_check, memory_fixture, prompt (separated by the unit separator, \037)
 list=$(awk '
@@ -87,7 +116,7 @@ kill_group() { # leader pid: its whole group, then the pid itself
 
 run_check() { # dir command
   rm -f "$work/timed_out"
-  ( cd "$1" && EVAL_SUITE_DIR="$suite" grouped sh -c "$2" ) >"$work/check.out" 2>&1 </dev/null &
+  ( cd "$1" && EVAL_SUITE_DIR="$suite" TMPDIR="$work/tmp" grouped sh -c "$2" ) >"$work/check.out" 2>&1 </dev/null &
   check_pid=$!
   (
     grouped sh -c 'sleep "$1"; : >"$2"; kill -KILL -- "-$3" 2>/dev/null || /bin/kill -KILL -- "-$3" 2>/dev/null; kill -KILL "$3" 2>/dev/null' \
@@ -99,6 +128,11 @@ run_check() { # dir command
   kill_group "$watchdog_pid"
   wait "$watchdog_pid" 2>/dev/null
   kill_group "$check_pid"
+  if [ -n "$integrity_check" ] && [ "$(integrity_hash)" != "$integrity_base" ]; then
+    : >"$work/tampered"
+    echo "suite modified during the run" >>"$work/check.out"
+    return 125
+  fi
   if [ -f "$work/timed_out" ]; then
     echo "the check did not finish within ${VERIFY_TIMEOUT:-150}s and was killed" >>"$work/check.out"
     return 124
@@ -148,8 +182,27 @@ if [ -z "$only" ]; then
   fi
 fi
 
+# T20 self-test: a check that modifies the suite must be detected (the file is restored at once).
+if [ -z "$only" ]; then
+  cp "$suite/checks/lib/judge.py" "$work/judge.bak"
+  run_check "$work/wd-selftest" "echo '# tampered' >> \"$suite/checks/lib/judge.py\""
+  cp "$work/judge.bak" "$suite/checks/lib/judge.py"
+  if [ -f "$work/tampered" ]; then
+    echo "OK    integrity: a check that rewrites the suite is detected"
+  else
+    echo "FAIL  integrity: a change to checks/lib/judge.py went unnoticed"
+    echo "x" >>"$work/failed"
+  fi
+  rm -f "$work/tampered"
+fi
+
 printf '%s\n' "$list" | while IFS="$US" read -r id wd chk fx prompt; do
   [ -n "$id" ] || continue
+  if [ -f "$work/tampered" ]; then
+    echo "INFRA $id: suite modified during the run"
+    echo "x" >>"$work/failed"
+    continue
+  fi
   if [ -n "$only" ]; then
     case " $only " in *" $id "*) ;; *) continue ;; esac
   fi
@@ -241,11 +294,15 @@ for n, line in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
     name=$(basename "$dir")
     fresh_copy
     overlay "$dir"
+    started=$(date +%s)
     if run_check "$copy" "$chk" || timed_out; then
       extra_fail "$name" "the check accepts this cheat"
+    elif [ $(( $(date +%s) - started )) -gt 60 ]; then
+      extra_fail "$name" "the cheat held the check up for $(( $(date +%s) - started )) s"
     else
       echo "OK    $id/$name (cheat rejected)"
     fi
+    pkill -f 'sleep 33[0-9]' 2>/dev/null || true
   done
   for dir in "$suite/checks/alt/$id"/*/; do
     [ -d "$dir" ] || continue
@@ -260,6 +317,11 @@ for n, line in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
     fi
   done
 done
+
+if [ -f "$work/tampered" ]; then
+  echo "FAIL  suite modified during the run"
+  echo "x" >>"$work/failed"
+fi
 
 # T15: no cheat may have written into the suite (the "rewrite check files" cheat drops a PWNED
 # marker wherever it can find the suite path)

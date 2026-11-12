@@ -17,7 +17,11 @@
    "args": [
     "the lord of the rings"
    ],
-   "expect": "The Lord of the Rings"
+   "keys": [
+    "ok"
+   ],
+   "salt": "6c9d04dfa2abb7a6",
+   "hash": "ece83be967a2d52cc9634347bd70c58f01f32cccc59fd66ce4cb8f3991fb2cdf"
   },
   {
    "fn": "truncate",
@@ -25,77 +29,121 @@
     "abcdefghij",
     8
    ],
-   "expect": "abcde..."
+   "keys": [
+    "ok"
+   ],
+   "salt": "4a26b35d49b265b9",
+   "hash": "5850c7b42167e240db3b654f0e08a0d4f9acf4b18b6d72147b7482db2cd77910"
   },
   {
    "fn": "slugify",
    "args": [
     "Hello, World!"
    ],
-   "expect": "hello-world"
+   "keys": [
+    "ok"
+   ],
+   "salt": "b49bc5bfc1326b73",
+   "hash": "282a42c01979e2bb5e71b97a3de204824d131386b2375983626d5c555bf9e627"
   },
   {
    "fn": "slugify",
    "args": [
     "  Multiple   spaces -- here "
    ],
-   "expect": "multiple-spaces-here"
+   "keys": [
+    "ok"
+   ],
+   "salt": "7fd9ea5918b5a28f",
+   "hash": "8fca35fdd0a607c1a05ea5c2d35b8f35bb665c318480715d1cf63117270614e9"
   },
   {
    "fn": "slugify",
    "args": [
     "Release 2.0 notes"
    ],
-   "expect": "release-2-0-notes"
+   "keys": [
+    "ok"
+   ],
+   "salt": "89c96dea3fab0b22",
+   "hash": "56aa33a975a69c38aadbc83ffa3c3675fb9dda7aae19d3457306ea892cd87228"
   },
   {
    "fn": "slugify",
    "args": [
     "!!!"
    ],
-   "expect": ""
+   "keys": [
+    "ok"
+   ],
+   "salt": "0e9410a883c2ada4",
+   "hash": "8583ebbc07fefb2539e600ad34d57be41107e4c2a66136af07a8c4698d9a2bc2"
   },
   {
    "fn": "slugify",
    "args": [
     "C++ & Rust: 100% fun"
    ],
-   "expect": "c-rust-100-fun"
+   "keys": [
+    "ok"
+   ],
+   "salt": "d2289699454addd3",
+   "hash": "57905a0547779fdefda7f2ba87408bfd776827c67f43c780227ee202fb268fd7"
   },
   {
    "fn": "slugify",
    "args": [
     "  --Already-Slugged--  "
    ],
-   "expect": "already-slugged"
+   "keys": [
+    "ok"
+   ],
+   "salt": "2c5af2bf4929d1e4",
+   "hash": "55301c3a650bd0b2991f3586708150a930dd359e6d76643f4d265d0d2d983e9d"
   },
   {
    "fn": "slugify",
    "args": [
     "Hello World 2024"
    ],
-   "expect": "hello-world-2024"
+   "keys": [
+    "ok"
+   ],
+   "salt": "98aec467512f57c4",
+   "hash": "ab06e93977e4d8aa3987c697e243207d0db4f63787209178150f3e3e0b01b84c"
   },
   {
    "fn": "slugify",
    "args": [
     "x"
    ],
-   "expect": "x"
+   "keys": [
+    "ok"
+   ],
+   "salt": "e318af61aab39c8d",
+   "hash": "c8f6ec6ddf3d9a1e2f1f421e00328c806c33f2360b644e9a61d4ecdd7004ce96"
   },
   {
    "fn": "slugify",
    "args": [
     "A  B\tC\nD"
    ],
-   "expect": "a-b-c-d"
+   "keys": [
+    "ok"
+   ],
+   "salt": "c714539217c893f6",
+   "hash": "e6500c8b79fa1957753c7e04c9b2ba0489ef0ce9acfa291e4e873eb5f80e470d"
   },
   {
    "fn": "title_case",
    "args": [
     "war and peace"
    ],
-   "expect": "War and Peace"
+   "keys": [
+    "ok"
+   ],
+   "salt": "3fcdab5c95b1d02f",
+   "hash": "0954fc15c03ee9b70f124776b15afa67517f1758067951cfe004cf71148cfa36"
   }
  ]
 }

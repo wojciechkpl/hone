@@ -1,0 +1,46 @@
+{
+ "runtime": "python",
+ "module": "net",
+ "assets": [
+  "probe_child.py"
+ ],
+ "take": [
+  {
+   "file": "net.py"
+  }
+ ],
+ "cases": [
+  {
+   "scenario": "m04_always_fail",
+   "expect": {
+    "value": null,
+    "raised": "fail 3",
+    "calls": 3,
+    "sleeps": [
+     2,
+     2
+    ]
+   }
+  },
+  {
+   "scenario": "m04_flaky",
+   "expect": {
+    "value": "value",
+    "raised": null,
+    "calls": 2,
+    "sleeps": [
+     2
+    ]
+   }
+  },
+  {
+   "scenario": "m04_ok",
+   "expect": {
+    "value": 7,
+    "raised": null,
+    "calls": 1,
+    "sleeps": []
+   }
+  }
+ ]
+}

@@ -21,10 +21,11 @@
      2
     ]
    ],
-   "expect": [
-    1,
-    2
-   ]
+   "keys": [
+    "ok"
+   ],
+   "salt": "10b94fb82eba3310",
+   "hash": "c0e8c150be23af866f49481c039e8f02fc47f50e3d713de9459391ea923021b5"
   },
   {
    "fn": "sum",
@@ -35,7 +36,11 @@
      3
     ]
    ],
-   "expect": 6
+   "keys": [
+    "ok"
+   ],
+   "salt": "a80779f2be99670d",
+   "hash": "d573b04753365b77b0ce03b70602a5add86a0909d92598f76ec0ea430f920766"
   },
   {
    "fn": "chunk",
@@ -49,19 +54,11 @@
     ],
     2
    ],
-   "expect": [
-    [
-     1,
-     2
-    ],
-    [
-     3,
-     4
-    ],
-    [
-     5
-    ]
-   ]
+   "keys": [
+    "ok"
+   ],
+   "salt": "8617921fc93bc009",
+   "hash": "4cc04a137999c6959eddd52c1bd241680c52533d8b5b69e0d8c2b34f951d7476"
   },
   {
    "fn": "chunk",
@@ -69,7 +66,11 @@
     [],
     3
    ],
-   "expect": []
+   "keys": [
+    "ok"
+   ],
+   "salt": "e2f238bd2d6dcf25",
+   "hash": "31bee99cb3d44ee9e0296fe2ee19070ff0bbf5884a96d17108c5bfde559b873c"
   },
   {
    "fn": "chunk",
@@ -79,7 +80,11 @@
     ],
     0
    ],
-   "raises": "RangeError"
+   "keys": [
+    "raises"
+   ],
+   "salt": "63b93546c9f449b4",
+   "hash": "2aac392b8c84615ff37da43d02cffe50ba803a9870f5dd552377580b1335c775"
   },
   {
    "fn": "chunk",
@@ -91,13 +96,11 @@
     ],
     3
    ],
-   "expect": [
-    [
-     1,
-     2,
-     3
-    ]
-   ]
+   "keys": [
+    "ok"
+   ],
+   "salt": "456febc9f274e012",
+   "hash": "99e5c8d10da4d260c11c1c9eef4a0db8b64122dcd7ce5de47537d324c1013b01"
   },
   {
    "fn": "chunk",
@@ -109,13 +112,11 @@
     ],
     5
    ],
-   "expect": [
-    [
-     1,
-     2,
-     3
-    ]
-   ]
+   "keys": [
+    "ok"
+   ],
+   "salt": "7ad1ed9280836729",
+   "hash": "ad6b28bde7d4eb78e1294c52415fd889a249f1103bd0dfa1358e7e96f039ec49"
   },
   {
    "fn": "chunk",
@@ -128,20 +129,11 @@
     ],
     1
    ],
-   "expect": [
-    [
-     1
-    ],
-    [
-     2
-    ],
-    [
-     3
-    ],
-    [
-     4
-    ]
-   ]
+   "keys": [
+    "ok"
+   ],
+   "salt": "253d2f0e373cfd33",
+   "hash": "12080ad472f1ea47bd5868577862dbfed3988817c2e3596e01865b53769b64ba"
   },
   {
    "fn": "chunk",
@@ -157,21 +149,11 @@
     ],
     3
    ],
-   "expect": [
-    [
-     1,
-     2,
-     3
-    ],
-    [
-     4,
-     5,
-     6
-    ],
-    [
-     7
-    ]
-   ]
+   "keys": [
+    "ok"
+   ],
+   "salt": "b3bd8683fc7c1f5b",
+   "hash": "40aed239bc8f349d9c055653248ef492dbe6c4b0408947396213047b61f75ecd"
   },
   {
    "fn": "unique",
@@ -182,10 +164,11 @@
      1
     ]
    ],
-   "expect": [
-    3,
-    1
-   ]
+   "keys": [
+    "ok"
+   ],
+   "salt": "cf8f9d07da8063e7",
+   "hash": "d89ef36c23c847f9413173982486c481d2e80373672bcd98089da0b3530d2eb6"
   }
  ]
 }

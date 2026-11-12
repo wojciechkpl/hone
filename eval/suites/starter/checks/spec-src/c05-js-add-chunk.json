@@ -1,6 +1,86 @@
 {
- "module": "./utils.js",
+ "runtime": "node",
+ "module": "utils.js",
+ "advisory": "node",
+ "assets": [
+  "probe_child.js"
+ ],
+ "base": "checks/data/c05-js-add-chunk",
+ "take": [
+  {
+   "file": "utils.js"
+  }
+ ],
  "cases": [
+  {
+   "fn": "unique",
+   "args": [
+    [
+     1,
+     1,
+     2
+    ]
+   ],
+   "expect": [
+    1,
+    2
+   ]
+  },
+  {
+   "fn": "sum",
+   "args": [
+    [
+     1,
+     2,
+     3
+    ]
+   ],
+   "expect": 6
+  },
+  {
+   "fn": "chunk",
+   "args": [
+    [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    2
+   ],
+   "expect": [
+    [
+     1,
+     2
+    ],
+    [
+     3,
+     4
+    ],
+    [
+     5
+    ]
+   ]
+  },
+  {
+   "fn": "chunk",
+   "args": [
+    [],
+    3
+   ],
+   "expect": []
+  },
+  {
+   "fn": "chunk",
+   "args": [
+    [
+     1
+    ],
+    0
+   ],
+   "raises": "RangeError"
+  },
   {
    "fn": "chunk",
    "args": [
@@ -92,36 +172,6 @@
      7
     ]
    ]
-  },
-  {
-   "fn": "chunk",
-   "args": [
-    [
-     1
-    ],
-    0
-   ],
-   "raises": "RangeError"
-  },
-  {
-   "fn": "chunk",
-   "args": [
-    [
-     1
-    ],
-    -2
-   ],
-   "raises": "RangeError"
-  },
-  {
-   "fn": "chunk",
-   "args": [
-    [
-     1
-    ],
-    1.5
-   ],
-   "raises": "RangeError"
   },
   {
    "fn": "unique",

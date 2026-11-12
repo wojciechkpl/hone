@@ -1,6 +1,104 @@
 {
- "module": "./flatten.js",
+ "runtime": "node",
+ "module": "flatten.js",
+ "advisory": "node",
+ "assets": [
+  "probe_child.js"
+ ],
+ "base": "checks/data/c04-js-fix-flatten",
+ "take": [
+  {
+   "file": "flatten.js"
+  }
+ ],
  "cases": [
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     1,
+     [
+      2,
+      3
+     ]
+    ]
+   ],
+   "expect": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     1,
+     [
+      2,
+      [
+       3,
+       [
+        4
+       ]
+      ]
+     ]
+    ]
+   ],
+   "expect": [
+    1,
+    2,
+    3,
+    4
+   ]
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     1,
+     [
+      2,
+      [
+       3,
+       [
+        4
+       ]
+      ]
+     ]
+    ],
+    1
+   ],
+   "expect": [
+    1,
+    2,
+    [
+     3,
+     [
+      4
+     ]
+    ]
+   ]
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     1,
+     [
+      2
+     ]
+    ],
+    0
+   ],
+   "expect": [
+    1,
+    [
+     2
+    ]
+   ],
+   "expect_same": false
+  },
   {
    "fn": "flatten",
    "args": [
@@ -109,24 +207,6 @@
    ],
    "expect": [
     7
-   ]
-  },
-  {
-   "fn": "flatten",
-   "args": [
-    [
-     1,
-     [
-      2
-     ]
-    ],
-    0
-   ],
-   "expect": [
-    1,
-    [
-     2
-    ]
    ]
   }
  ]

@@ -1,6 +1,82 @@
 {
+ "runtime": "python",
  "module": "stats",
+ "advisory": "python",
+ "assets": [
+  "probe_child.py"
+ ],
+ "base": "checks/data/c01-py-fix-median",
+ "take": [
+  {
+   "file": "stats.py"
+  }
+ ],
  "cases": [
+  {
+   "fn": "mean",
+   "args": [
+    [
+     1,
+     2,
+     3,
+     4
+    ]
+   ],
+   "expect": 2.5
+  },
+  {
+   "fn": "median",
+   "args": [
+    [
+     5,
+     1,
+     3
+    ]
+   ],
+   "expect": 3
+  },
+  {
+   "fn": "median",
+   "args": [
+    [
+     4,
+     1,
+     3,
+     2
+    ]
+   ],
+   "expect": 2.5
+  },
+  {
+   "fn": "median",
+   "args": [
+    [
+     10,
+     20
+    ]
+   ],
+   "expect": 15
+  },
+  {
+   "fn": "mode",
+   "args": [
+    [
+     2,
+     2,
+     1,
+     1,
+     3
+    ]
+   ],
+   "expect": 1
+  },
+  {
+   "fn": "median",
+   "args": [
+    []
+   ],
+   "raises": "ValueError"
+  },
   {
    "fn": "median",
    "args": [
@@ -68,13 +144,6 @@
     ]
    ],
    "expect": 5
-  },
-  {
-   "fn": "median",
-   "args": [
-    []
-   ],
-   "raises": "ValueError"
   },
   {
    "fn": "mean",

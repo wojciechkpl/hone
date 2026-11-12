@@ -20,7 +20,11 @@
    "select": [
     "timeout"
    ],
-   "expect": 30
+   "keys": [
+    "ok"
+   ],
+   "salt": "2dae9453a5075a48",
+   "hash": "97ed4f6157288335345be9e5434b776d95fba345f6a3c72a27ae1712d2ef1012"
   },
   {
    "fn": "load_settings",
@@ -30,7 +34,11 @@
    "select": [
     "timeout"
    ],
-   "expect": 30
+   "keys": [
+    "ok"
+   ],
+   "salt": "8dd64f1131101d40",
+   "hash": "ff915bc5c888b5aacdb82548c031af4433a18c7ff299b5841c4b407425026c7d"
   },
   {
    "fn": "load_settings",
@@ -40,7 +48,11 @@
    "select": [
     "timeout"
    ],
-   "expect": 5
+   "keys": [
+    "ok"
+   ],
+   "salt": "c175b94eb65c4d40",
+   "hash": "74d224802ab87ac1c05bb628ab6a10ec731112f9d449e0803b0bf344a6ec63ef"
   },
   {
    "fn": "load_settings",
@@ -50,7 +62,11 @@
    "select": [
     "timeout"
    ],
-   "expect": 30
+   "keys": [
+    "ok"
+   ],
+   "salt": "5ab8505a6db0b470",
+   "hash": "88df4cf7683bdee8159f9494640385e733dfea8fb85e75512ac66da9fb2b37cc"
   }
  ]
 }

@@ -111,6 +111,17 @@ a model call.
 
 ## Residual risk
 
+Round 4 closed the routes an agent child could use to *find* the expectations (T18-T21): the specs
+hold salted hashes, the judge runs from a private bundle without the suite path, `verify.sh` (and
+`hone eval` with `[eval] integrity = ["checks", "reference"]`) fails a run when `checks/` or
+`reference/` change, and no wait on agent code is unbounded. What remains: agent code running as
+your user can read any file your user can, including `reference/` and the plaintext
+`checks/spec-src/`, and the runner itself (`verify.sh`, `hone eval <suite>`) is an ancestor whose
+command line names the suite. Run suites on a machine or account where that matters, or treat
+results as measurements of cooperative models, not proofs. A process that escapes into its own
+session also survives a check; the checks don't wait for it, but they cannot kill it.
+
+
 Eval agents run in a copy of the task directory, but they are not sandboxed from reading the rest
 of the disk, and the suite's path is in the process table while a check runs (the parent's argv
 and environment). A determined agent could find the suite, its reference solutions and the

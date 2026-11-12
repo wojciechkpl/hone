@@ -1,21 +1,25 @@
 """The parent of every coding check (T13/T14 of docs/plans/eval-starter-suite-spec.md).
 
-usage: python3 -I -B judge.py <task-id>     (the check runs it in the agent's copy; the runner
-sets EVAL_SUITE_DIR). This process runs NO agent code. It
+usage: python3 -I -B judge.py <task-id>     (the check's launcher copies this file and what it needs
+into a private bundle directory and execs it from there with EVAL_SUITE_DIR removed, so the
+suite's path is in no argv or environment this process or its children can see; the bundle has
+the suite's relative layout: checks/lib, checks/specs, checks/data and the task's base files).
+This process runs NO agent code. It
 
   1. copies what it needs (harness scripts, pristine tests and project files) into a private
      temp directory, then moves its own cwd out of the agent's copy;
   2. builds a work directory = pristine files + only the allowlisted solution files of the copy;
   3. runs agent code only in child processes (own session, minimal environment, no suite path in
      argv/env/cwd) that read the INPUTS of the cases on stdin and print one JSON result per case;
-  4. requires a result for every case and compares them with the expectations in the spec, which
-     this process alone holds;
+  4. requires a result for every case and compares the salted SHA-256 of each canonical result with
+     the hash in the spec (the spec holds no expected value);
   5. runs the project's own tests as advisory checks: a failing test fails the check, a passing
      one proves nothing.
 
 The verdict is this process's exit code.
 """
 import fnmatch
+import hashlib
 import json
 import os
 import shutil
@@ -25,7 +29,9 @@ import subprocess
 import sys
 import tempfile
 
-SUITE = os.environ.pop("EVAL_SUITE_DIR")
+BUNDLE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SUITE = BUNDLE  # the bundle mirrors the suite's layout for the files this task needs
+os.environ.pop("EVAL_SUITE_DIR", None)
 COPY = os.getcwd()
 TASK = sys.argv[1]
 SPEC = json.load(open(os.path.join(SUITE, "checks", "specs", TASK + ".json"), encoding="utf-8"))
@@ -45,7 +51,7 @@ def make_readonly(path):
     os.chmod(path, 0o555)
 
 
-def cleanup():
+def _rmtree(path):
     def onerror(func, p, _):
         try:
             os.chmod(os.path.dirname(p), 0o755)
@@ -53,12 +59,17 @@ def cleanup():
             func(p)
         except OSError:
             pass
-    for root, dirs, files in os.walk(PRIV):
+    for root, dirs, files in os.walk(path):
         try:
             os.chmod(root, 0o755)
         except OSError:
             pass
-    shutil.rmtree(PRIV, onerror=onerror)
+    shutil.rmtree(path, onerror=onerror)
+
+
+def cleanup():
+    _rmtree(PRIV)
+    _rmtree(BUNDLE)
 
 
 def fail(message):
@@ -79,6 +90,10 @@ os.makedirs(WORK)
 base = SPEC.get("base")
 if base:
     shutil.copytree(os.path.join(SUITE, base), WORK, dirs_exist_ok=True)
+    for root, dirs, files in os.walk(WORK):
+        os.chmod(root, 0o755)
+        for f in files:
+            os.chmod(os.path.join(root, f), 0o644)
 for item in SPEC.get("take", []):
     if "file" in item:
         sources = [item["file"]]
@@ -122,22 +137,47 @@ def child_env():
 
 
 def run_child(argv, stdin_text=None, timeout=25):
-    """Runs agent code in its own session; the whole group is killed afterwards."""
-    proc = subprocess.Popen(
-        argv, cwd=WORK, env=child_env(), stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, start_new_session=True, text=True, errors="replace",
-    )
-    try:
-        out, err = proc.communicate(stdin_text, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        out, err = "", "timed out"
-        proc.kill()
-        proc.communicate()
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except OSError:
-        pass
-    return proc.returncode, out, err
+    """Runs agent code in its own session. No pipes: stdin, stdout and stderr are files, so a
+    process that escapes into another session and keeps its descriptors open cannot make this
+    process wait; it only waits for the direct child, with a deadline, then kills its group."""
+    io_dir = os.path.join(PRIV, "io")
+    os.makedirs(io_dir, exist_ok=True)
+    stdin_path = os.path.join(io_dir, "stdin")
+    with open(stdin_path, "w", encoding="utf-8") as f:
+        f.write(stdin_text or "")
+    out_path = os.path.join(io_dir, "stdout")
+    err_path = os.path.join(io_dir, "stderr")
+    with open(stdin_path, "rb") as fin, open(out_path, "wb") as fout, open(err_path, "wb") as ferr:
+        proc = subprocess.Popen(
+            argv, cwd=WORK, env=child_env(), stdin=fin if stdin_text is not None else subprocess.DEVNULL,
+            stdout=fout, stderr=ferr, start_new_session=True,
+        )
+        timed_out = False
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+    def read(path):
+        with open(path, "rb") as f:
+            return f.read(2_000_000).decode("utf-8", "replace")
+
+    out, err = read(out_path), read(err_path)
+    if timed_out:
+        err += "\ntimed out"
+    return (proc.returncode if proc.returncode is not None else -9), out, err
 
 
 def last_json_line(out):
@@ -172,7 +212,7 @@ if advisory:
 # 3. the probe
 inputs = []
 for c in cases:
-    inputs.append({k: v for k, v in c.items() if k not in ("expect", "raises", "contains", "expect_args_after", "expect_same")})
+    inputs.append({k: v for k, v in c.items() if k not in ("keys", "salt", "hash")})
 results = None
 if runtime == "python":
     code, out, err = run_child(
@@ -210,27 +250,31 @@ if not isinstance(results, list) or len(results) != len(cases):
     fail("the solution did not produce a result for every case "
          f"(exit {code}); it must be loaded and called normally\n{(out + err)[-600:]}")
 
+def canon(value):
+    """Canonical JSON (must match lib/make_specs.py): sorted keys, no spaces, 15 == 15.0."""
+    def norm(v):
+        if isinstance(v, float) and v == v and v not in (float("inf"), float("-inf")) and v == int(v) and abs(v) < 1e15:
+            return int(v)
+        if isinstance(v, list):
+            return [norm(x) for x in v]
+        if isinstance(v, dict):
+            return {k: norm(x) for k, x in v.items()}
+        return v
+    return json.dumps(norm(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
 for case, got in zip(cases, results):
     label = case.get("scenario") or f"{case.get('fn')}({json.dumps(case.get('args', []))[1:-1]})"
     if case.get("patch"):
         label += f"  [with {case['patch']['attr']} replaced]"
-    if "raises" in case:
-        ok = isinstance(got, dict) and got.get("raises") == case["raises"]
-        want = f"raises {case['raises']}"
-    elif "contains" in case:
-        ok = isinstance(got, dict) and isinstance(got.get("ok"), str) and case["contains"] in got["ok"]
-        want = f"a string containing {case['contains']!r}"
-    else:
-        ok = isinstance(got, dict) and "ok" in got and got["ok"] == case["expect"]
-        want = json.dumps(case.get("expect"))
-    if ok and "expect_args_after" in case:
-        ok = isinstance(got, dict) and got.get("args_after") == case["expect_args_after"]
-        want = f"arguments afterwards {json.dumps(case['expect_args_after'])}"
-    if ok and "expect_same" in case:
-        ok = isinstance(got, dict) and got.get("same0") == case["expect_same"]
-        want = f"result identical to the argument: {case['expect_same']}"
-    if not ok:
-        problems.append(f"{label}: expected {want}, got {json.dumps(got)[:200]}")
+    if not isinstance(got, dict):
+        problems.append(f"{label}: no usable result")
+        continue
+    projection = {k: got[k] for k in case["keys"] if k in got}
+    digest = hashlib.sha256((case["salt"] + canon(projection)).encode("utf-8")).hexdigest()
+    if digest != case["hash"]:
+        shown = json.dumps(projection)[:160]
+        problems.append(f"{label}: the result {shown} is not the expected one")
 
 # the context tasks: only the target file may differ from the original project
 manifest = SPEC.get("manifest")

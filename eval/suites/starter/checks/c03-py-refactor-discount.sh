@@ -1,6 +1,7 @@
 # requires: python3
 # Success check for c03-py-refactor-discount (T13/T14 of docs/plans/eval-starter-suite-spec.md). Runs in the agent's copy.
-# The verdict comes from lib/judge.py, a python3 -I parent that runs no agent code: agent code runs
-# only in child processes that read the case inputs on stdin; the expectations stay in the parent.
+# The verdict comes from lib/judge.py, a python3 -I parent that runs no agent code, launched from a
+# private bundle without the suite path; agent code runs only in child processes (T13, T19).
 set -e
-exec python3 -I -B "$EVAL_SUITE_DIR/checks/lib/judge.py" c03-py-refactor-discount
+. "$EVAL_SUITE_DIR/checks/lib/launch.sh"
+launch_judge c03-py-refactor-discount

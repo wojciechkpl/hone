@@ -88,6 +88,9 @@ fn test_t5_every_starter_task_check_should_fail_before_and_pass_with_the_referen
         "OK    n04-fill-config/shadow-configparser",
         "OK    n01-summarise-notes/shadow-unicodedata",
         "OK    no cheat could write into the suite",
+        "OK    c01-py-fix-median/ancestor-ps",
+        "OK    c01-py-fix-median/pipe-holding-escape",
+        "OK    integrity: a check that rewrites the suite is detected",
         "OK    c01-py-fix-median/shadow-unittest-module",
         "OK    c01-py-fix-median/disarm-asserts",
     ] {

@@ -22,7 +22,11 @@
      4
     ]
    ],
-   "expect": 2.5
+   "keys": [
+    "ok"
+   ],
+   "salt": "f3ce5ec2e3d1b7cf",
+   "hash": "70322b1b7a4583e30ce5b60ecba6b5829abc0431d01fd6536682807ef05e9b76"
   },
   {
    "fn": "median",
@@ -33,7 +37,11 @@
      3
     ]
    ],
-   "expect": 3
+   "keys": [
+    "ok"
+   ],
+   "salt": "5d86764f4d6e908a",
+   "hash": "7bba11213c518256c6d3a71e85ae19834c1d50abc4a1f2b3336ab126c4db63aa"
   },
   {
    "fn": "median",
@@ -45,7 +53,11 @@
      2
     ]
    ],
-   "expect": 2.5
+   "keys": [
+    "ok"
+   ],
+   "salt": "0826322ccc80c5b8",
+   "hash": "594b415a29b40959e8ca797d7090c3789914a4f36db5863d87d40be209d50f05"
   },
   {
    "fn": "median",
@@ -55,7 +67,11 @@
      20
     ]
    ],
-   "expect": 15
+   "keys": [
+    "ok"
+   ],
+   "salt": "4be4b1708f19e7df",
+   "hash": "dcf9ffa04425ef609940aadbd0cd14ce7af86a909fc23b9930738ab68b1a68a9"
   },
   {
    "fn": "mode",
@@ -68,14 +84,22 @@
      3
     ]
    ],
-   "expect": 1
+   "keys": [
+    "ok"
+   ],
+   "salt": "ae68a54f43c614cb",
+   "hash": "574f6d35754d775428c6d5613bbee49e9bfc9b3a6436fb3d6dc9884d1b60af9f"
   },
   {
    "fn": "median",
    "args": [
     []
    ],
-   "raises": "ValueError"
+   "keys": [
+    "raises"
+   ],
+   "salt": "aff7a60f80bc52fd",
+   "hash": "d8a0ac753168c931ee9c5c6e08e22f402709ad13b77a9dbf8c21651afbb2318a"
   },
   {
    "fn": "median",
@@ -84,7 +108,11 @@
      7
     ]
    ],
-   "expect": 7
+   "keys": [
+    "ok"
+   ],
+   "salt": "f70ab102c2104a47",
+   "hash": "1ca56791b7638fc25f1e15a5aaaa327c6b4ba38b50775b06beddb80c1d6f590f"
   },
   {
    "fn": "median",
@@ -98,7 +126,11 @@
      6
     ]
    ],
-   "expect": 3.5
+   "keys": [
+    "ok"
+   ],
+   "salt": "4244d7e7dfd59aa5",
+   "hash": "38ce2aede36cdd74805af7f2b2c1c52f1e0354342128d0521f51b52997c18da4"
   },
   {
    "fn": "median",
@@ -108,7 +140,11 @@
      -1
     ]
    ],
-   "expect": -3
+   "keys": [
+    "ok"
+   ],
+   "salt": "22b7d40eb4e4848f",
+   "hash": "4b2070584959575c3e458d5439350f5c485cd3222b313408742ff5bd1b075171"
   },
   {
    "fn": "median",
@@ -120,7 +156,11 @@
      2
     ]
    ],
-   "expect": 2
+   "keys": [
+    "ok"
+   ],
+   "salt": "da2633bfca346cb9",
+   "hash": "55decd1d6115483ca96bc3a753b1353442db91b646d25ea89a339782fd68a744"
   },
   {
    "fn": "median",
@@ -130,7 +170,11 @@
      1.5
     ]
    ],
-   "expect": 1.0
+   "keys": [
+    "ok"
+   ],
+   "salt": "4a859b4f7591fea9",
+   "hash": "2466dbbce988f38d28b7def43e17ec84b05b30f7a81030b1aa8151a6a0691617"
   },
   {
    "fn": "median",
@@ -143,7 +187,11 @@
      7
     ]
    ],
-   "expect": 5
+   "keys": [
+    "ok"
+   ],
+   "salt": "6434e142ab3f7c45",
+   "hash": "7d36981cae3efbfc3eb475b57c7e61f2be32909ba42691d4c6912ee5680a081f"
   },
   {
    "fn": "mean",
@@ -154,7 +202,11 @@
      9
     ]
    ],
-   "expect": 5.0
+   "keys": [
+    "ok"
+   ],
+   "salt": "35fd47552564d325",
+   "hash": "a21a3159628406b007c1ddc31616b10df57107e64a9376d7680bf7455af34d72"
   },
   {
    "fn": "mode",
@@ -167,7 +219,11 @@
      9
     ]
    ],
-   "expect": 3
+   "keys": [
+    "ok"
+   ],
+   "salt": "9894ac2c251dce2b",
+   "hash": "9f71b4762e7de47762b6585bdd8d192723b505289e30b470c19b0aaf7162981f"
   }
  ]
 }
