@@ -2073,3 +2073,47 @@ async fn test_w24_an_unknown_tools_error_result_should_count_as_a_tool_result() 
     assert!(text_of(&result).contains("no_such_tool"), "the refusal names the source: {result}");
     assert!(stored(&store).await.is_empty());
 }
+
+// ---- W23 (review round 3): the dedup fallback searches only the model's own memories --------------------------
+
+async fn all_memories(store: &Arc<dyn MemoryStore>) -> Vec<Memory> {
+    store.recall(&MemoryQuery { text: String::new(), limit: 10_000, kind: None }).await.unwrap()
+}
+
+#[tokio::test]
+async fn test_w23_a_thousand_newer_user_memories_should_not_hide_the_models_own_near_duplicate() {
+    let tool_text = format!("{BASE_RULE} and lint");
+    // A SqliteStore: its candidate listing is `ORDER BY created_at DESC LIMIT n`.
+    let store: Arc<dyn MemoryStore> = Arc::new(SqliteStore::in_memory().await.unwrap());
+    // The model writes a feedback memory ...
+    let mut first = setup(vec![vec![mw("c1", "feedback", &tool_text)]]);
+    first.store = Some(store.clone());
+    let (_, events) = run_one(&first, "remember it").await;
+    let own_id = end_of(&events, "c1").0["id"].as_str().unwrap().to_owned();
+    // ... then 1,000 NEWER feedback memories of the user arrive (visible in every project).
+    for i in 0..1_000u64 {
+        let mut m = stored_mem(
+            &format!("user-{i:04}"),
+            MemoryKind::Feedback,
+            &format!("Filler preference {i}: lunch is at noon on weekday number {i} in the cafeteria"),
+            &[],
+        );
+        m.created_at = 4_000_000_000 + i; // newer than the model's memory
+        store.record(m).await.unwrap();
+    }
+    assert_eq!(all_memories(&store).await.len(), 1 + 1_000, "harness: the store holds the model's memory and the fillers");
+
+    // A near-duplicate model write: it must update its own memory, not add a duplicate.
+    let mut second = setup(vec![vec![mw("c2", "feedback", NEAR_DUP)]]);
+    second.store = Some(store.clone());
+    let (_, events) = run_one(&second, "remember it again").await;
+
+    let (result, is_error) = end_of(&events, "c2");
+    assert!(!is_error, "{result}");
+    assert_eq!(result["status"], "updated", "the model's own near-duplicate is found among 1,000 newer memories: {result}");
+    assert_eq!(result["id"], own_id.as_str());
+    let all = all_memories(&store).await;
+    assert_eq!(all.len(), 1 + 1_000, "no new row was added");
+    let own = all.iter().find(|m| m.id == own_id).unwrap();
+    assert_eq!(own.content, NEAR_DUP, "the model's memory carries the new text");
+}
