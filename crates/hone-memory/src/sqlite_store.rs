@@ -194,14 +194,16 @@ const STOP_WORDS: &[&str] = &[
     "ourselves",
 ];
 
-/// The FTS5 `MATCH` expression for a prompt: its word tokens (`[A-Za-z0-9_]`,
-/// at least 3 characters, lowercased, stop words dropped, the first 32), each
-/// double-quoted and OR-ed. `None` when no token is usable.
+/// The FTS5 `MATCH` expression for a prompt: its word tokens (split on every
+/// character that is not a Unicode letter or digit, lowercased, at least 3
+/// characters, stop words dropped, the first 32), each double-quoted and OR-ed.
+/// `None` when no token is usable. FTS5's `unicode61` tokenizer (diacritics
+/// folded, its default) then matches them against the indexed text.
 fn fts5_match_expression(text: &str) -> Option<String> {
     let tokens: Vec<String> = text
-        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-        .filter(|t| t.len() >= 3)
-        .map(str::to_ascii_lowercase)
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.chars().count() >= 3)
+        .map(str::to_lowercase)
         .filter(|t| !STOP_WORDS.contains(&t.as_str()))
         .take(32)
         .map(|t| format!("\"{t}\""))
@@ -213,31 +215,37 @@ fn fts5_match_expression(text: &str) -> Option<String> {
     }
 }
 
+/// The index is keyed on the memory `id` (stored, not indexed), never on rowids,
+/// so renumbering rows (`VACUUM`, or any table rewrite) cannot misalign it.
 const FTS_TABLE_SQL: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-        content, description, content='memories', content_rowid='rowid')";
+        id UNINDEXED, content, description, tokenize = 'unicode61')";
 
 // `record` is INSERT OR REPLACE, whose implicit delete does not fire DELETE
 // triggers (recursive_triggers is off), so a BEFORE INSERT trigger removes the
 // replaced row's index entry first (a no-op for a fresh id).
 const FTS_TRIGGERS_SQL: [&str; 4] = [
-    "CREATE TRIGGER IF NOT EXISTS memories_fts_bi BEFORE INSERT ON memories BEGIN
-        INSERT INTO memories_fts(memories_fts, rowid, content, description)
-        SELECT 'delete', rowid, content, description FROM memories WHERE id = new.id;
+    "CREATE TRIGGER memories_fts_bi BEFORE INSERT ON memories BEGIN
+        DELETE FROM memories_fts WHERE id = new.id;
      END",
-    "CREATE TRIGGER IF NOT EXISTS memories_fts_ai AFTER INSERT ON memories BEGIN
-        INSERT INTO memories_fts(rowid, content, description)
-        VALUES (new.rowid, new.content, new.description);
+    "CREATE TRIGGER memories_fts_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(id, content, description)
+        VALUES (new.id, new.content, new.description);
      END",
-    "CREATE TRIGGER IF NOT EXISTS memories_fts_ad AFTER DELETE ON memories BEGIN
-        INSERT INTO memories_fts(memories_fts, rowid, content, description)
-        VALUES ('delete', old.rowid, old.content, old.description);
+    "CREATE TRIGGER memories_fts_ad AFTER DELETE ON memories BEGIN
+        DELETE FROM memories_fts WHERE id = old.id;
      END",
-    "CREATE TRIGGER IF NOT EXISTS memories_fts_au AFTER UPDATE ON memories BEGIN
-        INSERT INTO memories_fts(memories_fts, rowid, content, description)
-        VALUES ('delete', old.rowid, old.content, old.description);
-        INSERT INTO memories_fts(rowid, content, description)
-        VALUES (new.rowid, new.content, new.description);
+    "CREATE TRIGGER memories_fts_au AFTER UPDATE ON memories BEGIN
+        DELETE FROM memories_fts WHERE id = old.id;
+        INSERT INTO memories_fts(id, content, description)
+        VALUES (new.id, new.content, new.description);
      END",
+];
+
+const FTS_TRIGGER_NAMES: [&str; 4] = [
+    "memories_fts_bi",
+    "memories_fts_ai",
+    "memories_fts_ad",
+    "memories_fts_au",
 ];
 
 fn embedding_to_bytes(emb: &[f32]) -> Vec<u8> {
@@ -585,9 +593,31 @@ impl SqliteStore {
         Ok(store)
     }
 
-    /// Create the FTS5 table and its triggers if missing, and rebuild the index
-    /// when it holds a different number of rows than `memories`.
+    /// Make the FTS5 table and its triggers current, and rebuild the index when
+    /// it disagrees with `memories` (a different number of rows, or different
+    /// ids). A table from an older version (keyed on rowids) is replaced.
     async fn ensure_fts(&self) -> Result<(), MemoryError> {
+        // Triggers are recreated every time, so their bodies are always current.
+        for name in FTS_TRIGGER_NAMES {
+            sqlx::query(&format!("DROP TRIGGER IF EXISTS {name}"))
+                .execute(&self.pool)
+                .await
+                .map_err(to_io_err)?;
+        }
+        let existing: Option<String> =
+            sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(to_io_err)?;
+        let outdated = existing
+            .as_deref()
+            .is_some_and(|sql| !sql.contains("UNINDEXED"));
+        if outdated {
+            sqlx::query("DROP TABLE memories_fts")
+                .execute(&self.pool)
+                .await
+                .map_err(to_io_err)?;
+        }
         sqlx::query(FTS_TABLE_SQL)
             .execute(&self.pool)
             .await
@@ -598,9 +628,15 @@ impl SqliteStore {
                 .await
                 .map_err(to_io_err)?;
         }
-        // An external-content table counts the content table's rows itself, so
-        // the number of indexed documents is read from its docsize shadow table.
-        let indexed: i64 = sqlx::query_scalar("SELECT count(*) FROM memories_fts_docsize")
+        if !self.fts_matches_memories().await? {
+            self.reindex_fts().await?;
+        }
+        Ok(())
+    }
+
+    /// Whether the index holds exactly the ids of `memories`.
+    async fn fts_matches_memories(&self) -> Result<bool, MemoryError> {
+        let indexed: i64 = sqlx::query_scalar("SELECT count(*) FROM memories_fts")
             .fetch_one(&self.pool)
             .await
             .map_err(to_io_err)?;
@@ -609,9 +645,15 @@ impl SqliteStore {
             .await
             .map_err(to_io_err)?;
         if indexed != memories {
-            self.reindex_fts().await?;
+            return Ok(false);
         }
-        Ok(())
+        let missing: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM (SELECT id FROM memories EXCEPT SELECT id FROM memories_fts)",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+        Ok(missing == 0)
     }
 
     /// Rebuild the FTS5 index from `memories` (creating the table and triggers
@@ -621,17 +663,30 @@ impl SqliteStore {
             .execute(&self.pool)
             .await
             .map_err(to_io_err)?;
+        for name in FTS_TRIGGER_NAMES {
+            sqlx::query(&format!("DROP TRIGGER IF EXISTS {name}"))
+                .execute(&self.pool)
+                .await
+                .map_err(to_io_err)?;
+        }
         for sql in FTS_TRIGGERS_SQL {
             sqlx::query(sql)
                 .execute(&self.pool)
                 .await
                 .map_err(to_io_err)?;
         }
-        sqlx::query("INSERT INTO memories_fts(memories_fts) VALUES ('rebuild')")
+        sqlx::query("DELETE FROM memories_fts")
             .execute(&self.pool)
             .await
             .map_err(to_io_err)?;
-        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM memories_fts_docsize")
+        sqlx::query(
+            "INSERT INTO memories_fts(id, content, description)
+             SELECT id, content, description FROM memories",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM memories_fts")
             .fetch_one(&self.pool)
             .await
             .map_err(to_io_err)?;
@@ -640,7 +695,7 @@ impl SqliteStore {
 
     /// FTS5 recall: the prompt's word tokens (see `fts5_match_expression`) are
     /// matched in the index, the kind filter and `exclude` apply in the same
-    /// query, and the best `query.limit` by `-bm25()` come back (higher score is
+    /// query, and the best `query.limit` by `-bm25() x weight` come back (higher score is
     /// better) with no corpus cap. No usable token gives an empty result.
     pub async fn recall_fts5(
         &self,
@@ -668,10 +723,10 @@ impl SqliteStore {
         }
         let sql = format!(
             "SELECT m.id, m.content, m.tags, m.weight, m.created_at, m.decay_at, m.kind,
-                    m.description, m.embedding, -bm25(memories_fts) AS score
-             FROM memories_fts JOIN memories m ON m.rowid = memories_fts.rowid
+                    m.description, m.embedding, -bm25(memories_fts) * m.weight AS score
+             FROM memories_fts JOIN memories m ON m.id = memories_fts.id
              WHERE {}
-             ORDER BY bm25(memories_fts), m.created_at DESC
+             ORDER BY score DESC, m.created_at DESC
              LIMIT ?{}",
             conditions.join(" AND "),
             n + 1
