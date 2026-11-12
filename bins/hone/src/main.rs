@@ -2081,7 +2081,9 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
         model_id,
         &fallbacks,
     );
-    output["cost_known"] = serde_json::json!(cost_known);
+    let usage_known = agent.usage_known().await;
+    output["usage_known"] = serde_json::json!(usage_known);
+    output["cost_known"] = serde_json::json!(cost_known && usage_known);
     let output = attach_context(output, &receipts);
     println!("{}", serde_json::to_string_pretty(&output)?);
 
@@ -2275,6 +2277,7 @@ async fn cmd_eval(
 ) -> Result<()> {
     use std::path::Path;
 
+    hone_core::set_default_price_lookup(price_lookup(&eff.pricing));
     let config = EvalConfig::from_toml_file(tasks_path)
         .map_err(|e| anyhow::anyhow!("failed to load tasks file: {e}"))?;
 
@@ -3048,7 +3051,31 @@ async fn main() -> Result<()> {
 
     let agent = AgentHandle::spawn(base_config.clone());
     let prices = price_lookup(&eff.pricing);
+    // Every agent of this process (orchestrator leads and workers, ensemble
+    // candidates, the reviewer loop) is priced the same way.
+    hone_core::set_default_price_lookup(Arc::clone(&prices));
     agent.set_price_lookup(Arc::clone(&prices)).await;
+
+    // With a session limit, say up front which models it can't limit.
+    let budget_warnings = if eff.session_limit_usd.is_some() {
+        let mut models: Vec<ModelId> = vec![model_id.clone()];
+        for tier in [
+            hone_config::resolve::Tier::Simple,
+            hone_config::resolve::Tier::Medium,
+            hone_config::resolve::Tier::Complex,
+        ] {
+            if let Some(routed) = eff.routing.get(tier) {
+                models.push(routed.model.clone());
+            }
+        }
+        models.extend(eff.fallback_models.iter().cloned());
+        budget_warnings(&prices, &models)
+    } else {
+        Vec::new()
+    };
+    for w in &budget_warnings {
+        eprintln!("{w}");
+    }
 
     // Session resume: load history into the freshly spawned agent.
     let is_resume = matches!(
@@ -3118,6 +3145,7 @@ async fn main() -> Result<()> {
             pinned: pinned_choice,
         }),
         prices,
+        budget_warnings,
     )
     .await;
 
@@ -3170,6 +3198,7 @@ async fn run_selected_mode(
     no_clarify: bool,
     routing: Option<TuiRouting>,
     prices: hone_core::PriceLookup,
+    budget_warnings: Vec<String>,
 ) -> Result<()> {
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -3322,6 +3351,7 @@ async fn run_selected_mode(
         step_tx,
         routing,
         prices,
+        budget_warnings,
     )
     .await;
 
@@ -3640,6 +3670,20 @@ fn rates_for(lookup: &hone_core::PriceLookup, model: &str) -> (f64, f64) {
     })
 }
 
+/// `[budget]` warnings for `models` (deduplicated, in order) that have no price.
+fn budget_warnings(lookup: &hone_core::PriceLookup, models: &[ModelId]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    models
+        .iter()
+        .filter(|m| lookup(m).is_none() && seen.insert(m.as_str().to_owned()))
+        .map(|m| {
+            format!(
+                "hone: [budget] can't limit {m}: it has no price; add [pricing.\"{m}\"] to your config"
+            )
+        })
+        .collect()
+}
+
 /// The stderr note for a model without a price.
 fn unpriced_note(model: &str) -> String {
     format!("hone: no price for {model}; its usage isn't counted towards cost or [budget]")
@@ -3713,8 +3757,12 @@ async fn run_tui(
     step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
     routing: Option<TuiRouting>,
     prices: hone_core::PriceLookup,
+    budget_warnings: Vec<String>,
 ) -> Result<()> {
     let mut app = if vim { App::with_vim() } else { App::new() };
+    for w in budget_warnings {
+        app.push_system_message(w);
+    }
     // Wire step-mode sender into app so it can unblock the agent.
     if let Some(tx) = &step_tx {
         app.set_step_tx(tx.clone());
@@ -3833,7 +3881,6 @@ async fn run_tui(
     // Model of the last `ModelFallback` of the running turn: the adaptive
     // classifier records the turn under it, since it gave the answer.
     let mut turn_fallback_model: Option<String> = None;
-    let mut noted_unpriced: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Install a SIGINT handler so the process shuts down cleanly when the
     // terminal sends Ctrl+C at the OS level (e.g. from a wrapper script).
@@ -4288,16 +4335,11 @@ async fn run_tui(
                     note_turn_fallback(&event, &mut turn_fallback_model);
                     record_outcome_for_event(&event, &adaptive, &mut current_tier, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str()), rates_for(&prices, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str())).0, rates_for(&prices, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str())).1, &current_turn_prompt);
                     end_turn_fallback(&event, &mut turn_fallback_model);
-                    let turn_done = matches!(event, AgentEvent::Done { .. });
-                    app.handle_agent_event(event);
-                    if turn_done {
-                        // Once per unpriced model: its usage costs nothing.
-                        for m in agent.unpriced_models().await {
-                            if noted_unpriced.insert(m.clone()) {
-                                app.push_system_message(unpriced_note(&m));
-                            }
-                        }
+                    // Once per unpriced model: its usage costs nothing.
+                    if let AgentEvent::UnpricedModel { model } = &event {
+                        app.push_system_message(unpriced_note(model));
                     }
+                    app.handle_agent_event(event);
                     // When a turn completes, clear the abort handle and restore
                     // any follow-up message the user typed while waiting.
                     if matches!(app.state(), AppState::Idle | AppState::Error(_)) {

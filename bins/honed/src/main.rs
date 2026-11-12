@@ -11,6 +11,13 @@ use hone_server::{
 #[tokio::main]
 async fn main() -> Result<()> {
     hone_tools::install_panic_cleanup();
+    // Every executor's agents are priced per model (the default table).
+    {
+        let table = hone_providers::PricingTable::default_table();
+        hone_core::set_default_price_lookup(std::sync::Arc::new(move |m: &hone_proto::ModelId| {
+            table.get(m).cloned()
+        }));
+    }
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -426,8 +433,9 @@ async fn main() -> Result<()> {
                     let model = hone_proto::ModelId::new("anthropic:claude-sonnet-4-5");
                     let pricing = hone_proto::PricingEntry {
                         model: model.clone(),
-                        input_per_million: 3.0,
-                        output_per_million: 15.0,
+                        // A placeholder: the process-wide price lookup prices every call.
+                        input_per_million: 0.0,
+                        output_per_million: 0.0,
                         cache_read_per_million: None,
                         cache_creation_per_million: None,
                     };

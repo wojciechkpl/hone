@@ -7,6 +7,23 @@ pub struct PricingTable {
     entries: HashMap<String, PricingEntry>,
 }
 
+/// `id` without a trailing `-YYYY-MM-DD`, when it has one.
+fn strip_date_suffix(id: &str) -> Option<&str> {
+    let bytes = id.as_bytes();
+    let n = bytes.len();
+    if n < 11 {
+        return None;
+    }
+    let tail = &bytes[n - 11..];
+    let shape_ok = tail[0] == b'-'
+        && tail[5] == b'-'
+        && tail[8] == b'-'
+        && tail[1..5].iter().all(u8::is_ascii_digit)
+        && tail[6..8].iter().all(u8::is_ascii_digit)
+        && tail[9..11].iter().all(u8::is_ascii_digit);
+    shape_ok.then(|| &id[..n - 11])
+}
+
 impl PricingTable {
     /// Build a table pre-populated with known model prices.
     pub fn default_table() -> Self {
@@ -125,8 +142,14 @@ impl PricingTable {
     }
 
     /// Look up pricing for a model by its `ModelId`.
+    ///
+    /// An id ending in `-YYYY-MM-DD` that has no entry of its own is priced with
+    /// its base id's entry (`openai:gpt-4o-2024-08-06` as `openai:gpt-4o`).
     pub fn get(&self, model: &ModelId) -> Option<&PricingEntry> {
-        self.entries.get(model.as_str())
+        let id = model.as_str();
+        self.entries
+            .get(id)
+            .or_else(|| strip_date_suffix(id).and_then(|base| self.entries.get(base)))
     }
 
     /// Add or replace a pricing entry (keyed by the entry's model ID).

@@ -157,8 +157,14 @@ impl RalphLoop {
             let review = reviewer.review(&final_response, events.clone()).await?;
             total_usage = total_usage + review.usage;
             // Estimate review cost from usage (reviewer has no cost_usd field).
-            let review_cost =
-                (review.usage.input as f64 * 3.0 + review.usage.output as f64 * 15.0) / 1_000_000.0;
+            let review_cost = crate::agent::default_price(&reviewer_config.model).map_or(0.0, |p| {
+                p.calculate_cost(
+                    review.usage.input,
+                    review.usage.output,
+                    review.usage.cache_read,
+                    review.usage.cache_creation,
+                )
+            });
             total_cost += review_cost;
 
             let blocking_issues: Vec<&ReviewIssue> = review

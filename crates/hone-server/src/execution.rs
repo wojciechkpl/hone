@@ -207,6 +207,7 @@ fn event_type(event: &AgentEvent) -> &'static str {
         AgentEvent::ContextAssembled { .. } => "context_assembled",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
         AgentEvent::ModelFallback { .. } => "model_fallback",
+        AgentEvent::UnpricedModel { .. } => "unpriced_model",
         _ => "unknown",
     }
 }
@@ -385,8 +386,8 @@ pub async fn run_handler(
                     let prefixed = ModelId::new(format!("anthropic:{}", model_id.as_str()));
                     table.get(&prefixed).cloned().unwrap_or(PricingEntry {
                         model: model_id.clone(),
-                        input_per_million: 3.0,
-                        output_per_million: 15.0,
+                        input_per_million: 0.0,
+                        output_per_million: 0.0,
                         cache_read_per_million: None,
                         cache_creation_per_million: None,
                     })
