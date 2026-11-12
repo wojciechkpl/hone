@@ -1663,10 +1663,11 @@ fn spawn_orchestrated_turn(
                         .await;
                 }
                 let summary = format!(
-                    "\n\n--- Orchestration complete ---\n{}\n\nTotal cost: ${:.6} | workers: {}",
+                    "\n\n--- Orchestration complete ---\n{}\n\nTotal cost: ${:.6} | workers: {}{}",
                     result.merged_response,
                     result.total_cost_usd,
-                    result.workers.len()
+                    result.workers.len(),
+                    incomplete_mark()
                 );
                 let _ = tx.send(AgentEvent::Token { text: summary }).await;
                 let _ = tx
@@ -1818,10 +1819,12 @@ async fn run_orchestrate(
             let _ = printer.await;
             println!("\n\n--- Final Response ---");
             println!("{}", result.merged_response);
+            note_unpriced_seen();
             println!(
-                "\nTotal cost: ${:.6} | workers: {}",
+                "\nTotal cost: ${:.6} | workers: {}{}",
                 result.total_cost_usd,
-                result.workers.len()
+                result.workers.len(),
+                incomplete_mark()
             );
         }
         Err(e) => {
@@ -1897,11 +1900,13 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
     let result = ensemble.run(prompt, tx).await?;
     let _ = printer.await;
 
+    note_unpriced_seen();
     println!(
-        "\n\n[Ensemble: picked candidate {}/{} (${:.4} total)]\n\n{}",
+        "\n\n[Ensemble: picked candidate {}/{} (${:.4} total{})]\n\n{}",
         result.winner_index + 1,
         result.all_candidates.len(),
         result.total_cost_usd,
+        if incomplete_mark().is_empty() { "" } else { " (incomplete: unpriced models)" },
         result.winner.response,
     );
 
@@ -3684,6 +3689,23 @@ fn budget_warnings(lookup: &hone_core::PriceLookup, models: &[ModelId]) -> Vec<S
         .collect()
 }
 
+/// Print the stderr note for every model of this process that had an unpriced
+/// call (orchestrated and ensemble runs spawn their own agents).
+fn note_unpriced_seen() {
+    for m in hone_core::unpriced_models_seen() {
+        eprintln!("{}", unpriced_note(&m));
+    }
+}
+
+/// ` (incomplete: unpriced models)` when any call of this process was unpriced.
+fn incomplete_mark() -> &'static str {
+    if hone_core::unpriced_models_seen().is_empty() {
+        ""
+    } else {
+        " (incomplete: unpriced models)"
+    }
+}
+
 /// The stderr note for a model without a price.
 fn unpriced_note(model: &str) -> String {
     format!("hone: no price for {model}; its usage isn't counted towards cost or [budget]")
@@ -4335,10 +4357,6 @@ async fn run_tui(
                     note_turn_fallback(&event, &mut turn_fallback_model);
                     record_outcome_for_event(&event, &adaptive, &mut current_tier, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str()), rates_for(&prices, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str())).0, rates_for(&prices, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str())).1, &current_turn_prompt);
                     end_turn_fallback(&event, &mut turn_fallback_model);
-                    // Once per unpriced model: its usage costs nothing.
-                    if let AgentEvent::UnpricedModel { model } = &event {
-                        app.push_system_message(unpriced_note(model));
-                    }
                     app.handle_agent_event(event);
                     // When a turn completes, clear the abort handle and restore
                     // any follow-up message the user typed while waiting.

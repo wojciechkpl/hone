@@ -242,6 +242,10 @@ session_limit_usd = 2.0
 
 </details>
 
+### Pricing and `[budget]`
+
+Cost is computed per call from the price of the model that served it: the built-in table, with your `[pricing."provider:model"]` tables on top (`input_per_million`, `output_per_million`, optional `cache_read_per_million` and `cache_creation_per_million`; a project file's `[pricing]` is ignored). A model id ending in `-YYYY-MM-DD` or `-YYYYMMDD` uses its base id's price. A model with no price costs nothing and Hone says so once per model (`--json` sets `cost_known` to false); with a session limit it also warns before the first call. `AgentConfig.pricing` (the single price an embedding program passes) applies only when no price lookup is set. Usage that arrives more than 2 seconds after an OpenAI-compatible stream's final chunk isn't counted.
+
 ### Routing and fallback
 
 Hone sorts every prompt as **simple**, **medium** or **complex** (short single-file fixes

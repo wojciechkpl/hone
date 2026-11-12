@@ -201,6 +201,8 @@ pub struct App {
     /// when a turn starts or is cancelled (not on `Done`: an orchestrated turn
     /// sends one per worker).
     fallback_notices: std::collections::HashSet<(String, String)>,
+    /// Models whose "no price" note was shown.
+    unpriced_notices: std::collections::HashSet<String>,
 
     // --- Session switcher overlay -------------------------------------------
     /// Whether the session-switcher overlay is open (Ctrl+O).
@@ -324,6 +326,7 @@ impl App {
             plan_preview_opened_at: None,
             turn_start: None,
             fallback_notices: std::collections::HashSet::new(),
+            unpriced_notices: std::collections::HashSet::new(),
             sessions_open: false,
             sessions_list: Vec::new(),
             sessions_cursor: 0,
@@ -2586,6 +2589,14 @@ impl App {
                 self.status.active_tool = None;
                 self.state = AppState::Error(message);
                 self.pending_active_agent = None;
+            }
+
+            AgentEvent::UnpricedModel { model } => {
+                if self.unpriced_notices.insert(model.clone()) {
+                    self.push_system_message(format!(
+                        "no price for {model}; its usage isn't counted towards cost or [budget]"
+                    ));
+                }
             }
 
             AgentEvent::ModelFallback {

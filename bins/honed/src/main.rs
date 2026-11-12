@@ -11,12 +11,22 @@ use hone_server::{
 #[tokio::main]
 async fn main() -> Result<()> {
     hone_tools::install_panic_cleanup();
-    // Every executor's agents are priced per model (the default table).
+    // Every executor's agents are priced per model: the default table plus the
+    // user's `[pricing]` (a broken config file falls back to the table alone).
     {
-        let table = hone_providers::PricingTable::default_table();
-        hone_core::set_default_price_lookup(std::sync::Arc::new(move |m: &hone_proto::ModelId| {
-            table.get(m).cloned()
-        }));
+        let user = std::env::var("HOME").ok().and_then(|home| {
+            hone_config::resolve::ConfigLayer::load(
+                &std::path::PathBuf::from(home).join(".config/hone/config.toml"),
+            )
+            .map_err(|e| eprintln!("honed: ignoring [pricing] of the user config: {e}"))
+            .ok()
+            .flatten()
+        });
+        if let Ok(lookup) = hone_server::build_price_lookup(user.as_ref(), None)
+            .or_else(|_| hone_server::build_price_lookup(None, None))
+        {
+            hone_core::set_default_price_lookup(lookup);
+        }
     }
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())

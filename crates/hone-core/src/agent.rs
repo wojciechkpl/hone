@@ -59,6 +59,14 @@ pub fn default_price(model: &ModelId) -> Option<PricingEntry> {
     default_price_lookup().and_then(|lookup| lookup(model))
 }
 
+static UNPRICED_SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Models any agent of this process has had an unpriced call for, in first-seen
+/// order (orchestrator and ensemble agents included).
+pub fn unpriced_models_seen() -> Vec<String> {
+    UNPRICED_SEEN.lock().map(|v| v.clone()).unwrap_or_default()
+}
+
 fn default_price_lookup() -> Option<PriceLookup> {
     DEFAULT_PRICE_LOOKUP.read().ok().and_then(|slot| slot.clone())
 }
@@ -1069,6 +1077,11 @@ impl Agent {
             Some(price) => self.cost.add(usage, &price),
             None => {
                 self.cost.add_unpriced(usage);
+                if let Ok(mut seen) = UNPRICED_SEEN.lock() {
+                    if !seen.iter().any(|m| m == model.as_str()) {
+                        seen.push(model.as_str().to_owned());
+                    }
+                }
                 if !self.unpriced_models.iter().any(|m| m == model.as_str()) {
                     self.unpriced_models.push(model.as_str().to_owned());
                     self.unannounced_unpriced.push(model.as_str().to_owned());
