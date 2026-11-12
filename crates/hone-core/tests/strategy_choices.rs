@@ -543,12 +543,18 @@ async fn test_s7_phase_true_should_compact_when_a_write_follows_reads_a() {
         "fix it",
     )
     .await;
-    assert_eq!(
-        off.agent.metrics_snapshot().phase_transitions,
-        0,
-        "phase compaction is off by default"
+    // K11: the tracker always runs (it may record the transition); only the
+    // compaction is gated by `phase`.
+    assert!(
+        tool_texts(&off)[0].contains("lorem"),
+        "phase compaction is off by default: r1 stays verbatim"
     );
-    assert!(tool_texts(&off)[0].contains("lorem"), "r1 stays verbatim");
+    assert!(
+        !tool_texts(&off)
+            .iter()
+            .any(|t| t.starts_with("[tool result summarized")),
+        "nothing is summarised"
+    );
 
     let on = run(
         Some(strategies("[context.graduated]\nphase = true\n", no_inject)),
