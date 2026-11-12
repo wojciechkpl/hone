@@ -4,7 +4,10 @@ usage: python3 -I -B judge.py <task-id>     (the check's launcher copies this fi
 into a private bundle directory and execs it from there with EVAL_SUITE_DIR removed, so the
 suite's path is in no argv or environment this process or its children can see; the bundle has
 the suite's relative layout: checks/lib, checks/specs, checks/data and the task's base files).
-This process runs NO agent code. It
+This process runs NO agent code. Before it starts any solution process it has loaded the spec
+(salts, hashes, probe inputs) and the manifest into memory and deleted its bundle (T23), so
+nothing on disk, and nothing `ps` can point a solution at, holds an expectation while solution
+code runs. It
 
   1. copies what it needs (harness scripts, pristine tests and project files) into a private
      temp directory, then moves its own cwd out of the agent's copy;
@@ -52,6 +55,8 @@ def make_readonly(path):
 
 
 def _rmtree(path):
+    if not os.path.exists(path):
+        return
     def onerror(func, p, _):
         try:
             os.chmod(os.path.dirname(p), 0o755)
@@ -120,6 +125,16 @@ for rel, asset in SPEC.get("add", {}).items():
     shutil.copy(os.path.join(ASSETS, asset), dst)
 
 
+# T23: from here on nothing the solution could read holds an expectation. Everything the run needs
+# (spec with salts and hashes, probe inputs, manifest) is in memory or in PRIV (harness scripts and
+# pristine project files); the bundle that held the spec is deleted BEFORE any solution process
+# starts, so a solution that finds this process's argv in `ps` finds no file behind it.
+MANIFEST = None
+if SPEC.get("manifest"):
+    MANIFEST = json.load(open(os.path.join(SUITE, "checks", "data", SPEC["manifest"]), encoding="utf-8"))
+_rmtree(BUNDLE)
+
+
 def child_env():
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
@@ -142,11 +157,15 @@ def run_child(argv, stdin_text=None, timeout=25):
     process wait; it only waits for the direct child, with a deadline, then kills its group."""
     io_dir = os.path.join(PRIV, "io")
     os.makedirs(io_dir, exist_ok=True)
-    stdin_path = os.path.join(io_dir, "stdin")
-    with open(stdin_path, "w", encoding="utf-8") as f:
+    # Fresh files for every child (mkstemp): a process an earlier child left running in its own
+    # session can hold that child's descriptors, but never a later child's.
+    fd, stdin_path = tempfile.mkstemp(dir=io_dir, prefix="in-")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(stdin_text or "")
-    out_path = os.path.join(io_dir, "stdout")
-    err_path = os.path.join(io_dir, "stderr")
+    fd, out_path = tempfile.mkstemp(dir=io_dir, prefix="out-")
+    os.close(fd)
+    fd, err_path = tempfile.mkstemp(dir=io_dir, prefix="err-")
+    os.close(fd)
     with open(stdin_path, "rb") as fin, open(out_path, "wb") as fout, open(err_path, "wb") as ferr:
         proc = subprocess.Popen(
             argv, cwd=WORK, env=child_env(), stdin=fin if stdin_text is not None else subprocess.DEVNULL,
@@ -277,9 +296,8 @@ for case, got in zip(cases, results):
         problems.append(f"{label}: the result {shown} is not the expected one")
 
 # the context tasks: only the target file may differ from the original project
-manifest = SPEC.get("manifest")
-if manifest:
-    m = json.load(open(os.path.join(SUITE, "checks", "data", manifest), encoding="utf-8"))
+if MANIFEST:
+    m = MANIFEST
     targets = set(m["target"])
 
     def sha(path):

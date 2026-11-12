@@ -182,6 +182,22 @@ if [ -z "$only" ]; then
   fi
 fi
 
+# T24 self-test: the launcher's sweep removes a stale read-only bundle and keeps a fresh one
+if [ -z "$only" ]; then
+  mkdir -p "$work/tmp/evalchk.stale/checks" "$work/tmp/evalchk.fresh"
+  touch -t 200001010000 "$work/tmp/evalchk.stale"
+  chmod -R a-w "$work/tmp/evalchk.stale"
+  python3 -I -B "$suite/checks/lib/sweep.py" "$work/tmp"
+  if [ -e "$work/tmp/evalchk.stale" ] || [ ! -d "$work/tmp/evalchk.fresh" ]; then
+    echo "FAIL  sweep: a stale bundle was kept or a fresh one removed"
+    echo "x" >>"$work/failed"
+  else
+    echo "OK    sweep: a stale read-only bundle is removed, a fresh one is kept"
+  fi
+  chmod -R u+w "$work/tmp/evalchk.fresh"
+  rmdir "$work/tmp/evalchk.fresh" 2>/dev/null || true
+fi
+
 # T20 self-test: a check that modifies the suite must be detected (the file is restored at once).
 if [ -z "$only" ]; then
   cp "$suite/checks/lib/judge.py" "$work/judge.bak"

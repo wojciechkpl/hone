@@ -111,21 +111,20 @@ a model call.
 
 ## Residual risk
 
-Round 4 closed the routes an agent child could use to *find* the expectations (T18-T21): the specs
-hold salted hashes, the judge runs from a private bundle without the suite path, `verify.sh` (and
-`hone eval` with `[eval] integrity = ["checks", "reference"]`) fails a run when `checks/` or
-`reference/` change, and no wait on agent code is unbounded. What remains: agent code running as
-your user can read any file your user can, including `reference/` and the plaintext
-`checks/spec-src/`, and the runner itself (`verify.sh`, `hone eval <suite>`) is an ancestor whose
-command line names the suite. Run suites on a machine or account where that matters, or treat
-results as measurements of cooperative models, not proofs. A process that escapes into its own
-session also survives a check; the checks don't wait for it, but they cannot kill it.
+What the checks guarantee, precisely (T18, T23, T24, T26). Verdicts come from a judge that never
+runs solution code and keeps its expectations off disk while solution code runs: the judge loads
+the spec (salted hashes, probe inputs) and the manifest into memory and deletes its bundle before
+it starts any solution process, so a solution that walks its ancestors with `ps` finds the judge's
+command line but no file behind it. The salted hashes only keep the spec files from handing out
+answers while they exist; they are not secret against brute force of a small answer space, which is
+why the bundle must not exist while solution code runs. Suite files are integrity-checked by
+`verify.sh` (and by `hone eval` once the branch carries PR F's `[eval] integrity` support): any
+change to `checks/` or `reference/` during a run fails it.
 
-
-Eval agents run in a copy of the task directory, but they are not sandboxed from reading the rest
-of the disk, and the suite's path is in the process table while a check runs (the parent's argv
-and environment). A determined agent could find the suite, its reference solutions and the
-expected values. The checks are built so that nothing the child can reach decides a verdict, but
-that is a mitigation, not a proof: run suites from a location the model is not told about, and
-treat results as measurements, not proofs. Run the agent in a container or a separate user if the
-numbers matter.
+What they do not guarantee: solution code runs as your user, so it can read any file your user can,
+including the suite's `reference/` solutions and the plaintext `checks/spec-src/`; the runner
+(`verify.sh`, `hone eval <suite>`) is an ancestor whose command line names the suite. A process
+that starts its own session escapes the group kill and can outlive the run (each child gets its
+own output files, so it cannot write into a later child's output, and the checks never wait for
+it). Run suites on a machine or account where that matters, and treat results as measurements of
+cooperative models, not proofs.
