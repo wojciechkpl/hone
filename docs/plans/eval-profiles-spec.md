@@ -90,7 +90,7 @@ flowchart LR
 |---|---|
 | F32 | **Every run is checked, whatever its status.** The integrity hash is recomputed after every run (pass, fail, timeout, agent error, interrupted) and once more at the end of the eval; a change marks the run where it was found and the remaining runs `infra_error` and sets `integrity_violated`. |
 | F33 | **The integrity hash is robust and cheap.** The eval's own output directory and the system temp dir are excluded from hashing; `--check` errors if an integrity directory contains the output directory. The hash covers each file's path, size, mtime (ns) and content, so a change that's reverted before the next hash is still detected through mtime; a symlink inside an integrity directory is hashed by its target's content when the target lies under an integrity directory. Files are hashed streaming (no whole-file reads) on a blocking thread. `docs/eval.md` says checks must not write inside integrity directories. |
-| F34 | **Parallel runs can't slip past a violation.** With `--jobs` above 1, the integrity hash is re-checked right before each check starts. When a violation is found, every run whose check started after the last good hash is also marked `infra_error` ("suite modified during the run"), not only the run where it was found. |
+| F34 | **A changed suite never judges a run.** The integrity hash is re-checked right before each check starts. If the suite changed, that check isn't started, and the run (and per F32 the remaining runs) ends `infra_error` ("suite modified during the run"). With `--jobs` above 1, a run whose check started after the change is caught by its own post-run re-hash (F32). |
 
 ## Testing notes
 
