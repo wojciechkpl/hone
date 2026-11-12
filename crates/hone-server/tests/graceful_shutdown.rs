@@ -912,12 +912,8 @@ async fn test_d8_open_stream_should_end_for_the_client_soon_after_the_limit() {
     // The test runtime keeps running: only the cut can end the stream.
     let start = Instant::now();
     let ended = tokio::time::timeout(Duration::from_millis(2500), async {
-        loop {
-            match resp.chunk().await {
-                Ok(Some(_)) => continue,
-                Ok(None) | Err(_) => break,
-            }
-        }
+        // Read until the stream ends (EOF or an error).
+        while let Ok(Some(_)) = resp.chunk().await {}
     })
     .await;
     let took = start.elapsed();
