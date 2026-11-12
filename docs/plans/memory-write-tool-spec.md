@@ -28,6 +28,21 @@ flowchart LR
 | W6 | **Bounded.** At most 20 `memory_write` calls succeed per session; later calls return a tool error. |
 | W7 | **Visible.** Each successful write sends `AgentEvent::MemoryWritten { id, kind, status }` (status `added`/`updated`), rendered by the TUI as one line and named `memory_written` in the server's event maps. Encrypted stores work through the same path. |
 
+### Review round 1 (W8–W15)
+
+Review reproduced, auto-approved and with no injection: a `memory_write` near-duplicate rewrote the user's own feedback memory into its opposite, changed its kind and added a `source:user` tag; tool content with newlines forged a "verified" section inside the next session's system-role "Relevant Memories" block; a plain-language instruction in a repository file was stored without forced approval (the regex detector didn't flag it), and a labelled injection from an earlier turn still in context didn't count.
+
+| Row | Behaviour |
+|---|---|
+| W8 | **The model can only update its own memories.** A tool write's near-duplicate check (`find_similar` 0.8) considers only memories tagged `source:tool` of the same kind; a match against any other memory (user-, trigger- or import-written) adds a new memory instead of updating. An update never changes a memory's kind. |
+| W9 | **Reserved tags are refused.** Tags starting with `source:`, `call:`, `project:` or `__` in the tool's input are an input error naming the tag. The runtime's own `call:<id>` tags keep only the newest 5 on a memory. |
+| W10 | **Tool content is stored as one line of data.** Newlines, tabs and other control characters in `content` are collapsed to single spaces before storing, so a stored memory can't introduce headings or list items into a later prompt. |
+| W11 | **Model-written memories are labelled where they're shown.** In the "Relevant Memories" block and the memory index, a `source:tool` memory is prefixed `(model-written)`. |
+| W12 | **Approval is forced whenever untrusted content is in context.** `memory_write` needs approval (overriding auto-approve, `--yes` and session "always") when the request it's part of contains any result of `read_file`, `grep`, `glob`, `shell`, `web_fetch`, `web_search`, an LSP tool or an MCP tool, or a HONE.md section — in this turn or any earlier one still in context. With no approver (headless), it's refused with an error that says why. A write in a turn whose context holds none of these (conversation only) follows the normal approval policy. This replaces W5's same-turn, regex-only rule. |
+| W13 | **Tool-written memories stay in their project.** A tool write is tagged `project:<id>` (a hash of the working directory's canonical path, or of the git top-level when inside a repository), and recall and the memory index include `source:tool` memories only when that tag matches the current project. Other memories are unaffected. |
+| W14 | **The approval prompt says what an update replaces.** When a tool write would update an existing memory, the approval request's arguments include `replaces: {id, content preview (≤120 chars)}`. |
+| W15 | **Rules and limits are documented.** `docs/configuration.md` documents the `tool` writers, that permission rules match `memory_write` as `command = "memory_write"` (and that a broad `command = "*"` rule covers it), that the 20-write cap is per agent (one process; a TUI session switch resets it), that tags are stored unencrypted with `--encrypted-memory`, and that a new memory reaches the memory index on the next start (recall finds it next turn). A warning is logged when an MCP tool named `memory_write` is shadowed. |
+
 ## Testing notes
 
 - **W2/W3/W6** through a real agent with the scripted provider calling `memory_write`, on an `InMemoryStore`/temp `SqliteStore`; dedup with a near-duplicate.
