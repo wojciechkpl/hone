@@ -118,6 +118,12 @@ pub struct ContextReceipt {
     /// Compaction since the previous receipt.
     pub compaction: Vec<CompactionStep>,
     pub tools_offered: Vec<String>,
+    /// Number of non-system messages in the request.
+    pub history_len: u32,
+    /// SHA-256 (hex) of the newline-joined per-message hashes of those
+    /// messages, in request order. The `History` block lists only the messages
+    /// new or changed since the agent's previous receipt; this commits to all.
+    pub history_root: String,
 }
 
 /// Lowercase hex SHA-256 of `bytes`.

@@ -7865,6 +7865,8 @@ mod tui_panic_restore_tests {
             dropped: vec![],
             compaction: vec![],
             tools_offered: vec![],
+            history_len: 0,
+            history_root: String::new(),
         }
     }
 

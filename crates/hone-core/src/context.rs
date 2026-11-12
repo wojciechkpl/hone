@@ -1,3 +1,20 @@
+//! Context management: token budgeting, compaction and phase tracking.
+//!
+//! # Compaction log and receipts
+//!
+//! The manager records every change it makes to the stored history as a
+//! [`CompactionStep`] (see [`ContextManager::drain_compaction_log`]), for context
+//! receipts. Two index spaces are in play:
+//!
+//! - compaction refs use positions in the **stored history** (the system prompt,
+//!   recall and skills blocks are not part of it). Within one drop pass, every
+//!   `replaced` ref's index is its position before the pass started;
+//! - the `History` block of a receipt uses positions in the **request** as sent.
+//!
+//! The two are linked by `sha256` (the hash of the message). A dedup step's
+//! `replaced` ref is the hash of the incoming message, which was never stored; its
+//! index is the position the pointer message took.
+
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
@@ -539,6 +556,9 @@ pub struct ContextManager {
     phase_compaction: bool,
     /// What compaction changed since the log was last drained (for receipts).
     compaction_log: Vec<CompactionStep>,
+    /// Hash of each stored message (parallel to `messages`), filled lazily and
+    /// reset when a message is rewritten.
+    hashes: Vec<Option<String>>,
 }
 
 impl ContextManager {
@@ -555,6 +575,7 @@ impl ContextManager {
             phase_tracker: PhaseTracker::new(),
             phase_compaction: phase_compaction_from_env(),
             compaction_log: Vec::new(),
+            hashes: Vec::new(),
         }
     }
 
@@ -572,6 +593,7 @@ impl ContextManager {
             phase_tracker: PhaseTracker::new(),
             phase_compaction: phase_compaction_from_env(),
             compaction_log: Vec::new(),
+            hashes: Vec::new(),
         }
     }
 
@@ -708,6 +730,7 @@ impl ContextManager {
         };
 
         self.messages.push(message);
+        self.hashes.push(None);
         self.trim_to_budget();
     }
 
@@ -734,6 +757,8 @@ impl ContextManager {
         let dropped_before = self.dropped_count;
         let recent_window = self.config.recent_window;
         let mut removed_refs: Vec<SourceRef> = Vec::new();
+        // Position each stored message had before this pass started.
+        let mut pre_pass: Vec<usize> = (0..self.messages.len()).collect();
         loop {
             if self.total_tokens() <= self.max_context_tokens {
                 break;
@@ -749,7 +774,9 @@ impl ContextManager {
             };
 
             let removed = self.messages.remove(idx);
-            removed_refs.push(message_ref(idx, &removed));
+            self.hashes.remove(idx);
+            let before = pre_pass.remove(idx);
+            removed_refs.push(message_ref(before, &removed));
             self.record_dropped_message(removed);
         }
 
@@ -761,7 +788,8 @@ impl ContextManager {
         }
 
         // Step 3: emit a summary marker.
-        let marker = self.flush_dropped_summary();
+        let (marker, old_marker) = self.flush_dropped_summary(&pre_pass);
+        removed_refs.extend(old_marker);
         if !removed_refs.is_empty() {
             self.log_step(
                 "drop_oldest",
@@ -825,6 +853,7 @@ impl ContextManager {
 
                     let before = message_ref(i, &self.messages[i]);
                     self.messages[i].content = Content::Text(compressed);
+                    self.hashes[i] = None;
                     let after = message_ref(i, &self.messages[i]);
                     self.log_step(
                         "graduated",
@@ -868,6 +897,7 @@ impl ContextManager {
             let path = self.call_paths_for(i).into_iter().next();
             let before = message_ref(i, &self.messages[i]);
             self.messages[i].content = Content::Text(structural_summary(&text, path.as_deref()));
+            self.hashes[i] = None;
             let after = message_ref(i, &self.messages[i]);
             self.log_step(
                 "phase",
@@ -922,9 +952,16 @@ impl ContextManager {
     /// Emit a "[session history: …]" system message summarising every message
     /// dropped in this trim pass.  Replaces any existing summary marker to
     /// avoid duplicates.
-    fn flush_dropped_summary(&mut self) -> Option<SourceRef> {
+    ///
+    /// `pre_pass` maps each stored position to the position it had before the
+    /// current drop pass. Returns the new marker's ref and the ref of the marker
+    /// it replaced, if any.
+    fn flush_dropped_summary(
+        &mut self,
+        pre_pass: &[usize],
+    ) -> (Option<SourceRef>, Option<SourceRef>) {
         if self.dropped_count == 0 {
-            return None;
+            return (None, None);
         }
 
         let summary = format!(
@@ -934,10 +971,16 @@ impl ContextManager {
         );
 
         // Remove any pre-existing summary marker first.
+        let mut replaced = None;
         if let Some(existing) =
             (0..self.messages.len()).find(|i| is_summary_marker_at(&self.messages, *i))
         {
-            self.messages.remove(existing);
+            let old = self.messages.remove(existing);
+            self.hashes.remove(existing);
+            replaced = Some(message_ref(
+                pre_pass.get(existing).copied().unwrap_or(existing),
+                &old,
+            ));
         }
 
         // Insert after the first stored system message (index 0) if one is
@@ -960,10 +1003,11 @@ impl ContextManager {
         };
         let marker_ref = message_ref(insert_at, &marker);
         self.messages.insert(insert_at, marker);
+        self.hashes.insert(insert_at, None);
 
         self.dropped_count = 0;
         self.dropped_role_hints.clear();
-        Some(marker_ref)
+        (Some(marker_ref), replaced)
     }
 
     /// Build the full message list for a completion request.
@@ -974,17 +1018,51 @@ impl ContextManager {
     /// latest user query so the most relevant content sits at the high-
     /// attention edges of the context window.
     pub fn build_messages(&self, system_prompt: &str) -> Vec<Message> {
+        let mut result = Vec::with_capacity(self.messages.len() + 1);
+        result.push(Message::system(system_prompt));
+        result.extend(
+            self.request_order()
+                .into_iter()
+                .map(|i| self.messages[i].clone()),
+        );
+        result
+    }
+
+    /// Like [`build_messages`](Self::build_messages), plus the hash of each
+    /// message (the system prompt included), from the per-message cache: only new
+    /// or rewritten messages are hashed.
+    pub fn build_messages_hashed(&mut self, system_prompt: &str) -> (Vec<Message>, Vec<String>) {
+        let order = self.request_order();
+        let system = Message::system(system_prompt);
+        let mut messages = Vec::with_capacity(order.len() + 1);
+        let mut hashes = Vec::with_capacity(order.len() + 1);
+        hashes.push(message_sha256(&system));
+        messages.push(system);
+        for i in order {
+            let hash = match &self.hashes[i] {
+                Some(h) => h.clone(),
+                None => {
+                    let h = message_sha256(&self.messages[i]);
+                    self.hashes[i] = Some(h.clone());
+                    h
+                }
+            };
+            hashes.push(hash);
+            messages.push(self.messages[i].clone());
+        }
+        (messages, hashes)
+    }
+
+    /// Stored-message indexes in the order they are sent.
+    fn request_order(&self) -> Vec<usize> {
         use crate::relevance::{Bm25Scorer, interleave_edges};
 
-        let system = Message::system(system_prompt);
-        let mut result = Vec::with_capacity(self.messages.len() + 1);
-        result.push(system);
+        let mut result: Vec<usize> = Vec::with_capacity(self.messages.len());
 
         // Short-circuit: no reordering if disabled or too few messages.
         let recent_window = self.config.recent_window;
         if !self.config.reorder_middle_zone || self.messages.len() <= recent_window + 2 {
-            result.extend_from_slice(&self.messages);
-            return result;
+            return (0..self.messages.len()).collect();
         }
 
         // Identify zones.
@@ -1001,8 +1079,7 @@ impl ContextManager {
             .unwrap_or_default();
 
         if query.is_empty() {
-            result.extend_from_slice(&self.messages);
-            return result;
+            return (0..self.messages.len()).collect();
         }
 
         // Partition messages into start/middle/recent zones.
@@ -1025,8 +1102,7 @@ impl ContextManager {
 
         // Only reorder if there are enough tool messages to matter.
         if middle_tool_indices.len() < 3 {
-            result.extend_from_slice(&self.messages);
-            return result;
+            return (0..self.messages.len()).collect();
         }
 
         // Score tool messages by BM25 relevance.
@@ -1050,7 +1126,7 @@ impl ContextManager {
         // Assemble: start + middle_other (chronological) interleaved with
         // reordered tools + recent.
         for &i in &start_zone {
-            result.push(self.messages[i].clone());
+            result.push(i);
         }
 
         // Merge middle_other (chronological) and reordered tools.
@@ -1058,20 +1134,20 @@ impl ContextManager {
         // and insert reordered tool messages in the gaps.
         let mut tool_iter = reordered_tool_indices.iter();
         for &i in &middle_other_indices {
-            result.push(self.messages[i].clone());
+            result.push(i);
             // After each non-tool message, insert the next reordered tool if
             // there are tools remaining.
             if let Some(&ti) = tool_iter.next() {
-                result.push(self.messages[ti].clone());
+                result.push(ti);
             }
         }
         // Append any remaining tool messages.
         for &ti in tool_iter {
-            result.push(self.messages[ti].clone());
+            result.push(ti);
         }
 
         for &i in &recent_zone {
-            result.push(self.messages[i].clone());
+            result.push(i);
         }
 
         result
@@ -1080,6 +1156,7 @@ impl ContextManager {
     /// Remove all stored messages (system prompt is re-supplied at build time).
     pub fn clear(&mut self) {
         self.messages.clear();
+        self.hashes.clear();
         self.compaction_log.clear();
     }
 

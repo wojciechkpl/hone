@@ -5,9 +5,10 @@
 
 use hone_proto::{
     BlockReceipt, CompactionStep, ContextReceipt, Message, Role, ScoredSource, Slot, SourceRef,
-    StrategyId, canonical_json_sha256, message_sha256, request_sha256,
+    StrategyId, canonical_json_sha256, request_sha256, sha256_hex,
 };
 
+use crate::agent::{RECALL_LIMIT, RECALL_RRF_K, SEMANTIC_RECALL_FETCH};
 use crate::context::estimate_text_tokens;
 
 /// What recall did for the current turn.
@@ -77,6 +78,11 @@ fn unscored(source: SourceRef) -> ScoredSource {
 /// The receipt for the request made of `messages` (as sent, system prompt
 /// first) and `tool_names`. `recall_at` and `skills_at` are the positions of
 /// the recall and skills system messages in `messages`, when present.
+///
+/// `hashes` holds the hash of every message of `messages` (cached by the
+/// context manager). The `History` block lists only the non-system messages
+/// whose hash is not in `prev` (the previous receipt's), then `prev` is set to
+/// the hashes of this request.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_receipt(
     turn: u32,
@@ -88,6 +94,8 @@ pub(crate) fn build_receipt(
     skills_at: Option<usize>,
     info: &TurnContextInfo,
     compaction: Vec<CompactionStep>,
+    hashes: &[String],
+    prev: &mut std::collections::HashSet<String>,
 ) -> ContextReceipt {
     let tokens_of = |i: usize| {
         messages
@@ -111,15 +119,15 @@ pub(crate) fn build_receipt(
                 "bm25+semantic:rrf",
                 serde_json::json!({
                     "exclude": ["outcome"],
-                    "limit": 5,
-                    "rrf_k": 60,
-                    "semantic_fetch": 20,
+                    "limit": RECALL_LIMIT,
+                    "rrf_k": RECALL_RRF_K,
+                    "semantic_fetch": SEMANTIC_RECALL_FETCH,
                 }),
             )
         } else {
             (
                 "bm25",
-                serde_json::json!({ "exclude": ["outcome"], "limit": 5 }),
+                serde_json::json!({ "exclude": ["outcome"], "limit": RECALL_LIMIT }),
             )
         };
         let sources = info
@@ -182,20 +190,31 @@ pub(crate) fn build_receipt(
         ));
     }
 
-    // History: every non-system message of the request, hashed as sent.
+    // History: the non-system messages of the request that are new or changed
+    // since the previous receipt, with their request positions.
     let mut history_tokens = 0u32;
     let mut sources = Vec::new();
+    let mut current: Vec<&str> = Vec::new();
     for (index, m) in messages.iter().enumerate() {
         if m.role == Role::System {
             continue;
         }
+        let Some(hash) = hashes.get(index) else {
+            continue;
+        };
         history_tokens = history_tokens.saturating_add(estimate_text_tokens(&m.content.as_text()));
-        sources.push(unscored(SourceRef::Message {
-            index,
-            sha256: message_sha256(m),
-        }));
+        current.push(hash);
+        if !prev.contains(hash) {
+            sources.push(unscored(SourceRef::Message {
+                index,
+                sha256: hash.clone(),
+            }));
+        }
     }
-    if !sources.is_empty() {
+    let history_len = current.len() as u32;
+    let history_root = sha256_hex(current.join("\n").as_bytes());
+    *prev = current.into_iter().map(str::to_owned).collect();
+    if history_len > 0 {
         blocks.push(block(
             Slot::History,
             "history",
@@ -225,5 +244,7 @@ pub(crate) fn build_receipt(
         dropped,
         compaction,
         tools_offered: tool_names.to_vec(),
+        history_len,
+        history_root,
     }
 }

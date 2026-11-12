@@ -17,27 +17,27 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
-use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
 use crate::context::{ContextManager, estimate_text_tokens};
 use crate::context_injector::{ContextInjector, SkeletonStrategy};
 use crate::cost::CostAccumulator;
 use crate::egress_log::{EgressEntry, EgressLog, SpanKind, TraceContext, now_rfc3339, preview};
 use crate::error::AgentError;
 use crate::hooks::{HookEvent, HookOutcome, HookRegistry};
-use crate::session_approvals::SessionApprovals;
 use crate::injection_detector::InjectionDetector;
 use crate::memory_format::format_memory_body;
 use crate::memory_worthy::{MemoryCandidate, classify_turn};
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
+use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
+use crate::recovery::{FailureScenario, RecoveryAction};
+use crate::retry::{RetryConfig, is_transient_error, retry};
+use crate::session_approvals::SessionApprovals;
+use crate::skills::SkillRegistry;
+use crate::turn::TurnResult;
 use hone_tools::policy_gate::{
     GateDecision, PolicyConfig, decide, read_filter, session_approval_entries,
 };
 use hone_tools::redact::{redact_json, redact_secrets};
-use crate::recovery::{FailureScenario, RecoveryAction};
-use crate::retry::{RetryConfig, is_transient_error, retry};
-use crate::skills::SkillRegistry;
-use crate::turn::TurnResult;
 
 /// Configuration for creating an `Agent`.
 #[derive(Clone)]
@@ -136,7 +136,10 @@ enum PolicyVerdict {
     /// `session_cleared` is true when an `ask` rule was cleared only by a
     /// session "always" (the agent's own or a shared one): the pause is then
     /// skipped too, except under `AlwaysAsk`.
-    Proceed { prompted: bool, session_cleared: bool },
+    Proceed {
+        prompted: bool,
+        session_cleared: bool,
+    },
     /// The call must not run; the caller reports `result` / `message`.
     Blocked {
         result: Value,
@@ -499,11 +502,7 @@ fn redacted_text(redact: bool, text: &str) -> String {
 
 /// The `result` of a `ToolCallEnd` event: redacted when `redact` is set.
 fn event_result(redact: bool, value: Value) -> Value {
-    if redact {
-        redact_json(&value).0
-    } else {
-        value
-    }
+    if redact { redact_json(&value).0 } else { value }
 }
 
 /// The one place a tool result becomes a model-visible message. With `redact` set,
@@ -625,6 +624,9 @@ pub struct Agent {
     turn_count: u32,
     /// Inputs of the current turn's context receipts (recall, skills, injection).
     receipt_info: TurnContextInfo,
+    /// Hashes of the non-system messages of the previous receipt (for the incremental
+    /// `History` listing).
+    receipt_history: std::collections::HashSet<String>,
     metrics: Arc<ContextMetrics>,
     /// Per-turn guard state (reset at the top of each `run_turn` call).
     guards: TurnGuards,
@@ -659,7 +661,11 @@ pub struct Agent {
 
 /// Candidates asked of the semantic recall: more than the 5 used, because
 /// `Outcome` logs are dropped afterwards and must not leave fewer than 5.
-const SEMANTIC_RECALL_FETCH: usize = 20;
+pub(crate) const SEMANTIC_RECALL_FETCH: usize = 20;
+/// Memories recalled per turn.
+pub(crate) const RECALL_LIMIT: usize = 5;
+/// The RRF constant `k` for fusing BM25 and semantic recall.
+pub(crate) const RECALL_RRF_K: usize = 60;
 
 impl Agent {
     pub fn new(mut config: AgentConfig) -> Self {
@@ -697,6 +703,7 @@ impl Agent {
             cost: CostAccumulator::new(),
             turn_count: 0,
             receipt_info: TurnContextInfo::default(),
+            receipt_history: std::collections::HashSet::new(),
             metrics,
             guards: TurnGuards::default(),
             error_event_sent: false,
@@ -808,7 +815,7 @@ impl Agent {
 
         let memory_query = MemoryQuery {
             text: query.to_string(),
-            limit: 5,
+            limit: RECALL_LIMIT,
             kind: None,
         };
 
@@ -823,20 +830,24 @@ impl Agent {
         };
 
         // Semantic (when embedder present)
+        let mut embedder_ran = false;
         let semantic_memories: Vec<hone_memory::Memory> =
             if let Some(embedder) = &self.config.embedder {
                 match embedder.embed(query).await {
-                    Ok(query_vec) => store
-                        .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
-                        .await
-                        .map(|scored| {
-                            scored
-                                .into_iter()
-                                .map(|s| s.memory)
-                                .filter(|m| m.kind != hone_memory::MemoryKind::Outcome)
-                                .collect()
-                        })
-                        .unwrap_or_default(),
+                    Ok(query_vec) => {
+                        embedder_ran = true;
+                        store
+                            .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
+                            .await
+                            .map(|scored| {
+                                scored
+                                    .into_iter()
+                                    .map(|s| s.memory)
+                                    .filter(|m| m.kind != hone_memory::MemoryKind::Outcome)
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    }
                     Err(_) => Vec::new(),
                 }
             } else {
@@ -845,10 +856,16 @@ impl Agent {
 
         // Candidates fetched and then cut, for the context receipt.
         let mut cut_ids: Vec<String> = Vec::new();
-        let semantic = !semantic_memories.is_empty();
+        // An embedder was configured and ran for this query (even if it found nothing).
+        let semantic = embedder_ran;
         let mut semantic_memories = semantic_memories;
-        if semantic_memories.len() > 5 {
-            cut_ids.extend(semantic_memories.split_off(5).into_iter().map(|m| m.id));
+        if semantic_memories.len() > RECALL_LIMIT {
+            cut_ids.extend(
+                semantic_memories
+                    .split_off(RECALL_LIMIT)
+                    .into_iter()
+                    .map(|m| m.id),
+            );
         }
 
         // Fuse via RRF when both signals are present; otherwise use whichever is non-empty
@@ -856,8 +873,8 @@ impl Agent {
             let bm25_ids: Vec<String> = bm25_memories.iter().map(|m| m.id.clone()).collect();
             let semantic_ids: Vec<String> =
                 semantic_memories.iter().map(|m| m.id.clone()).collect();
-            let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], 60);
-            cut_ids.extend(fused_ids.iter().skip(5).cloned());
+            let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], RECALL_RRF_K);
+            cut_ids.extend(fused_ids.iter().skip(RECALL_LIMIT).cloned());
             let mut by_id: std::collections::HashMap<String, hone_memory::Memory> =
                 std::collections::HashMap::new();
             for m in bm25_memories
@@ -868,7 +885,7 @@ impl Agent {
             }
             fused_ids
                 .into_iter()
-                .take(5)
+                .take(RECALL_LIMIT)
                 .filter_map(|id| by_id.remove(&id))
                 .collect()
         } else {
@@ -1351,13 +1368,14 @@ impl Agent {
                         budget = injection.exploration_budget,
                         "context injection applied"
                     );
-                    self.receipt_info.injection = Some(InjectionInfo {
-                        strategy: self.config.skeleton_strategy.as_str().to_string(),
-                        tokens: estimate_text_tokens(&injection.context_block),
-                        hits: injection.bm25_hits.clone(),
-                    });
                     // Skeletons and snippets can carry secret-shaped names or text.
                     let block = redacted_text(self.redacting(), &injection.context_block);
+                    self.receipt_info.injection = Some(InjectionInfo {
+                        strategy: self.config.skeleton_strategy.as_str().to_string(),
+                        // The text actually sent.
+                        tokens: estimate_text_tokens(&block),
+                        hits: injection.bm25_hits.clone(),
+                    });
                     std::borrow::Cow::Owned(format!("{block}\n\n---\n\n{user_input}"))
                 } else {
                     std::borrow::Cow::Borrowed(user_input)
@@ -1485,7 +1503,9 @@ impl Agent {
             // Build the base message list with the STABLE system prompt.
             // Memories are injected as a separate system-role message right
             // after the base system prompt, so the prefix stays cache-friendly.
-            let mut messages = self.context.build_messages(&self.config.system_prompt);
+            let (mut messages, mut message_hashes) = self
+                .context
+                .build_messages_hashed(&self.config.system_prompt);
 
             if !memories.is_empty() {
                 let memory_msg = Message {
@@ -1502,8 +1522,10 @@ impl Agent {
                     .first()
                     .is_some_and(|m| matches!(m.role, hone_proto::Role::System))
                 {
+                    message_hashes.insert(1, hone_proto::message_sha256(&memory_msg));
                     messages.insert(1, memory_msg);
                 } else {
+                    message_hashes.insert(0, hone_proto::message_sha256(&memory_msg));
                     messages.insert(0, memory_msg);
                 }
             }
@@ -1522,9 +1544,12 @@ impl Agent {
                 // Position: after memories (index 2) when memories are present,
                 // otherwise right after the base system prompt (index 1).
                 let pos = if !memories.is_empty() { 2 } else { 1 };
+                let skills_hash = hone_proto::message_sha256(&skills_msg);
                 if messages.len() > pos {
+                    message_hashes.insert(pos, skills_hash);
                     messages.insert(pos, skills_msg);
                 } else {
+                    message_hashes.push(skills_hash);
                     messages.push(skills_msg);
                 }
             }
@@ -1558,6 +1583,8 @@ impl Agent {
                     skills_at,
                     &self.receipt_info,
                     self.context.drain_compaction_log(),
+                    &message_hashes,
+                    &mut self.receipt_history,
                 );
                 let _ = events.send(AgentEvent::ContextAssembled { receipt }).await;
             }
@@ -1861,10 +1888,8 @@ impl Agent {
                     // pre-filled, live entries have `None` (filled after dispatch).
                     let raw_batch = pending_tool_calls[i..j].to_vec();
                     // (call, pre_filled_result)
-                    let mut ordered_batch: Vec<(
-                        hone_proto::ToolCallRequest,
-                        Option<ToolRun>,
-                    )> = Vec::with_capacity(raw_batch.len());
+                    let mut ordered_batch: Vec<(hone_proto::ToolCallRequest, Option<ToolRun>)> =
+                        Vec::with_capacity(raw_batch.len());
                     let mut live_batch: Vec<hone_proto::ToolCallRequest> = Vec::new();
                     // Ids of calls the permission policy blocked in the pre-pass;
                     // they count as neither tool calls nor guard reads.
@@ -1873,82 +1898,14 @@ impl Agent {
                     for mut call_item in raw_batch {
                         // The permission gate runs before hooks, so a blocked call
                         // never shows its arguments to a hook.
-                        let mut blocked = match self
-                            .gate_call(&call_item, &turn_trace, &events)
-                            .await
-                        {
-                            PolicyVerdict::Proceed { .. } => None,
-                            PolicyVerdict::Blocked {
-                                result,
-                                is_error,
-                                message,
-                            } => Some((result, is_error, message)),
-                            PolicyVerdict::Cancelled => {
-                                self.cancel_pending_calls(
-                                    &pending_tool_calls,
-                                    redact,
-                                    CANCELLED_REASON,
-                                );
-                                return Err(AgentError::Cancelled);
-                            }
-                        };
-                        if blocked.is_none() {
-                        let hook_event = HookEvent::PreToolUse {
-                            tool_name: call_item.name.clone(),
-                            args: call_item.arguments.clone(),
-                        };
-                        let hook_outcomes =
-                            Self::fire_hooks(self.config.hooks.as_ref(), &hook_event).await;
-                        let mut deny_msg: Option<String> = None;
-                        for outcome in &hook_outcomes {
-                            if outcome.deny {
-                                deny_msg = Some(
-                                    outcome
-                                        .message
-                                        .clone()
-                                        .unwrap_or_else(|| "blocked by hook".to_string()),
-                                );
-                                break;
-                            }
-                        }
-                        if let Some(msg) = deny_msg {
-                            let deny_val = serde_json::json!({ "error": msg.clone() });
-                            let _ = events
-                                .send(AgentEvent::ToolCallEnd {
-                                    id: call_item.id.clone(),
-                                    result: deny_val,
-                                    is_error: true,
-                                    duration_ms: 0,
-                                    cache_hit: false,
-                                })
-                                .await;
-                            self.context.add_message(tool_result_message(
-                                redact,
-                                call_item.id.clone(),
-                                "",
-                                ToolText::Text(format!("(blocked by hook): {msg}")),
-                            ));
-                            ordered_batch.push((
-                                call_item,
-                                Some(Err(AgentError::Internal {
-                                    detail: format!("(blocked by hook): {msg}"),
-                                })),
-                            ));
-                            continue;
-                        }
-                        // A hook that rewrites the input is gated again on the
-                        // rewritten input.
-                        if let Some(mutated) =
-                            hook_outcomes.iter().find_map(|o| o.mutated_input.as_ref())
-                        {
-                            call_item.arguments = mutated.clone();
+                        let mut blocked =
                             match self.gate_call(&call_item, &turn_trace, &events).await {
-                                PolicyVerdict::Proceed { .. } => {}
+                                PolicyVerdict::Proceed { .. } => None,
                                 PolicyVerdict::Blocked {
                                     result,
                                     is_error,
                                     message,
-                                } => blocked = Some((result, is_error, message)),
+                                } => Some((result, is_error, message)),
                                 PolicyVerdict::Cancelled => {
                                     self.cancel_pending_calls(
                                         &pending_tool_calls,
@@ -1957,8 +1914,74 @@ impl Agent {
                                     );
                                     return Err(AgentError::Cancelled);
                                 }
+                            };
+                        if blocked.is_none() {
+                            let hook_event = HookEvent::PreToolUse {
+                                tool_name: call_item.name.clone(),
+                                args: call_item.arguments.clone(),
+                            };
+                            let hook_outcomes =
+                                Self::fire_hooks(self.config.hooks.as_ref(), &hook_event).await;
+                            let mut deny_msg: Option<String> = None;
+                            for outcome in &hook_outcomes {
+                                if outcome.deny {
+                                    deny_msg = Some(
+                                        outcome
+                                            .message
+                                            .clone()
+                                            .unwrap_or_else(|| "blocked by hook".to_string()),
+                                    );
+                                    break;
+                                }
                             }
-                        }
+                            if let Some(msg) = deny_msg {
+                                let deny_val = serde_json::json!({ "error": msg.clone() });
+                                let _ = events
+                                    .send(AgentEvent::ToolCallEnd {
+                                        id: call_item.id.clone(),
+                                        result: deny_val,
+                                        is_error: true,
+                                        duration_ms: 0,
+                                        cache_hit: false,
+                                    })
+                                    .await;
+                                self.context.add_message(tool_result_message(
+                                    redact,
+                                    call_item.id.clone(),
+                                    "",
+                                    ToolText::Text(format!("(blocked by hook): {msg}")),
+                                ));
+                                ordered_batch.push((
+                                    call_item,
+                                    Some(Err(AgentError::Internal {
+                                        detail: format!("(blocked by hook): {msg}"),
+                                    })),
+                                ));
+                                continue;
+                            }
+                            // A hook that rewrites the input is gated again on the
+                            // rewritten input.
+                            if let Some(mutated) =
+                                hook_outcomes.iter().find_map(|o| o.mutated_input.as_ref())
+                            {
+                                call_item.arguments = mutated.clone();
+                                match self.gate_call(&call_item, &turn_trace, &events).await {
+                                    PolicyVerdict::Proceed { .. } => {}
+                                    PolicyVerdict::Blocked {
+                                        result,
+                                        is_error,
+                                        message,
+                                    } => blocked = Some((result, is_error, message)),
+                                    PolicyVerdict::Cancelled => {
+                                        self.cancel_pending_calls(
+                                            &pending_tool_calls,
+                                            redact,
+                                            CANCELLED_REASON,
+                                        );
+                                        return Err(AgentError::Cancelled);
+                                    }
+                                }
+                            }
                         }
                         if let Some((result, is_error, message)) = blocked {
                             // The result loop below adds the tool-result
@@ -3180,12 +3203,10 @@ async fn dispatch_parallel(
             let is_error = result.is_err();
             let result_value = match &result {
                 Ok((v, _)) => v.clone(),
-                Err(AgentError::ToolNotFound { name }) => {
-                    event_result(
-                        redact,
-                        serde_json::json!({ "error": format!("tool '{name}' not found") }),
-                    )
-                }
+                Err(AgentError::ToolNotFound { name }) => event_result(
+                    redact,
+                    serde_json::json!({ "error": format!("tool '{name}' not found") }),
+                ),
                 Err(e) => event_result(redact, serde_json::json!({ "error": e.to_string() })),
             };
 

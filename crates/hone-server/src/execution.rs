@@ -517,6 +517,8 @@ mod tests {
             dropped: vec![],
             compaction: vec![],
             tools_offered: vec!["read_file".to_owned()],
+            history_len: 0,
+            history_root: String::new(),
         }
     }
 
