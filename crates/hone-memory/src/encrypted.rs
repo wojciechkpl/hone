@@ -163,8 +163,13 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
             .as_deref()
             .filter(|d| d.starts_with("enc:v1:"))
         {
-            if let Ok(plain) = self.decrypt_content(d) {
-                memory.description = Some(plain);
+            // A description that doesn't decrypt is never shown as ciphertext.
+            match self.decrypt_content(d) {
+                Ok(plain) => memory.description = Some(plain),
+                Err(e) => {
+                    tracing::warn!(id = %memory.id, "description could not be decrypted: {e}");
+                    memory.description = None;
+                }
             }
         }
         Ok(memory)
@@ -289,31 +294,13 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
 async fn load_or_init_salt(store: &impl MemoryStore) -> Result<Vec<u8>, MemoryError> {
     use base64::Engine;
 
-    let sentinel_query = MemoryQuery {
-        text: String::new(),
-        limit: 10_000,
-        kind: None,
-    };
-    let all = store.recall(&sentinel_query).await?;
-
-    // Check whether the sentinel already exists.
-    if let Some(sentinel) = all.iter().find(|m| m.id == SALT_SENTINEL_ID) {
-        let salt = base64::engine::general_purpose::STANDARD
-            .decode(&sentinel.content)
-            .map_err(|e| {
-                MemoryError::Io(std::io::Error::other(format!(
-                    "failed to decode salt sentinel: {e}"
-                )))
-            })?;
-        return Ok(salt);
+    // The sentinel is found by id (a listing of the newest memories can miss it).
+    if let Some(sentinel) = store.recall_by_id(SALT_SENTINEL_ID).await? {
+        return decode_salt(&sentinel.content);
     }
 
-    // No sentinel present. Check for existing encrypted records.
-    let has_encrypted = all
-        .iter()
-        .any(|m| m.id != SALT_SENTINEL_ID && m.content.starts_with("enc:v1:"));
-
-    if has_encrypted {
+    // No sentinel present. Check for existing encrypted records (a direct query).
+    if store.has_encrypted_rows().await? {
         return Err(MemoryError::Io(std::io::Error::other(
             "EncryptedStore: salt sentinel (__encrypted_store_salt__) is missing but \
              encrypted records exist. The store was created with the old fixed-salt API. \
@@ -321,13 +308,13 @@ async fn load_or_init_salt(store: &impl MemoryStore) -> Result<Vec<u8>, MemoryEr
         )));
     }
 
-    // Fresh store — generate and persist a new random salt.
+    // Fresh store — generate a random salt and persist it, never replacing a
+    // sentinel another opener wrote meanwhile; then use whichever is stored.
     let mut salt = [0u8; 16];
     aes_gcm::aead::rand_core::RngCore::fill_bytes(&mut OsRng, &mut salt);
-
     let encoded = base64::engine::general_purpose::STANDARD.encode(salt);
     store
-        .record(Memory {
+        .record_if_absent(Memory {
             id: SALT_SENTINEL_ID.to_string(),
             content: encoded,
             tags: vec!["__internal__".to_string()],
@@ -339,8 +326,21 @@ async fn load_or_init_salt(store: &impl MemoryStore) -> Result<Vec<u8>, MemoryEr
             embedding: None,
         })
         .await?;
+    let stored = store.recall_by_id(SALT_SENTINEL_ID).await?.ok_or_else(|| {
+        MemoryError::Io(std::io::Error::other("failed to store the salt sentinel"))
+    })?;
+    decode_salt(&stored.content)
+}
 
-    Ok(salt.to_vec())
+fn decode_salt(encoded: &str) -> Result<Vec<u8>, MemoryError> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|e| {
+            MemoryError::Io(std::io::Error::other(format!(
+                "failed to decode salt sentinel: {e}"
+            )))
+        })
 }
 
 // ---------------------------------------------------------------------------
