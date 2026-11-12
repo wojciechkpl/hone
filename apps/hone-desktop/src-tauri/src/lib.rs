@@ -48,6 +48,7 @@ pub fn run() -> anyhow::Result<()> {
         .invoke_handler(tauri::generate_handler![
             commands::daemon_status,
             commands::daemon_start,
+            commands::daemon_boot,
             commands::daemon_stop,
             commands::daemon_set_external,
             commands::run_turn,

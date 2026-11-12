@@ -79,27 +79,84 @@ pub async fn daemon_status(state: tauri::State<'_, DaemonState>) -> Result<Daemo
     Ok(DaemonStatus { mode: "none", url: None, healthy: false, pid: None })
 }
 
+/// Whether the app should start its own `honed` at launch. The active profile
+/// (which falls back to the first one) is authoritative when there is one:
+/// sidecar starts it, external never does. With no profile, the web view's saved
+/// mode decides: only `"sidecar"` starts it.
+pub fn should_autostart(saved_mode: Option<&str>, cfg: &DesktopConfig) -> bool {
+    match cfg.active_profile().map(|p| &p.mode) {
+        Some(DaemonMode::Sidecar) => true,
+        Some(DaemonMode::External { .. }) => false,
+        None => saved_mode == Some("sidecar"),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartOutcome {
+    Started,
+    AlreadyRunning,
+}
+
+/// How long a start waits for `honed` to answer `/health`.
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Start the managed `honed` unless one is already running. The slot stays
+/// locked while starting, so two callers never start two. On failure the slot
+/// stays empty and nothing is left running. Writes no `desktop.json`.
+pub fn start_sidecar(
+    state: &DaemonState,
+    honed_path: Option<std::path::PathBuf>,
+    health_timeout: Duration,
+) -> Result<StartOutcome, SupervisorError> {
+    let mut slot = state.sidecar.lock();
+    if slot.is_some() {
+        return Ok(StartOutcome::AlreadyRunning);
+    }
+    let sup = SidecarSupervisor::start(honed_path, std::env::vars(), health_timeout)?;
+    *slot = Some(sup);
+    Ok(StartOutcome::Started)
+}
+
+/// The launch hook: start the sidecar if [`should_autostart`] says so.
+pub fn boot_sidecar_if_wanted(
+    state: &DaemonState,
+    saved_mode: Option<&str>,
+    honed_path: Option<std::path::PathBuf>,
+    health_timeout: Duration,
+) -> Result<Option<StartOutcome>, SupervisorError> {
+    let wanted = should_autostart(saved_mode, &state.cfg.lock());
+    if !wanted {
+        return Ok(None);
+    }
+    start_sidecar(state, honed_path, health_timeout).map(Some)
+}
+
+/// Record that the managed daemon is the chosen one.
+fn remember_sidecar_profile(state: &DaemonState) {
+    let mut cfg = state.cfg.lock();
+    ensure_named_profile(&mut cfg, LEGACY_SIDECAR_NAME, DaemonMode::Sidecar);
+    let _ = cfg.set_active(LEGACY_SIDECAR_NAME);
+    let _ = cfg.save();
+}
+
 #[tauri::command]
 pub async fn daemon_start(state: tauri::State<'_, DaemonState>) -> Result<DaemonStatus, String> {
-    {
-        let mut slot = state.sidecar.lock();
-        if slot.is_some() {
-            // Already running — fall through to status.
-        } else {
-            let sup = SidecarSupervisor::spawn(None).map_err(supervisor_err)?;
-            // Wait briefly for health; if the user has no honed binary on
-            // PATH the spawn would have failed already, so this is the
-            // tighter check that the bind succeeded.
-            sup.wait_until_healthy(Duration::from_secs(5))
-                .map_err(supervisor_err)?;
-            *slot = Some(sup);
-        }
-    }
-    {
-        let mut cfg = state.cfg.lock();
-        ensure_named_profile(&mut cfg, LEGACY_SIDECAR_NAME, DaemonMode::Sidecar);
-        let _ = cfg.set_active(LEGACY_SIDECAR_NAME);
-        let _ = cfg.save();
+    start_sidecar(&state, None, HEALTH_TIMEOUT).map_err(supervisor_err)?;
+    remember_sidecar_profile(&state);
+    daemon_status(state).await
+}
+
+/// Called by the frontend at launch with the web view's saved mode: starts the
+/// managed daemon when the saved choice or the active profile says so.
+#[tauri::command]
+pub async fn daemon_boot(
+    state: tauri::State<'_, DaemonState>,
+    saved_mode: Option<String>,
+) -> Result<DaemonStatus, String> {
+    let started = boot_sidecar_if_wanted(&state, saved_mode.as_deref(), None, HEALTH_TIMEOUT)
+        .map_err(supervisor_err)?;
+    if started == Some(StartOutcome::Started) {
+        remember_sidecar_profile(&state);
     }
     daemon_status(state).await
 }
@@ -704,7 +761,7 @@ fn urlencoding(s: &str) -> String {
 /// Tiny in-house FS helpers wrapped behind a module so test code can stub
 /// them out if we ever need to. Today they're just `std::fs` shims.
 pub(crate) mod fs {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     pub fn create_dir_all(p: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(p)

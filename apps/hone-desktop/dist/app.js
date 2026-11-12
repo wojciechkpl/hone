@@ -23,6 +23,21 @@ function hide(id) { document.getElementById(id).classList.add('hidden'); }
 // Daemon status
 // ---------------------------------------------------------------------------
 
+// The reason the last attempt to start the managed daemon failed (a string),
+// or null. Shown in the pill (tooltip) and the Daemon panel.
+let lastStartError = null;
+
+// Run a daemon start command; remember why it failed instead of dropping it.
+async function startDaemon(command, args) {
+  try {
+    await invoke(command, args);
+    lastStartError = null;
+  } catch (e) {
+    lastStartError = String(e);
+    console.warn(e);
+  }
+}
+
 async function refreshDaemon() {
   const dot = document.getElementById('daemon-dot');
   const label = document.getElementById('daemon-label');
@@ -41,9 +56,17 @@ async function refreshDaemon() {
       label.textContent = `${prefix}${status.mode} @ ${status.url}`;
     } else {
       dot.className = 'dot dot--bad';
-      label.textContent = prefix ? `${prefix}unreachable` : 'daemon not reachable';
+      label.textContent = lastStartError
+        ? 'daemon failed to start'
+        : (prefix ? `${prefix}unreachable` : 'daemon not reachable');
     }
-    if (info) info.textContent = JSON.stringify(status, null, 2);
+    label.title = (status && status.healthy) ? '' : (lastStartError || '');
+    if (info) {
+      const text = JSON.stringify(status, null, 2);
+      info.textContent = (status && !status.healthy && lastStartError)
+        ? `Start failed:\n${lastStartError}\n\n${text}`
+        : text;
+    }
   } catch (err) {
     dot.className = 'dot dot--bad';
     label.textContent = `error: ${err}`;
@@ -1525,6 +1548,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     show('wizard');
   } else {
     show('home');
+    // Starts the managed daemon when the saved choice (or the active profile)
+    // says so; a no-op for an external daemon.
+    await startDaemon('daemon_boot', { savedMode: state.mode });
     refreshDaemon();
   }
 
@@ -1533,7 +1559,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const mode = btn.dataset.mode;
       if (mode === 'sidecar') {
         saveState({ mode: 'sidecar' });
-        try { await invoke('daemon_start'); } catch (e) { console.warn(e); }
+        await startDaemon('daemon_start');
         hide('wizard'); show('home'); refreshDaemon();
       } else {
         document.getElementById('external-form').classList.remove('hidden');
@@ -1552,7 +1578,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('btn-start').addEventListener('click', async () => {
-    try { await invoke('daemon_start'); } catch (e) { console.warn(e); }
+    await startDaemon('daemon_start');
     refreshDaemon();
   });
   document.getElementById('btn-stop').addEventListener('click', async () => {
@@ -1631,7 +1657,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const palResults = document.getElementById('palette-results');
   const PALETTE_ITEMS = [
     { id: 'refresh', label: 'Refresh daemon status', run: refreshDaemon },
-    { id: 'start', label: 'Start managed honed sidecar', run: async () => { await invoke('daemon_start'); refreshDaemon(); } },
+    { id: 'start', label: 'Start managed honed sidecar', run: async () => { await startDaemon('daemon_start'); refreshDaemon(); } },
     { id: 'stop',  label: 'Stop managed honed sidecar', run: async () => { await invoke('daemon_stop'); refreshDaemon(); } },
     { id: 'cancel', label: 'Cancel current run', run: cancelRun },
     { id: 'cost-reset', label: 'Reset session cost meter', run: () => cost.reset() },
