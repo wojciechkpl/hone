@@ -78,6 +78,12 @@ flowchart LR
 | F29 | **Interrupted runs are complete in the report.** Runs that never started because of an interrupt are listed as `interrupted` in the manifest's outcomes. Config error text keeps newlines readable (escaped control characters except `\n`, rendered as separate indented lines). |
 | F30 | **Limits are documented.** `docs/eval.md` says a check that starts a new session (`setsid`) escapes the process-group kill, and that a copied `.git` directory's `core.worktree` is cleared and submodules aren't linked in copies. The copy clears `core.worktree` in a copied `.git/config`. |
 
+### Added from the suite review (F31)
+
+| Row | Behaviour |
+|---|---|
+| F31 | **Suite integrity.** A tasks file may set `[eval] integrity = ["<dir>", …]` (paths relative to the tasks file). The runner hashes those directories before the first run and after every check; on any change it marks the current and remaining runs `infra_error` ("suite modified during the run") and the report flags the run as untrustworthy. |
+
 ## Testing notes
 
 - **F1/F2/F8** through `EvalRunner` with a scripted mock provider that calls tools (`write_file` then reply), a temp tasks dir, and a success check (`test -f out.txt`). Check isolation: two runs of a task that appends to a file each see the original.
