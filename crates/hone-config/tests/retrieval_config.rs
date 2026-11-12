@@ -43,8 +43,8 @@ fn warns(s: &StrategySelection, path: &str) -> Vec<String> {
 fn test_r6_retrieval_should_be_off_by_default_with_the_documented_defaults() {
     let s = select(None, None);
     assert!(!s.sources.value.contains(&"retrieval".to_owned()));
-    assert_eq!((s.retrieval_top_k.value, s.retrieval_top_k.origin), (3, Origin::Default));
-    assert_eq!((s.retrieval_max_tokens.value, s.retrieval_max_tokens.origin), (1200, Origin::Default));
+    assert_eq!((s.retrieval_top_k.value, s.retrieval_top_k.origin.clone()), (3, Origin::Default));
+    assert_eq!((s.retrieval_max_tokens.value, s.retrieval_max_tokens.origin.clone()), (1200, Origin::Default));
     assert_eq!((s.retrieval_chunker.value.as_str(), s.retrieval_chunker.origin), ("markdown", Origin::Default));
     assert_eq!((s.retrieval_fixed_lines.value, s.retrieval_fixed_overlap.value), (40, 5));
 }
@@ -68,8 +68,8 @@ fn test_r8_every_key_should_parse_with_its_file_as_origin() {
 
     let s = select(Some(&u), None);
 
-    assert_eq!((s.retrieval_top_k.value, s.retrieval_top_k.origin), (5, file(USER)));
-    assert_eq!((s.retrieval_max_tokens.value, s.retrieval_max_tokens.origin), (2000, file(USER)));
+    assert_eq!((s.retrieval_top_k.value, s.retrieval_top_k.origin.clone()), (5, file(USER)));
+    assert_eq!((s.retrieval_max_tokens.value, s.retrieval_max_tokens.origin.clone()), (2000, file(USER)));
     assert_eq!((s.retrieval_chunker.value.as_str(), s.retrieval_chunker.origin), ("fixed", file(USER)));
     assert_eq!((s.retrieval_fixed_lines.value, s.retrieval_fixed_lines.origin), (20, file(USER)));
     assert_eq!((s.retrieval_fixed_overlap.value, s.retrieval_fixed_overlap.origin), (2, file(USER)));
@@ -138,13 +138,13 @@ fn test_r8_a_project_file_may_only_lower_top_k_and_max_tokens() {
     let u = layer(USER, "[retrieval]\ntop_k = 6\nmax_tokens = 3000\n");
 
     let s = select(Some(&u), Some(&layer(PROJECT, "[retrieval]\ntop_k = 2\nmax_tokens = 500\n")));
-    assert_eq!((s.retrieval_top_k.value, s.retrieval_top_k.origin), (2, file(PROJECT)));
-    assert_eq!((s.retrieval_max_tokens.value, s.retrieval_max_tokens.origin), (500, file(PROJECT)));
+    assert_eq!((s.retrieval_top_k.value, s.retrieval_top_k.origin.clone()), (2, file(PROJECT)));
+    assert_eq!((s.retrieval_max_tokens.value, s.retrieval_max_tokens.origin.clone()), (500, file(PROJECT)));
     assert!(warns(&s, PROJECT).is_empty());
 
     let s = select(Some(&u), Some(&layer(PROJECT, "[retrieval]\ntop_k = 12\nmax_tokens = 7000\n")));
-    assert_eq!((s.retrieval_top_k.value, s.retrieval_top_k.origin), (6, file(USER)));
-    assert_eq!((s.retrieval_max_tokens.value, s.retrieval_max_tokens.origin), (3000, file(USER)));
+    assert_eq!((s.retrieval_top_k.value, s.retrieval_top_k.origin.clone()), (6, file(USER)));
+    assert_eq!((s.retrieval_max_tokens.value, s.retrieval_max_tokens.origin.clone()), (3000, file(USER)));
     let w = warns(&s, PROJECT);
     assert_eq!(w.len(), 2, "{w:?}");
     assert!(w.iter().any(|m| m.contains("top_k")) && w.iter().any(|m| m.contains("max_tokens")));
@@ -153,7 +153,7 @@ fn test_r8_a_project_file_may_only_lower_top_k_and_max_tokens() {
 #[test]
 fn test_r8_a_project_value_is_compared_with_the_default_when_the_user_sets_none() {
     let s = select(None, Some(&layer(PROJECT, "[retrieval]\ntop_k = 2\n")));
-    assert_eq!((s.retrieval_top_k.value, s.retrieval_top_k.origin), (2, file(PROJECT)));
+    assert_eq!((s.retrieval_top_k.value, s.retrieval_top_k.origin.clone()), (2, file(PROJECT)));
 
     let s = select(None, Some(&layer(PROJECT, "[retrieval]\ntop_k = 10\nmax_tokens = 5000\n")));
     assert_eq!((s.retrieval_top_k.value, s.retrieval_max_tokens.value), (3, 1200));
