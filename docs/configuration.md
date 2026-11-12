@@ -698,8 +698,9 @@ running 1 s later (the TUI takes the graceful path). A panic that ends Hone does
 same, for servers and running commands. `kill -9`, the OOM killer, and a crash that is
 not a panic (a segfault, a stack overflow, an abort from C code) still leave a server that
 ignores its input closing running. If you start a server through a
-shell, `exec` it (`sh -c "cd DIR && exec server"`): on Linux the 1 s ends as soon as the
-shell itself exits. A server can't prompt on the terminal: one that reads `/dev/tty`
+shell, `exec` it (`sh -c "cd DIR && exec server"`): it saves a process, and the SIGTERM
+goes straight to the server. Without `exec` the 1 s still lasts as long as any process of
+the server's group is alive, on Linux as on macOS. A server can't prompt on the terminal: one that reads `/dev/tty`
 stops until its handshake timeout.
 A tool call that times
 out returns an error to the model; the server stays connected for the next call. Native tools win over MCP tools with the same name. Permission rules don't see
