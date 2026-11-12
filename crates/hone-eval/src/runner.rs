@@ -1109,6 +1109,17 @@ async fn run_in_copy(
             None,
         ),
         Ok(Ok(turn)) => {
+            // Re-hash right before the check starts (F34): once the suite has
+            // changed, no further check is started.
+            if ctx.integrity.check().await {
+                return finish(
+                    TaskStatus::InfraError,
+                    Some(INTEGRITY_MESSAGE.to_owned()),
+                    turn.usage,
+                    turn.cost_usd,
+                    None,
+                );
+            }
             let check = run_check(
                 &task.success_check,
                 workdir,
