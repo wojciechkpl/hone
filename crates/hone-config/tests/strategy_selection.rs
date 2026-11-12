@@ -309,7 +309,8 @@ fn test_s2_the_skeleton_env_var_should_accept_todays_spellings() {
         ("deps", "dependency-graph"),
         ("FLAT", "flat"),
     ] {
-        let env = env_of(&[("HONE_SKELETON_STRATEGY", raw)]);
+        let pairs = [("HONE_SKELETON_STRATEGY", raw)];
+        let env = env_of(&pairs);
         let s = StrategySelection::from_sources(None, None, &env, &Flags::default()).unwrap();
         assert_eq!(s.skeleton.value, expected, "{raw}");
     }
@@ -340,7 +341,8 @@ fn test_s2_no_injection_env_var_should_remove_skeleton_only_when_it_is_one() {
     );
 
     for v in ["0", "", "true"] {
-        let off = env_of(&[("HONE_NO_INJECTION", v)]);
+        let pairs = [("HONE_NO_INJECTION", v)];
+        let off = env_of(&pairs);
         let s = StrategySelection::from_sources(None, None, &off, &Flags::default()).unwrap();
         assert!(
             s.sources.value.contains(&"skeleton".to_owned()),
@@ -363,7 +365,8 @@ fn test_s2_no_inject_should_also_strip_skeleton_from_a_files_sources() {
 #[test]
 fn test_s2_phase_compaction_env_var_should_set_graduated_phase() {
     for v in ["1", "true", "on"] {
-        let env = env_of(&[("HONE_PHASE_COMPACTION", v)]);
+        let pairs = [("HONE_PHASE_COMPACTION", v)];
+        let env = env_of(&pairs);
         let s = StrategySelection::from_sources(None, None, &env, &Flags::default()).unwrap();
         assert!(s.graduated_phase.value, "{v}");
         assert_eq!(
@@ -372,7 +375,8 @@ fn test_s2_phase_compaction_env_var_should_set_graduated_phase() {
         );
     }
     for v in ["0", "false", "off", ""] {
-        let env = env_of(&[("HONE_PHASE_COMPACTION", v)]);
+        let pairs = [("HONE_PHASE_COMPACTION", v)];
+        let env = env_of(&pairs);
         let s = StrategySelection::from_sources(None, None, &env, &Flags::default()).unwrap();
         assert!(!s.graduated_phase.value, "{v}");
     }
@@ -422,13 +426,13 @@ fn test_s3_project_numbers_should_only_take_effect_when_lower() {
         "[memory]\ntop_k = 3\n[context.skeleton]\nmax_tokens = 1000\n[context]\nbudget_ratio = 0.4\n",
     );
     let s = select(Some(&u), Some(&lower));
-    assert_eq!((s.top_k.value, s.top_k.origin), (3, file(PROJECT)));
+    assert_eq!((s.top_k.value, s.top_k.origin.clone()), (3, file(PROJECT)));
     assert_eq!(
-        (s.skeleton_max_tokens.value, s.skeleton_max_tokens.origin),
+        (s.skeleton_max_tokens.value, s.skeleton_max_tokens.origin.clone()),
         (1000, file(PROJECT))
     );
     assert_eq!(
-        (s.budget_ratio.value, s.budget_ratio.origin),
+        (s.budget_ratio.value, s.budget_ratio.origin.clone()),
         (Some(0.4), file(PROJECT))
     );
     assert!(
@@ -440,13 +444,13 @@ fn test_s3_project_numbers_should_only_take_effect_when_lower() {
         "[memory]\ntop_k = 9\n[context.skeleton]\nmax_tokens = 9000\n[context]\nbudget_ratio = 0.9\n",
     );
     let s = select(Some(&u), Some(&higher));
-    assert_eq!((s.top_k.value, s.top_k.origin), (5, file(USER)));
+    assert_eq!((s.top_k.value, s.top_k.origin.clone()), (5, file(USER)));
     assert_eq!(
-        (s.skeleton_max_tokens.value, s.skeleton_max_tokens.origin),
+        (s.skeleton_max_tokens.value, s.skeleton_max_tokens.origin.clone()),
         (2000, file(USER))
     );
     assert_eq!(
-        (s.budget_ratio.value, s.budget_ratio.origin),
+        (s.budget_ratio.value, s.budget_ratio.origin.clone()),
         (Some(0.6), file(USER))
     );
     let w = warns_for(&s, PROJECT);
@@ -468,7 +472,7 @@ fn test_s3_project_top_k_should_be_compared_with_the_default_when_the_user_sets_
     assert_eq!(warns_for(&s, PROJECT).len(), 1);
 
     let s = select(None, Some(&project("[memory]\ntop_k = 2\n")));
-    assert_eq!((s.top_k.value, s.top_k.origin), (2, file(PROJECT)));
+    assert_eq!((s.top_k.value, s.top_k.origin.clone()), (2, file(PROJECT)));
 }
 
 #[test]
@@ -480,11 +484,11 @@ fn test_s3_project_writer_and_recaller_can_only_be_turned_off() {
         )),
     );
     assert_eq!(
-        (s.writer.value.as_str(), s.writer.origin),
+        (s.writer.value.as_str(), s.writer.origin.clone()),
         ("off", file(PROJECT))
     );
     assert_eq!(
-        (s.recaller.value.as_str(), s.recaller.origin),
+        (s.recaller.value.as_str(), s.recaller.origin.clone()),
         ("none", file(PROJECT))
     );
 
@@ -492,11 +496,11 @@ fn test_s3_project_writer_and_recaller_can_only_be_turned_off() {
     let p = project("[memory]\nwriter = \"triggers\"\nrecaller = \"bm25\"\n");
     let s = select(Some(&u), Some(&p));
     assert_eq!(
-        (s.writer.value.as_str(), s.writer.origin),
+        (s.writer.value.as_str(), s.writer.origin.clone()),
         ("off", file(USER))
     );
     assert_eq!(
-        (s.recaller.value.as_str(), s.recaller.origin),
+        (s.recaller.value.as_str(), s.recaller.origin.clone()),
         ("none", file(USER))
     );
     assert_eq!(
