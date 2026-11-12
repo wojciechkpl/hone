@@ -184,25 +184,14 @@ fn kind_to_str(kind: MemoryKind) -> &'static str {
 }
 
 fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
-    row_to_memory_with(row, false)
-}
-
-/// Whether an embedding column value is an encrypted blob of `EncryptedStore`:
-/// its 8-byte magic, or the 1-byte marker earlier builds of it used.
-fn looks_sealed(bytes: &[u8]) -> bool {
-    bytes.len() >= 32
-        && (bytes.starts_with(&[0xE1, 0x48, 0x4F, 0x4E, 0x45, 0x56, 0x31, 0x00])
-            || bytes.first() == Some(&0xE1))
+    row_to_memory_with(row)
 }
 
 /// `keep_encrypted_embedding`: a row of an encrypted store (`enc:` content)
 /// whose embedding column holds an encrypted blob reports no embedding in
 /// listings (the blob means nothing to a plain reader and is only decrypted for
 /// the memories an `EncryptedStore` returns); `recall_by_id` keeps it.
-fn row_to_memory_with(
-    row: &sqlx::sqlite::SqliteRow,
-    keep_encrypted_embedding: bool,
-) -> Result<Memory, MemoryError> {
+fn row_to_memory_with(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
     let id: String = row.try_get("id").map_err(to_io_err)?;
     let content: String = row.try_get("content").map_err(to_io_err)?;
     let tags_json: String = row.try_get("tags").map_err(to_io_err)?;
@@ -224,9 +213,6 @@ fn row_to_memory_with(
         .try_get::<Option<Vec<u8>>, _>("embedding")
         .ok()
         .flatten()
-        .filter(|bytes| {
-            keep_encrypted_embedding || !(content.starts_with("enc:") && looks_sealed(bytes))
-        })
         .map(|bytes| bytes_to_embedding(&bytes));
 
     Ok(Memory {
@@ -447,6 +433,27 @@ impl SqliteStore {
     /// mapping table or triggers are created. It is the inner store of an
     /// `EncryptedStore`, whose content is ciphertext and cannot be indexed;
     /// `recall_fts5` on it ranks with the in-Rust BM25.
+    /// Create the side table of sealed vectors (`EncryptedStore`) and the trigger
+    /// that removes a memory's sealed vector when the memory is deleted
+    /// (forget, decay). Not a schema-version change: both are `IF NOT EXISTS`.
+    async fn ensure_sealed_table(&self) -> Result<(), MemoryError> {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS memory_vectors_sealed
+             (id TEXT PRIMARY KEY, blob BLOB NOT NULL)",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+        sqlx::query(
+            "CREATE TRIGGER IF NOT EXISTS memory_vectors_sealed_ad AFTER DELETE ON memories
+             BEGIN DELETE FROM memory_vectors_sealed WHERE id = old.id; END",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+        Ok(())
+    }
+
     pub async fn open_without_fts(path: &Path) -> Result<Self, MemoryError> {
         Self::open_inner(path, 86_400, false).await
     }
@@ -1010,7 +1017,8 @@ impl MemoryStore for SqliteStore {
 
     async fn has_encrypted_rows(&self) -> Result<bool, MemoryError> {
         let found: Option<i64> = sqlx::query_scalar(
-            "SELECT 1 FROM memories WHERE content LIKE 'enc:v1:%' AND id != ?1 LIMIT 1",
+            "SELECT 1 FROM memories
+             WHERE (content LIKE 'enc:v1:%' OR content LIKE 'enc:v2:%') AND id != ?1 LIMIT 1",
         )
         .bind(SALT_SENTINEL_ID)
         .fetch_optional(&self.pool)
@@ -1043,9 +1051,95 @@ impl MemoryStore for SqliteStore {
         .await
         .map_err(to_io_err)?;
 
-        row.as_ref()
-            .map(|r| row_to_memory_with(r, true))
-            .transpose()
+        row.as_ref().map(row_to_memory_with).transpose()
+    }
+
+    async fn set_description_if_absent(
+        &self,
+        id: &str,
+        description: &str,
+    ) -> Result<bool, MemoryError> {
+        let done = sqlx::query(
+            "UPDATE memories SET description = ?1 WHERE id = ?2 AND description IS NULL",
+        )
+        .bind(description)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    async fn sealed_vector(&self, id: &str) -> Result<Option<Vec<u8>>, MemoryError> {
+        let row = sqlx::query("SELECT blob FROM memory_vectors_sealed WHERE id = ?1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await;
+        match row {
+            Ok(r) => Ok(r.and_then(|r| r.try_get::<Vec<u8>, _>("blob").ok())),
+            // No side table yet: nothing sealed.
+            Err(e) if e.to_string().contains("no such table") => Ok(None),
+            Err(e) => Err(to_io_err(e)),
+        }
+    }
+
+    async fn set_sealed_vector(&self, id: &str, blob: Option<&[u8]>) -> Result<(), MemoryError> {
+        match blob {
+            Some(b) => {
+                self.ensure_sealed_table().await?;
+                sqlx::query(
+                    "INSERT OR REPLACE INTO memory_vectors_sealed (id, blob) VALUES (?1, ?2)",
+                )
+                .bind(id)
+                .bind(b)
+                .execute(&self.pool)
+                .await
+                .map_err(to_io_err)?;
+            }
+            None => {
+                match sqlx::query("DELETE FROM memory_vectors_sealed WHERE id = ?1")
+                    .bind(id)
+                    .execute(&self.pool)
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(e) if e.to_string().contains("no such table") => {}
+                    Err(e) => return Err(to_io_err(e)),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn vector_migration_candidates(&self) -> Result<Vec<(String, Vec<u8>)>, MemoryError> {
+        let rows = sqlx::query(
+            "SELECT id, embedding FROM memories
+             WHERE content LIKE 'enc:v1:%' AND embedding IS NOT NULL",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| Some((r.try_get("id").ok()?, r.try_get("embedding").ok()?)))
+            .collect())
+    }
+
+    async fn move_vector_to_sealed(&self, id: &str, blob: &[u8]) -> Result<(), MemoryError> {
+        self.ensure_sealed_table().await?;
+        let mut tx = self.pool.begin().await.map_err(to_io_err)?;
+        sqlx::query("INSERT OR REPLACE INTO memory_vectors_sealed (id, blob) VALUES (?1, ?2)")
+            .bind(id)
+            .bind(blob)
+            .execute(&mut *tx)
+            .await
+            .map_err(to_io_err)?;
+        sqlx::query("UPDATE memories SET embedding = NULL WHERE id = ?1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(to_io_err)?;
+        tx.commit().await.map_err(to_io_err)
     }
 
     async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError> {

@@ -94,8 +94,8 @@ pub trait MemoryStore: Send + Sync {
         Ok(true)
     }
 
-    /// Whether any memory (but the encryption salt record) holds `enc:v1:`
-    /// content, i.e. was written by an `EncryptedStore`. The default scans a
+    /// Whether any memory (but the encryption salt record) holds `enc:v1:` or
+    /// `enc:v2:` content, i.e. was written by an `EncryptedStore`. The default scans a
     /// listing; stores with a query override it.
     async fn has_encrypted_rows(&self) -> Result<bool, MemoryError> {
         let all = self
@@ -106,7 +106,8 @@ pub trait MemoryStore: Send + Sync {
             })
             .await?;
         Ok(all.iter().any(|m| {
-            m.id != crate::encrypted::SALT_SENTINEL_ID && m.content.starts_with("enc:v1:")
+            m.id != crate::encrypted::SALT_SENTINEL_ID
+                && (m.content.starts_with("enc:v1:") || m.content.starts_with("enc:v2:"))
         }))
     }
 
@@ -131,6 +132,56 @@ pub trait MemoryStore: Send + Sync {
     /// O(log n) (or better) exact lookup by `id`. Returns `None` when no
     /// memory has that id. Implementations MUST NOT do a full table scan.
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError>;
+
+    /// Set the `description` of memory `id` only when it has none. Returns
+    /// whether it was set. Atomic in stores that can be shared by several
+    /// processes (the default is a lookup then a write, which is not).
+    async fn set_description_if_absent(
+        &self,
+        id: &str,
+        description: &str,
+    ) -> Result<bool, MemoryError> {
+        let Some(mut memory) = self.recall_by_id(id).await? else {
+            return Ok(false);
+        };
+        if memory.description.is_some() {
+            return Ok(false);
+        }
+        memory.description = Some(description.to_owned());
+        self.record(memory).await?;
+        Ok(true)
+    }
+
+    /// The sealed (encrypted) vector `EncryptedStore` keeps for memory `id` in
+    /// the store's side table, if any. Stores without one return `None`.
+    async fn sealed_vector(&self, _id: &str) -> Result<Option<Vec<u8>>, MemoryError> {
+        Ok(None)
+    }
+
+    /// Set (`Some`) or remove (`None`) the sealed vector of memory `id`. A store
+    /// without a side table has nothing to remove, but cannot keep one.
+    async fn set_sealed_vector(&self, _id: &str, blob: Option<&[u8]>) -> Result<(), MemoryError> {
+        match blob {
+            None => Ok(()),
+            Some(_) => Err(MemoryError::Io(std::io::Error::other(
+                "this memory store cannot keep sealed vectors",
+            ))),
+        }
+    }
+
+    /// `(id, raw embedding bytes)` of the `enc:v1` memories whose `embedding`
+    /// column is set: what `EncryptedStore` still has to move to the side table.
+    async fn vector_migration_candidates(&self) -> Result<Vec<(String, Vec<u8>)>, MemoryError> {
+        Ok(Vec::new())
+    }
+
+    /// Store `blob` as memory `id`'s sealed vector and set its `embedding`
+    /// column to NULL, together.
+    async fn move_vector_to_sealed(&self, _id: &str, _blob: &[u8]) -> Result<(), MemoryError> {
+        Err(MemoryError::Io(std::io::Error::other(
+            "this memory store cannot keep sealed vectors",
+        )))
+    }
 
     async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError>;
 

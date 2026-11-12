@@ -45,13 +45,17 @@ use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
 /// decrypt all records, generate a new random salt, and re-encrypt.
 pub const LEGACY_SALT: &[u8] = b"hone-memory-v1-salt";
 
-/// The 8 bytes every sealed embedding blob starts with: `\xE1HONEV1\0`.
-pub(crate) const EMBEDDING_MAGIC: [u8; 8] = [0xE1, 0x48, 0x4F, 0x4E, 0x45, 0x56, 0x31, 0x00];
-/// The 1-byte marker earlier builds of this branch used (still decrypted).
+/// The 8-byte magic of sealed vectors in the `embedding` column, as earlier
+/// builds of this branch wrote them (now only read, to migrate them).
+const OLD_EMBEDDING_MAGIC: [u8; 8] = [0xE1, 0x48, 0x4F, 0x4E, 0x45, 0x56, 0x31, 0x00];
+/// The 1-byte marker of still earlier builds (also only read).
 const OLD_EMBEDDING_MARKER: u8 = 0xE1;
 /// What the key-check value (kept in the salt sentinel's description) holds.
 const KEY_CHECK_PLAIN: &str = "hone-key-check";
 const KEY_CHECK_PREFIX: &str = "keycheck:";
+/// How many encrypted rows are tried to verify a passphrase when the store has
+/// no key-check value yet.
+const TRIAL_ROWS: usize = 5;
 
 /// Reserved memory ID used to persist the per-store random salt. `SqliteStore`
 /// never forgets or expires it: without it every encrypted memory is unreadable.
@@ -91,93 +95,102 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
     /// - Argon2 key derivation fails.
     /// - The cipher cannot be initialised.
     pub async fn new(inner: S, passphrase: &str) -> Result<Self, MemoryError> {
-        let (salt, sentinel) = load_or_init_salt(&inner).await?;
+        // The salt is created insert-if-absent and read back before any key is
+        // derived, so two first opens of one database agree on it.
+        let sentinel = ensure_sentinel(&inner).await?;
+        let salt = decode_salt(&sentinel)?;
         let key = derive_key(passphrase, &salt)?;
         let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|e| MemoryError::Io(std::io::Error::other(format!("cipher init: {e}"))))?;
         let store = Self { inner, cipher };
-        // Nothing is written before the passphrase is known to be right: a wrong
-        // key would otherwise "migrate" plaintext vectors into unreadable blobs.
-        store.verify_passphrase(&salt, sentinel).await?;
-        store.encrypt_plaintext_embeddings().await?;
+        // No memory, vector or key check is changed before the passphrase is
+        // known to be right: a wrong key would otherwise "migrate" plaintext
+        // vectors into unreadable blobs.
+        store.verify_passphrase(sentinel).await?;
+        store.migrate_vectors().await?;
         Ok(store)
     }
 
     /// The error for a passphrase that does not match the store.
     fn wrong_passphrase() -> MemoryError {
         MemoryError::Io(std::io::Error::other(
-            "EncryptedStore: wrong passphrase (the key check failed); nothing was changed",
+            "EncryptedStore: wrong passphrase (the key check failed); no memory, vector or key check was changed",
         ))
     }
 
+    /// Whether `sentinel`'s key-check value (if it has one) opens with this key.
+    /// `None` when it has no key check.
+    fn key_check_ok(&self, sentinel: &Memory) -> Option<bool> {
+        let check = sentinel
+            .description
+            .as_deref()?
+            .strip_prefix(KEY_CHECK_PREFIX)?;
+        Some(
+            self.decrypt_content(check)
+                .is_ok_and(|plain| plain == KEY_CHECK_PLAIN),
+        )
+    }
+
     /// Check the passphrase against the key-check value kept with the salt
-    /// sentinel. A store without one (new, or made by an older build) is
-    /// checked by trial-decrypting an encrypted row; once the key is known to
-    /// be right the key-check value is written.
-    async fn verify_passphrase(
-        &self,
-        salt: &[u8],
-        sentinel: Option<Memory>,
-    ) -> Result<(), MemoryError> {
-        use base64::Engine;
-        if let Some(check) = sentinel
-            .as_ref()
-            .and_then(|s| s.description.as_deref())
-            .and_then(|d| d.strip_prefix(KEY_CHECK_PREFIX))
-        {
-            let ok = self
-                .decrypt_content(check)
-                .is_ok_and(|plain| plain == KEY_CHECK_PLAIN);
+    /// sentinel. A store without one (made by `main`) is checked by
+    /// trial-decrypting up to [`TRIAL_ROWS`] encrypted rows (any success
+    /// accepts); a store with no encrypted rows pins the first passphrase used.
+    /// The key check is then written insert-if-absent and read back, so a
+    /// concurrent open with another passphrase can't both win.
+    async fn verify_passphrase(&self, sentinel: Memory) -> Result<(), MemoryError> {
+        if let Some(ok) = self.key_check_ok(&sentinel) {
             return if ok {
                 Ok(())
             } else {
                 Err(Self::wrong_passphrase())
             };
         }
-        if sentinel.is_some() {
-            // No key-check yet: trial-decrypt an existing encrypted row.
-            let rows = self
-                .inner
-                .recall(&MemoryQuery {
-                    text: String::new(),
-                    limit: 1_000_000,
-                    kind: None,
-                })
-                .await?;
-            let sample = rows.iter().find(|m| {
+        let rows = self
+            .inner
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: 1_000,
+                kind: None,
+            })
+            .await?;
+        let sample: Vec<&Memory> = rows
+            .iter()
+            .filter(|m| {
                 m.id != SALT_SENTINEL_ID
                     && (m.content.starts_with("enc:v1:") || m.content.starts_with("enc:v2:"))
-            });
-            if let Some(row) = sample {
-                self.decrypt_content(&row.content)
-                    .map_err(|_| Self::wrong_passphrase())?;
-            }
+            })
+            .take(TRIAL_ROWS)
+            .collect();
+        if sample.is_empty() {
+            tracing::warn!(
+                "encrypted memory has no memories to check the passphrase against: \
+                 the passphrase used now is pinned for this database"
+            );
+        } else if !sample
+            .iter()
+            .any(|m| self.decrypt_content(&m.content).is_ok())
+        {
+            return Err(Self::wrong_passphrase());
         }
-        let mut record = sentinel.unwrap_or_else(|| Memory {
-            id: SALT_SENTINEL_ID.to_string(),
-            content: base64::engine::general_purpose::STANDARD.encode(salt),
-            tags: vec!["__internal__".to_string()],
-            weight: 0.0,
-            created_at: 0,
-            decay_at: None,
-            kind: crate::types::MemoryKind::Conversation,
-            description: None,
-            embedding: None,
-        });
         let check = self.encrypt_content(KEY_CHECK_PLAIN)?;
-        record.description = Some(format!("{KEY_CHECK_PREFIX}{check}"));
-        self.inner.record(record).await
+        self.inner
+            .set_description_if_absent(SALT_SENTINEL_ID, &format!("{KEY_CHECK_PREFIX}{check}"))
+            .await?;
+        // Whoever wrote the check first decides: it must be ours.
+        let stored = self
+            .inner
+            .recall_by_id(SALT_SENTINEL_ID)
+            .await?
+            .ok_or_else(Self::wrong_passphrase)?;
+        match self.key_check_ok(&stored) {
+            Some(true) => Ok(()),
+            _ => Err(Self::wrong_passphrase()),
+        }
     }
 
-    /// An embedding as the blob stored in the embedding column: the 8-byte
-    /// magic, a 12-byte nonce and the AES-GCM ciphertext of the little-endian
-    /// f32s. The length is a multiple of 4 (the column is read as f32s).
-    ///
-    /// An older binary reads this blob as a vector of a different dimension (the
-    /// blob's length in f32s, which is the original plus 9), so it never
-    /// looks like an embedding of the right size; see the CHANGELOG for what
-    /// such a binary does with it.
-    fn seal_embedding(&self, embedding: &[f32]) -> Result<Vec<f32>, MemoryError> {
+    /// An embedding as the blob kept in the side table: the 12-byte nonce and
+    /// the AES-GCM ciphertext of the little-endian f32s.
+    fn seal_embedding(&self, embedding: &[f32]) -> Result<Vec<u8>, MemoryError> {
         let mut nonce_bytes = [0u8; 12];
         aes_gcm::aead::rand_core::RngCore::fill_bytes(&mut OsRng, &mut nonce_bytes);
         let plain: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
@@ -185,86 +198,84 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
             .cipher
             .encrypt(Nonce::from_slice(&nonce_bytes), plain.as_slice())
             .map_err(|e| MemoryError::Io(std::io::Error::other(format!("encrypt: {e}"))))?;
-        let mut blob = Vec::with_capacity(8 + 12 + ct.len());
-        blob.extend_from_slice(&EMBEDDING_MAGIC);
+        let mut blob = Vec::with_capacity(12 + ct.len());
         blob.extend_from_slice(&nonce_bytes);
         blob.extend_from_slice(&ct);
-        Ok(blob
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect())
+        Ok(blob)
     }
 
-    /// The vector a stored column value holds when it is a blob sealed with this
-    /// store's key (the 8-byte magic, or an earlier build's 1-byte marker);
-    /// `None` for anything else (a plaintext vector, another key's blob).
-    fn unseal(&self, stored: &[f32]) -> Option<Vec<f32>> {
-        let bytes: Vec<u8> = stored.iter().flat_map(|f| f.to_le_bytes()).collect();
-        let plain = if bytes.len() >= 8 + 12 + 16 && bytes[..8] == EMBEDDING_MAGIC {
-            self.cipher
+    /// The vector in a side-table blob, or `None` when it does not open with
+    /// this store's key.
+    fn open_sealed(&self, blob: &[u8]) -> Option<Vec<f32>> {
+        if blob.len() < 12 + 16 {
+            return None;
+        }
+        let plain = self
+            .cipher
+            .decrypt(Nonce::from_slice(&blob[..12]), &blob[12..])
+            .ok()?;
+        Some(le_f32s(&plain))
+    }
+
+    /// What an `embedding` column value of an `enc:v1` row is.
+    fn classify_column(&self, bytes: &[u8]) -> ColumnVector {
+        if bytes.len() >= 8 + 12 + 16 && bytes[..8] == OLD_EMBEDDING_MAGIC {
+            // An earlier build's sealed blob: decrypted, or left alone. Never
+            // taken for a plaintext vector.
+            return match self
+                .cipher
                 .decrypt(Nonce::from_slice(&bytes[8..20]), &bytes[20..])
-                .ok()?
-        } else if bytes.first() == Some(&OLD_EMBEDDING_MARKER) && bytes.len() >= 32 {
+            {
+                Ok(plain) => ColumnVector::Vector(le_f32s(&plain)),
+                Err(_) => ColumnVector::Undecryptable,
+            };
+        }
+        if bytes.first() == Some(&OLD_EMBEDDING_MARKER) && bytes.len() >= 32 && bytes.len() % 4 == 0
+        {
             // Earlier build: marker, nonce, ciphertext, 3 zero bytes of padding.
             let end = bytes.len() - 3;
             let (nonce, ct) = bytes[1..end].split_at(12);
-            self.cipher.decrypt(Nonce::from_slice(nonce), ct).ok()?
-        } else {
-            return None;
-        };
-        Some(
-            plain
-                .chunks_exact(4)
-                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect(),
-        )
+            if let Ok(plain) = self.cipher.decrypt(Nonce::from_slice(nonce), ct) {
+                return ColumnVector::Vector(le_f32s(&plain));
+            }
+            // Not a sealed blob of this key: a plaintext vector that happens to
+            // start with 0xE1.
+        }
+        if bytes.len() % 4 != 0 {
+            return ColumnVector::Undecryptable;
+        }
+        ColumnVector::Vector(le_f32s(bytes))
     }
 
-    /// The embedding a stored column value holds: decrypted when it is a blob
-    /// of this store's key, else (an older binary's plaintext vector) as it is.
-    fn open_embedding(&self, stored: Vec<f32>) -> Vec<f32> {
-        self.unseal(&stored).unwrap_or(stored)
-    }
-
-    /// Rows an older binary wrote (`enc:v1` content, plaintext vector in the
-    /// column) are re-encrypted, once. Each row's column is read directly (by id:
-    /// listings hide blobs that look sealed) and judged by the magic plus a
-    /// successful trial decryption, so a plaintext vector that happens to start
-    /// with `0xE1` is re-encrypted too. Reads every row once per open.
-    async fn encrypt_plaintext_embeddings(&self) -> Result<(), MemoryError> {
-        let listed = self
-            .inner
-            .recall(&MemoryQuery {
-                text: String::new(),
-                limit: 1_000_000,
-                kind: None,
-            })
-            .await?;
-        for listed_row in listed {
-            if listed_row.id == SALT_SENTINEL_ID || !listed_row.content.starts_with("enc:v1:") {
-                continue;
+    /// Rows an older binary wrote (`enc:v1` content, a vector in the `embedding`
+    /// column: plaintext, or a blob of an earlier build) are moved into the side
+    /// table, once: sealed, the column set to NULL. Only those rows are selected
+    /// (in SQL), so an open with nothing to migrate reads no embeddings. A blob
+    /// that does not decrypt is left in place and skipped.
+    async fn migrate_vectors(&self) -> Result<(), MemoryError> {
+        for (id, bytes) in self.inner.vector_migration_candidates().await? {
+            match self.classify_column(&bytes) {
+                ColumnVector::Vector(v) => {
+                    let blob = self.seal_embedding(&v)?;
+                    self.inner.move_vector_to_sealed(&id, &blob).await?;
+                }
+                ColumnVector::Undecryptable => {
+                    tracing::warn!(
+                        memory = %id,
+                        "skipping an embedding that is neither a plain vector nor a blob of this key"
+                    );
+                }
             }
-            let Some(mut mem) = self.inner.recall_by_id(&listed_row.id).await? else {
-                continue;
-            };
-            let Some(stored) = mem.embedding.take() else {
-                continue;
-            };
-            if self.unseal(&stored).is_some() {
-                continue;
-            }
-            mem.embedding = Some(self.seal_embedding(&stored)?);
-            self.inner.record(mem).await?;
         }
         Ok(())
     }
 
-    /// Give each of `memories` its decrypted embedding, fetched by id (the
-    /// listing carries none for sealed vectors).
+    /// Give each of `memories` its decrypted embedding, read from the side table
+    /// (the column is NULL for encrypted rows).
     async fn attach_embeddings(&self, memories: &mut [Memory]) -> Result<(), MemoryError> {
         for m in memories.iter_mut().filter(|m| m.embedding.is_none()) {
-            if let Some(stored) = self.inner.recall_by_id(&m.id).await? {
-                m.embedding = stored.embedding.map(|e| self.open_embedding(e));
+            if let Some(blob) = self.inner.sealed_vector(&m.id).await? {
+                m.embedding = self.open_sealed(&blob);
             }
         }
         Ok(())
@@ -331,26 +342,9 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
             .map_err(|e| MemoryError::Io(std::io::Error::other(format!("utf8: {e}"))))
     }
 
-    /// Content and description are `enc:v1:` (content readable by older
-    /// binaries); an embedding goes into the embedding column as an encrypted
-    /// blob (see `seal_embedding`).
-    fn encrypt_memory(&self, mut memory: Memory) -> Result<Memory, MemoryError> {
-        memory.content = self.encrypt_content(&memory.content)?;
-        memory.embedding = memory
-            .embedding
-            .take()
-            .map(|e| self.seal_embedding(&e))
-            .transpose()?;
-        memory.description = memory
-            .description
-            .take()
-            .map(|d| self.encrypt_content(&d))
-            .transpose()?;
-        Ok(memory)
-    }
-
     /// Decrypt content and description; a plaintext description (written before
-    /// descriptions were encrypted) is returned as it is.
+    /// descriptions were encrypted) is returned as it is. An `enc:v2:` row (written
+    /// by earlier builds) carries its embedding inside the ciphertext.
     fn decrypt_memory(&self, mut memory: Memory) -> Result<Memory, MemoryError> {
         if memory.content.starts_with("enc:v2:") {
             let plain = self.decrypt_content(&memory.content)?;
@@ -359,7 +353,9 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
             memory.embedding = serde_json::from_value(payload["embedding"].clone()).ok();
         } else if memory.content.starts_with("enc:v1:") {
             memory.content = self.decrypt_content(&memory.content)?;
-            memory.embedding = memory.embedding.take().map(|e| self.open_embedding(e));
+            // The vector is in the side table (attached by id); whatever the
+            // column holds is not a vector this store can vouch for.
+            memory.embedding = None;
         }
         if let Some(d) = memory
             .description
@@ -437,14 +433,39 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
 
 #[async_trait]
 impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
-    async fn record(&self, memory: Memory) -> Result<(), MemoryError> {
-        let encrypted = self.encrypt_memory(memory)?;
-        self.inner.record(encrypted).await
+    /// Content is `enc:v1:` (readable by older binaries); the embedding goes,
+    /// sealed, into the side table, and the `embedding` column stays NULL, so an
+    /// older binary sees no embedding.
+    async fn record(&self, mut memory: Memory) -> Result<(), MemoryError> {
+        let embedding = memory.embedding.take();
+        let sealed = embedding
+            .as_deref()
+            .map(|e| self.seal_embedding(e))
+            .transpose()?;
+        memory.content = self.encrypt_content(&memory.content)?;
+        // The description (the start of the user's message, for some memories)
+        // is encrypted too.
+        memory.description = memory
+            .description
+            .take()
+            .map(|d| self.encrypt_content(&d))
+            .transpose()?;
+        let id = memory.id.clone();
+        self.inner.record(memory).await?;
+        // Replacing a memory replaces (or removes) its sealed vector too.
+        self.inner.set_sealed_vector(&id, sealed.as_deref()).await
     }
 
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
-        let result = self.inner.recall_by_id(id).await?;
-        result.map(|m| self.decrypt_memory(m)).transpose()
+        let Some(found) = self.inner.recall_by_id(id).await? else {
+            return Ok(None);
+        };
+        let mut memory = self.decrypt_memory(found)?;
+        if memory.embedding.is_none() {
+            self.attach_embeddings(std::slice::from_mut(&mut memory))
+                .await?;
+        }
+        Ok(Some(memory))
     }
 
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
@@ -541,23 +562,16 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
 // Salt management helpers
 // ---------------------------------------------------------------------------
 
-/// Load the persisted random salt from the sentinel record, or generate a new
-/// one (not yet written: [`EncryptedStore::verify_passphrase`] writes the
-/// sentinel with its key-check value once the cipher exists). Returns the salt
-/// and the sentinel record when there is one.
-///
-/// Returns an error if encrypted records exist but the sentinel is absent
-/// (this indicates the store was created with the old fixed-salt code and the
-/// sentinel was never written — migration is required).
-async fn load_or_init_salt(
-    store: &impl MemoryStore,
-) -> Result<(Vec<u8>, Option<Memory>), MemoryError> {
+/// The salt sentinel: read it, or create it insert-if-absent and read it back
+/// (so concurrent first opens all end up with the one stored salt). Errors if
+/// encrypted records exist but the sentinel is absent (the store was created
+/// with the old fixed-salt code: migration is required).
+async fn ensure_sentinel(store: &impl MemoryStore) -> Result<Memory, MemoryError> {
     use base64::Engine;
 
     // The sentinel is found by id (a listing of the newest memories can miss it).
     if let Some(sentinel) = store.recall_by_id(SALT_SENTINEL_ID).await? {
-        let salt = decode_salt(&sentinel.content)?;
-        return Ok((salt, Some(sentinel)));
+        return Ok(sentinel);
     }
 
     // No sentinel present. Check for existing encrypted records (a direct query).
@@ -569,21 +583,52 @@ async fn load_or_init_salt(
         )));
     }
 
-    // Fresh store — generate a new random salt.
     let mut salt = [0u8; 16];
     aes_gcm::aead::rand_core::RngCore::fill_bytes(&mut OsRng, &mut salt);
-    Ok((salt.to_vec(), None))
+    store
+        .record_if_absent(Memory {
+            id: SALT_SENTINEL_ID.to_string(),
+            content: base64::engine::general_purpose::STANDARD.encode(salt),
+            tags: vec!["__internal__".to_string()],
+            weight: 0.0,
+            created_at: 0,
+            decay_at: None,
+            kind: crate::types::MemoryKind::Conversation,
+            description: None,
+            embedding: None,
+        })
+        .await?;
+    store
+        .recall_by_id(SALT_SENTINEL_ID)
+        .await?
+        .ok_or_else(|| MemoryError::Io(std::io::Error::other("salt sentinel was not stored")))
 }
 
-fn decode_salt(encoded: &str) -> Result<Vec<u8>, MemoryError> {
+fn decode_salt(sentinel: &Memory) -> Result<Vec<u8>, MemoryError> {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD
-        .decode(encoded)
+        .decode(&sentinel.content)
         .map_err(|e| {
             MemoryError::Io(std::io::Error::other(format!(
                 "failed to decode salt sentinel: {e}"
             )))
         })
+}
+
+/// What an `embedding` column value of an `enc:v1` row turned out to be.
+enum ColumnVector {
+    /// A vector (plaintext, or decrypted from an earlier build's blob).
+    Vector(Vec<f32>),
+    /// Not usable: a sealed-looking blob that does not decrypt, or bytes that
+    /// are not whole f32s.
+    Undecryptable,
+}
+
+fn le_f32s(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
