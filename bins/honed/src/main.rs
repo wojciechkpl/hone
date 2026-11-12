@@ -428,6 +428,8 @@ async fn main() -> Result<()> {
                         Ok(p) => p,
                         Err(e) => {
                             eprintln!("honed: permission policy error: {e}");
+                            // `exit` runs no destructors: stop MCP servers first.
+                            hone_tools::kill_running_commands();
                             std::process::exit(2);
                         }
                     };

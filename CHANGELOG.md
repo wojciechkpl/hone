@@ -137,6 +137,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Known gaps:** the automatic test run after an edit runs (approved, or in AutoApprove) is not prompted and not sandboxed, and (until "shell commands stop when their call ends" below) <kbd>Esc</kbd> didn't stop the fix turns it starts; with `--step`, <kbd>a</kbd> approves once.
 - Contract: `docs/plans/tui-approval-fix-spec.md`.
 
+### Fixed: MCP servers start and stop in parallel
+
+- **Before:** hone started MCP servers one after another and waited for each one's handshake before starting the next, so startup took the sum of their start times. A hung server held up the rest by its whole handshake timeout (60 s by default), and several `npx -y …` servers downloaded their packages one at a time. Exit stopped servers one after another too, giving each one that ignored its input closing 5 s. The message hone sends a server at exit had no time limit, so a server that had stopped reading could keep hone from exiting at all.
+- **Now:**
+  - All enabled servers start and handshake at once, so startup waits only for the slowest one. A hung server delays it by its handshake timeout while the others connect.
+  - Which servers connect, and their tools, are unchanged. If startup is cancelled, every server it started is killed.
+  - Exit stops every server at once. Each gets at most 5 s in all, that message included, before it is killed.
+  - No exit leaves an MCP server running any more (unix), short of a crash or `kill -9`. Before, a server that ignored its input closing kept running in these cases, all older than this change:
+    - `hone session resume` with a missing session;
+    - an unknown `--approve` id or a malformed project `permissions.toml`;
+    - an out-of-range `--ensemble`;
+    - SIGTERM or SIGHUP sent to `hone` alone.
+  - Each server now runs in its own process group, which hone stops on every exit.
+    - A normal exit, TUI quit included, shuts it down gracefully: hone closes its input and gives it up to 5 s.
+    - An error exit, or a signal to a one-shot run or `honed`, sends it SIGTERM first, then SIGKILL if it is still running 1 s later. (In the TUI a signal takes the graceful path.)
+    - If you start a server through a shell (`sh -c "cd DIR && server"`), write `exec server`. On Linux the 1 s ends as soon as the shell itself exits.
+    - A failed `session resume` with a server that ignores its input closing takes about 5 s to exit.
+    - Because a server is no longer in the terminal's process group, one that prompts on the terminal (`/dev/tty`) now stops until its handshake timeout.
+  - Killing a server kills everything it started. A server launched through `npx -y …`, `uvx` or `sh -c` no longer leaves its real process running after a failed start or at exit. Before, only the launcher was killed.
+- Contract: `docs/plans/mcp-parallel-connect-spec.md`.
+
 ### Fixed: MCP requests time out
 
 - **Before:** `timeout_ms` in `mcp.json` (documented as the per-request timeout, default 10 000 ms) was never applied, so a request to a stdio MCP server that didn't answer waited forever. Servers connect one after another at startup, so a server that hung during its handshake kept hone from starting. A tool call to a hung server waited until <kbd>Esc</kbd> (TUI) or <kbd>Ctrl</kbd>+<kbd>C</kbd>, and a `honed` worker waited indefinitely, with every other call to that server queued behind it. A line on a server's stdout that wasn't JSON (log output) failed the call.

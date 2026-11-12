@@ -2784,6 +2784,7 @@ name = "hone-mcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures",
  "hone-config",
  "hone-proto",
  "hone-sandbox",
@@ -2795,6 +2796,7 @@ dependencies = [
  "tokio",
  "toml 0.8.2",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

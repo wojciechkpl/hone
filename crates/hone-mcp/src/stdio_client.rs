@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use hone_tools::Tool;
+use hone_tools::{ProcessGroupGuard, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
@@ -53,6 +53,15 @@ struct JsonRpcErrorObj {
     message: String,
 }
 
+/// Run the server in its own process group (unix), so it and what it starts can
+/// be killed together and are not hit by the terminal's Ctrl+C directly.
+fn own_process_group(cmd: &mut tokio::process::Command) {
+    #[cfg(unix)]
+    cmd.process_group(0);
+    #[cfg(not(unix))]
+    let _ = cmd;
+}
+
 /// A handshake is bounded by at least this long (see `handshake_limit`).
 const DEFAULT_HANDSHAKE_FLOOR: Duration = Duration::from_secs(60);
 
@@ -64,6 +73,10 @@ struct TransportInner {
     /// Keep the child alive so it is not reaped while we hold its pipes.
     #[allow(dead_code)]
     process: Child,
+    /// The server's process group, registered with hone's running-process
+    /// registry: killed with everything the server started whenever hone lets
+    /// go of it (also on drop), and by `kill_running_commands()` on hone's exit.
+    group: Option<ProcessGroupGuard>,
     /// `None` once closed at shutdown (the server sees end of input).
     stdin: Option<BufWriter<ChildStdin>>,
     reader: BufReader<ChildStdout>,
@@ -352,17 +365,17 @@ impl StdioMcpClient {
     pub async fn spawn(command: &str, args: &[&str]) -> Result<Self, McpError> {
         let server_name = command.to_string();
 
-        let mut child = tokio::process::Command::new(command)
-            .args(args)
+        let mut cmd = tokio::process::Command::new(command);
+        cmd.args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| McpError::ConnectionFailed {
-                server: server_name.clone(),
-                source: e,
-            })?;
+            .kill_on_drop(true);
+        own_process_group(&mut cmd);
+        let mut child = cmd.spawn().map_err(|e| McpError::ConnectionFailed {
+            server: server_name.clone(),
+            source: e,
+        })?;
 
         // Safe: Command was configured with .stdin/.stdout(Stdio::piped) above.
         #[allow(clippy::expect_used)]
@@ -373,6 +386,7 @@ impl StdioMcpClient {
         Ok(Self {
             server_name,
             transport: Arc::new(Mutex::new(TransportInner {
+                group: child.id().map(ProcessGroupGuard::new),
                 process: child,
                 stdin: Some(BufWriter::new(stdin)),
                 reader: BufReader::new(stdout),
@@ -421,7 +435,17 @@ impl StdioMcpClient {
     /// Kill the server process and reap it (startup failure path).
     pub(crate) async fn kill(&mut self) {
         let mut transport = self.transport.lock().await;
-        let _ = transport.process.kill().await;
+        // Group first, while the leader is not yet reaped (its pid stays
+        // reserved); the group SIGKILL takes the leader too, then reap it.
+        if let Some(group) = transport.group.as_mut() {
+            group.kill();
+        }
+        let _ = transport.process.start_kill();
+        let _ = tokio::time::timeout(
+            tokio::time::Duration::from_secs(1),
+            transport.process.wait(),
+        )
+        .await;
     }
 
     /// Spawn with an explicit logical name and additional environment variables.
@@ -457,6 +481,7 @@ impl StdioMcpClient {
             cmd.env(k, v);
         }
 
+        own_process_group(&mut cmd);
         let mut child = cmd.spawn().map_err(|e| McpError::ConnectionFailed {
             server: server_name.to_string(),
             source: e,
@@ -471,6 +496,7 @@ impl StdioMcpClient {
         Ok(Self {
             server_name: server_name.to_string(),
             transport: Arc::new(Mutex::new(TransportInner {
+                group: child.id().map(ProcessGroupGuard::new),
                 process: child,
                 stdin: Some(BufWriter::new(stdin)),
                 reader: BufReader::new(stdout),
@@ -484,32 +510,47 @@ impl StdioMcpClient {
 
     /// Gracefully stop the MCP server subprocess.
     ///
-    /// Sends a `notifications/cancelled` notification and then waits up to 5
-    /// seconds for the process to exit cleanly before issuing a hard kill.
+    /// Sends a `notifications/cancelled` notification, closes the server's
+    /// stdin and waits for the process to exit; all of that shares one 5 second
+    /// budget, after which the process is killed. (Waiting for the transport
+    /// lock, held by a request in flight, is outside the budget.)
     pub async fn shutdown(&mut self) -> Result<(), McpError> {
-        // Best-effort notification — the server may already be gone.
-        let _ = self
-            .transport
-            .lock()
-            .await
-            .send_notification("notifications/cancelled", None, &self.server_name)
-            .await;
-
-        let kill_timeout = tokio::time::Duration::from_secs(5);
+        let budget = tokio::time::Duration::from_secs(5);
+        let server_name = self.server_name.clone();
         let mut transport = self.transport.lock().await;
-        // Close the server's stdin (after flushing the notification), so a
-        // server that exits when its input ends is gone at once; the wait and
-        // kill below remain the fallback for one that does not.
-        if let Some(mut stdin) = transport.stdin.take() {
-            let _ = stdin.flush().await;
-            drop(stdin);
-        }
-        match tokio::time::timeout(kill_timeout, transport.process.wait()).await {
-            Ok(_) => {}
-            Err(_) => {
-                // Timed out — forcibly kill the subprocess.
-                let _ = transport.process.kill().await;
+        let ended = tokio::time::timeout(budget, async {
+            // Best-effort notification — the server may already be gone.
+            let _ = transport
+                .send_notification("notifications/cancelled", None, &server_name)
+                .await;
+            // Close the server's stdin (after flushing the notification), so a
+            // server that exits when its input ends is gone at once; the wait
+            // and kill remain the fallback for one that does not.
+            if let Some(mut stdin) = transport.stdin.take() {
+                let _ = stdin.flush().await;
+                drop(stdin);
             }
+            let _ = transport.process.wait().await;
+        })
+        .await;
+        if ended.is_err() {
+            // Out of budget (also when it ran out writing the notification):
+            // forcibly kill the subprocess. Signal first, then wait only briefly
+            // for the reap, so shutdown cannot hang here.
+            if let Some(group) = transport.group.as_mut() {
+                group.kill();
+            }
+            let _ = transport.process.start_kill();
+            let _ = tokio::time::timeout(
+                tokio::time::Duration::from_secs(1),
+                transport.process.wait(),
+            )
+            .await;
+        }
+        // Whatever the leader did, nothing it started stays behind (a launcher's
+        // child may outlive it).
+        if let Some(group) = transport.group.as_mut() {
+            group.kill();
         }
         Ok(())
     }

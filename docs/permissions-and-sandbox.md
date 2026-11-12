@@ -306,7 +306,8 @@ On unix each `shell` command runs in its own process group with stdin closed. If
 call ends early (<kbd>Esc</kbd>, a worker's timeout, the tool's `timeout_ms`, 30 s by
 default), Hone kills the whole group: the shell and everything it started. Hone also
 kills its running commands when it exits or is stopped by SIGINT, SIGTERM or SIGHUP
-(`honed` too). A command that starts its own session (`setsid`) escapes this, and so does
+(`honed` too). MCP servers run in their own process groups as well and are killed the
+same way. A command that starts its own session (`setsid`) escapes this, and so does
 every command if Hone is killed with `kill -9`. A command that needs the terminal (an ssh
 passphrase prompt) stops until its timeout.
 
