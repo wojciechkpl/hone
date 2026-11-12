@@ -90,3 +90,13 @@ path and content) before the first run and after every check; on any change the
 current and remaining runs end `infra_error` ("suite modified during the run") and
 `report.json` has `"integrity_violated": true` (`report.md` flags the run as
 untrustworthy). `--check` rejects a path that is not a directory.
+
+Integrity is re-checked after every run, whatever its status (an agent that wrote
+into the suite and then timed out or failed is caught), and once more at the end
+of the eval. The hash covers each file's path, size, modification time and content,
+so a change that is reverted before the next check is still detected. A symlink
+inside an integrity directory is also hashed through to its target when the target
+lies under an integrity directory. The eval's own output directory and the system
+temp directory are not hashed, and `--check` errors if an integrity directory
+contains the output directory. Checks must not write inside integrity directories
+(not even temporary files): any write counts as tampering.

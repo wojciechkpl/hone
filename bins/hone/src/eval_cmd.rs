@@ -153,6 +153,21 @@ pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> 
 
     // Everything that can be wrong before a model is called, reported together.
     let mut errors = tasks.check_files(&base_dir);
+    // An integrity directory must not contain the output directory (F33).
+    let out_dir = args
+        .output
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("eval-runs"));
+    let out_abs = absolute_lossy(&out_dir);
+    for dir in tasks.integrity() {
+        let integrity_dir = std::fs::canonicalize(base_dir.join(dir));
+        if integrity_dir.is_ok_and(|d| out_abs.starts_with(&d)) {
+            errors.push(format!(
+                "[eval] integrity: `{dir}` contains the output directory {}; pass a different --output",
+                out_abs.display()
+            ));
+        }
+    }
     // Every profile resolved over the user's config, as a run would use it.
     for name in tasks.profile_names() {
         if let Err(e) = tasks.profile_selection(&name, user.as_ref()) {
@@ -289,6 +304,25 @@ fn all_infra_errors(run_dir: &Path) -> bool {
         return false;
     };
     !counts.is_empty() && counts.keys().all(|k| k == "infra_error")
+}
+
+/// An absolute path for `p`, resolving symlinks in its longest existing prefix.
+fn absolute_lossy(p: &Path) -> PathBuf {
+    let abs = std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
+    let mut tail = Vec::new();
+    let mut head = abs.as_path();
+    loop {
+        if let Ok(real) = std::fs::canonicalize(head) {
+            return tail.iter().rev().fold(real, |acc, c| acc.join(c));
+        }
+        match (head.parent(), head.file_name()) {
+            (Some(parent), Some(name)) => {
+                tail.push(name.to_owned());
+                head = parent;
+            }
+            _ => return abs,
+        }
+    }
 }
 
 /// SIGINT and SIGTERM (Unix); Ctrl+C elsewhere. `next` resolves to the exit code

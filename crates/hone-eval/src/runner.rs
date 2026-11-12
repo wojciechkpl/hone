@@ -134,9 +134,11 @@ struct Ctx {
     integrity: Arc<Integrity>,
 }
 
-/// The suite directories that must not change during a run (F31).
+/// The suite directories that must not change during a run (F31, F32, F33).
 struct Integrity {
     dirs: Vec<PathBuf>,
+    /// Never hashed: the eval's own output directory and the system temp directory.
+    excludes: Vec<PathBuf>,
     baseline: String,
     violated: std::sync::atomic::AtomicBool,
 }
@@ -144,10 +146,21 @@ struct Integrity {
 const INTEGRITY_MESSAGE: &str = "suite modified during the run";
 
 impl Integrity {
-    fn new(dirs: Vec<PathBuf>) -> Self {
-        let baseline = hash_dirs(&dirs);
+    async fn new(dirs: Vec<PathBuf>, excludes: Vec<PathBuf>) -> Self {
+        let dirs: Vec<PathBuf> = dirs
+            .into_iter()
+            .map(|d| std::fs::canonicalize(&d).unwrap_or(d))
+            .collect();
+        // Only what lies strictly below an integrity directory needs excluding: an
+        // integrity directory that is itself under the temp directory is not skipped.
+        let excludes: Vec<PathBuf> = excludes
+            .into_iter()
+            .filter(|x| dirs.iter().any(|d| x != d && x.starts_with(d)))
+            .collect();
+        let baseline = hash_dirs_blocking(dirs.clone(), excludes.clone()).await;
         Self {
             dirs,
+            excludes,
             baseline,
             violated: false.into(),
         }
@@ -157,9 +170,12 @@ impl Integrity {
         self.violated.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// Re-hash the directories (after a check); true when anything changed, now or before.
-    fn check(&self) -> bool {
-        if !self.dirs.is_empty() && hash_dirs(&self.dirs) != self.baseline {
+    /// Re-hash the directories (after every run, and at the end of the eval); true
+    /// when anything changed, now or before.
+    async fn check(&self) -> bool {
+        if !self.dirs.is_empty()
+            && hash_dirs_blocking(self.dirs.clone(), self.excludes.clone()).await != self.baseline
+        {
             self.violated
                 .store(true, std::sync::atomic::Ordering::SeqCst);
         }
@@ -167,10 +183,57 @@ impl Integrity {
     }
 }
 
-/// SHA-256 over every file's relative path and content (and symlink targets).
-fn hash_dirs(dirs: &[PathBuf]) -> String {
+/// [`hash_dirs`] on a blocking thread.
+async fn hash_dirs_blocking(dirs: Vec<PathBuf>, excludes: Vec<PathBuf>) -> String {
+    if dirs.is_empty() {
+        return String::new();
+    }
+    tokio::task::spawn_blocking(move || hash_dirs(&dirs, &excludes))
+        .await
+        .unwrap_or_default()
+}
+
+/// SHA-256 over every entry's relative path, and for files their size, mtime (ns)
+/// and content, streamed. A symlink is hashed by its target text, and by its
+/// target's size, mtime and content when the target lies under one of `dirs`.
+/// Paths under `excludes` are skipped.
+fn hash_dirs(dirs: &[PathBuf], excludes: &[PathBuf]) -> String {
     use sha2::{Digest, Sha256};
-    fn walk(root: &Path, dir: &Path, hasher: &mut Sha256) {
+    use std::io::Read;
+
+    fn hash_file(path: &Path, hasher: &mut Sha256) {
+        let Ok(mut file) = std::fs::File::open(path) else {
+            hasher.update(b"unreadable");
+            return;
+        };
+        if let Ok(meta) = file.metadata() {
+            hasher.update(meta.len().to_le_bytes());
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos());
+            hasher.update(mtime.to_le_bytes());
+        }
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            match file.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => hasher.update(&buf[..n]),
+                Err(_) => {
+                    hasher.update(b"read-error");
+                    break;
+                }
+            }
+        }
+    }
+
+    struct Ctx<'a> {
+        dirs: &'a [PathBuf],
+        excludes: &'a [PathBuf],
+    }
+
+    fn walk(c: &Ctx, root: &Path, dir: &Path, hasher: &mut Sha256) {
         let Ok(read) = std::fs::read_dir(dir) else {
             hasher.update(b"unreadable:");
             hasher.update(dir.to_string_lossy().as_bytes());
@@ -180,34 +243,44 @@ fn hash_dirs(dirs: &[PathBuf]) -> String {
         entries.sort_by_key(|e| e.file_name());
         for entry in entries {
             let path = entry.path();
+            if c.excludes.iter().any(|x| path.starts_with(x)) {
+                continue;
+            }
             let rel = path.strip_prefix(root).unwrap_or(&path);
             hasher.update(rel.to_string_lossy().as_bytes());
             hasher.update([0]);
             match entry.file_type() {
                 Ok(t) if t.is_dir() => {
                     hasher.update(b"d");
-                    walk(root, &path, hasher);
+                    walk(c, root, &path, hasher);
                 }
                 Ok(t) if t.is_symlink() => {
                     hasher.update(b"l");
                     if let Ok(target) = std::fs::read_link(&path) {
                         hasher.update(target.to_string_lossy().as_bytes());
                     }
+                    if let Ok(real) = std::fs::canonicalize(&path) {
+                        if c.dirs.iter().any(|d| real.starts_with(d)) && real.is_file() {
+                            hasher.update(b"->");
+                            hash_file(&real, hasher);
+                        }
+                    }
                 }
                 Ok(t) if t.is_file() => {
                     hasher.update(b"f");
-                    hasher.update(std::fs::read(&path).unwrap_or_default());
+                    hash_file(&path, hasher);
                 }
                 _ => {}
             }
             hasher.update([0]);
         }
     }
+    let c = Ctx { dirs, excludes };
     let mut hasher = Sha256::new();
     for dir in dirs {
         hasher.update(dir.to_string_lossy().as_bytes());
         hasher.update([1]);
-        walk(dir, dir, &mut hasher);
+        walk(&c, dir, dir, &mut hasher);
     }
     hasher
         .finalize()
@@ -299,16 +372,25 @@ impl EvalRunner {
             copy_warn_bytes: self.copy_warn_bytes,
             warned: Arc::default(),
             interrupt: opts.interrupt.clone(),
-            integrity: Arc::new(Integrity::new(
-                self.tasks
-                    .integrity()
-                    .iter()
-                    .map(|d| base_dir.join(d))
-                    .collect(),
-            )),
+            integrity: Arc::new(
+                Integrity::new(
+                    self.tasks
+                        .integrity()
+                        .iter()
+                        .map(|d| base_dir.join(d))
+                        .collect(),
+                    [opts.out_dir.clone(), std::env::temp_dir()]
+                        .into_iter()
+                        .map(|p| std::fs::canonicalize(&p).unwrap_or(p))
+                        .collect(),
+                )
+                .await,
+            ),
         };
         let planned_total = planned.len();
         let results = run_all(&ctx, planned, opts.jobs).await;
+        // Once more at the end of the eval (F32).
+        ctx.integrity.check().await;
         let interrupted = ctx.interrupt.as_ref().is_some_and(|rx| *rx.borrow());
 
         manifest["ended_at"] = json!(Utc::now().to_rfc3339());
@@ -763,6 +845,13 @@ async fn run_one(ctx: &Ctx, planned: PlannedRun) -> Option<RunResult> {
             }
         }
     };
+    // Every run is checked, whatever its status (F32): the agent may have written
+    // into the suite and then timed out or failed.
+    let mut finished = finished;
+    if ctx.integrity.check().await && finished.status != TaskStatus::Interrupted {
+        finished.status = TaskStatus::InfraError;
+        finished.message = Some(INTEGRITY_MESSAGE.to_owned());
+    }
     persist(&dir, &finished);
 
     let check = finished.check.as_ref();
@@ -1027,17 +1116,6 @@ async fn run_in_copy(
                 task.timeout_secs,
             )
             .await;
-            if ctx.integrity.check() {
-                let mut out = finish(
-                    TaskStatus::InfraError,
-                    Some(INTEGRITY_MESSAGE.to_owned()),
-                    turn.usage,
-                    turn.cost_usd,
-                    Some(check),
-                );
-                out.status = TaskStatus::InfraError;
-                return out;
-            }
             let status = if check.exit_code == Some(0) {
                 TaskStatus::Pass
             } else {
