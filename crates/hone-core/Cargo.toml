@@ -27,7 +27,6 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
-libc = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tempfile = { workspace = true }
@@ -40,6 +39,9 @@ reqwest = { workspace = true, features = ["json"] }
 chrono = { workspace = true }
 async-stream = { workspace = true }
 bytes = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

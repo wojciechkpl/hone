@@ -177,16 +177,38 @@ fn command(argv: &[&str], sha256: &str) -> ScoredSource {
     }
 }
 
+/// Whether `p` is a file the current user may run.
+#[cfg(unix)]
+fn is_executable(p: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(p)
+        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+/// Whether `p` is a file (execute bits do not exist here; `.exe` and friends
+/// are found by trying the usual extensions).
+#[cfg(not(unix))]
+fn is_executable(p: &Path) -> bool {
+    p.is_file()
+}
+
 /// Find `program` in the directories of `path`.
 fn find_program(program: &str, path: &OsStr) -> Option<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-    std::env::split_paths(path)
-        .map(|dir| dir.join(program))
-        .find(|p| {
-            std::fs::metadata(p)
-                .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-                .unwrap_or(false)
-        })
+    std::env::split_paths(path).find_map(|dir| {
+        let plain = dir.join(program);
+        if is_executable(&plain) {
+            return Some(plain);
+        }
+        #[cfg(not(unix))]
+        for ext in ["exe", "cmd", "bat"] {
+            let candidate = dir.join(format!("{program}.{ext}"));
+            if is_executable(&candidate) {
+                return Some(candidate);
+            }
+        }
+        None
+    })
 }
 
 /// Run one probe. `None` for anything but a clean, non-empty answer.
@@ -209,6 +231,7 @@ async fn run_probe(
     if cwd.is_dir() {
         cmd.current_dir(cwd);
     }
+    #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         // Its own process group, so a timeout can take the whole tree down.
@@ -242,6 +265,7 @@ async fn run_probe(
 }
 
 /// SIGKILL the process group `pid` leads.
+#[cfg(unix)]
 fn kill_group(pid: Option<u32>) {
     if let Some(pid) = pid.and_then(|p| i32::try_from(p).ok()) {
         // SAFETY: `killpg` only signals the group created for this probe
@@ -251,6 +275,11 @@ fn kill_group(pid: Option<u32>) {
         }
     }
 }
+
+/// Without process groups the direct child is killed when its handle drops
+/// (`kill_on_drop`), which has already happened by the time this runs.
+#[cfg(not(unix))]
+fn kill_group(_pid: Option<u32>) {}
 
 /// The sorted top-level listing (hidden entries skipped, directories suffixed,
 /// at most 50) and the hash of it. `None` when the directory cannot be read.
