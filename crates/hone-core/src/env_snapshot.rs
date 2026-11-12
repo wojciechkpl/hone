@@ -3,7 +3,7 @@
 //!
 //! Every probe is a fixed argv (never a shell, never anything from the prompt or
 //! the repository), run in parallel with stdin closed, in a fresh empty
-//! temporary directory (never the repository, so repository files such as
+//! temporary directory (never inside the repository, so repository files such as
 //! `.yarnrc`, `package.json` or `rust-toolchain.toml` cannot redirect a
 //! toolchain), with a minimal environment, and found only through absolute
 //! `PATH` entries outside the working directory. A probe that is missing, exits
@@ -20,6 +20,8 @@ use hone_proto::{ScoredSource, SourceRef, sha256_hex};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
+
+use hone_tools::ProcessGroupGuard;
 
 /// How long one probe may run.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -41,15 +43,7 @@ const DRAIN_GRACE: Duration = Duration::from_millis(500);
 /// whatever the toolchain search path says.
 const SYSTEM_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
 /// The variables a probe inherits, when the caller has them.
-const INHERITED_ENV: &[&str] = &[
-    "HOME",
-    "LANG",
-    "LC_ALL",
-    "TMPDIR",
-    "TEMP",
-    "TMP",
-    "SYSTEMROOT",
-];
+const INHERITED_ENV: &[&str] = &["HOME", "LANG", "LC_ALL", "SYSTEMROOT"];
 /// Settings every probe gets, so a toolchain never downloads or runs anything
 /// the repository names.
 const FIXED_ENV: &[(&str, &str)] = &[
@@ -152,8 +146,11 @@ impl EnvSnapshot {
             .clone()
             .or_else(|| std::env::var_os("PATH"))
             .unwrap_or_default();
-        let tool_path = usable_path(&raw_path, &self.working_dir);
-        let system_path = usable_path(OsStr::new(SYSTEM_PATH), &self.working_dir);
+        let tool_path = usable_path(&raw_path, &self.working_dir, home.as_deref());
+        let system_path = usable_path(OsStr::new(SYSTEM_PATH), &self.working_dir, home.as_deref());
+        let tmp = probe_temp_parent(&self.working_dir);
+        let tmp = tmp.as_path();
+        let home_ref = home.as_deref();
 
         // The listing runs off the async runtime and is dropped if it is late.
         let work = self.working_dir.clone();
@@ -162,7 +159,7 @@ impl EnvSnapshot {
 
         let toolchains =
             futures::future::join_all(PROBES.iter().map(|(prog, args, stream, pick)| {
-                run_probe(prog, args, *stream, *pick, &tool_path, limit)
+                run_probe(prog, args, *stream, *pick, &tool_path, tmp, limit)
             }));
         let kernel = run_probe(
             "uname",
@@ -170,10 +167,11 @@ impl EnvSnapshot {
             Stream::Stdout,
             Pick::First,
             &system_path,
+            tmp,
             limit,
         );
-        let product = product_version(&system_path, limit);
-        let memory = memory_gib(&system_path, limit);
+        let product = product_version(&system_path, tmp, limit);
+        let memory = memory_gib(&system_path, tmp, limit);
         let (listing, toolchains, kernel, product, memory) =
             tokio::join!(listing, toolchains, kernel, product, memory);
         let listing = listing.ok().and_then(Result::ok).flatten();
@@ -184,16 +182,12 @@ impl EnvSnapshot {
         let mut os = format!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH);
         let mut details = Vec::new();
         if let Some((argv, a)) = &product {
-            details.push(format!(
-                "{} {}",
-                macos_name(),
-                tilde(&a.line, home.as_deref())
-            ));
+            details.push(format!("{} {}", macos_name(), shown(&a.line, home_ref)));
             let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
             sources.push(command(&argv, &a.sha256));
         }
         if let Some(k) = &kernel {
-            details.push(format!("kernel {}", tilde(&k.line, home.as_deref())));
+            details.push(format!("kernel {}", shown(&k.line, home_ref)));
             sources.push(command(&["uname", "-r"], &k.sha256));
         }
         if !details.is_empty() {
@@ -206,15 +200,14 @@ impl EnvSnapshot {
         ));
 
         if let Some((entries, hash)) = listing {
-            lines.push("Top-level entries:".to_owned());
-            lines.extend(entries);
+            lines.push(entries);
             sources.push(command(&["<builtin:listing>"], &hash));
         }
 
         let mut tool_lines = Vec::new();
         for ((prog, args, _, _), answer) in PROBES.iter().zip(&toolchains) {
             if let Some(a) = answer {
-                tool_lines.push(format!("  {prog}: {}", tilde(&a.line, home.as_deref())));
+                tool_lines.push(format!("  {prog}: {}", shown(&a.line, home_ref)));
                 let mut argv = vec![*prog];
                 argv.extend(args.iter().copied());
                 sources.push(command(&argv, &a.sha256));
@@ -258,6 +251,11 @@ fn cap_block(mut lines: Vec<String>) -> String {
     lines.join("\n")
 }
 
+/// A probe's line as shown: home replaced by `~`, then cut to 120 characters.
+fn shown(line: &str, home: Option<&Path>) -> String {
+    tilde(line, home).chars().take(MAX_LINE_CHARS).collect()
+}
+
 /// Replace the home directory in `text` with `~` where it is a whole path
 /// prefix (followed by `/`, a non-path character or the end).
 fn tilde(text: &str, home: Option<&Path>) -> String {
@@ -298,12 +296,23 @@ fn command(argv: &[&str], sha256: &str) -> ScoredSource {
 }
 
 /// The `PATH` entries a probe may be found through: absolute, not empty, and not
-/// inside the working directory (a repository could plant a binary there).
-fn usable_path(path: &OsStr, working_dir: &Path) -> Vec<PathBuf> {
+/// inside the working directory (a repository could plant a binary there). The
+/// inside check is skipped when the working directory is `/`, `home` or an
+/// ancestor of `home`: everything the user installed is then "inside" it.
+fn usable_path(path: &OsStr, working_dir: &Path, home: Option<&Path>) -> Vec<PathBuf> {
     let work_real = std::fs::canonicalize(working_dir).ok();
+    let work_cmp = work_real.as_deref().unwrap_or(working_dir);
+    let broad = work_cmp.parent().is_none()
+        || home.is_some_and(|h| {
+            let h = std::fs::canonicalize(h).unwrap_or_else(|_| h.to_path_buf());
+            h.starts_with(work_cmp)
+        });
     std::env::split_paths(path)
         .filter(|p| !p.as_os_str().is_empty() && p.is_absolute())
         .filter(|p| {
+            if broad {
+                return true;
+            }
             if p.starts_with(working_dir) {
                 return false;
             }
@@ -313,6 +322,25 @@ fn usable_path(path: &OsStr, working_dir: &Path) -> Vec<PathBuf> {
             }
         })
         .collect()
+}
+
+/// The directory probes' scratch directories are made in: `TMPDIR` when it is
+/// absolute, exists and is not inside the working directory (after resolving
+/// symlinks); otherwise the OS default (`/tmp` on unix). Always absolute.
+fn probe_temp_parent(working_dir: &Path) -> PathBuf {
+    let work = std::fs::canonicalize(working_dir).unwrap_or_else(|_| working_dir.to_path_buf());
+    let wanted = std::env::var_os("TMPDIR")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .filter(|p| p.is_dir() && !p.starts_with(&work));
+    wanted.unwrap_or_else(|| {
+        #[cfg(unix)]
+        let default = PathBuf::from("/tmp");
+        #[cfg(not(unix))]
+        let default = std::env::temp_dir();
+        std::fs::canonicalize(&default).unwrap_or(default)
+    })
 }
 
 /// Whether `p` is a file the current user may run.
@@ -351,16 +379,6 @@ fn find_program(program: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     }
 }
 
-/// Kills the probe's process group when dropped (after the probe finished,
-/// timed out, or its future was dropped), so nothing a probe started outlives it.
-struct GroupGuard(Option<u32>);
-
-impl Drop for GroupGuard {
-    fn drop(&mut self) {
-        kill_group(self.0);
-    }
-}
-
 /// Aborts a reader task when dropped.
 struct AbortOnDrop(JoinHandle<Vec<u8>>);
 
@@ -387,17 +405,20 @@ async fn run_probe(
     stream: Stream,
     pick: Pick,
     dirs: &[PathBuf],
+    tmp: &Path,
     limit: Duration,
 ) -> Option<Answer> {
     let exe = find_program(program, dirs)?;
-    // A fresh empty directory: repository files cannot reach the toolchain.
-    let cwd = tempfile::tempdir().ok()?;
+    // A fresh empty directory outside the repository: repository files cannot
+    // reach the toolchain.
+    let cwd = tempfile::tempdir_in(tmp).ok()?;
     let path = std::env::join_paths(dirs).ok()?;
 
     let mut cmd = Command::new(exe);
     cmd.args(args)
         .env_clear()
         .env("PATH", path)
+        .env("TMPDIR", tmp)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -418,8 +439,10 @@ async fn run_probe(
         cmd.as_std_mut().process_group(0);
     }
     let mut child = cmd.spawn().ok()?;
-    let pid = child.id();
-    let _group = GroupGuard(pid);
+    // Registered with hone's running-command registry while it runs, so an
+    // interrupt or any exit path that stops commands stops probes too. Dropping
+    // the guard kills the group.
+    let mut group = child.id().map(ProcessGroupGuard::new);
     let out = read_capped(child.stdout.take());
     let err = read_capped(child.stderr.take());
 
@@ -430,7 +453,9 @@ async fn run_probe(
     };
     // The probe exited: end anything it left behind (a child holding the pipes
     // open), then take what was read.
-    kill_group(pid);
+    if let Some(g) = group.as_mut() {
+        g.kill();
+    }
     let drain = |h: AbortOnDrop| async move {
         let mut h = h;
         let bytes = tokio::time::timeout(DRAIN_GRACE, &mut h.0)
@@ -459,30 +484,17 @@ async fn run_probe(
         return None;
     }
     Some(Answer {
-        line: line.chars().take(MAX_LINE_CHARS).collect(),
+        line: line.to_owned(),
         sha256: sha256_hex(&raw),
     })
 }
 
-/// SIGKILL the process group `pid` leads.
-#[cfg(unix)]
-fn kill_group(pid: Option<u32>) {
-    if let Some(pid) = pid.and_then(|p| i32::try_from(p).ok()) {
-        // SAFETY: `killpg` only signals the group created for this probe
-        // (`process_group(0)` makes the child its leader); `pid > 0`.
-        unsafe {
-            libc::killpg(pid, libc::SIGKILL);
-        }
-    }
-}
-
-/// Without process groups the direct child is killed when its handle drops
-/// (`kill_on_drop`).
-#[cfg(not(unix))]
-fn kill_group(_pid: Option<u32>) {}
-
 /// `sw_vers -productVersion` on macOS: the OS line's product version.
-async fn product_version(dirs: &[PathBuf], limit: Duration) -> Option<(Vec<String>, Answer)> {
+async fn product_version(
+    dirs: &[PathBuf],
+    tmp: &Path,
+    limit: Duration,
+) -> Option<(Vec<String>, Answer)> {
     #[cfg(target_os = "macos")]
     {
         let a = run_probe(
@@ -491,6 +503,7 @@ async fn product_version(dirs: &[PathBuf], limit: Duration) -> Option<(Vec<Strin
             Stream::Stdout,
             Pick::First,
             dirs,
+            tmp,
             limit,
         )
         .await?;
@@ -498,7 +511,7 @@ async fn product_version(dirs: &[PathBuf], limit: Duration) -> Option<(Vec<Strin
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (dirs, limit);
+        let _ = (dirs, tmp, limit);
         None
     }
 }
@@ -523,10 +536,12 @@ fn show_name(name: &str) -> String {
     }
 }
 
-/// The sorted top-level listing as indented lines (hidden entries skipped,
-/// directories suffixed, names escaped, at most 50 shown; at most 5,000 entries
-/// read) and the hash of it. `None` when the directory cannot be read or is empty.
-fn list_dir(dir: &Path) -> Option<(Vec<String>, String)> {
+/// The sorted top-level listing as one `Top-level entries (JSON): [...]` line
+/// (hidden entries skipped, directories suffixed, names escaped and cut as data
+/// before encoding, at most 50 shown, then a last `… and N more` element; at
+/// most 5,000 entries read) and the hash of it. `None` when the directory cannot
+/// be read or is empty.
+fn list_dir(dir: &Path) -> Option<(String, String)> {
     let mut names: Vec<String> = Vec::new();
     let mut more = false;
     for (read, entry) in std::fs::read_dir(dir)
@@ -550,22 +565,28 @@ fn list_dir(dir: &Path) -> Option<(Vec<String>, String)> {
     }
     names.sort();
     let total = names.len();
-    let mut lines: Vec<String> = names
+    let mut items: Vec<String> = names
         .iter()
         .take(MAX_ENTRIES)
-        .map(|n| format!("  {}", show_name(n)))
+        .map(|n| show_name(n))
         .collect();
     if more {
-        lines.push("  … and more".to_owned());
+        items.push("… and more".to_owned());
     } else if total > MAX_ENTRIES {
-        lines.push(format!("  … and {} more", total - MAX_ENTRIES));
+        items.push(format!("… and {} more", total - MAX_ENTRIES));
     }
-    let hash = sha256_hex(lines.join("\n").as_bytes());
-    Some((lines, hash))
+    let json = serde_json::to_string(&items).ok()?;
+    let line = format!("Top-level entries (JSON): {json}");
+    let hash = sha256_hex(line.as_bytes());
+    Some((line, hash))
 }
 
 /// Total RAM in GiB, with the argv of what told us and the hash of its output.
-async fn memory_gib(dirs: &[PathBuf], limit: Duration) -> Option<(u64, Vec<String>, String)> {
+async fn memory_gib(
+    dirs: &[PathBuf],
+    tmp: &Path,
+    limit: Duration,
+) -> Option<(u64, Vec<String>, String)> {
     #[cfg(target_os = "macos")]
     {
         let answer = run_probe(
@@ -574,6 +595,7 @@ async fn memory_gib(dirs: &[PathBuf], limit: Duration) -> Option<(u64, Vec<Strin
             Stream::Stdout,
             Pick::First,
             dirs,
+            tmp,
             limit,
         )
         .await?;
@@ -587,7 +609,7 @@ async fn memory_gib(dirs: &[PathBuf], limit: Duration) -> Option<(u64, Vec<Strin
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = (dirs, limit);
+        let _ = (dirs, tmp, limit);
         let raw = std::fs::read("/proc/meminfo").ok()?;
         let text = String::from_utf8_lossy(&raw);
         let kb: u64 = text
@@ -602,7 +624,7 @@ async fn memory_gib(dirs: &[PathBuf], limit: Duration) -> Option<(u64, Vec<Strin
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        let _ = (dirs, limit);
+        let _ = (dirs, tmp, limit);
         None
     }
 }
