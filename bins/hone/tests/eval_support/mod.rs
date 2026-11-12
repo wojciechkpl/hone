@@ -136,6 +136,48 @@ impl Tool for TamperTool {
     }
 }
 
+/// Polls (up to 30 s) until `path` exists, or, with `unless_equals`, until its content differs
+/// from that text; then sleeps `sleep_after_ms`. Lets scripted agents of parallel runs be
+/// ordered without sleeps.
+pub struct WaitTool;
+
+#[async_trait]
+impl Tool for WaitTool {
+    fn name(&self) -> &str {
+        "waitfor"
+    }
+    fn description(&self) -> &str {
+        "waits for a file"
+    }
+    fn schema(&self) -> Value {
+        json!({ "type": "object" })
+    }
+    async fn call(&self, i: ToolInput, _c: &ToolContext) -> Result<ToolOutput, ToolError> {
+        let path = i.0["path"].as_str().unwrap_or_default().to_owned();
+        let unless = i.0["unless_equals"].as_str().map(str::to_owned);
+        let after = i.0["sleep_after_ms"].as_u64().unwrap_or(0);
+        for _ in 0..600 {
+            let ready = match (&unless, std::fs::read_to_string(&path)) {
+                (Some(orig), Ok(now)) => &now != orig,
+                (None, Ok(_)) => true,
+                _ => false,
+            };
+            if ready {
+                tokio::time::sleep(Duration::from_millis(after)).await;
+                return Ok(ToolOutput::new(json!("ready")));
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        Err(ToolError::Other("waited 30 s".to_owned()))
+    }
+    fn layer(&self) -> ToolLayer {
+        ToolLayer::Native
+    }
+    fn is_read_only(&self) -> bool {
+        true
+    }
+}
+
 pub fn call(id: &str, name: &str, args: Value) -> ToolCallRequest {
     ToolCallRequest {
         id: id.to_owned(),
@@ -150,6 +192,7 @@ pub fn agent_for(b: &AgentBuild, rounds: Vec<Vec<ToolCallRequest>>) -> Agent {
         .register(Box::new(WriteFileTool))
         .register(Box::new(SlowTool))
         .register(Box::new(TamperTool))
+        .register(Box::new(WaitTool))
         .build();
     Agent::new(AgentConfig {
         provider: Arc::new(Script {
