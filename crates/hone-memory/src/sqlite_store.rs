@@ -404,6 +404,7 @@ impl SqliteStore {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
         project: Option<&str>,
+        owned_only: bool,
     ) -> Result<Vec<Memory>, MemoryError> {
         let fetch_limit = if query.text.is_empty() {
             query.limit
@@ -439,7 +440,13 @@ impl SqliteStore {
                 .replace('_', "\\_");
             format!("%{escaped}%")
         });
-        if project_pattern.is_some() {
+        if project_pattern.is_some() && owned_only {
+            // Only the model's own memories of this project.
+            n += 1;
+            conditions.push(format!(
+                "tags LIKE '%\"source:tool\"%' AND tags LIKE ?{n} ESCAPE '\\'"
+            ));
+        } else if project_pattern.is_some() {
             n += 1;
             conditions.push(format!(
                 "NOT (tags LIKE '%\"source:tool\"%' AND tags LIKE '%\"project:%' \
@@ -599,7 +606,7 @@ impl MemoryStore for SqliteStore {
     }
 
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_with_exclusions(query, &[], None).await
+        self.recall_with_exclusions(query, &[], None, false).await
     }
 
     async fn recall_excluding(
@@ -607,7 +614,8 @@ impl MemoryStore for SqliteStore {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
     ) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_with_exclusions(query, exclude, None).await
+        self.recall_with_exclusions(query, exclude, None, false)
+            .await
     }
 
     async fn recall_visible(
@@ -616,7 +624,23 @@ impl MemoryStore for SqliteStore {
         exclude: &[MemoryKind],
         project: Option<&str>,
     ) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_with_exclusions(query, exclude, project).await
+        self.recall_with_exclusions(query, exclude, project, false)
+            .await
+    }
+
+    async fn recall_tool_memories(
+        &self,
+        kind: MemoryKind,
+        project: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let query = MemoryQuery {
+            text: String::new(),
+            limit,
+            kind: Some(kind),
+        };
+        self.recall_with_exclusions(&query, &[], Some(project), true)
+            .await
     }
 
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {

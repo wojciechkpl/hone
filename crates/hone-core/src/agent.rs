@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use futures::StreamExt;
 use hone_index::SqliteIndex;
-use hone_memory::{Memory, MemoryQuery, MemoryStore};
+use hone_memory::{Memory, MemoryStore};
 use hone_proto::{
     AgentEvent, Content, Message, ModelId, PricingEntry, ProviderEvent, StepAction, TokenUsage,
     ToolApprovalPolicy, ToolCallRequest, WorkerRef,
@@ -1345,23 +1345,19 @@ impl Agent {
         kind: hone_memory::MemoryKind,
         model_project: Option<&str>,
     ) -> Option<Memory> {
-        let best = store.find_similar(body, 0.8).await.ok().flatten()?;
-        if Self::updatable_by_model(&best, kind, model_project) {
-            return Some(best);
+        let best = store.find_similar(body, 0.8).await.ok().flatten();
+        if let Some(best) = best {
+            if Self::updatable_by_model(&best, kind, model_project) {
+                return Some(best);
+            }
         }
+        // Either the best match isn't the model's to update, or the store's
+        // similarity window (the newest memories) didn't reach the model's own.
         let project = model_project?;
         // Only the candidates: the model's own memories of this kind in this
         // project (the store drops other projects' tool memories itself).
         let candidates = store
-            .recall_visible(
-                &MemoryQuery {
-                    text: String::new(),
-                    limit: DEDUP_CANDIDATES,
-                    kind: Some(kind),
-                },
-                &[],
-                project.strip_prefix("project:"),
-            )
+            .recall_tool_memories(kind, project.strip_prefix("project:")?, DEDUP_CANDIDATES)
             .await
             .ok()?;
         candidates

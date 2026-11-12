@@ -120,6 +120,34 @@ pub trait MemoryStore: Send + Sync {
         Ok(found)
     }
 
+    /// The memories the model wrote (`source:tool`) of `kind` in `project` (the
+    /// id in `project:<id>`), newest first, at most `limit`. Nothing else is read:
+    /// user and trigger memories can't push the model's own out of the window.
+    async fn recall_tool_memories(
+        &self,
+        kind: MemoryKind,
+        project: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let all = self
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: usize::MAX,
+                kind: Some(kind),
+            })
+            .await?;
+        let wanted = format!("project:{project}");
+        let mut found: Vec<Memory> = all
+            .into_iter()
+            .filter(|m| {
+                m.tags.iter().any(|t| t == "source:tool") && m.tags.iter().any(|t| *t == wanted)
+            })
+            .collect();
+        found.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        found.truncate(limit);
+        Ok(found)
+    }
+
     /// O(log n) (or better) exact lookup by `id`. Returns `None` when no
     /// memory has that id. Implementations MUST NOT do a full table scan.
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError>;

@@ -228,6 +228,23 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
         self.recall_filtered(query, exclude, project).await
     }
 
+    async fn recall_tool_memories(
+        &self,
+        kind: MemoryKind,
+        project: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let found = self
+            .inner
+            .recall_tool_memories(kind, project, limit)
+            .await?;
+        found
+            .into_iter()
+            .filter(|m| m.id != SALT_SENTINEL_ID)
+            .map(|m| self.decrypt_memory(m))
+            .collect()
+    }
+
     async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
         self.inner.forget(filter).await
     }
