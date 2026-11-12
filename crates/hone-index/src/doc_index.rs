@@ -74,7 +74,8 @@ const SCHEMA: [&str; 6] = [
     )",
     "CREATE INDEX IF NOT EXISTS doc_chunks_file_idx ON doc_chunks(file_id)",
     "CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks_fts USING fts5(
-        text, heading, content='doc_chunks', content_rowid='id')",
+        text, heading, content='doc_chunks', content_rowid='id',
+        tokenize = 'unicode61 remove_diacritics 2')",
     "CREATE TRIGGER IF NOT EXISTS doc_chunks_ai AFTER INSERT ON doc_chunks BEGIN
         INSERT INTO doc_chunks_fts(rowid, text, heading) VALUES (new.id, new.text, new.heading);
      END",
@@ -132,6 +133,25 @@ impl DocIndex {
     async fn from_pool(pool: sqlx::SqlitePool) -> Result<Self, IndexError> {
         // One transaction, so concurrent opens queue instead of racing.
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.map_err(db_err)?;
+        // An index made with another tokenizer is rebuilt (the query side folds
+        // diacritics of Latin letters only, as `remove_diacritics 2` does).
+        let existing: Option<String> =
+            sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE name = 'doc_chunks_fts'")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(db_err)?;
+        let retokenize = existing
+            .as_deref()
+            .is_some_and(|sql| !sql.contains("remove_diacritics 2"));
+        if retokenize {
+            for sql in [
+                "DROP TRIGGER IF EXISTS doc_chunks_ai",
+                "DROP TRIGGER IF EXISTS doc_chunks_ad",
+                "DROP TABLE doc_chunks_fts",
+            ] {
+                sqlx::query(sql).execute(&mut *tx).await.map_err(db_err)?;
+            }
+        }
         for sql in SCHEMA {
             sqlx::query(sql).execute(&mut *tx).await.map_err(db_err)?;
         }
@@ -139,6 +159,12 @@ impl DocIndex {
             .execute(&mut *tx)
             .await
             .map_err(db_err)?;
+        if retokenize {
+            sqlx::query("INSERT INTO doc_chunks_fts(doc_chunks_fts) VALUES ('rebuild')")
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?;
+        }
         tx.commit().await.map_err(db_err)?;
         let index = Self {
             pool,
