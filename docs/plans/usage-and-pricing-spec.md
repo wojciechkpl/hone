@@ -16,6 +16,19 @@ Branch `fix/usage-and-pricing`, off `main`. Found while reviewing `hone eval` (P
 | U3 | **Unpriced models cost nothing, and say so.** A model with no entry (all `ollama:` models unless priced by the user, unknown `openai:` models) is costed at 0, and the first such call in a session prints one note on stderr: `hone: no price for <model>; its usage isn't counted towards cost or [budget]` (the TUI shows it once in the status line). `--json` gains `"cost_known": false` when any call was unpriced. |
 | U4 | **Per-turn pricing follows the model.** When routing, a fallback model or `/model` changes the model, that turn's usage is priced with the new model's entry. |
 
+### Review round 1 (U5–U12)
+
+| Row | Behaviour |
+|---|---|
+| U5 | **Every agent is priced the same way.** A process-wide default price lookup (`hone_core::set_default_price_lookup`) is set once at start by the CLI, `honed`, the server and `hone eval`, from `PricingTable::default_table()` plus the user's `[pricing]`. An agent uses its own lookup if set, else the process default, else `AgentConfig.pricing`. So orchestrator leads and workers, ensemble candidates and rankers, the reviewer loop, `honed`'s executors and eval runs are all priced per model, and their unpriced models are reported. The hard-coded `$3/$15` in `honed`, `hone-server` and the reviewer loop is removed. `--orchestrate` with `openai:gpt-4o` reports the real cost. |
+| U6 | **Dated model ids match their base entry.** A model id ending in `-YYYY-MM-DD` (e.g. `openai:gpt-4o-2024-08-06`) is priced with its base id's entry when it has none of its own. |
+| U7 | **`[budget]` warns up front about unpriced models.** When a session limit is set, Hone checks the session model, every `[[routing]]` model and every fallback model before the first call; for each with no price it prints (stderr; a system line in the TUI) `hone: [budget] can't limit <model>: it has no price; add [pricing."<model>"] to your config`, once. |
+| U8 | **A held finish doesn't delay the turn.** After `finish_reason`, the adapter waits for a trailing usage chunk for at most 2 s (or until `[DONE]`, end of stream, or the usage chunk, whichever comes first), then emits `Done`. An error chunk after `finish_reason` doesn't fail the turn: the completion stands (the error is logged). |
+| U9 | **Usage within one response is counted once.** If a response reports usage more than once (inline and trailing, or cumulative per chunk), the last report is used. |
+| U10 | **Missing usage is visible.** A successful call that reported no usage at all marks the run `"usage_known": false` in `--json` (and `cost_known` is false too). |
+| U11 | **The TUI doesn't query the agent for unpriced models.** The agent sends `AgentEvent::UnpricedModel { model }` the first time a model is unpriced; the TUI shows the note from the event (no round trip after `Done`). The server's event maps name it `unpriced_model`. |
+| U12 | **Rebased on main.** The branch merges cleanly with `main` (which added receipts and `context` to `--json`); tests re-run after. |
+
 ## Testing notes
 
 - **U1** in `hone-providers` with a mock SSE server (existing adapter tests show the harness): usage after the finish chunk, inline, absent, and with tool calls.
