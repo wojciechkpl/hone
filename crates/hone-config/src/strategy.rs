@@ -64,6 +64,30 @@ pub struct GraduatedTable {
     pub phase: Option<bool>,
 }
 
+/// The `[retrieval]` table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct RetrievalTable {
+    /// Documents added per turn (1–20, default 3).
+    pub top_k: Option<usize>,
+    /// Token budget of the documents block (100–8,000, default 1,200).
+    pub max_tokens: Option<u32>,
+    /// `markdown` or `fixed`: the chunker for markdown files.
+    pub chunker: Option<String>,
+    /// `[retrieval.fixed]`.
+    pub fixed: Option<FixedChunkerTable>,
+}
+
+/// The `[retrieval.fixed]` table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct FixedChunkerTable {
+    /// Lines per window (default 40).
+    pub lines: Option<usize>,
+    /// Lines shared by consecutive windows (default 5).
+    pub overlap: Option<usize>,
+}
+
 /// The `[memory]` table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -85,9 +109,23 @@ pub const SOURCE_NAMES: &[&str] = &[
     "skills",
     "skeleton",
     "env-snapshot",
+    "retrieval",
 ];
 /// The sources that are on unless a file says otherwise (`env-snapshot` is off).
 pub const DEFAULT_SOURCES: &[&str] = &["memory-index", "recall", "skills", "skeleton"];
+/// Valid `[retrieval] chunker` names.
+pub const CHUNKER_NAMES: &[&str] = &["markdown", "fixed"];
+/// The accepted range of `[retrieval] top_k`.
+pub const RETRIEVAL_TOP_K_RANGE: std::ops::RangeInclusive<usize> = 1..=20;
+/// The accepted range of `[retrieval] max_tokens`.
+pub const RETRIEVAL_MAX_TOKENS_RANGE: std::ops::RangeInclusive<u32> = 100..=8000;
+/// The default `[retrieval] top_k`.
+pub const DEFAULT_RETRIEVAL_TOP_K: usize = 3;
+/// The default `[retrieval] max_tokens`.
+pub const DEFAULT_RETRIEVAL_MAX_TOKENS: u32 = 1200;
+/// The default `[retrieval.fixed]` window and overlap, in lines.
+pub const DEFAULT_FIXED_LINES: usize = 40;
+pub const DEFAULT_FIXED_OVERLAP: usize = 5;
 /// The default `[context.env-snapshot] timeout_secs`.
 pub const DEFAULT_ENV_TIMEOUT_SECS: u64 = 15;
 /// The accepted range of `[context.env-snapshot] timeout_secs`.
@@ -213,6 +251,16 @@ pub struct StrategySelection {
     pub top_k: Chosen<usize>,
     pub exclude_kinds: Chosen<Vec<String>>,
     pub writer: Chosen<String>,
+    /// `[retrieval] top_k`.
+    pub retrieval_top_k: Chosen<usize>,
+    /// `[retrieval] max_tokens`.
+    pub retrieval_max_tokens: Chosen<u32>,
+    /// `[retrieval] chunker`.
+    pub retrieval_chunker: Chosen<String>,
+    /// `[retrieval.fixed] lines`.
+    pub retrieval_fixed_lines: Chosen<usize>,
+    /// `[retrieval.fixed] overlap`.
+    pub retrieval_fixed_overlap: Chosen<usize>,
     /// Values of the project file that were ignored.
     pub warnings: Vec<Warning>,
 }
@@ -344,6 +392,35 @@ fn validate(layer: &ConfigLayer) -> Result<(), ConfigError> {
             }
         }
     }
+    if let Some(r) = &cfg.retrieval {
+        if let Some(k) = r.top_k {
+            if !RETRIEVAL_TOP_K_RANGE.contains(&k) {
+                return Err(invalid(
+                    path,
+                    format!(
+                        "retrieval.top_k = {k} must be between {} and {}",
+                        RETRIEVAL_TOP_K_RANGE.start(),
+                        RETRIEVAL_TOP_K_RANGE.end()
+                    ),
+                ));
+            }
+        }
+        if let Some(t) = r.max_tokens {
+            if !RETRIEVAL_MAX_TOKENS_RANGE.contains(&t) {
+                return Err(invalid(
+                    path,
+                    format!(
+                        "retrieval.max_tokens = {t} must be between {} and {}",
+                        RETRIEVAL_MAX_TOKENS_RANGE.start(),
+                        RETRIEVAL_MAX_TOKENS_RANGE.end()
+                    ),
+                ));
+            }
+        }
+        if let Some(n) = &r.chunker {
+            check_one(path, "retrieval.chunker", n, CHUNKER_NAMES)?;
+        }
+    }
     Ok(())
 }
 
@@ -382,6 +459,11 @@ impl StrategySelection {
             top_k: Chosen::default_of(DEFAULT_TOP_K),
             exclude_kinds: Chosen::default_of(vec!["outcome".to_owned()]),
             writer: Chosen::default_of("triggers".to_owned()),
+            retrieval_top_k: Chosen::default_of(DEFAULT_RETRIEVAL_TOP_K),
+            retrieval_max_tokens: Chosen::default_of(DEFAULT_RETRIEVAL_MAX_TOKENS),
+            retrieval_chunker: Chosen::default_of("markdown".to_owned()),
+            retrieval_fixed_lines: Chosen::default_of(DEFAULT_FIXED_LINES),
+            retrieval_fixed_overlap: Chosen::default_of(DEFAULT_FIXED_OVERLAP),
             warnings: Vec::new(),
         };
 
@@ -459,6 +541,40 @@ impl StrategySelection {
                     value: t,
                     origin: origin(),
                 };
+            }
+        }
+        if let Some(r) = &layer.config.retrieval {
+            if let Some(k) = r.top_k {
+                self.retrieval_top_k = Chosen {
+                    value: k,
+                    origin: origin(),
+                };
+            }
+            if let Some(t) = r.max_tokens {
+                self.retrieval_max_tokens = Chosen {
+                    value: t,
+                    origin: origin(),
+                };
+            }
+            if let Some(n) = &r.chunker {
+                self.retrieval_chunker = Chosen {
+                    value: n.clone(),
+                    origin: origin(),
+                };
+            }
+            if let Some(f) = &r.fixed {
+                if let Some(l) = f.lines {
+                    self.retrieval_fixed_lines = Chosen {
+                        value: l.max(1),
+                        origin: origin(),
+                    };
+                }
+                if let Some(o) = f.overlap {
+                    self.retrieval_fixed_overlap = Chosen {
+                        value: o,
+                        origin: origin(),
+                    };
+                }
             }
         }
         if let Some(m) = &layer.config.memory {
@@ -607,6 +723,52 @@ impl StrategySelection {
                         "context.graduated.phase = true ignored: a project file cannot turn on a lossy compaction"
                             .to_owned(),
                     );
+                }
+            }
+        }
+        if let Some(r) = &layer.config.retrieval {
+            if let Some(k) = r.top_k {
+                if k < self.retrieval_top_k.value {
+                    self.retrieval_top_k = Chosen {
+                        value: k,
+                        origin: origin(),
+                    };
+                } else if k > self.retrieval_top_k.value {
+                    warnings.push(format!(
+                        "retrieval.top_k = {k} is higher than the current limit; ignored (a project file can only lower it)"
+                    ));
+                }
+            }
+            if let Some(t) = r.max_tokens {
+                if t < self.retrieval_max_tokens.value {
+                    self.retrieval_max_tokens = Chosen {
+                        value: t,
+                        origin: origin(),
+                    };
+                } else if t > self.retrieval_max_tokens.value {
+                    warnings.push(format!(
+                        "retrieval.max_tokens = {t} is higher than the current limit; ignored (a project file can only lower it)"
+                    ));
+                }
+            }
+            if let Some(n) = &r.chunker {
+                self.retrieval_chunker = Chosen {
+                    value: n.clone(),
+                    origin: origin(),
+                };
+            }
+            if let Some(f) = &r.fixed {
+                if let Some(l) = f.lines {
+                    self.retrieval_fixed_lines = Chosen {
+                        value: l.max(1),
+                        origin: origin(),
+                    };
+                }
+                if let Some(o) = f.overlap {
+                    self.retrieval_fixed_overlap = Chosen {
+                        value: o,
+                        origin: origin(),
+                    };
                 }
             }
         }

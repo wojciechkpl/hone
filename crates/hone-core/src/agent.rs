@@ -643,6 +643,8 @@ pub struct Agent {
     extra_blocks: Vec<(String, bool, Vec<ExtraBlock>)>,
     /// Names of the `Once` sources already gathered.
     once_gathered: HashSet<String>,
+    /// What document retrieval added to the current turn (redacted).
+    retrieval_turn: Option<crate::retrieval::RetrievalOutcome>,
     /// The context receipts of this agent's life, oldest first (newest
     /// `MAX_KEPT_RECEIPTS` at most).
     receipts: Vec<hone_proto::ContextReceipt>,
@@ -735,6 +737,7 @@ impl Agent {
             receipt_history: std::collections::HashSet::new(),
             extra_blocks: Vec::new(),
             once_gathered: HashSet::new(),
+            retrieval_turn: None,
             receipts: Vec::new(),
             receipts_dropped: 0,
             receipt_agent_id: uuid::Uuid::now_v7().to_string(),
@@ -949,12 +952,13 @@ impl Agent {
         prompt: &str,
         events: &mpsc::Sender<AgentEvent>,
     ) -> Result<(String, Vec<(String, String)>, RecallInfo), AgentError> {
-        let (gathered, recalled) = {
+        let (gathered, recalled, retrieved) = {
             let this = &*self;
             let work = async {
                 tokio::join!(
                     this.gather_context_sources(prompt),
-                    this.fetch_relevant_memories(prompt)
+                    this.fetch_relevant_memories(prompt),
+                    this.gather_retrieval(prompt)
                 )
             };
             tokio::select! {
@@ -963,7 +967,17 @@ impl Agent {
             }
         };
         self.store_gathered(gathered);
+        self.retrieval_turn = retrieved;
         Ok(recalled)
+    }
+
+    /// Document retrieval for this turn's prompt (redacted); `None` when it is
+    /// off or finds nothing.
+    async fn gather_retrieval(&self, prompt: &str) -> Option<crate::retrieval::RetrievalOutcome> {
+        let retrieval = self.strategies.retrieval.as_ref()?;
+        let mut outcome = retrieval.retrieve(prompt, &self.config.working_dir).await?;
+        outcome.text = redacted_text(self.redacting(), &outcome.text);
+        Some(outcome)
     }
 
     /// Keep what `gather_context_sources` returned.
@@ -977,6 +991,17 @@ impl Agent {
                 None => self.extra_blocks.push((g.name, g.once, g.extras)),
             }
         }
+    }
+
+    /// The receipt inputs of this turn's document retrieval.
+    fn retrieval_info(&self) -> Option<crate::receipts::RetrievalInfo> {
+        self.retrieval_turn
+            .as_ref()
+            .map(|o| crate::receipts::RetrievalInfo {
+                strategy: o.id.clone(),
+                sources: o.sources.clone(),
+                dropped: o.dropped.clone(),
+            })
     }
 
     /// The gathered blocks that have text: `Once` sources first, then `EachTurn`
@@ -1573,6 +1598,7 @@ impl Agent {
                 Vec::new()
             },
             injection: None,
+            retrieval: self.retrieval_info(),
             ..TurnContextInfo::default()
         };
         if !memory_entries.is_empty() {
@@ -1712,7 +1738,11 @@ impl Agent {
                     .active_extras()
                     .iter()
                     .map(|e| estimate_text_tokens(&e.text))
-                    .sum::<u32>();
+                    .sum::<u32>()
+                + self
+                    .retrieval_turn
+                    .as_ref()
+                    .map_or(0, |r| estimate_text_tokens(&r.text));
             if !context_emergency && self.context.is_over_ratio(0.95, extra_tokens) {
                 context_emergency = true;
                 tracing::warn!(
@@ -1813,6 +1843,25 @@ impl Agent {
                 }
             }
 
+            // Retrieved documents: after the skills block.
+            let retrieval_at = self.retrieval_turn.as_ref().map(|r| {
+                let at = (shift
+                    + 1
+                    + usize::from(!memories.is_empty())
+                    + usize::from(!skills_block.is_empty()))
+                .min(messages.len());
+                messages.insert(
+                    at,
+                    Message {
+                        role: hone_proto::Role::System,
+                        content: hone_proto::Content::Text(r.text.clone()),
+                        tool_calls: vec![],
+                        tool_call_id: None,
+                    },
+                );
+                at
+            });
+
             let mut request = CompletionRequest::new(self.config.model.clone(), messages);
             request.temperature = self.config.temperature;
             request.max_tokens = self.config.max_tokens;
@@ -1844,6 +1893,7 @@ impl Agent {
                     &tool_names,
                     recall_at,
                     skills_at,
+                    retrieval_at,
                     &self.receipt_info,
                     &extras,
                     self.context.drain_compaction_log(),
@@ -3284,6 +3334,7 @@ impl Agent {
                 Vec::new()
             },
             injection: None,
+            retrieval: self.retrieval_info(),
             ..TurnContextInfo::default()
         };
         if !memory_entries.is_empty() {

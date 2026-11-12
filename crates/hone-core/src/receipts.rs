@@ -64,6 +64,16 @@ pub(crate) struct TurnContextInfo {
     /// as `phase_compaction`).
     pub trim_only: bool,
     pub phase_compaction: bool,
+    /// What document retrieval added this turn.
+    pub retrieval: Option<RetrievalInfo>,
+}
+
+/// The document retrieval block of a turn.
+#[derive(Debug, Clone)]
+pub(crate) struct RetrievalInfo {
+    pub strategy: StrategyId,
+    pub sources: Vec<ScoredSource>,
+    pub dropped: Vec<SourceRef>,
 }
 
 fn strategy(slot: Slot, name: &str, params: &serde_json::Value) -> StrategyId {
@@ -116,6 +126,7 @@ pub(crate) fn build_receipt(
     tool_names: &[String],
     recall_at: Option<usize>,
     skills_at: Option<usize>,
+    retrieval_at: Option<usize>,
     info: &TurnContextInfo,
     extras: &[ExtraBlock],
     compaction: Vec<CompactionStep>,
@@ -204,6 +215,16 @@ pub(crate) fn build_receipt(
         ));
     }
 
+    if let (Some(at), Some(r)) = (retrieval_at, &info.retrieval) {
+        blocks.push(BlockReceipt {
+            slot: Slot::Retrieval,
+            strategy: r.strategy.clone(),
+            tokens: tokens_of(at),
+            sources: r.sources.clone(),
+            duration_ms: 0,
+        });
+    }
+
     if let Some(inj) = &info.injection {
         let sources = inj
             .hits
@@ -274,6 +295,11 @@ pub(crate) fn build_receipt(
             id: id.clone(),
             version: None,
         })
+        .chain(
+            info.retrieval
+                .iter()
+                .flat_map(|r| r.dropped.iter().cloned()),
+        )
         .collect();
 
     ContextReceipt {

@@ -197,6 +197,10 @@ pub struct Config {
     /// The `[memory]` table: recaller, writer, top_k, excluded kinds.
     #[serde(default)]
     pub memory: Option<crate::strategy::MemoryTable>,
+
+    /// The `[retrieval]` table: document retrieval settings.
+    #[serde(default)]
+    pub retrieval: Option<crate::strategy::RetrievalTable>,
 }
 
 impl Config {
