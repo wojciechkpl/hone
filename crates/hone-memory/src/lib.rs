@@ -9,7 +9,7 @@ mod store;
 mod types;
 
 pub use embedding::{EmbedError, Embedder, Embedding, ScoredMemory, cosine_similarity, rrf_fuse};
-pub use encrypted::EncryptedStore;
+pub use encrypted::{EncryptedStore, SALT_SENTINEL_ID};
 pub use error::MemoryError;
 pub use in_memory::InMemoryStore;
 pub use index::read_memory;
