@@ -159,3 +159,56 @@ fn test_r8_a_project_value_is_compared_with_the_default_when_the_user_sets_none(
     assert_eq!((s.retrieval_top_k.value, s.retrieval_max_tokens.value), (3, 1200));
     assert_eq!(warns(&s, PROJECT).len(), 2);
 }
+
+// ---- R11 (review round 1): the fixed chunker is bounded -------------------------------------------------------------
+
+#[test]
+fn test_r11_fixed_lines_and_overlap_should_be_range_checked_naming_file_key_and_range() {
+    for (raw, key, range) in [
+        ("[retrieval.fixed]\nlines = 0\n", "lines", "400"),
+        ("[retrieval.fixed]\nlines = 401\n", "lines", "400"),
+        ("[retrieval.fixed]\nlines = 1000\noverlap = 1000\n", "lines", "400"),
+        ("[retrieval.fixed]\nlines = 10\noverlap = 6\n", "overlap", "lines / 2"),
+        ("[retrieval.fixed]\nlines = 1\noverlap = 1\n", "overlap", "lines / 2"),
+        ("[retrieval.fixed]\noverlap = 21\n", "overlap", "lines / 2"), // default lines = 40 -> at most 20
+    ] {
+        match select_err(Some(&layer(USER, raw)), None) {
+            ConfigError::InvalidField { path, reason } => {
+                assert_eq!(path, Path::new(USER), "{raw}");
+                assert!(reason.contains(key) && reason.contains(range), "{raw}: {reason}");
+            }
+            other => panic!("{raw}: {other:?}"),
+        }
+    }
+
+    // The limits themselves are accepted.
+    for (raw, lines, overlap) in [
+        ("[retrieval.fixed]\nlines = 1\noverlap = 0\n", 1, 0),
+        ("[retrieval.fixed]\nlines = 400\noverlap = 200\n", 400, 200),
+        ("[retrieval.fixed]\nlines = 10\noverlap = 5\n", 10, 5),
+        ("[retrieval.fixed]\noverlap = 20\n", 40, 20),
+    ] {
+        let s = select(Some(&layer(USER, raw)), None);
+        assert_eq!((s.retrieval_fixed_lines.value, s.retrieval_fixed_overlap.value), (lines, overlap), "{raw}");
+    }
+}
+
+#[test]
+fn test_r11_a_project_file_cannot_set_the_fixed_chunker_parameters() {
+    let u = layer(USER, "[retrieval.fixed]\nlines = 30\noverlap = 3\n");
+    let p = layer(PROJECT, "[retrieval.fixed]\nlines = 1000\noverlap = 1000\n");
+
+    let s = select(Some(&u), Some(&p));
+
+    assert_eq!((s.retrieval_fixed_lines.value, s.retrieval_fixed_overlap.value), (30, 3), "the user's values win");
+    assert_eq!(s.retrieval_fixed_lines.origin, file(USER));
+    let w = warns(&s, PROJECT);
+    assert!(w.iter().any(|m| m.contains("retrieval.fixed")), "a warning names the project file and the table: {w:?}");
+
+    // Even a valid project value is ignored.
+    let p = layer(PROJECT, "[retrieval.fixed]\nlines = 20\noverlap = 2\n");
+    let s = select(None, Some(&p));
+    assert_eq!((s.retrieval_fixed_lines.value, s.retrieval_fixed_overlap.value), (40, 5), "defaults stay");
+    assert_eq!(s.retrieval_fixed_lines.origin, Origin::Default);
+    assert!(!warns(&s, PROJECT).is_empty());
+}

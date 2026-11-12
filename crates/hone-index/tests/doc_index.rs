@@ -161,7 +161,7 @@ async fn test_r4_files_over_the_size_cap_should_be_skipped() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "small.md", "# Small\nplatypus\n");
     write(dir.path(), "big.md", &format!("# Big\nplatypus\n{}\n", "x".repeat(4000)));
-    let idx = DocIndex::in_memory().await.unwrap().with_limits(DocLimits { max_file_bytes: 1000, max_files: 100 });
+    let idx = DocIndex::in_memory().await.unwrap().with_limits(DocLimits { max_file_bytes: 1000, max_files: 100, ..Default::default() });
 
     let stats = idx.sync(dir.path()).await.unwrap();
 
@@ -175,7 +175,7 @@ async fn test_r4_indexing_should_stop_at_the_file_cap_in_sorted_path_order() {
     for i in 0..8 {
         write(dir.path(), &format!("n{i}.md"), &format!("# N{i}\nokapi {i}\n"));
     }
-    let idx = DocIndex::in_memory().await.unwrap().with_limits(DocLimits { max_file_bytes: 1 << 20, max_files: 5 });
+    let idx = DocIndex::in_memory().await.unwrap().with_limits(DocLimits { max_file_bytes: 1 << 20, max_files: 5, ..Default::default() });
 
     let stats = idx.sync(dir.path()).await.unwrap();
 
@@ -243,7 +243,7 @@ async fn test_r4_deleted_ignored_and_newly_oversized_files_should_be_removed() {
     write(dir.path(), "a.md", "# A\naardvark\n");
     write(dir.path(), "b.md", "# B\naardvark\n");
     write(dir.path(), "c.md", "# C\naardvark\n");
-    let idx = DocIndex::in_memory().await.unwrap().with_limits(DocLimits { max_file_bytes: 200, max_files: 100 });
+    let idx = DocIndex::in_memory().await.unwrap().with_limits(DocLimits { max_file_bytes: 200, max_files: 100, ..Default::default() });
     idx.sync(dir.path()).await.unwrap();
     assert_eq!(idx.chunk_count().await.unwrap(), 3);
 

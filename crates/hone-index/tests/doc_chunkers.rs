@@ -324,3 +324,78 @@ fn test_r3_crlf_should_chunk_like_lf() {
     let b = FixedChunker { lines: 4, overlap: 1 }.chunk(&doc("n.txt", &numbered(10).replace('\n', "\r\n")));
     assert_eq!(a, b);
 }
+
+// ---- R13 (review round 1): markdown structure ----------------------------------------------------------------------------
+
+#[test]
+fn test_r13_a_fence_should_close_only_with_the_same_character_and_at_least_the_same_length() {
+    // 4 backticks open; a 3-backtick line does not close; the heading inside stays text.
+    let longer = "# Top\n````\n```\n# not a heading\n````\n# Real\nbody\n";
+    assert_eq!(shape(&md("f.md", longer)), [(1, 5, Some("Top")), (6, 7, Some("Real"))]);
+
+    // A tilde fence is not closed by backticks (and vice versa).
+    let mixed = "# Top\n~~~\n```\n# inside\n~~~\n# Real\nbody\n";
+    assert_eq!(shape(&md("f.md", mixed)), [(1, 5, Some("Top")), (6, 7, Some("Real"))]);
+    let mixed = "# Top\n```\n~~~\n# inside\n```\n# Real\nbody\n";
+    assert_eq!(shape(&md("f.md", mixed)), [(1, 5, Some("Top")), (6, 7, Some("Real"))]);
+
+    // A longer closing fence is fine.
+    let ok = "# Top\n```\n# inside\n`````\n# Real\nbody\n";
+    assert_eq!(shape(&md("f.md", ok)), [(1, 4, Some("Top")), (5, 6, Some("Real"))]);
+}
+
+#[test]
+fn test_r13_a_leading_thematic_break_should_not_swallow_the_first_section() {
+    // No closing `---` within 100 lines: this is a thematic break, not front matter.
+    let text = format!("---\n# Intro\nbody line\n{}---\ntail\n", "filler\n".repeat(120));
+
+    let chunks = md("f.md", &text);
+
+    assert_eq!(chunks[0].heading.as_deref(), Some("Intro"), "{:?}", shape(&chunks));
+    assert_eq!(chunks[0].start_line, 2);
+}
+
+#[test]
+fn test_r13_front_matter_should_close_within_one_hundred_lines_in_yaml_or_toml() {
+    // YAML closing at line 50 is front matter; closing at line 150 is not.
+    let yaml = |n: usize| format!("---\n{}---\n# Real\ntext\n", "k: v\n".repeat(n));
+    let chunks = md("f.md", &yaml(48)); // closing `---` is line 50
+    assert_eq!(shape(&chunks), [(51, 52, Some("Real"))], "closed within 100 lines: skipped");
+    let chunks = md("f.md", &yaml(148)); // closing `---` is line 150
+    assert!(
+        chunks.iter().any(|c| c.text.contains("k: v")),
+        "no close within 100 lines: not front matter, its lines are text: {:?}",
+        shape(&chunks)
+    );
+
+    // TOML front matter.
+    let toml = "+++\ntitle = \"Hidden\"\n+++\n# Real\ntext\n";
+    let chunks = md("f.md", toml);
+    assert_eq!(shape(&chunks), [(4, 5, Some("Real"))]);
+    assert!(chunks.iter().all(|c| !c.text.contains("Hidden")));
+
+    // `+++` anywhere but the first line is ordinary text.
+    assert_eq!(shape(&md("f.md", "# T\ntext\n+++\nmore\n")), [(1, 4, Some("T"))]);
+}
+
+#[test]
+fn test_r13_atx_headings_may_be_indented_up_to_three_spaces() {
+    assert_eq!(shape(&md("f.md", "   ## Indented\nbody\n")), [(1, 2, Some("Indented"))]);
+    assert_eq!(shape(&md("f.md", "  # One\ntext\n ## Two\nmore\n")), [(1, 2, Some("One")), (3, 4, Some("One > Two"))]);
+    // Four spaces is an indented code block, not a heading.
+    assert_eq!(shape(&md("f.md", "    ## not a heading\nbody\n")), [(1, 2, None)]);
+}
+
+#[test]
+fn test_r13_setext_headings_should_start_sections() {
+    let text = "Title\n=====\nbody\n\nSub\n-----\ntext\n";
+
+    let chunks = md("f.md", text);
+
+    assert_eq!(shape(&chunks), [(1, 3, Some("Title")), (5, 7, Some("Title > Sub"))]);
+    assert!(chunks[0].text.starts_with("Title\n====="), "the section includes the heading lines: {:?}", chunks[0].text);
+
+    // After a blank line `---` is a thematic break, and inside a fence nothing is a heading.
+    assert_eq!(shape(&md("f.md", "# T\ntext\n\n---\nmore\n")), [(1, 5, Some("T"))]);
+    assert_eq!(shape(&md("f.md", "```\nTitle\n=====\n```\nbody\n")), [(1, 5, None)]);
+}
