@@ -43,6 +43,16 @@ Review reproduced, auto-approved and with no injection: a `memory_write` near-du
 | W14 | **The approval prompt says what an update replaces.** When a tool write would update an existing memory, the approval request's arguments include `replaces: {id, content preview (≤120 chars)}`. |
 | W15 | **Rules and limits are documented.** `docs/configuration.md` documents the `tool` writers, that permission rules match `memory_write` as `command = "memory_write"` (and that a broad `command = "*"` rule covers it), that the 20-write cap is per agent (one process; a TUI session switch resets it), that tags are stored unencrypted with `--encrypted-memory`, and that a new memory reaches the memory index on the next start (recall finds it next turn). A warning is logged when an MCP tool named `memory_write` is shadowed. |
 
+### Review round 2 (W16–W20)
+
+| Row | Behaviour |
+|---|---|
+| W16 | **Untrusted by default.** W12's forced approval applies when the request context holds **any** tool result except `memory_write`'s own (so `git_diff`, `git_status`, `symbol_search`, `memory_read`, `screen_capture`, every MCP and future tool count), or a HONE.md section, or the turn-1 injected repository skeleton, or a gathered context block from a source (env-snapshot, retrieval), or a recalled `source:tool` memory, or a project skill. Only a conversation whose context holds none of these follows the normal approval policy. Docs list the rule this way. |
+| W17 | **The project filter applies before the cap.** Recall (BM25 and semantic) considers only memories visible in the current project — `source:tool` memories of other projects are excluded before `top_k` is applied (in the store query, or by over-fetching and then capping), so another project's tool memories can't use up recall slots. |
+| W18 | **Worktrees share a project; a home-directory repo doesn't capture everything.** The project id resolves a git worktree to its repository's common git directory (`git rev-parse --git-common-dir` semantics, read from the `.git` file's `gitdir:` and the worktree's `commondir`, no subprocess), so a main checkout and its worktrees are one project. A `.git` at `$HOME` is ignored when looking for the repository root. |
+| W19 | **Line and paragraph separators are collapsed too.** `one_line` treats U+2028, U+2029 and U+0085 like control characters. |
+| W20 | **Dedup looks for the model's own match.** When the best near-duplicate is a memory the tool may not update, the tool's own best same-kind, same-project match above the threshold is used (updated) if there is one, so the model's duplicates don't accumulate. |
+
 ## Testing notes
 
 - **W2/W3/W6** through a real agent with the scripted provider calling `memory_write`, on an `InMemoryStore`/temp `SqliteStore`; dedup with a near-duplicate.
