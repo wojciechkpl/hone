@@ -44,6 +44,17 @@ The review reproduced a panic and a content loss, and listed matcher misses.
 | K10 | **Phase compaction keeps what the edit needs.** When a write triggers phase compaction:<br>• results of reads of any path the write targets (`path` or `file_path` in its arguments; for `apply_patch`, the paths in its patch headers) are not compacted;<br>• the protected recent window counts the newest `recent_window` tool results, not messages.<br>The age-based path is unchanged. |
 | K11 | **Phase compaction is off by default, until measured.** The phase tracker always runs (K1–K3), but it compacts only when `HONE_PHASE_COMPACTION` is `1`, `true` or `on`. PR D maps this to `[context.graduated] phase`. Whether to turn it on by default is decided from a `harness-compare` run. |
 
+### Review round 2 (K12–K15)
+
+Round 1's K9/K10 tests used a made-up `{"content", "path"}` result. The real `read_file` result (`crates/hone-tools/src/file/read.rs`) is `{"content", "start_line", "end_line", "total_lines", "truncated"}`, with no `path` and every content line prefixed with its number (`"   42 | fn main() {"`). Tests for these rows build results with the real `ReadFileTool` (or its exact output shape) and the real argument shapes of `multi_edit` (`edits[].path`) and `apply_patch` (`diff`).
+
+| Row | Behaviour |
+|---|---|
+| K12 | **Summaries of real file reads keep the path and declarations.** For a JSON result with a string `content`:<br>• a leading line-number prefix (`^\s*\d+ \| `) is stripped before testing a line for a declaration, and the kept line is shown as `<n>: <declaration>`;<br>• the path comes from the result's `path` field if present, else from the matching tool call's `path`/`file_path` argument;<br>• the header gives the range read: `lines <start>–<end> of <total>` when `start_line`/`end_line`/`total_lines` are present (else the number of lines), and says `(truncated)` when `truncated` is true;<br>• when more than 40 declarations exist it says `first 40 of N declarations`; singular/plural is right;<br>• it ends with `(re-read before editing)`.<br>This applies on both the phase path and the age-based path. |
+| K13 | **Every edit tool's targets are protected.** Write targets include `path`/`file_path`, every `edits[].path` (and `file_path`) of `multi_edit`, and the `---`/`+++` header paths of `apply_patch`'s `diff` argument (`patch` stays an alias). |
+| K14 | **Paths match by whole components.** A read and a write target refer to the same file when, after stripping a leading `./`, they are equal or one ends with `/` followed by the other. So a read of `/abs/repo/src/a.rs` (as `glob` returns) is protected by an edit of `src/a.rs`, and `src/a.rs` is not matched by `rc/a.rs`. |
+| K15 | **Matcher details.** `make test…` targets (`make test`, `make test-unit`) and `make check` are tests; `timeout` options (`-s KILL`, `-k 5`) are skipped before its duration; `bash`/`sh`/`zsh` with other flags before `-c` (`bash -x -c '…'`, `bash -lc`) are unwrapped; `env` options (`-u NAME`, `-i`) are skipped; `go test -list .` is a read; `bun test.ts` style file runs and `npm test*` are as K3a says (no change). |
+
 ## Testing notes
 
 - **K2/K3** are unit tests on the classifier: each runner, each wrapper, the separators, and the negative examples.
