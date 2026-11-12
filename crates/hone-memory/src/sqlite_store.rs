@@ -99,7 +99,7 @@ pub(crate) fn bm25_scored(memories: Vec<Memory>, text: &str, limit: usize) -> Ve
 /// by docid (cheap at any size) and never depend on the rowids of `memories`, so
 /// renumbering those (`VACUUM`) cannot misalign the index.
 const FTS_TABLE_SQL: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-        content, description, tokenize = 'unicode61')";
+        content, description, tokenize = 'unicode61 remove_diacritics 2')";
 const FTS_MAP_SQL: &str = "CREATE TABLE IF NOT EXISTS memories_fts_map (
         id    TEXT    PRIMARY KEY,
         docid INTEGER NOT NULL UNIQUE
@@ -184,6 +184,20 @@ fn kind_to_str(kind: MemoryKind) -> &'static str {
 }
 
 fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
+    row_to_memory_with(row, false)
+}
+
+/// First byte of an encrypted embedding blob (see `EncryptedStore`).
+const ENCRYPTED_EMBEDDING_MARKER: u8 = 0xE1;
+
+/// `keep_encrypted_embedding`: a row of an encrypted store (`enc:` content)
+/// whose embedding column holds an encrypted blob reports no embedding in
+/// listings (the blob means nothing to a plain reader and is only decrypted for
+/// the memories an `EncryptedStore` returns); `recall_by_id` keeps it.
+fn row_to_memory_with(
+    row: &sqlx::sqlite::SqliteRow,
+    keep_encrypted_embedding: bool,
+) -> Result<Memory, MemoryError> {
     let id: String = row.try_get("id").map_err(to_io_err)?;
     let content: String = row.try_get("content").map_err(to_io_err)?;
     let tags_json: String = row.try_get("tags").map_err(to_io_err)?;
@@ -205,6 +219,12 @@ fn row_to_memory(row: &sqlx::sqlite::SqliteRow) -> Result<Memory, MemoryError> {
         .try_get::<Option<Vec<u8>>, _>("embedding")
         .ok()
         .flatten()
+        .filter(|bytes| {
+            keep_encrypted_embedding
+                || !(content.starts_with("enc:")
+                    && bytes.first() == Some(&ENCRYPTED_EMBEDDING_MARKER)
+                    && bytes.len() >= 32)
+        })
         .map(|bytes| bytes_to_embedding(&bytes));
 
     Ok(Memory {
@@ -446,9 +466,22 @@ impl SqliteStore {
             .await
             .map_err(to_io_err)?;
 
-        let store = Self { pool, fts };
+        let mut store = Self { pool, fts };
         if fts {
-            store.ensure_fts().await?;
+            // An encrypted database (it holds the encryption sentinel) never
+            // gets an FTS index, however it is opened.
+            let encrypted: i64 = sqlx::query_scalar("SELECT count(*) FROM memories WHERE id = ?1")
+                .bind(crate::encrypted::SALT_SENTINEL_ID)
+                .fetch_one(&store.pool)
+                .await
+                .map_err(to_io_err)?;
+            if encrypted > 0 {
+                store.fts = false;
+            } else {
+                store.ensure_fts().await?;
+            }
+        } else {
+            store.drop_fts().await?;
         }
 
         let now_secs = std::time::SystemTime::now()
@@ -625,6 +658,30 @@ impl SqliteStore {
         }
         tx.commit().await.map_err(to_io_err)?;
         Ok(memories as usize)
+    }
+
+    /// Remove any FTS5 table, mapping table and triggers (one transaction).
+    async fn drop_fts(&self) -> Result<(), MemoryError> {
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(to_io_err)?;
+        for (name, _) in FTS_TRIGGERS {
+            sqlx::query(&format!("DROP TRIGGER IF EXISTS {name}"))
+                .execute(&mut *tx)
+                .await
+                .map_err(to_io_err)?;
+        }
+        sqlx::query("DROP TABLE IF EXISTS memories_fts")
+            .execute(&mut *tx)
+            .await
+            .map_err(to_io_err)?;
+        sqlx::query("DROP TABLE IF EXISTS memories_fts_map")
+            .execute(&mut *tx)
+            .await
+            .map_err(to_io_err)?;
+        tx.commit().await.map_err(to_io_err)
     }
 
     /// Rebuild the FTS5 index from `memories`, atomically (creating the tables
@@ -984,7 +1041,9 @@ impl MemoryStore for SqliteStore {
         .await
         .map_err(to_io_err)?;
 
-        row.as_ref().map(row_to_memory).transpose()
+        row.as_ref()
+            .map(|r| row_to_memory_with(r, true))
+            .transpose()
     }
 
     async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError> {

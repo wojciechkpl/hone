@@ -45,6 +45,9 @@ use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
 /// decrypt all records, generate a new random salt, and re-encrypt.
 pub const LEGACY_SALT: &[u8] = b"hone-memory-v1-salt";
 
+/// First byte of an encrypted embedding blob (the column's marker).
+const EMBEDDING_MARKER: u8 = 0xE1;
+
 /// Reserved memory ID used to persist the per-store random salt. `SqliteStore`
 /// never forgets or expires it: without it every encrypted memory is unreadable.
 pub const SALT_SENTINEL_ID: &str = "__encrypted_store_salt__";
@@ -87,7 +90,102 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
         let key = derive_key(passphrase, &salt)?;
         let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|e| MemoryError::Io(std::io::Error::other(format!("cipher init: {e}"))))?;
-        Ok(Self { inner, cipher })
+        let store = Self { inner, cipher };
+        store.encrypt_plaintext_embeddings().await?;
+        Ok(store)
+    }
+
+    /// An embedding as the blob stored in the embedding column: the marker
+    /// `0xE1`, a 12-byte nonce and the AES-GCM ciphertext of the little-endian
+    /// f32s, zero-padded to a multiple of 4 bytes (the column is read as f32s).
+    fn seal_embedding(&self, embedding: &[f32]) -> Result<Vec<f32>, MemoryError> {
+        let mut nonce_bytes = [0u8; 12];
+        aes_gcm::aead::rand_core::RngCore::fill_bytes(&mut OsRng, &mut nonce_bytes);
+        let plain: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let ct = self
+            .cipher
+            .encrypt(Nonce::from_slice(&nonce_bytes), plain.as_slice())
+            .map_err(|e| MemoryError::Io(std::io::Error::other(format!("encrypt: {e}"))))?;
+        let mut blob = Vec::with_capacity(1 + 12 + ct.len() + 3);
+        blob.push(EMBEDDING_MARKER);
+        blob.extend_from_slice(&nonce_bytes);
+        blob.extend_from_slice(&ct);
+        blob.extend_from_slice(&[0, 0, 0]);
+        Ok(blob
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect())
+    }
+
+    /// The embedding a stored column value holds: decrypted when it is a blob
+    /// of this store's key, else (an older binary's plaintext vector) as it is.
+    fn open_embedding(&self, stored: Vec<f32>) -> Vec<f32> {
+        let bytes: Vec<u8> = stored.iter().flat_map(|f| f.to_le_bytes()).collect();
+        if bytes.first() == Some(&EMBEDDING_MARKER) && bytes.len() >= 32 {
+            let end = bytes.len() - 3;
+            let (nonce, ct) = bytes[1..end].split_at(12);
+            if let Ok(plain) = self.cipher.decrypt(Nonce::from_slice(nonce), ct) {
+                return plain
+                    .chunks_exact(4)
+                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                    .collect();
+            }
+        }
+        stored
+    }
+
+    /// Whether a stored column value is already one of this store's blobs.
+    fn is_sealed(&self, stored: &[f32]) -> bool {
+        let bytes: Vec<u8> = stored.iter().flat_map(|f| f.to_le_bytes()).collect();
+        bytes.first() == Some(&EMBEDDING_MARKER)
+            && bytes.len() >= 32
+            && bytes.len() % 4 == 0
+            && self
+                .cipher
+                .decrypt(
+                    Nonce::from_slice(&bytes[1..13]),
+                    &bytes[13..bytes.len() - 3],
+                )
+                .is_ok()
+    }
+
+    /// Rows an older binary wrote (`enc:v1` content, plaintext vector in the
+    /// column) are re-encrypted, once: listings show only plaintext vectors, as
+    /// sealed ones read as no embedding.
+    async fn encrypt_plaintext_embeddings(&self) -> Result<(), MemoryError> {
+        let listed = self
+            .inner
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: 1_000_000,
+                kind: None,
+            })
+            .await?;
+        for mut mem in listed {
+            if mem.id == SALT_SENTINEL_ID {
+                continue;
+            }
+            let Some(plain) = mem.embedding.take() else {
+                continue;
+            };
+            if self.is_sealed(&plain) {
+                continue;
+            }
+            mem.embedding = Some(self.seal_embedding(&plain)?);
+            self.inner.record(mem).await?;
+        }
+        Ok(())
+    }
+
+    /// Give each of `memories` its decrypted embedding, fetched by id (the
+    /// listing carries none for sealed vectors).
+    async fn attach_embeddings(&self, memories: &mut [Memory]) -> Result<(), MemoryError> {
+        for m in memories.iter_mut().filter(|m| m.embedding.is_none()) {
+            if let Some(stored) = self.inner.recall_by_id(&m.id).await? {
+                m.embedding = stored.embedding.map(|e| self.open_embedding(e));
+            }
+        }
+        Ok(())
     }
 
     fn encrypt_content(&self, plaintext: &str) -> Result<String, MemoryError> {
@@ -151,21 +249,16 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
             .map_err(|e| MemoryError::Io(std::io::Error::other(format!("utf8: {e}"))))
     }
 
-    /// Content (and, for a memory with an embedding, the embedding with it) and
-    /// the description are stored as ciphertext. A memory with an embedding is stored as `enc:v2:` (content and embedding
-    /// together in the ciphertext) and its embedding column left empty, so
-    /// listing the corpus never carries vectors; `enc:v1:` holds the content only.
+    /// Content and description are `enc:v1:` (content readable by older
+    /// binaries); an embedding goes into the embedding column as an encrypted
+    /// blob (see `seal_embedding`).
     fn encrypt_memory(&self, mut memory: Memory) -> Result<Memory, MemoryError> {
-        match memory.embedding.take() {
-            Some(embedding) => {
-                let payload = serde_json::json!({
-                    "content": memory.content,
-                    "embedding": embedding,
-                });
-                memory.content = self.encrypt_with("enc:v2:", &payload.to_string())?;
-            }
-            None => memory.content = self.encrypt_content(&memory.content)?,
-        }
+        memory.content = self.encrypt_content(&memory.content)?;
+        memory.embedding = memory
+            .embedding
+            .take()
+            .map(|e| self.seal_embedding(&e))
+            .transpose()?;
         memory.description = memory
             .description
             .take()
@@ -184,6 +277,7 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
             memory.embedding = serde_json::from_value(payload["embedding"].clone()).ok();
         } else if memory.content.starts_with("enc:v1:") {
             memory.content = self.decrypt_content(&memory.content)?;
+            memory.embedding = memory.embedding.take().map(|e| self.open_embedding(e));
         }
         if let Some(d) = memory
             .description
@@ -231,6 +325,7 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
                     break;
                 }
             }
+            self.attach_embeddings(&mut results).await?;
             return Ok(results);
         }
 
@@ -251,7 +346,9 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
             }
             corpus.push(self.decrypt_memory(mem)?);
         }
-        let results = crate::sqlite_store::bm25_top(corpus, &query.text, query.limit);
+        let mut results = crate::sqlite_store::bm25_top(corpus, &query.text, query.limit);
+        // Vectors are decrypted only for the memories returned.
+        self.attach_embeddings(&mut results).await?;
         Ok(results)
     }
 }
@@ -280,6 +377,40 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
         self.recall_filtered(query, exclude).await
     }
 
+    async fn recall_semantic(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+    ) -> Result<Vec<crate::embedding::ScoredMemory>, MemoryError> {
+        // Candidates: the newest memories; their vectors are decrypted here.
+        let mut candidates = self
+            .recall_filtered(
+                &MemoryQuery {
+                    text: String::new(),
+                    limit: 1024,
+                    kind: None,
+                },
+                &[],
+            )
+            .await?;
+        candidates.retain(|m| m.embedding.is_some());
+        let mut scored: Vec<crate::embedding::ScoredMemory> = candidates
+            .into_iter()
+            .filter_map(|m| {
+                let score =
+                    crate::embedding::cosine_similarity(query_embedding, m.embedding.as_deref()?);
+                Some(crate::embedding::ScoredMemory { memory: m, score })
+            })
+            .collect();
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        scored.truncate(limit);
+        Ok(scored)
+    }
+
     async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
         self.inner.forget(filter).await
     }
@@ -306,6 +437,7 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
             }
             decrypted.push(self.decrypt_memory(mem)?);
         }
+        self.attach_embeddings(&mut decrypted).await?;
 
         let json = serde_json::to_string_pretty(&decrypted)?;
         tokio::fs::write(path, json).await?;

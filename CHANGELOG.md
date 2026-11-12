@@ -26,6 +26,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The salt record is found by id, so stores with more than 10,000 memories open and a new salt is never written over an existing one.
 - If an encrypted database was written by an older version, don't run `hone memory forget` on it with that older version.
 
+### Changed: encrypted memory format (`--encrypted-memory`)
+
+- A memory's content stays `enc:v1:<base64>`, as before, so older binaries read it.
+- An embedding is stored in the `embedding` column as an encrypted binary blob: the marker byte `0xE1`, a 12-byte nonce, the AES-256-GCM ciphertext of the little-endian f32s, and up to 3 zero bytes of padding. A memory without an embedding has a NULL column. An older binary treats the blob as an unusable vector (it does not fail).
+- Vectors are decrypted only for the memories a recall returns or a semantic recall scores.
+- Rows written as `enc:v2:` by earlier builds of this branch still decrypt; `enc:v1` rows with a plaintext vector are re-encrypted once, when the database is opened with the passphrase.
+- An encrypted database never gets an FTS5 index: opening it removes any FTS5 tables and triggers.
+
 ### Fixed: memory recall finds older memories, skips outcome logs, and code search understands prompts
 
 - **Before:**

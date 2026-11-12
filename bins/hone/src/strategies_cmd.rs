@@ -187,7 +187,14 @@ pub fn render_text(
                 origin.as_str().unwrap_or_default()
             ));
         }
-        out.push_str(&format!("  chosen by: {}\n\n", s.origin));
+        // The only thing a flag chooses for the recaller is the encrypted-memory
+        // fallback to `bm25` (JSON keeps the origin `flag`).
+        let origin = if s.slot == "memory.recaller" && s.origin == "flag" {
+            "--encrypted-memory".to_owned()
+        } else {
+            s.origin.clone()
+        };
+        out.push_str(&format!("  chosen by: {origin}\n\n"));
     }
     if !sel.warnings.is_empty() {
         out.push_str("warnings:\n");

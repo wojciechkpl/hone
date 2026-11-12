@@ -1,8 +1,11 @@
 //! What a word is, for every memory search: the in-Rust BM25 and the FTS5 query
 //! split text the same way (on every character that is not a Unicode letter or
-//! digit), lowercase it and fold diacritics (NFD, combining marks removed, so
-//! `kąt` is `kat` and `café` is `cafe`; `ł` is not decomposable and stays `ł`,
-//! as in FTS5's `unicode61` tokenizer).
+//! digit), lowercase it and fold diacritics of LATIN base letters only (NFD,
+//! their combining marks removed, so `kąt` is `kat`, `café` is `cafe` and the
+//! Vietnamese `ệ` is `e`; `ł` is not decomposable and stays `ł`, as in FTS5's
+//! `unicode61 remove_diacritics 2`). Other scripts keep their marks and are
+//! recomposed to NFC: Hangul syllables, kana voicing marks (`パ` is not `ハ`),
+//! Devanagari vowel signs and virama, Thai marks.
 
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
@@ -145,18 +148,38 @@ const STOP_WORDS: &[&str] = &[
 /// The most tokens an FTS5 query carries.
 pub const MAX_QUERY_TOKENS: usize = 32;
 
-/// `text` lowercased with diacritics removed.
-fn fold(text: &str) -> String {
-    text.to_lowercase()
-        .nfd()
-        .filter(|c| !is_combining_mark(*c))
-        .collect()
+/// A letter of the Latin script (the ones whose diacritics `unicode61` folds).
+fn is_latin(c: char) -> bool {
+    matches!(c,
+        'a'..='z' | 'A'..='Z'
+        | '\u{00C0}'..='\u{024F}'
+        | '\u{1E00}'..='\u{1EFF}'
+        | '\u{2C60}'..='\u{2C7F}'
+        | '\u{A720}'..='\u{A7FF}')
+}
+
+/// `text` lowercased, with the diacritics of Latin letters removed and the
+/// rest recomposed (NFC).
+pub fn fold(text: &str) -> String {
+    let mut out: Vec<char> = Vec::with_capacity(text.len());
+    let mut after_latin = false;
+    for c in text.to_lowercase().nfd() {
+        if is_combining_mark(c) {
+            if after_latin {
+                continue;
+            }
+        } else {
+            after_latin = is_latin(c);
+        }
+        out.push(c);
+    }
+    out.into_iter().nfc().collect()
 }
 
 /// The words of `text`: folded, split on non-(letter or digit), empty ones dropped.
 pub fn word_tokens(text: &str) -> Vec<String> {
     fold(text)
-        .split(|c: char| !c.is_alphanumeric())
+        .split(|c: char| !(c.is_alphanumeric() || is_combining_mark(c)))
         .filter(|t| !t.is_empty())
         .map(str::to_owned)
         .collect()

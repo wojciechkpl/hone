@@ -835,6 +835,7 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 | `<project root>/.hone/specs/` | Output of `hone spec` | |
 
 **`memory.db` and FTS5.** Hone keeps a full-text index of the memories in `memory.db` (FTS5 tables `memories_fts` and `memories_fts_map`, kept in sync by triggers on `memories`, and used by `recaller = "fts5"`). A tool that writes to `memory.db` directly needs an SQLite build with FTS5, or the triggers fail; deleting the FTS tables and triggers is safe, Hone rebuilds them on the next open (`hone memory reindex` rebuilds on demand). With `--encrypted-memory` the database holds ciphertext and has no FTS5 index.
+**`memory.db` and FTS5.** Hone keeps a full-text index of the memories in `memory.db` (FTS5 tables `memories_fts` and `memories_fts_map`, kept in sync by triggers on `memories`, and used by `recaller = "fts5"`). A tool that writes to `memory.db` directly needs an SQLite build with FTS5, or the triggers fail; deleting the FTS tables and triggers is safe, Hone rebuilds them on the next open (`hone memory reindex` rebuilds on demand). With `--encrypted-memory` the database holds ciphertext and has no FTS5 index (opening it removes any FTS5 tables and triggers). For prompts with more than 32 distinct words, `recaller = "fts5"` searches the 32 rarest and `bm25` all of them, so the two can rank differently.
 
 ## Context receipts
 

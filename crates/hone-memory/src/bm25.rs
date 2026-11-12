@@ -28,18 +28,18 @@ impl Default for Bm25Params {
 // Tokenisation
 // ---------------------------------------------------------------------------
 
-/// Tokenise `text` for BM25 indexing / querying.
+/// Tokenise `text` for BM25 indexing / querying (the shared tokenizer of
+/// [`crate::fts_query`], also used for `recall_fts5`).
 ///
 /// Rules:
-/// - Lowercases all characters.
-/// - Splits on any character that is **not** Unicode-alphanumeric (`char::is_alphanumeric()`).
-///   This means `_` and `-` are separators, but accented letters like `é` are kept.
+/// - Lowercases all characters and folds the diacritics of Latin letters
+///   (`café` is `cafe`, `ł` stays `ł`); other scripts are kept whole (no jamo
+///   decomposition, kana voicing marks and Devanagari signs stay).
+/// - Splits on any character that is **not** Unicode-alphanumeric
+///   (`char::is_alphanumeric()`): `_` and `-` are separators.
 /// - Drops empty tokens.
 pub fn tokenize(text: &str) -> Vec<String> {
-    text.split(|c: char| !c.is_alphanumeric())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_lowercase())
-        .collect()
+    crate::fts_query::word_tokens(text)
 }
 
 // ---------------------------------------------------------------------------
