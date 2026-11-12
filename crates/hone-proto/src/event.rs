@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::model::TokenUsage;
+use crate::receipt::ContextReceipt;
 use crate::tool::ToolCallRequest;
 
 /// The orchestrator worker an event belongs to: its subtask id and agent name.
@@ -206,6 +207,9 @@ pub enum AgentEvent {
         /// "High", "Medium", or "Low"
         confidence: String,
     },
+    /// Emitted before every model call: what that call was given (ids, paths,
+    /// hashes, names and scores, never text).
+    ContextAssembled { receipt: ContextReceipt },
     /// Emitted once per turn when the memory store returns relevant entries.
     MemoryRecalled {
         /// (memory_id, short_snippet ≤ 80 chars) pairs.

@@ -23,20 +23,21 @@ use crate::cost::CostAccumulator;
 use crate::egress_log::{EgressEntry, EgressLog, SpanKind, TraceContext, now_rfc3339, preview};
 use crate::error::AgentError;
 use crate::hooks::{HookEvent, HookOutcome, HookRegistry};
-use crate::session_approvals::SessionApprovals;
 use crate::injection_detector::InjectionDetector;
 use crate::memory_format::format_memory_body;
 use crate::memory_worthy::{MemoryCandidate, classify_turn};
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
+use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
+use crate::recovery::{FailureScenario, RecoveryAction};
+use crate::retry::{RetryConfig, is_transient_error, retry};
+use crate::session_approvals::SessionApprovals;
+use crate::skills::SkillRegistry;
+use crate::turn::TurnResult;
 use hone_tools::policy_gate::{
     GateDecision, PolicyConfig, decide, read_filter, session_approval_entries,
 };
 use hone_tools::redact::{redact_json, redact_secrets};
-use crate::recovery::{FailureScenario, RecoveryAction};
-use crate::retry::{RetryConfig, is_transient_error, retry};
-use crate::skills::SkillRegistry;
-use crate::turn::TurnResult;
 
 /// Configuration for creating an `Agent`.
 #[derive(Clone)]
@@ -135,7 +136,10 @@ enum PolicyVerdict {
     /// `session_cleared` is true when an `ask` rule was cleared only by a
     /// session "always" (the agent's own or a shared one): the pause is then
     /// skipped too, except under `AlwaysAsk`.
-    Proceed { prompted: bool, session_cleared: bool },
+    Proceed {
+        prompted: bool,
+        session_cleared: bool,
+    },
     /// The call must not run; the caller reports `result` / `message`.
     Blocked {
         result: Value,
@@ -498,11 +502,7 @@ fn redacted_text(redact: bool, text: &str) -> String {
 
 /// The `result` of a `ToolCallEnd` event: redacted when `redact` is set.
 fn event_result(redact: bool, value: Value) -> Value {
-    if redact {
-        redact_json(&value).0
-    } else {
-        value
-    }
+    if redact { redact_json(&value).0 } else { value }
 }
 
 /// The one place a tool result becomes a model-visible message. With `redact` set,
@@ -622,6 +622,11 @@ pub struct Agent {
     cost: CostAccumulator,
     /// Monotonically increasing counter of completed turns this session.
     turn_count: u32,
+    /// Inputs of the current turn's context receipts (recall, skills, injection).
+    receipt_info: TurnContextInfo,
+    /// Hashes of the non-system messages of the previous receipt (for the incremental
+    /// `History` listing).
+    receipt_history: std::collections::HashSet<String>,
     metrics: Arc<ContextMetrics>,
     /// Per-turn guard state (reset at the top of each `run_turn` call).
     guards: TurnGuards,
@@ -656,7 +661,11 @@ pub struct Agent {
 
 /// Candidates asked of the semantic recall: more than the 5 used, because
 /// `Outcome` logs are dropped afterwards and must not leave fewer than 5.
-const SEMANTIC_RECALL_FETCH: usize = 20;
+pub(crate) const SEMANTIC_RECALL_FETCH: usize = 20;
+/// Memories recalled per turn.
+pub(crate) const RECALL_LIMIT: usize = 5;
+/// The RRF constant `k` for fusing BM25 and semantic recall.
+pub(crate) const RECALL_RRF_K: usize = 60;
 
 impl Agent {
     pub fn new(mut config: AgentConfig) -> Self {
@@ -693,6 +702,8 @@ impl Agent {
             context,
             cost: CostAccumulator::new(),
             turn_count: 0,
+            receipt_info: TurnContextInfo::default(),
+            receipt_history: std::collections::HashSet::new(),
             metrics,
             guards: TurnGuards::default(),
             error_event_sent: false,
@@ -779,18 +790,32 @@ impl Agent {
         self.metrics.snapshot()
     }
 
+    /// Names of the skills whose triggers match `prompt` (for context receipts).
+    fn matched_skill_names(&self, prompt: &str) -> Vec<String> {
+        self.config.skills.as_ref().map_or_else(Vec::new, |reg| {
+            reg.matching(prompt)
+                .into_iter()
+                .map(|s| s.name.clone())
+                .collect()
+        })
+    }
+
     /// Query the memory store for entries relevant to `query` and format them
     /// as an appendix for the system prompt.  Returns the prompt appendix and
     /// (id, snippet) pairs for the `MemoryRecalled` event.  Returns empty
     /// values when no store is configured or no relevant memories exist.
-    async fn fetch_relevant_memories(&self, query: &str) -> (String, Vec<(String, String)>) {
+    async fn fetch_relevant_memories(
+        &self,
+        query: &str,
+    ) -> (String, Vec<(String, String)>, RecallInfo) {
+        let started = std::time::Instant::now();
         let Some(store) = &self.config.memory_store else {
-            return (String::new(), vec![]);
+            return (String::new(), vec![], RecallInfo::default());
         };
 
         let memory_query = MemoryQuery {
             text: query.to_string(),
-            limit: 5,
+            limit: RECALL_LIMIT,
             kind: None,
         };
 
@@ -805,33 +830,51 @@ impl Agent {
         };
 
         // Semantic (when embedder present)
+        let mut embedder_ran = false;
         let semantic_memories: Vec<hone_memory::Memory> =
             if let Some(embedder) = &self.config.embedder {
                 match embedder.embed(query).await {
-                    Ok(query_vec) => store
-                        .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
-                        .await
-                        .map(|scored| {
-                            scored
-                                .into_iter()
-                                .map(|s| s.memory)
-                                .filter(|m| m.kind != hone_memory::MemoryKind::Outcome)
-                                .take(5)
-                                .collect()
-                        })
-                        .unwrap_or_default(),
+                    Ok(query_vec) => {
+                        embedder_ran = true;
+                        store
+                            .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
+                            .await
+                            .map(|scored| {
+                                scored
+                                    .into_iter()
+                                    .map(|s| s.memory)
+                                    .filter(|m| m.kind != hone_memory::MemoryKind::Outcome)
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    }
                     Err(_) => Vec::new(),
                 }
             } else {
                 Vec::new()
             };
 
+        // Candidates fetched and then cut, for the context receipt.
+        let mut cut_ids: Vec<String> = Vec::new();
+        // An embedder was configured and ran for this query (even if it found nothing).
+        let semantic = embedder_ran;
+        let mut semantic_memories = semantic_memories;
+        if semantic_memories.len() > RECALL_LIMIT {
+            cut_ids.extend(
+                semantic_memories
+                    .split_off(RECALL_LIMIT)
+                    .into_iter()
+                    .map(|m| m.id),
+            );
+        }
+
         // Fuse via RRF when both signals are present; otherwise use whichever is non-empty
         let final_memories: Vec<hone_memory::Memory> = if !semantic_memories.is_empty() {
             let bm25_ids: Vec<String> = bm25_memories.iter().map(|m| m.id.clone()).collect();
             let semantic_ids: Vec<String> =
                 semantic_memories.iter().map(|m| m.id.clone()).collect();
-            let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], 60);
+            let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], RECALL_RRF_K);
+            cut_ids.extend(fused_ids.iter().skip(RECALL_LIMIT).cloned());
             let mut by_id: std::collections::HashMap<String, hone_memory::Memory> =
                 std::collections::HashMap::new();
             for m in bm25_memories
@@ -842,7 +885,7 @@ impl Agent {
             }
             fused_ids
                 .into_iter()
-                .take(5)
+                .take(RECALL_LIMIT)
                 .filter_map(|id| by_id.remove(&id))
                 .collect()
         } else {
@@ -850,8 +893,17 @@ impl Agent {
         };
 
         if final_memories.is_empty() {
-            return (String::new(), vec![]);
+            return (String::new(), vec![], RecallInfo::default());
         }
+        let info = RecallInfo {
+            ids: final_memories.iter().map(|m| m.id.clone()).collect(),
+            semantic,
+            dropped: cut_ids
+                .into_iter()
+                .filter(|id| !final_memories.iter().any(|m| &m.id == id))
+                .collect(),
+            duration_ms: started.elapsed().as_millis().min(u128::from(u32::MAX)) as u32,
+        };
 
         let entries: Vec<(String, String)> = final_memories
             .iter()
@@ -866,7 +918,7 @@ impl Agent {
         for mem in &final_memories {
             prompt.push_str(&format!("- {}\n", mem.content));
         }
-        (prompt, entries)
+        (prompt, entries, info)
     }
 
     /// Record a classified memory candidate (fire-and-forget; errors are
@@ -1274,7 +1326,14 @@ impl Agent {
         };
 
         // Fetch memories before adding the user message so the query is clean.
-        let (memories, memory_entries) = self.fetch_relevant_memories(user_input).await;
+        let (memories, memory_entries, recall_info) =
+            self.fetch_relevant_memories(user_input).await;
+        // Inputs of this turn's context receipts.
+        self.receipt_info = TurnContextInfo {
+            recall: recall_info,
+            skills: self.matched_skill_names(user_input),
+            injection: None,
+        };
         if !memory_entries.is_empty() {
             let _ = events
                 .send(AgentEvent::MemoryRecalled {
@@ -1311,6 +1370,12 @@ impl Agent {
                     );
                     // Skeletons and snippets can carry secret-shaped names or text.
                     let block = redacted_text(self.redacting(), &injection.context_block);
+                    self.receipt_info.injection = Some(InjectionInfo {
+                        strategy: self.config.skeleton_strategy.as_str().to_string(),
+                        // The text actually sent.
+                        tokens: estimate_text_tokens(&block),
+                        hits: injection.bm25_hits.clone(),
+                    });
                     std::borrow::Cow::Owned(format!("{block}\n\n---\n\n{user_input}"))
                 } else {
                     std::borrow::Cow::Borrowed(user_input)
@@ -1363,6 +1428,8 @@ impl Agent {
         // - doom-loop warning fires at most once so we don't spam the model.
         let mut context_emergency = false;
         let mut doom_loop_warned = false;
+        // 1-based count of model calls made this turn (for context receipts).
+        let mut model_call: u32 = 0;
 
         // We loop so that tool call → model follow-up cycles are handled
         // transparently.
@@ -1427,7 +1494,9 @@ impl Agent {
             // Build the base message list with the STABLE system prompt.
             // Memories are injected as a separate system-role message right
             // after the base system prompt, so the prefix stays cache-friendly.
-            let mut messages = self.context.build_messages(&self.config.system_prompt);
+            let (mut messages, mut message_hashes) = self
+                .context
+                .build_messages_hashed(&self.config.system_prompt);
 
             if !memories.is_empty() {
                 let memory_msg = Message {
@@ -1444,8 +1513,10 @@ impl Agent {
                     .first()
                     .is_some_and(|m| matches!(m.role, hone_proto::Role::System))
                 {
+                    message_hashes.insert(1, hone_proto::message_sha256(&memory_msg));
                     messages.insert(1, memory_msg);
                 } else {
+                    message_hashes.insert(0, hone_proto::message_sha256(&memory_msg));
                     messages.insert(0, memory_msg);
                 }
             }
@@ -1464,9 +1535,12 @@ impl Agent {
                 // Position: after memories (index 2) when memories are present,
                 // otherwise right after the base system prompt (index 1).
                 let pos = if !memories.is_empty() { 2 } else { 1 };
+                let skills_hash = hone_proto::message_sha256(&skills_msg);
                 if messages.len() > pos {
+                    message_hashes.insert(pos, skills_hash);
                     messages.insert(pos, skills_msg);
                 } else {
+                    message_hashes.push(skills_hash);
                     messages.push(skills_msg);
                 }
             }
@@ -1481,6 +1555,30 @@ impl Agent {
             } else {
                 self.config.tools.schemas()
             };
+
+            // Context receipt: what this call is given, sent before the request.
+            model_call += 1;
+            {
+                let tool_names: Vec<String> =
+                    request.tools.iter().map(|t| t.name.clone()).collect();
+                let recall_at = (!memories.is_empty()).then_some(1);
+                let skills_at =
+                    (!skills_block.is_empty()).then_some(if memories.is_empty() { 1 } else { 2 });
+                let receipt = crate::receipts::build_receipt(
+                    self.turn_count,
+                    model_call,
+                    &request.model.to_string(),
+                    &request.messages,
+                    &tool_names,
+                    recall_at,
+                    skills_at,
+                    &self.receipt_info,
+                    self.context.drain_compaction_log(),
+                    &message_hashes,
+                    &mut self.receipt_history,
+                );
+                let _ = events.send(AgentEvent::ContextAssembled { receipt }).await;
+            }
 
             let retry_cfg = self.config.retry_config.clone();
             let provider = Arc::clone(&self.config.provider);
@@ -1781,10 +1879,8 @@ impl Agent {
                     // pre-filled, live entries have `None` (filled after dispatch).
                     let raw_batch = pending_tool_calls[i..j].to_vec();
                     // (call, pre_filled_result)
-                    let mut ordered_batch: Vec<(
-                        hone_proto::ToolCallRequest,
-                        Option<ToolRun>,
-                    )> = Vec::with_capacity(raw_batch.len());
+                    let mut ordered_batch: Vec<(hone_proto::ToolCallRequest, Option<ToolRun>)> =
+                        Vec::with_capacity(raw_batch.len());
                     let mut live_batch: Vec<hone_proto::ToolCallRequest> = Vec::new();
                     // Ids of calls the permission policy blocked in the pre-pass;
                     // they count as neither tool calls nor guard reads.
@@ -1793,82 +1889,14 @@ impl Agent {
                     for mut call_item in raw_batch {
                         // The permission gate runs before hooks, so a blocked call
                         // never shows its arguments to a hook.
-                        let mut blocked = match self
-                            .gate_call(&call_item, &turn_trace, &events)
-                            .await
-                        {
-                            PolicyVerdict::Proceed { .. } => None,
-                            PolicyVerdict::Blocked {
-                                result,
-                                is_error,
-                                message,
-                            } => Some((result, is_error, message)),
-                            PolicyVerdict::Cancelled => {
-                                self.cancel_pending_calls(
-                                    &pending_tool_calls,
-                                    redact,
-                                    CANCELLED_REASON,
-                                );
-                                return Err(AgentError::Cancelled);
-                            }
-                        };
-                        if blocked.is_none() {
-                        let hook_event = HookEvent::PreToolUse {
-                            tool_name: call_item.name.clone(),
-                            args: call_item.arguments.clone(),
-                        };
-                        let hook_outcomes =
-                            Self::fire_hooks(self.config.hooks.as_ref(), &hook_event).await;
-                        let mut deny_msg: Option<String> = None;
-                        for outcome in &hook_outcomes {
-                            if outcome.deny {
-                                deny_msg = Some(
-                                    outcome
-                                        .message
-                                        .clone()
-                                        .unwrap_or_else(|| "blocked by hook".to_string()),
-                                );
-                                break;
-                            }
-                        }
-                        if let Some(msg) = deny_msg {
-                            let deny_val = serde_json::json!({ "error": msg.clone() });
-                            let _ = events
-                                .send(AgentEvent::ToolCallEnd {
-                                    id: call_item.id.clone(),
-                                    result: deny_val,
-                                    is_error: true,
-                                    duration_ms: 0,
-                                    cache_hit: false,
-                                })
-                                .await;
-                            self.context.add_message(tool_result_message(
-                                redact,
-                                call_item.id.clone(),
-                                "",
-                                ToolText::Text(format!("(blocked by hook): {msg}")),
-                            ));
-                            ordered_batch.push((
-                                call_item,
-                                Some(Err(AgentError::Internal {
-                                    detail: format!("(blocked by hook): {msg}"),
-                                })),
-                            ));
-                            continue;
-                        }
-                        // A hook that rewrites the input is gated again on the
-                        // rewritten input.
-                        if let Some(mutated) =
-                            hook_outcomes.iter().find_map(|o| o.mutated_input.as_ref())
-                        {
-                            call_item.arguments = mutated.clone();
+                        let mut blocked =
                             match self.gate_call(&call_item, &turn_trace, &events).await {
-                                PolicyVerdict::Proceed { .. } => {}
+                                PolicyVerdict::Proceed { .. } => None,
                                 PolicyVerdict::Blocked {
                                     result,
                                     is_error,
                                     message,
-                                } => blocked = Some((result, is_error, message)),
+                                } => Some((result, is_error, message)),
                                 PolicyVerdict::Cancelled => {
                                     self.cancel_pending_calls(
                                         &pending_tool_calls,
@@ -1877,8 +1905,74 @@ impl Agent {
                                     );
                                     return Err(AgentError::Cancelled);
                                 }
+                            };
+                        if blocked.is_none() {
+                            let hook_event = HookEvent::PreToolUse {
+                                tool_name: call_item.name.clone(),
+                                args: call_item.arguments.clone(),
+                            };
+                            let hook_outcomes =
+                                Self::fire_hooks(self.config.hooks.as_ref(), &hook_event).await;
+                            let mut deny_msg: Option<String> = None;
+                            for outcome in &hook_outcomes {
+                                if outcome.deny {
+                                    deny_msg = Some(
+                                        outcome
+                                            .message
+                                            .clone()
+                                            .unwrap_or_else(|| "blocked by hook".to_string()),
+                                    );
+                                    break;
+                                }
                             }
-                        }
+                            if let Some(msg) = deny_msg {
+                                let deny_val = serde_json::json!({ "error": msg.clone() });
+                                let _ = events
+                                    .send(AgentEvent::ToolCallEnd {
+                                        id: call_item.id.clone(),
+                                        result: deny_val,
+                                        is_error: true,
+                                        duration_ms: 0,
+                                        cache_hit: false,
+                                    })
+                                    .await;
+                                self.context.add_message(tool_result_message(
+                                    redact,
+                                    call_item.id.clone(),
+                                    "",
+                                    ToolText::Text(format!("(blocked by hook): {msg}")),
+                                ));
+                                ordered_batch.push((
+                                    call_item,
+                                    Some(Err(AgentError::Internal {
+                                        detail: format!("(blocked by hook): {msg}"),
+                                    })),
+                                ));
+                                continue;
+                            }
+                            // A hook that rewrites the input is gated again on the
+                            // rewritten input.
+                            if let Some(mutated) =
+                                hook_outcomes.iter().find_map(|o| o.mutated_input.as_ref())
+                            {
+                                call_item.arguments = mutated.clone();
+                                match self.gate_call(&call_item, &turn_trace, &events).await {
+                                    PolicyVerdict::Proceed { .. } => {}
+                                    PolicyVerdict::Blocked {
+                                        result,
+                                        is_error,
+                                        message,
+                                    } => blocked = Some((result, is_error, message)),
+                                    PolicyVerdict::Cancelled => {
+                                        self.cancel_pending_calls(
+                                            &pending_tool_calls,
+                                            redact,
+                                            CANCELLED_REASON,
+                                        );
+                                        return Err(AgentError::Cancelled);
+                                    }
+                                }
+                            }
                         }
                         if let Some((result, is_error, message)) = blocked {
                             // The result loop below adds the tool-result
@@ -2898,7 +2992,13 @@ impl Agent {
         self.cost.check_budget(self.config.budget_limit)?;
         let cost_before_turn = self.cost.total_usd();
 
-        let (memories, memory_entries) = self.fetch_relevant_memories(&text_for_memory).await;
+        let (memories, memory_entries, recall_info) =
+            self.fetch_relevant_memories(&text_for_memory).await;
+        self.receipt_info = TurnContextInfo {
+            recall: recall_info,
+            skills: self.matched_skill_names(&text_for_memory),
+            injection: None,
+        };
         if !memory_entries.is_empty() {
             let _ = events
                 .send(AgentEvent::MemoryRecalled {
@@ -3093,12 +3193,10 @@ async fn dispatch_parallel(
             let is_error = result.is_err();
             let result_value = match &result {
                 Ok((v, _)) => v.clone(),
-                Err(AgentError::ToolNotFound { name }) => {
-                    event_result(
-                        redact,
-                        serde_json::json!({ "error": format!("tool '{name}' not found") }),
-                    )
-                }
+                Err(AgentError::ToolNotFound { name }) => event_result(
+                    redact,
+                    serde_json::json!({ "error": format!("tool '{name}' not found") }),
+                ),
                 Err(e) => event_result(redact, serde_json::json!({ "error": e.to_string() })),
             };
 

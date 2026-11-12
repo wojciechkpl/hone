@@ -1,0 +1,200 @@
+[
+  {
+    "messages": [
+      {
+        "content": "You are a test assistant.",
+        "role": "system"
+      },
+      {
+        "content": "# Relevant Memories\n\n\n\n## Relevant context from memory:\n- prefer small commits when refactoring the parser module\n- the parser module lives in src/parser and has golden tests\n",
+        "role": "system"
+      },
+      {
+        "content": "\n\n## Skills\n\n### refactor-helper\nKeep diffs small.\n\n",
+        "role": "system"
+      },
+      {
+        "content": "refactor the parser module",
+        "role": "user"
+      }
+    ],
+    "model": "mock:test",
+    "tool_names": [
+      "apply_patch",
+      "edit_file",
+      "read_file",
+      "shell"
+    ]
+  },
+  {
+    "messages": [
+      {
+        "content": "You are a test assistant.",
+        "role": "system"
+      },
+      {
+        "content": "# Relevant Memories\n\n\n\n## Relevant context from memory:\n- prefer small commits when refactoring the parser module\n- the parser module lives in src/parser and has golden tests\n",
+        "role": "system"
+      },
+      {
+        "content": "\n\n## Skills\n\n### refactor-helper\nKeep diffs small.\n\n",
+        "role": "system"
+      },
+      {
+        "content": "refactor the parser module",
+        "role": "user"
+      },
+      {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "arguments": {
+              "tag": "r1"
+            },
+            "id": "r1",
+            "name": "read_file"
+          }
+        ]
+      },
+      {
+        "content": "\"r1 lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet \"",
+        "role": "tool",
+        "tool_call_id": "r1"
+      }
+    ],
+    "model": "mock:test",
+    "tool_names": [
+      "apply_patch",
+      "edit_file",
+      "read_file",
+      "shell"
+    ]
+  },
+  {
+    "messages": [
+      {
+        "content": "You are a test assistant.",
+        "role": "system"
+      },
+      {
+        "content": "# Relevant Memories\n\n\n\n## Relevant context from memory:\n- prefer small commits when refactoring the parser module\n- the parser module lives in src/parser and has golden tests\n",
+        "role": "system"
+      },
+      {
+        "content": "\n\n## Skills\n\n### refactor-helper\nKeep diffs small.\n\n",
+        "role": "system"
+      },
+      {
+        "content": "refactor the parser module",
+        "role": "user"
+      },
+      {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "arguments": {
+              "tag": "r1"
+            },
+            "id": "r1",
+            "name": "read_file"
+          }
+        ]
+      },
+      {
+        "content": "\"r1 lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet \"",
+        "role": "tool",
+        "tool_call_id": "r1"
+      },
+      {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "arguments": {
+              "tag": "r2"
+            },
+            "id": "r2",
+            "name": "read_file"
+          }
+        ]
+      },
+      {
+        "content": "\"r2 lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet \"",
+        "role": "tool",
+        "tool_call_id": "r2"
+      }
+    ],
+    "model": "mock:test",
+    "tool_names": [
+      "apply_patch",
+      "edit_file",
+      "read_file",
+      "shell"
+    ]
+  },
+  {
+    "messages": [
+      {
+        "content": "You are a test assistant.",
+        "role": "system"
+      },
+      {
+        "content": "refactor the parser module",
+        "role": "user"
+      },
+      {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "arguments": {
+              "tag": "r1"
+            },
+            "id": "r1",
+            "name": "read_file"
+          }
+        ]
+      },
+      {
+        "content": "\"r1 lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet \"",
+        "role": "tool",
+        "tool_call_id": "r1"
+      },
+      {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "arguments": {
+              "tag": "r2"
+            },
+            "id": "r2",
+            "name": "read_file"
+          }
+        ]
+      },
+      {
+        "content": "\"r2 lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet lorem ipsum dolor sit amet \"",
+        "role": "tool",
+        "tool_call_id": "r2"
+      },
+      {
+        "content": "answer 2",
+        "role": "assistant"
+      },
+      {
+        "content": "thanks, now add docs",
+        "role": "user"
+      }
+    ],
+    "model": "mock:test",
+    "tool_names": [
+      "apply_patch",
+      "edit_file",
+      "read_file",
+      "shell"
+    ]
+  }
+]

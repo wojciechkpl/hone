@@ -2023,12 +2023,14 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
         let mut error: Option<String> = None;
         let mut current_tool: Option<String> = None;
         let mut fallbacks = FallbackPrinter::default();
+        let mut receipts: Vec<hone_proto::ContextReceipt> = Vec::new();
 
         while let Some(event) = rx.recv().await {
             match event {
                 AgentEvent::Token { text } => {
                     response.push_str(&text);
                 }
+                AgentEvent::ContextAssembled { receipt } => receipts.push(receipt),
                 AgentEvent::ModelFallback {
                     requested,
                     fallback,
@@ -2056,11 +2058,11 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
             }
         }
 
-        (response, tool_calls, error, fallbacks.log)
+        (response, tool_calls, error, fallbacks.log, receipts)
     });
 
     let turn_result = agent.run_turn(prompt, tx).await;
-    let (response, tool_calls, error, fallbacks) = collector.await.unwrap_or_default();
+    let (response, tool_calls, error, fallbacks, receipts) = collector.await.unwrap_or_default();
     // One fresh agent per run, so the session's spend is this run's spend,
     // including model calls of a turn that failed or was cancelled.
     let spend = agent.session_spend().await;
@@ -2074,6 +2076,7 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
         model_id,
         &fallbacks,
     );
+    let output = attach_context(output, &receipts);
     println!("{}", serde_json::to_string_pretty(&output)?);
 
     if output["success"] != true {
@@ -2081,6 +2084,19 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
     }
 
     Ok(())
+}
+
+/// Add `"context": [receipt, ...]` (one per model call, in call order; `[]`
+/// when there are none) to the `--json` report. Other fields are unchanged.
+fn attach_context(
+    mut report: serde_json::Value,
+    receipts: &[hone_proto::ContextReceipt],
+) -> serde_json::Value {
+    let context = serde_json::to_value(receipts).unwrap_or_else(|_| serde_json::json!([]));
+    if let Some(map) = report.as_object_mut() {
+        map.insert("context".to_owned(), context);
+    }
+    report
 }
 
 /// Build the `--json` report. `usage` and `cost_usd` come from the session
@@ -7831,5 +7847,55 @@ mod tui_panic_restore_tests {
         assert!(other_thread_can_lock_stdout(
             std::time::Duration::from_secs(5)
         ));
+    }
+
+    // CR9 of docs/plans/context-receipts-spec.md. Seam (pure fn in main.rs; `run_json_mode`
+    // collects the `ContextAssembled` events and calls it on the report before printing):
+    //   fn attach_context(report: serde_json::Value, receipts: &[hone_proto::ContextReceipt])
+    //       -> serde_json::Value
+    // Adds `"context": [receipt, ...]` in call order (always present, `[]` when none) and
+    // leaves every other field unchanged.
+    fn cr9_receipt(turn: u32, call: u32) -> hone_proto::ContextReceipt {
+        hone_proto::ContextReceipt {
+            turn,
+            call,
+            model: "mock:test".to_owned(),
+            request_sha256: "ab".repeat(32),
+            blocks: vec![],
+            dropped: vec![],
+            compaction: vec![],
+            tools_offered: vec![],
+            history_len: 0,
+            history_root: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_cr9_json_report_should_carry_the_receipts_in_call_order() {
+        let report = serde_json::json!({ "response": "hi", "success": true });
+        let out = attach_context(report, &[cr9_receipt(1, 1), cr9_receipt(1, 2), cr9_receipt(2, 1)]);
+        let calls: Vec<(u64, u64)> = out["context"]
+            .as_array()
+            .expect("a context array")
+            .iter()
+            .map(|r| (r["turn"].as_u64().unwrap(), r["call"].as_u64().unwrap()))
+            .collect();
+        assert_eq!(calls, [(1, 1), (1, 2), (2, 1)]);
+        assert_eq!(out["response"], "hi", "other fields are untouched");
+        assert_eq!(out["success"], true);
+    }
+
+    #[test]
+    fn test_cr9_json_report_should_have_an_empty_context_array_without_receipts() {
+        let out = attach_context(serde_json::json!({ "response": "hi" }), &[]);
+        assert_eq!(out["context"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn test_cr9_attached_receipts_should_deserialise_back() {
+        let out = attach_context(serde_json::json!({}), &[cr9_receipt(3, 4)]);
+        let back: hone_proto::ContextReceipt =
+            serde_json::from_value(out["context"][0].clone()).unwrap();
+        assert_eq!((back.turn, back.call), (3, 4));
     }
 }
