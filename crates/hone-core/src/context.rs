@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
-use hone_proto::{Content, Message, Role};
+use hone_proto::{
+    CompactionStep, Content, Message, Role, Slot, SourceRef, StrategyId, canonical_json_sha256,
+    message_sha256,
+};
 use tiktoken_rs::CoreBPE;
 
 use crate::metrics::ContextMetrics;
@@ -534,6 +537,8 @@ pub struct ContextManager {
     content_hashes: HashMap<u64, usize>,
     phase_tracker: PhaseTracker,
     phase_compaction: bool,
+    /// What compaction changed since the log was last drained (for receipts).
+    compaction_log: Vec<CompactionStep>,
 }
 
 impl ContextManager {
@@ -549,6 +554,7 @@ impl ContextManager {
             content_hashes: HashMap::new(),
             phase_tracker: PhaseTracker::new(),
             phase_compaction: phase_compaction_from_env(),
+            compaction_log: Vec::new(),
         }
     }
 
@@ -565,6 +571,7 @@ impl ContextManager {
             content_hashes: HashMap::new(),
             phase_tracker: PhaseTracker::new(),
             phase_compaction: phase_compaction_from_env(),
+            compaction_log: Vec::new(),
         }
     }
 
@@ -624,6 +631,34 @@ impl ContextManager {
         self.phase_tracker.current_phase()
     }
 
+    /// Take the compaction steps recorded since the last call: phase,
+    /// graduated, dedup and drop-oldest changes to the stored history, each
+    /// with the hashes of the messages it replaced and of the message that took
+    /// their place. Indexes are positions in the stored history (the system
+    /// prompt, recall and skills blocks are not part of it).
+    pub fn drain_compaction_log(&mut self) -> Vec<CompactionStep> {
+        std::mem::take(&mut self.compaction_log)
+    }
+
+    fn log_step(
+        &mut self,
+        name: &str,
+        params: serde_json::Value,
+        replaced: Vec<SourceRef>,
+        derived: Option<SourceRef>,
+    ) {
+        self.compaction_log.push(CompactionStep {
+            strategy: StrategyId {
+                slot: Slot::History,
+                name: name.to_owned(),
+                version: env!("CARGO_PKG_VERSION").to_owned(),
+                params_sha256: canonical_json_sha256(&params),
+            },
+            replaced,
+            derived,
+        });
+    }
+
     /// Append a message to the conversation history, trimming old messages if
     /// the estimated token count exceeds the budget.
     ///
@@ -648,10 +683,19 @@ impl ContextManager {
                     if let Some(m) = &self.metrics {
                         m.record_dedup_hit();
                     }
-                    Message {
+                    let original = message_ref(idx, &message);
+                    let pointer = Message {
                         content: Content::Text(summary),
                         ..message
-                    }
+                    };
+                    let derived = message_ref(idx, &pointer);
+                    self.log_step(
+                        "dedup",
+                        serde_json::json!({}),
+                        vec![original],
+                        Some(derived),
+                    );
+                    pointer
                 } else {
                     self.content_hashes.insert(hash, idx);
                     message
@@ -689,6 +733,7 @@ impl ContextManager {
         // Step 2: drop oldest non-preserved messages until under budget.
         let dropped_before = self.dropped_count;
         let recent_window = self.config.recent_window;
+        let mut removed_refs: Vec<SourceRef> = Vec::new();
         loop {
             if self.total_tokens() <= self.max_context_tokens {
                 break;
@@ -704,6 +749,7 @@ impl ContextManager {
             };
 
             let removed = self.messages.remove(idx);
+            removed_refs.push(message_ref(idx, &removed));
             self.record_dropped_message(removed);
         }
 
@@ -715,7 +761,15 @@ impl ContextManager {
         }
 
         // Step 3: emit a summary marker.
-        self.flush_dropped_summary();
+        let marker = self.flush_dropped_summary();
+        if !removed_refs.is_empty() {
+            self.log_step(
+                "drop_oldest",
+                serde_json::json!({ "recent_window": recent_window }),
+                removed_refs,
+                marker,
+            );
+        }
     }
 
     /// Graduated tool result compression.
@@ -769,7 +823,19 @@ impl ContextManager {
                         )
                     };
 
+                    let before = message_ref(i, &self.messages[i]);
                     self.messages[i].content = Content::Text(compressed);
+                    let after = message_ref(i, &self.messages[i]);
+                    self.log_step(
+                        "graduated",
+                        serde_json::json!({
+                            "oneliner_age": oneliner_age,
+                            "recent_window": self.config.recent_window,
+                            "summary_age": summary_age,
+                        }),
+                        vec![before],
+                        Some(after),
+                    );
                     if let Some(m) = &self.metrics {
                         m.record_compression();
                     }
@@ -800,7 +866,15 @@ impl ContextManager {
                 continue;
             }
             let path = self.call_paths_for(i).into_iter().next();
+            let before = message_ref(i, &self.messages[i]);
             self.messages[i].content = Content::Text(structural_summary(&text, path.as_deref()));
+            let after = message_ref(i, &self.messages[i]);
+            self.log_step(
+                "phase",
+                serde_json::json!({ "recent_window": self.config.recent_window }),
+                vec![before],
+                Some(after),
+            );
             if let Some(m) = &self.metrics {
                 m.record_compression();
             }
@@ -848,9 +922,9 @@ impl ContextManager {
     /// Emit a "[session history: …]" system message summarising every message
     /// dropped in this trim pass.  Replaces any existing summary marker to
     /// avoid duplicates.
-    fn flush_dropped_summary(&mut self) {
+    fn flush_dropped_summary(&mut self) -> Option<SourceRef> {
         if self.dropped_count == 0 {
-            return;
+            return None;
         }
 
         let summary = format!(
@@ -878,18 +952,18 @@ impl ContextManager {
             0
         };
 
-        self.messages.insert(
-            insert_at,
-            Message {
-                role: Role::System,
-                content: Content::Text(summary),
-                tool_calls: vec![],
-                tool_call_id: None,
-            },
-        );
+        let marker = Message {
+            role: Role::System,
+            content: Content::Text(summary),
+            tool_calls: vec![],
+            tool_call_id: None,
+        };
+        let marker_ref = message_ref(insert_at, &marker);
+        self.messages.insert(insert_at, marker);
 
         self.dropped_count = 0;
         self.dropped_role_hints.clear();
+        Some(marker_ref)
     }
 
     /// Build the full message list for a completion request.
@@ -1006,6 +1080,7 @@ impl ContextManager {
     /// Remove all stored messages (system prompt is re-supplied at build time).
     pub fn clear(&mut self) {
         self.messages.clear();
+        self.compaction_log.clear();
     }
 
     /// Number of non-system messages stored.
@@ -1145,6 +1220,14 @@ fn prefix(text: &str, max_bytes: usize) -> &str {
 // ---------------------------------------------------------------------------
 // Graduated compression helpers
 // ---------------------------------------------------------------------------
+
+/// A `Message` source ref for the message at `index`, hashed as it is now.
+fn message_ref(index: usize, message: &Message) -> SourceRef {
+    SourceRef::Message {
+        index,
+        sha256: message_sha256(message),
+    }
+}
 
 /// Check if text is already compressed by a previous pass.
 fn is_already_compressed(text: &str) -> bool {

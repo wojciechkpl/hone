@@ -17,6 +17,7 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
+use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
 use crate::context::{ContextManager, estimate_text_tokens};
 use crate::context_injector::{ContextInjector, SkeletonStrategy};
 use crate::cost::CostAccumulator;
@@ -622,6 +623,8 @@ pub struct Agent {
     cost: CostAccumulator,
     /// Monotonically increasing counter of completed turns this session.
     turn_count: u32,
+    /// Inputs of the current turn's context receipts (recall, skills, injection).
+    receipt_info: TurnContextInfo,
     metrics: Arc<ContextMetrics>,
     /// Per-turn guard state (reset at the top of each `run_turn` call).
     guards: TurnGuards,
@@ -693,6 +696,7 @@ impl Agent {
             context,
             cost: CostAccumulator::new(),
             turn_count: 0,
+            receipt_info: TurnContextInfo::default(),
             metrics,
             guards: TurnGuards::default(),
             error_event_sent: false,
@@ -779,13 +783,27 @@ impl Agent {
         self.metrics.snapshot()
     }
 
+    /// Names of the skills whose triggers match `prompt` (for context receipts).
+    fn matched_skill_names(&self, prompt: &str) -> Vec<String> {
+        self.config.skills.as_ref().map_or_else(Vec::new, |reg| {
+            reg.matching(prompt)
+                .into_iter()
+                .map(|s| s.name.clone())
+                .collect()
+        })
+    }
+
     /// Query the memory store for entries relevant to `query` and format them
     /// as an appendix for the system prompt.  Returns the prompt appendix and
     /// (id, snippet) pairs for the `MemoryRecalled` event.  Returns empty
     /// values when no store is configured or no relevant memories exist.
-    async fn fetch_relevant_memories(&self, query: &str) -> (String, Vec<(String, String)>) {
+    async fn fetch_relevant_memories(
+        &self,
+        query: &str,
+    ) -> (String, Vec<(String, String)>, RecallInfo) {
+        let started = std::time::Instant::now();
         let Some(store) = &self.config.memory_store else {
-            return (String::new(), vec![]);
+            return (String::new(), vec![], RecallInfo::default());
         };
 
         let memory_query = MemoryQuery {
@@ -816,7 +834,6 @@ impl Agent {
                                 .into_iter()
                                 .map(|s| s.memory)
                                 .filter(|m| m.kind != hone_memory::MemoryKind::Outcome)
-                                .take(5)
                                 .collect()
                         })
                         .unwrap_or_default(),
@@ -826,12 +843,21 @@ impl Agent {
                 Vec::new()
             };
 
+        // Candidates fetched and then cut, for the context receipt.
+        let mut cut_ids: Vec<String> = Vec::new();
+        let semantic = !semantic_memories.is_empty();
+        let mut semantic_memories = semantic_memories;
+        if semantic_memories.len() > 5 {
+            cut_ids.extend(semantic_memories.split_off(5).into_iter().map(|m| m.id));
+        }
+
         // Fuse via RRF when both signals are present; otherwise use whichever is non-empty
         let final_memories: Vec<hone_memory::Memory> = if !semantic_memories.is_empty() {
             let bm25_ids: Vec<String> = bm25_memories.iter().map(|m| m.id.clone()).collect();
             let semantic_ids: Vec<String> =
                 semantic_memories.iter().map(|m| m.id.clone()).collect();
             let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], 60);
+            cut_ids.extend(fused_ids.iter().skip(5).cloned());
             let mut by_id: std::collections::HashMap<String, hone_memory::Memory> =
                 std::collections::HashMap::new();
             for m in bm25_memories
@@ -850,8 +876,17 @@ impl Agent {
         };
 
         if final_memories.is_empty() {
-            return (String::new(), vec![]);
+            return (String::new(), vec![], RecallInfo::default());
         }
+        let info = RecallInfo {
+            ids: final_memories.iter().map(|m| m.id.clone()).collect(),
+            semantic,
+            dropped: cut_ids
+                .into_iter()
+                .filter(|id| !final_memories.iter().any(|m| &m.id == id))
+                .collect(),
+            duration_ms: started.elapsed().as_millis().min(u128::from(u32::MAX)) as u32,
+        };
 
         let entries: Vec<(String, String)> = final_memories
             .iter()
@@ -866,7 +901,7 @@ impl Agent {
         for mem in &final_memories {
             prompt.push_str(&format!("- {}\n", mem.content));
         }
-        (prompt, entries)
+        (prompt, entries, info)
     }
 
     /// Record a classified memory candidate (fire-and-forget; errors are
@@ -1274,7 +1309,14 @@ impl Agent {
         };
 
         // Fetch memories before adding the user message so the query is clean.
-        let (memories, memory_entries) = self.fetch_relevant_memories(user_input).await;
+        let (memories, memory_entries, recall_info) =
+            self.fetch_relevant_memories(user_input).await;
+        // Inputs of this turn's context receipts.
+        self.receipt_info = TurnContextInfo {
+            recall: recall_info,
+            skills: self.matched_skill_names(user_input),
+            injection: None,
+        };
         if !memory_entries.is_empty() {
             let _ = events
                 .send(AgentEvent::MemoryRecalled {
@@ -1309,6 +1351,11 @@ impl Agent {
                         budget = injection.exploration_budget,
                         "context injection applied"
                     );
+                    self.receipt_info.injection = Some(InjectionInfo {
+                        strategy: self.config.skeleton_strategy.as_str().to_string(),
+                        tokens: estimate_text_tokens(&injection.context_block),
+                        hits: injection.bm25_hits.clone(),
+                    });
                     // Skeletons and snippets can carry secret-shaped names or text.
                     let block = redacted_text(self.redacting(), &injection.context_block);
                     std::borrow::Cow::Owned(format!("{block}\n\n---\n\n{user_input}"))
@@ -1363,6 +1410,13 @@ impl Agent {
         // - doom-loop warning fires at most once so we don't spam the model.
         let mut context_emergency = false;
         let mut doom_loop_warned = false;
+        // 1-based count of model calls made this turn (for context receipts).
+        let mut model_call: u32 = 0;
+        // Tool calls of the current round that feed the phase tracker, applied
+        // at the start of the next iteration, after the round's results are in
+        // the history: the newest results then sit inside the recent window and
+        // only older ones are compacted.
+        let mut pending_phase: Vec<(String, serde_json::Value)> = Vec::new();
 
         // We loop so that tool call → model follow-up cycles are handled
         // transparently.
@@ -1370,6 +1424,10 @@ impl Agent {
             // Nobody is listening any more: stop before spending another model call.
             if events.is_closed() {
                 return Err(AgentError::Cancelled);
+            }
+
+            for (name, args) in pending_phase.drain(..) {
+                self.context.notify_tool_use(&name, &args);
             }
 
             // --- Pre-LLM safety checks ----------------------------------
@@ -1481,6 +1539,28 @@ impl Agent {
             } else {
                 self.config.tools.schemas()
             };
+
+            // Context receipt: what this call is given, sent before the request.
+            model_call += 1;
+            {
+                let tool_names: Vec<String> =
+                    request.tools.iter().map(|t| t.name.clone()).collect();
+                let recall_at = (!memories.is_empty()).then_some(1);
+                let skills_at =
+                    (!skills_block.is_empty()).then_some(if memories.is_empty() { 1 } else { 2 });
+                let receipt = crate::receipts::build_receipt(
+                    self.turn_count,
+                    model_call,
+                    &request.model.to_string(),
+                    &request.messages,
+                    &tool_names,
+                    recall_at,
+                    skills_at,
+                    &self.receipt_info,
+                    self.context.drain_compaction_log(),
+                );
+                let _ = events.send(AgentEvent::ContextAssembled { receipt }).await;
+            }
 
             let retry_cfg = self.config.retry_config.clone();
             let provider = Arc::clone(&self.config.provider);
@@ -1947,8 +2027,9 @@ impl Agent {
                             tool_calls_count += 1;
                             tracing::debug!(tool_name = %call.name, "tool dispatched (parallel)");
                             // Phase tracking: once per call that really ran, in
-                            // call order, before its result enters the history.
-                            self.context.notify_tool_use(&call.name, &call.arguments);
+                            // call order; applied once the round's results are
+                            // in the history (see `pending_phase`).
+                            pending_phase.push((call.name.clone(), call.arguments.clone()));
 
                             // Guard: record successful read_file calls so we know
                             // which files have been read before any subsequent
@@ -2598,7 +2679,7 @@ impl Agent {
                     // Phase tracking: the call ran (even if it returned a tool
                     // error); a cancelled one returned above and does not count.
                     if tool_found {
-                        self.context.notify_tool_use(&call.name, &call.arguments);
+                        pending_phase.push((call.name.clone(), call.arguments.clone()));
                     }
 
                     match result {
@@ -2898,7 +2979,13 @@ impl Agent {
         self.cost.check_budget(self.config.budget_limit)?;
         let cost_before_turn = self.cost.total_usd();
 
-        let (memories, memory_entries) = self.fetch_relevant_memories(&text_for_memory).await;
+        let (memories, memory_entries, recall_info) =
+            self.fetch_relevant_memories(&text_for_memory).await;
+        self.receipt_info = TurnContextInfo {
+            recall: recall_info,
+            skills: self.matched_skill_names(&text_for_memory),
+            injection: None,
+        };
         if !memory_entries.is_empty() {
             let _ = events
                 .send(AgentEvent::MemoryRecalled {

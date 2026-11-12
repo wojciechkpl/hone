@@ -2023,12 +2023,14 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
         let mut error: Option<String> = None;
         let mut current_tool: Option<String> = None;
         let mut fallbacks = FallbackPrinter::default();
+        let mut receipts: Vec<hone_proto::ContextReceipt> = Vec::new();
 
         while let Some(event) = rx.recv().await {
             match event {
                 AgentEvent::Token { text } => {
                     response.push_str(&text);
                 }
+                AgentEvent::ContextAssembled { receipt } => receipts.push(receipt),
                 AgentEvent::ModelFallback {
                     requested,
                     fallback,
@@ -2056,11 +2058,11 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
             }
         }
 
-        (response, tool_calls, error, fallbacks.log)
+        (response, tool_calls, error, fallbacks.log, receipts)
     });
 
     let turn_result = agent.run_turn(prompt, tx).await;
-    let (response, tool_calls, error, fallbacks) = collector.await.unwrap_or_default();
+    let (response, tool_calls, error, fallbacks, receipts) = collector.await.unwrap_or_default();
     // One fresh agent per run, so the session's spend is this run's spend,
     // including model calls of a turn that failed or was cancelled.
     let spend = agent.session_spend().await;
@@ -2074,6 +2076,7 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
         model_id,
         &fallbacks,
     );
+    let output = attach_context(output, &receipts);
     println!("{}", serde_json::to_string_pretty(&output)?);
 
     if output["success"] != true {
@@ -2081,6 +2084,19 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
     }
 
     Ok(())
+}
+
+/// Add `"context": [receipt, ...]` (one per model call, in call order; `[]`
+/// when there are none) to the `--json` report. Other fields are unchanged.
+fn attach_context(
+    mut report: serde_json::Value,
+    receipts: &[hone_proto::ContextReceipt],
+) -> serde_json::Value {
+    let context = serde_json::to_value(receipts).unwrap_or_else(|_| serde_json::json!([]));
+    if let Some(map) = report.as_object_mut() {
+        map.insert("context".to_owned(), context);
+    }
+    report
 }
 
 /// Build the `--json` report. `usage` and `cost_usd` come from the session

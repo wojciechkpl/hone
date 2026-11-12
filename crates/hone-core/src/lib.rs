@@ -8,6 +8,7 @@ pub mod clarify;
 mod code_mode;
 pub mod complexity;
 mod context;
+mod receipts;
 pub mod context_injector;
 mod cost;
 pub mod doom_loop;
@@ -51,7 +52,7 @@ pub use code_mode::{CodeModeOutput, CodeModeRunner};
 pub use complexity::{ComplexityClassifier, ComplexityTier};
 pub use context::{
     CONTEXT_WINDOW_ENV, ContextConfig, ContextManager, MAX_CONTEXT_WINDOW, MIN_CONTEXT_WINDOW,
-    TaskPhase, ToolPhaseKind, classify_tool_call, parse_context_window,
+    TaskPhase, ToolPhaseKind, classify_tool_call, estimate_text_tokens, parse_context_window,
 };
 pub use context_injector::{
     ContextInjector, InjectionResult, RetrievalConfidence, SkeletonStrategy,

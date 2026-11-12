@@ -131,6 +131,7 @@ fn make_sse_event(event: AgentEvent, id: u64) -> Event {
         AgentEvent::ModelInfo { .. } => "model_info",
         AgentEvent::ToolCallPaused { .. } => "tool_call_paused",
         AgentEvent::ContextInjected { .. } => "context_injected",
+        AgentEvent::ContextAssembled { .. } => "context_assembled",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
         AgentEvent::ModelFallback { .. } => "model_fallback",
         _ => "unknown",
