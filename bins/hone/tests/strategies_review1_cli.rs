@@ -314,3 +314,29 @@ fn test_s16_text_should_show_parameter_origins_and_floats_as_written() {
     );
     assert!(s.contains("builtin"), "the registry origin: {s}");
 }
+
+// ---- S16: a project budget cap is shown -------------------------------------------------------------------------------
+
+#[test]
+fn test_s16_a_project_budget_ratio_should_show_as_a_budget_cap_with_its_file() {
+    let e = Env::new();
+    e.user_config("http://127.0.0.1:9", "");
+    let project = e.project_config("[context]\nbudget_ratio = 0.4\n");
+
+    let out = e.run(&[], &["strategies", "--json"]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let v: Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    let compactor = slot(&v, "context.compactor");
+    assert_eq!(compactor["params"]["budget_cap"], json!(0.4), "{compactor}");
+    assert_eq!(
+        compactor["param_origins"]["budget_cap"],
+        format!("file:{}", path_str(&project)),
+        "{compactor}"
+    );
+
+    let out = e.run(&[], &["strategies"]);
+    let s = text(&out.stdout);
+    assert!(s.contains("budget_cap"), "{s}");
+    assert!(s.contains(&path_str(&project)), "the file that set the cap:\n{s}");
+}

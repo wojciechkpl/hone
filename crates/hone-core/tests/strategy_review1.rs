@@ -197,3 +197,23 @@ async fn test_s21_the_history_block_should_name_the_compactor_with_the_phase_par
     }
 }
 
+
+#[tokio::test]
+async fn test_s21_trim_only_should_report_phase_off_whatever_the_phase_setting() {
+    // trim-only never runs phase compaction, so the receipt must not claim it does.
+    let toml = "[context]\ncompactor = \"trim-only\"\n[context.graduated]\nphase = true\n";
+    let (_, _, events) = run_agent(resolve(Some(toml), None), vec![], "hello").await;
+
+    let receipt = first_receipt(&events);
+    let history = receipt
+        .blocks
+        .iter()
+        .find(|b| b.slot == Slot::History)
+        .expect("a History block");
+    assert_eq!(history.strategy.name, "trim-only");
+    assert_eq!(
+        history.strategy.params_sha256,
+        sha256_hex(br#"{"phase":false}"#),
+        "trim-only with phase = true still reports {{\"phase\":false}}"
+    );
+}
