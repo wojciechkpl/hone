@@ -432,3 +432,67 @@ fn test_k3a_a_runner_that_only_builds_or_lists_tests_should_be_a_read() {
         ToolPhaseKind::Test
     );
 }
+
+// ---- K15: matcher details (review round 2) -------------------------------------------------
+
+#[test]
+fn test_k15_make_test_targets_and_check_should_be_tests() {
+    for cmd in [
+        "make test",
+        "make test-unit",
+        "make check",
+        "make -j4 test",
+        "cd app && make test-integration",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Test, "{cmd:?}");
+    }
+    for cmd in ["make build", "make", "make install", "make lint"] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Read, "{cmd:?}");
+    }
+}
+
+#[test]
+fn test_k15_timeout_options_should_be_skipped_before_the_duration() {
+    for cmd in [
+        "timeout -s KILL 30 cargo test",
+        "timeout -k 5 30 pytest",
+        "timeout -s KILL -k 5 600 cargo test",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Test, "{cmd:?}");
+    }
+}
+
+#[test]
+fn test_k15_shell_wrappers_with_flags_before_dash_c_should_be_unwrapped() {
+    for cmd in [
+        "bash -x -c 'cargo test'",
+        "bash -lc \"pytest\"",
+        "sh -e -c 'npm test'",
+        "zsh -x -c 'cd a && cargo test'",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Test, "{cmd:?}");
+    }
+    for cmd in ["bash -x -c 'cargo build'", "bash -lc \"echo cargo test\""] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Read, "{cmd:?}");
+    }
+}
+
+#[test]
+fn test_k15_env_options_should_be_skipped() {
+    for cmd in [
+        "env -u FOO cargo test",
+        "env -i cargo test",
+        "env -i FOO=1 pytest",
+        "env -u A -u B cargo test",
+    ] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Test, "{cmd:?}");
+    }
+}
+
+#[test]
+fn test_k15_go_test_list_should_be_a_read() {
+    for cmd in ["go test -list .", "go test -list . ./...", "go test ./... -list Foo"] {
+        assert_eq!(kind_of_shell(cmd), ToolPhaseKind::Read, "{cmd:?}");
+    }
+    assert_eq!(kind_of_shell("go test ./..."), ToolPhaseKind::Test);
+}
