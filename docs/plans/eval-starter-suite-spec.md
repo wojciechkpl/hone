@@ -31,3 +31,16 @@ flowchart LR
 
 - Running the suite against a model.
 - SWE-bench-style tasks (that's `benchmarks/harness-compare`).
+
+## Review round 2 (T7–T12)
+
+Review reproduced six ways to pass coding checks without fixing anything, all through files the agent leaves in its working copy: a `unittest.py` / `unittest/__main__.py` shadowing the stdlib; an `UNCHECKED_HASH` `.pyc` of a gutted test in `__pycache__`; the module under test disarming `assertEqual` / `node:assert`; a `.cargo/config.toml` `runner = "true"`; a `build.rs` rewriting the tests; and `EVAL_SUITE_DIR` visible to agent code.
+
+| Row | Behaviour |
+|---|---|
+| T7 | **Checks run in a fresh directory.** Each coding check copies only an allowlist of solution files (per task, e.g. `stats.py`, `src/**/*.rs`) from the agent's copy into a fresh temp directory, adds the pristine tests and project files from `checks/data/<id>/`, and runs there. Nothing else from the agent's copy (`.cargo/`, `build.rs`, `__pycache__`, shadow modules, symlinks) reaches the run. |
+| T8 | **Interpreters run isolated.** Python runs with `-I` and a fresh `PYTHONPYCACHEPREFIX`; `EVAL_SUITE_DIR` is unset before any agent code runs; Node runs with no `NODE_OPTIONS`/`NODE_PATH`. |
+| T9 | **Behaviour is probed out of process.** c01, c02, c04, c05, c07 and c08 each add one probe with held-out inputs (not in the test file), run in a separate process that only imports the solution, so in-process assertion patching can't pass the check. |
+| T10 | **Every cheat above is a guarded self-test.** Each becomes a `checks/cheats/<id>/<name>/` entry that `verify.sh` must see rejected. |
+| T11 | **The watchdog kills the whole check.** Each check runs in its own process group (where available) and a timeout kills the group, or the watchdog is awaited rather than killed mid-recursion; a check that spawns background sleepers leaves nothing running after a timeout, on macOS and Linux (dash). |
+| T12 | **n01's size cap uses the suite's notes.** The cap is computed from the pristine `n01-summarise-notes/notes/`, not the agent's copy. The README notes that c03/c06 helpers must be module-level bindings looked up at call time, and T5 requires 0 skipped tasks for every installed toolchain. |
