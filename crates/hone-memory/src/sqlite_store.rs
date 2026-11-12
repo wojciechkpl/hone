@@ -393,98 +393,83 @@ impl SqliteStore {
     }
 }
 
-#[async_trait]
-impl MemoryStore for SqliteStore {
-    async fn record(&self, memory: Memory) -> Result<(), MemoryError> {
-        let tags_json = serde_json::to_string(&memory.tags)?;
-        let created_at = memory.created_at as i64;
-        let decay_at = memory.decay_at.map(|t| t as i64);
-        let kind_str = kind_to_str(memory.kind);
-        let embedding_bytes = memory.embedding.as_deref().map(embedding_to_bytes);
-
-        sqlx::query(
-            "INSERT OR REPLACE INTO memories
-             (id, content, tags, weight, created_at, decay_at, kind, description, embedding)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        )
-        .bind(&memory.id)
-        .bind(&memory.content)
-        .bind(&tags_json)
-        .bind(memory.weight)
-        .bind(created_at)
-        .bind(decay_at)
-        .bind(kind_str)
-        .bind(&memory.description)
-        .bind(embedding_bytes)
-        .execute(&self.pool)
-        .await
-        .map_err(to_io_err)?;
-
-        Ok(())
-    }
-
-    async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
-        // Fetch memories from the database — BM25 scoring happens in Rust.
-        // For non-empty queries we cap at MAX_RECALL_CORPUS most-recent rows to
-        // bound memory and CPU usage; see the const-level doc comment for the
-        // IDF tradeoff.  For empty-query enumeration (e.g. render_index) the cap
-        // has no purpose — BM25 is skipped entirely — so we honour query.limit
-        // directly.
-        //
-        // When query.kind is Some(k), we add a WHERE kind = ? clause so the kind
-        // filter is applied in the database BEFORE the LIMIT (pre-limit filter).
-        let effective_limit = if query.text.is_empty() {
+impl SqliteStore {
+    /// `recall` / `recall_excluding`. For a non-empty query the corpus is the
+    /// most recent `MAX_RECALL_CORPUS` rows that pass the kind filter and the
+    /// exclusions (both applied in SQL, before the cap); BM25 ranks that corpus
+    /// and the best `query.limit` are returned. An empty query enumerates the
+    /// newest `query.limit` rows with no ranking.
+    async fn recall_with_exclusions(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let fetch_limit = if query.text.is_empty() {
             query.limit
         } else {
-            query.limit.min(MAX_RECALL_CORPUS)
+            MAX_RECALL_CORPUS
         };
 
-        let memories: Vec<Memory> = if let Some(kind) = query.kind {
-            let kind_str = kind_to_str(kind);
-            let rows = sqlx::query(
-                "SELECT id, content, tags, weight, created_at, decay_at, kind, description, embedding
-                 FROM memories
-                 WHERE kind = ?1
-                 ORDER BY created_at DESC
-                 LIMIT ?2",
-            )
-            .bind(kind_str)
-            .bind(effective_limit.min(i64::MAX as usize) as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(to_io_err)?;
-
-            rows.iter()
-                .filter_map(|row| match row_to_memory(row) {
-                    Ok(m) => Some(m),
-                    Err(e) => {
-                        tracing::warn!(error = ?e, "skipping memory row that failed to deserialize");
-                        None
-                    }
+        // Only placeholders are built into the SQL; every value is bound.
+        let mut conditions: Vec<String> = Vec::new();
+        let mut n = 0;
+        if query.kind.is_some() {
+            n += 1;
+            conditions.push(format!("kind = ?{n}"));
+        }
+        if !exclude.is_empty() {
+            let marks: Vec<String> = exclude
+                .iter()
+                .map(|_| {
+                    n += 1;
+                    format!("?{n}")
                 })
-                .collect()
+                .collect();
+            conditions.push(format!("kind NOT IN ({})", marks.join(", ")));
+        }
+        let where_clause = if conditions.is_empty() {
+            String::new()
         } else {
-            let rows = sqlx::query(
-                "SELECT id, content, tags, weight, created_at, decay_at, kind, description, embedding
-                 FROM memories
-                 ORDER BY created_at DESC
-                 LIMIT ?",
-            )
-            .bind(effective_limit.min(i64::MAX as usize) as i64)
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+        // The BM25 corpus does not need the (large) embedding column; an
+        // enumeration returns the memories themselves, embedding included.
+        let columns = if query.text.is_empty() {
+            "id, content, tags, weight, created_at, decay_at, kind, description, embedding"
+        } else {
+            "id, content, tags, weight, created_at, decay_at, kind, description"
+        };
+        let sql = format!(
+            "SELECT {columns}
+             FROM memories
+             {where_clause}
+             ORDER BY created_at DESC
+             LIMIT ?{}",
+            n + 1
+        );
+        let mut q = sqlx::query(&sql);
+        if let Some(kind) = query.kind {
+            q = q.bind(kind_to_str(kind));
+        }
+        for kind in exclude {
+            q = q.bind(kind_to_str(*kind));
+        }
+        let rows = q
+            .bind(fetch_limit.min(i64::MAX as usize) as i64)
             .fetch_all(&self.pool)
             .await
             .map_err(to_io_err)?;
 
-            rows.iter()
-                .filter_map(|row| match row_to_memory(row) {
-                    Ok(m) => Some(m),
-                    Err(e) => {
-                        tracing::warn!(error = ?e, "skipping memory row that failed to deserialize");
-                        None
-                    }
-                })
-                .collect()
-        };
+        let memories: Vec<Memory> = rows
+            .iter()
+            .filter_map(|row| match row_to_memory(row) {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    tracing::warn!(error = ?e, "skipping memory row that failed to deserialize");
+                    None
+                }
+            })
+            .collect();
 
         // Empty-query short-circuit: return all memories ordered by weight.
         if query.text.is_empty() {
@@ -525,13 +510,82 @@ impl MemoryStore for SqliteStore {
 
         scored.sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
 
-        let results = scored
+        let mut results: Vec<Memory> = scored
             .into_iter()
             .take(query.limit)
             .map(|(_, m)| m)
             .collect();
 
+        // The corpus was read without the embedding column; load the vectors of
+        // the memories actually returned, in one bound query.
+        if !results.is_empty() {
+            let marks: Vec<String> = (1..=results.len()).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "SELECT id, embedding FROM memories WHERE id IN ({})",
+                marks.join(", ")
+            );
+            let mut q = sqlx::query(&sql);
+            for m in &results {
+                q = q.bind(&m.id);
+            }
+            let rows = q.fetch_all(&self.pool).await.map_err(to_io_err)?;
+            let mut by_id: std::collections::HashMap<String, Vec<f32>> = rows
+                .iter()
+                .filter_map(|row| {
+                    let id: String = row.try_get("id").ok()?;
+                    let bytes: Vec<u8> = row.try_get::<Option<Vec<u8>>, _>("embedding").ok()??;
+                    Some((id, bytes_to_embedding(&bytes)))
+                })
+                .collect();
+            for m in &mut results {
+                m.embedding = by_id.remove(&m.id);
+            }
+        }
+
         Ok(results)
+    }
+}
+
+#[async_trait]
+impl MemoryStore for SqliteStore {
+    async fn record(&self, memory: Memory) -> Result<(), MemoryError> {
+        let tags_json = serde_json::to_string(&memory.tags)?;
+        let created_at = memory.created_at as i64;
+        let decay_at = memory.decay_at.map(|t| t as i64);
+        let kind_str = kind_to_str(memory.kind);
+        let embedding_bytes = memory.embedding.as_deref().map(embedding_to_bytes);
+
+        sqlx::query(
+            "INSERT OR REPLACE INTO memories
+             (id, content, tags, weight, created_at, decay_at, kind, description, embedding)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        )
+        .bind(&memory.id)
+        .bind(&memory.content)
+        .bind(&tags_json)
+        .bind(memory.weight)
+        .bind(created_at)
+        .bind(decay_at)
+        .bind(kind_str)
+        .bind(&memory.description)
+        .bind(embedding_bytes)
+        .execute(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+
+        Ok(())
+    }
+
+    async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
+        self.recall_with_exclusions(query, &[]).await
+    }
+
+    async fn recall_excluding(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+    ) -> Result<Vec<Memory>, MemoryError> {
+        self.recall_with_exclusions(query, exclude).await
     }
 
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {

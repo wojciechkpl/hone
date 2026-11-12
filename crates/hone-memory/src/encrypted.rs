@@ -36,7 +36,7 @@ use async_trait::async_trait;
 
 use crate::error::MemoryError;
 use crate::store::MemoryStore;
-use crate::types::{Memory, MemoryFilter, MemoryQuery};
+use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
 
 /// The old fixed salt.  Kept as `LEGACY_SALT` so that any tests or tooling
 /// that were built against the old API have a named constant to reference.
@@ -151,21 +151,15 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
         }
         Ok(memory)
     }
-}
 
-#[async_trait]
-impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
-    async fn record(&self, memory: Memory) -> Result<(), MemoryError> {
-        let encrypted = self.encrypt_memory(memory)?;
-        self.inner.record(encrypted).await
-    }
-
-    async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
-        let result = self.inner.recall_by_id(id).await?;
-        result.map(|m| self.decrypt_memory(m)).transpose()
-    }
-
-    async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
+    /// `recall` / `recall_excluding`: fetch every memory of the wanted kinds
+    /// (the inner store applies the kind filter and the exclusions), decrypt,
+    /// then filter on the text.
+    async fn recall_filtered(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+    ) -> Result<Vec<Memory>, MemoryError> {
         // Note: encrypted content cannot be searched server-side. We fetch all
         // and filter in-memory after decryption. For typical memory stores
         // (< 10K entries) this is acceptable.
@@ -174,7 +168,7 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
             limit: 10_000,
             kind: query.kind, // push kind filter into the inner store
         };
-        let encrypted_memories = self.inner.recall(&all_query).await?;
+        let encrypted_memories = self.inner.recall_excluding(&all_query, exclude).await?;
 
         let query_lower = query.text.to_lowercase();
         let mut results: Vec<Memory> = Vec::new();
@@ -194,6 +188,31 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
         }
 
         Ok(results)
+    }
+}
+
+#[async_trait]
+impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
+    async fn record(&self, memory: Memory) -> Result<(), MemoryError> {
+        let encrypted = self.encrypt_memory(memory)?;
+        self.inner.record(encrypted).await
+    }
+
+    async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
+        let result = self.inner.recall_by_id(id).await?;
+        result.map(|m| self.decrypt_memory(m)).transpose()
+    }
+
+    async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
+        self.recall_filtered(query, &[]).await
+    }
+
+    async fn recall_excluding(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+    ) -> Result<Vec<Memory>, MemoryError> {
+        self.recall_filtered(query, exclude).await
     }
 
     async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
