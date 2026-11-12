@@ -3431,17 +3431,28 @@ pub struct RunSettings {
 pub struct AgentHandle {
     cmd_tx: mpsc::Sender<AgentCommand>,
     context_tokens_cache: Arc<AtomicU32>,
+    /// Identifies the agent's receipt ordinals (see `context_receipts_after`).
+    agent_id: Arc<str>,
 }
 
 impl AgentHandle {
+    /// The id of the agent behind this handle, as in `ReceiptBatch::agent_id`
+    /// (stable for the agent's life, distinct between agents).
+    pub fn agent_id(&self) -> &str {
+        &self.agent_id
+    }
+
     /// Spawn an agent actor task and return a handle to it.
     pub fn spawn(config: AgentConfig) -> Self {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<AgentCommand>(32);
         let context_tokens_cache = Arc::new(AtomicU32::new(0));
         let tokens_writer = Arc::clone(&context_tokens_cache);
+        let agent_id: Arc<str> = Arc::from(uuid::Uuid::now_v7().to_string());
+        let actor_agent_id = agent_id.to_string();
 
         tokio::spawn(async move {
             let mut agent = Agent::new(config);
+            agent.receipt_agent_id = actor_agent_id;
             while let Some(cmd) = cmd_rx.recv().await {
                 match cmd {
                     AgentCommand::RunTurn {
@@ -3564,6 +3575,7 @@ impl AgentHandle {
         Self {
             cmd_tx,
             context_tokens_cache,
+            agent_id,
         }
     }
 

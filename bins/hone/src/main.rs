@@ -2206,10 +2206,7 @@ async fn auto_save_session(agent: &AgentHandle, name: Option<&str>) {
                     .map(|(_, _, o)| *o)
             })
         };
-        // The agent id isn't known before asking; ask for everything after 0
-        // only when nothing is tracked, else after the tracked ordinal.
-        let probe = agent.context_receipts_after(u64::MAX).await;
-        let after = find(&probe.agent_id).unwrap_or(0);
+        let after = find(agent.agent_id()).unwrap_or(0);
         let batch = agent.context_receipts_after(after).await;
         if let Some(last) = batch.items.last().map(|(o, _)| *o) {
             match store.append_context_receipts(&resolved_name, &batch).await {
