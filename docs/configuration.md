@@ -826,6 +826,8 @@ Don't attach audit logs or receipts from private work to public bug reports.
 
 **What the request hash covers.** `request_sha256` covers the messages and the names of the tools offered, not tool schemas or sampling parameters.
 
+**Reading history refs.** A receipt lists only the history messages that are new or changed since the agent's previous receipt, plus `history_len` and `history_root` (a hash over every message hash, in request order). A message identical to one sent earlier isn't listed again, and messages that only moved aren't relisted, so the full ordered history can't be rebuilt from receipts alone: check `history_root` against the session's transcript.
+
 ## Environment variables
 
 <details open>
