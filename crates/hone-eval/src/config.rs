@@ -7,6 +7,7 @@ pub struct EvalConfig {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TaskSpec {
     pub id: String,
     pub prompt: String,

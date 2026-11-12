@@ -25,3 +25,46 @@ yet. Each run gets its own copy of the task directory (outside the repository,
 deleted right after the run unless `--keep-workdirs`), its own memory store loaded
 from the task's `memory_fixture`, and its own session. The success check runs in the
 copy with `EVAL_SUITE_DIR` set to the tasks file's directory.
+
+## What runs, and what doesn't
+
+- **Git state is isolated.** A copy never shares git state with the original. A
+  `.git` directory is copied as a directory (an independent repository). If the
+  task directory is a git worktree (`.git` is a `gitdir:` file) or a subdirectory of
+  one, the copy gets its own repository at the same `HEAD` (it only reads the
+  original's object store; everything it writes stays in the copy), with the
+  working-tree contents as changes. A subdirectory's copy shows the rest of the tree
+  as deleted. If that cannot be set up the run is an `infra_error`.
+- **Copies are bounded.** The copy respects the task directory's `.gitignore`
+  (keeping `.git`), skips `target/` and `node_modules/` only at the top level,
+  clones files copy-on-write where the filesystem supports it, and a copy over
+  200 MB is reported once per task in the manifest's `warnings`. A symlink whose
+  target is outside the task directory makes the run an `infra_error` naming the
+  link; links inside are recreated. FIFOs, sockets and devices are skipped, with a
+  note in `check.txt`.
+- **Agent CLIs are refused.** `claude-cli:` and `gemini-cli:` models run their own
+  tools outside Hone's sandbox, permission rules and working directory, so
+  `hone eval` (and `--check`) rejects them.
+- **Interrupts clean up.** On SIGINT or SIGTERM every running agent's commands are
+  stopped, working-directory copies are removed, unfinished runs are marked
+  `interrupted`, the reports are written for what finished (manifest
+  `interrupted: true`), and the exit code is 130 or 143. A second signal exits at
+  once. A check's own processes die with it: each check runs in its own process
+  group, which is killed when the check times out and after it finishes.
+- **The manifest says what ran:** hone's version and build git SHA, the suite's
+  git SHA, and the `HONE_AUDIT_LOG`, `HONE_CONTEXT_WINDOW`, `HONE_POLICY_BUILTINS`
+  and `HONE_PHASE_COMPACTION` values.
+
+## Reading the numbers
+
+- Repeats are not independent samples of the task distribution. The per-profile
+  interval treats every run as one sample, so it is narrower than it should be when
+  tasks repeat; the paired comparison resamples tasks (not runs), which is the
+  unit that matters. Prefer more tasks over more repeats.
+- HONE.md files above the task directory are not loaded: the copy lives in the
+  system temp directory, so only HONE.md files inside the task directory apply.
+- A shell command that needs approval in a one-shot run needs it in eval too:
+  turns are auto-approved, but `deny` permission rules (and the built-in policy)
+  still apply, so a task whose commands are denied fails the same way.
+- Cost depends on the provider reporting token usage and on the model's pricing
+  entry; a provider that reports no usage shows zero cost and tokens.

@@ -2,6 +2,7 @@
 
 pub mod bisect;
 pub mod config;
+pub mod copy;
 pub mod fixture;
 pub mod history;
 pub mod report;

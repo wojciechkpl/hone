@@ -2739,6 +2739,8 @@ dependencies = [
  "hone-providers",
  "hone-sandbox",
  "hone-tools",
+ "ignore",
+ "libc",
  "serde",
  "serde_json",
  "sha2",

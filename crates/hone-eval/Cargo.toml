@@ -18,6 +18,8 @@ hone-tools = { workspace = true }
 hone-config = { workspace = true }
 hone-memory = { workspace = true }
 sha2 = { workspace = true }
+ignore = { workspace = true }
+libc = { workspace = true }
 hone-sandbox = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

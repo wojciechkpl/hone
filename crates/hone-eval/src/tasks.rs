@@ -62,8 +62,40 @@ pub struct PlannedRun {
     pub repeat: u32,
 }
 
+/// Escape control characters (newlines included, so an echoed value can't forge a
+/// line) so text echoed from a config file can't reach a terminal raw.
+pub fn escape_control(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            if c.is_control() {
+                c.escape_default().collect::<Vec<char>>()
+            } else {
+                vec![c]
+            }
+        })
+        .collect()
+}
+
 fn invalid(msg: String) -> EvalConfigError {
-    EvalConfigError::Invalid(msg)
+    EvalConfigError::Invalid(escape_control(&msg))
+}
+
+/// A task id or profile name becomes a path component: no separators, no
+/// control characters, not empty, not `.` or `..`.
+fn check_component(file: &str, what: &str, name: &str) -> Result<(), EvalConfigError> {
+    let bad = name.is_empty()
+        || name == "."
+        || name == ".."
+        || name
+            .chars()
+            .any(|c| c == '/' || c == '\\' || c.is_control());
+    if bad {
+        return Err(invalid(format!(
+            "{file}: {what} {name:?} cannot be used as a directory name (no empty name, `.`, `..`, \
+             path separators or control characters)"
+        )));
+    }
+    Ok(())
 }
 
 fn context(cfg: &mut Config) -> &mut ContextTable {
@@ -73,16 +105,23 @@ fn context(cfg: &mut Config) -> &mut ContextTable {
 impl TasksFile {
     /// Parse and validate. `file` labels errors (the path).
     pub fn from_toml_str(file: &str, raw: &str) -> Result<TasksFile, EvalConfigError> {
-        let parsed: RawFile =
-            toml::from_str(raw).map_err(|e| EvalConfigError::Toml(format!("{file}: {e}")))?;
+        let parsed: RawFile = toml::from_str(raw)
+            .map_err(|e| EvalConfigError::Toml(escape_control(&format!("{file}: {e}"))))?;
+        if parsed.eval.repeats == Some(0) {
+            return Err(invalid(format!(
+                "{file}: [eval] repeats must be at least 1"
+            )));
+        }
         let mut seen = std::collections::HashSet::new();
         for task in &parsed.tasks {
+            check_component(file, "task id", &task.id)?;
             if !seen.insert(task.id.clone()) {
                 return Err(EvalConfigError::DuplicateId(task.id.clone()));
             }
         }
         let mut profiles = BTreeMap::new();
         for (name, value) in parsed.profiles {
+            check_component(file, "profile name", &name)?;
             let cfg: Config = value
                 .try_into()
                 .map_err(|e| invalid(format!("{file}: profile `{name}`: {e}")))?;
@@ -223,7 +262,13 @@ impl TasksFile {
             .iter()
             .filter(|n| opts.profiles.is_empty() || opts.profiles.contains(n))
             .collect();
-        let repeats = opts.repeats.unwrap_or_else(|| self.repeats()).max(1);
+        if opts.repeats == Some(0) {
+            return Err(invalid(format!(
+                "{}: repeats must be at least 1",
+                self.label
+            )));
+        }
+        let repeats = opts.repeats.unwrap_or_else(|| self.repeats());
         let mut runs = Vec::new();
         for task in &self.tasks {
             for repeat in 1..=repeats {
@@ -246,6 +291,19 @@ impl TasksFile {
         slot: &str,
         base: Option<&str>,
     ) -> Result<TasksFile, EvalConfigError> {
+        self.with_ablation_over(slot, base, None)
+    }
+
+    /// Like [`with_ablation`](Self::with_ablation), but the base is the user's
+    /// config plus the base profile, and a generated value equal to the base's is
+    /// skipped. A source toggle is `...=off` when the source is on in the base and
+    /// `...=on` when it is off.
+    pub fn with_ablation_over(
+        &self,
+        slot: &str,
+        base: Option<&str>,
+        user: Option<&ConfigLayer>,
+    ) -> Result<TasksFile, EvalConfigError> {
         let base_name = base
             .map(str::to_owned)
             .unwrap_or_else(|| self.base_profile());
@@ -255,7 +313,7 @@ impl TasksFile {
                 self.label
             )));
         }
-        let sel = self.profile_selection(&base_name, None)?;
+        let sel = self.profile_selection(&base_name, user)?;
         let base_cfg = self.profiles.get(&base_name).cloned().unwrap_or_default();
 
         // (profile name suffix, the config with the slot varied)
@@ -321,6 +379,13 @@ impl TasksFile {
                         .cloned()
                         .collect();
                     vary("off", &|cfg| context(cfg).sources = Some(kept.clone()));
+                } else {
+                    let with: Vec<String> = SOURCE_NAMES
+                        .iter()
+                        .filter(|n| **n == source || sel.sources.value.iter().any(|s| s == **n))
+                        .map(|n| (*n).to_owned())
+                        .collect();
+                    vary("on", &|cfg| context(cfg).sources = Some(with.clone()));
                 }
             }
             _ => {
@@ -345,7 +410,7 @@ impl TasksFile {
             builtin_default: base_name == DEFAULT_PROFILE,
         };
         for name in out.profile_names() {
-            out.profile_selection(&name, None)?;
+            out.profile_selection(&name, user)?;
         }
         Ok(out)
     }

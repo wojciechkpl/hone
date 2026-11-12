@@ -84,6 +84,13 @@ fn check_provider(
         "claude-cli:",
         "gemini-cli:",
     ];
+    if model.starts_with("claude-cli:") || model.starts_with("gemini-cli:") {
+        let prefix = model.split(':').next().unwrap_or(model);
+        return Err(format!(
+            "model '{model}': {prefix} models run their own tools outside Hone's sandbox, \
+             permission rules and working directory, so `hone eval` does not support them"
+        ));
+    }
     if !PREFIXES.iter().any(|p| model.starts_with(p)) {
         return Err(format!(
             "invalid model ID '{model}': it must start with a provider prefix ({})",
@@ -107,10 +114,21 @@ pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> 
         Ok(t) => t,
         Err(e) => fail(&[e.to_string()]),
     };
+    let user = match crate::settings::load_user_layer() {
+        Ok(u) => u,
+        Err(e) => fail(&[crate::settings::format_config_error(&e)]),
+    };
     let mut profiles = args.profile.clone();
     if let Some(slot) = &args.ablate {
         // Combined with --profile only to pick the base.
-        tasks = match tasks.with_ablation(slot, profiles.first().map(String::as_str)) {
+        if profiles.len() > 1 {
+            fail(&["--ablate takes at most one --profile (the base profile)".to_owned()]);
+        }
+        tasks = match tasks.with_ablation_over(
+            slot,
+            profiles.first().map(String::as_str),
+            user.as_ref(),
+        ) {
             Ok(t) => t,
             Err(e) => fail(&[e.to_string()]),
         };
@@ -132,6 +150,12 @@ pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> 
 
     // Everything that can be wrong before a model is called, reported together.
     let mut errors = tasks.check_files(&base_dir);
+    // Every profile resolved over the user's config, as a run would use it.
+    for name in tasks.profile_names() {
+        if let Err(e) = tasks.profile_selection(&name, user.as_ref()) {
+            errors.push(e.to_string());
+        }
+    }
     let configured = model_flag
         .clone()
         .map(|m| (m, ModelSource::Cli))
@@ -154,6 +178,12 @@ pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> 
         if let Err(e) = check_provider(model, source.clone(), &eff) {
             errors.push(e);
         }
+    }
+    if configured.is_none() && args.check {
+        errors.push(
+            "no model: set `model` in the tasks file, pass --model, or set default_model in config.toml"
+                .to_owned(),
+        );
     }
     if !errors.is_empty() {
         fail(&errors);
@@ -180,11 +210,13 @@ pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> 
 
     let default_model = match &configured {
         Some((m, _)) => m.clone(),
-        None => crate::detect_provider(&eff).await.model_id.to_string(),
-    };
-    let user = match crate::settings::load_user_layer() {
-        Ok(u) => u,
-        Err(e) => fail(&[crate::settings::format_config_error(&e)]),
+        None => {
+            let m = crate::detect_provider(&eff).await.model_id.to_string();
+            if let Err(e) = check_provider(&m, ModelSource::Cli, &eff) {
+                fail(&[e]);
+            }
+            m
+        }
     };
     let eff = Arc::new(eff);
     let mut runner =
@@ -205,16 +237,57 @@ pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> 
         model: model_flag,
         tag: args.tag.clone(),
         history,
+        interrupt: None,
     };
     println!("running {}", plural(planned.len(), "run"));
+    let (interrupt_tx, interrupt_rx) = tokio::sync::watch::channel(false);
+    let opts = EvalOptions {
+        interrupt: Some(interrupt_rx),
+        ..opts
+    };
     // A spawned task runs on a worker thread, where the builder may block on the
     // runtime (see `build_agent`).
-    let run_dir = tokio::spawn(async move { runner.run(&opts).await })
-        .await
+    let mut task = tokio::spawn(async move { runner.run(&opts).await });
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut got: Option<i32> = None;
+    let joined = loop {
+        let signal = tokio::select! {
+            r = &mut task => break r,
+            _ = sigint.recv() => 130,
+            _ = sigterm.recv() => 143,
+        };
+        if got.is_some() {
+            // A second signal: stop at once, after killing the commands.
+            crate::exit_now(signal);
+        }
+        got = Some(signal);
+        eprintln!("hone eval: interrupted; stopping the running agents (signal again to exit now)");
+        let _ = interrupt_tx.send(true);
+    };
+    let run_dir = joined
         .map_err(|e| anyhow::anyhow!("eval task failed: {e}"))?
         .map_err(|e| anyhow::anyhow!("eval failed: {e}"))?;
     print_summary(&run_dir);
+    if let Some(code) = got {
+        crate::exit_now(code);
+    }
+    // A run in which every outcome is an infrastructure error measured nothing.
+    if all_infra_errors(&run_dir) {
+        eprintln!("hone eval: every run ended in infra_error; see the outcome.json files");
+        crate::exit_now(1);
+    }
     Ok(())
+}
+
+fn all_infra_errors(run_dir: &Path) -> bool {
+    let manifest = std::fs::read_to_string(run_dir.join("manifest.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok());
+    let Some(counts) = manifest.as_ref().and_then(|m| m["outcomes"].as_object()) else {
+        return false;
+    };
+    !counts.is_empty() && counts.keys().all(|k| k == "infra_error")
 }
 
 async fn open_history() -> Option<Arc<EvalRunStore>> {
