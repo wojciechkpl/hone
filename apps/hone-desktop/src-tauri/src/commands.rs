@@ -1351,4 +1351,183 @@ http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
         assert!(err.contains("no key"), "got: {err}");
         assert!(state.sidecar.lock().is_none());
     }
+
+    // ---- A6: starting works from inside a tokio runtime ----------------------------
+    //
+    // `daemon_start` / `daemon_boot` are `async fn`s, so they run on Tauri's tokio
+    // runtime, where `reqwest::blocking` panics. API required (in this file; the
+    // commands use these instead of the sync helpers):
+    //
+    // ```ignore
+    // pub async fn start_sidecar_async(state: &DaemonState, honed_path: Option<PathBuf>,
+    //     health_timeout: Duration) -> Result<StartOutcome, SupervisorError>;
+    // pub async fn boot_sidecar_if_wanted_async(state: &DaemonState, saved_mode: Option<&str>,
+    //     honed_path: Option<PathBuf>, health_timeout: Duration)
+    //     -> Result<Option<StartOutcome>, SupervisorError>;
+    // ```
+    // Same results as the sync helpers. They must not panic inside a runtime and
+    // must not hold a runtime worker for the health wait (the blocking work runs
+    // on a blocking thread, or the wait is async). The returned futures are
+    // `Send` (they are awaited in `tokio::spawn`ed tasks), and `&DaemonState`
+    // need not be `'static` (a Tauri command only has `State<'_, DaemonState>`),
+    // so clone what the blocking part needs (`state.sidecar` is an `Arc`, the
+    // config can be snapshotted).
+
+    /// Like `HEALTHY`, but answers /health only after 0.6 s, so the health wait
+    /// really spans a while.
+    const SLOW_HEALTHY: &str = r#"#!/usr/bin/env python3
+import http.server, os, sys, time
+d = os.path.dirname(os.path.abspath(__file__))
+open(os.path.join(d, "pid"), "w").write(str(os.getpid()))
+open(os.path.join(d, "starts"), "a").write("x\n")
+time.sleep(0.6)
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+"#;
+
+    fn runtime(workers: usize) -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(workers)
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// Runs `fut` as a spawned task (as Tauri runs a command); a panic inside it
+    /// comes back as the failure message instead of aborting the test run.
+    fn in_task<T: Send + 'static>(
+        rt: &tokio::runtime::Runtime,
+        fut: impl std::future::Future<Output = T> + Send + 'static,
+    ) -> Result<T, String> {
+        rt.block_on(async {
+            tokio::time::timeout(Duration::from_secs(30), tokio::spawn(fut))
+                .await
+                .map_err(|_| "the start hung (30 s)".to_string())?
+                .map_err(|e| {
+                    if e.is_panic() {
+                        let p = e.into_panic();
+                        let msg = p
+                            .downcast_ref::<String>()
+                            .cloned()
+                            .or_else(|| p.downcast_ref::<&str>().map(|s| (*s).to_string()))
+                            .unwrap_or_default();
+                        format!("the start PANICKED inside the runtime: {msg}")
+                    } else {
+                        "the task was cancelled".to_string()
+                    }
+                })
+        })
+    }
+
+    #[test]
+    fn test_a6_start_sidecar_should_work_from_a_task_on_a_tokio_runtime() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+        let rt = runtime(2);
+
+        let st = state.clone();
+        let out = in_task(&rt, async move {
+            start_sidecar_async(&st, Some(honed), HEALTH).await
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        assert_eq!(out.unwrap(), StartOutcome::Started);
+        assert!(state.sidecar.lock().is_some());
+        assert_eq!(starts(dir.path()), 1);
+    }
+
+    #[test]
+    fn test_a6_boot_should_work_from_a_task_on_a_tokio_runtime() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+        let rt = runtime(2);
+
+        let st = state.clone();
+        let out = in_task(&rt, async move {
+            boot_sidecar_if_wanted_async(&st, Some("sidecar"), Some(honed), HEALTH).await
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        assert_eq!(out.unwrap(), Some(StartOutcome::Started));
+        assert!(state.sidecar.lock().is_some());
+    }
+
+    #[test]
+    fn test_a6_boot_with_nothing_wanted_should_return_none_from_a_runtime_too() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+        let rt = runtime(2);
+
+        let st = state.clone();
+        let out = in_task(&rt, async move {
+            boot_sidecar_if_wanted_async(&st, None, Some(honed), HEALTH).await
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        assert_eq!(out.unwrap(), None);
+        assert_eq!(starts(dir.path()), 0);
+    }
+
+    #[test]
+    fn test_a6_a_failed_start_should_return_its_reason_from_a_runtime_too() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), "#!/bin/sh\necho 'no key' >&2\nexit 3\n");
+        let rt = runtime(2);
+
+        let st = state.clone();
+        let out = in_task(&rt, async move {
+            start_sidecar_async(&st, Some(honed), HEALTH).await
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        let err = out.err().expect("a honed that exits 3 fails").to_string();
+        assert!(err.contains("exit status: 3") && err.contains("no key"), "got: {err}");
+        assert!(state.sidecar.lock().is_none());
+    }
+
+    #[test]
+    fn test_a6_start_should_not_hold_the_only_runtime_worker_during_the_health_wait() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), SLOW_HEALTHY);
+        let rt = runtime(1); // one worker: a blocked worker stops every other task
+
+        let ticks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let t = ticks.clone();
+        let st = state.clone();
+        let out = in_task(&rt, async move {
+            let ticker = tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    t.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            });
+            let r = start_sidecar_async(&st, Some(honed), HEALTH).await;
+            ticker.abort();
+            r
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        assert_eq!(out.unwrap(), StartOutcome::Started);
+        let n = ticks.load(std::sync::atomic::Ordering::SeqCst);
+        // The wait lasted >= 0.6 s: about 60 ticks if the runtime stayed free.
+        assert!(n >= 20, "other tasks ran only {n} times during the health wait");
+    }
 }

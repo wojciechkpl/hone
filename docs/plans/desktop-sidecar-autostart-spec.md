@@ -41,6 +41,12 @@ flowchart TD
 | A4 | **Only one daemon, and only when wanted.** With an external profile active, or with no saved choice, launch starts nothing. If a sidecar is already running, launch and **Start** don't start a second one, as `daemon_start` already ensures. |
 | A5 | **README desktop quick start.** It must work as written on a fresh or a used machine:<br>• install `honed` with `cargo install --path bins/honed --locked`;<br>• `export ANTHROPIC_API_KEY=…` in the terminal before `cargo run -p hone-desktop`, because the daemon reads only that key for now;<br>• what you should see (the green pill), and what to do if it's red: the reason shown, **Daemon → Start**, <kbd>Cmd</kbd>+<kbd>K</kbd> → "Reset onboarding".<br><br>Correct where the choice is saved: the app's local storage, and the `desktop.json` path per OS. |
 
+### Found while checking by hand (A6)
+
+| Row | Behaviour |
+|---|---|
+| A6 | **Starting works from inside the app.** The Tauri commands `daemon_start` and `daemon_boot` are `async fn`, so they run on Tauri's async (tokio) runtime. Starting the sidecar from there must succeed: it must not panic and must not block a runtime worker for the whole health wait.<br><br>Today the start path waits with `reqwest::blocking`, which panics when used inside a tokio runtime. The likely result: the wizard's start never succeeded. The user's machine has no `desktop.json`, which is written only after a successful start. A launched app with an active sidecar profile started no `honed`. The unit tests run the start from plain `#[test]` functions, outside any runtime, so they didn't see it.<br><br>Fix: run the blocking start on a blocking thread (`tauri::async_runtime::spawn_blocking`), or make the health wait async. Test it the way the command runs it, from inside a multi-thread tokio runtime task. |
+
 ## Testing notes
 
 - **Rust unit and integration tests in `apps/hone-desktop/src-tauri`** (`cargo test -p hone-desktop`):
