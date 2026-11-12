@@ -4,17 +4,18 @@
 //!
 //! Contract pinned:
 //! - a new row's `content` stays `enc:v1:<base64>` (readable by older binaries);
-//! - its embedding is stored encrypted in the `embedding` column as a BINARY blob whose first
-//!   byte is the marker `0xE1`, followed by the 12-byte nonce and the AES-GCM ciphertext of the
-//!   little-endian f32s (so about 1 + 12 + 4n + 16 bytes, at most a few bytes of padding): not
-//!   JSON, not plaintext floats. A memory without an embedding has a NULL embedding column;
-//! - an older reader (a plain `SqliteStore`) sees the ciphertext content text and does not
-//!   fail on the blob;
+//! - its embedding is stored encrypted in the side table `memory_vectors_sealed(id TEXT PRIMARY
+//!   KEY, blob BLOB NOT NULL)` (G29, review round 4; no longer in `memories.embedding`): the
+//!   12-byte nonce and the AES-GCM ciphertext of the little-endian f32s (12 + 4n + 16 bytes),
+//!   not JSON, not plaintext floats. `memories.embedding` stays NULL for encrypted rows, and a
+//!   memory without an embedding has no side-table row;
+//! - an older reader (a plain `SqliteStore`) sees the ciphertext content text and NO embedding;
 //! - rows written as `enc:v2:` by earlier builds of this branch (fixture
 //!   `tests/fixtures/enc_v2.db`, passphrase `fixture-pass`, rows `v2-row` with embedding
 //!   [1.0, 0.0, 0.5, 0.25] and `v1-row` without) still decrypt;
 //! - an `enc:v1` row whose embedding column holds PLAINTEXT floats (written by an older
-//!   binary) is re-encrypted once, when an `EncryptedStore` is opened over the database.
+//!   binary) is migrated once, when an `EncryptedStore` is opened over the database: sealed into
+//!   the side table, the column set to NULL.
 //! No new API (`SqliteStore::open_without_fts` is pinned in `fts5_noindex.rs`).
 
 mod fts5_support;
@@ -25,7 +26,6 @@ use fts5_support::{mem, q};
 use hone_memory::{EncryptedStore, MemoryKind, MemoryStore, SqliteStore};
 use sqlx::Row;
 
-const MARKER: u8 = 0xE1;
 
 async fn open(path: &Path, pass: &str) -> EncryptedStore<SqliteStore> {
     let inner = SqliteStore::open_without_fts(path).await.unwrap();
@@ -42,6 +42,16 @@ async fn raw(path: &Path, id: &str) -> (String, Option<Vec<u8>>) {
     let out = (row.get::<String, _>(0), row.get::<Option<Vec<u8>>, _>(1));
     pool.close().await;
     out
+}
+
+async fn sealed(path: &Path, id: &str) -> Option<Vec<u8>> {
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite:{}?mode=rw", path.display())).await.unwrap();
+    let row = sqlx::query("SELECT blob FROM memory_vectors_sealed WHERE id = ?1").bind(id).fetch_optional(&pool).await;
+    pool.close().await;
+    match row {
+        Ok(r) => r.map(|r| r.get::<Vec<u8>, _>(0)),
+        Err(_) => None, // no side table yet
+    }
 }
 
 fn f32_bytes(v: &[f32]) -> Vec<u8> {
@@ -67,17 +77,15 @@ async fn test_g21_new_rows_should_keep_enc_v1_content_and_store_the_vector_as_a_
 
     let (content, embedding) = raw(&path, "with").await;
     assert!(content.starts_with("enc:v1:"), "content stays enc:v1: {}", &content[..content.len().min(12)]);
-    let blob = embedding.expect("an embedding column value");
-    assert_eq!(blob[0], MARKER, "the marker byte");
-    assert!(blob[0] != b'[' && blob[0] != b'{', "not JSON");
-    assert!(blob.len() >= 1 + 12 + 16 + 16, "marker + nonce + tag + ciphertext: {} bytes", blob.len());
+    assert!(embedding.is_none(), "memories.embedding stays NULL for encrypted rows");
+    let blob = sealed(&path, "with").await.expect("a row in memory_vectors_sealed");
+    assert!(blob.len() >= 12 + 16 + 16, "nonce + tag + ciphertext: {} bytes", blob.len());
     assert!(blob.len() <= 64, "compact: {} bytes for 4 floats", blob.len());
-    for window in vector.chunks(1) {
-        assert!(!contains(&blob, &f32_bytes(window)) || window[0] == 0.0, "no plaintext float {window:?} in the blob");
-    }
+    assert!(blob[0] != b'[' && blob[0] != b'{', "not JSON");
     assert!(!contains(&blob, &f32_bytes(&vector)), "the plaintext vector is not in the blob");
     let (_, none) = raw(&path, "without").await;
-    assert!(none.is_none() || none.as_ref().is_some_and(Vec::is_empty), "no embedding, no blob");
+    assert!(none.is_none(), "no embedding, no column value");
+    assert!(sealed(&path, "without").await.is_none(), "and no sealed row");
 
     // Round trip, semantic recall and an older (plain) reader.
     let store = open(&path, "pw").await;
@@ -93,6 +101,7 @@ async fn test_g21_new_rows_should_keep_enc_v1_content_and_store_the_vector_as_a_
     let all = plain.recall(&q("", 10, None)).await.unwrap();
     let seen = all.iter().find(|m| m.id == "with").expect("an older reader still lists the row");
     assert!(seen.content.starts_with("enc:v1:"), "it sees the ciphertext content text");
+    assert!(seen.embedding.is_none(), "and no embedding at all: no bogus vector for an older reader");
 }
 
 async fn rows_written_as_enc_v2_by_earlier_builds_should_still_decrypt() {
@@ -116,7 +125,7 @@ async fn rows_written_as_enc_v2_by_earlier_builds_should_still_decrypt() {
 }
 
 #[tokio::test]
-async fn test_g21_an_enc_v1_row_with_a_plaintext_embedding_should_be_re_encrypted_on_open_and_v2_rows_still_decrypt() {
+async fn test_g21_an_enc_v1_row_with_a_plaintext_embedding_should_be_migrated_on_open_and_v2_rows_still_decrypt() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("memory.db");
     {
@@ -136,16 +145,17 @@ async fn test_g21_an_enc_v1_row_with_a_plaintext_embedding_should_be_re_encrypte
     let store = open(&path, "pw").await;
 
     let (_, after) = raw(&path, "old").await;
-    let blob = after.expect("the column still holds the vector");
-    assert_eq!(blob[0], MARKER, "re-encrypted once, on open");
-    assert!(!contains(&blob, &plain), "no plaintext floats remain");
+    assert!(after.is_none(), "the plaintext column value is gone (set to NULL)");
+    let blob = sealed(&path, "old").await.expect("sealed into the side table");
+    assert!(!contains(&blob, &plain), "no plaintext floats in the sealed blob");
     let got = store.recall(&q("pangolins", 5, None)).await.unwrap();
     assert_eq!(got[0].embedding.as_deref(), Some(&[0.5f32, 0.5, 0.25, 0.125][..]), "and it still decrypts");
     drop(store);
-    // A second open leaves the blob alone (idempotent).
+    // A second open leaves everything alone (idempotent).
+    let again_blob = sealed(&path, "old").await;
     let _ = open(&path, "pw").await;
-    let (_, again) = raw(&path, "old").await;
-    assert_eq!(again.as_ref().map(|b| b[0]), Some(MARKER));
+    assert_eq!(sealed(&path, "old").await, again_blob);
+    assert!(raw(&path, "old").await.1.is_none());
 
     // Rows written as enc:v2 by earlier builds still decrypt (fixture from this branch's code).
     rows_written_as_enc_v2_by_earlier_builds_should_still_decrypt().await;

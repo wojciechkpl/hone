@@ -9,15 +9,14 @@
 //!   on first use or created from a successful trial decryption of an existing `enc:v1` row),
 //!   or by trial-decrypting an `enc:v1` row. So a FRESH database (sentinel, no memories) also
 //!   rejects a wrong passphrase on reopening.
-//! - G26: a sealed embedding blob starts with the 8-byte magic `E1 48 4F 4E 45 56 31 00`
-//!   (`\xE1HONEV1\0`). The migration decides by magic plus a successful trial decryption, so a
-//!   legacy plaintext vector whose first byte happens to be `0xE1` is still re-encrypted. Blobs
-//!   from earlier builds of this branch (1-byte marker, fixture `tests/fixtures/enc_marker1.db`,
-//!   passphrase `fixture-pass`) still decrypt.
-//! - G27 (what is testable here): a plain `SqliteStore` (today's decoder, which reads any blob
-//!   as little-endian f32s) does not read a sealed row as a vector of the original dimension.
-//!   `main`'s decoder cannot be run from this tree, so rejection by an older binary is not
-//!   tested; the spec's fallback (CHANGELOG wording) is documentation.
+//! - G26 (as changed by G29/G30, review round 4): sealed vectors no longer live in the
+//!   `embedding` column, so there is no magic to look for. The migration is selected in SQL
+//!   (`enc:v1` rows with a non-NULL embedding), so a legacy plaintext vector whose first byte
+//!   happens to be `0xE1` is migrated like any other: sealed into `memory_vectors_sealed`, the
+//!   column set to NULL. Blobs from earlier builds of this branch (1-byte marker, fixture
+//!   `tests/fixtures/enc_marker1.db`; passphrase `fixture-pass`) still decrypt and migrate.
+//! - G27/G29: an older reader (a plain `SqliteStore`) sees no embedding for a sealed row (the
+//!   column is NULL), so it can neither read a bogus vector nor panic.
 //! Legacy rows are built the way `main` writes them: `enc:v1` content and the vector as plaintext
 //! little-endian f32 bytes in the `embedding` column.
 
@@ -29,7 +28,6 @@ use fts5_support::{mem, q};
 use hone_memory::{EncryptedStore, MemoryKind, MemoryStore, SqliteStore};
 use sqlx::Row;
 
-const MAGIC: [u8; 8] = [0xE1, 0x48, 0x4F, 0x4E, 0x45, 0x56, 0x31, 0x00];
 
 async fn open(path: &Path, pass: &str) -> Result<EncryptedStore<SqliteStore>, hone_memory::MemoryError> {
     let inner = SqliteStore::open_without_fts(path).await.unwrap();
@@ -44,22 +42,31 @@ async fn pool(path: &Path) -> sqlx::SqlitePool {
     sqlx::SqlitePool::connect(&format!("sqlite:{}?mode=rw", path.display())).await.unwrap()
 }
 
-/// Every row as (id, content, embedding bytes), ordered by id.
+/// Every row as (id, content, embedding column bytes), ordered by id, plus the side table's
+/// rows (as `("sealed:<id>", "", blob)`) when it exists.
 async fn snapshot(path: &Path) -> Vec<(String, String, Option<Vec<u8>>)> {
     let p = pool(path).await;
-    let rows = sqlx::query("SELECT id, content, embedding FROM memories ORDER BY id")
+    let mut rows: Vec<(String, String, Option<Vec<u8>>)> = sqlx::query("SELECT id, content, embedding FROM memories ORDER BY id")
         .fetch_all(&p)
         .await
         .unwrap()
         .iter()
         .map(|r| (r.get::<String, _>(0), r.get::<String, _>(1), r.get::<Option<Vec<u8>>, _>(2)))
         .collect();
+    if let Ok(side) = sqlx::query("SELECT id, blob FROM memory_vectors_sealed ORDER BY id").fetch_all(&p).await {
+        rows.extend(side.iter().map(|r| (format!("sealed:{}", r.get::<String, _>(0)), String::new(), Some(r.get::<Vec<u8>, _>(1)))));
+    }
     p.close().await;
     rows
 }
 
 async fn embedding_of(path: &Path, id: &str) -> Option<Vec<u8>> {
     snapshot(path).await.into_iter().find(|r| r.0 == id).unwrap().2
+}
+
+async fn sealed_of(path: &Path, id: &str) -> Option<Vec<u8>> {
+    let key = format!("sealed:{id}");
+    snapshot(path).await.into_iter().find(|r| r.0 == key).and_then(|r| r.2)
 }
 
 /// A vector whose first byte (little-endian) is `0xE1`.
@@ -142,32 +149,7 @@ async fn test_g25_a_fresh_database_should_reject_a_wrong_passphrase_on_reopening
     assert!(open(&path, "pw").await.is_ok(), "the right passphrase still opens it");
 }
 
-// ---- G26 -------------------------------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_g26_sealed_vectors_should_start_with_the_eight_byte_magic() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("memory.db");
-    let vector = vec![1.5f32, 0.25, 0.125, 0.0625];
-    {
-        let store = open(&path, "pw").await.unwrap_or_else(|e| panic!("{e}"));
-        let mut m = mem("m", "note about quokkas", MemoryKind::Feedback, 1);
-        m.embedding = Some(vector.clone());
-        store.record(m).await.unwrap();
-    }
-
-    let blob = embedding_of(&path, "m").await.expect("a blob");
-
-    assert_eq!(&blob[..8], &MAGIC, "the magic");
-    assert!(blob.len() >= 8 + 12 + 16 + 16, "magic + nonce + tag + ciphertext: {} bytes", blob.len());
-    // G27 (testable part): today's plain decoder does not read the sealed row as the original vector.
-    let plain = SqliteStore::open_without_fts(&path).await.unwrap();
-    let seen = plain.recall(&q("", 10, None)).await.unwrap();
-    let read = seen.iter().find(|m| m.id == "m").expect("the plain store lists the row");
-    assert!(read.content.starts_with("enc:v1:"));
-    assert_ne!(read.embedding.as_ref().map(Vec::len), Some(vector.len()), "never a vector of the original dimension");
-    assert_ne!(read.embedding.as_deref(), Some(&vector[..]));
-}
+// ---- G26 (as changed by round 4) ---------------------------------------------------------------------
 
 #[tokio::test]
 async fn test_g26_a_legacy_vector_starting_with_0xe1_should_be_re_encrypted_with_the_rest() {
@@ -181,10 +163,10 @@ async fn test_g26_a_legacy_vector_starting_with_0xe1_should_be_re_encrypted_with
     let store = open(&path, "pw").await.unwrap_or_else(|e| panic!("{e}"));
 
     for (id, _, v) in vectors.iter().rev() {
-        // (the 0xE1 vector first: it is the one the 1-byte marker missed)
-        let blob = embedding_of(&path, id).await.unwrap();
-        assert_eq!(&blob[..8], &MAGIC, "{id}: sealed (magic-prefixed)");
-        assert_ne!(blob, f32_bytes(v), "{id}: no longer plaintext");
+        // (the 0xE1 vector first: the one a first-byte heuristic missed)
+        assert!(embedding_of(&path, id).await.is_none(), "{id}: the plaintext column value is gone");
+        let blob = sealed_of(&path, id).await.unwrap_or_else(|| panic!("{id}: no sealed row"));
+        assert_ne!(blob, f32_bytes(v), "{id}: not plaintext");
     }
     let got = store.recall(&q("gamma", 5, None)).await.unwrap();
     assert_eq!(got[0].embedding.as_deref(), Some(&e1_vector()[..]), "and it decrypts to the original");
@@ -199,6 +181,8 @@ async fn test_g26_a_legacy_vector_starting_with_0xe1_should_be_re_encrypted_with
     std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/enc_marker1.db"), &old).unwrap();
     assert_eq!(embedding_of(&old, "sealed-row").await.unwrap()[0], 0xE1, "harness: a 1-byte-marker blob");
     let store = open(&old, "fixture-pass").await.unwrap_or_else(|e| panic!("{e}"));
+    assert!(embedding_of(&old, "sealed-row").await.is_none(), "migrated into the side table");
+    assert!(sealed_of(&old, "sealed-row").await.is_some());
     let got = store.recall(&q("quokkas", 5, None)).await.unwrap();
     assert_eq!(got[0].embedding.as_deref(), Some(&[1.0f32, 0.0, 0.5, 0.25][..]), "earlier sealed blobs decrypt");
     let scored = store.recall_semantic(&[1.0, 0.0, 0.5, 0.25], 2).await.unwrap();
