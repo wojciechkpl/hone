@@ -630,6 +630,11 @@ pub struct Agent {
     cost: CostAccumulator,
     /// Monotonically increasing counter of completed turns this session.
     turn_count: u32,
+    /// Successful `memory_write` calls this session (capped).
+    memory_writes: usize,
+    /// Set when a tool result this turn was labelled with a Medium/High injection
+    /// risk: a `memory_write` then needs approval even in auto-approve modes.
+    injection_seen: std::sync::atomic::AtomicBool,
     /// The strategies this agent runs with (derived from `AgentConfig` unless
     /// set with `with_strategies`).
     strategies: Arc<ResolvedStrategies>,
@@ -730,6 +735,8 @@ impl Agent {
             context,
             cost: CostAccumulator::new(),
             turn_count: 0,
+            memory_writes: 0,
+            injection_seen: std::sync::atomic::AtomicBool::new(false),
             strategies,
             receipt_info: TurnContextInfo::default(),
             receipt_history: std::collections::HashSet::new(),
@@ -764,6 +771,13 @@ impl Agent {
         // A project file's ratio only ever lowers: min(user or per-model, cap).
         if let Some(cap) = strategies.budget_cap {
             self.context.cap_budget_ratio(cap);
+        }
+        // The model is offered `memory_write` when the writer includes the tool
+        // and there is a store to write to. The agent applies it itself.
+        if strategies.writer_kind.offers_tool() && self.config.memory_store.is_some() {
+            let tool: Arc<dyn hone_tools::Tool> = Arc::new(crate::memory_write::MemoryWriteTool);
+            self.config.tools = self.config.tools.with_tool(Arc::clone(&tool));
+            self.base_tools = self.base_tools.with_tool(tool);
         }
         self.strategies = strategies;
         self
@@ -1155,9 +1169,19 @@ impl Agent {
     /// use case (single-agent sessions).  PR4/R12 will address races across
     /// multiple agents sharing the same backing file via explicit transactions.
     pub async fn record_memory(&self, candidate: MemoryCandidate) {
-        let Some(store) = &self.config.memory_store else {
-            return;
-        };
+        let _ = self.apply_memory_candidate(candidate, Vec::new()).await;
+    }
+
+    /// The write path: embedding, near-duplicate upsert (`find_similar` 0.8),
+    /// UUID v7 ids. `extra_tags` are added to the memory (kept when updating).
+    /// Returns the memory's id and `"added"` or `"updated"`; `None` when there
+    /// is no store or the store refused.
+    async fn apply_memory_candidate(
+        &self,
+        candidate: MemoryCandidate,
+        extra_tags: Vec<String>,
+    ) -> Option<(String, &'static str)> {
+        let store = self.config.memory_store.as_ref()?;
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1183,6 +1207,13 @@ impl Agent {
         let existing = store.find_similar(&body, 0.8).await.ok().flatten();
 
         if let Some(existing) = existing {
+            let mut tags = existing.tags;
+            for t in extra_tags {
+                if !tags.contains(&t) {
+                    tags.push(t);
+                }
+            }
+            let id = existing.id.clone();
             let updated = Memory {
                 id: existing.id,
                 content: body,
@@ -1190,17 +1221,18 @@ impl Agent {
                 created_at: now,
                 description: candidate.description.or(existing.description),
                 kind: candidate.kind,
-                tags: existing.tags,
+                tags,
                 decay_at: existing.decay_at,
                 embedding,
             };
-            let _ = store.record(updated).await;
+            store.record(updated).await.ok()?;
+            Some((id, "updated"))
         } else {
             let id = uuid::Uuid::now_v7().to_string();
             let memory = Memory {
-                id,
+                id: id.clone(),
                 content: body,
-                tags: vec![],
+                tags: extra_tags,
                 weight: 1.0,
                 created_at: now,
                 decay_at: None,
@@ -1208,8 +1240,52 @@ impl Agent {
                 description: candidate.description,
                 embedding,
             };
-            let _ = store.record(memory).await;
+            store.record(memory).await.ok()?;
+            Some((id, "added"))
         }
+    }
+
+    /// Apply a `memory_write` call: validate, check the session cap, write
+    /// through the shared path with the attribution tags. On success returns the
+    /// result for the model and what to announce as `MemoryWritten`.
+    async fn memory_write_call(
+        &mut self,
+        call: &ToolCallRequest,
+    ) -> Result<(ToolOutput, (String, String, String)), AgentError> {
+        let tool_err = |e: ToolError| AgentError::Tool {
+            name: call.name.clone(),
+            source: e,
+        };
+        if self.memory_writes >= crate::memory_write::MAX_WRITES_PER_SESSION {
+            return Err(tool_err(ToolError::Other(format!(
+                "memory_write limit reached: at most {} writes per session",
+                crate::memory_write::MAX_WRITES_PER_SESSION
+            ))));
+        }
+        let v = crate::memory_write::validate(&call.arguments)
+            .map_err(|reason| tool_err(ToolError::InvalidInput { reason }))?;
+        let mut tags = v.tags;
+        tags.push("source:tool".to_owned());
+        tags.push(format!("call:{}", call.id));
+        let kind_name = crate::strategy::kind_name(v.kind).to_owned();
+        let candidate = MemoryCandidate {
+            kind: v.kind,
+            description: None,
+            body: crate::memory_format::StructuredBody {
+                rule: v.content,
+                why: None,
+                how: None,
+            },
+        };
+        let Some((id, status)) = self.apply_memory_candidate(candidate, tags).await else {
+            return Err(tool_err(ToolError::ExecutionFailed {
+                tool: call.name.clone(),
+                message: "the memory store did not accept the write".to_owned(),
+            }));
+        };
+        self.memory_writes += 1;
+        let out = ToolOutput::new(serde_json::json!({ "id": id, "status": status }));
+        Ok((out, (id, kind_name, status.to_owned())))
     }
 
     /// Fire hooks for `event`, returning all outcomes.
@@ -1276,6 +1352,8 @@ impl Agent {
     fn scan_for_injection(&self, tool: &str, result_str: &str) -> (Option<String>, &'static str) {
         let risk = InjectionDetector::scan_tool_result(tool, result_str);
         if risk.is_actionable() {
+            self.injection_seen
+                .store(true, std::sync::atomic::Ordering::SeqCst);
             self.metrics.record_injection_detection();
             tracing::warn!(
                 tool = %tool,
@@ -1501,6 +1579,8 @@ impl Agent {
 
         // Reset per-turn guard state for each new turn.
         self.guards.reset();
+        self.injection_seen
+            .store(false, std::sync::atomic::Ordering::SeqCst);
 
         // Create a fresh trace context for this turn.  The turn's span_id
         // becomes the parent for every tool call dispatched below.
@@ -2760,20 +2840,32 @@ impl Agent {
                     // pause, except under `--step` (AlwaysAsk), which asks every time.
                     let always_ask =
                         matches!(self.config.approval_policy, ToolApprovalPolicy::AlwaysAsk);
+                    // A `memory_write` after a tool result that looked like prompt
+                    // injection needs approval whatever the mode or earlier
+                    // "always" answers: injected text must not become a stored
+                    // fact silently.
+                    let forced = call.name == crate::memory_write::NAME
+                        && self.injection_seen.load(std::sync::atomic::Ordering::SeqCst);
                     if !policy_prompted
-                        && !(session_cleared && !always_ask)
+                        && (forced || !(session_cleared && !always_ask))
                         && self.config.tools.get(&call.name).is_some()
-                        && self.config.mode != AgentMode::AutoApprove
-                        && self
-                            .config
-                            .approval_policy
-                            .requires_approval(&call.name, is_ro)
+                        && (forced || self.config.mode != AgentMode::AutoApprove)
+                        && (forced
+                            || self
+                                .config
+                                .approval_policy
+                                .requires_approval(&call.name, is_ro))
                     {
                         let Some(rx) = self.config.step_rx.clone() else {
                             // Approval is required but nobody can answer: deny,
                             // and do not show a menu that cannot be answered.
+                            let reason = if forced {
+                                "denied: a tool result earlier in this turn looked like prompt injection, and nobody can approve this memory write"
+                            } else {
+                                "denied: no approval channel"
+                            };
                             let err_val = serde_json::json!({
-                                "error": "denied: no approval channel",
+                                "error": reason,
                             });
                             let _ = events
                                 .send(AgentEvent::ToolCallEnd {
@@ -2788,7 +2880,7 @@ impl Agent {
                                 redact,
                                 call.id.clone(),
                                 "",
-                                ToolText::Text("(denied: no approval channel)".to_string()),
+                                ToolText::Text(format!("({reason})")),
                             );
                             i += 1;
                             continue;
@@ -2805,7 +2897,7 @@ impl Agent {
                         let covered = {
                             let shared = Arc::clone(&self.session_approvals);
                             let name = call.name.clone();
-                            move || !always_ask && shared.covers_tool(&name)
+                            move || !always_ask && !forced && shared.covers_tool(&name)
                         };
                         // Record an "always" while the step lock is still held,
                         // so a worker queued behind us always sees it. `--step`
@@ -2911,10 +3003,22 @@ impl Agent {
                     let tool = self.config.tools.get(&call.name).map(Arc::clone);
                     let tool_found = tool.is_some();
                     let ctx = self.tool_context();
+                    let mut memory_written: Option<(String, String, String)> = None;
                     let result = match tool {
                         None => Err(AgentError::ToolNotFound {
                             name: call.name.clone(),
                         }),
+                        // The agent applies `memory_write` itself.
+                        Some(_)
+                            if call.name == crate::memory_write::NAME
+                                && self.strategies.writer_kind.offers_tool() =>
+                        {
+                            let call = call.clone();
+                            self.memory_write_call(&call).await.map(|(out, written)| {
+                                memory_written = Some(written);
+                                out
+                            })
+                        }
                         Some(t) => {
                             let dispatch = dispatch_with_recovery(
                                 t,
@@ -3036,6 +3140,11 @@ impl Agent {
                                     cache_hit: tool_cache_hit,
                                 })
                                 .await;
+                            if let Some((id, kind, status)) = memory_written.take() {
+                                let _ = events
+                                    .send(AgentEvent::MemoryWritten { id, kind, status })
+                                    .await;
+                            }
 
                             // Fire PostToolUse hook (advisory — log denial, no unwind).
                             {
@@ -3253,6 +3362,8 @@ impl Agent {
         tracing::debug!(turn_number = self.turn_count, "starting turn (content)");
 
         self.guards.reset();
+        self.injection_seen
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         let turn_trace = TraceContext::new();
 
         self.cost.check_budget(self.config.budget_limit)?;

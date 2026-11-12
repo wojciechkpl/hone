@@ -354,6 +354,22 @@ impl MemoryWriter for TriggersWriter {
     }
 }
 
+/// The model writes memories through the `memory_write` tool; nothing is
+/// proposed from turns.
+struct ToolWriter {
+    id: StrategyId,
+}
+
+#[async_trait]
+impl MemoryWriter for ToolWriter {
+    fn id(&self) -> &StrategyId {
+        &self.id
+    }
+    async fn propose(&self, _turn: &TurnRecord) -> Vec<MemoryCandidate> {
+        Vec::new()
+    }
+}
+
 /// Memory writes switched off.
 struct NoWriter {
     id: StrategyId,
@@ -498,6 +514,24 @@ impl StrategyRegistry {
             }),
         );
         r.register_writer(
+            "tool",
+            Origin::Builtin,
+            Arc::new(|_p, _d| {
+                Ok(Arc::new(ToolWriter {
+                    id: id(Slot::Recall, "tool", &serde_json::json!({})),
+                }) as Arc<dyn MemoryWriter>)
+            }),
+        );
+        r.register_writer(
+            "triggers+tool",
+            Origin::Builtin,
+            Arc::new(|_p, _d| {
+                Ok(Arc::new(TriggersWriter {
+                    id: id(Slot::Recall, "triggers+tool", &serde_json::json!({})),
+                }) as Arc<dyn MemoryWriter>)
+            }),
+        );
+        r.register_writer(
             "off",
             Origin::Builtin,
             Arc::new(|_p, _d| {
@@ -626,6 +660,8 @@ impl StrategyRegistry {
         let writer_kind = match (sel.writer.value.as_str(), builtin(writer_origin)) {
             ("triggers", true) => WriterKind::Triggers,
             ("off", true) => WriterKind::Off,
+            ("tool", true) => WriterKind::Tool,
+            ("triggers+tool", true) => WriterKind::TriggersTool,
             _ => WriterKind::Custom,
         };
 
@@ -689,7 +725,18 @@ pub enum RecallerKind {
 pub enum WriterKind {
     Triggers,
     Off,
+    /// The model writes through `memory_write`; no trigger writes.
+    Tool,
+    /// Trigger writes and the `memory_write` tool.
+    TriggersTool,
     Custom,
+}
+
+impl WriterKind {
+    /// Whether the model is offered the `memory_write` tool.
+    pub fn offers_tool(self) -> bool {
+        matches!(self, WriterKind::Tool | WriterKind::TriggersTool)
+    }
 }
 
 /// The strategies an agent runs with.
