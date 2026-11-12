@@ -1,0 +1,148 @@
+# Starter suite for `hone eval` (docs/plans/eval-starter-suite-spec.md).
+# working_dir, memory_fixture and the check script are relative to this file.
+# The runner sets EVAL_SUITE_DIR (absolute path of this directory) when it runs a check;
+# the check runs with the run's working-directory copy as its current directory.
+
+[[tasks]]
+id = "c01-py-fix-median"
+prompt = "The median() function in stats.py gives the wrong answer for some inputs. Fix the bug so that `python3 -m unittest` passes. Do not change the tests."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/c01-py-fix-median.sh\""
+working_dir = "c01-py-fix-median"
+timeout_secs = 300
+
+[[tasks]]
+id = "c02-py-add-slugify"
+prompt = "Add a function slugify(text) to text_utils.py so that the tests in test_text_utils.py pass (`python3 -m unittest`). It should turn a title into a lowercase, hyphen-separated URL slug. Do not change the tests."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/c02-py-add-slugify.sh\""
+working_dir = "c02-py-add-slugify"
+timeout_secs = 300
+
+[[tasks]]
+id = "c03-py-refactor-discount"
+prompt = "pricing.py repeats the same discount calculation in three places. Refactor it: introduce one function apply_discount(price) that holds the discount rule, and make the other functions use it. Behaviour and the tests must stay the same (`python3 -m unittest`)."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/c03-py-refactor-discount.sh\""
+working_dir = "c03-py-refactor-discount"
+timeout_secs = 300
+
+[[tasks]]
+id = "c04-js-fix-flatten"
+prompt = "flatten() in flatten.js does not flatten deeply nested arrays correctly. Fix it so that `node --test` passes. Do not change the tests."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/c04-js-fix-flatten.sh\""
+working_dir = "c04-js-fix-flatten"
+timeout_secs = 300
+
+[[tasks]]
+id = "c05-js-add-chunk"
+prompt = "Add a function chunk(arr, size) to utils.js and export it, so that `node --test` passes. Do not change the tests."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/c05-js-add-chunk.sh\""
+working_dir = "c05-js-add-chunk"
+timeout_secs = 300
+
+[[tasks]]
+id = "c06-js-refactor-money"
+prompt = "report.js formats money in three places with the same code. Refactor it: add one function formatMoney(amount) that does the formatting and use it from the other functions. Behaviour and the tests must stay the same (`node --test`)."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/c06-js-refactor-money.sh\""
+working_dir = "c06-js-refactor-money"
+timeout_secs = 300
+
+[[tasks]]
+id = "c07-rs-fix-kvparse"
+prompt = "parse_kv() in src/lib.rs loses part of the value for some inputs. Fix it so that `cargo test --offline` passes. Do not change the tests and do not add dependencies."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/c07-rs-fix-kvparse.sh\""
+working_dir = "c07-rs-fix-kvparse"
+timeout_secs = 300
+
+[[tasks]]
+id = "c08-rs-add-roman"
+prompt = "Add a function to_roman(n: u32) -> Option<String> to src/lib.rs so that `cargo test --offline` passes. Do not change the tests and do not add dependencies."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/c08-rs-add-roman.sh\""
+working_dir = "c08-rs-add-roman"
+timeout_secs = 300
+
+[[tasks]]
+id = "m01-mem-report-filename"
+prompt = "Add a function make_report_filename(day) to reports.py. It takes a datetime.date and returns the file name for that day's report, following our report file naming convention."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/m01-mem-report-filename.sh\""
+working_dir = "m01-mem-report-filename"
+memory_fixture = "fixtures/m01-mem-report-filename.jsonl"
+timeout_secs = 300
+
+[[tasks]]
+id = "m02-mem-staging-port"
+prompt = "Set the port in config.json to the staging service port we agreed on. Change nothing else in the file."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/m02-mem-staging-port.sh\""
+working_dir = "m02-mem-staging-port"
+memory_fixture = "fixtures/m02-mem-staging-port.jsonl"
+timeout_secs = 300
+
+[[tasks]]
+id = "m03-mem-deadline-format"
+prompt = "Add a function format_deadline(day) to deadlines.py. It takes a datetime.date and returns the deadline rendered the way our team prefers dates for deadlines. Do not depend on the system locale."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/m03-mem-deadline-format.sh\""
+working_dir = "m03-mem-deadline-format"
+memory_fixture = "fixtures/m03-mem-deadline-format.jsonl"
+timeout_secs = 300
+
+[[tasks]]
+id = "m04-mem-retry-rule"
+prompt = "Add with_retry(fn, sleep=time.sleep) to net.py. It calls fn() and returns its result, and retries when fn raises, following the reviewer's retry rule. Use the sleep argument for the pauses so it can be faked in tests."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/m04-mem-retry-rule.sh\""
+working_dir = "m04-mem-retry-rule"
+memory_fixture = "fixtures/m04-mem-retry-rule.jsonl"
+timeout_secs = 300
+
+[[tasks]]
+id = "n01-summarise-notes"
+prompt = "Read the meeting notes in notes/ and write summary.md listing the decisions that were made: the launch date, the budget, who owns what, where the offsite is and when the feature freeze starts. Use the final decisions, not earlier proposals."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/n01-summarise-notes.sh\""
+working_dir = "n01-summarise-notes"
+timeout_secs = 300
+
+[[tasks]]
+id = "n02-table-to-csv"
+prompt = "Convert the table in quarterly.md to quarterly.csv: comma-separated, the header row first, no spaces around cells, and no thousands separators in the numbers. Do not include anything else in the file."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/n02-table-to-csv.sh\""
+working_dir = "n02-table-to-csv"
+timeout_secs = 300
+
+[[tasks]]
+id = "n03-rename-photos"
+prompt = "Rename every file in photos/ to this convention: all lowercase, words separated by single hyphens (no spaces), and the extension .jpg. For example 'IMG 0001 Some Place.JPEG' becomes 'img-0001-some-place.jpg'. Keep the file contents unchanged and do not create copies."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/n03-rename-photos.sh\""
+working_dir = "n03-rename-photos"
+timeout_secs = 300
+
+[[tasks]]
+id = "n04-fill-config"
+prompt = "Fill in every TODO value in service.ini using the decisions in meeting-note.md. Use the final decisions and leave the other values unchanged."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/n04-fill-config.sh\""
+working_dir = "n04-fill-config"
+timeout_secs = 300
+
+[[tasks]]
+id = "x01-ctx-free-shipping"
+prompt = "Customers whose order total is above 100 euros should not be charged for shipping, but at the moment everyone still pays the flat rate. Fix this. Change only what is needed."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/x01-ctx-free-shipping.sh\""
+working_dir = "x01-ctx-free-shipping"
+timeout_secs = 420
+
+[[tasks]]
+id = "x02-ctx-long-names"
+prompt = "Player names that are too long overflow the layout on the leaderboard page. Names longer than 12 characters should be cut so that the result is 12 characters long, ending with the ellipsis character …. Shorter names stay as they are. Change only what is needed."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/x02-ctx-long-names.sh\""
+working_dir = "x02-ctx-long-names"
+timeout_secs = 420
+
+[[tasks]]
+id = "x03-ctx-blank-timeout"
+prompt = "The app crashes at startup when the request timeout is left blank in the settings file. A blank timeout should mean the default of 30 seconds. Fix it. Change only what is needed."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/x03-ctx-blank-timeout.sh\""
+working_dir = "x03-ctx-blank-timeout"
+timeout_secs = 420
+
+[[tasks]]
+id = "x04-ctx-invoice-order"
+prompt = "The monthly invoice export lists the oldest invoice first, but the accountants want the newest invoice at the top. Fix this for the export only. Change only what is needed."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/x04-ctx-invoice-order.sh\""
+working_dir = "x04-ctx-invoice-order"
+timeout_secs = 420
