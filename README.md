@@ -13,6 +13,7 @@
 <p align="center">
   <a href="#installation">Installation</a> •
   <a href="#quick-start">Quick Start</a> •
+  <a href="#whats-new">What's new</a> •
   <a href="#features">Features</a> •
   <a href="#documentation">Documentation</a> •
   <a href="#contributing">Contributing</a>
@@ -21,7 +22,7 @@
 <p align="center">
   <img alt="Rust 1.85+" src="https://img.shields.io/badge/rust-1.85+-orange.svg">
   <img alt="MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-1100%2B%20passing-brightgreen.svg">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-4300%2B%20passing-brightgreen.svg">
   <img alt="SWE-bench" src="https://img.shields.io/badge/SWE--bench%20v1-58%2F300%20(19.3%25)-green.svg">
 </p>
 
@@ -125,6 +126,84 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 
 **Work from anywhere.** Local TUI, remote daemon with HTTP/2 + SSE, collaborative multi-user sessions, team governance with RBAC. Run honed on a server, connect from any terminal.
 
+## What's new
+
+Recent highlights. They are all in the `[Unreleased]` section of the [CHANGELOG](CHANGELOG.md), which has the details.
+
+### Decide what the agent may do
+
+- **Permission rules.** Allow, ask about or deny tool calls by shell command, file path or network host.
+  - Where they live: your own `~/.config/hone/permissions.toml`, and the project's `.hone/permissions.toml`, which can only tighten your rules.
+  - Where they're checked: on every tool call, in the TUI, one-shot runs, `honed` and `hone-mcp-server`.
+  - Headless runs: `--approve <rule-id>` approves an `ask` rule in advance. A `deny` can't be lifted that way.
+  - Built-in rules: `HONE_POLICY_BUILTINS=1` adds 39 rules (`.env` files, `~/.ssh`, cloud and package credentials, …) and redacts secrets in tool output.
+  - With no permission files, nothing changes. See the [permissions guide](docs/permissions-and-sandbox.md).
+- **Approvals on every turn.** The TUI asks before edits and commands on every turn, and `--step` asks before each call. In a complex prompt or a `/plan` Run, the specialist workers ask too. The approval menu names the worker, and "always" covers the rest of the session.
+
+```toml
+# ~/.config/hone/permissions.toml or .hone/permissions.toml
+version = 2
+
+[[rules]]
+id = "no-push"
+command = "git push*"
+decision = "deny"
+
+[[rules]]
+id = "ask-secrets"
+path = "secrets/**"
+op = "read"
+decision = "ask"
+```
+
+### The right model for each turn, and a fallback when it fails
+
+- **Routing by complexity.** Hone sorts every prompt as simple, medium or complex, and `[[routing]]` in `config.toml` gives each kind its own model. `/model` now switches the provider as well as the model.
+- **Fallback models.** `fallback_models`, set in your own config only, are tried in order when the turn's model fails before answering: an overload, a rate limit, a 5xx error, or no answer at all. Hone tells you when a fallback took over: in the TUI, on stderr, and in `--json` output.
+- **`config.toml` takes effect.** `default_model`, `[providers.*]` and `[budget]` are now applied. A project's `.hone/config.toml` may choose models and lower the budget, but it can't change endpoints or API keys.
+
+```toml
+# ~/.config/hone/config.toml
+default_model = "anthropic:claude-sonnet-4-5"      # medium turns, and any tier without a rule
+fallback_models = ["openai:deepseek-chat", "ollama:qwen2.5-coder"]
+
+[[routing]]
+task = "simple"
+model = "openai:deepseek-chat"
+
+[[routing]]
+task = "complex"
+model = "anthropic:claude-opus-4-5"
+```
+
+See [routing and fallback](docs/configuration.md#routing-and-fallback).
+
+### Answers that arrive whole, and tools that recover
+
+- **Streaming:**
+  - A response that fails before any output is retried, or handed to a fallback model.
+  - A response cut off midway is reported as an error, not kept as if it were complete.
+  - Long answers are no longer cut off at two minutes: the 120 s limit now applies only when nothing arrives.
+  - A character split across two network chunks (accented letters, CJK, emoji) is no longer lost.
+  - Base URLs ending in `/v1` work.
+  - An error that a retry can't fix isn't retried.
+- **A failing tool doesn't end the turn.** For example, an `edit_file` whose text isn't in the file: the model sees the error and can try again.
+- **Workers can act.** In a complex prompt or a `/plan` Run, the specialist agents (`rust-expert`, `code-reviewer`, …) get the tools their agent definition lists. They run under the session's approvals, permission rules and sandbox.
+
+### Nothing left running after Hone stops (unix)
+
+- **Shell commands** each run in their own process group. When a call ends early (<kbd>Esc</kbd>, a timeout, a stopped run), the whole group is killed, so a `cargo test` or a dev server doesn't keep running in the background.
+- **MCP servers:**
+  - Every request gives up after the server's `timeout_ms`.
+  - A server that hangs at startup is skipped.
+  - All servers start and stop in parallel.
+  - Every way Hone ends stops them: a normal exit, an error, a signal or a panic. Servers get SIGTERM first, so they can clean up. Only `kill -9` or a crash that isn't a panic can still leave one running.
+
+### Also new
+
+- **`HONE_CONTEXT_WINDOW`** sets the context window for a model that is served with a smaller one than its name suggests.
+- **Typed memories.** The model reads an index of memories and fetches the ones it needs. Recall uses BM25 ranking. Manage memories with `hone memory ls | show | forget`.
+
 ## Features
 
 - **Shell escape** — Run native shell commands with `!command`: `!ls`, `!git status`, `!cargo test` show inline output. `!cd src` changes directory (confined to project). `!nvim file.rs` suspends TUI, runs editor, restores after.
@@ -136,7 +215,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 - **Observability sidebar & session reports** — Press `Ctrl+R` to toggle the Agent Rail sidebar showing files touched, context injected, and memory recalls per turn. On session end, detailed reports are auto-generated with cost, tokens, files, tools, and timelines. View with `hone reports list/show/diff`.
 - **Multi-agent orchestration** — Decompose complex tasks via research-backed patterns (Anthropic, MASAI, CodeR). Orchestrator-worker pipeline with message merging. Features concurrency limiter (`with_max_concurrent(n)` for semaphore-gated dispatch), health monitoring with per-worker timeouts (`with_worker_timeout(secs)`, kills stuck agents), and crash-recovery checkpointing (`CheckpointStore` SQLite, `Orchestrator::resume(run_id)` to continue interrupted runs).
 - **Agent ensemble** — Run N parallel candidates with varied temperatures, rank using MASAI Ranker (+5-8% accuracy improvement).
-- **Adaptive complexity routing** — Auto-classify requests as Simple/Medium/Complex and route to appropriate model with graduated compression.
+- **Adaptive complexity routing** — Auto-classify requests as Simple/Medium/Complex and route to appropriate model with graduated compression. Choose the model for each tier with `[[routing]]` in `config.toml`, and add `fallback_models` for outages ([routing and fallback](docs/configuration.md#routing-and-fallback)).
 - **Adaptive hierarchical skeleton** — Proactive context injection with intelligent strategy selection: auto-detects repository size and auto-selects detail level. 4-level hierarchy: directory → file list → signatures → call graph. The default strategy is **Adaptive**; `call-graph`, `hybrid`, `dependency-graph` and `flat` are selectable with `--skeleton-strategy`. Adaptive skips large files (>100KB) and slow parses (>100ms). Progressive budget filling ensures efficient token use. Disable with `--no-inject` or `HONE_NO_INJECTION=1`. Its effect on SWE-bench resolve rate is being measured (see [SWE-bench Results](#swe-bench-results)).
 - **Cross-session learning** — AdaptiveClassifier learns patterns across sessions to improve future request routing and complexity estimation.
 - **Test-verification loop** — AgentCoder pattern that runs tests after each iteration (+40% bugs caught early).
