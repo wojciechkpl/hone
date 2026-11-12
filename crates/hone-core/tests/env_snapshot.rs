@@ -49,6 +49,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use hone_core::strategy::EnvSnapshot;
+
+/// Creating a script and executing it from parallel threads races with `fork` (ETXTBSY on
+/// Linux): every test holds this for its whole duration, so no other test's fork can inherit
+/// the still-open write handle of a fake executable. (M5 of the env-snapshot review.)
+static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 use hone_proto::{SourceRef, sha256_hex};
 
 struct Fixture {
@@ -118,6 +123,7 @@ fn pos(text: &str, needle: &str) -> usize {
 
 #[tokio::test]
 async fn test_e2_block_should_have_the_documented_header_and_line_order() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     f.version("rustc", "rustc 1.99.0 (fake)");
     std::fs::write(f.work.join("a.txt"), "x").unwrap();
@@ -141,6 +147,7 @@ async fn test_e2_block_should_have_the_documented_header_and_line_order() {
 
 #[tokio::test]
 async fn test_e2_top_level_entries_should_be_sorted_skip_hidden_and_mark_directories() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     for name in ["b.txt", "a.txt", ".env", ".hidden"] {
         std::fs::write(f.work.join(name), "x").unwrap();
@@ -159,6 +166,7 @@ async fn test_e2_top_level_entries_should_be_sorted_skip_hidden_and_mark_directo
 
 #[tokio::test]
 async fn test_e2_listing_should_stop_at_fifty_entries_and_count_the_rest() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     for i in 0..60 {
         std::fs::write(f.work.join(format!("file_{i:02}.txt")), "x").unwrap();
@@ -177,6 +185,7 @@ async fn test_e2_listing_should_stop_at_fifty_entries_and_count_the_rest() {
 
 #[tokio::test]
 async fn test_e2_exactly_fifty_entries_should_not_get_a_more_line() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     for i in 0..50 {
         std::fs::write(f.work.join(format!("f{i:02}")), "x").unwrap();
@@ -187,6 +196,7 @@ async fn test_e2_exactly_fifty_entries_should_not_get_a_more_line() {
 
 #[tokio::test]
 async fn test_e2_toolchains_should_list_present_programs_in_probe_order_with_their_first_line() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     // Created in a different order than the probe order.
     f.version("git", "git version 2.45.0");
@@ -212,6 +222,7 @@ async fn test_e2_toolchains_should_list_present_programs_in_probe_order_with_the
 
 #[tokio::test]
 async fn test_e2_a_long_version_line_should_be_cut_to_120_characters() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     f.fake("git", &format!("echo '{}'", "x".repeat(300)));
 
@@ -223,6 +234,7 @@ async fn test_e2_a_long_version_line_should_be_cut_to_120_characters() {
 
 #[tokio::test]
 async fn test_e2_toolchains_header_should_be_omitted_when_no_probe_succeeds() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new(); // an empty bin dir
     let b = f.snapshot(15).gather().await.unwrap();
     assert!(!b.text.contains("Toolchains:"), "{}", b.text);
@@ -232,10 +244,12 @@ async fn test_e2_toolchains_header_should_be_omitted_when_no_probe_succeeds() {
 // ---- E3: no shell, bounded -------------------------------------------------------------------------
 
 #[tokio::test]
-async fn test_e3_probes_should_run_with_a_fixed_argv_closed_stdin_and_the_working_directory() {
+async fn test_e3_probes_should_run_with_a_fixed_argv_and_closed_stdin_in_an_empty_directory() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     let args = f.work.parent().unwrap().join("args.txt");
-    // Records its arguments, would hang on an open stdin, prints its cwd.
+    std::fs::write(f.work.join("repo-file.txt"), "x").unwrap();
+    // Records its arguments, would hang on an open stdin, prints its cwd (E9: not the repository).
     f.fake("git", &format!("echo \"$@\" >> '{}'; cat > /dev/null; pwd -P", args.display()));
     f.fake("java", &format!("echo \"$@\" >> '{}'; echo ok >&2", args.display()));
 
@@ -245,15 +259,14 @@ async fn test_e3_probes_should_run_with_a_fixed_argv_closed_stdin_and_the_workin
     let mut got: Vec<&str> = recorded.lines().collect();
     got.sort_unstable();
     assert_eq!(got, ["--version", "-version"], "argv is fixed: {recorded:?}");
-    assert!(
-        b.text.contains(&format!("  git: {}", f.work.display())),
-        "stdin closed (cat returned) and cwd is the working dir:\n{}",
-        b.text
-    );
+    let line = b.text.lines().find_map(|l| l.strip_prefix("  git: ")).expect("a git line (stdin closed: cat returned)");
+    assert_ne!(std::path::Path::new(line), f.work, "the probe must not run in the working directory:\n{}", b.text);
+    assert!(!std::path::Path::new(line).starts_with(&f.work), "nor below it: {line}");
 }
 
 #[tokio::test]
 async fn test_e3_probes_should_run_in_parallel() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     for name in ["rustc", "cargo", "python3", "node", "npm"] {
         f.fake(name, &format!("sleep 1; echo '{name} ok'"));
@@ -271,6 +284,7 @@ async fn test_e3_probes_should_run_in_parallel() {
 
 #[tokio::test]
 async fn test_e3_a_probe_should_be_killed_after_three_seconds_with_its_process_group() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     let pids = f.work.parent().unwrap();
     f.fake(
@@ -294,6 +308,7 @@ async fn test_e3_a_probe_should_be_killed_after_three_seconds_with_its_process_g
 
 #[tokio::test]
 async fn test_e3_the_whole_snapshot_should_finish_within_timeout_secs() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     f.fake("node", "sleep 30");
     f.version("git", "git version 2.45.0");
@@ -311,6 +326,7 @@ async fn test_e3_the_whole_snapshot_should_finish_within_timeout_secs() {
 
 #[tokio::test]
 async fn test_e4_failing_empty_and_missing_probes_should_leave_their_lines_out() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     f.fake("go", "echo 'go broke' >&2; exit 1");
     f.fake("ruby", "true"); // succeeds with no output
@@ -327,6 +343,7 @@ async fn test_e4_failing_empty_and_missing_probes_should_leave_their_lines_out()
 
 #[tokio::test]
 async fn test_e4_an_unreadable_working_directory_should_not_fail_the_snapshot() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     f.version("git", "git version 2.45.0");
     let missing = f.work.join("no-such-dir");
@@ -345,6 +362,7 @@ async fn test_e4_an_unreadable_working_directory_should_not_fail_the_snapshot() 
 
 #[tokio::test]
 async fn test_e7_each_contributing_probe_and_the_listing_should_be_a_command_source() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     f.version("rustc", "rustc 1.99.0 (fake)");
     f.fake("java", "echo 'openjdk version \"21\"' >&2");
@@ -380,6 +398,7 @@ async fn test_e7_each_contributing_probe_and_the_listing_should_be_a_command_sou
 
 #[tokio::test]
 async fn test_e7_toolchain_sources_should_follow_the_probe_order() {
+    let _serial = SERIAL.lock().await;
     let f = Fixture::new();
     f.version("git", "g");
     f.version("rustc", "r");
