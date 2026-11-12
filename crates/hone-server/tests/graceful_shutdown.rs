@@ -26,7 +26,7 @@
 //!     pub worker: Option<WorkerShutdown>,
 //!     pub mcp: Option<hone_mcp::McpManager>,
 //! }
-//! impl Default for ShutdownOptions { /* grace 25 s, no worker, no mcp */ }
+//! impl Default for ShutdownOptions { /* grace 20 s, no worker, no mcp */ }
 //! pub struct ShutdownReport {
 //!     /// true: everything finished by itself inside the limit; false: the
 //!     /// limit passed (or was 0) and something was dropped.
@@ -51,7 +51,7 @@
 //! where F: std::future::Future<Output = ()> + Send + 'static;
 //!
 //! /// `HONE_SHUTDOWN_GRACE_SECS` parsing: `None` or an invalid value (not a
-//! /// whole number of seconds >= 0) gives 25 s (the invalid case logs a
+//! /// whole number of seconds >= 0) gives 20 s (the invalid case logs a
 //! /// warning); `"0"` is zero.
 //! pub fn parse_shutdown_grace(raw: Option<&str>) -> std::time::Duration;
 //! ```
@@ -433,14 +433,19 @@ async fn test_d2_new_connections_should_be_refused_after_the_signal() {
 // ---- D3: the drain has a limit ---------------------------------------------
 
 #[test]
-fn test_d3_grace_parsing_should_default_to_25_and_accept_whole_seconds() {
+fn test_d3_grace_parsing_should_default_to_20_and_accept_whole_seconds() {
     let secs = |raw: Option<&str>| parse_shutdown_grace(raw);
-    assert_eq!(secs(None), Duration::from_secs(25));
+    assert_eq!(secs(None), Duration::from_secs(20));
     assert_eq!(secs(Some("30")), Duration::from_secs(30));
     assert_eq!(secs(Some("0")), Duration::ZERO);
     for bad in ["", "abc", "-1", "1.5", "5s", " "] {
-        assert_eq!(secs(Some(bad)), Duration::from_secs(25), "value {bad:?}");
+        assert_eq!(secs(Some(bad)), Duration::from_secs(20), "value {bad:?}");
     }
+}
+
+#[test]
+fn test_d10_default_options_should_use_a_20_second_grace() {
+    assert_eq!(ShutdownOptions::default().grace, Duration::from_secs(20));
 }
 
 #[tokio::test]
@@ -948,11 +953,14 @@ async fn test_d8_handlers_should_get_the_peer_address_as_connect_info() {
 /// Its drop is slow, so "the aborted worker task was awaited before the MCP
 /// shutdown" is observable without racing: the MCP server sees its input close
 /// only after the slow drop has finished.
-struct DropStamp(Arc<std::sync::Mutex<Option<std::time::SystemTime>>>);
+struct DropStamp(
+    Arc<std::sync::Mutex<Option<std::time::SystemTime>>>,
+    Duration,
+);
 
 impl Drop for DropStamp {
     fn drop(&mut self) {
-        std::thread::sleep(Duration::from_millis(600));
+        std::thread::sleep(self.1);
         *self
             .0
             .lock()
@@ -964,12 +972,13 @@ impl Drop for DropStamp {
 struct StuckExecutor {
     started: Arc<Notify>,
     dropped_at: Arc<std::sync::Mutex<Option<std::time::SystemTime>>>,
+    drop_delay: Duration,
 }
 
 #[async_trait]
 impl TaskExecutor for StuckExecutor {
     async fn execute(&self, _task: &SubTask) -> ExecutionOutcome {
-        let _stamp = DropStamp(self.dropped_at.clone());
+        let _stamp = DropStamp(self.dropped_at.clone(), self.drop_delay);
         self.started.notify_one();
         tokio::time::sleep(Duration::from_secs(60)).await;
         ExecutionOutcome::completed("never")
@@ -988,6 +997,7 @@ async fn test_d8_aborted_worker_task_should_be_gone_before_the_mcp_shutdown_star
     let executor = Arc::new(StuckExecutor {
         started: started.clone(),
         dropped_at: dropped_at.clone(),
+        drop_delay: Duration::from_millis(600),
     });
     let (stop, rx) = watch::channel(false);
     let handle = coord.pool(executor).spawn_with_shutdown(rx);
@@ -1021,5 +1031,125 @@ async fn test_d8_aborted_worker_task_should_be_gone_before_the_mcp_shutdown_star
     assert!(
         closed >= dropped,
         "the MCP shutdown started while the aborted worker task was still being dropped"
+    );
+}
+
+// ---- D9: reaching the limit after the worker finished cannot crash ------------
+
+fn events_app() -> Router {
+    Router::new().route(
+        "/events",
+        get(|| async { Sse::new(futures::stream::pending::<Result<Event, Infallible>>()) }),
+    )
+}
+
+/// Reads `resp` until the stream ends or fails; returns when that happened.
+fn watch_stream_end(mut resp: reqwest::Response) -> tokio::task::JoinHandle<Instant> {
+    tokio::spawn(async move {
+        loop {
+            match resp.chunk().await {
+                Ok(Some(_)) => continue,
+                Ok(None) | Err(_) => return Instant::now(),
+            }
+        }
+    })
+}
+
+/// The worker is done by the time the HTTP phase reaches the limit: the old
+/// code polled the finished `JoinHandle` again and tokio panicked.
+async fn limit_after_finished_worker(coord: Coordinator, executor: Arc<dyn TaskExecutor>) {
+    let (stop, rx) = watch::channel(false);
+    let handle = coord.pool(executor).spawn_with_shutdown(rx);
+    tokio::time::sleep(Duration::from_millis(300)).await; // idle, or the task has run
+    let (listener, base) = bind().await;
+    let grace = Duration::from_millis(600);
+    let (signal, mut serving) = serve(
+        listener,
+        events_app(),
+        ShutdownOptions {
+            grace,
+            worker: Some(WorkerShutdown { stop, handle }),
+            mcp: None,
+        },
+    );
+    let resp = reqwest::get(format!("{base}/events")).await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let ended = watch_stream_end(resp);
+    signal.send(()).unwrap();
+    let t0 = Instant::now();
+
+    let report = finishes_within(&mut serving, Duration::from_secs(6))
+        .await
+        .expect("serve_until_shutdown returned an error");
+    assert!(!report.drained, "the open stream hit the limit");
+    let ended_at = tokio::time::timeout(Duration::from_secs(2), ended)
+        .await
+        .expect("the stream was never cut")
+        .unwrap();
+    let after = ended_at.duration_since(t0);
+    assert!(
+        after >= Duration::from_millis(450) && after < grace + Duration::from_millis(1000),
+        "the stream ended {after:?} after the signal (limit {grace:?})"
+    );
+}
+
+#[tokio::test]
+async fn test_d9_limit_reached_after_an_idle_worker_ended_should_not_crash_and_should_cut() {
+    let _s = SERIAL.lock().await;
+    let coord = Coordinator::start(None).await;
+    limit_after_finished_worker(coord, SlowExecutor::new(Duration::ZERO)).await;
+}
+
+#[tokio::test]
+async fn test_d9_limit_reached_after_a_quick_task_finished_should_not_crash_and_should_cut() {
+    let _s = SERIAL.lock().await;
+    let coord = Coordinator::start(Some(claimed_task_json("task-abc"))).await;
+    limit_after_finished_worker(coord, SlowExecutor::new(Duration::from_millis(50))).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_d9_connections_should_be_cut_at_the_limit_not_after_the_aborted_workers_slow_drop() {
+    let _s = SERIAL.lock().await;
+    let coord = Coordinator::start(Some(claimed_task_json("task-abc"))).await;
+    let started = Arc::new(Notify::new());
+    let executor = Arc::new(StuckExecutor {
+        started: started.clone(),
+        dropped_at: Arc::new(std::sync::Mutex::new(None)),
+        drop_delay: Duration::from_millis(900),
+    });
+    let (stop, rx) = watch::channel(false);
+    let handle = coord.pool(executor).spawn_with_shutdown(rx);
+    tokio::time::timeout(Duration::from_secs(5), started.notified())
+        .await
+        .expect("the task never started");
+    let (listener, base) = bind().await;
+    let grace = Duration::from_millis(300);
+    let (signal, mut serving) = serve(
+        listener,
+        events_app(),
+        ShutdownOptions {
+            grace,
+            worker: Some(WorkerShutdown { stop, handle }),
+            mcp: None,
+        },
+    );
+    let resp = reqwest::get(format!("{base}/events")).await.unwrap();
+    let ended = watch_stream_end(resp);
+    signal.send(()).unwrap();
+    let t0 = Instant::now();
+
+    let ended_at = tokio::time::timeout(Duration::from_secs(6), ended)
+        .await
+        .expect("the stream was never cut")
+        .unwrap();
+    let after = ended_at.duration_since(t0);
+    finishes_within(&mut serving, Duration::from_secs(8))
+        .await
+        .unwrap();
+    // Cut at the limit (300 ms); waiting for the 900 ms drop first would end it
+    // at about 1.2 s.
+    assert!(
+        after < Duration::from_millis(800),
+        "the stream ended {after:?} after the signal: the cut waited for the worker"
     );
 }

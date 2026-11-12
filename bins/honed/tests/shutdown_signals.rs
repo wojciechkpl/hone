@@ -221,7 +221,7 @@ fn test_d3_invalid_grace_value_should_warn_and_still_shut_down() {
 
 #[test]
 fn test_d5_second_sigterm_during_the_drain_should_end_honed_by_the_signal() {
-    let mut h = start(None, false); // default limit 25 s: only the 2nd signal ends it
+    let mut h = start(None, false); // default limit 20 s: only the 2nd signal ends it
     let _held = h.hold_request_open();
     h.signal("TERM");
     std::thread::sleep(Duration::from_millis(700));
