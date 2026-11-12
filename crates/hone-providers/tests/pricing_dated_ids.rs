@@ -27,7 +27,6 @@ fn test_u6_the_longest_base_should_win() {
 
 #[test]
 fn test_u6_only_a_dash_separated_date_suffix_counts() {
-    assert_eq!(rates("openai:gpt-4o-20240806"), None, "no dashes: not a dated id");
     assert_eq!(rates("openai:gpt-4o-preview"), None);
     assert_eq!(rates("openai:gpt-4o-2024-08"), None, "incomplete date");
     assert_eq!(rates("openai:unknown-model-2024-08-06"), None, "the base has no entry either");
@@ -40,4 +39,28 @@ fn test_u6_an_exact_entry_should_still_win_over_the_base() {
     let table = PricingTable::default_table();
     let e = table.get(&ModelId::new("openai:gpt-4o")).unwrap();
     assert_eq!(e.model.as_str(), "openai:gpt-4o");
+}
+
+// ---- U16: Anthropic-style -YYYYMMDD suffixes ----------------------------------------------------
+
+#[test]
+fn test_u16_a_trailing_yyyymmdd_should_be_stripped_to_find_the_base_entry() {
+    let sonnet = rates("anthropic:claude-sonnet-4-5").expect("in the table");
+    assert_eq!(rates("anthropic:claude-sonnet-4-5-20250929"), Some(sonnet));
+    let opus = rates("anthropic:claude-opus-4-5").expect("in the table");
+    assert_eq!(rates("anthropic:claude-opus-4-5-20251101"), Some(opus));
+    let gpt = rates("openai:gpt-4o").unwrap();
+    assert_eq!(rates("openai:gpt-4o-20240806"), Some(gpt), "the rule is the same for every provider");
+}
+
+#[test]
+fn test_u16_only_eight_digits_after_a_dash_count() {
+    assert_eq!(rates("anthropic:claude-sonnet-4-5-2025"), None);
+    assert_eq!(rates("anthropic:claude-sonnet-4-5-202509291"), None, "nine digits");
+    assert_eq!(rates("anthropic:unknown-model-20250929"), None, "the base has no entry either");
+}
+
+#[test]
+fn test_u16_a_listed_dated_entry_should_still_win() {
+    assert!(rates("anthropic:claude-haiku-4-5-20251001").is_some());
 }

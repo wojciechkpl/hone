@@ -286,3 +286,57 @@ fn test_u10_a_call_that_reported_usage_should_keep_the_run_usage_known() {
     assert_eq!(v["usage_known"], true, "{v}");
     assert_eq!(v["cost_known"], true, "{v}");
 }
+
+// ---- U14: orchestrated and ensemble runs report unpriced models ----------------------------------------------
+
+const NOTE: &str = "hone: no price for openai:dummy-model; its usage isn't counted towards cost or [budget]";
+const INCOMPLETE: &str = "(incomplete: unpriced models)";
+
+#[test]
+fn test_u14_orchestrate_with_an_unpriced_model_should_note_it_once_and_mark_the_total_incomplete() {
+    let mock = start_mock(PLAN, true);
+    let e = env("openai:dummy-model", &mock.base_url, "", "");
+
+    let o = run(&e, &["--no-clarify", "--no-inject", "--orchestrate", "do thing"]);
+
+    assert!(mock.requests.load(Ordering::SeqCst) >= 3, "{}", o.stderr);
+    assert_eq!(o.stderr.matches(NOTE).count(), 1, "one note per model, not per agent: {}", o.stderr);
+    let total = o
+        .stdout
+        .lines()
+        .find(|l| l.starts_with("Total cost:"))
+        .unwrap_or_else(|| panic!("a Total cost line:\n{}", o.stdout));
+    assert!(total.trim_end().ends_with(INCOMPLETE), "{total}");
+}
+
+#[test]
+fn test_u14_ensemble_with_an_unpriced_model_should_note_it_once_and_mark_the_total_incomplete() {
+    let mock = start_mock("alpha", true);
+    let e = env("openai:dummy-model", &mock.base_url, "", "");
+
+    let o = run(&e, &["--no-clarify", "--no-inject", "--ensemble", "2", "question"]);
+
+    assert_eq!(mock.requests.load(Ordering::SeqCst), 3, "{}", o.stderr);
+    assert_eq!(o.stderr.matches(NOTE).count(), 1, "{}", o.stderr);
+    let line = o
+        .stdout
+        .lines()
+        .find(|l| l.contains("[Ensemble:"))
+        .unwrap_or_else(|| panic!("an Ensemble line:\n{}", o.stdout));
+    assert!(line.contains(INCOMPLETE), "{line}");
+}
+
+#[test]
+fn test_u14_priced_orchestrated_and_ensemble_runs_should_have_no_note_and_no_incomplete_mark() {
+    let mock = start_mock(PLAN, true);
+    let e = env("openai:gpt-4o", &mock.base_url, "", "");
+    let o = run(&e, &["--no-clarify", "--no-inject", "--orchestrate", "do thing"]);
+    assert!(!o.stderr.contains("no price for"), "{}", o.stderr);
+    assert!(!o.stdout.contains("incomplete"), "{}", o.stdout);
+
+    let mock = start_mock("alpha", true);
+    let e = env("openai:gpt-4o", &mock.base_url, "", "");
+    let o = run(&e, &["--no-clarify", "--no-inject", "--ensemble", "2", "question"]);
+    assert!(!o.stderr.contains("no price for"), "{}", o.stderr);
+    assert!(!o.stdout.contains("incomplete"), "{}", o.stdout);
+}
