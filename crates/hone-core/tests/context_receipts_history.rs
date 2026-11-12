@@ -178,13 +178,23 @@ async fn test_cr15_history_sources_should_stay_proportional_to_what_each_call_ad
         assert!(n <= 8, "call {}: {n} sources", i + 1);
     }
     assert_eq!(field(&rs[30], "history_len"), json!(61));
-    let size = |i: usize| serde_json::to_string(&rs[i]).unwrap().len();
-    assert!(
-        size(30) < 2 * size(5),
-        "receipt size must not grow with history: {} vs {}",
-        size(30),
-        size(5)
-    );
+    // Size must not grow with the history. Compaction steps come and go with the
+    // call (a rewrite is logged once), so measure the receipt without them.
+    let size = |i: usize| {
+        let mut r = rs[i].clone();
+        r.compaction.clear();
+        serde_json::to_string(&r).unwrap().len()
+    };
+    let slack = 100; // a few more digits in indexes and counts
+    for i in 20..rs.len() {
+        assert!(
+            size(i) <= size(13) + slack,
+            "call {}: {} bytes vs {} at call 14",
+            i + 1,
+            size(i),
+            size(13)
+        );
+    }
 }
 
 #[tokio::test]
