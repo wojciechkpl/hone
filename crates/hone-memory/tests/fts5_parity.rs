@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! G8-G10 of `docs/plans/fts5-recall-spec.md` (parity and robustness): Unicode-aware
-//! prompt tokens, an index keyed on memory `id` (immune to `VACUUM` rowid renumbering),
+//! prompt tokens, an index keyed on memory `id` through a mapping table (memory id -> FTS rowid; immune to
+//! `VACUUM` and other rowid renumbering of `memories`),
 //! and scores scaled by the memory's decay weight. API: `SqliteStore::recall_fts5` and
 //! `reindex_fts` as in `fts5_index.rs`; no new API.
 
@@ -70,15 +71,17 @@ async fn test_g8_accented_words_should_match_with_and_without_diacritics() {
 }
 
 #[tokio::test]
-async fn test_g8_the_three_character_minimum_should_count_characters_not_bytes() {
+async fn test_g8_the_token_minimum_should_count_characters_not_bytes() {
     let store = SqliteStore::in_memory().await.unwrap();
     store.record(mem("meadow", "kwieciste łąk pełne maków", MemoryKind::Feedback, 1)).await.unwrap();
 
     assert_eq!(ids_for(&store, "łąk").await, ["meadow"], "3 characters (6 bytes) count");
-    for two_chars_four_bytes in ["łą", "ąę", "ża"] {
+    // (Since G13 the minimum is 2 characters.) One character is not usable, however many
+    // bytes: `ż`, `ą` and `ł` are 2 bytes each.
+    for one_char_two_bytes in ["ż", "ą", "ł"] {
         assert!(
-            ids_for(&store, two_chars_four_bytes).await.is_empty(),
-            "{two_chars_four_bytes:?} is 2 characters: not usable"
+            ids_for(&store, one_char_two_bytes).await.is_empty(),
+            "{one_char_two_bytes:?} is 1 character: not usable"
         );
     }
 }
@@ -94,7 +97,7 @@ async fn test_g8_non_ascii_and_ascii_words_in_one_prompt_should_all_count() {
     assert_eq!(got, ["a", "b"]);
 }
 
-// ---- G9: the index is keyed on id ---------------------------------------------------------------
+// ---- G9: the index is keyed on id (through a mapping table since review round 1) ---------------------------------------------------------------
 
 #[tokio::test]
 async fn test_g9_vacuum_and_rowid_renumbering_must_not_misalign_the_index() {

@@ -286,15 +286,22 @@ async fn test_g2_stop_words_should_not_make_a_memory_match() {
 }
 
 #[tokio::test]
-async fn test_g2_at_most_32_tokens_of_a_prompt_should_be_used() {
+async fn test_g2_at_most_32_tokens_of_a_prompt_should_be_used_the_rarest_ones() {
+    // (Since review round 1, G13: when a prompt has more than 32 distinct usable tokens, the
+    // 32 RAREST are kept, not the first 32.) tok001-tok008 are common (6 documents each carry
+    // them); tok009-tok040 occur in one document only.
     let store = SqliteStore::in_memory().await.unwrap();
-    store.record(mem("in", "carries tok032 only", MemoryKind::Feedback, 1)).await.unwrap();
-    store.record(mem("out", "carries tok033 only", MemoryKind::Feedback, 2)).await.unwrap();
+    let common: String = (1..=8).map(|i| format!("tok{i:03} ")).collect();
+    for i in 0..6 {
+        store.record(mem(&format!("common-{i}"), &format!("{common}filler {i}"), MemoryKind::Feedback, 1 + i)).await.unwrap();
+    }
+    let rare: String = (9..=40).map(|i| format!("tok{i:03} ")).collect();
+    store.record(mem("rare32", &rare, MemoryKind::Feedback, 10)).await.unwrap();
     let prompt: String = (1..=40).map(|i| format!("tok{i:03} ")).collect();
 
-    let got = store.recall_fts5(&q(&prompt, 5, None), &[]).await.unwrap();
+    let got = store.recall_fts5(&q(&prompt, 10, None), &[]).await.unwrap();
 
-    assert_eq!(ids(&got), ["in"], "the first 32 tokens count, in order of appearance");
+    assert_eq!(ids(&got), ["rare32"], "the 8 common tokens are the ones cut, so the common documents do not match");
 }
 
 #[tokio::test]

@@ -136,6 +136,24 @@ fn test_g6_fts5_with_encrypted_memory_should_fall_back_to_bm25_with_one_warning(
     assert!(msg.contains("fts5") && msg.contains("bm25"), "{msg}");
 }
 
+#[test]
+fn test_g17_strategies_should_show_the_encrypted_fallback_as_chosen_by_the_flag() {
+    let e = Env::new("[memory]\nrecaller = \"fts5\"\n");
+    let env = [("HONE_MEMORY_PASSPHRASE", "pw")];
+
+    let v = e.json(&env, &["--encrypted-memory", "strategies", "--json"]);
+    assert_eq!(recaller(&v)["name"], "bm25");
+    assert_eq!(
+        recaller(&v)["origin"], "flag",
+        "the active recaller was chosen by --encrypted-memory, not by the config file: {v}"
+    );
+
+    let out = e.run(&env, &["--encrypted-memory", "strategies"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let shown = text(&out.stdout);
+    assert!(shown.contains("--encrypted-memory"), "the text output names the flag: {shown}");
+}
+
 async fn seed(db: &Path, n: usize) {
     let store = SqliteStore::open_with_decay_interval(db, 0).await.unwrap();
     for i in 0..n {

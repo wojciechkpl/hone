@@ -123,3 +123,61 @@ async fn test_g6_fts5_with_an_encrypted_store_should_fall_back_to_bm25() {
     assert_eq!(b.strategy.name, "bm25", "FTS5 cannot index ciphertext");
     assert!(recalled_m1(b), "recall still works through bm25");
 }
+
+#[tokio::test]
+async fn test_g17_a_recaller_error_should_fall_back_to_bm25_for_the_turn() {
+    // A file-backed store whose FTS5 objects are removed behind its back: `fts5` fails.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("memory.db");
+    let store = Arc::new(SqliteStore::open_with_decay_interval(&path, 0).await.unwrap());
+    store
+        .record(Memory {
+            id: "m1".to_owned(),
+            content: "rebasing the zorblax branch before merging".to_owned(),
+            tags: vec![],
+            weight: 1.0,
+            created_at: 1_000_000,
+            decay_at: None,
+            kind: MemoryKind::Feedback,
+            description: None,
+            embedding: None,
+        })
+        .await
+        .unwrap();
+    {
+        let pool = sqlx::SqlitePool::connect(&format!("sqlite:{}?mode=rw", path.display())).await.unwrap();
+        let triggers: Vec<String> = sqlx::query_scalar("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        for t in triggers {
+            sqlx::query(&format!("DROP TRIGGER \"{t}\"")).execute(&pool).await.unwrap();
+        }
+        sqlx::query("DROP TABLE memories_fts").execute(&pool).await.unwrap();
+        pool.close().await;
+    }
+    let Rig { provider, agent } = rig(
+        vec![],
+        Opts {
+            memory: Some(store),
+            ..Default::default()
+        },
+    );
+    let mut r = Rig {
+        provider,
+        agent: agent.with_strategies(strategies(StrategyDeps::default())),
+    };
+
+    let events = r.turn("rebasing the zorblax branch").await;
+
+    let receipt = events
+        .into_iter()
+        .find_map(|e| match e {
+            AgentEvent::ContextAssembled { receipt } => Some(receipt),
+            _ => None,
+        })
+        .expect("a receipt");
+    let b = recall_block(&receipt);
+    assert_eq!(b.strategy.name, "bm25", "the failed fts5 recall fell back to bm25");
+    assert!(recalled_m1(b), "and still recalled the memory: {:?}", b.sources);
+}
