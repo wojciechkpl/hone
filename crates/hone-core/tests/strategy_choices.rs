@@ -528,10 +528,11 @@ async fn test_s7_phase_true_should_compact_when_a_write_follows_reads_a() {
         no_inject: true,
         ..Default::default()
     };
-    // Six reads then an edit: r1 is older than the recent window (4 for `mock:test`),
-    // so phase compaction summarises it.
+    // Five reads then an edit: r1 is older than the recent window (4 for `mock:test`), so
+    // phase compaction summarises it, but it is still too young for the age-based
+    // (graduated) compression, which would otherwise summarise it in the "off" run too.
     let rounds = || {
-        let mut r: Vec<_> = (1..=6).map(|i| vec![read(&format!("r{i}"))]).collect();
+        let mut r: Vec<_> = (1..=5).map(|i| vec![read(&format!("r{i}"))]).collect();
         r.push(vec![call("e1", "edit_file", json!({ "tag": "e1" }))]);
         r
     };
