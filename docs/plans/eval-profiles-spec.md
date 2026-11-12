@@ -38,6 +38,12 @@ flowchart LR
 | F9 | **Report.** `report.json` and `report.md` in the run directory. Per profile: runs, passes, pass rate with a Wilson 95% interval, mean and median cost, mean context tokens, mean model calls, and timeouts and errors counted separately (they're failures in the pass rate). A Pareto column marks profiles not dominated on (pass rate ↑, mean cost ↓) and on (pass rate ↑, mean context tokens ↓). For each non-base profile, a paired comparison with the base over the tasks both ran: per-task pass-rate difference, tasks better / worse / tied, and a 95% bootstrap interval (10,000 resamples of tasks, fixed seed) for the mean difference. |
 | F10 | **History.** Each finished run directory is recorded in the existing eval history store with its profile summaries, so `RegressionBisector::compare` keeps working on the base profile. |
 
+### Added with the starter suite (F11)
+
+| Row | Behaviour |
+|---|---|
+| F11 | **Checks know where the suite lives, and fixtures are JSONL memories.** The success check runs with the run's working-directory copy as its current directory and with `EVAL_SUITE_DIR` set to the absolute path of the tasks file's directory, so a check can be `sh "$EVAL_SUITE_DIR/checks/<id>.sh"` and keep its data outside the working directory. Paths in the tasks file (`working_dir`, `memory_fixture`) are relative to the tasks file. A `memory_fixture` is JSONL, one `hone_memory::Memory` object per line, where `id`, `kind` and `content` are required and other fields default; a malformed line is an `infra_error` naming the file and line. |
+
 ## Testing notes
 
 - **F1/F2/F8** through `EvalRunner` with a scripted mock provider that calls tools (`write_file` then reply), a temp tasks dir, and a success check (`test -f out.txt`). Check isolation: two runs of a task that appends to a file each see the original.
