@@ -42,7 +42,7 @@ flowchart LR
 
 | Row | Behaviour |
 |---|---|
-| F11 | **Checks know where the suite lives, and fixtures are JSONL memories.** The success check runs with the run's working-directory copy as its current directory and with `EVAL_SUITE_DIR` set to the absolute path of the tasks file's directory, so a check can be `sh "$EVAL_SUITE_DIR/checks/<id>.sh"` and keep its data outside the working directory. Paths in the tasks file (`working_dir`, `memory_fixture`) are relative to the tasks file. A `memory_fixture` is JSONL, one `hone_memory::Memory` object per line, where `id`, `kind` and `content` are required and other fields default; a malformed line is an `infra_error` naming the file and line. |
+| F11 | **Checks know where the suite lives, and fixtures are JSONL memories.** The success check runs with the run's working-directory copy as its current directory and with `EVAL_SUITE_DIR` set to the absolute path of the tasks file's directory **in the check's process environment only** (never `set_var` in the runner: the agent runs in-process and its shell would inherit it), and the copy lives outside the repository (the system temp dir), so a check can be `sh "$EVAL_SUITE_DIR/checks/<id>.sh"` and keep its data outside the working directory. Paths in the tasks file (`working_dir`, `memory_fixture`) are relative to the tasks file. A `memory_fixture` is JSONL, one `hone_memory::Memory` object per line, where `id`, `kind` and `content` are required and other fields default; a malformed line is an `infra_error` naming the file and line. |
 
 ## Testing notes
 
