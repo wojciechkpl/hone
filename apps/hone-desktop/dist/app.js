@@ -1726,7 +1726,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     let active = null;
     try {
       const list = await invoke('list_daemons');
-      active = list && list.active;
+      // Like the Rust side, fall back to the first profile when none is
+      // marked active (only a hand-edited desktop.json gets there).
+      const first = list && Array.isArray(list.daemons) && list.daemons[0];
+      active = (list && list.active) || (first && first.name) || null;
     } catch (_) {}
     if (active) {
       show('home');
