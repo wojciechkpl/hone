@@ -92,6 +92,16 @@ flowchart LR
 | F33 | **The integrity hash is robust and cheap.** The eval's own output directory and the system temp dir are excluded from hashing; `--check` errors if an integrity directory contains the output directory. The hash covers each file's path, size, mtime (ns) and content, so a change that's reverted before the next hash is still detected through mtime; a symlink inside an integrity directory is hashed by its target's content when the target lies under an integrity directory. Files are hashed streaming (no whole-file reads) on a blocking thread. `docs/eval.md` says checks must not write inside integrity directories. |
 | F34 | **A changed suite never judges a run.** The integrity hash is re-checked right before each check starts. If the suite changed, that check isn't started, and the run (and per F32 the remaining runs) ends `infra_error` ("suite modified during the run"). With `--jobs` above 1, a run whose check started after the change is caught by its own post-run re-hash (F32). |
 
+### Final verification (F35–F37)
+
+Verification approved F32–F34. Two problems remain. A violation that follows a passing run exits 0, and the terminal shows only the pass rate. A rewrite whose content and mtime are both restored isn't detected. Every re-hash also re-reads all content (about 2.4 s per 320 MB), and directory symlinks pointing outside an integrity dir aren't followed.
+
+| Row | Behaviour |
+|---|---|
+| F35 | **A violated eval fails visibly.** Whenever `integrity_violated` is true, `hone eval` prints to stderr that the suite changed during the run, naming the first changed path, and that the results can't be trusted. It exits 1 whatever the pass rate, and the run isn't added to the eval history. |
+| F36 | **Re-hashes are cheap and harder to fool.** On Unix, each file's fingerprint adds ctime (ns) and inode to path, size and mtime. Content is hashed once at the baseline. Later hashes compare each file's metadata and re-read only files whose metadata changed, plus new or removed files. On other platforms, every hash re-reads content as today. A rewrite whose content and mtime are restored is detected through ctime. |
+| F37 | **Symlinks out of the protected area are named.** `--check` warns for each directory symlink under an integrity dir that points outside the integrity dirs, because files reached through it aren't protected. `docs/eval.md` says so. |
+
 ## Testing notes
 
 - **F1/F2/F8** through `EvalRunner` with a scripted mock provider that calls tools (`write_file` then reply), a temp tasks dir, and a success check (`test -f out.txt`). Check isolation: two runs of a task that appends to a file each see the original.
