@@ -68,7 +68,12 @@ fn slots(sel: &StrategySelection) -> Vec<Slot> {
         Slot {
             slot: "context.sources",
             name: json!(sel.sources.value),
-            params: json!({}),
+            // Parameters of the sources that have any, keyed by source name.
+            params: if sel.sources.value.iter().any(|n| n == "env-snapshot") {
+                json!({ "env-snapshot": { "timeout_secs": sel.env_snapshot_timeout_secs.value } })
+            } else {
+                json!({})
+            },
             origin: sel.sources.origin.label(),
             param_origins: Map::new(),
         },

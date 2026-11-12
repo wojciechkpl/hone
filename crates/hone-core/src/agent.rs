@@ -17,6 +17,8 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
+use crate::receipts::{ExtraBlock, InjectionInfo, RecallInfo, TurnContextInfo};
+use crate::strategy::{RecallerKind, ResolvedStrategies, WriterKind};
 use crate::context::{ContextManager, estimate_text_tokens};
 use crate::context_injector::{ContextInjector, SkeletonStrategy};
 use crate::cost::CostAccumulator;
@@ -631,6 +633,11 @@ pub struct Agent {
     /// Hashes of the non-system messages of the previous receipt (for the incremental
     /// `History` listing).
     receipt_history: std::collections::HashSet<String>,
+    /// Blocks of gathered context sources, in source order: `Once` sources are
+    /// gathered before the first model call and kept; `EachTurn` ones every turn.
+    extra_blocks: Vec<(String, Option<ExtraBlock>)>,
+    /// Names of the `Once` sources already gathered.
+    once_gathered: HashSet<String>,
     /// The context receipts of this agent's life, oldest first (newest
     /// `MAX_KEPT_RECEIPTS` at most).
     receipts: Vec<hone_proto::ContextReceipt>,
@@ -721,6 +728,8 @@ impl Agent {
             strategies,
             receipt_info: TurnContextInfo::default(),
             receipt_history: std::collections::HashSet::new(),
+            extra_blocks: Vec::new(),
+            once_gathered: HashSet::new(),
             receipts: Vec::new(),
             receipts_dropped: 0,
             receipt_agent_id: uuid::Uuid::now_v7().to_string(),
@@ -860,6 +869,68 @@ impl Agent {
             };
             log.lock().await.record(entry);
         }
+    }
+
+    /// Gather the context sources that are due: `Once` sources before the first
+    /// model call of the session (the result is kept), `EachTurn` sources on every
+    /// turn. A source that fails or adds nothing leaves no block. The text is
+    /// redacted like injected skeletons.
+    async fn gather_context_sources(&mut self, prompt: &str) {
+        let strategies = Arc::clone(&self.strategies);
+        let mut due: Vec<usize> = Vec::new();
+        for (i, (name, src)) in strategies.gatherable().enumerate() {
+            let once = src.cadence() == crate::strategy::Cadence::Once;
+            if !(once && self.once_gathered.contains(name)) {
+                due.push(i);
+            }
+        }
+        if due.is_empty() {
+            return;
+        }
+        let history = self.context.messages();
+        let budget_tokens = self.context.max_context_tokens();
+        let redact = self.redacting();
+        for (i, (name, src)) in strategies.gatherable().enumerate() {
+            if !due.contains(&i) {
+                continue;
+            }
+            let view = crate::strategy::TurnView {
+                prompt,
+                turn: self.turn_count,
+                history: &history,
+                working_dir: &self.config.working_dir,
+                budget_tokens,
+            };
+            let blocks = src.gather(&view).await.unwrap_or_default();
+            if src.cadence() == crate::strategy::Cadence::Once {
+                self.once_gathered.insert(name.clone());
+            }
+            // One system message per source; its blocks are joined.
+            let block = blocks.into_iter().reduce(|mut a, b| {
+                a.text.push_str("\n\n");
+                a.text.push_str(&b.text);
+                a.sources.extend(b.sources);
+                a
+            });
+            let extra = block.map(|b| ExtraBlock {
+                slot: b.slot,
+                strategy: src.id().clone(),
+                text: redacted_text(redact, &b.text),
+                sources: b.sources,
+            });
+            match self.extra_blocks.iter_mut().find(|(n, _)| n == name) {
+                Some(slot) => slot.1 = extra,
+                None => self.extra_blocks.push((name.clone(), extra)),
+            }
+        }
+    }
+
+    /// The gathered blocks that have text, in source order.
+    fn active_extras(&self) -> Vec<ExtraBlock> {
+        self.extra_blocks
+            .iter()
+            .filter_map(|(_, b)| b.clone())
+            .collect()
     }
 
     /// Names of the skills whose triggers match `prompt` (for context receipts).
@@ -1419,6 +1490,7 @@ impl Agent {
         };
 
         // Fetch memories before adding the user message so the query is clean.
+        self.gather_context_sources(user_input).await;
         let (memories, memory_entries, recall_info) =
             self.fetch_relevant_memories(user_input).await;
         // Inputs of this turn's context receipts.
@@ -1601,6 +1673,22 @@ impl Agent {
                 .context
                 .build_messages_hashed(&self.config.system_prompt);
 
+            // Gathered sources: one system message each, right after the base
+            // system prompt and before the memories and skills.
+            let extras = self.active_extras();
+            for (i, extra) in extras.iter().enumerate() {
+                let msg = Message {
+                    role: hone_proto::Role::System,
+                    content: hone_proto::Content::Text(extra.text.clone()),
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                };
+                let at = (1 + i).min(messages.len());
+                message_hashes.insert(at, hone_proto::message_sha256(&msg));
+                messages.insert(at, msg);
+            }
+            let shift = extras.len();
+
             if !memories.is_empty() {
                 let memory_msg = Message {
                     role: hone_proto::Role::System,
@@ -1616,8 +1704,8 @@ impl Agent {
                     .first()
                     .is_some_and(|m| matches!(m.role, hone_proto::Role::System))
                 {
-                    message_hashes.insert(1, hone_proto::message_sha256(&memory_msg));
-                    messages.insert(1, memory_msg);
+                    message_hashes.insert(1 + shift, hone_proto::message_sha256(&memory_msg));
+                    messages.insert(1 + shift, memory_msg);
                 } else {
                     message_hashes.insert(0, hone_proto::message_sha256(&memory_msg));
                     messages.insert(0, memory_msg);
@@ -1637,7 +1725,7 @@ impl Agent {
                 };
                 // Position: after memories (index 2) when memories are present,
                 // otherwise right after the base system prompt (index 1).
-                let pos = if !memories.is_empty() { 2 } else { 1 };
+                let pos = shift + if !memories.is_empty() { 2 } else { 1 };
                 let skills_hash = hone_proto::message_sha256(&skills_msg);
                 if messages.len() > pos {
                     message_hashes.insert(pos, skills_hash);
@@ -1664,9 +1752,9 @@ impl Agent {
             {
                 let tool_names: Vec<String> =
                     request.tools.iter().map(|t| t.name.clone()).collect();
-                let recall_at = (!memories.is_empty()).then_some(1);
-                let skills_at =
-                    (!skills_block.is_empty()).then_some(if memories.is_empty() { 1 } else { 2 });
+                let recall_at = (!memories.is_empty()).then_some(1 + shift);
+                let skills_at = (!skills_block.is_empty())
+                    .then_some(shift + if memories.is_empty() { 1 } else { 2 });
                 self.receipt_info.trim_only = self.context.trim_only();
                 // trim-only never runs phase compaction.
                 self.receipt_info.phase_compaction =
@@ -1680,6 +1768,7 @@ impl Agent {
                     recall_at,
                     skills_at,
                     &self.receipt_info,
+                    &extras,
                     self.context.drain_compaction_log(),
                     &message_hashes,
                     &mut self.receipt_history,
@@ -3108,6 +3197,7 @@ impl Agent {
         self.cost.check_budget(self.config.budget_limit)?;
         let cost_before_turn = self.cost.total_usd();
 
+        self.gather_context_sources(&text_for_memory).await;
         let (memories, memory_entries, recall_info) =
             self.fetch_relevant_memories(&text_for_memory).await;
         self.receipt_info = TurnContextInfo {

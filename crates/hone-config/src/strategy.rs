@@ -32,6 +32,17 @@ pub struct ContextTable {
     pub skeleton: Option<SkeletonTable>,
     /// `[context.graduated]`.
     pub graduated: Option<GraduatedTable>,
+    /// `[context.env-snapshot]`.
+    #[serde(rename = "env-snapshot")]
+    pub env_snapshot: Option<EnvSnapshotTable>,
+}
+
+/// The `[context.env-snapshot]` table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct EnvSnapshotTable {
+    /// Seconds the whole snapshot may take (1–60, default 15).
+    pub timeout_secs: Option<u64>,
 }
 
 /// The `[context.skeleton]` table.
@@ -68,7 +79,19 @@ pub struct MemoryTable {
 // ── Names ─────────────────────────────────────────────────────────────────────
 
 /// Valid `[context] sources` names.
-pub const SOURCE_NAMES: &[&str] = &["memory-index", "recall", "skills", "skeleton"];
+pub const SOURCE_NAMES: &[&str] = &[
+    "memory-index",
+    "recall",
+    "skills",
+    "skeleton",
+    "env-snapshot",
+];
+/// The sources that are on unless a file says otherwise (`env-snapshot` is off).
+pub const DEFAULT_SOURCES: &[&str] = &["memory-index", "recall", "skills", "skeleton"];
+/// The default `[context.env-snapshot] timeout_secs`.
+pub const DEFAULT_ENV_TIMEOUT_SECS: u64 = 15;
+/// The accepted range of `[context.env-snapshot] timeout_secs`.
+pub const ENV_TIMEOUT_RANGE: std::ops::RangeInclusive<u64> = 1..=60;
 /// Valid `[context.skeleton] use` names.
 pub const SKELETON_NAMES: &[&str] = &[
     "adaptive",
@@ -176,6 +199,8 @@ pub struct StrategySelection {
     pub skeleton_gap_threshold: Chosen<f32>,
     pub compactor: Chosen<String>,
     pub graduated_phase: Chosen<bool>,
+    /// `[context.env-snapshot] timeout_secs`.
+    pub env_snapshot_timeout_secs: Chosen<u64>,
     /// `None` = the per-model table.
     pub budget_ratio: Chosen<Option<f32>>,
     /// A project file's `budget_ratio` when the user set none: a cap, applied
@@ -268,6 +293,18 @@ fn validate(layer: &ConfigLayer) -> Result<(), ConfigError> {
                 ));
             }
         }
+        if let Some(t) = c.env_snapshot.as_ref().and_then(|e| e.timeout_secs) {
+            if !ENV_TIMEOUT_RANGE.contains(&t) {
+                return Err(invalid(
+                    path,
+                    format!(
+                        "context.env-snapshot.timeout_secs = {t} must be between {} and {}",
+                        ENV_TIMEOUT_RANGE.start(),
+                        ENV_TIMEOUT_RANGE.end()
+                    ),
+                ));
+            }
+        }
         if let Some(g) = c.skeleton.as_ref().and_then(|s| s.gap_threshold) {
             if !(0.0..=1.0).contains(&g) {
                 return Err(invalid(
@@ -323,7 +360,7 @@ impl StrategySelection {
             validate(layer)?;
         }
 
-        let default_sources: Vec<String> = SOURCE_NAMES
+        let default_sources: Vec<String> = DEFAULT_SOURCES
             .iter()
             .filter(|n| !(flags.daemon && **n == "skeleton"))
             .map(|s| (*s).to_owned())
@@ -335,6 +372,7 @@ impl StrategySelection {
             skeleton_gap_threshold: Chosen::default_of(DEFAULT_GAP_THRESHOLD),
             compactor: Chosen::default_of("graduated".to_owned()),
             graduated_phase: Chosen::default_of(false),
+            env_snapshot_timeout_secs: Chosen::default_of(DEFAULT_ENV_TIMEOUT_SECS),
             budget_ratio: Chosen::default_of(None),
             budget_cap: Chosen::default_of(None),
             recaller: Chosen::default_of("bm25".to_owned()),
@@ -399,6 +437,12 @@ impl StrategySelection {
             if let Some(p) = c.graduated.as_ref().and_then(|g| g.phase) {
                 self.graduated_phase = Chosen {
                     value: p,
+                    origin: origin(),
+                };
+            }
+            if let Some(t) = c.env_snapshot.as_ref().and_then(|e| e.timeout_secs) {
+                self.env_snapshot_timeout_secs = Chosen {
+                    value: t,
                     origin: origin(),
                 };
             }
@@ -524,6 +568,18 @@ impl StrategySelection {
                             "context.skeleton.gap_threshold = {g} is lower than the current value; ignored (a project file can only raise it)"
                         ));
                     }
+                }
+            }
+            if let Some(t) = c.env_snapshot.as_ref().and_then(|e| e.timeout_secs) {
+                if t < self.env_snapshot_timeout_secs.value {
+                    self.env_snapshot_timeout_secs = Chosen {
+                        value: t,
+                        origin: origin(),
+                    };
+                } else if t > self.env_snapshot_timeout_secs.value {
+                    warnings.push(format!(
+                        "context.env-snapshot.timeout_secs = {t} is higher than the current limit; ignored (a project file can only lower it)"
+                    ));
                 }
             }
             if let Some(p) = c.graduated.as_ref().and_then(|g| g.phase) {
