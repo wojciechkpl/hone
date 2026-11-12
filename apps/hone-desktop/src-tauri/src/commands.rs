@@ -1574,4 +1574,44 @@ http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
         // The wait lasted >= 0.6 s: about 60 ticks if the runtime stayed free.
         assert!(n >= 20, "other tasks ran only {n} times during the health wait");
     }
+
+    // ---- A8: dropping the state stops its sidecar -------------------------------
+
+    /// SIGKILLs the pid recorded in `<dir>/pid` on drop (the state itself is
+    /// dropped by the test, so `Cleanup` cannot borrow it).
+    struct KillPid(PathBuf);
+
+    impl Drop for KillPid {
+        fn drop(&mut self) {
+            if let Ok(pid) = std::fs::read_to_string(self.0.join("pid")) {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", pid.trim()])
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        }
+    }
+
+    #[test]
+    fn test_a8_dropping_the_state_should_stop_the_managed_sidecar() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let _k = KillPid(dir.path().to_path_buf());
+        let state = DaemonState::new(DesktopConfig::default());
+        let honed = script(dir.path(), HEALTHY);
+        start_sidecar(&state, Some(honed), HEALTH).unwrap();
+        let pid = std::fs::read_to_string(dir.path().join("pid"))
+            .unwrap()
+            .trim()
+            .to_owned();
+        assert!(alive(&pid));
+
+        drop(state);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while alive(&pid) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(!alive(&pid), "the sidecar outlived the app state");
+    }
 }

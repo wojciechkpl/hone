@@ -269,3 +269,83 @@ fn test_a3_failed_start_should_kill_and_reap_the_child_before_returning() {
         "the honed that never became healthy is still running"
     );
 }
+
+// ---- A8: the app's exit leaves no honed behind -----------------------------------
+//
+// Behaviour required: dropping a `SidecarSupervisor` kills and reaps its child
+// (`impl Drop`), idempotently with `shutdown(self)` and without panicking or
+// hanging when the child is already gone.
+
+/// A healthy `honed`: records its pid, answers every GET with 200.
+const HEALTHY: &str = r#"#!/usr/bin/env python3
+import http.server, os, sys
+d = os.path.dirname(os.path.abspath(__file__))
+open(os.path.join(d, "pid"), "w").write(str(os.getpid()))
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+"#;
+
+fn started(dir: &Path) -> SidecarSupervisor {
+    let honed = script(dir, HEALTHY);
+    SidecarSupervisor::start(Some(honed), no_env(), Duration::from_secs(10))
+        .unwrap_or_else(|e| panic!("a healthy honed must start: {e}"))
+}
+
+#[test]
+fn test_a8_dropping_a_started_supervisor_should_kill_its_child() {
+    let _s = serial();
+    let dir = tempfile::tempdir().unwrap();
+    let _reaper = Reaper(dir.path().to_path_buf());
+    let sup = started(dir.path());
+    let pid = std::fs::read_to_string(dir.path().join("pid")).unwrap();
+    assert!(alive(pid.trim()), "the fake is running before the drop");
+
+    drop(sup);
+
+    assert!(
+        gone_within(dir.path(), Duration::from_secs(2)),
+        "the honed outlived its supervisor"
+    );
+}
+
+#[test]
+fn test_a8_dropping_a_supervisor_whose_child_already_exited_should_not_panic_or_hang() {
+    let _s = serial();
+    let dir = tempfile::tempdir().unwrap();
+    let _reaper = Reaper(dir.path().to_path_buf());
+    let mut sup = started(dir.path());
+    let pid = std::fs::read_to_string(dir.path().join("pid"))
+        .unwrap()
+        .trim()
+        .to_owned();
+    let _ = Command::new("kill").args(["-9", &pid]).status();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while sup.is_alive() {
+        assert!(Instant::now() < deadline, "the killed child never ended");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let t = std::thread::spawn(move || {
+        drop(sup);
+        let _ = tx.send(());
+    });
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("dropping a supervisor with a dead child hung");
+    t.join().expect("dropping a supervisor with a dead child panicked");
+}
+
+#[test]
+fn test_a8_explicit_shutdown_should_still_work_with_the_drop_in_place() {
+    let _s = serial();
+    let dir = tempfile::tempdir().unwrap();
+    let _reaper = Reaper(dir.path().to_path_buf());
+    let sup = started(dir.path());
+
+    sup.shutdown().expect("shutdown");
+
+    assert!(gone_within(dir.path(), Duration::from_secs(2)));
+}
