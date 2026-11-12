@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use fts5_support::{mem, q};
 use hone_memory::{
     EncryptedStore, Memory, MemoryError, MemoryFilter, MemoryKind, MemoryQuery, MemoryStore,
-    SqliteStore,
+    SealedVectorStore, SqliteStore,
 };
 
 struct Counting {
@@ -70,25 +70,6 @@ impl MemoryStore for Counting {
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
         self.inner.recall_by_id(id).await
     }
-    async fn record_if_absent(&self, memory: Memory) -> Result<bool, MemoryError> {
-        self.inner.record_if_absent(memory).await
-    }
-    async fn set_description_if_absent(&self, id: &str, description: &str) -> Result<bool, MemoryError> {
-        self.inner.set_description_if_absent(id, description).await
-    }
-    async fn sealed_vector(&self, id: &str) -> Result<Option<Vec<u8>>, MemoryError> {
-        self.sealed_fetches.fetch_add(1, Ordering::SeqCst);
-        self.inner.sealed_vector(id).await
-    }
-    async fn set_sealed_vector(&self, id: &str, blob: Option<&[u8]>) -> Result<(), MemoryError> {
-        self.inner.set_sealed_vector(id, blob).await
-    }
-    async fn vector_migration_candidates(&self) -> Result<Vec<(String, Vec<u8>)>, MemoryError> {
-        self.inner.vector_migration_candidates().await
-    }
-    async fn move_vector_to_sealed(&self, id: &str, blob: &[u8]) -> Result<(), MemoryError> {
-        self.inner.move_vector_to_sealed(id, blob).await
-    }
     async fn recall_semantic(&self, query_embedding: &[f32], limit: usize) -> Result<Vec<hone_memory::ScoredMemory>, MemoryError> {
         self.inner.recall_semantic(query_embedding, limit).await
     }
@@ -106,6 +87,32 @@ impl MemoryStore for Counting {
     }
     async fn import(_path: &Path) -> Result<Self, MemoryError> {
         Err(MemoryError::Io(std::io::Error::other("not supported")))
+    }
+}
+
+#[async_trait]
+impl SealedVectorStore for Counting {
+    async fn record_if_absent(&self, memory: Memory) -> Result<bool, MemoryError> {
+        self.inner.record_if_absent(memory).await
+    }
+    async fn set_description_if_absent(&self, id: &str, description: &str) -> Result<bool, MemoryError> {
+        self.inner.set_description_if_absent(id, description).await
+    }
+    async fn sealed_vector(&self, id: &str) -> Result<Option<Vec<u8>>, MemoryError> {
+        self.sealed_fetches.fetch_add(1, Ordering::SeqCst);
+        self.inner.sealed_vector(id).await
+    }
+    async fn vector_migration_candidates(&self) -> Result<Vec<(String, Vec<u8>)>, MemoryError> {
+        self.inner.vector_migration_candidates().await
+    }
+    async fn move_vector_to_sealed(&self, id: &str, blob: &[u8]) -> Result<(), MemoryError> {
+        self.inner.move_vector_to_sealed(id, blob).await
+    }
+    async fn has_encrypted_rows(&self) -> Result<bool, MemoryError> {
+        self.inner.has_encrypted_rows().await
+    }
+    async fn record_sealed(&self, memory: Memory, sealed: Option<Vec<u8>>) -> Result<(), MemoryError> {
+        self.inner.record_sealed(memory, sealed).await
     }
 }
 
