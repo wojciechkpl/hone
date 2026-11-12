@@ -63,7 +63,7 @@ Legend: ✅ shipped • ⚠️ partial • ❌ missing
 | Web fetch / browser | ❌ | ✅ WebFetch | ⚠️ | ✅ playwright | ✅ |
 | Computer use / vision | ❌ | ⚠️ | ❌ | ⚠️ | ⚠️ |
 | LSP code intelligence | ✅ embedded | ⚠️ via tools | ⚠️ | ⚠️ | ✅ |
-| Tree-sitter semantic index | ✅ pgvector | ❌ | ⚠️ | ❌ | ✅ |
+| Tree-sitter semantic index | ⚠️ symbols in SQLite (no pgvector) | ❌ | ⚠️ | ❌ | ✅ |
 | Memory (cross-session) | ✅ encrypted | ✅ CLAUDE.md | ⚠️ AGENTS.md | ✅ | ✅ rules |
 | Sandboxing | ✅ kernel | ⚠️ container | ⚠️ | ❌ | ⚠️ |
 | Audit log | ✅ JSONL | ⚠️ | ⚠️ | ⚠️ | ❌ |
@@ -135,13 +135,15 @@ The biggest gap surface.
 
 ### 5.3 Context engineering
 
-Hone is *strong*: hierarchical skeleton + CallGraph (95% SWE-bench v1 sample), BM25 memory recall, tree-sitter index over pgvector, doom-loop detector, context-budget graceful abort, output-truncation retry, adaptive complexity router.
+Hone is *strong*: hierarchical skeleton + CallGraph (95% SWE-bench v1 sample), BM25 memory recall, tree-sitter symbol index in SQLite, doom-loop detector, context-budget graceful abort, output-truncation retry, adaptive complexity router.
+
+> **Correction (2026-11-12).** This analysis assumed `hone-index` used pgvector. It never did: the index stores tree-sitter symbols in SQLite, and `docs/architecture.md` lists the vector index as deferred. The pgvector proposals below are superseded by `docs/research/pluggable-context-memory-2026-11.md` §4.7, which keeps embeddings opt-in on SQLite.
 
 **Gaps:**
 - **No prompt-caching awareness.** Anthropic's `cache_control` blocks (5-min and 1-hour) are how Claude Code keeps cost down on long sessions. Hone's `hone-providers/anthropic.rs` should annotate static system prompt + memory index + skeleton with `cache_control` to claim 90% discount on cached tokens.
 - **No automatic context summarization at threshold.** Hone has graceful abort at 95%; Goose summarizes earlier turns to keep going. Add a `summarize_oldest_n_turns` strategy to `hone-core/src/context.rs` triggered at 70%.
 - **No retrieval cache for memory.** Each turn re-runs BM25; cache last query → ids in `hone-cache`.
-- **No semantic memory recall** (only BM25). pgvector is already a dependency for `hone-index` — bring it to memory recall too.
+- **No semantic memory recall** (only BM25). (Corrected: pgvector was never a dependency of `hone-index`; see the note above.)
 
 ### 5.4 Tooling depth
 
@@ -287,7 +289,7 @@ Hone is *ahead* of every competitor here: kernel sandbox (Seatbelt/Landlock), AE
    - Drastically reduces token cost vs full-file rewrites for big files.
 7. **Semantic memory recall** (pgvector) in `crates/hone-memory/`.
    - Currently BM25 only. Add embedding column + cosine recall, hybrid-rank with BM25 (RRF fusion).
-   - Reuses the pgvector pool already in `hone-index`.
+   - Reuses the pgvector pool already in `hone-index`. *(Superseded: no such pool exists; see §5.3's correction.)*
 8. **Image input** in `crates/hone-providers/`.
    - Support `image_url` / `base64` content blocks for Anthropic + OpenAI.
    - Add `paste_image` event in TUI (capture clipboard PNG via `arboard` — already a dep).

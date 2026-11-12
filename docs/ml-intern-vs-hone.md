@@ -5,7 +5,7 @@ Scoped comparative review of [huggingface/ml-intern](https://github.com/huggingf
 2026-04-21) against `hone` (Rust TUI workspace, branch `main`).
 
 Baseline for hone is `docs/aider-vs-hone.md` — this doc only covers novel
-ideas, not the already-catalogued ones (MCP, pgvector, agent rail, etc.).
+ideas, not the already-catalogued ones (MCP, the symbol index, agent rail, etc.).
 
 Research date: 2026-04-21.
 
@@ -265,8 +265,10 @@ three things pass the test:
   `hone-sandbox` with its own model; ml-intern's approach (duplicate a
   template Space, wait for it, talk over HTTPS) is specific to running
   training jobs on HF infra.
-- Whoosh-based docs index (`docs_tools.py`). hone has pgvector, which
-  subsumes Whoosh for everything hone cares about.
+- Whoosh-based docs index (`docs_tools.py`). hone has no document index
+  (its index holds code symbols only, and pgvector was never built), so
+  this is a real gap; `docs/research/pluggable-context-memory-2026-11.md`
+  §4.7 proposes an FTS5 document index.
 - Frontend (React SPA). hone is TUI-first; the web frontend is
   orthogonal. (See `project_hone_webui_prd.md` in your agent memory if
   hone eventually grows a web UI — some of ml-intern's SSE transport

@@ -76,7 +76,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - **Rate limiter using peer IP** — Server-side rate limiting now uses actual peer socket address instead of spoofable `X-Forwarded-For` header.
 
 - **Storage improvements**:
-  - **Dual-database strategy** — Semantic index now uses PostgreSQL+pgvector for vector similarity search (HNSW/IVFFlat indexes). Sessions and memories remain in SQLite for zero-ops local storage.
+  - **Dual-database strategy** — Semantic index now uses PostgreSQL+pgvector for vector similarity search (HNSW/IVFFlat indexes). Sessions and memories remain in SQLite for zero-ops local storage. *(Correction, 2026-11-12: this never shipped. The code index is tree-sitter symbols in SQLite; see `docs/architecture.md`.)*
   - **RwLock poison recovery** — Provider registry uses `unwrap_or_else(|e| e.into_inner())` to recover state after panic.
   - **Memory IDs with UUID v7** — Session and memory IDs now use sortable UUID v7 instead of truncated timestamps.
   - **Cache keys with blake3** — Tool result cache uses blake3 hashing for integrity instead of non-cryptographic `DefaultHasher`.
@@ -90,7 +90,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Deprecated
 
-- **In-memory semantic index fallback only** — PostgreSQL+pgvector is now the default semantic index. In-memory fallback available only when database is unavailable (see `docs/architecture.md` section 9.2).
+- **In-memory semantic index fallback only** — PostgreSQL+pgvector is now the default semantic index. In-memory fallback available only when database is unavailable (see `docs/architecture.md` section 9.2). *(Correction, 2026-11-12: this never shipped; there is no PostgreSQL index.)*
 
 ### Fixed
 
