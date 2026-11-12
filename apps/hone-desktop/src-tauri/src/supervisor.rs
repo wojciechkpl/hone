@@ -378,4 +378,64 @@ mod tests {
         }
         assert!(!healthy, "expected probe to time out, but it succeeded");
     }
+
+    // ---- G6: the stderr reader retries interrupted reads --------------------------
+
+    /// Yields `steps` in order, then end of file.
+    enum Step {
+        Data(&'static [u8]),
+        Err(std::io::ErrorKind),
+    }
+
+    struct Scripted(std::collections::VecDeque<Step>);
+
+    impl Read for Scripted {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            match self.0.pop_front() {
+                None => Ok(0),
+                Some(Step::Err(kind)) => Err(std::io::Error::from(kind)),
+                Some(Step::Data(d)) => {
+                    buf[..d.len()].copy_from_slice(d);
+                    Ok(d.len())
+                }
+            }
+        }
+    }
+
+    fn drained(steps: Vec<Step>) -> Vec<String> {
+        let (tail, handle) = drain_stderr(Scripted(steps.into()));
+        handle.join().unwrap();
+        let q = tail.lock().unwrap_or_else(PoisonError::into_inner);
+        q.iter().cloned().collect()
+    }
+
+    #[test]
+    fn test_g6_interrupted_read_should_be_retried() {
+        let lines = drained(vec![
+            Step::Data(b"before\n"),
+            Step::Err(std::io::ErrorKind::Interrupted),
+            Step::Data(b"after\n"),
+        ]);
+        assert_eq!(lines, ["before", "after"]);
+    }
+
+    #[test]
+    fn test_g6_interrupted_first_read_should_not_end_the_reader() {
+        let lines = drained(vec![
+            Step::Err(std::io::ErrorKind::Interrupted),
+            Step::Err(std::io::ErrorKind::Interrupted),
+            Step::Data(b"hello\nworld\n"),
+        ]);
+        assert_eq!(lines, ["hello", "world"]);
+    }
+
+    #[test]
+    fn test_g6_any_other_error_should_end_the_reader() {
+        let lines = drained(vec![
+            Step::Data(b"kept\n"),
+            Step::Err(std::io::ErrorKind::BrokenPipe),
+            Step::Data(b"never read\n"),
+        ]);
+        assert_eq!(lines, ["kept"]);
+    }
 }
