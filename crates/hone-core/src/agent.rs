@@ -772,15 +772,25 @@ impl Agent {
         if let Some(cap) = strategies.budget_cap {
             self.context.cap_budget_ratio(cap);
         }
-        // The model is offered `memory_write` when the writer includes the tool
-        // and there is a store to write to. The agent applies it itself.
-        if strategies.writer_kind.offers_tool() && self.config.memory_store.is_some() {
-            let tool: Arc<dyn hone_tools::Tool> = Arc::new(crate::memory_write::MemoryWriteTool);
-            self.config.tools = self.config.tools.with_tool(Arc::clone(&tool));
-            self.base_tools = self.base_tools.with_tool(tool);
-        }
         self.strategies = strategies;
+        // The saved base registry (restored on a mode change) always carries the
+        // tool; the active one does too unless the agent is in Plan mode.
+        self.base_tools = self.with_memory_write(&self.base_tools);
+        if self.config.mode != AgentMode::Plan {
+            self.config.tools = self.with_memory_write(&self.config.tools);
+        }
         self
+    }
+
+    /// `tools` plus the `memory_write` facade when this agent offers it: the
+    /// resolved writer includes the tool and there is a memory store. The one
+    /// place that rule lives, used wherever the registry is set or replaced.
+    fn with_memory_write(&self, tools: &ToolRegistry) -> ToolRegistry {
+        if self.strategies.writer_kind.offers_tool() && self.config.memory_store.is_some() {
+            tools.with_tool(Arc::new(crate::memory_write::MemoryWriteTool))
+        } else {
+            tools.clone()
+        }
     }
 
     /// Use `approvals` as this agent's session approvals instead of its own, so
@@ -2190,8 +2200,12 @@ impl Agent {
             // A read-only call joins the parallel batch only if the approval
             // policy would not pause it; otherwise (e.g. `AlwaysAsk`/--step) it
             // takes the sequential path, which owns the approval gate.
+            // `memory_write` is never read-only and is applied by the agent itself
+            // on the sequential path (approval, cap, event); keep it out of the
+            // parallel batch even if a registry ever said otherwise.
             let parallel_ok = |agent: &Self, name: &str| {
-                tool_is_read_only(&agent.config.tools, name)
+                name != crate::memory_write::NAME
+                    && tool_is_read_only(&agent.config.tools, name)
                     && (agent.config.mode == AgentMode::AutoApprove
                         || !agent.config.approval_policy.requires_approval(name, true))
             };
@@ -3867,7 +3881,13 @@ impl AgentHandle {
                         agent.config.model = model;
                     }
                     AgentCommand::SetTools { tools } => {
-                        agent.config.tools = tools;
+                        // A replacement registry keeps `memory_write` (not in Plan
+                        // mode, which offers read-only tools only).
+                        agent.config.tools = if agent.config.mode == AgentMode::Plan {
+                            tools
+                        } else {
+                            agent.with_memory_write(&tools)
+                        };
                     }
                     AgentCommand::SetMode { mode } => {
                         if agent.config.mode != mode {
