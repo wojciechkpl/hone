@@ -1,5 +1,7 @@
 // Tauri 2 exposes invoke + event listening at window.__TAURI__.
 const tauri = window.__TAURI__ || null;
+// False in a plain browser tab: no command reaches the app there.
+const inTauri = !!(tauri && tauri.core && tauri.core.invoke);
 const invoke = (tauri && tauri.core && tauri.core.invoke) ? tauri.core.invoke : async () => ({ stub: true });
 const listen = (tauri && tauri.event && tauri.event.listen) ? tauri.event.listen : async () => () => {};
 
@@ -23,10 +25,35 @@ function hide(id) { document.getElementById(id).classList.add('hidden'); }
 // Daemon status
 // ---------------------------------------------------------------------------
 
+// The reason the last attempt to start the managed daemon failed (a string),
+// or null. Shown in the pill (tooltip) and the Daemon panel.
+let lastStartError = null;
+
+// Run a daemon start command; remember why it failed instead of dropping it.
+// Returns the daemon status the command reports, or null if it failed.
+async function startDaemon(command, args) {
+  try {
+    const status = await invoke(command, args);
+    lastStartError = null;
+    return status;
+  } catch (e) {
+    lastStartError = String(e);
+    console.warn(e);
+    return null;
+  }
+}
+
 async function refreshDaemon() {
   const dot = document.getElementById('daemon-dot');
   const label = document.getElementById('daemon-label');
   const info = document.getElementById('daemon-info');
+  if (!inTauri) {
+    // Not the desktop app: the daemon is neither up nor down as far as we know.
+    dot.className = 'dot dot--unknown';
+    label.textContent = 'not running inside the Hone app';
+    if (info) info.textContent = 'This page is not running inside the Hone desktop app, so daemon controls are unavailable.';
+    return;
+  }
   try {
     const status = await invoke('daemon_status');
     // Prefix the topbar label with the active profile name when known.
@@ -41,9 +68,17 @@ async function refreshDaemon() {
       label.textContent = `${prefix}${status.mode} @ ${status.url}`;
     } else {
       dot.className = 'dot dot--bad';
-      label.textContent = prefix ? `${prefix}unreachable` : 'daemon not reachable';
+      label.textContent = lastStartError
+        ? 'daemon failed to start'
+        : (prefix ? `${prefix}unreachable` : 'daemon not reachable');
     }
-    if (info) info.textContent = JSON.stringify(status, null, 2);
+    label.title = (status && status.healthy) ? '' : (lastStartError || '');
+    if (info) {
+      const text = JSON.stringify(status, null, 2);
+      info.textContent = (status && !status.healthy && lastStartError)
+        ? `Start failed:\n${lastStartError}\n\n${text}`
+        : text;
+    }
   } catch (err) {
     dot.className = 'dot dot--bad';
     label.textContent = `error: ${err}`;
@@ -1520,8 +1555,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     handleAgentEvent(payload.event || {});
   });
 
+  if (!inTauri) show('no-tauri-banner');
+
   const state = loadState();
-  if (!state.mode) {
+  // The Rust side decides from the saved choice and the active profile in
+  // desktop.json, and starts the managed daemon when either says so (a no-op
+  // for an external daemon). The wizard shows only when neither chose one.
+  const booted = await startDaemon('daemon_boot', { savedMode: state.mode || null });
+  const chosen = state.mode || lastStartError || (booted && booted.mode !== 'none');
+  if (!chosen) {
     show('wizard');
   } else {
     show('home');
@@ -1533,7 +1575,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const mode = btn.dataset.mode;
       if (mode === 'sidecar') {
         saveState({ mode: 'sidecar' });
-        try { await invoke('daemon_start'); } catch (e) { console.warn(e); }
+        await startDaemon('daemon_start');
         hide('wizard'); show('home'); refreshDaemon();
       } else {
         document.getElementById('external-form').classList.remove('hidden');
@@ -1552,7 +1594,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('btn-start').addEventListener('click', async () => {
-    try { await invoke('daemon_start'); } catch (e) { console.warn(e); }
+    await startDaemon('daemon_start');
     refreshDaemon();
   });
   document.getElementById('btn-stop').addEventListener('click', async () => {
@@ -1631,7 +1673,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const palResults = document.getElementById('palette-results');
   const PALETTE_ITEMS = [
     { id: 'refresh', label: 'Refresh daemon status', run: refreshDaemon },
-    { id: 'start', label: 'Start managed honed sidecar', run: async () => { await invoke('daemon_start'); refreshDaemon(); } },
+    { id: 'start', label: 'Start managed honed sidecar', run: async () => { await startDaemon('daemon_start'); refreshDaemon(); } },
     { id: 'stop',  label: 'Stop managed honed sidecar', run: async () => { await invoke('daemon_stop'); refreshDaemon(); } },
     { id: 'cancel', label: 'Cancel current run', run: cancelRun },
     { id: 'cost-reset', label: 'Reset session cost meter', run: () => cost.reset() },

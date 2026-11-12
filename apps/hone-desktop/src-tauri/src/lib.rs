@@ -17,6 +17,8 @@ pub mod tray;
 
 use std::sync::Arc;
 
+use tauri::Manager;
+
 use crate::commands::DaemonState;
 use crate::runtime::RunRegistry;
 
@@ -42,12 +44,13 @@ pub fn run() -> anyhow::Result<()> {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
-    builder
+    let app = builder
         .manage(state)
         .manage(Arc::new(RunRegistry::new()))
         .invoke_handler(tauri::generate_handler![
             commands::daemon_status,
             commands::daemon_start,
+            commands::daemon_boot,
             commands::daemon_stop,
             commands::daemon_set_external,
             commands::run_turn,
@@ -89,8 +92,20 @@ pub fn run() -> anyhow::Result<()> {
                 }
             }
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .map_err(|e| anyhow::anyhow!("tauri runtime error: {e}"))?;
+
+    app.run(|handle, event| {
+        // `Exit` comes only when the app really ends (Cmd+Q, the app menu's
+        // Quit, the tray's Quit): closing the window just hides it and never
+        // gets here. Stop the managed `honed` so it does not outlive the app.
+        if let tauri::RunEvent::Exit = event {
+            let sidecar = handle.state::<DaemonState>().sidecar.lock().take();
+            if let Some(sup) = sidecar {
+                let _ = sup.shutdown();
+            }
+        }
+    });
 
     Ok(())
 }

@@ -79,27 +79,128 @@ pub async fn daemon_status(state: tauri::State<'_, DaemonState>) -> Result<Daemo
     Ok(DaemonStatus { mode: "none", url: None, healthy: false, pid: None })
 }
 
+/// Whether the app should start its own `honed` at launch. The active profile
+/// (which falls back to the first one) is authoritative when there is one:
+/// sidecar starts it, external never does. With no profile, the web view's saved
+/// mode decides: only `"sidecar"` starts it.
+pub fn should_autostart(saved_mode: Option<&str>, cfg: &DesktopConfig) -> bool {
+    match cfg.active_profile().map(|p| &p.mode) {
+        Some(DaemonMode::Sidecar) => true,
+        Some(DaemonMode::External { .. }) => false,
+        None => saved_mode == Some("sidecar"),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartOutcome {
+    Started,
+    AlreadyRunning,
+}
+
+/// How long a start waits for `honed` to answer `/health`.
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Start the managed `honed` unless one is already running. The slot stays
+/// locked while starting, so two callers never start two. On failure the slot
+/// stays empty and nothing is left running. Writes no `desktop.json`.
+pub fn start_sidecar(
+    state: &DaemonState,
+    honed_path: Option<std::path::PathBuf>,
+    health_timeout: Duration,
+) -> Result<StartOutcome, SupervisorError> {
+    start_in_slot(&state.sidecar, honed_path, health_timeout)
+}
+
+type SidecarSlot = Arc<Mutex<Option<SidecarSupervisor>>>;
+
+fn start_in_slot(
+    slot: &SidecarSlot,
+    honed_path: Option<std::path::PathBuf>,
+    health_timeout: Duration,
+) -> Result<StartOutcome, SupervisorError> {
+    let mut slot = slot.lock();
+    if slot.is_some() {
+        return Ok(StartOutcome::AlreadyRunning);
+    }
+    let sup = SidecarSupervisor::start(honed_path, std::env::vars(), health_timeout)?;
+    *slot = Some(sup);
+    Ok(StartOutcome::Started)
+}
+
+/// [`start_sidecar`] for use inside a tokio runtime (the Tauri commands). The
+/// start uses `reqwest::blocking`, which panics on a runtime worker and would
+/// hold it for the whole health wait, so it runs on a blocking thread. The slot
+/// is locked there for the whole start, so two callers still start one `honed`.
+pub async fn start_sidecar_async(
+    state: &DaemonState,
+    honed_path: Option<std::path::PathBuf>,
+    health_timeout: Duration,
+) -> Result<StartOutcome, SupervisorError> {
+    let slot = Arc::clone(&state.sidecar);
+    tokio::task::spawn_blocking(move || start_in_slot(&slot, honed_path, health_timeout))
+        .await
+        .map_err(|e| SupervisorError::Io(std::io::Error::other(e.to_string())))?
+}
+
+/// The launch hook: start the sidecar if [`should_autostart`] says so.
+pub fn boot_sidecar_if_wanted(
+    state: &DaemonState,
+    saved_mode: Option<&str>,
+    honed_path: Option<std::path::PathBuf>,
+    health_timeout: Duration,
+) -> Result<Option<StartOutcome>, SupervisorError> {
+    let wanted = should_autostart(saved_mode, &state.cfg.lock());
+    if !wanted {
+        return Ok(None);
+    }
+    start_sidecar(state, honed_path, health_timeout).map(Some)
+}
+
+/// [`boot_sidecar_if_wanted`] for use inside a tokio runtime.
+pub async fn boot_sidecar_if_wanted_async(
+    state: &DaemonState,
+    saved_mode: Option<&str>,
+    honed_path: Option<std::path::PathBuf>,
+    health_timeout: Duration,
+) -> Result<Option<StartOutcome>, SupervisorError> {
+    let wanted = should_autostart(saved_mode, &state.cfg.lock());
+    if !wanted {
+        return Ok(None);
+    }
+    start_sidecar_async(state, honed_path, health_timeout)
+        .await
+        .map(Some)
+}
+
+/// Record that the managed daemon is the chosen one.
+fn remember_sidecar_profile(state: &DaemonState) {
+    let mut cfg = state.cfg.lock();
+    ensure_named_profile(&mut cfg, LEGACY_SIDECAR_NAME, DaemonMode::Sidecar);
+    let _ = cfg.set_active(LEGACY_SIDECAR_NAME);
+    let _ = cfg.save();
+}
+
 #[tauri::command]
 pub async fn daemon_start(state: tauri::State<'_, DaemonState>) -> Result<DaemonStatus, String> {
-    {
-        let mut slot = state.sidecar.lock();
-        if slot.is_some() {
-            // Already running — fall through to status.
-        } else {
-            let sup = SidecarSupervisor::spawn(None).map_err(supervisor_err)?;
-            // Wait briefly for health; if the user has no honed binary on
-            // PATH the spawn would have failed already, so this is the
-            // tighter check that the bind succeeded.
-            sup.wait_until_healthy(Duration::from_secs(5))
-                .map_err(supervisor_err)?;
-            *slot = Some(sup);
-        }
-    }
-    {
-        let mut cfg = state.cfg.lock();
-        ensure_named_profile(&mut cfg, LEGACY_SIDECAR_NAME, DaemonMode::Sidecar);
-        let _ = cfg.set_active(LEGACY_SIDECAR_NAME);
-        let _ = cfg.save();
+    start_sidecar_async(&state, None, HEALTH_TIMEOUT)
+        .await
+        .map_err(supervisor_err)?;
+    remember_sidecar_profile(&state);
+    daemon_status(state).await
+}
+
+/// Called by the frontend at launch with the web view's saved mode: starts the
+/// managed daemon when the saved choice or the active profile says so.
+#[tauri::command]
+pub async fn daemon_boot(
+    state: tauri::State<'_, DaemonState>,
+    saved_mode: Option<String>,
+) -> Result<DaemonStatus, String> {
+    let started = boot_sidecar_if_wanted_async(&state, saved_mode.as_deref(), None, HEALTH_TIMEOUT)
+        .await
+        .map_err(supervisor_err)?;
+    if started == Some(StartOutcome::Started) {
+        remember_sidecar_profile(&state);
     }
     daemon_status(state).await
 }
@@ -1039,5 +1140,478 @@ mod tests {
         );
         assert_eq!(cfg.daemons.len(), 1);
         assert!(matches!(cfg.daemons[0].mode, DaemonMode::External { .. }));
+    }
+}
+
+#[cfg(all(test, unix))]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+mod autostart_tests {
+    //! A3/A4 of `docs/plans/desktop-sidecar-autostart-spec.md` on `DaemonState`.
+    //!
+    //! API required (in this file, plain functions so no `tauri::State` is
+    //! needed; the Tauri commands call them):
+    //!
+    //! ```ignore
+    //! #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    //! pub enum StartOutcome { Started, AlreadyRunning }
+    //!
+    //! /// What `daemon_start` does, minus the profile bookkeeping: with a sidecar
+    //! /// already in `state.sidecar` start nothing (`AlreadyRunning`); otherwise
+    //! /// `SidecarSupervisor::start(honed_path, env, health_timeout)` and store
+    //! /// it (`Started`). The slot stays locked meanwhile, so two callers never
+    //! /// start two. On failure the slot stays empty and nothing is left running.
+    //! /// It does NOT write `desktop.json` (the command does that after).
+    //! pub fn start_sidecar(state: &DaemonState, honed_path: Option<PathBuf>,
+    //!     health_timeout: Duration) -> Result<StartOutcome, SupervisorError>;
+    //!
+    //! /// The launch hook behind a `daemon_boot(saved_mode)` command:
+    //! /// `should_autostart(saved_mode, &state.cfg)`? then `start_sidecar`
+    //! /// (`Some(outcome)`), else start nothing (`None`).
+    //! pub fn boot_sidecar_if_wanted(state: &DaemonState, saved_mode: Option<&str>,
+    //!     honed_path: Option<PathBuf>, health_timeout: Duration)
+    //!     -> Result<Option<StartOutcome>, SupervisorError>;
+    //! ```
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+    use std::process::Stdio;
+
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Records its pid in `pid`, appends a line to `starts` per launch, and
+    /// answers every GET with 200 on the port in argv[1].
+    const HEALTHY: &str = r#"#!/usr/bin/env python3
+import http.server, os, sys
+d = os.path.dirname(os.path.abspath(__file__))
+open(os.path.join(d, "pid"), "w").write(str(os.getpid()))
+open(os.path.join(d, "starts"), "a").write("x\n")
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+"#;
+
+    /// Never answers /health.
+    const HANGING: &str =
+        "#!/bin/sh\necho $$ > \"$(dirname \"$0\")/pid\"\necho x >> \"$(dirname \"$0\")/starts\"\nexec sleep 300\n";
+
+    fn script(dir: &Path, body: &str) -> PathBuf {
+        let path = dir.join("honed");
+        std::fs::write(&path, body).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    fn starts(dir: &Path) -> usize {
+        std::fs::read_to_string(dir.join("starts"))
+            .map(|s| s.lines().count())
+            .unwrap_or(0)
+    }
+
+    fn alive(pid: &str) -> bool {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", pid])
+            .output()
+            .unwrap();
+        let stat = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        !stat.is_empty() && !stat.starts_with('Z')
+    }
+
+    /// Stops the managed sidecar and SIGKILLs the recorded pid on drop.
+    struct Cleanup<'a>(&'a DaemonState, PathBuf);
+
+    impl Drop for Cleanup<'_> {
+        fn drop(&mut self) {
+            if let Some(sup) = self.0.sidecar.lock().take() {
+                let _ = sup.shutdown();
+            }
+            if let Ok(pid) = std::fs::read_to_string(self.1.join("pid")) {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", pid.trim()])
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        }
+    }
+
+    fn external_cfg() -> DesktopConfig {
+        let mut cfg = DesktopConfig::default();
+        cfg.add_profile(DaemonProfile {
+            name: "team".into(),
+            mode: DaemonMode::External {
+                url: "http://10.0.0.5:3117".into(),
+                token: None,
+            },
+        })
+        .unwrap();
+        cfg
+    }
+
+    const HEALTH: Duration = Duration::from_secs(10);
+
+    #[test]
+    fn test_a3_failed_start_should_leave_the_slot_empty_and_no_process_running() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HANGING);
+
+        let err = start_sidecar(&state, Some(honed), Duration::from_millis(600))
+            .err()
+            .expect("never healthy: the start fails");
+
+        assert!(err.to_string().contains("did not become healthy"), "got: {err}");
+        assert!(state.sidecar.lock().is_none(), "nothing is stored");
+        let pid = std::fs::read_to_string(dir.path().join("pid")).unwrap();
+        assert!(!alive(pid.trim()), "the failed honed is still running");
+    }
+
+    #[test]
+    fn test_a4_second_start_should_not_start_another_sidecar() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let first = start_sidecar(&state, Some(honed.clone()), HEALTH).unwrap();
+        let second = start_sidecar(&state, Some(honed), HEALTH).unwrap();
+
+        assert_eq!(first, StartOutcome::Started);
+        assert_eq!(second, StartOutcome::AlreadyRunning);
+        assert_eq!(starts(dir.path()), 1, "honed was launched once");
+        assert!(state.sidecar.lock().is_some());
+    }
+
+    #[test]
+    fn test_a4_two_simultaneous_starts_should_launch_exactly_one_honed() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let outcomes: Vec<StartOutcome> = std::thread::scope(|sc| {
+            let a = sc.spawn(|| start_sidecar(&state, Some(honed.clone()), HEALTH).unwrap());
+            let b = sc.spawn(|| start_sidecar(&state, Some(honed.clone()), HEALTH).unwrap());
+            vec![a.join().unwrap(), b.join().unwrap()]
+        });
+
+        assert_eq!(starts(dir.path()), 1);
+        assert_eq!(
+            outcomes.iter().filter(|o| **o == StartOutcome::Started).count(),
+            1,
+            "{outcomes:?}"
+        );
+    }
+
+    #[test]
+    fn test_a1_boot_with_saved_sidecar_mode_should_start_once_and_only_once() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let first =
+            boot_sidecar_if_wanted(&state, Some("sidecar"), Some(honed.clone()), HEALTH).unwrap();
+        let second =
+            boot_sidecar_if_wanted(&state, Some("sidecar"), Some(honed), HEALTH).unwrap();
+
+        assert_eq!(first, Some(StartOutcome::Started));
+        assert_eq!(second, Some(StartOutcome::AlreadyRunning));
+        assert_eq!(starts(dir.path()), 1);
+        assert!(state.sidecar.lock().is_some(), "the daemon is managed now");
+    }
+
+    #[test]
+    fn test_a1_boot_with_an_active_sidecar_profile_should_start_without_a_saved_mode() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = DesktopConfig::default();
+        cfg.add_profile(DaemonProfile {
+            name: LEGACY_SIDECAR_NAME.into(),
+            mode: DaemonMode::Sidecar,
+        })
+        .unwrap();
+        let state = DaemonState::new(cfg);
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let out = boot_sidecar_if_wanted(&state, None, Some(honed), HEALTH).unwrap();
+
+        assert_eq!(out, Some(StartOutcome::Started));
+    }
+
+    #[test]
+    fn test_a4_boot_with_an_external_profile_active_should_start_nothing() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(external_cfg());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let out = boot_sidecar_if_wanted(&state, Some("sidecar"), Some(honed), HEALTH).unwrap();
+
+        assert_eq!(out, None);
+        assert_eq!(starts(dir.path()), 0, "no honed was launched");
+        assert!(state.sidecar.lock().is_none());
+    }
+
+    #[test]
+    fn test_a4_boot_with_no_saved_choice_should_start_nothing() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let out = boot_sidecar_if_wanted(&state, None, Some(honed), HEALTH).unwrap();
+
+        assert_eq!(out, None);
+        assert_eq!(starts(dir.path()), 0);
+    }
+
+    #[test]
+    fn test_a2_boot_that_fails_should_return_the_reason_and_leave_nothing() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), "#!/bin/sh\necho 'no key' >&2\nexit 3\n");
+
+        let err = boot_sidecar_if_wanted(&state, Some("sidecar"), Some(honed), HEALTH)
+            .err()
+            .expect("a honed that exits 3 fails the boot")
+            .to_string();
+
+        assert!(err.contains("exit status: 3"), "got: {err}");
+        assert!(err.contains("no key"), "got: {err}");
+        assert!(state.sidecar.lock().is_none());
+    }
+
+    // ---- A6: starting works from inside a tokio runtime ----------------------------
+    //
+    // `daemon_start` / `daemon_boot` are `async fn`s, so they run on Tauri's tokio
+    // runtime, where `reqwest::blocking` panics. API required (in this file; the
+    // commands use these instead of the sync helpers):
+    //
+    // ```ignore
+    // pub async fn start_sidecar_async(state: &DaemonState, honed_path: Option<PathBuf>,
+    //     health_timeout: Duration) -> Result<StartOutcome, SupervisorError>;
+    // pub async fn boot_sidecar_if_wanted_async(state: &DaemonState, saved_mode: Option<&str>,
+    //     honed_path: Option<PathBuf>, health_timeout: Duration)
+    //     -> Result<Option<StartOutcome>, SupervisorError>;
+    // ```
+    // Same results as the sync helpers. They must not panic inside a runtime and
+    // must not hold a runtime worker for the health wait (the blocking work runs
+    // on a blocking thread, or the wait is async). The returned futures are
+    // `Send` (they are awaited in `tokio::spawn`ed tasks), and `&DaemonState`
+    // need not be `'static` (a Tauri command only has `State<'_, DaemonState>`),
+    // so clone what the blocking part needs (`state.sidecar` is an `Arc`, the
+    // config can be snapshotted).
+
+    /// Like `HEALTHY`, but answers /health only after 0.6 s, so the health wait
+    /// really spans a while.
+    const SLOW_HEALTHY: &str = r#"#!/usr/bin/env python3
+import http.server, os, sys, time
+d = os.path.dirname(os.path.abspath(__file__))
+open(os.path.join(d, "pid"), "w").write(str(os.getpid()))
+open(os.path.join(d, "starts"), "a").write("x\n")
+time.sleep(0.6)
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+"#;
+
+    fn runtime(workers: usize) -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(workers)
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// Runs `fut` as a spawned task (as Tauri runs a command); a panic inside it
+    /// comes back as the failure message instead of aborting the test run.
+    fn in_task<T: Send + 'static>(
+        rt: &tokio::runtime::Runtime,
+        fut: impl std::future::Future<Output = T> + Send + 'static,
+    ) -> Result<T, String> {
+        rt.block_on(async {
+            tokio::time::timeout(Duration::from_secs(30), tokio::spawn(fut))
+                .await
+                .map_err(|_| "the start hung (30 s)".to_string())?
+                .map_err(|e| {
+                    if e.is_panic() {
+                        let p = e.into_panic();
+                        let msg = p
+                            .downcast_ref::<String>()
+                            .cloned()
+                            .or_else(|| p.downcast_ref::<&str>().map(|s| (*s).to_string()))
+                            .unwrap_or_default();
+                        format!("the start PANICKED inside the runtime: {msg}")
+                    } else {
+                        "the task was cancelled".to_string()
+                    }
+                })
+        })
+    }
+
+    #[test]
+    fn test_a6_start_sidecar_should_work_from_a_task_on_a_tokio_runtime() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+        let rt = runtime(2);
+
+        let st = state.clone();
+        let out = in_task(&rt, async move {
+            start_sidecar_async(&st, Some(honed), HEALTH).await
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        assert_eq!(out.unwrap(), StartOutcome::Started);
+        assert!(state.sidecar.lock().is_some());
+        assert_eq!(starts(dir.path()), 1);
+    }
+
+    #[test]
+    fn test_a6_boot_should_work_from_a_task_on_a_tokio_runtime() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+        let rt = runtime(2);
+
+        let st = state.clone();
+        let out = in_task(&rt, async move {
+            boot_sidecar_if_wanted_async(&st, Some("sidecar"), Some(honed), HEALTH).await
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        assert_eq!(out.unwrap(), Some(StartOutcome::Started));
+        assert!(state.sidecar.lock().is_some());
+    }
+
+    #[test]
+    fn test_a6_boot_with_nothing_wanted_should_return_none_from_a_runtime_too() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+        let rt = runtime(2);
+
+        let st = state.clone();
+        let out = in_task(&rt, async move {
+            boot_sidecar_if_wanted_async(&st, None, Some(honed), HEALTH).await
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        assert_eq!(out.unwrap(), None);
+        assert_eq!(starts(dir.path()), 0);
+    }
+
+    #[test]
+    fn test_a6_a_failed_start_should_return_its_reason_from_a_runtime_too() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), "#!/bin/sh\necho 'no key' >&2\nexit 3\n");
+        let rt = runtime(2);
+
+        let st = state.clone();
+        let out = in_task(&rt, async move {
+            start_sidecar_async(&st, Some(honed), HEALTH).await
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        let err = out.err().expect("a honed that exits 3 fails").to_string();
+        assert!(err.contains("exit status: 3") && err.contains("no key"), "got: {err}");
+        assert!(state.sidecar.lock().is_none());
+    }
+
+    #[test]
+    fn test_a6_start_should_not_hold_the_only_runtime_worker_during_the_health_wait() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(DaemonState::new(DesktopConfig::default()));
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), SLOW_HEALTHY);
+        let rt = runtime(1); // one worker: a blocked worker stops every other task
+
+        let ticks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let t = ticks.clone();
+        let st = state.clone();
+        let out = in_task(&rt, async move {
+            let ticker = tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    t.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            });
+            let r = start_sidecar_async(&st, Some(honed), HEALTH).await;
+            ticker.abort();
+            r
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        assert_eq!(out.unwrap(), StartOutcome::Started);
+        let n = ticks.load(std::sync::atomic::Ordering::SeqCst);
+        // The wait lasted >= 0.6 s: about 60 ticks if the runtime stayed free.
+        assert!(n >= 20, "other tasks ran only {n} times during the health wait");
+    }
+
+    // ---- A8: dropping the state stops its sidecar -------------------------------
+
+    /// SIGKILLs the pid recorded in `<dir>/pid` on drop (the state itself is
+    /// dropped by the test, so `Cleanup` cannot borrow it).
+    struct KillPid(PathBuf);
+
+    impl Drop for KillPid {
+        fn drop(&mut self) {
+            if let Ok(pid) = std::fs::read_to_string(self.0.join("pid")) {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", pid.trim()])
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        }
+    }
+
+    #[test]
+    fn test_a8_dropping_the_state_should_stop_the_managed_sidecar() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let _k = KillPid(dir.path().to_path_buf());
+        let state = DaemonState::new(DesktopConfig::default());
+        let honed = script(dir.path(), HEALTHY);
+        start_sidecar(&state, Some(honed), HEALTH).unwrap();
+        let pid = std::fs::read_to_string(dir.path().join("pid"))
+            .unwrap()
+            .trim()
+            .to_owned();
+        assert!(alive(&pid));
+
+        drop(state);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while alive(&pid) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(!alive(&pid), "the sidecar outlived the app state");
     }
 }

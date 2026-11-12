@@ -574,16 +574,30 @@ flowchart LR
 ### Quick start
 
 ```bash
-# Local sidecar mode — Tauri spawns a private honed on a free port
-cargo build -p honed --release
-cp target/release/honed /usr/local/bin/honed   # or any PATH dir
-cargo run -p hone-desktop                       # launches the window
+# Local sidecar mode: the app starts a private honed on a free port
+cargo install --path bins/honed --locked    # puts honed in ~/.cargo/bin; keep that on PATH
+export ANTHROPIC_API_KEY=sk-...             # the daemon reads only this key for now
+cargo run -p hone-desktop                   # launches the window
 ```
 
 The first-run wizard asks **Manage daemon for me** (sidecar) vs
-**Connect to an existing daemon** (external URL + bearer token).
-Choice is persisted to `~/.config/hone/desktop.json` so subsequent
-launches skip the wizard.
+**Connect to an existing daemon** (external URL + bearer token). Pick the
+first and the app starts `honed` for you, now and on every later launch.
+
+You should see a green pill in the top bar, such as
+`local sidecar · sidecar @ http://127.0.0.1:<port>` (the profile name comes
+first). If starting the daemon failed, the pill is red, reads "daemon failed
+to start", and its tooltip and the **Daemon** panel say why (for example
+`honed` not found on `PATH`, or its exit status and last error lines). Then:
+
+- fix the cause (install `honed`, set `ANTHROPIC_API_KEY` in the terminal you
+  launched from) and press **Daemon → Start**;
+- or press <kbd>Cmd</kbd>+<kbd>K</kbd> → "Reset onboarding" to see the wizard again.
+
+The choice is saved in the app's local storage, so later launches skip the
+wizard. The daemon profiles live in `desktop.json` under the OS config
+directory: `~/Library/Application Support/hone/` on macOS,
+`~/.config/hone/` on Linux, `%APPDATA%\hone\` on Windows.
 
 ### Feature tour
 
@@ -638,7 +652,7 @@ launches skip the wizard.
   between profiles (local sidecar, team VM, cloud). Switch tears
   down the prev sidecar; **Add external daemon** form lets you
   register an HTTP target with optional bearer token. Persisted to
-  `~/.config/hone/desktop.json`.
+  `desktop.json` in the OS config directory (see Quick start).
 
 ### Walkthrough — running a step-mode turn end-to-end
 
