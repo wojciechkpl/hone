@@ -1,17 +1,6 @@
-# requires: node python3
-# Success check for x04-ctx-invoice-order. Runs in the task's working-directory copy.
+# requires: python3 node
+# Success check for x04-ctx-invoice-order (T13/T14 of docs/plans/eval-starter-suite-spec.md). Runs in the agent's copy.
+# The verdict comes from lib/judge.py, a python3 -I parent that runs no agent code: agent code runs
+# only in child processes that read the case inputs on stdin; the expectations stay in the parent.
 set -e
-export PYTHONDONTWRITEBYTECODE=1
-node -e "
-const { orderInvoices } = require('./src/billing/export/order');
-const assert = require('node:assert');
-const input = [
-  { id: 1, date: '2026-01-05' },
-  { id: 2, date: '2026-03-01' },
-  { id: 3, date: '2026-02-11' },
-];
-assert.deepStrictEqual(orderInvoices(input).map((i) => i.id), [2, 3, 1]);
-assert.deepStrictEqual(input.map((i) => i.id), [1, 2, 3], 'the input must not be mutated');
-console.log('ok');
-" || exit 1
-python3 "$EVAL_SUITE_DIR/checks/lib/manifest.py" "$EVAL_SUITE_DIR/checks/data/x04-ctx-invoice-order.manifest.json"
+exec python3 -I -B "$EVAL_SUITE_DIR/checks/lib/judge.py" x04-ctx-invoice-order

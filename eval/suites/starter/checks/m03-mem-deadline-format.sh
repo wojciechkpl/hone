@@ -1,13 +1,6 @@
 # requires: python3
-# Success check for m03-mem-deadline-format. Runs in the task's working-directory copy.
+# Success check for m03-mem-deadline-format (T13/T14 of docs/plans/eval-starter-suite-spec.md). Runs in the agent's copy.
+# The verdict comes from lib/judge.py, a python3 -I parent that runs no agent code: agent code runs
+# only in child processes that read the case inputs on stdin; the expectations stay in the parent.
 set -e
-export PYTHONDONTWRITEBYTECODE=1
-python3 - <<'PY'
-import datetime, sys
-sys.path.insert(0, ".")
-import deadlines
-for day, want in [(datetime.date(2026, 3, 9), "09-Mar-2026"), (datetime.date(2026, 12, 1), "01-Dec-2026"), (datetime.date(2027, 8, 31), "31-Aug-2027")]:
-    got = deadlines.format_deadline(day)
-    assert got == want, (day, got)
-print("ok")
-PY
+exec python3 -I -B "$EVAL_SUITE_DIR/checks/lib/judge.py" m03-mem-deadline-format

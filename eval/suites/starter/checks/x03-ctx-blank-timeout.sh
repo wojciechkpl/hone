@@ -1,15 +1,6 @@
 # requires: python3
-# Success check for x03-ctx-blank-timeout. Runs in the task's working-directory copy.
+# Success check for x03-ctx-blank-timeout (T13/T14 of docs/plans/eval-starter-suite-spec.md). Runs in the agent's copy.
+# The verdict comes from lib/judge.py, a python3 -I parent that runs no agent code: agent code runs
+# only in child processes that read the case inputs on stdin; the expectations stay in the parent.
 set -e
-export PYTHONDONTWRITEBYTECODE=1
-python3 - <<'PY'
-import sys
-sys.path.insert(0, ".")
-from app.settings.loader import load_settings
-assert load_settings("name=x\ntimeout=\n")["timeout"] == 30
-assert load_settings("timeout=   \n")["timeout"] == 30
-assert load_settings("timeout=5\n")["timeout"] == 5
-assert load_settings("")["timeout"] == 30
-print("ok")
-PY
-python3 "$EVAL_SUITE_DIR/checks/lib/manifest.py" "$EVAL_SUITE_DIR/checks/data/x03-ctx-blank-timeout.manifest.json"
+exec python3 -I -B "$EVAL_SUITE_DIR/checks/lib/judge.py" x03-ctx-blank-timeout

@@ -1,0 +1,66 @@
+{
+ "runtime": "node",
+ "module": "src/billing/export/order.js",
+ "assets": [
+  "probe_child.js"
+ ],
+ "base": "checks/data/x04-ctx-invoice-order",
+ "take": [
+  {
+   "tree": "src",
+   "glob": "*.js"
+  }
+ ],
+ "manifest": "x04-ctx-invoice-order.manifest.json",
+ "cases": [
+  {
+   "fn": "orderInvoices",
+   "args": [
+    [
+     {
+      "id": 1,
+      "date": "2026-01-05"
+     },
+     {
+      "id": 2,
+      "date": "2026-03-01"
+     },
+     {
+      "id": 3,
+      "date": "2026-02-11"
+     }
+    ]
+   ],
+   "expect": [
+    {
+     "id": 2,
+     "date": "2026-03-01"
+    },
+    {
+     "id": 3,
+     "date": "2026-02-11"
+    },
+    {
+     "id": 1,
+     "date": "2026-01-05"
+    }
+   ],
+   "expect_args_after": [
+    [
+     {
+      "id": 1,
+      "date": "2026-01-05"
+     },
+     {
+      "id": 2,
+      "date": "2026-03-01"
+     },
+     {
+      "id": 3,
+      "date": "2026-02-11"
+     }
+    ]
+   ]
+  }
+ ]
+}

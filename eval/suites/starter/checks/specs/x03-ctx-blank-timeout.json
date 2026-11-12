@@ -1,0 +1,56 @@
+{
+ "runtime": "python",
+ "module": "app.settings.loader",
+ "assets": [
+  "probe_child.py"
+ ],
+ "take": [
+  {
+   "tree": "app",
+   "glob": "*.py"
+  }
+ ],
+ "manifest": "x03-ctx-blank-timeout.manifest.json",
+ "cases": [
+  {
+   "fn": "load_settings",
+   "args": [
+    "name=x\ntimeout=\n"
+   ],
+   "select": [
+    "timeout"
+   ],
+   "expect": 30
+  },
+  {
+   "fn": "load_settings",
+   "args": [
+    "timeout=   \n"
+   ],
+   "select": [
+    "timeout"
+   ],
+   "expect": 30
+  },
+  {
+   "fn": "load_settings",
+   "args": [
+    "timeout=5\n"
+   ],
+   "select": [
+    "timeout"
+   ],
+   "expect": 5
+  },
+  {
+   "fn": "load_settings",
+   "args": [
+    ""
+   ],
+   "select": [
+    "timeout"
+   ],
+   "expect": 30
+  }
+ ]
+}

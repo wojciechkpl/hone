@@ -1,0 +1,130 @@
+{
+ "runtime": "rust-kv",
+ "advisory": "rust",
+ "assets": [
+  "rs_kvparse_probe.rs"
+ ],
+ "base": "checks/data/c07-rs-fix-kvparse",
+ "take": [
+  {
+   "tree": "src",
+   "glob": "*.rs",
+   "skip": [
+    "src/bin/"
+   ]
+  }
+ ],
+ "add": {
+  "src/bin/probe.rs": "rs_kvparse_probe.rs"
+ },
+ "cases": [
+  {
+   "fn": "parse_kv",
+   "args": [
+    "name = hone"
+   ],
+   "expect": [
+    "name",
+    "hone"
+   ]
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "url=https://x.test/?a=1&b=2"
+   ],
+   "expect": [
+    "url",
+    "https://x.test/?a=1&b=2"
+   ]
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "flag="
+   ],
+   "expect": [
+    "flag",
+    ""
+   ]
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "=value"
+   ],
+   "expect": null
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "no separator"
+   ],
+   "expect": null
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "a=b=c=d"
+   ],
+   "expect": [
+    "a",
+    "b=c=d"
+   ]
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "k==v"
+   ],
+   "expect": [
+    "k",
+    "=v"
+   ]
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "  key  =  a = b  "
+   ],
+   "expect": [
+    "key",
+    "a = b"
+   ]
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "path=/usr/bin:/bin?x=1"
+   ],
+   "expect": [
+    "path",
+    "/usr/bin:/bin?x=1"
+   ]
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "   =x"
+   ],
+   "expect": null
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    ""
+   ],
+   "expect": null
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "x="
+   ],
+   "expect": [
+    "x",
+    ""
+   ]
+  }
+ ]
+}

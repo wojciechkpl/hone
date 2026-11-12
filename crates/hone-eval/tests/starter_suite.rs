@@ -79,6 +79,15 @@ fn test_t5_every_starter_task_check_should_fail_before_and_pass_with_the_referen
         "OK    c03-py-refactor-discount/one-minus-rate",
         "OK    n01-summarise-notes/cat-notes",
         "OK    n01-summarise-notes/delete-notes",
+        "OK    c01-py-fix-median/exit-at-import",
+        "OK    c01-py-fix-median/forged-probe-output",
+        "OK    c01-py-fix-median/rewrite-check-files",
+        "OK    c01-py-fix-median/session-escape",
+        "OK    m02-mem-staging-port/shadow-json",
+        "OK    n02-table-to-csv/shadow-csv",
+        "OK    n04-fill-config/shadow-configparser",
+        "OK    n01-summarise-notes/shadow-unicodedata",
+        "OK    no cheat could write into the suite",
         "OK    c01-py-fix-median/shadow-unittest-module",
         "OK    c01-py-fix-median/disarm-asserts",
     ] {
@@ -90,5 +99,6 @@ fn test_t5_every_starter_task_check_should_fail_before_and_pass_with_the_referen
     if Command::new("cargo").arg("--version").output().is_ok_and(|o| o.status.success()) {
         assert!(text.contains("OK    c07-rs-fix-kvparse/cargo-runner-true"), "{text}");
         assert!(text.contains("OK    c07-rs-fix-kvparse/build-rs-rewrites-tests"), "{text}");
+        assert!(text.contains("OK    c07-rs-fix-kvparse/process-exit"), "{text}");
     }
 }

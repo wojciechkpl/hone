@@ -1,0 +1,76 @@
+{
+ "runtime": "node",
+ "module": "report.js",
+ "advisory": "node",
+ "assets": [
+  "probe_child.js"
+ ],
+ "base": "checks/data/c06-js-refactor-money",
+ "take": [
+  {
+   "file": "report.js"
+  }
+ ],
+ "cases": [
+  {
+   "fn": "formatPrice",
+   "args": [
+    3
+   ],
+   "expect": "$3.00"
+  },
+  {
+   "fn": "formatRefund",
+   "args": [
+    2.5
+   ],
+   "expect": "-$2.50"
+  },
+  {
+   "fn": "formatTotal",
+   "args": [
+    [
+     1,
+     2.25
+    ]
+   ],
+   "expect": "Total: $3.25"
+  },
+  {
+   "fn": "formatPrice",
+   "args": [
+    3
+   ],
+   "patch": {
+    "attr": "formatMoney",
+    "with": "tag"
+   },
+   "contains": "X<3>"
+  },
+  {
+   "fn": "formatRefund",
+   "args": [
+    2.5
+   ],
+   "patch": {
+    "attr": "formatMoney",
+    "with": "tag"
+   },
+   "contains": "X<2.5>"
+  },
+  {
+   "fn": "formatTotal",
+   "args": [
+    [
+     1,
+     2.25
+    ]
+   ],
+   "patch": {
+    "attr": "formatMoney",
+    "with": "tag"
+   },
+   "contains": "X<3.25>"
+  }
+ ]
+}

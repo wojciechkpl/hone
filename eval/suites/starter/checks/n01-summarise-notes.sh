@@ -5,8 +5,11 @@
 # variants pass), must not present superseded values as decisions, must leave out the
 # noise from the notes, and must be a summary: at most half the size of the notes.
 set -e
-export PYTHONDONTWRITEBYTECODE=1
-python3 - <<'PY'
+# The verdict is computed by python3 -I that only reads the agent's summary as data; its cwd is
+# outside the copy (a stdlib shadow in the copy cannot be imported).
+COPY=$(pwd)
+cd "$(mktemp -d)"
+python3 -I -B - "$COPY" <<'PY'
 import glob
 import os
 import re
@@ -21,7 +24,7 @@ def norm(text):
 
 
 try:
-    raw = open("summary.md", encoding="utf-8").read()
+    raw = open(sys.argv[1] + "/summary.md", encoding="utf-8").read()
 except FileNotFoundError:
     print("summary.md is missing")
     sys.exit(1)

@@ -10,7 +10,7 @@
 #
 # usage: sh verify.sh [task-id ...]     (default: every task)
 # env:   VERIFY_KEEP=1 keeps the temp copies; VERIFY_VERBOSE=1 prints the check output;
-#        VERIFY_TIMEOUT=SECONDS caps every single check run (default 60). A check that
+#        VERIFY_TIMEOUT=SECONDS caps every single check run (default 150). A check that
 #        runs over is killed (with its child processes) and the task FAILs.
 #
 # Besides the original/reference pair, every task is also run against:
@@ -91,7 +91,7 @@ run_check() { # dir command
   check_pid=$!
   (
     grouped sh -c 'sleep "$1"; : >"$2"; kill -KILL -- "-$3" 2>/dev/null || /bin/kill -KILL -- "-$3" 2>/dev/null; kill -KILL "$3" 2>/dev/null' \
-      watchdog "${VERIFY_TIMEOUT:-60}" "$work/timed_out" "$check_pid"
+      watchdog "${VERIFY_TIMEOUT:-150}" "$work/timed_out" "$check_pid"
   ) >/dev/null 2>&1 &
   watchdog_pid=$!
   wait "$check_pid" 2>/dev/null
@@ -100,7 +100,7 @@ run_check() { # dir command
   wait "$watchdog_pid" 2>/dev/null
   kill_group "$check_pid"
   if [ -f "$work/timed_out" ]; then
-    echo "the check did not finish within ${VERIFY_TIMEOUT:-60}s and was killed" >>"$work/check.out"
+    echo "the check did not finish within ${VERIFY_TIMEOUT:-150}s and was killed" >>"$work/check.out"
     return 124
   fi
   return "$status"
@@ -260,6 +260,15 @@ for n, line in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
     fi
   done
 done
+
+# T15: no cheat may have written into the suite (the "rewrite check files" cheat drops a PWNED
+# marker wherever it can find the suite path)
+if find "$suite" -name PWNED 2>/dev/null | grep -q .; then
+  echo "FAIL  a cheat wrote into the suite: $(find "$suite" -name PWNED | head -1)"
+  echo "x" >>"$work/failed"
+else
+  echo "OK    no cheat could write into the suite"
+fi
 
 # the loop above runs in a subshell: count through marker files
 count() { [ -f "$work/$1" ] && wc -l <"$work/$1" | tr -d ' ' || echo 0; }
