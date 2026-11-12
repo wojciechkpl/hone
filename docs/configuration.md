@@ -260,7 +260,7 @@ written. Without them Hone behaves as before. `hone strategies` shows what is ac
 | `[memory] recaller` | `"bm25"` | `bm25` or `none` (no recall) | can only set `none` |
 | `[memory] top_k` | `5` | Memories recalled per turn, at least 1 (use `recaller = "none"` to turn recall off) | can only lower it |
 | `[memory] exclude_kinds` | `["outcome"]` | Memory kinds never recalled: `conversation`, `user`, `feedback`, `project`, `reference`, `outcome` | can only add kinds |
-| `[memory] writer` | `"triggers"` | `triggers` (trigger phrases) or `off`. `off` stops every memory write, outcome logs included | can only set `off` |
+| `[memory] writer` | `"triggers"` | `triggers` (trigger phrases), `tool` (the model's `memory_write`, see [Memory writers](#memory-writers)), `triggers+tool` or `off`. `off` stops every memory write, outcome logs included | can only set `off` |
 
 **Precedence,** highest first: a command-line flag, an environment variable, the project
 file, the user file, the default. `--skeleton-strategy` and `HONE_SKELETON_STRATEGY` set
