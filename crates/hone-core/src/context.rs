@@ -274,51 +274,216 @@ pub fn classify_tool_call(name: &str, args: &serde_json::Value) -> ToolPhaseKind
     classify_by_name(name)
 }
 
-/// Whether any segment of a shell command line (split on `&&`, `||`, `;`, `|`
-/// and newlines) runs a test runner. Leading `NAME=value` assignments and the
-/// wrappers `env`, `time`, `uv run`, `poetry run`, `pdm run`, `npx`, `bunx`,
-/// `pnpm exec` and `bundle exec` are skipped before matching.
+/// Whether any segment of a shell command line runs a test runner.
+///
+/// The line is split on `&&`, `||`, `;`, `|`, `&` and newlines outside quotes.
+/// Leading `NAME=value` assignments and the wrappers `env`, `time`, `timeout`,
+/// `nice`, `stdbuf`, `uv run`, `poetry run`, `pdm run`, `npx`, `bunx`,
+/// `pnpm exec` and `bundle exec` are skipped, `sh|bash|zsh -c '<script>'` is
+/// matched on its script, and path-qualified runners match by basename. A runner
+/// invocation that only builds or lists tests (`--no-run`, `-- --list`,
+/// `--collect-only`, `--co`) is not a test run.
 fn command_runs_tests(command: &str) -> bool {
-    command.split(['\n', ';', '|', '&']).any(segment_runs_tests)
+    shell_segments(command)
+        .iter()
+        .any(|tokens| segment_runs_tests(tokens))
 }
 
-fn segment_runs_tests(segment: &str) -> bool {
-    let mut tokens: Vec<&str> = segment.split_whitespace().collect();
+/// Split a command line into segments of unquoted tokens. Separators inside
+/// single or double quotes do not split; a backslash escapes the next char
+/// outside single quotes.
+fn shell_segments(command: &str) -> Vec<Vec<String>> {
+    let mut segments: Vec<Vec<String>> = Vec::new();
+    let mut tokens: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut in_token = false;
+    let mut quote: Option<char> = None;
+    let mut chars = command.chars();
+
+    while let Some(c) = chars.next() {
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None;
+                } else if c == '\\' && q == '"' {
+                    match chars.next() {
+                        Some(n) if matches!(n, '"' | '\\' | '$' | '`') => cur.push(n),
+                        Some(n) => {
+                            cur.push('\\');
+                            cur.push(n);
+                        }
+                        None => cur.push('\\'),
+                    }
+                } else {
+                    cur.push(c);
+                }
+            }
+            None => match c {
+                '\'' | '"' => {
+                    quote = Some(c);
+                    in_token = true;
+                }
+                '\\' => {
+                    if let Some(n) = chars.next() {
+                        cur.push(n);
+                        in_token = true;
+                    }
+                }
+                '\n' | ';' | '|' | '&' => {
+                    if in_token {
+                        tokens.push(std::mem::take(&mut cur));
+                        in_token = false;
+                    }
+                    if !tokens.is_empty() {
+                        segments.push(std::mem::take(&mut tokens));
+                    }
+                }
+                c if c.is_whitespace() => {
+                    if in_token {
+                        tokens.push(std::mem::take(&mut cur));
+                        in_token = false;
+                    }
+                }
+                c => {
+                    cur.push(c);
+                    in_token = true;
+                }
+            },
+        }
+    }
+    if in_token {
+        tokens.push(cur);
+    }
+    if !tokens.is_empty() {
+        segments.push(tokens);
+    }
+    segments
+}
+
+fn basename(token: &str) -> &str {
+    token.rsplit('/').next().unwrap_or(token)
+}
+
+/// `python`, `python3`, `python3.12`.
+fn is_python(name: &str) -> bool {
+    name.strip_prefix("python")
+        .is_some_and(|rest| rest.chars().all(|c| c.is_ascii_digit() || c == '.'))
+}
+
+/// `uv run` options that take a separate value.
+fn uv_option_takes_value(opt: &str) -> bool {
+    matches!(
+        opt,
+        "--with"
+            | "--with-requirements"
+            | "--with-editable"
+            | "--python"
+            | "-p"
+            | "--directory"
+            | "--project"
+            | "--extra"
+            | "--group"
+            | "--env-file"
+            | "--package"
+    )
+}
+
+fn segment_runs_tests(tokens: &[String]) -> bool {
+    let t: Vec<&str> = tokens.iter().map(String::as_str).collect();
+    let mut i = 0;
     // Drop assignments and wrappers until the real command starts.
-    loop {
-        match tokens.as_slice() {
-            [t, ..] if is_assignment(t) => {
-                tokens.remove(0);
+    while i < t.len() {
+        let name = basename(t[i]);
+        if is_assignment(t[i]) {
+            i += 1;
+            continue;
+        }
+        match name {
+            "env" | "time" => i += 1,
+            "timeout" => {
+                i += 1;
+                while t.get(i).is_some_and(|s| s.starts_with('-')) {
+                    i += 1;
+                }
+                i += 1; // the duration
             }
-            ["env" | "time" | "npx" | "bunx", ..] => {
-                tokens.remove(0);
+            "nice" => {
+                i += 1;
+                if t.get(i) == Some(&"-n") {
+                    i += 2;
+                } else if t.get(i).is_some_and(|s| s.starts_with('-')) {
+                    i += 1;
+                }
             }
-            ["uv" | "poetry" | "pdm", "run", ..]
-            | ["pnpm", "exec", ..]
-            | ["bundle", "exec", ..] => {
-                tokens.drain(..2);
+            "stdbuf" | "npx" | "bunx" => {
+                i += 1;
+                while t.get(i).is_some_and(|s| s.starts_with('-')) {
+                    i += 1;
+                }
+            }
+            "uv" if t.get(i + 1) == Some(&"run") => {
+                i += 2;
+                while let Some(opt) = t.get(i).filter(|s| s.starts_with('-')) {
+                    i += if !opt.contains('=') && uv_option_takes_value(opt) {
+                        2
+                    } else {
+                        1
+                    };
+                }
+            }
+            "poetry" | "pdm" if t.get(i + 1) == Some(&"run") => i += 2,
+            "pnpm" | "bundle" if t.get(i + 1) == Some(&"exec") => i += 2,
+            "sh" | "bash" | "zsh" => {
+                // `sh -c '<script>'` (also `-lc`, `-ec`): match the script.
+                let flag = t
+                    .get(i + 1)
+                    .filter(|f| f.starts_with('-') && f.ends_with('c'));
+                return match (flag, t.get(i + 2)) {
+                    (Some(_), Some(script)) => command_runs_tests(script),
+                    _ => false,
+                };
             }
             _ => break,
         }
     }
-    match tokens.as_slice() {
-        ["cargo", "test" | "nextest", ..] => true,
-        [
-            "pytest" | "py.test" | "jest" | "vitest" | "ctest" | "rspec" | "phpunit" | "tox"
-            | "nox",
-            ..,
-        ] => true,
-        ["python" | "python3", "-m", "pytest" | "unittest", ..] => true,
-        ["npm" | "pnpm", "test", ..] => true,
-        ["npm" | "pnpm", "run", script, ..] => script.starts_with("test"),
-        [
-            "yarn" | "bun" | "deno" | "go" | "mvn" | "gradle" | "./gradlew" | "make" | "flutter"
-            | "dart" | "mix" | "swift" | "dotnet",
-            "test",
-            ..,
-        ] => true,
+    let rest = &t[i.min(t.len())..];
+    let Some(first) = rest.first() else {
+        return false;
+    };
+    if only_lists_tests(rest) {
+        return false;
+    }
+    let runner = basename(first);
+    let arg = |n: usize| rest.get(n).copied();
+    match runner {
+        "cargo" => matches!(arg(1), Some("test" | "nextest" | "t")),
+        "pytest" | "py.test" | "jest" | "vitest" | "ctest" | "rspec" | "phpunit" | "tox"
+        | "nox" => true,
+        r if is_python(r) => arg(1) == Some("-m") && matches!(arg(2), Some("pytest" | "unittest")),
+        "npm" => match arg(1) {
+            Some("t") => true,
+            Some("run" | "run-script") => arg(2).is_some_and(|s| s.starts_with("test")),
+            Some(s) => s.starts_with("test"),
+            None => false,
+        },
+        "yarn" | "pnpm" | "bun" => match arg(1) {
+            Some("run") => arg(2).is_some_and(|s| s.starts_with("test")),
+            Some(s) => s.starts_with("test"),
+            None => false,
+        },
+        "deno" | "go" | "mvn" | "gradle" | "gradlew" | "make" | "flutter" | "dart" | "mix"
+        | "swift" | "dotnet" | "just" | "bazel" => arg(1) == Some("test"),
         _ => false,
     }
+}
+
+/// `--no-run`, `--collect-only`, `--co`, or `--list` after a bare `--`.
+fn only_lists_tests(tokens: &[&str]) -> bool {
+    let after_dashes = tokens.iter().position(|t| *t == "--");
+    tokens.iter().enumerate().any(|(n, t)| {
+        matches!(*t, "--no-run" | "--collect-only" | "--co")
+            || (*t == "--list" && after_dashes.is_some_and(|d| n > d))
+    })
 }
 
 /// `NAME=value` (a shell variable assignment before a command).
@@ -347,6 +512,7 @@ pub struct ContextManager {
     metrics: Option<Arc<ContextMetrics>>,
     content_hashes: HashMap<u64, usize>,
     phase_tracker: PhaseTracker,
+    phase_compaction: bool,
 }
 
 impl ContextManager {
@@ -361,6 +527,7 @@ impl ContextManager {
             metrics: None,
             content_hashes: HashMap::new(),
             phase_tracker: PhaseTracker::new(),
+            phase_compaction: phase_compaction_from_env(),
         }
     }
 
@@ -376,7 +543,15 @@ impl ContextManager {
             metrics: None,
             content_hashes: HashMap::new(),
             phase_tracker: PhaseTracker::new(),
+            phase_compaction: phase_compaction_from_env(),
         }
+    }
+
+    /// Turn compaction on phase transitions on or off, overriding
+    /// `HONE_PHASE_COMPACTION` (read when the manager was built).
+    pub fn with_phase_compaction(mut self, enabled: bool) -> Self {
+        self.phase_compaction = enabled;
+        self
     }
 
     /// Attach a metrics sink. Trim and compression events will be recorded on it.
@@ -392,7 +567,7 @@ impl ContextManager {
     /// aggressively compacted.
     pub fn notify_tool_call(&mut self, tool_name: &str) {
         let kind = classify_by_name(tool_name);
-        self.notify_kind(kind);
+        self.notify_kind(kind, &[]);
     }
 
     /// Like [`notify_tool_call`](Self::notify_tool_call), but classified with
@@ -400,15 +575,22 @@ impl ContextManager {
     /// a test run.
     pub fn notify_tool_use(&mut self, tool_name: &str, args: &serde_json::Value) {
         let kind = classify_tool_call(tool_name, args);
-        self.notify_kind(kind);
+        let targets = if kind == ToolPhaseKind::Write {
+            write_targets(tool_name, args)
+        } else {
+            Vec::new()
+        };
+        self.notify_kind(kind, &targets);
     }
 
-    fn notify_kind(&mut self, kind: ToolPhaseKind) {
+    fn notify_kind(&mut self, kind: ToolPhaseKind, targets: &[String]) {
         if let Some((from, to)) = self.phase_tracker.observe_kind(kind) {
             if from == TaskPhase::Exploration
                 && (to == TaskPhase::Editing || to == TaskPhase::Verification)
             {
-                self.force_compress_exploration_results();
+                if self.phase_compaction {
+                    self.force_compress_exploration_results(targets);
+                }
                 if let Some(m) = &self.metrics {
                     m.record_phase_transition();
                 }
@@ -573,25 +755,58 @@ impl ContextManager {
         }
     }
 
-    /// Force-compress all exploration tool results outside the recent window.
-    /// Called on phase transitions (exploration → editing/verification).
-    fn force_compress_exploration_results(&mut self) {
-        let protected_from = self
-            .messages
-            .len()
-            .saturating_sub(self.config.recent_window);
+    /// Force-compress exploration tool results. Called on phase transitions
+    /// (exploration → editing/verification) when phase compaction is enabled.
+    ///
+    /// The newest `recent_window` tool results stay verbatim, and so does any
+    /// result of a read of one of `targets` (the paths the triggering write
+    /// changes).
+    fn force_compress_exploration_results(&mut self, targets: &[String]) {
+        let tool_idx: Vec<usize> = (0..self.messages.len())
+            .filter(|&i| matches!(self.messages[i].role, Role::Tool))
+            .collect();
+        let older = tool_idx.len().saturating_sub(self.config.recent_window);
 
-        for i in 0..protected_from {
-            if matches!(self.messages[i].role, Role::Tool) {
-                let text = self.messages[i].content.as_text().to_string();
-                if !is_already_compressed(&text) && text.len() > 200 {
-                    self.messages[i].content = Content::Text(structural_summary(&text));
-                    if let Some(m) = &self.metrics {
-                        m.record_compression();
-                    }
-                }
+        for &i in &tool_idx[..older] {
+            let text = self.messages[i].content.as_text().to_string();
+            if is_already_compressed(&text) || text.len() <= 200 {
+                continue;
+            }
+            if !targets.is_empty() && self.read_path_matches(i, &text, targets) {
+                continue;
+            }
+            self.messages[i].content = Content::Text(structural_summary(&text));
+            if let Some(m) = &self.metrics {
+                m.record_compression();
             }
         }
+    }
+
+    /// Whether the tool result at `idx` read one of `targets`: its path comes
+    /// from the result JSON's `path`, or from the arguments of the assistant
+    /// tool call with the same id.
+    fn read_path_matches(&self, idx: usize, text: &str, targets: &[String]) -> bool {
+        let hit = |p: &str| {
+            let p = normalize_path(p);
+            targets.iter().any(|t| t == p)
+        };
+        if let Some(path) = result_json(text).and_then(|v| {
+            v.get("path")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        }) && hit(&path)
+        {
+            return true;
+        }
+        let Some(id) = self.messages[idx].tool_call_id.as_deref() else {
+            return false;
+        };
+        self.messages[..idx]
+            .iter()
+            .rev()
+            .flat_map(|m| m.tool_calls.iter())
+            .find(|c| c.id == id)
+            .is_some_and(|c| call_paths(&c.arguments).iter().any(|p| hit(p)))
     }
 
     /// Record metadata about a message we are about to drop.
@@ -818,6 +1033,66 @@ pub fn estimate_text_tokens(text: &str) -> u32 {
     tokens + 4 // per-message framing overhead, matching `estimate_message_tokens`
 }
 
+/// Whether `HONE_PHASE_COMPACTION` enables compaction on phase transitions
+/// (`1`, `true` or `on`). Read each time a manager is built.
+fn phase_compaction_from_env() -> bool {
+    std::env::var("HONE_PHASE_COMPACTION").is_ok_and(|v| matches!(v.trim(), "1" | "true" | "on"))
+}
+
+fn normalize_path(p: &str) -> &str {
+    p.strip_prefix("./").unwrap_or(p)
+}
+
+/// `path` / `file_path` arguments of a tool call.
+fn call_paths(args: &serde_json::Value) -> Vec<String> {
+    ["path", "file_path"]
+        .iter()
+        .filter_map(|k| args.get(*k).and_then(serde_json::Value::as_str))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Paths a write call targets: `path` / `file_path`, and for `apply_patch` the
+/// `--- a/…` / `+++ b/…` header paths of its `patch` argument.
+fn write_targets(name: &str, args: &serde_json::Value) -> Vec<String> {
+    let mut paths = call_paths(args);
+    if matches!(name, "apply_patch" | "apply_diff")
+        && let Some(patch) = args.get("patch").and_then(serde_json::Value::as_str)
+    {
+        for line in patch.lines() {
+            let Some(rest) = line
+                .strip_prefix("--- ")
+                .or_else(|| line.strip_prefix("+++ "))
+            else {
+                continue;
+            };
+            let path = rest.split('\t').next().unwrap_or(rest).trim();
+            let path = path
+                .strip_prefix("a/")
+                .or_else(|| path.strip_prefix("b/"))
+                .unwrap_or(path);
+            if !path.is_empty() && path != "/dev/null" {
+                paths.push(path.to_owned());
+            }
+        }
+    }
+    paths.iter().map(|p| normalize_path(p).to_owned()).collect()
+}
+
+/// A tool result that is a JSON object (as `read_file` returns).
+fn result_json(text: &str) -> Option<serde_json::Value> {
+    if !text.trim_start().starts_with('{') {
+        return None;
+    }
+    serde_json::from_str(text).ok()
+}
+
+/// The longest prefix of `text` that is at most `max_bytes` and ends on a char
+/// boundary.
+fn prefix(text: &str, max_bytes: usize) -> &str {
+    &text[..safe_char_boundary(text, max_bytes)]
+}
+
 // ---------------------------------------------------------------------------
 // Graduated compression helpers
 // ---------------------------------------------------------------------------
@@ -838,7 +1113,10 @@ fn is_already_compressed(text: &str) -> bool {
 /// - Default: first 200 chars
 fn structural_summary(text: &str) -> String {
     let len = text.len();
-    let sample = &text[..500.min(len)];
+    if let Some(summary) = file_read_summary(text) {
+        return summary;
+    }
+    let sample = prefix(text, 500);
 
     if looks_like_test_output(sample) {
         let lines: Vec<&str> = text.lines().collect();
@@ -869,7 +1147,7 @@ fn structural_summary(text: &str) -> String {
             return format!(
                 "[tool result summarized, {} chars: {}...]",
                 len,
-                &text[..200.min(len)]
+                prefix(text, 200)
             );
         }
         format!(
@@ -910,7 +1188,7 @@ fn structural_summary(text: &str) -> String {
             return format!(
                 "[tool result summarized, {} chars: {}...]",
                 len,
-                &text[..200.min(len)]
+                prefix(text, 200)
             );
         }
         format!(
@@ -940,23 +1218,78 @@ fn structural_summary(text: &str) -> String {
             path_strings.join("\n")
         )
     } else {
-        let safe_end = safe_char_boundary(text, 200);
         format!(
             "[tool result summarized, {} chars: {}...]",
             len,
-            &text[..safe_end]
+            prefix(text, 200)
         )
     }
+}
+
+/// Summary of a JSON file-read result (`{"content": "...", "path": "..."}`):
+/// the path, the line count and up to 40 declaration lines of `content`.
+fn file_read_summary(text: &str) -> Option<String> {
+    let value = result_json(text)?;
+    let content = value.get("content")?.as_str()?;
+    let path = value.get("path").and_then(serde_json::Value::as_str);
+    let lines = content.lines().count();
+    let decls: Vec<&str> = content
+        .lines()
+        .filter(|l| is_declaration(l.trim()))
+        .take(40)
+        .collect();
+    let head = match path {
+        Some(p) => format!("file {p}, {lines} lines"),
+        None => format!("file, {lines} lines"),
+    };
+    let len = text.len();
+    Some(if decls.is_empty() {
+        format!(
+            "[tool result summarized, {len} chars, {head}: {}...]",
+            prefix(content, 200)
+        )
+    } else {
+        format!(
+            "[tool result summarized, {len} chars, {head}, {} declarations:\n{}]",
+            decls.len(),
+            decls.join("\n")
+        )
+    })
+}
+
+/// Whether a trimmed line starts a declaration in a common language.
+fn is_declaration(t: &str) -> bool {
+    [
+        "fn ",
+        "async fn ",
+        "struct ",
+        "enum ",
+        "impl ",
+        "impl<",
+        "trait ",
+        "mod ",
+        "class ",
+        "def ",
+        "async def ",
+        "function ",
+        "interface ",
+        "type ",
+        "export ",
+        "pub ",
+        "pub(",
+    ]
+    .iter()
+    .any(|k| t.starts_with(k))
 }
 
 /// Produce a one-liner description for very old tool results.
 fn tool_oneliner(text: &str) -> String {
     let len = text.len();
-    let descriptor = if looks_like_test_output(&text[..500.min(len)]) {
+    let descriptor = if looks_like_test_output(prefix(text, 500)) {
         let pass = text.matches("PASS").count() + text.matches(" ok").count();
         let fail = text.matches("FAIL").count() + text.matches("FAILED").count();
         format!("test output ({pass} passed, {fail} failed)")
-    } else if looks_like_code(&text[..500.min(len)]) {
+    } else if looks_like_code(prefix(text, 500)) {
         let fns = text
             .lines()
             .filter(|l| {
@@ -968,7 +1301,7 @@ fn tool_oneliner(text: &str) -> String {
             })
             .count();
         format!("code ({fns} functions)")
-    } else if looks_like_grep_result(&text[..500.min(len)]) {
+    } else if looks_like_grep_result(prefix(text, 500)) {
         let matches = text.lines().filter(|l| l.contains(':')).count();
         format!("grep ({matches} matches)")
     } else {
@@ -1381,7 +1714,7 @@ mod tests {
         let mut config = ContextConfig::default();
         config.recent_window = 1;
         config.advertised_context_length = 1_000_000;
-        let mut ctx = ContextManager::with_config(config);
+        let mut ctx = ContextManager::with_config(config).with_phase_compaction(true);
 
         // Add exploration tool results
         ctx.add_message(Message::user("find the bug"));
@@ -1397,6 +1730,13 @@ mod tests {
         // Add padding to push tool result out of recent window
         ctx.add_message(Message::user("ok fix it"));
         ctx.add_message(Message::assistant("Sure, writing now."));
+        // The window counts tool results: one newer result takes the only slot.
+        ctx.add_message(Message {
+            role: Role::Tool,
+            content: Content::Text("short".to_string()),
+            tool_calls: vec![],
+            tool_call_id: Some("tc2".to_string()),
+        });
 
         // Trigger phase transition
         ctx.notify_tool_call("write_file");
