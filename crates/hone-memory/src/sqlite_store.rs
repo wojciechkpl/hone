@@ -432,8 +432,15 @@ impl SqliteStore {
         } else {
             format!("WHERE {}", conditions.join(" AND "))
         };
+        // The BM25 corpus does not need the (large) embedding column; an
+        // enumeration returns the memories themselves, embedding included.
+        let columns = if query.text.is_empty() {
+            "id, content, tags, weight, created_at, decay_at, kind, description, embedding"
+        } else {
+            "id, content, tags, weight, created_at, decay_at, kind, description"
+        };
         let sql = format!(
-            "SELECT id, content, tags, weight, created_at, decay_at, kind, description
+            "SELECT {columns}
              FROM memories
              {where_clause}
              ORDER BY created_at DESC
