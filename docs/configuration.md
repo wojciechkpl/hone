@@ -834,6 +834,51 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 | `<cwd>/.hone/plans/` | Saved plans from plan mode (`hone --plan FILE`) | |
 | `<project root>/.hone/specs/` | Output of `hone spec` | |
 
+## Memory writers
+
+`[memory] writer` in `config.toml` picks who writes long-term memory:
+
+| Writer | Who writes |
+|---|---|
+| `triggers` | Hone, from conversation triggers (the default) |
+| `off` | nobody |
+| `tool` | the model, through the `memory_write` tool |
+| `triggers+tool` | both |
+
+With a `tool` writer the model gets `memory_write(kind, content, tags?)`: `kind` is `user`,
+`feedback`, `project` or `reference`; `content` is 1 to 2000 characters, stored as one line
+(newlines and other control characters become single spaces); at most 8 tags. Tags starting
+with `source:`, `call:`, `project:` or `__` are refused: the runtime sets those itself.
+
+- **It only updates its own memories.** A near-duplicate of a memory the model wrote, of the
+  same kind and in the same project, is updated; anything else (yours, a trigger's, an
+  import) is never changed, and a new memory is added instead.
+- **Provenance.** Each write is tagged `source:tool`, `project:<id>` (a hash of the git
+  top-level, or of the working directory) and `call:<id>` (the newest 5 are kept). The tags
+  are stored unencrypted even with `--encrypted-memory`; the content is encrypted.
+  Recall and the memory index show a model-written memory with a `(model-written)` prefix,
+  and only in its own project. Memories of yours are shown everywhere.
+- **Approval.** Under `--yes`, auto-approve or a session "always", a write still asks you
+  whenever file, shell, web, LSP or MCP results (or a HONE.md section) are in the
+  conversation, in this turn or an earlier one. The prompt of an update shows the memory it
+  replaces (`replaces`). With nobody to ask (headless) the write is refused, and the
+  error names the source. A conversation with none of those follows the normal policy.
+- **Permission rules** see the call as the command `memory_write`:
+
+  ```toml
+  [[rules]]
+  command = "memory_write"
+  decision = "deny"
+  ```
+
+  A broad `command = "*"` rule covers it too.
+- **Limit.** 20 successful writes per agent (one process). Switching sessions in the TUI
+  starts a new agent, which starts a new count.
+- **When it shows up.** The memory index in the system prompt is built at start, so a new
+  memory reaches it on the next start. Recall finds it from the next turn.
+- If an MCP server offers a tool also called `memory_write`, the built-in one replaces it
+  and Hone logs a warning.
+
 ## Context receipts
 
 Every time Hone sends a request to a model, it records a *context receipt*: what went into that request and where it came from. A receipt lists, per block of the prompt (system prompt, recalled memories, skills, injected code, history), the strategy that produced it, its estimated tokens and its sources: memory ids, file paths with scores, skill names, and hashes of history messages. It also lists what was retrieved but cut, what compaction replaced and with what, the tools offered, and a SHA-256 of the request.

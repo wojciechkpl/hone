@@ -8,7 +8,7 @@ use hone_index::SqliteIndex;
 use hone_memory::{Memory, MemoryStore};
 use hone_proto::{
     AgentEvent, Content, Message, ModelId, PricingEntry, ProviderEvent, StepAction, TokenUsage,
-    ToolApprovalPolicy, ToolCallRequest, WorkerRef,
+    ToolApprovalPolicy, ToolCallRequest, ToolLayer, WorkerRef,
 };
 use hone_providers::{CompletionRequest, ContextWindowTable, ModelProvider, ProviderError};
 use hone_sandbox::{Sandbox, SandboxPolicy};
@@ -635,6 +635,11 @@ pub struct Agent {
     /// Set when a tool result this turn was labelled with a Medium/High injection
     /// risk: a `memory_write` then needs approval even in auto-approve modes.
     injection_seen: std::sync::atomic::AtomicBool,
+    /// Tools whose results (file, shell, web, LSP or MCP content) are in this
+    /// agent's context: a `memory_write` then needs approval, in this turn or any
+    /// later one. Kept for the life of the agent: results can leave the context
+    /// window, but not as a way to skip the approval.
+    untrusted_sources: std::sync::Mutex<Vec<String>>,
     /// The strategies this agent runs with (derived from `AgentConfig` unless
     /// set with `with_strategies`).
     strategies: Arc<ResolvedStrategies>,
@@ -737,6 +742,7 @@ impl Agent {
             turn_count: 0,
             memory_writes: 0,
             injection_seen: std::sync::atomic::AtomicBool::new(false),
+            untrusted_sources: std::sync::Mutex::new(Vec::new()),
             strategies,
             receipt_info: TurnContextInfo::default(),
             receipt_history: std::collections::HashSet::new(),
@@ -787,6 +793,11 @@ impl Agent {
     /// place that rule lives, used wherever the registry is set or replaced.
     fn with_memory_write(&self, tools: &ToolRegistry) -> ToolRegistry {
         if self.strategies.writer_kind.offers_tool() && self.config.memory_store.is_some() {
+            if tools.get(crate::memory_write::NAME).is_some() {
+                tracing::warn!(
+                    "a registered tool named `memory_write` (an MCP server's?) is shadowed by the built-in memory_write tool"
+                );
+            }
             tools.with_tool(Arc::new(crate::memory_write::MemoryWriteTool))
         } else {
             tools.clone()
@@ -1057,12 +1068,20 @@ impl Agent {
             exclude_kinds: &exclude,
             scope: None,
         };
+        // A memory the model wrote is recalled only in its own project.
+        let project = crate::memory_write::project_tag(&self.config.working_dir);
+        let in_project =
+            |m: &hone_memory::Memory| crate::memory_write::visible_in_project(&m.tags, &project);
         let bm25_memories: Vec<hone_memory::Memory> = match strategies
             .recaller
             .recall(store.as_ref(), &recall_query)
             .await
         {
-            Ok(found) => found.into_iter().map(|s| s.memory).collect(),
+            Ok(found) => found
+                .into_iter()
+                .map(|s| s.memory)
+                .filter(|m| in_project(m))
+                .collect(),
             Err(_) => Vec::new(),
         };
 
@@ -1086,7 +1105,7 @@ impl Agent {
                                     scored
                                         .into_iter()
                                         .map(|s| s.memory)
-                                        .filter(|m| !exclude.contains(&m.kind))
+                                        .filter(|m| !exclude.contains(&m.kind) && in_project(m))
                                         .collect()
                                 })
                                 .unwrap_or_default()
@@ -1159,7 +1178,12 @@ impl Agent {
             .collect();
         let mut prompt = String::from("\n\n## Relevant context from memory:\n");
         for mem in &final_memories {
-            prompt.push_str(&format!("- {}\n", mem.content));
+            let label = if crate::memory_write::is_model_written(&mem.tags) {
+                "(model-written) "
+            } else {
+                ""
+            };
+            prompt.push_str(&format!("- {label}{}\n", mem.content));
         }
         (prompt, entries, info)
     }
@@ -1179,17 +1203,25 @@ impl Agent {
     /// use case (single-agent sessions).  PR4/R12 will address races across
     /// multiple agents sharing the same backing file via explicit transactions.
     pub async fn record_memory(&self, candidate: MemoryCandidate) {
-        let _ = self.apply_memory_candidate(candidate, Vec::new()).await;
+        let _ = self
+            .apply_memory_candidate(candidate, Vec::new(), None)
+            .await;
     }
 
     /// The write path: embedding, near-duplicate upsert (`find_similar` 0.8),
     /// UUID v7 ids. `extra_tags` are added to the memory (kept when updating).
     /// Returns the memory's id and `"added"` or `"updated"`; `None` when there
     /// is no store or the store refused.
+    ///
+    /// `model_project` is `Some(project tag)` for a write made by the model: it
+    /// may only update a memory the model wrote itself, of the same kind, in
+    /// the same project. A near-duplicate of any other memory (the user's, a
+    /// trigger's, an import's) is left alone and a new memory is added.
     async fn apply_memory_candidate(
         &self,
         candidate: MemoryCandidate,
         extra_tags: Vec<String>,
+        model_project: Option<&str>,
     ) -> Option<(String, &'static str)> {
         let store = self.config.memory_store.as_ref()?;
 
@@ -1214,7 +1246,12 @@ impl Agent {
         };
 
         // R6: check for a near-duplicate and upsert instead of inserting twice.
-        let existing = store.find_similar(&body, 0.8).await.ok().flatten();
+        let existing = store
+            .find_similar(&body, 0.8)
+            .await
+            .ok()
+            .flatten()
+            .filter(|m| Self::updatable_by_model(m, candidate.kind, model_project));
 
         if let Some(existing) = existing {
             let mut tags = existing.tags;
@@ -1223,6 +1260,9 @@ impl Agent {
                     tags.push(t);
                 }
             }
+            if model_project.is_some() {
+                crate::memory_write::keep_newest_call_tags(&mut tags);
+            }
             let id = existing.id.clone();
             let updated = Memory {
                 id: existing.id,
@@ -1230,7 +1270,7 @@ impl Agent {
                 weight: 1.0,
                 created_at: now,
                 description: candidate.description.or(existing.description),
-                kind: candidate.kind,
+                kind: existing.kind,
                 tags,
                 decay_at: existing.decay_at,
                 embedding,
@@ -1255,6 +1295,38 @@ impl Agent {
         }
     }
 
+    /// Whether a write by the model (`model_project` is `Some`) may update
+    /// `existing`: only a memory of the same kind that the model itself wrote in
+    /// the same project. Writes that aren't the model's may update anything.
+    fn updatable_by_model(
+        existing: &Memory,
+        kind: hone_memory::MemoryKind,
+        model_project: Option<&str>,
+    ) -> bool {
+        match model_project {
+            None => true,
+            Some(project) => {
+                existing.kind == kind
+                    && crate::memory_write::is_model_written(&existing.tags)
+                    && existing.tags.iter().any(|t| t == project)
+            }
+        }
+    }
+
+    /// The memory a `memory_write` with these (valid) arguments would update,
+    /// for the approval prompt. Looks only at what the write itself may update.
+    async fn memory_write_target(&self, args: &Value) -> Option<Memory> {
+        let store = self.config.memory_store.as_ref()?;
+        let v = crate::memory_write::validate(args).ok()?;
+        let project = crate::memory_write::project_tag(&self.config.working_dir);
+        store
+            .find_similar(&v.content, 0.8)
+            .await
+            .ok()
+            .flatten()
+            .filter(|m| Self::updatable_by_model(m, v.kind, Some(&project)))
+    }
+
     /// Apply a `memory_write` call: validate, check the session cap, write
     /// through the shared path with the attribution tags. On success returns the
     /// result for the model and what to announce as `MemoryWritten`.
@@ -1275,7 +1347,9 @@ impl Agent {
         let v = crate::memory_write::validate(&call.arguments)
             .map_err(|reason| tool_err(ToolError::InvalidInput { reason }))?;
         let mut tags = v.tags;
+        let project = crate::memory_write::project_tag(&self.config.working_dir);
         tags.push("source:tool".to_owned());
+        tags.push(project.clone());
         tags.push(format!("call:{}", call.id));
         let kind_name = crate::strategy::kind_name(v.kind).to_owned();
         let candidate = MemoryCandidate {
@@ -1287,7 +1361,10 @@ impl Agent {
                 how: None,
             },
         };
-        let Some((id, status)) = self.apply_memory_candidate(candidate, tags).await else {
+        let Some((id, status)) = self
+            .apply_memory_candidate(candidate, tags, Some(&project))
+            .await
+        else {
             return Err(tool_err(ToolError::ExecutionFailed {
                 tool: call.name.clone(),
                 message: "the memory store did not accept the write".to_owned(),
@@ -1356,10 +1433,51 @@ impl Agent {
         self.context.add_message(message);
     }
 
+    /// True for tools whose results carry content the user didn't write: files,
+    /// command output, the web, LSP servers and MCP servers.
+    fn is_untrusted_source(&self, tool: &str) -> bool {
+        matches!(
+            tool,
+            "read_file" | "grep" | "glob" | "shell" | "web_fetch" | "web_search"
+        ) || tool.starts_with("lsp_")
+            || self
+                .config
+                .tools
+                .get(tool)
+                .is_some_and(|t| t.layer() == ToolLayer::Mcp)
+    }
+
+    /// Remember that a result of `tool` is in context, when it is untrusted content.
+    fn note_untrusted_source(&self, tool: &str) {
+        if !self.is_untrusted_source(tool) {
+            return;
+        }
+        if let Ok(mut seen) = self.untrusted_sources.lock() {
+            if !seen.iter().any(|t| t == tool) {
+                seen.push(tool.to_owned());
+            }
+        }
+    }
+
+    /// What untrusted content is in this agent's context: the tools whose
+    /// results were seen and `HONE.md` when the system prompt carries a section.
+    fn untrusted_context(&self) -> Vec<String> {
+        let mut sources = self
+            .untrusted_sources
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default();
+        if self.config.system_prompt.contains("(from HONE.md)") {
+            sources.push("HONE.md".to_owned());
+        }
+        sources
+    }
+
     /// Scan a tool result for prompt injection. Returns the egress risk label
     /// and the SECURITY prefix for the history message (empty when clean).
     /// Shared by every path that turns a tool outcome into a result.
     fn scan_for_injection(&self, tool: &str, result_str: &str) -> (Option<String>, &'static str) {
+        self.note_untrusted_source(tool);
         let risk = InjectionDetector::scan_tool_result(tool, result_str);
         if risk.is_actionable() {
             self.injection_seen
@@ -2858,8 +2976,19 @@ impl Agent {
                     // injection needs approval whatever the mode or earlier
                     // "always" answers: injected text must not become a stored
                     // fact silently.
+                    // Also after any file, shell, web, LSP or MCP result, or with
+                    // a HONE.md section in the prompt (this turn or an earlier one
+                    // still in context): that text may have steered the model.
+                    let untrusted = if call.name == crate::memory_write::NAME {
+                        self.untrusted_context()
+                    } else {
+                        Vec::new()
+                    };
                     let forced = call.name == crate::memory_write::NAME
-                        && self.injection_seen.load(std::sync::atomic::Ordering::SeqCst);
+                        && (!untrusted.is_empty()
+                            || self
+                                .injection_seen
+                                .load(std::sync::atomic::Ordering::SeqCst));
                     if !policy_prompted
                         && (forced || !(session_cleared && !always_ask))
                         && self.config.tools.get(&call.name).is_some()
@@ -2873,10 +3002,15 @@ impl Agent {
                         let Some(rx) = self.config.step_rx.clone() else {
                             // Approval is required but nobody can answer: deny,
                             // and do not show a menu that cannot be answered.
-                            let reason = if forced {
-                                "denied: a tool result earlier in this turn looked like prompt injection, and nobody can approve this memory write"
+                            let reason = if forced && untrusted.is_empty() {
+                                "denied: a tool result looked like prompt injection, and nobody can approve this memory write".to_owned()
+                            } else if forced {
+                                format!(
+                                    "denied: content from {} is in the conversation, and nobody can approve this memory write",
+                                    untrusted.join(", ")
+                                )
                             } else {
-                                "denied: no approval channel"
+                                "denied: no approval channel".to_owned()
                             };
                             let err_val = serde_json::json!({
                                 "error": reason,
@@ -2899,10 +3033,25 @@ impl Agent {
                             i += 1;
                             continue;
                         };
+                        // An update shows what it would replace.
+                        let mut paused_args = call.arguments.clone();
+                        if call.name == crate::memory_write::NAME {
+                            if let Some(old) = self.memory_write_target(&call.arguments).await {
+                                if let Some(obj) = paused_args.as_object_mut() {
+                                    obj.insert(
+                                        "replaces".to_owned(),
+                                        serde_json::json!({
+                                            "id": old.id,
+                                            "preview": old.content.chars().take(120).collect::<String>(),
+                                        }),
+                                    );
+                                }
+                            }
+                        }
                         let paused = AgentEvent::ToolCallPaused {
                             id: call.id.clone(),
                             name: call.name.clone(),
-                            args: call.arguments.clone(),
+                            args: paused_args,
                             worker: self.worker.clone(),
                         };
                         // Re-check once this call holds the channel: another
@@ -3848,7 +3997,13 @@ impl AgentHandle {
                         let _ = reply.send(agent.context_token_count());
                     }
                     AgentCommand::LoadHistory { messages } => {
+                        // A resumed session starts a fresh write cap; the tools it
+                        // used still count as untrusted content in context.
+                        agent.memory_writes = 0;
                         for msg in messages {
+                            for call in &msg.tool_calls {
+                                agent.note_untrusted_source(&call.name);
+                            }
                             agent.context.add_message(msg);
                         }
                         tokens_writer.store(agent.context_token_count(), Ordering::Relaxed);
