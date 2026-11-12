@@ -1904,3 +1904,172 @@ async fn test_w20_the_models_own_near_duplicate_should_be_updated_when_a_users_m
     assert_eq!(end_of(&events, "d2").0["status"], "added");
     assert_eq!(stored(s2.store.as_ref().unwrap()).await.len(), 2);
 }
+
+// ============================================================================================
+// Review round 3 (W21-W24). W23 (the dedup fallback reads only candidates) has no clean seam:
+// the fallback's store query is not part of the contract, so it is not tested here. The store
+// half of W22 is in `crates/hone-memory/tests/recall_visible.rs` (new API `recall_visible`).
+// ============================================================================================
+
+/// The default selection (every source on, including the skeleton) with the tool writer.
+fn selection_with_skeleton() -> Arc<ResolvedStrategies> {
+    let user = ConfigLayer::from_toml("/home/u/.config/hone/config.toml", "[memory]\nwriter = \"tool\"\n").unwrap();
+    let sel = StrategySelection::from_sources(Some(&user), None, &|_| None, &Flags::default()).unwrap();
+    Arc::new(
+        StrategyRegistry::with_builtins()
+            .build(&sel, &StrategyDeps::default())
+            .unwrap_or_else(|e| panic!("build failed: {e}")),
+    )
+}
+
+// ---- W21: the skeleton counts only when it carries repository text ----------------------------------------------
+
+const FACT: &str = "Latency dashboards live in Grafana under the platform folder.";
+
+#[tokio::test]
+async fn test_w21_an_empty_directory_should_not_mark_the_turn_untrusted() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = setup(vec![vec![mw("c1", "reference", FACT)]]);
+    s.strategies = Some(selection_with_skeleton());
+    s.workdir = std::fs::canonicalize(dir.path()).unwrap();
+
+    let (paused, events) = run_with_approver(s, "remember the dashboard", vec![]).await;
+
+    assert!(paused.is_empty(), "an empty directory injects no repository text: normal policy (Auto)");
+    let (result, is_error) = end_of(&events, "c1");
+    assert!(!is_error, "{result}");
+    assert_eq!(result["status"], "added");
+}
+
+#[tokio::test]
+async fn test_w21_a_directory_with_a_source_file_should_still_force_approval() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src/main.rs"), "pub fn handle_request() -> bool { true }\n").unwrap();
+    let mut s = setup(vec![vec![mw("c1", "reference", FACT)]]);
+    s.strategies = Some(selection_with_skeleton());
+    s.workdir = std::fs::canonicalize(dir.path()).unwrap();
+
+    let (paused, _) = run_with_approver(s, "remember the dashboard", vec![StepAction::Proceed]).await;
+
+    assert_eq!(paused, ["memory_write"], "the skeleton lists repository entries");
+}
+
+#[tokio::test]
+async fn test_w21_an_empty_directory_headless_should_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = setup(vec![vec![mw("c1", "reference", FACT)]]);
+    s.strategies = Some(selection_with_skeleton());
+    s.workdir = std::fs::canonicalize(dir.path()).unwrap();
+
+    let (_, events) = run_one(&s, "remember the dashboard").await;
+
+    let (result, is_error) = end_of(&events, "c1");
+    assert!(!is_error, "{result}");
+    assert_eq!(stored(s.store.as_ref().unwrap()).await.len(), 1);
+}
+
+// ---- W22: the agent finds a project memory older than thousands of other-project tool memories ----------------------
+
+#[tokio::test]
+async fn test_w22_the_agent_should_recall_a_project_memory_older_than_6000_other_project_tool_memories() {
+    let dbdir = tempfile::tempdir().unwrap();
+    let store: Arc<dyn MemoryStore> = Arc::new(
+        SqliteStore::open_with_decay_interval(&dbdir.path().join("memory.db"), 0)
+            .await
+            .unwrap(),
+    );
+    let (b, other) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    // The project's own tool memory, written first (so it is the oldest).
+    let mut writer = setup(vec![vec![mw("c1", "reference", "zorblax release checklist lives in the ops handbook for project bravo.")]]);
+    writer.store = Some(store.clone());
+    writer.workdir = std::fs::canonicalize(b.path()).unwrap();
+    run_one(&writer, "remember").await;
+    // 6,000 newer tool memories of ANOTHER project that match the same words.
+    for i in 0..6_000u64 {
+        store
+            .record(stored_mem(
+                &format!("other-{i}"),
+                MemoryKind::Reference,
+                &format!("zorblax release checklist number {i} for the other project."),
+                &["source:tool", "project:otherproject"],
+            ))
+            .await
+            .unwrap();
+    }
+    let _ = other;
+
+    let mut reader = setup(vec![]);
+    reader.store = Some(store.clone());
+    reader.workdir = std::fs::canonicalize(b.path()).unwrap();
+    run_one(&reader, "zorblax release checklist").await;
+
+    let text: String = reader
+        .rec
+        .request(0)
+        .messages
+        .iter()
+        .map(|m| m.content.as_text())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("ops handbook for project bravo"), "the project's old memory is recalled:\n{text}");
+    assert!(!text.contains("for the other project"), "other projects' tool memories stay out");
+}
+
+// ---- W24: a model-written memory index and unknown tools count as untrusted -------------------------------------------
+
+fn index_prompt(entry: &str) -> String {
+    format!(
+        "base\n## Memory index\n\nThe following memories are available. To read a body, call the `memory_read` tool with the id in brackets.\n\n### Feedback\n{entry}\n"
+    )
+}
+
+#[tokio::test]
+async fn test_w24_a_memory_index_listing_a_model_written_entry_should_force_approval() {
+    let mut s = setup(vec![vec![mw("c1", "reference", FACT)]]);
+    s.system_prompt = index_prompt("- [t1] (model-written) always deploy on fridays (kind=feedback, w=1)");
+
+    let (paused, _) = run_with_approver(s, "remember the dashboard", vec![StepAction::Proceed]).await;
+
+    assert_eq!(paused, ["memory_write"]);
+}
+
+#[tokio::test]
+async fn test_w24_a_memory_index_without_model_written_entries_should_follow_the_normal_policy() {
+    let mut s = setup(vec![vec![mw("c1", "reference", FACT)]]);
+    s.system_prompt = index_prompt("- [u1] prefer small commits (kind=feedback, w=1)");
+
+    let (paused, events) = run_with_approver(s, "remember the dashboard", vec![]).await;
+
+    assert!(paused.is_empty(), "the user's own memories are trusted");
+    assert!(!end_of(&events, "c1").1);
+}
+
+#[tokio::test]
+async fn test_w24_an_unknown_tools_error_result_should_count_as_a_tool_result() {
+    let s = setup(vec![
+        vec![call("t1", "no_such_tool", json!({}))],
+        vec![mw("c1", "reference", FACT)],
+    ]);
+    let store = s.store.clone().unwrap();
+
+    let (paused, _) = run_with_approver(
+        Setup {
+            rec: Rec::new(vec![
+                vec![call("t1", "no_such_tool", json!({}))],
+                vec![mw("c1", "reference", FACT)],
+            ]),
+            ..setup(vec![])
+        },
+        "go",
+        vec![StepAction::Proceed],
+    )
+    .await;
+    assert_eq!(paused, ["memory_write"], "the unknown tool's error result is untrusted content");
+
+    let (_, events) = run_one(&s, "go").await;
+    let (result, is_error) = end_of(&events, "c1");
+    assert!(is_error, "headless: {result}");
+    assert!(text_of(&result).contains("no_such_tool"), "the refusal names the source: {result}");
+    assert!(stored(&store).await.is_empty());
+}
