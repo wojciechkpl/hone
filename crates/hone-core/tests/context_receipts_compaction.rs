@@ -218,3 +218,84 @@ async fn test_cr8_first_write_after_reads_should_be_recorded_as_a_phase_step() {
     );
     assert!(!step(&rs[3], "phase").replaced.is_empty());
 }
+
+// ---- CR17: the compaction log is consistent (review round 1) -------------------------------
+
+fn big_round(id: &str) -> Vec<hone_proto::ToolCallRequest> {
+    vec![call(id, "read_file", json!({ "tag": id, "reps": 700 }))]
+}
+
+#[tokio::test]
+async fn test_cr17_a_second_drop_pass_should_log_the_marker_it_replaces() {
+    init();
+    // Turn 1 overshoots the budget (first drop pass, a `[session history` marker is
+    // stored). Turn 2 does it again: the old marker is replaced by a new one.
+    let mut rounds: Vec<_> = (1..=3).map(|i| vec![read(&format!("a{i}"))]).collect();
+    rounds.push(big_round("big1"));
+    rounds.push(vec![]); // turn 1: the emergency call answers with text
+    rounds.extend((1..=3).map(|i| vec![read(&format!("b{i}"))]));
+    rounds.push(big_round("big2"));
+    let mut r = rig(rounds, Opts::default());
+
+    let mut rs = receipts(&r.turn("read a lot").await);
+    rs.extend(receipts(&r.turn("and again").await));
+
+    // Every drop pass after the first replaces the marker the previous pass left:
+    // the marker is in the request sent just before it, and in the step's `replaced`.
+    let passes = with_step(&rs, "drop_oldest");
+    assert!(passes.len() >= 2, "need two drop passes: {passes:?} of {}", rs.len());
+    let mut checked = 0;
+    for &p in passes.iter().filter(|&&p| p > 0) {
+        let markers: Vec<String> = r
+            .provider
+            .request(p - 1)
+            .messages
+            .iter()
+            .filter(|m| m.content.as_text().starts_with("[session history"))
+            .map(message_sha256)
+            .collect();
+        if markers.is_empty() {
+            continue; // the first pass: no marker yet
+        }
+        checked += 1;
+        let replaced: Vec<String> = step(&rs[p], "drop_oldest")
+            .replaced
+            .iter()
+            .map(|x| match x {
+                SourceRef::Message { sha256, .. } => sha256.clone(),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert!(
+            markers.iter().all(|h| replaced.contains(h)),
+            "call {}: the old marker {markers:?} must be in `replaced` {replaced:?}",
+            p + 1
+        );
+    }
+    assert!(checked >= 1, "harness: a later pass must find an earlier marker");
+}
+
+#[tokio::test]
+async fn test_cr17_refs_within_one_drop_pass_should_have_distinct_pre_pass_indices() {
+    init();
+    let mut rounds: Vec<_> = (1..=5).map(|i| vec![read(&format!("s{i}"))]).collect();
+    rounds.push(big_round("big"));
+    let mut r = rig(rounds, Opts::default());
+
+    let rs = receipts(&r.turn("read a lot").await);
+
+    let hits = with_step(&rs, "drop_oldest");
+    assert_eq!(hits.len(), 1);
+    let s = step(&rs[hits[0]], "drop_oldest");
+    let indices: Vec<usize> = s
+        .replaced
+        .iter()
+        .map(|x| match x {
+            SourceRef::Message { index, .. } => *index,
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert!(indices.len() >= 2, "several messages dropped: {indices:?}");
+    let distinct: std::collections::HashSet<_> = indices.iter().collect();
+    assert_eq!(distinct.len(), indices.len(), "no two refs share an index: {indices:?}");
+}

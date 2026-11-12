@@ -177,6 +177,7 @@ pub struct Opts {
     pub strategy: SkeletonStrategy,
     pub working_dir: Option<std::path::PathBuf>,
     pub hooks: Option<Arc<hone_core::hooks::HookRegistry>>,
+    pub policy: Option<hone_core::PolicyConfig>,
 }
 
 pub struct Rig {
@@ -225,7 +226,7 @@ pub fn rig(rounds: Vec<Vec<ToolCallRequest>>, o: Opts) -> Rig {
         skills: o.skills,
         embedder: o.embedder,
         mode: AgentMode::Build,
-        policy: None,
+        policy: o.policy,
     });
     Rig { provider, agent }
 }

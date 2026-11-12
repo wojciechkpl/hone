@@ -29,7 +29,9 @@
 //!                             pub derived: Option<SourceRef> }
 //! pub struct ContextReceipt { pub turn: u32, pub call: u32, pub model: String,
 //!     pub request_sha256: String, pub blocks: Vec<BlockReceipt>, pub dropped: Vec<SourceRef>,
-//!     pub compaction: Vec<CompactionStep>, pub tools_offered: Vec<String> }
+//!     pub compaction: Vec<CompactionStep>, pub tools_offered: Vec<String>,
+//!     pub history_len: u32,        // CR15: non-system messages in the request
+//!     pub history_root: String }   // CR15: sha256_hex of the newline-joined message hashes
 //! // all: Debug + Clone + PartialEq + Serialize + Deserialize
 //!
 //! AgentEvent::ContextAssembled { receipt: ContextReceipt }   // wire: {"type":"context_assembled","receipt":{..}}
@@ -120,6 +122,8 @@ fn sample_receipt() -> ContextReceipt {
             }),
         }],
         tools_offered: vec!["read_file".into(), "shell".into()],
+        history_len: 7,
+        history_root: "ef".repeat(32),
     }
 }
 
@@ -320,4 +324,11 @@ fn test_cr7_message_hash_should_cover_role_text_tool_calls_and_call_id() {
         message_sha256(&with_call),
         message_sha256(&Message::assistant("x"))
     );
+}
+
+#[test]
+fn test_cr15_receipt_should_serialise_history_len_and_history_root_under_those_names() {
+    let v = serde_json::to_value(sample_receipt()).unwrap();
+    assert_eq!(v["history_len"], 7);
+    assert_eq!(v["history_root"], "ef".repeat(32));
 }

@@ -22,8 +22,7 @@ use hone_memory::{
     EmbedError, Embedder, Embedding, InMemoryStore, Memory, MemoryKind, MemoryStore,
 };
 use hone_proto::{
-    AgentEvent, ContextReceipt, Message, Role, Slot, SourceRef, message_sha256, request_sha256,
-    sha256_hex,
+    AgentEvent, ContextReceipt, Slot, SourceRef, request_sha256, sha256_hex,
 };
 use receipts_support::*;
 
@@ -422,45 +421,9 @@ async fn test_cr6_skills_block_should_list_the_matched_skill_names() {
     assert_eq!(b.sources[0].score, None);
 }
 
-// ---- CR7: history ----------------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_cr7_history_should_list_every_non_system_message_with_its_hash_and_position() {
-    let store = store_with(vec![mem("m-a", "zorblax note", MemoryKind::Feedback, None)]).await;
-    let skills = registry(vec![skill("zorblax-helper", "zorblax", "Be careful.")]);
-    let mut r = rig(
-        vec![vec![read("r1")], vec![read("r2")]],
-        Opts {
-            memory: Some(store),
-            skills: Some(skills),
-            ..Default::default()
-        },
-    );
-
-    let got = receipts(&r.turn("zorblax please").await);
-
-    assert_eq!(got.len(), 3);
-    for (i, receipt) in got.iter().enumerate() {
-        let req = r.provider.request(i);
-        let expected: Vec<(usize, String)> = req
-            .messages
-            .iter()
-            .enumerate()
-            .filter(|(_, m): &(usize, &Message)| m.role != Role::System)
-            .map(|(idx, m)| (idx, message_sha256(m)))
-            .collect();
-        let history = block(receipt, Slot::History);
-        let actual: Vec<(usize, String)> = history
-            .sources
-            .iter()
-            .map(|s| match &s.source {
-                SourceRef::Message { index, sha256 } => (*index, sha256.clone()),
-                other => panic!("history lists messages: {other:?}"),
-            })
-            .collect();
-        assert_eq!(actual, expected, "call {}", i + 1);
-    }
-}
+// ---- CR7 / CR15: history ------------------------------------------------------------------
+// The History block is listed incrementally since review round 1 (CR15): see
+// `context_receipts_history.rs`, which replaced the old "every message on every call" test.
 
 // ---- CR10: no text in receipts ------------------------------------------------------------------
 
