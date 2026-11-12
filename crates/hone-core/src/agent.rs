@@ -17,8 +17,6 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
-use crate::receipts::{ExtraBlock, InjectionInfo, RecallInfo, TurnContextInfo};
-use crate::strategy::{RecallerKind, ResolvedStrategies, WriterKind};
 use crate::context::{ContextManager, estimate_text_tokens};
 use crate::context_injector::{ContextInjector, SkeletonStrategy};
 use crate::cost::CostAccumulator;
@@ -30,7 +28,7 @@ use crate::memory_format::format_memory_body;
 use crate::memory_worthy::MemoryCandidate;
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
-use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
+use crate::receipts::{ExtraBlock, InjectionInfo, RecallInfo, TurnContextInfo};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
 use crate::session_approvals::SessionApprovals;
