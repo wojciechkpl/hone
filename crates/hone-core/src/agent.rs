@@ -1117,6 +1117,7 @@ impl Agent {
                 .map(|k| crate::strategy::kind_name(*k).to_owned())
                 .collect(),
             custom,
+            fts5: strategies.recaller_kind == RecallerKind::Fts5,
             dropped: cut_ids
                 .into_iter()
                 .filter(|id| !final_memories.iter().any(|m| &m.id == id))

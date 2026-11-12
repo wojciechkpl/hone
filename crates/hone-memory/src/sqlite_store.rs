@@ -51,6 +51,195 @@ const CREATE_META_TABLE_SQL: &str = "
 const CREATE_KIND_INDEX_SQL: &str =
     "CREATE INDEX IF NOT EXISTS memories_kind_idx ON memories(kind)";
 
+/// Rank `memories` against `text` with the in-Rust BM25 over their searchable
+/// text (description, a newline, content), weighted by the memory weight, and
+/// return the best `limit` with a positive score. Shared by `SqliteStore` and
+/// `EncryptedStore` so both rank alike.
+pub(crate) fn bm25_top(memories: Vec<Memory>, text: &str, limit: usize) -> Vec<Memory> {
+    let texts: Vec<String> = memories
+        .iter()
+        .map(|m| {
+            let desc = m.description.as_deref().unwrap_or_default();
+            format!("{desc}\n{}", m.content)
+        })
+        .collect();
+    let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+    let index = Bm25Index::build(&refs, Bm25Params::default());
+
+    let mut scored: Vec<(f64, Memory)> = memories
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, memory)| {
+            let bm25 = index.score(i, text);
+            if bm25 > 0.0 {
+                Some((bm25 * memory.weight, memory))
+            } else {
+                None
+            }
+        })
+        .collect();
+    scored.sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    scored.into_iter().take(limit).map(|(_, m)| m).collect()
+}
+
+/// English stop words dropped from FTS5 queries.
+const STOP_WORDS: &[&str] = &[
+    "the",
+    "and",
+    "for",
+    "with",
+    "are",
+    "was",
+    "were",
+    "been",
+    "being",
+    "but",
+    "not",
+    "you",
+    "your",
+    "yours",
+    "his",
+    "her",
+    "hers",
+    "its",
+    "our",
+    "ours",
+    "their",
+    "theirs",
+    "this",
+    "that",
+    "these",
+    "those",
+    "who",
+    "whom",
+    "whose",
+    "which",
+    "what",
+    "when",
+    "where",
+    "why",
+    "how",
+    "can",
+    "could",
+    "should",
+    "would",
+    "will",
+    "shall",
+    "may",
+    "might",
+    "must",
+    "has",
+    "have",
+    "had",
+    "having",
+    "does",
+    "did",
+    "doing",
+    "done",
+    "from",
+    "into",
+    "onto",
+    "over",
+    "under",
+    "about",
+    "above",
+    "below",
+    "between",
+    "through",
+    "during",
+    "before",
+    "after",
+    "than",
+    "then",
+    "too",
+    "very",
+    "also",
+    "just",
+    "any",
+    "all",
+    "some",
+    "such",
+    "each",
+    "both",
+    "few",
+    "more",
+    "most",
+    "other",
+    "only",
+    "own",
+    "same",
+    "out",
+    "off",
+    "again",
+    "once",
+    "here",
+    "there",
+    "because",
+    "until",
+    "while",
+    "against",
+    "per",
+    "via",
+    "let",
+    "get",
+    "got",
+    "him",
+    "she",
+    "they",
+    "them",
+    "myself",
+    "yourself",
+    "itself",
+    "themselves",
+    "ourselves",
+];
+
+/// The FTS5 `MATCH` expression for a prompt: its word tokens (`[A-Za-z0-9_]`,
+/// at least 3 characters, lowercased, stop words dropped, the first 32), each
+/// double-quoted and OR-ed. `None` when no token is usable.
+fn fts5_match_expression(text: &str) -> Option<String> {
+    let tokens: Vec<String> = text
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|t| t.len() >= 3)
+        .map(str::to_ascii_lowercase)
+        .filter(|t| !STOP_WORDS.contains(&t.as_str()))
+        .take(32)
+        .map(|t| format!("\"{t}\""))
+        .collect();
+    if tokens.is_empty() {
+        None
+    } else {
+        Some(tokens.join(" OR "))
+    }
+}
+
+const FTS_TABLE_SQL: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+        content, description, content='memories', content_rowid='rowid')";
+
+// `record` is INSERT OR REPLACE, whose implicit delete does not fire DELETE
+// triggers (recursive_triggers is off), so a BEFORE INSERT trigger removes the
+// replaced row's index entry first (a no-op for a fresh id).
+const FTS_TRIGGERS_SQL: [&str; 4] = [
+    "CREATE TRIGGER IF NOT EXISTS memories_fts_bi BEFORE INSERT ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content, description)
+        SELECT 'delete', rowid, content, description FROM memories WHERE id = new.id;
+     END",
+    "CREATE TRIGGER IF NOT EXISTS memories_fts_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(rowid, content, description)
+        VALUES (new.rowid, new.content, new.description);
+     END",
+    "CREATE TRIGGER IF NOT EXISTS memories_fts_ad AFTER DELETE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content, description)
+        VALUES ('delete', old.rowid, old.content, old.description);
+     END",
+    "CREATE TRIGGER IF NOT EXISTS memories_fts_au AFTER UPDATE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, content, description)
+        VALUES ('delete', old.rowid, old.content, old.description);
+        INSERT INTO memories_fts(rowid, content, description)
+        VALUES (new.rowid, new.content, new.description);
+     END",
+];
+
 fn embedding_to_bytes(emb: &[f32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(emb.len() * 4);
     for v in emb {
@@ -344,6 +533,7 @@ impl SqliteStore {
             .map_err(to_io_err)?;
 
         let store = Self { pool };
+        store.ensure_fts().await?;
 
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -390,7 +580,123 @@ impl SqliteStore {
             .execute(&pool)
             .await
             .map_err(to_io_err)?;
-        Ok(Self { pool })
+        let store = Self { pool };
+        store.ensure_fts().await?;
+        Ok(store)
+    }
+
+    /// Create the FTS5 table and its triggers if missing, and rebuild the index
+    /// when it holds a different number of rows than `memories`.
+    async fn ensure_fts(&self) -> Result<(), MemoryError> {
+        sqlx::query(FTS_TABLE_SQL)
+            .execute(&self.pool)
+            .await
+            .map_err(to_io_err)?;
+        for sql in FTS_TRIGGERS_SQL {
+            sqlx::query(sql)
+                .execute(&self.pool)
+                .await
+                .map_err(to_io_err)?;
+        }
+        // An external-content table counts the content table's rows itself, so
+        // the number of indexed documents is read from its docsize shadow table.
+        let indexed: i64 = sqlx::query_scalar("SELECT count(*) FROM memories_fts_docsize")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(to_io_err)?;
+        let memories: i64 = sqlx::query_scalar("SELECT count(*) FROM memories")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(to_io_err)?;
+        if indexed != memories {
+            self.reindex_fts().await?;
+        }
+        Ok(())
+    }
+
+    /// Rebuild the FTS5 index from `memories` (creating the table and triggers
+    /// when missing). Returns the number of memories indexed.
+    pub async fn reindex_fts(&self) -> Result<usize, MemoryError> {
+        sqlx::query(FTS_TABLE_SQL)
+            .execute(&self.pool)
+            .await
+            .map_err(to_io_err)?;
+        for sql in FTS_TRIGGERS_SQL {
+            sqlx::query(sql)
+                .execute(&self.pool)
+                .await
+                .map_err(to_io_err)?;
+        }
+        sqlx::query("INSERT INTO memories_fts(memories_fts) VALUES ('rebuild')")
+            .execute(&self.pool)
+            .await
+            .map_err(to_io_err)?;
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM memories_fts_docsize")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(to_io_err)?;
+        Ok(n as usize)
+    }
+
+    /// FTS5 recall: the prompt's word tokens (see `fts5_match_expression`) are
+    /// matched in the index, the kind filter and `exclude` apply in the same
+    /// query, and the best `query.limit` by `-bm25()` come back (higher score is
+    /// better) with no corpus cap. No usable token gives an empty result.
+    pub async fn recall_fts5(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+    ) -> Result<Vec<ScoredMemory>, MemoryError> {
+        let Some(expr) = fts5_match_expression(&query.text) else {
+            return Ok(Vec::new());
+        };
+        let mut conditions = vec!["memories_fts MATCH ?1".to_owned()];
+        let mut n = 1;
+        if query.kind.is_some() {
+            n += 1;
+            conditions.push(format!("m.kind = ?{n}"));
+        }
+        if !exclude.is_empty() {
+            let marks: Vec<String> = exclude
+                .iter()
+                .map(|_| {
+                    n += 1;
+                    format!("?{n}")
+                })
+                .collect();
+            conditions.push(format!("m.kind NOT IN ({})", marks.join(", ")));
+        }
+        let sql = format!(
+            "SELECT m.id, m.content, m.tags, m.weight, m.created_at, m.decay_at, m.kind,
+                    m.description, m.embedding, -bm25(memories_fts) AS score
+             FROM memories_fts JOIN memories m ON m.rowid = memories_fts.rowid
+             WHERE {}
+             ORDER BY bm25(memories_fts), m.created_at DESC
+             LIMIT ?{}",
+            conditions.join(" AND "),
+            n + 1
+        );
+        let mut q = sqlx::query(&sql).bind(expr);
+        if let Some(kind) = query.kind {
+            q = q.bind(kind_to_str(kind));
+        }
+        for kind in exclude {
+            q = q.bind(kind_to_str(*kind));
+        }
+        let rows = q
+            .bind(query.limit.min(i64::MAX as usize) as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_io_err)?;
+        rows.iter()
+            .map(|row| {
+                let score: f64 = row.try_get("score").map_err(to_io_err)?;
+                Ok(ScoredMemory {
+                    memory: row_to_memory(row)?,
+                    score: score as f32,
+                })
+            })
+            .collect()
     }
 }
 
@@ -484,38 +790,7 @@ impl SqliteStore {
             return Ok(results);
         }
 
-        // Build a BM25 index over the searchable text of every memory.
-        // Searchable text = description (if present) + "\n" + content.
-        let texts: Vec<String> = memories
-            .iter()
-            .map(|m| {
-                let desc = m.description.as_deref().unwrap_or_default();
-                format!("{desc}\n{}", m.content)
-            })
-            .collect();
-        let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
-        let index = Bm25Index::build(&refs, Bm25Params::default());
-
-        let mut scored: Vec<(f64, Memory)> = memories
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, memory)| {
-                let bm25 = index.score(i, &query.text);
-                if bm25 > 0.0 {
-                    Some((bm25 * memory.weight, memory))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        scored.sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-
-        let mut results: Vec<Memory> = scored
-            .into_iter()
-            .take(query.limit)
-            .map(|(_, m)| m)
-            .collect();
+        let mut results = bm25_top(memories, &query.text, query.limit);
 
         // The corpus was read without the embedding column; load the vectors of
         // the memories actually returned, in one bound query.
@@ -622,6 +897,18 @@ impl MemoryStore for SqliteStore {
         .await
         .map_err(to_io_err)?;
         Ok(found.is_some())
+    }
+
+    async fn recall_indexed(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+    ) -> Result<Option<Vec<ScoredMemory>>, MemoryError> {
+        self.recall_fts5(query, exclude).await.map(Some)
+    }
+
+    async fn reindex(&self) -> Result<Option<usize>, MemoryError> {
+        self.reindex_fts().await.map(Some)
     }
 
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
@@ -889,7 +1176,11 @@ mod tests {
         let store = SqliteStore::in_memory().await.expect("in_memory");
         let emb = vec![0.1_f32, 0.2, 0.3];
         store
-            .record(make_memory_with_embedding("id-emb", "content with embedding", emb.clone()))
+            .record(make_memory_with_embedding(
+                "id-emb",
+                "content with embedding",
+                emb.clone(),
+            ))
             .await
             .expect("record");
 
@@ -967,7 +1258,10 @@ mod tests {
 
         // Query aligned with "alpha".
         let query = vec![1.0_f32, 0.0, 0.0, 0.0];
-        let results = store.recall_semantic(&query, 1).await.expect("recall_semantic");
+        let results = store
+            .recall_semantic(&query, 1)
+            .await
+            .expect("recall_semantic");
 
         assert_eq!(results.len(), 1, "expected exactly 1 result");
         assert_eq!(

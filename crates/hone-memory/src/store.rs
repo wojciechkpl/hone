@@ -110,6 +110,24 @@ pub trait MemoryStore: Send + Sync {
         }))
     }
 
+    /// Ranked full-text recall through the store's own search index (SQLite's
+    /// FTS5), with the kind filter and `exclude` applied in the index query.
+    /// `None` when the store has no such index (the default); callers then fall
+    /// back to [`recall_excluding`](Self::recall_excluding).
+    async fn recall_indexed(
+        &self,
+        _query: &MemoryQuery,
+        _exclude: &[MemoryKind],
+    ) -> Result<Option<Vec<ScoredMemory>>, MemoryError> {
+        Ok(None)
+    }
+
+    /// Rebuild the store's search index; returns the number of memories
+    /// indexed, or `None` when the store has no index (the default).
+    async fn reindex(&self) -> Result<Option<usize>, MemoryError> {
+        Ok(None)
+    }
+
     /// O(log n) (or better) exact lookup by `id`. Returns `None` when no
     /// memory has that id. Implementations MUST NOT do a full table scan.
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError>;

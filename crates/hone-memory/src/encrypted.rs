@@ -64,6 +64,9 @@ pub struct EncryptedStore<S: MemoryStore> {
     cipher: Aes256Gcm,
 }
 
+/// How many of the newest memories a ranked recall decrypts.
+const RANKED_CORPUS: usize = 5_000;
+
 impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
     /// Create an encrypted wrapper around `inner`, deriving the key from
     /// `passphrase` using Argon2id with a per-store random salt.
@@ -183,33 +186,48 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
     ) -> Result<Vec<Memory>, MemoryError> {
-        // Note: encrypted content cannot be searched server-side. We fetch all
-        // and filter in-memory after decryption. For typical memory stores
-        // (< 10K entries) this is acceptable.
-        let all_query = MemoryQuery {
-            text: String::new(), // fetch all matching kind
-            limit: 10_000,
-            kind: query.kind, // push kind filter into the inner store
+        // Encrypted content cannot be searched server-side: the inner store
+        // applies the kind filter and the exclusions, then the newest
+        // `RANKED_CORPUS` memories are decrypted and ranked in Rust.
+        if query.text.is_empty() {
+            let all_query = MemoryQuery {
+                text: String::new(),
+                limit: 10_000,
+                kind: query.kind,
+            };
+            let encrypted_memories = self.inner.recall_excluding(&all_query, exclude).await?;
+            let mut results: Vec<Memory> = Vec::new();
+            for mem in encrypted_memories {
+                // Skip the salt sentinel — it is an implementation detail.
+                if mem.id == SALT_SENTINEL_ID {
+                    continue;
+                }
+                results.push(self.decrypt_memory(mem)?);
+                if results.len() >= query.limit {
+                    break;
+                }
+            }
+            return Ok(results);
+        }
+
+        // One extra row: the salt sentinel may be among the newest.
+        let corpus_query = MemoryQuery {
+            text: String::new(),
+            limit: RANKED_CORPUS + 1,
+            kind: query.kind,
         };
-        let encrypted_memories = self.inner.recall_excluding(&all_query, exclude).await?;
-
-        let query_lower = query.text.to_lowercase();
-        let mut results: Vec<Memory> = Vec::new();
-
+        let encrypted_memories = self.inner.recall_excluding(&corpus_query, exclude).await?;
+        let mut corpus: Vec<Memory> = Vec::with_capacity(encrypted_memories.len());
         for mem in encrypted_memories {
-            // Skip the salt sentinel — it is an implementation detail.
             if mem.id == SALT_SENTINEL_ID {
                 continue;
             }
-            let decrypted = self.decrypt_memory(mem)?;
-            if query_lower.is_empty() || decrypted.content.to_lowercase().contains(&query_lower) {
-                results.push(decrypted);
-            }
-            if results.len() >= query.limit {
+            if corpus.len() >= RANKED_CORPUS {
                 break;
             }
+            corpus.push(self.decrypt_memory(mem)?);
         }
-
+        let results = crate::sqlite_store::bm25_top(corpus, &query.text, query.limit);
         Ok(results)
     }
 }

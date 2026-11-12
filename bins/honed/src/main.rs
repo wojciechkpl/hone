@@ -555,6 +555,7 @@ fn build_strategies(
     let project = ConfigLayer::load_project(working_dir).map_err(|e| e.to_string())?;
     let flags = hone_config::strategy::Flags {
         daemon: true,
+        encrypted_memory: false,
         ..Default::default()
     };
     let selection = hone_config::strategy::StrategySelection::from_sources(
