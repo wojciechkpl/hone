@@ -108,13 +108,38 @@ pub fn start_sidecar(
     honed_path: Option<std::path::PathBuf>,
     health_timeout: Duration,
 ) -> Result<StartOutcome, SupervisorError> {
-    let mut slot = state.sidecar.lock();
+    start_in_slot(&state.sidecar, honed_path, health_timeout)
+}
+
+type SidecarSlot = Arc<Mutex<Option<SidecarSupervisor>>>;
+
+fn start_in_slot(
+    slot: &SidecarSlot,
+    honed_path: Option<std::path::PathBuf>,
+    health_timeout: Duration,
+) -> Result<StartOutcome, SupervisorError> {
+    let mut slot = slot.lock();
     if slot.is_some() {
         return Ok(StartOutcome::AlreadyRunning);
     }
     let sup = SidecarSupervisor::start(honed_path, std::env::vars(), health_timeout)?;
     *slot = Some(sup);
     Ok(StartOutcome::Started)
+}
+
+/// [`start_sidecar`] for use inside a tokio runtime (the Tauri commands). The
+/// start uses `reqwest::blocking`, which panics on a runtime worker and would
+/// hold it for the whole health wait, so it runs on a blocking thread. The slot
+/// is locked there for the whole start, so two callers still start one `honed`.
+pub async fn start_sidecar_async(
+    state: &DaemonState,
+    honed_path: Option<std::path::PathBuf>,
+    health_timeout: Duration,
+) -> Result<StartOutcome, SupervisorError> {
+    let slot = Arc::clone(&state.sidecar);
+    tokio::task::spawn_blocking(move || start_in_slot(&slot, honed_path, health_timeout))
+        .await
+        .map_err(|e| SupervisorError::Io(std::io::Error::other(e.to_string())))?
 }
 
 /// The launch hook: start the sidecar if [`should_autostart`] says so.
@@ -131,6 +156,22 @@ pub fn boot_sidecar_if_wanted(
     start_sidecar(state, honed_path, health_timeout).map(Some)
 }
 
+/// [`boot_sidecar_if_wanted`] for use inside a tokio runtime.
+pub async fn boot_sidecar_if_wanted_async(
+    state: &DaemonState,
+    saved_mode: Option<&str>,
+    honed_path: Option<std::path::PathBuf>,
+    health_timeout: Duration,
+) -> Result<Option<StartOutcome>, SupervisorError> {
+    let wanted = should_autostart(saved_mode, &state.cfg.lock());
+    if !wanted {
+        return Ok(None);
+    }
+    start_sidecar_async(state, honed_path, health_timeout)
+        .await
+        .map(Some)
+}
+
 /// Record that the managed daemon is the chosen one.
 fn remember_sidecar_profile(state: &DaemonState) {
     let mut cfg = state.cfg.lock();
@@ -141,7 +182,9 @@ fn remember_sidecar_profile(state: &DaemonState) {
 
 #[tauri::command]
 pub async fn daemon_start(state: tauri::State<'_, DaemonState>) -> Result<DaemonStatus, String> {
-    start_sidecar(&state, None, HEALTH_TIMEOUT).map_err(supervisor_err)?;
+    start_sidecar_async(&state, None, HEALTH_TIMEOUT)
+        .await
+        .map_err(supervisor_err)?;
     remember_sidecar_profile(&state);
     daemon_status(state).await
 }
@@ -153,7 +196,8 @@ pub async fn daemon_boot(
     state: tauri::State<'_, DaemonState>,
     saved_mode: Option<String>,
 ) -> Result<DaemonStatus, String> {
-    let started = boot_sidecar_if_wanted(&state, saved_mode.as_deref(), None, HEALTH_TIMEOUT)
+    let started = boot_sidecar_if_wanted_async(&state, saved_mode.as_deref(), None, HEALTH_TIMEOUT)
+        .await
         .map_err(supervisor_err)?;
     if started == Some(StartOutcome::Started) {
         remember_sidecar_profile(&state);
