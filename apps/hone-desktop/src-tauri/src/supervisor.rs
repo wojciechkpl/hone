@@ -194,13 +194,12 @@ mod tests {
     }
 
     #[test]
-    fn spawning_missing_binary_fails_with_spawn_error() {
-        let result = SidecarSupervisor::spawn(Some(PathBuf::from(
-            "/definitely/not/a/real/honed/binary/path",
-        )));
+    fn spawning_missing_binary_fails_and_names_the_path() {
+        let path = "/definitely/not/a/real/honed/binary/path";
+        let result = SidecarSupervisor::spawn(Some(PathBuf::from(path)));
         match result {
             Ok(_) => panic!("expected spawn to fail"),
-            Err(e) => assert!(matches!(e, SupervisorError::Spawn(_)), "got {e:?}"),
+            Err(e) => assert!(e.to_string().contains(path), "got {e}"),
         }
     }
 

@@ -704,7 +704,7 @@ fn urlencoding(s: &str) -> String {
 /// Tiny in-house FS helpers wrapped behind a module so test code can stub
 /// them out if we ever need to. Today they're just `std::fs` shims.
 pub(crate) mod fs {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     pub fn create_dir_all(p: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(p)
@@ -1039,5 +1039,259 @@ mod tests {
         );
         assert_eq!(cfg.daemons.len(), 1);
         assert!(matches!(cfg.daemons[0].mode, DaemonMode::External { .. }));
+    }
+}
+
+#[cfg(all(test, unix))]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+mod autostart_tests {
+    //! A3/A4 of `docs/plans/desktop-sidecar-autostart-spec.md` on `DaemonState`.
+    //!
+    //! API required (in this file, plain functions so no `tauri::State` is
+    //! needed; the Tauri commands call them):
+    //!
+    //! ```ignore
+    //! #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    //! pub enum StartOutcome { Started, AlreadyRunning }
+    //!
+    //! /// What `daemon_start` does, minus the profile bookkeeping: with a sidecar
+    //! /// already in `state.sidecar` start nothing (`AlreadyRunning`); otherwise
+    //! /// `SidecarSupervisor::start(honed_path, env, health_timeout)` and store
+    //! /// it (`Started`). The slot stays locked meanwhile, so two callers never
+    //! /// start two. On failure the slot stays empty and nothing is left running.
+    //! /// It does NOT write `desktop.json` (the command does that after).
+    //! pub fn start_sidecar(state: &DaemonState, honed_path: Option<PathBuf>,
+    //!     health_timeout: Duration) -> Result<StartOutcome, SupervisorError>;
+    //!
+    //! /// The launch hook behind a `daemon_boot(saved_mode)` command:
+    //! /// `should_autostart(saved_mode, &state.cfg)`? then `start_sidecar`
+    //! /// (`Some(outcome)`), else start nothing (`None`).
+    //! pub fn boot_sidecar_if_wanted(state: &DaemonState, saved_mode: Option<&str>,
+    //!     honed_path: Option<PathBuf>, health_timeout: Duration)
+    //!     -> Result<Option<StartOutcome>, SupervisorError>;
+    //! ```
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+    use std::process::Stdio;
+
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Records its pid in `pid`, appends a line to `starts` per launch, and
+    /// answers every GET with 200 on the port in argv[1].
+    const HEALTHY: &str = r#"#!/usr/bin/env python3
+import http.server, os, sys
+d = os.path.dirname(os.path.abspath(__file__))
+open(os.path.join(d, "pid"), "w").write(str(os.getpid()))
+open(os.path.join(d, "starts"), "a").write("x\n")
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+"#;
+
+    /// Never answers /health.
+    const HANGING: &str =
+        "#!/bin/sh\necho $$ > \"$(dirname \"$0\")/pid\"\necho x >> \"$(dirname \"$0\")/starts\"\nexec sleep 300\n";
+
+    fn script(dir: &Path, body: &str) -> PathBuf {
+        let path = dir.join("honed");
+        std::fs::write(&path, body).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    fn starts(dir: &Path) -> usize {
+        std::fs::read_to_string(dir.join("starts"))
+            .map(|s| s.lines().count())
+            .unwrap_or(0)
+    }
+
+    fn alive(pid: &str) -> bool {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", pid])
+            .output()
+            .unwrap();
+        let stat = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        !stat.is_empty() && !stat.starts_with('Z')
+    }
+
+    /// Stops the managed sidecar and SIGKILLs the recorded pid on drop.
+    struct Cleanup<'a>(&'a DaemonState, PathBuf);
+
+    impl Drop for Cleanup<'_> {
+        fn drop(&mut self) {
+            if let Some(sup) = self.0.sidecar.lock().take() {
+                let _ = sup.shutdown();
+            }
+            if let Ok(pid) = std::fs::read_to_string(self.1.join("pid")) {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", pid.trim()])
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        }
+    }
+
+    fn external_cfg() -> DesktopConfig {
+        let mut cfg = DesktopConfig::default();
+        cfg.add_profile(DaemonProfile {
+            name: "team".into(),
+            mode: DaemonMode::External {
+                url: "http://10.0.0.5:3117".into(),
+                token: None,
+            },
+        })
+        .unwrap();
+        cfg
+    }
+
+    const HEALTH: Duration = Duration::from_secs(10);
+
+    #[test]
+    fn test_a3_failed_start_should_leave_the_slot_empty_and_no_process_running() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HANGING);
+
+        let err = start_sidecar(&state, Some(honed), Duration::from_millis(600))
+            .err()
+            .expect("never healthy: the start fails");
+
+        assert!(err.to_string().contains("did not become healthy"), "got: {err}");
+        assert!(state.sidecar.lock().is_none(), "nothing is stored");
+        let pid = std::fs::read_to_string(dir.path().join("pid")).unwrap();
+        assert!(!alive(pid.trim()), "the failed honed is still running");
+    }
+
+    #[test]
+    fn test_a4_second_start_should_not_start_another_sidecar() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let first = start_sidecar(&state, Some(honed.clone()), HEALTH).unwrap();
+        let second = start_sidecar(&state, Some(honed), HEALTH).unwrap();
+
+        assert_eq!(first, StartOutcome::Started);
+        assert_eq!(second, StartOutcome::AlreadyRunning);
+        assert_eq!(starts(dir.path()), 1, "honed was launched once");
+        assert!(state.sidecar.lock().is_some());
+    }
+
+    #[test]
+    fn test_a4_two_simultaneous_starts_should_launch_exactly_one_honed() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let outcomes: Vec<StartOutcome> = std::thread::scope(|sc| {
+            let a = sc.spawn(|| start_sidecar(&state, Some(honed.clone()), HEALTH).unwrap());
+            let b = sc.spawn(|| start_sidecar(&state, Some(honed.clone()), HEALTH).unwrap());
+            vec![a.join().unwrap(), b.join().unwrap()]
+        });
+
+        assert_eq!(starts(dir.path()), 1);
+        assert_eq!(
+            outcomes.iter().filter(|o| **o == StartOutcome::Started).count(),
+            1,
+            "{outcomes:?}"
+        );
+    }
+
+    #[test]
+    fn test_a1_boot_with_saved_sidecar_mode_should_start_once_and_only_once() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let first =
+            boot_sidecar_if_wanted(&state, Some("sidecar"), Some(honed.clone()), HEALTH).unwrap();
+        let second =
+            boot_sidecar_if_wanted(&state, Some("sidecar"), Some(honed), HEALTH).unwrap();
+
+        assert_eq!(first, Some(StartOutcome::Started));
+        assert_eq!(second, Some(StartOutcome::AlreadyRunning));
+        assert_eq!(starts(dir.path()), 1);
+        assert!(state.sidecar.lock().is_some(), "the daemon is managed now");
+    }
+
+    #[test]
+    fn test_a1_boot_with_an_active_sidecar_profile_should_start_without_a_saved_mode() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = DesktopConfig::default();
+        cfg.add_profile(DaemonProfile {
+            name: LEGACY_SIDECAR_NAME.into(),
+            mode: DaemonMode::Sidecar,
+        })
+        .unwrap();
+        let state = DaemonState::new(cfg);
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let out = boot_sidecar_if_wanted(&state, None, Some(honed), HEALTH).unwrap();
+
+        assert_eq!(out, Some(StartOutcome::Started));
+    }
+
+    #[test]
+    fn test_a4_boot_with_an_external_profile_active_should_start_nothing() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(external_cfg());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let out = boot_sidecar_if_wanted(&state, Some("sidecar"), Some(honed), HEALTH).unwrap();
+
+        assert_eq!(out, None);
+        assert_eq!(starts(dir.path()), 0, "no honed was launched");
+        assert!(state.sidecar.lock().is_none());
+    }
+
+    #[test]
+    fn test_a4_boot_with_no_saved_choice_should_start_nothing() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), HEALTHY);
+
+        let out = boot_sidecar_if_wanted(&state, None, Some(honed), HEALTH).unwrap();
+
+        assert_eq!(out, None);
+        assert_eq!(starts(dir.path()), 0);
+    }
+
+    #[test]
+    fn test_a2_boot_that_fails_should_return_the_reason_and_leave_nothing() {
+        let _s = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let state = DaemonState::new(DesktopConfig::default());
+        let _c = Cleanup(&state, dir.path().to_path_buf());
+        let honed = script(dir.path(), "#!/bin/sh\necho 'no key' >&2\nexit 3\n");
+
+        let err = boot_sidecar_if_wanted(&state, Some("sidecar"), Some(honed), HEALTH)
+            .err()
+            .expect("a honed that exits 3 fails the boot")
+            .to_string();
+
+        assert!(err.contains("exit status: 3"), "got: {err}");
+        assert!(err.contains("no key"), "got: {err}");
+        assert!(state.sidecar.lock().is_none());
     }
 }
