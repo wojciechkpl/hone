@@ -89,6 +89,31 @@ Review found: two concurrent first opens of a fresh encrypted DB corrupt it (eac
 | G33 | **Claims are accurate.** Error text, spec G25 and the CHANGELOG say that a wrong passphrase changes no memory, vector or key check (schema setup, the daily decay and FTS removal may still run, as they don't depend on the passphrase). The CHANGELOG describes the side table and that older binaries see no embedding. |
 | G34 | **No sealed-blob heuristics remain.** `looks_sealed` and the listing special-cases are removed; listings are plain again. |
 
+### Review round 5 (G35–G40)
+
+Review approved the side-table design (concurrent first opens 40/40 safe; opens about 30 ms at 50k rows; `origin/main` sees no embedding). It found:
+- **A wrong passphrase can be pinned (R4-M1).** The trial sample is the newest 1,000 rows. With 1,000 newer plaintext rows (plain runs on the same database, which ES7 documents), a wrong passphrase is accepted and pinned, vectors are sealed under it, and the right passphrase is locked out.
+- **Writes through custom stores fail after writing (R4-M2).** The `set_sealed_vector` default errors even for `None`, after `record` has written the row. The other defaults silently degrade, including non-atomic `record_if_absent`, which reopens C1 for wrappers.
+- **Stale sealed vectors survive a replacement (m1).** A replacement written by an older binary or a plain store doesn't fire the AFTER DELETE trigger, so the old sealed vector survives.
+- **Notices are invisible (m2).** The pin notice and skip warnings don't show without `RUST_LOG`.
+- **Migration and hygiene (m3, m4).** Migration runs one transaction per row with every candidate loaded at once, plus doc hygiene.
+- **Merge hazards with `fix/encrypted-store-safety`.** They include a duplicate `record_if_absent`, and description encryption silently lost on merge.
+
+| Row | Behaviour |
+|---|---|
+| G35 | **Verification samples encrypted rows directly.** The trial-decrypt sample is chosen by a direct query for encrypted rows (`content LIKE 'enc:v1:%' AND id != sentinel LIMIT 5`, the same pattern as ES4's `has_encrypted_rows`). A passphrase is pinned only when no encrypted row exists. Scenario: a `main`-format database with 3 encrypted rows that have vectors, plus 1,000 or more newer plaintext rows. A wrong passphrase errors with a full snapshot unchanged; the right one then works. |
+| G36 | **Sealed-vector storage is an explicit capability.** The atomic and sealed-vector operations live in an extension trait with no defaults (for example `SealedVectorStore`: `record_if_absent`, `set_description_if_absent`, `record_sealed(memory, Option<blob>)` that writes the row and its sealed vector in one transaction, `sealed_vector`, `vector_migration_candidates`, `move_vector_to_sealed`). `EncryptedStore<S>` requires it. `SqliteStore` and `InMemoryStore` implement it. A store without it can't be wrapped, which is a compile error, not a runtime failure after a write. `record` never reports an error after the row was written. |
+| G37 | **A sealed vector belongs to its row.** Vectors are sealed with AES-GCM associated data made of the memory id and the row's content ciphertext. A sealed vector whose row was replaced outside `EncryptedStore` (an older binary, a plain store, `INSERT OR REPLACE` without the trigger) fails to open and reads as no embedding. A blob moved to another id reads as none too. |
+| G38 | **Notices are visible.** `EncryptedStore::new` reports what it did: a first passphrase was pinned, or N vectors were migrated or skipped. The CLI prints these to stderr whatever `RUST_LOG` says. |
+| G39 | **Migration is batched, and the docs are tidy.** Migration runs in chunks of about 500 rows per transaction and doesn't load every candidate at once. Fix `open_without_fts`'s doc, remove the stale `keep_encrypted_embedding` doc, say in G25 what may change (schema, decay, FTS drop) and what doesn't, mark G26/G27 as superseded by G29, and add `#[must_use]` consistently. |
+| G40 | **The branch builds on the encrypted-store safety fix.** It is rebased onto `fix/encrypted-store-safety`, with these combined: |
+|  | - one `record_if_absent`; |
+|  | - descriptions encrypted in G's `record` (ES2's tests pass); |
+|  | - ES4's `has_encrypted_rows` used when the sentinel is created; |
+|  | - ES's `pub SALT_SENTINEL_ID` and its forget/decay guards alongside G's trigger; |
+|  | - one CHANGELOG/docs account of what `--encrypted-memory` covers. |
+|  | The key check in the sentinel's description is skipped by any description pass. |
+
 ## Testing notes
 
 - **G1/G2/G7** on temp SQLite stores: inserts, updates (`record` is `INSERT OR REPLACE`), `forget`, reopening an old database without the FTS table, FTS5 syntax in prompts, 6,000-row corpora.
