@@ -56,6 +56,17 @@ Review measured that G9's id-keyed table makes every trigger delete scan the who
 | G17 | **Failures fall back, visibly.** A recaller error is logged as a warning and the turn falls back to `bm25`; `fts5` on a store with no index uses `bm25` (with real scores). `hone strategies` shows the encrypted fallback as chosen by `--encrypted-memory`. |
 | G18 | **Docs match.** Spec row G1 and test headers describe the mapping-table design; `docs/configuration.md` notes that `memory.db` then needs an SQLite build with FTS5 for external tools that write to it. |
 
+### Review round 2 (G19–G24)
+
+| Row | Behaviour |
+|---|---|
+| G19 | **Folding leaves non-Latin scripts intact.** Diacritics are removed only from Latin base letters (the letters `unicode61` folds); text is recomposed to NFC afterwards, so Hangul syllables, kana with voicing marks (`パ`, `バ`), Devanagari vowel signs and virama, and Thai marks are kept. The FTS table uses `unicode61 remove_diacritics 2`, and the Rust side folds Vietnamese letters with two diacritics the same way. Queries in Korean (`한국어`), Japanese (`データベース`), Hindi (`हिन्दी`), Vietnamese (`Việt`, `phở`) and Thai find their memories with both `fts5` and `bm25`, and `パス` doesn't match `バス` or `ハス`. |
+| G20 | **Scale is checked structurally, not by wall-clock.** The FTS write path's delete statements search the mapping table by id and the FTS table by rowid (`EXPLAIN QUERY PLAN`), a weight-only update doesn't touch the index, and the median delete-by-id cost at 50,000 memories stays within 5× of the cost at 1,000. Absolute timings move to an `#[ignore]`d perf test. |
+| G21 | **Encrypted memories keep a compatible format and compact vectors.** Content stays `enc:v1` (readable by older binaries). An embedding is stored encrypted as a binary blob in the embedding column (a marker byte, nonce, ciphertext of little-endian f32s), decrypted only for memories being returned or scored semantically; ranked lexical recall doesn't decrypt vectors. Rows already written as `enc:v2:` (from earlier builds of this branch) still decrypt. Existing `enc:v1` rows with a plaintext embedding column are re-encrypted once on open. An older binary reading a new row sees its content and treats the blob as no embedding (no crash). The CHANGELOG documents the format. |
+| G22 | **An encrypted store never gets an FTS index.** `open_without_fts` drops any FTS table, mapping table and triggers it finds (inside one `BEGIN IMMEDIATE`), and a plain `open` of a database holding the encryption sentinel skips FTS setup, so `hone memory …` subcommands and other plain opens don't reinstate it. |
+| G23 | **The parity claim matches what's built.** For prompts with more than 32 distinct usable tokens, `fts5` uses the 32 rarest and `bm25` all of them, so their top results may differ; the spec and docs say so. |
+| G24 | **Small fixes.** `hone strategies` names the encrypted fallback's origin `--encrypted-memory`; `bm25::tokenize` uses the shared folding tokenizer (its doc stays true); doc comments and test headers describe the mapping-table design. |
+
 ## Testing notes
 
 - **G1/G2/G7** on temp SQLite stores: inserts, updates (`record` is `INSERT OR REPLACE`), `forget`, reopening an old database without the FTS table, FTS5 syntax in prompts, 6,000-row corpora.
