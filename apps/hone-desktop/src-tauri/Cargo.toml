@@ -40,6 +40,7 @@ reqwest = { workspace = true, features = ["blocking"] }
 uuid = { workspace = true }
 futures = { workspace = true }
 dirs = "5"
+libc = { workspace = true }
 parking_lot = "0.12"
 
 [dev-dependencies]

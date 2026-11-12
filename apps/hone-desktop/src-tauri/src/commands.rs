@@ -119,8 +119,12 @@ fn start_in_slot(
     health_timeout: Duration,
 ) -> Result<StartOutcome, SupervisorError> {
     let mut slot = slot.lock();
-    if slot.is_some() {
-        return Ok(StartOutcome::AlreadyRunning);
+    if let Some(sup) = slot.as_mut() {
+        if sup.is_alive() {
+            return Ok(StartOutcome::AlreadyRunning);
+        }
+        // Its honed has exited (is_alive reaped it): replace it.
+        *slot = None;
     }
     let sup = SidecarSupervisor::start(honed_path, std::env::vars(), health_timeout)?;
     *slot = Some(sup);
@@ -218,11 +222,18 @@ fn ensure_named_profile(cfg: &mut DesktopConfig, name: &str, mode: DaemonMode) {
     }
 }
 
+/// Stop a supervisor on a blocking thread: it can take about 5 s.
+async fn stop_blocking(sup: SidecarSupervisor) -> Result<(), SupervisorError> {
+    tokio::task::spawn_blocking(move || sup.shutdown())
+        .await
+        .map_err(|e| SupervisorError::Io(std::io::Error::other(e.to_string())))?
+}
+
 #[tauri::command]
 pub async fn daemon_stop(state: tauri::State<'_, DaemonState>) -> Result<DaemonStatus, String> {
     let taken = { state.sidecar.lock().take() };
     if let Some(sup) = taken {
-        sup.shutdown().map_err(supervisor_err)?;
+        stop_blocking(sup).await.map_err(supervisor_err)?;
     }
     daemon_status(state).await
 }
@@ -286,6 +297,7 @@ pub async fn remove_daemon(
     state: tauri::State<'_, DaemonState>,
     name: String,
 ) -> Result<(), String> {
+    let mut stopping = None;
     {
         let mut cfg = state.cfg.lock();
         let was_active = cfg.active.as_deref() == Some(&name);
@@ -297,12 +309,12 @@ pub async fn remove_daemon(
         // If we removed the active profile and it was a sidecar, stop the
         // supervised child. Best-effort.
         if was_active {
-            let taken = state.sidecar.lock().take();
-            if let Some(sup) = taken {
-                let _ = sup.shutdown();
-            }
+            stopping = state.sidecar.lock().take();
             *state.external.lock() = None;
         }
+    }
+    if let Some(sup) = stopping {
+        let _ = stop_blocking(sup).await;
     }
     Ok(())
 }
@@ -315,6 +327,7 @@ pub async fn switch_daemon(
     state: tauri::State<'_, DaemonState>,
     name: String,
 ) -> Result<DaemonStatus, String> {
+    let prev_sidecar;
     {
         let mut cfg = state.cfg.lock();
         cfg.set_active(&name)?;
@@ -324,10 +337,7 @@ pub async fn switch_daemon(
             .active_profile()
             .map(|p| p.mode.clone())
             .unwrap_or_default();
-        let prev_sidecar = state.sidecar.lock().take();
-        if let Some(sup) = prev_sidecar {
-            let _ = sup.shutdown();
-        }
+        prev_sidecar = state.sidecar.lock().take();
         match mode {
             DaemonMode::External { url, token } => {
                 *state.external.lock() = Some(ExternalDaemon { url, token });
@@ -339,6 +349,9 @@ pub async fn switch_daemon(
             }
         }
         cfg.save().map_err(|e| format!("save failed: {e}"))?;
+    }
+    if let Some(sup) = prev_sidecar {
+        let _ = stop_blocking(sup).await;
     }
     daemon_status(state).await
 }

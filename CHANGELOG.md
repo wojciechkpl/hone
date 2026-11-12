@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed: the desktop app stops `honed` gently, and its window responds at launch
+
+- **Before:** every way of stopping the managed `honed` (Stop, the tray, switching or removing a profile, quitting the app, dropping it after a failed start) sent SIGKILL. `honed` could not stop its own MCP servers and commands, so a server that ignores SIGTERM kept running after the app quit. At launch the window showed neither view and ignored clicks until the daemon start finished, up to about 5 s. Smaller faults: **Start** did nothing after `honed` crashed until you pressed **Stop**; "daemon failed to start" stayed after Stop or a profile switch; the stderr reader stopped on an interrupted read.
+- **Now:**
+  - Stopping sends SIGTERM and waits up to 3 s, then a second SIGTERM (`honed`'s force-stop) and waits up to 2 s, and only then SIGKILL. A `honed` that exits on the first SIGTERM is gone at once. The app starts `honed` with `HONE_SHUTDOWN_GRACE_SECS=1` unless its own environment sets it, so that stop is quick. Stops that can take a few seconds no longer run on the UI or async threads.
+  - **Start** replaces a `honed` that has crashed.
+  - The window shows its view and answers clicks at once; the pill reads "starting daemon…" until the start finishes.
+  - The start error is cleared on Stop, on a profile switch and when connecting to an external daemon.
+  - An interrupted stderr read is retried.
+- Contract: `docs/plans/desktop-graceful-stop-spec.md`.
+
 ### Fixed: the desktop app starts its managed `honed` on launch, and says why a start failed
 
 - **Before:** following the README, the desktop app showed "daemon not reachable". The page could not reach the app at all: `app.withGlobalTauri` was missing from `tauri.conf.json`, so `window.__TAURI__` was undefined and every command ran on a stub that did nothing. Only the first-run wizard started the managed `honed`; on every later launch the app skipped the wizard and started nothing, until you found **Daemon → Start**. A failed start was never shown (`console.warn` only, and `honed`'s stderr was discarded). A `honed` that started but never became healthy was left running. The README also said the choice is saved in `~/.config/hone/desktop.json` (it is in the app's local storage) and never mentioned that the daemon needs `ANTHROPIC_API_KEY`.

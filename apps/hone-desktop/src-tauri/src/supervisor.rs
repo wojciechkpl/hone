@@ -55,14 +55,56 @@ pub struct SidecarInfo {
 }
 
 impl Drop for SidecarSupervisor {
-    /// Never leave a `honed` behind: kill and reap the child if it is still
-    /// running. A child already reaped (by `shutdown`, or a failed `start`) is
-    /// left alone, so no signal goes to a reused pid.
+    /// Never leave a `honed` behind: stop it if it is still running. A child
+    /// already reaped (by `shutdown`, or a failed `start`) is left alone.
     fn drop(&mut self) {
-        if let Ok(None) = self.child.try_wait() {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
+        stop_child(&mut self.child);
+    }
+}
+
+/// How long `honed` gets after the first and the second SIGTERM.
+const FIRST_TERM_WAIT: Duration = Duration::from_secs(3);
+const SECOND_TERM_WAIT: Duration = Duration::from_secs(2);
+
+/// Stop `child` gently, then firmly, and always reap it: SIGTERM and wait up
+/// to 3 s; a second SIGTERM (`honed`'s force-stop) and wait up to 2 s; then
+/// SIGKILL. Returns as soon as the child is gone. A child that has already
+/// exited or been reaped is never signalled (its pid may be reused). Blocks for
+/// up to about 5 s: call it off an async runtime worker.
+fn stop_child(child: &mut Child) {
+    if !matches!(child.try_wait(), Ok(None)) {
+        return;
+    }
+    #[cfg(unix)]
+    if term_and_wait(child, FIRST_TERM_WAIT) || term_and_wait(child, SECOND_TERM_WAIT) {
+        return;
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Send SIGTERM and poll until the child exits (reaping it) or `limit` passes.
+#[cfg(unix)]
+fn term_and_wait(child: &mut Child, limit: Duration) -> bool {
+    let Ok(pid) = i32::try_from(child.id()) else {
+        return false;
+    };
+    // SAFETY: plain `kill(2)` on the pid of our own child, which `try_wait`
+    // has just shown to be neither exited nor reaped, so the pid is not reused.
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+    }
+    let deadline = Instant::now() + limit;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) => {}
+            Err(_) => return false,
         }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(5));
     }
 }
 
@@ -97,6 +139,7 @@ fn drain_stderr<R: Read + Send + 'static>(
         };
         loop {
             match stderr.read(&mut buf) {
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
                     for &b in &buf[..n] {
@@ -146,6 +189,9 @@ impl SidecarSupervisor {
 
         let mut cmd = Command::new(&bin);
         cmd.arg(port.to_string());
+        // A short drain, so the first SIGTERM leads to a quick orderly stop.
+        // The app's own value (passed in `extra_env`) overrides it.
+        cmd.env("HONE_SHUTDOWN_GRACE_SECS", "1");
         for (k, v) in extra_env {
             cmd.env(k, v);
         }
@@ -203,8 +249,7 @@ impl SidecarSupervisor {
         match sup.wait_healthy_or_exit(health_timeout) {
             Ok(()) => Ok(sup),
             Err(e) => {
-                let _ = sup.child.kill();
-                let _ = sup.child.wait();
+                stop_child(&mut sup.child);
                 Err(e)
             }
         }
@@ -288,19 +333,10 @@ impl SidecarSupervisor {
         }
     }
 
-    /// Send a kill signal and wait for exit. Idempotent across repeated calls.
+    /// Stop the child (SIGTERM, a second SIGTERM, then SIGKILL; see
+    /// [`stop_child`]) and reap it. Blocks for up to about 5 s. Idempotent.
     pub fn shutdown(mut self) -> Result<(), SupervisorError> {
-        // `Child::kill` on Unix is SIGKILL; for the v0.0.1 shell we accept
-        // that — `honed` has no on-disk state worth flushing in ephemeral
-        // mode. Future work: switch to SIGTERM via libc and a join timeout.
-        if let Err(e) = self.child.kill() {
-            // ESRCH ("no such process") means the child already exited;
-            // treat that as success.
-            if e.kind() != std::io::ErrorKind::InvalidInput {
-                return Err(SupervisorError::Io(e));
-            }
-        }
-        let _ = self.child.wait();
+        stop_child(&mut self.child);
         Ok(())
     }
 }
