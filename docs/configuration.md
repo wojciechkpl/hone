@@ -692,7 +692,10 @@ before it is killed. On unix each server runs in its own process group, and when
 kills a server the whole group goes, so a server started through `npx` or `sh -c` doesn't
 leave its real process behind. When Hone stops on an error, or a one-shot run or `honed`
 gets SIGINT, SIGTERM or SIGHUP, each group gets SIGTERM, then SIGKILL if it is still
-running 1 s later (the TUI takes the graceful path). If you start a server through a
+running 1 s later (the TUI takes the graceful path). A panic that ends Hone does the
+same, for servers and running commands. `kill -9`, the OOM killer, and a crash that is
+not a panic (a segfault, a stack overflow, an abort from C code) still leave a server that
+ignores its input closing running. If you start a server through a
 shell, `exec` it (`sh -c "cd DIR && exec server"`): on Linux the 1 s ends as soon as the
 shell itself exits. A server can't prompt on the terminal: one that reads `/dev/tty`
 stops until its handshake timeout.

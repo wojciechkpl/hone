@@ -2526,8 +2526,60 @@ async fn index_directory_bg(index: &SqliteIndex, root: &std::path::Path) -> Resu
 // TUI event loop
 // ---------------------------------------------------------------------------
 
+static TUI_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn set_tui_running(running: bool) {
+    TUI_RUNNING.store(running, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn tui_running() -> bool {
+    TUI_RUNNING.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Clears the "TUI running" flag when dropped, so no early return can leave it set.
+struct TuiRunningGuard;
+
+impl Drop for TuiRunningGuard {
+    fn drop(&mut self) {
+        set_tui_running(false);
+    }
+}
+
+/// Panic hook step: if the TUI is running and the panic ends hone, give the
+/// terminal back (raw mode off, then the restore sequence to `out`). Returns
+/// whether it did. Errors are ignored: nothing more can be done in a hook.
+fn tui_panic_restore<W: io::Write>(out: &mut W, ends_process: bool) -> bool {
+    if !ends_process || !tui_running() {
+        return false;
+    }
+    let _ = disable_raw_mode();
+    let _ = execute!(
+        out,
+        DisableBracketedPaste,
+        DisableMouseCapture,
+        LeaveAlternateScreen,
+        crossterm::cursor::Show
+    );
+    let _ = out.flush();
+    true
+}
+
+/// Panic hooks: group cleanup innermost (it runs last, after the message),
+/// with the terminal restore on top so the message lands on a usable screen.
+fn install_panic_hooks() {
+    hone_tools::install_panic_cleanup();
+    let inner = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // The TUI draws on stdout, so the restore sequences go there; the
+        // message (inner hook) goes to stderr.
+        tui_panic_restore(&mut io::stdout(), hone_tools::panic_ends_process());
+        inner(info);
+    }));
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    install_panic_hooks();
     let cli = Cli::parse();
 
     tracing_subscriber::fmt()
@@ -3198,6 +3250,8 @@ async fn run_selected_mode(
 
     // TUI mode.
     enable_raw_mode()?;
+    set_tui_running(true);
+    let _tui_running = TuiRunningGuard;
     let mut stdout = io::stdout();
     execute!(
         stdout,
@@ -3232,6 +3286,7 @@ async fn run_selected_mode(
         DisableMouseCapture,
         LeaveAlternateScreen
     )?;
+    set_tui_running(false);
     terminal.show_cursor()?;
 
     if result.is_ok() {

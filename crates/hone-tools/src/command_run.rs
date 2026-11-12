@@ -107,6 +107,42 @@ pub fn kill_running_commands() {
     unix::kill_all();
 }
 
+/// Whether a panic on this thread ends hone: always with `panic = "abort"`,
+/// otherwise only on the main thread (a thread or task panic is contained).
+pub fn panic_ends_process() -> bool {
+    cfg!(panic = "abort") || std::thread::current().name() == Some("main")
+}
+
+/// The panic hook's cleanup: stop every registered group like
+/// [`kill_running_commands`], but wait at most `lock_wait` for the registry
+/// (the panicking thread may hold it). Returns `false`, having stopped nothing,
+/// if the registry stayed locked. Runs once; concurrent callers wait for it and
+/// return `true`. Off unix: `true`, does nothing.
+pub fn stop_groups_on_panic(lock_wait: Duration) -> bool {
+    #[cfg(unix)]
+    {
+        unix::stop_on_panic(lock_wait)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = lock_wait;
+        true
+    }
+}
+
+/// Install a panic hook that runs the previous hook first, then, when the
+/// panic ends hone ([`panic_ends_process`]), calls [`stop_groups_on_panic`]
+/// with a 100 ms registry wait, so no command or MCP server outlives a crash.
+pub fn install_panic_cleanup() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        prev(info);
+        if panic_ends_process() {
+            stop_groups_on_panic(Duration::from_millis(100));
+        }
+    }));
+}
+
 /// Kill only the shell-command groups (commands, test runs), with `SIGKILL`,
 /// and leave registered MCP groups running, for an exit that goes on to shut
 /// the MCP servers down gracefully itself. A no-op off unix.
@@ -154,7 +190,7 @@ mod unix {
     use std::time::{Duration, Instant};
 
     /// Running groups: group id -> is it an MCP server group (else a command).
-    static RUNNING: Mutex<Option<HashMap<i32, bool>>> = Mutex::new(None);
+    pub(super) static RUNNING: Mutex<Option<HashMap<i32, bool>>> = Mutex::new(None);
 
     /// How long an abrupt exit waits for MCP groups to leave after `SIGTERM`.
     const TERM_GRACE: Duration = Duration::from_secs(1);
@@ -329,33 +365,42 @@ mod unix {
         }
     }
 
+    /// SIGKILL the command groups in `map` and return the MCP groups. Callers
+    /// hold the registry lock only for this call.
+    fn kill_shell_in(map: &Option<HashMap<i32, bool>>) -> Vec<i32> {
+        let mut mcp_groups = Vec::new();
+        if let Some(map) = map {
+            for (&pgid, &mcp) in map {
+                if mcp {
+                    mcp_groups.push(pgid);
+                } else {
+                    kill_group(pgid);
+                }
+            }
+        }
+        mcp_groups
+    }
+
     pub(super) fn kill_all() {
-        kill_shell();
-        // MCP groups: SIGTERM, wait (without the lock) until they are gone, then
-        // SIGKILL what is left and deregister, so a later guard drop does not
-        // signal a reused group id.
-        let mcp_groups: Vec<i32> = RUNNING
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .map(|map| {
-                map.iter()
-                    .filter(|(_, mcp)| **mcp)
-                    .map(|(p, _)| *p)
-                    .collect()
-            })
-            .unwrap_or_default();
+        let mcp_groups = kill_shell_in(&RUNNING.lock().unwrap_or_else(PoisonError::into_inner));
+        stop_mcp(&mcp_groups);
+    }
+
+    /// MCP groups: SIGTERM, wait (without the lock) until they are gone, then
+    /// SIGKILL what is left and deregister, so a later guard drop does not
+    /// signal a reused group id.
+    fn stop_mcp(mcp_groups: &[i32]) {
         if mcp_groups.is_empty() {
             return;
         }
-        for &pgid in &mcp_groups {
+        for &pgid in mcp_groups {
             signal_group(pgid, libc::SIGTERM);
         }
         let deadline = Instant::now() + TERM_GRACE;
         while Instant::now() < deadline && !mcp_groups.iter().all(|&p| group_gone(p)) {
             std::thread::sleep(Duration::from_millis(20));
         }
-        for &pgid in &mcp_groups {
+        for &pgid in mcp_groups {
             if unregister(pgid) {
                 kill_group(pgid);
             }
@@ -363,6 +408,36 @@ mod unix {
         // A command may have started while we waited (another task running
         // under the grace period): kill those too, so none outlives the exit.
         kill_shell();
+    }
+
+    /// Serialises panic cleanups; `true` once one has finished.
+    static PANIC_CLEANUP: Mutex<bool> = Mutex::new(false);
+
+    /// The panic hook's body. Waits at most `lock_wait` for the registry (the
+    /// panicking thread may hold it itself); on timeout returns `false`, stops
+    /// nothing and latches nothing. The cleanup runs once; other callers block
+    /// until it is done and return `true`.
+    pub(super) fn stop_on_panic(lock_wait: Duration) -> bool {
+        let mut done = PANIC_CLEANUP.lock().unwrap_or_else(PoisonError::into_inner);
+        if *done {
+            return true;
+        }
+        let deadline = Instant::now() + lock_wait;
+        let mcp_groups = loop {
+            match RUNNING.try_lock() {
+                Ok(map) => break kill_shell_in(&map),
+                Err(std::sync::TryLockError::Poisoned(e)) => break kill_shell_in(&e.into_inner()),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if Instant::now() >= deadline {
+                        return false;
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+        };
+        stop_mcp(&mcp_groups);
+        *done = true;
+        true
     }
 }
 

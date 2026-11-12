@@ -15,8 +15,9 @@ mod traits;
 pub mod web;
 
 pub use command_run::{
-    ProcessGroupGuard, RunCommandError, kill_commands_and_reraise, kill_running_commands,
-    kill_shell_commands, run_command, signal_is_ignored,
+    ProcessGroupGuard, RunCommandError, install_panic_cleanup, kill_commands_and_reraise,
+    kill_running_commands, kill_shell_commands, panic_ends_process, run_command, signal_is_ignored,
+    stop_groups_on_panic,
 };
 pub use error::ToolError;
 pub use memory::MemoryReadTool;
