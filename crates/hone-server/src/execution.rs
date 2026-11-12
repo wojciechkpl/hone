@@ -528,4 +528,13 @@ mod tests {
         let ev = AgentEvent::ContextAssembled { receipt: cr9_receipt(1, 1) };
         assert_eq!(event_type(&ev), "context_assembled");
     }
+
+    // U11 of docs/plans/usage-and-pricing-spec.md: the unpriced-model event has its own SSE name.
+    #[test]
+    fn u11_event_type_names_an_unpriced_model_event() {
+        let ev = AgentEvent::UnpricedModel {
+            model: "ollama:llama3".into(),
+        };
+        assert_eq!(event_type(&ev), "unpriced_model");
+    }
 }

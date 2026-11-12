@@ -526,4 +526,33 @@ mod tests {
         assert!(frame.contains("event: context_assembled"), "{frame}");
         assert!(!frame.contains("event: unknown"), "{frame}");
     }
+
+    // U11 of docs/plans/usage-and-pricing-spec.md: the unpriced-model event has its own SSE name.
+    #[test]
+    fn u11_make_sse_event_names_an_unpriced_model_event() {
+        let ev = AgentEvent::UnpricedModel {
+            model: "ollama:llama3".into(),
+        };
+        let frame = format!("{:?}", make_sse_event(ev, 3));
+        assert!(frame.contains("event: unpriced_model"), "{frame}");
+        assert!(!frame.contains("event: unknown"), "{frame}");
+    }
+
+    // U5: no phantom Sonnet price for a model that has no entry (the process-wide price lookup
+    // prices the calls; the config's own pricing is only a placeholder).
+    #[test]
+    fn u5_the_lead_config_should_not_hard_code_sonnet_prices() {
+        let provider: Arc<dyn ModelProvider> = Arc::new(hone_providers::MockProvider::new(vec![]));
+        let config = build_lead_agent_config(
+            provider,
+            ModelId::new("openai:model-without-an-entry"),
+            std::path::PathBuf::from("."),
+            None,
+        );
+        assert_ne!(
+            (config.pricing.input_per_million, config.pricing.output_per_million),
+            (3.0, 15.0),
+            "an unpriced model must not be costed as Sonnet"
+        );
+    }
 }
