@@ -164,8 +164,10 @@ fn agent_for(b: &AgentBuild, rounds: Vec<Vec<ToolCallRequest>>, hang: bool) -> A
             model: ModelId::new("mock:test"),
             input_per_million: 1.0,
             output_per_million: 2.0,
-            cache_read_per_million: None,
-            cache_creation_per_million: None,
+            // Explicit, so the expected cost is exact: the mock reports cache tokens, and an
+            // unset creation rate would be billed at 1.25x input by `calculate_cost`.
+            cache_read_per_million: Some(0.0),
+            cache_creation_per_million: Some(0.0),
         },
         working_dir: b.workdir.clone(),
         memory_store: Some(b.memory.clone()),

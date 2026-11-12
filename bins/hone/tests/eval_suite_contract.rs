@@ -211,25 +211,74 @@ fn check_lines(run: &Path, task: &str) -> (String, String, String) {
     (find("SUITE="), find("CWD="), text)
 }
 
+/// A task whose check records, into `record` (outside the copy), what it saw: the suite
+/// directory, its physical cwd and whether the task's `data.txt` is there.
+fn recording_task(record: &Path) -> String {
+    format!(
+        r#"
+[[tasks]]
+id = "t"
+prompt = "p"
+success_check = 'echo "SUITE=$EVAL_SUITE_DIR" > {r}; echo "CWD=$(pwd -P)" >> {r}; if test -f data.txt; then echo HAS_DATA=yes >> {r}; else echo HAS_DATA=no >> {r}; fi'
+working_dir = "proj"
+timeout_secs = 30
+"#,
+        r = record.display()
+    )
+}
+
+fn recorded(record: &Path, key: &str) -> String {
+    let text = std::fs::read_to_string(record).expect("the check wrote its record");
+    text.lines()
+        .find_map(|l| l.strip_prefix(key))
+        .unwrap_or_else(|| panic!("no {key} line in:\n{text}"))
+        .to_owned()
+}
+
 #[tokio::test]
 async fn test_f11_the_check_should_see_the_tasks_directory_and_run_in_the_copy() {
     let f = fx();
     std::fs::create_dir_all(f.base.join("proj")).unwrap();
     std::fs::write(f.base.join("proj/data.txt"), "x").unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let record = out.path().join("record.txt");
     let seen = Seen::default();
-    let r = runner(&f.base, ECHO_TASK, recording_builder(&seen));
+    let r = runner(&f.base, &recording_task(&record), recording_builder(&seen));
 
     let run = r.run(&opts(&f)).await.unwrap();
 
-    let (suite, cwd, text) = check_lines(&run, "t");
-    assert_eq!(std::fs::canonicalize(&suite).unwrap(), f.base, "EVAL_SUITE_DIR is the tasks file's directory");
+    // What the check saw, recorded by the check itself (the copy is gone by now).
+    let suite = recorded(&record, "SUITE=");
+    let cwd = recorded(&record, "CWD=");
     assert!(Path::new(&suite).is_absolute(), "{suite}");
-    let source = f.base.join("proj");
-    assert_ne!(std::fs::canonicalize(&cwd).unwrap(), source, "the check runs in the copy, not the source");
-    assert!(text.contains("data.txt"), "the copy has the task's files:\n{text}");
-    let copy = seen.workdirs.lock().unwrap()[0].clone();
-    assert_eq!(std::fs::canonicalize(&cwd).unwrap(), std::fs::canonicalize(&copy).unwrap(), "cwd is the run's workdir");
+    assert_eq!(std::fs::canonicalize(&suite).unwrap(), f.base, "EVAL_SUITE_DIR is the tasks file's directory");
+    assert_eq!(recorded(&record, "HAS_DATA="), "yes", "the copy has the task's files");
+    let source = std::fs::canonicalize(f.base.join("proj")).unwrap();
+    assert_ne!(PathBuf::from(&cwd), source, "the check runs in the copy, not the source");
     assert_eq!(read_json(&run_dir(&run, "t").join("outcome.json"))["status"], "pass");
+
+    // The copy is deleted when the run ends (no keep_workdirs).
+    let copy = seen.workdirs.lock().unwrap()[0].clone();
+    assert!(!copy.exists(), "the copy {} must be deleted after run() returns", copy.display());
+    assert!(!run_dir(&run, "t").join("workdir").exists());
+}
+
+#[tokio::test]
+async fn test_f11_with_keep_workdirs_the_copy_should_be_kept_in_the_run_directory() {
+    let f = fx();
+    std::fs::create_dir_all(f.base.join("proj")).unwrap();
+    std::fs::write(f.base.join("proj/data.txt"), "x").unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let record = out.path().join("record.txt");
+    let r = runner(&f.base, &recording_task(&record), recording_builder(&Seen::default()));
+
+    let run = r.run(&EvalOptions { keep_workdirs: true, ..opts(&f) }).await.unwrap();
+
+    let kept = run_dir(&run, "t").join("workdir");
+    assert!(kept.join("data.txt").exists(), "the copy is kept in the run directory");
+    assert_eq!(recorded(&record, "HAS_DATA="), "yes");
+    let source = std::fs::canonicalize(f.base.join("proj")).unwrap();
+    assert_ne!(PathBuf::from(recorded(&record, "CWD=")), source, "the check ran in a copy, not the source");
 }
 
 #[tokio::test]
