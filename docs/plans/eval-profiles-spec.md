@@ -62,6 +62,12 @@ flowchart LR
 | F23 | **The manifest says what ran.** It records hone's build version and git SHA (from build metadata), the suite's git SHA separately, and the values of environment variables that change runs (`HONE_AUDIT_LOG`, `HONE_CONTEXT_WINDOW`, `HONE_POLICY_BUILTINS`, `HONE_PHASE_COMPACTION`). |
 | F24 | **Docs.** `docs/eval.md` explains: repeats aren't independent samples (the per-profile interval is per run; the paired comparison resamples tasks); HONE.md files above the task directory aren't loaded; shell commands that need approval in a one-shot run need it in eval too; and that cost depends on the provider reporting usage and on model pricing. Docs only. |
 
+### Added from the suite review (F25)
+
+| Row | Behaviour |
+|---|---|
+| F25 | **A check's processes die with it.** The runner starts each success check in its own process group, kills the group when the check times out and after it finishes, so a check (or code it runs) that leaves background processes behind leaves nothing running. |
+
 ## Testing notes
 
 - **F1/F2/F8** through `EvalRunner` with a scripted mock provider that calls tools (`write_file` then reply), a temp tasks dir, and a success check (`test -f out.txt`). Check isolation: two runs of a task that appends to a file each see the original.
