@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed: memory recall finds older memories, skips outcome logs, and code search understands prompts
+
+- **Before:**
+  - Recall ranked only the newest few memories. The agent asks for 5, so a relevant memory older than the 5 newest was never found, however well it matched.
+  - The "Relevant context from memory" section could be filled with `Outcome` logs, which the TUI writes after each turn with the task text in them.
+  - The code index matched a symbol only if its name contained the whole prompt, so "fix the login bug" found nothing, and the "Potentially relevant code" section and file hints almost never appeared.
+- **Now:**
+  - A query ranks the newest 5,000 memories (of the wanted kind) by relevance and returns the best few. Listing with no query is unchanged.
+  - The agent's recall leaves `Outcome` logs out before the cap, so they can't crowd out other memories. A new `MemoryStore::recall_excluding(query, kinds)` does this; stores that don't override it still work.
+  - Code search splits the prompt into words (3 or more letters, digits or `_`, no common English words, at most 16) and finds symbols whose name contains any of them. Names that match more words come first, then exact, prefix and substring matches, then shorter names. A single identifier gives the same results as before; a prompt with no usable words finds nothing.
+- README: the claim that Hone has a pgvector semantic index is removed. The index is tree-sitter symbols in SQLite.
+- Contract: `docs/plans/memory-recall-index-spec.md`.
+
 ### Fixed: the desktop app stops `honed` gently, and its window responds at launch
 
 - **Before:** every way of stopping the managed `honed` (Stop, the tray, switching or removing a profile, quitting the app, dropping it after a failed start) sent SIGKILL. `honed` could not stop its own MCP servers and commands, so a server that ignores SIGTERM kept running after the app quit. At launch the window showed neither view and ignored clicks until the daemon start finished, up to about 5 s. Smaller faults: **Start** did nothing after `honed` crashed until you pressed **Stop**; "daemon failed to start" stayed after Stop or a profile switch; the stderr reader stopped on an interrupted read.

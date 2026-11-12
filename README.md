@@ -245,7 +245,7 @@ See [routing and fallback](docs/configuration.md#routing-and-fallback).
 - **Typed memories with index-driven recall** — Memories carry a `kind` (`User`, `Feedback`, `Project`, `Reference`, `Outcome`, `Conversation`) and an optional one-line `description`. The system prompt embeds a budgeted `## Memory index`; the agent fetches bodies on demand via the `memory_read` tool. Recall ordering uses BM25 (k1=1.5, b=0.75) over content + description. Inspect or prune via `hone memory ls | show <id> | forget`.
 - **Layered tool architecture** — Native Rust layer (Layer 2) for zero-cost file/shell/git/LSP. MCP client for 70+ community extensions (Layer 1) with `.hone/mcp.json` config. Skills in markdown (Layer 3). Tool decorators for cost tracking and governance (Layer 4).
 - **Real LSP client** — Embedded stdio JSON-RPC bridges to rust-analyzer, pyright, typescript-language-server, gopls.
-- **Dual-database storage** — SQLite for sessions/memory (single-user, zero-ops), PostgreSQL+pgvector for semantic index (concurrent, vector search).
+- **SQLite storage** — sessions and memory live in SQLite (single-user, zero-ops). The code index (`hone-index`) is tree-sitter symbols in SQLite, searched by name; there is no pgvector or vector index.
 - **Adaptive memory** — Pattern learning across sessions. Hone remembers what worked, what failed, and why. Memory is local-first, private by default.
 - **OpenAPI 3.1 spec generation** — GET /openapi.json for automated API documentation.
 - **Rate limiting** — Sliding window middleware per IP/user.

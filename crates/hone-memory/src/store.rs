@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use crate::embedding::{ScoredMemory, cosine_similarity};
 use crate::error::MemoryError;
-use crate::types::{Memory, MemoryFilter, MemoryQuery};
+use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
 
 // ---------------------------------------------------------------------------
 // Trigram similarity helpers
@@ -67,6 +67,21 @@ pub trait MemoryStore: Send + Sync {
     /// default `find_similar` relies on this to gather candidates for similarity
     /// scoring.
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError>;
+
+    /// Like [`recall`](Self::recall), but memories of the `exclude` kinds never
+    /// appear. The default recalls, then drops them; a store that caps its
+    /// candidates (`SqliteStore`) overrides it to exclude BEFORE the cap, so
+    /// excluded rows cannot crowd out the rest. `recall_excluding(q, &[])`
+    /// equals `recall(q)`.
+    async fn recall_excluding(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let mut found = self.recall(query).await?;
+        found.retain(|m| !exclude.contains(&m.kind));
+        Ok(found)
+    }
 
     /// O(log n) (or better) exact lookup by `id`. Returns `None` when no
     /// memory has that id. Implementations MUST NOT do a full table scan.

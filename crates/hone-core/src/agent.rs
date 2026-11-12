@@ -791,7 +791,11 @@ impl Agent {
         };
 
         // BM25 (existing path)
-        let bm25_memories = match store.recall(&memory_query).await {
+        // Outcome logs record the task text and would match it: leave them out.
+        let bm25_memories = match store
+            .recall_excluding(&memory_query, &[hone_memory::MemoryKind::Outcome])
+            .await
+        {
             Ok(m) => m,
             Err(_) => Vec::new(),
         };
@@ -803,7 +807,13 @@ impl Agent {
                     Ok(query_vec) => store
                         .recall_semantic(&query_vec, 5)
                         .await
-                        .map(|scored| scored.into_iter().map(|s| s.memory).collect())
+                        .map(|scored| {
+                            scored
+                                .into_iter()
+                                .map(|s| s.memory)
+                                .filter(|m| m.kind != hone_memory::MemoryKind::Outcome)
+                                .collect()
+                        })
                         .unwrap_or_default(),
                     Err(_) => Vec::new(),
                 }
