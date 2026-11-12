@@ -369,4 +369,105 @@ mod tests {
         let reopened = ProvenanceLog::open(&path).expect("reopen verifies");
         assert_eq!(reopened.entries().len(), 5);
     }
+
+    // ---- CR14 of docs/plans/context-receipts-spec.md ---------------------------------------
+
+    fn cr14_receipt() -> hone_proto::ContextReceipt {
+        use hone_proto::{BlockReceipt, ContextReceipt, ScoredSource, Slot, SourceRef, StrategyId};
+        let strategy = |slot, name: &str| StrategyId {
+            slot,
+            name: name.to_owned(),
+            version: "0.1.0".to_owned(),
+            params_sha256: "ab".repeat(32),
+        };
+        ContextReceipt {
+            turn: 1,
+            call: 2,
+            model: "mock:test".to_owned(),
+            request_sha256: "cd".repeat(32),
+            blocks: vec![
+                BlockReceipt {
+                    slot: Slot::SystemPrompt,
+                    strategy: strategy(Slot::SystemPrompt, "system"),
+                    tokens: 5,
+                    sources: vec![],
+                    duration_ms: 0,
+                },
+                BlockReceipt {
+                    slot: Slot::Recall,
+                    strategy: strategy(Slot::Recall, "bm25"),
+                    tokens: 40,
+                    sources: vec![
+                        ScoredSource {
+                            source: SourceRef::Memory { id: "m-1".into(), version: None },
+                            score: Some(2.0),
+                        },
+                        ScoredSource {
+                            source: SourceRef::Memory { id: "m-2".into(), version: None },
+                            score: Some(1.0),
+                        },
+                    ],
+                    duration_ms: 3,
+                },
+                BlockReceipt {
+                    slot: Slot::History,
+                    strategy: strategy(Slot::History, "history"),
+                    tokens: 90,
+                    sources: vec![ScoredSource {
+                        source: SourceRef::Message { index: 1, sha256: "ef".repeat(32) },
+                        score: None,
+                    }],
+                    duration_ms: 0,
+                },
+            ],
+            dropped: vec![],
+            compaction: vec![],
+            tools_offered: vec![],
+        }
+    }
+
+    #[test]
+    fn cr14_mapper_turns_a_context_receipt_into_one_context_assembled_entry() {
+        let receipt = cr14_receipt();
+        let mut m = EventMapper::new("claude");
+
+        let out = m.map(&AgentEvent::ContextAssembled { receipt: receipt.clone() });
+
+        assert_eq!(out.len(), 1);
+        let expected_hash = hone_proto::sha256_hex(
+            serde_json::to_string(&serde_json::to_value(&receipt).unwrap())
+                .unwrap()
+                .as_bytes(),
+        );
+        match &out[0] {
+            ProvenanceEvent::ContextAssembled { receipt_sha256, strategies, sources } => {
+                assert_eq!(*receipt_sha256, expected_hash, "sha256 of the compact key-sorted JSON");
+                assert_eq!(strategies, &["system", "bm25", "history"]);
+                let expected: Vec<hone_proto::SourceRef> = receipt
+                    .blocks
+                    .iter()
+                    .flat_map(|b| b.sources.iter().map(|s| s.source.clone()))
+                    .collect();
+                assert_eq!(sources, &expected, "every block's sources, in order");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn cr14_a_receipt_does_not_disturb_the_token_buffer() {
+        let mut m = EventMapper::new("claude");
+        m.map(&AgentEvent::Token { text: "hel".into() });
+        m.map(&AgentEvent::ContextAssembled { receipt: cr14_receipt() });
+        m.map(&AgentEvent::Token { text: "lo".into() });
+        let out = m.map(&AgentEvent::Done {
+            usage: hone_proto::TokenUsage::default(),
+            cost_usd: 0.0,
+            plan: None,
+        });
+        assert!(matches!(
+            out[0],
+            ProvenanceEvent::ModelCompletion { ref output, .. } if output == "hello"
+        ));
+    }
 }

@@ -368,4 +368,225 @@ mod tests {
         let s = format_timestamp(0);
         assert!(s.starts_with("1970-01-01"));
     }
+
+    // ---- CR11 of docs/plans/context-receipts-spec.md ------------------------------------
+    //
+    // API required (in this file):
+    //
+    //   pub struct StoredReceipt { pub run: u32, pub seq: u32, pub receipt: hone_proto::ContextReceipt }
+    //       // Debug + Clone
+    //   impl SessionStore {
+    //       /// Receipts of the agent's life so far (`AgentHandle::get_context_receipts()`),
+    //       /// oldest first. The first call of this store instance for a session takes
+    //       /// `run = max(run) + 1` (1 for a new one) and stores them all, `seq` 1-based and
+    //       /// increasing; later calls for the same session in this instance store only the
+    //       /// receipts beyond those already stored. Errors when the session does not exist.
+    //       pub async fn append_context_receipts(&self, session_name: &str,
+    //           receipts: &[ContextReceipt]) -> Result<()>;
+    //       /// Every stored receipt of the session ordered by (run, seq); empty for an
+    //       /// unknown session or one without receipts.
+    //       pub async fn list_context_receipts(&self, session_name: &str)
+    //           -> Result<Vec<StoredReceipt>>;
+    //   }
+    //
+    // The table `context_receipts` is keyed by the session id (so renaming a session keeps
+    // its receipts and deleting one deletes them), created in place for old databases.
+
+    fn cr11_receipt(turn: u32, call: u32) -> hone_proto::ContextReceipt {
+        hone_proto::ContextReceipt {
+            turn,
+            call,
+            model: "mock:test".to_owned(),
+            request_sha256: format!("{turn:02x}{call:02x}").repeat(16),
+            blocks: vec![],
+            dropped: vec![],
+            compaction: vec![],
+            tools_offered: vec!["read_file".to_owned()],
+        }
+    }
+
+    fn pairs(v: &[StoredReceipt]) -> Vec<(u32, u32, u32, u32)> {
+        v.iter()
+            .map(|s| (s.run, s.seq, s.receipt.turn, s.receipt.call))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn cr11_first_append_should_store_every_receipt_as_run_one() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("s", &make_messages(2)).await.unwrap();
+
+        store
+            .append_context_receipts("s", &[cr11_receipt(1, 1), cr11_receipt(1, 2)])
+            .await
+            .unwrap();
+
+        let got = store.list_context_receipts("s").await.unwrap();
+        assert_eq!(pairs(&got), [(1, 1, 1, 1), (1, 2, 1, 2)]);
+        assert_eq!(
+            got[0].receipt,
+            cr11_receipt(1, 1),
+            "the receipt round-trips"
+        );
+    }
+
+    #[tokio::test]
+    async fn cr11_later_appends_in_the_same_process_should_store_only_new_receipts() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("s", &make_messages(2)).await.unwrap();
+        let mut all = vec![cr11_receipt(1, 1), cr11_receipt(1, 2)];
+        store.append_context_receipts("s", &all).await.unwrap();
+
+        all.push(cr11_receipt(2, 1));
+        store.append_context_receipts("s", &all).await.unwrap();
+        store.append_context_receipts("s", &all).await.unwrap(); // nothing new
+
+        let got = store.list_context_receipts("s").await.unwrap();
+        assert_eq!(pairs(&got), [(1, 1, 1, 1), (1, 2, 1, 2), (1, 3, 2, 1)]);
+    }
+
+    #[tokio::test]
+    async fn cr11_a_new_process_should_take_the_next_run_and_restart_seq() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("sessions.db");
+        {
+            let store = SessionStore::open(&path).await.unwrap();
+            store.save_session("s", &make_messages(2)).await.unwrap();
+            store
+                .append_context_receipts("s", &[cr11_receipt(1, 1), cr11_receipt(1, 2)])
+                .await
+                .unwrap();
+        }
+        // A second process resumes the session: turn numbers restart.
+        let store = SessionStore::open(&path).await.unwrap();
+        store
+            .append_context_receipts("s", &[cr11_receipt(1, 1)])
+            .await
+            .unwrap();
+
+        let got = store.list_context_receipts("s").await.unwrap();
+        assert_eq!(pairs(&got), [(1, 1, 1, 1), (1, 2, 1, 2), (2, 1, 1, 1)]);
+    }
+
+    #[tokio::test]
+    async fn cr11_sessions_should_number_their_runs_independently() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("a", &make_messages(2)).await.unwrap();
+        store.save_session("b", &make_messages(2)).await.unwrap();
+
+        store
+            .append_context_receipts("a", &[cr11_receipt(1, 1)])
+            .await
+            .unwrap();
+        store
+            .append_context_receipts("b", &[cr11_receipt(1, 1)])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            pairs(&store.list_context_receipts("a").await.unwrap()),
+            [(1, 1, 1, 1)]
+        );
+        assert_eq!(
+            pairs(&store.list_context_receipts("b").await.unwrap()),
+            [(1, 1, 1, 1)]
+        );
+    }
+
+    #[tokio::test]
+    async fn cr11_saving_the_session_again_should_keep_its_receipts() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("s", &make_messages(2)).await.unwrap();
+        store
+            .append_context_receipts("s", &[cr11_receipt(1, 1)])
+            .await
+            .unwrap();
+
+        store.save_session("s", &make_messages(4)).await.unwrap(); // upsert
+
+        assert_eq!(store.list_context_receipts("s").await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn cr11_deleting_a_session_should_delete_its_receipts() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("s", &make_messages(2)).await.unwrap();
+        store
+            .append_context_receipts("s", &[cr11_receipt(1, 1)])
+            .await
+            .unwrap();
+
+        store.delete_session("s").await.unwrap();
+
+        assert!(store.list_context_receipts("s").await.unwrap().is_empty());
+        // A new session with the same name starts clean.
+        store.save_session("s", &make_messages(2)).await.unwrap();
+        assert!(store.list_context_receipts("s").await.unwrap().is_empty());
+        let rows: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM context_receipts")
+            .fetch_one(&store.pool)
+            .await
+            .unwrap();
+        assert_eq!(rows.0, 0, "no orphaned rows");
+    }
+
+    #[tokio::test]
+    async fn cr11_renaming_a_session_should_keep_its_receipts() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("old", &make_messages(2)).await.unwrap();
+        store
+            .append_context_receipts("old", &[cr11_receipt(1, 1)])
+            .await
+            .unwrap();
+
+        store.rename_session("old", "new").await.unwrap();
+
+        assert_eq!(store.list_context_receipts("new").await.unwrap().len(), 1);
+        assert!(store.list_context_receipts("old").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn cr11_appending_to_an_unknown_session_should_error() {
+        let (store, _d) = open_test_store().await;
+        let r = store
+            .append_context_receipts("nope", &[cr11_receipt(1, 1)])
+            .await;
+        assert!(r.is_err());
+    }
+
+    #[tokio::test]
+    async fn cr11_an_old_database_should_gain_the_table_in_place() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("sessions.db");
+        // A database made by an older hone: only `cli_sessions`.
+        {
+            let opts = sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(&path)
+                .create_if_missing(true);
+            let pool = sqlx::SqlitePool::connect_with(opts).await.unwrap();
+            sqlx::query(
+                "CREATE TABLE cli_sessions (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL,
+                 created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, messages TEXT NOT NULL)",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query("INSERT INTO cli_sessions VALUES ('id-1', 'old', 1, 1, '[]')")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        let store = SessionStore::open(&path).await.unwrap();
+
+        assert!(
+            store.load_session("old").await.unwrap().is_some(),
+            "old rows survive"
+        );
+        assert!(store.list_context_receipts("old").await.unwrap().is_empty());
+        store
+            .append_context_receipts("old", &[cr11_receipt(1, 1)])
+            .await
+            .unwrap();
+        assert_eq!(store.list_context_receipts("old").await.unwrap().len(), 1);
+    }
 }

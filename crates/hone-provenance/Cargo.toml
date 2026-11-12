@@ -13,3 +13,6 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# CR14 tests use `hone_proto::SourceRef`; the implementation moves this to
+# [dependencies] (hone-proto depends on neither crate, so there is no cycle).
+hone-proto = { workspace = true }
