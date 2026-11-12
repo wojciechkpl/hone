@@ -92,35 +92,7 @@ pub enum EvalRunnerError {
     History(#[from] crate::history::EvalHistoryError),
 }
 
-/// Working-directory copies of finished runs. A copy is removed when the next
-/// run finishes (so at most one finished copy lingers, for inspection), and
-/// whatever is left is removed when the runner is dropped.
-#[derive(Default)]
-struct Graveyard(std::sync::Mutex<std::collections::VecDeque<PathBuf>>);
-
-impl Graveyard {
-    fn retire(&self, copy: PathBuf) {
-        let mut queue = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        queue.push_back(copy);
-        while queue.len() > 1 {
-            if let Some(old) = queue.pop_front() {
-                let _ = std::fs::remove_dir_all(old);
-            }
-        }
-    }
-}
-
-impl Drop for Graveyard {
-    fn drop(&mut self) {
-        let queue = self.0.get_mut().unwrap_or_else(|e| e.into_inner());
-        for copy in queue.drain(..) {
-            let _ = std::fs::remove_dir_all(copy);
-        }
-    }
-}
-
 pub struct EvalRunner {
-    graveyard: Arc<Graveyard>,
     tasks: Arc<TasksFile>,
     base_dir: PathBuf,
     default_model: String,
@@ -138,7 +110,6 @@ struct RunResult {
 /// Everything a spawned run needs, cloned out of the runner.
 #[derive(Clone)]
 struct Ctx {
-    graveyard: Arc<Graveyard>,
     tasks: Arc<TasksFile>,
     base_dir: PathBuf,
     model: String,
@@ -156,7 +127,6 @@ impl EvalRunner {
         builder: AgentBuilder,
     ) -> Self {
         Self {
-            graveyard: Arc::new(Graveyard::default()),
             tasks: Arc::new(tasks),
             base_dir,
             default_model: default_model.into(),
@@ -210,7 +180,6 @@ impl EvalRunner {
         write_json(&run_dir.join("manifest.json"), &manifest)?;
 
         let ctx = Ctx {
-            graveyard: self.graveyard.clone(),
             tasks: self.tasks.clone(),
             base_dir,
             model: model.clone(),
@@ -654,7 +623,7 @@ async fn execute(ctx: &Ctx, planned: &PlannedRun, dir: &Path, started: Instant) 
             tracing::warn!("eval: cannot keep the working directory: {e}");
         }
     }
-    ctx.graveyard.retire(copy);
+    let _ = std::fs::remove_dir_all(&copy);
     result
 }
 

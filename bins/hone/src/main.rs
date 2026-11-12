@@ -155,6 +155,9 @@ enum HoneCmd {
         cmd: memory_cmd::MemoryCmd,
     },
     /// Run evaluation tasks from a TOML file with real agents, and compare profiles.
+    ///
+    /// Runs are hermetic: no MCP servers, no language server, no tool cache, and the
+    /// model is pinned. Tasks that need MCP are not supported yet.
     Eval(eval_cmd::EvalArgs),
     /// Generate a Kiro-style spec (requirements + design + tasks) for a goal.
     Spec {
