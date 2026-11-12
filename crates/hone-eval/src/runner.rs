@@ -131,6 +131,89 @@ struct Ctx {
     /// Tasks whose copy was already reported, and the warnings for the manifest.
     warned: Arc<std::sync::Mutex<(std::collections::HashSet<String>, Vec<String>)>>,
     interrupt: Option<tokio::sync::watch::Receiver<bool>>,
+    integrity: Arc<Integrity>,
+}
+
+/// The suite directories that must not change during a run (F31).
+struct Integrity {
+    dirs: Vec<PathBuf>,
+    baseline: String,
+    violated: std::sync::atomic::AtomicBool,
+}
+
+const INTEGRITY_MESSAGE: &str = "suite modified during the run";
+
+impl Integrity {
+    fn new(dirs: Vec<PathBuf>) -> Self {
+        let baseline = hash_dirs(&dirs);
+        Self {
+            dirs,
+            baseline,
+            violated: false.into(),
+        }
+    }
+
+    fn is_violated(&self) -> bool {
+        self.violated.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Re-hash the directories (after a check); true when anything changed, now or before.
+    fn check(&self) -> bool {
+        if !self.dirs.is_empty() && hash_dirs(&self.dirs) != self.baseline {
+            self.violated
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        self.is_violated()
+    }
+}
+
+/// SHA-256 over every file's relative path and content (and symlink targets).
+fn hash_dirs(dirs: &[PathBuf]) -> String {
+    use sha2::{Digest, Sha256};
+    fn walk(root: &Path, dir: &Path, hasher: &mut Sha256) {
+        let Ok(read) = std::fs::read_dir(dir) else {
+            hasher.update(b"unreadable:");
+            hasher.update(dir.to_string_lossy().as_bytes());
+            return;
+        };
+        let mut entries: Vec<_> = read.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let rel = path.strip_prefix(root).unwrap_or(&path);
+            hasher.update(rel.to_string_lossy().as_bytes());
+            hasher.update([0]);
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => {
+                    hasher.update(b"d");
+                    walk(root, &path, hasher);
+                }
+                Ok(t) if t.is_symlink() => {
+                    hasher.update(b"l");
+                    if let Ok(target) = std::fs::read_link(&path) {
+                        hasher.update(target.to_string_lossy().as_bytes());
+                    }
+                }
+                Ok(t) if t.is_file() => {
+                    hasher.update(b"f");
+                    hasher.update(std::fs::read(&path).unwrap_or_default());
+                }
+                _ => {}
+            }
+            hasher.update([0]);
+        }
+    }
+    let mut hasher = Sha256::new();
+    for dir in dirs {
+        hasher.update(dir.to_string_lossy().as_bytes());
+        hasher.update([1]);
+        walk(dir, dir, &mut hasher);
+    }
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 impl EvalRunner {
@@ -191,7 +274,6 @@ impl EvalRunner {
         let mut manifest = json!({
             "run_id": run_id,
             "hone_version": env!("CARGO_PKG_VERSION"),
-            "git_sha": suite_sha,
             "suite_git_sha": suite_sha,
             "hone_git_sha": hone_git_sha(),
             "env": run_env(),
@@ -208,7 +290,7 @@ impl EvalRunner {
 
         let ctx = Ctx {
             tasks: self.tasks.clone(),
-            base_dir,
+            base_dir: base_dir.clone(),
             model: model.clone(),
             builder: self.builder.clone(),
             user: self.user.clone(),
@@ -217,7 +299,15 @@ impl EvalRunner {
             copy_warn_bytes: self.copy_warn_bytes,
             warned: Arc::default(),
             interrupt: opts.interrupt.clone(),
+            integrity: Arc::new(Integrity::new(
+                self.tasks
+                    .integrity()
+                    .iter()
+                    .map(|d| base_dir.join(d))
+                    .collect(),
+            )),
         };
+        let planned_total = planned.len();
         let results = run_all(&ctx, planned, opts.jobs).await;
         let interrupted = ctx.interrupt.as_ref().is_some_and(|rx| *rx.borrow());
 
@@ -230,7 +320,8 @@ impl EvalRunner {
                 .1
                 .clone()
         );
-        manifest["outcomes"] = status_counts(&results);
+        manifest["outcomes"] = status_counts(&results, planned_total);
+        manifest["integrity_violated"] = json!(ctx.integrity.is_violated());
         write_json(&run_dir.join("manifest.json"), &manifest)?;
 
         // Unfinished runs are marked in their outcome.json; the report covers the rest.
@@ -239,7 +330,13 @@ impl EvalRunner {
             .filter(|r| r.stat.status != TaskStatus::Interrupted)
             .collect();
         let results = finished;
-        let report = self.report(&profile_names, &results);
+        let mut report = self.report(&profile_names, &results);
+        report.json["integrity_violated"] = json!(ctx.integrity.is_violated());
+        if ctx.integrity.is_violated() {
+            report
+                .markdown
+                .push_str("\n**Untrustworthy run: the suite was modified during the run.**\n");
+        }
         write_json(&run_dir.join("report.json"), &report.json)?;
         std::fs::write(run_dir.join("report.md"), &report.markdown)?;
 
@@ -261,7 +358,7 @@ impl EvalRunner {
                 .collect();
             store
                 .record_with_profiles(
-                    manifest["git_sha"].as_str().map(str::to_owned),
+                    manifest["suite_git_sha"].as_str().map(str::to_owned),
                     model,
                     manifest["tasks_sha256"]
                         .as_str()
@@ -482,7 +579,9 @@ fn run_env() -> Value {
     Value::Object(vars)
 }
 
-fn status_counts(results: &[RunResult]) -> Value {
+/// Statuses of the planned runs; those that never started (an interrupt) count as
+/// `interrupted`.
+fn status_counts(results: &[RunResult], planned_total: usize) -> Value {
     let mut counts = serde_json::Map::new();
     for r in results {
         let key = serde_json::to_value(r.stat.status)
@@ -491,6 +590,14 @@ fn status_counts(results: &[RunResult]) -> Value {
             .unwrap_or_default();
         let n = counts.get(&key).and_then(Value::as_u64).unwrap_or(0);
         counts.insert(key, json!(n + 1));
+    }
+    let missing = planned_total.saturating_sub(results.len());
+    if missing > 0 {
+        let n = counts
+            .get("interrupted")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        counts.insert("interrupted".to_owned(), json!(n + missing as u64));
     }
     Value::Object(counts)
 }
@@ -760,6 +867,9 @@ async fn execute(ctx: &Ctx, planned: &PlannedRun, dir: &Path, started: Instant) 
         return Finished::infra(format!("unknown task `{}`", planned.task), 0);
     };
 
+    if ctx.integrity.is_violated() {
+        return Finished::infra(INTEGRITY_MESSAGE.to_owned(), 0);
+    }
     // The fixture is read first, so a malformed one stops the run cheaply.
     let fixture = match &task.memory_fixture {
         Some(f) => match crate::fixture::load(&ctx.base_dir.join(f)) {
@@ -917,6 +1027,17 @@ async fn run_in_copy(
                 task.timeout_secs,
             )
             .await;
+            if ctx.integrity.check() {
+                let mut out = finish(
+                    TaskStatus::InfraError,
+                    Some(INTEGRITY_MESSAGE.to_owned()),
+                    turn.usage,
+                    turn.cost_usd,
+                    Some(check),
+                );
+                out.status = TaskStatus::InfraError;
+                return out;
+            }
             let status = if check.exit_code == Some(0) {
                 TaskStatus::Pass
             } else {

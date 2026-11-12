@@ -105,6 +105,9 @@ fn check_provider(
 }
 
 pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> Result<()> {
+    // TODO: when this branch meets main after the usage-and-pricing fix, call
+    // `hone_core::set_default_price_lookup` here, as the one-shot path does, so
+    // eval cost uses the real price table.
     let label = args.tasks.display().to_string();
     let raw = match std::fs::read_to_string(&args.tasks) {
         Ok(r) => r,
@@ -248,14 +251,12 @@ pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> 
     // A spawned task runs on a worker thread, where the builder may block on the
     // runtime (see `build_agent`).
     let mut task = tokio::spawn(async move { runner.run(&opts).await });
-    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut signals = Signals::new()?;
     let mut got: Option<i32> = None;
     let joined = loop {
         let signal = tokio::select! {
             r = &mut task => break r,
-            _ = sigint.recv() => 130,
-            _ = sigterm.recv() => 143,
+            code = signals.next() => code,
         };
         if got.is_some() {
             // A second signal: stop at once, after killing the commands.
@@ -288,6 +289,47 @@ fn all_infra_errors(run_dir: &Path) -> bool {
         return false;
     };
     !counts.is_empty() && counts.keys().all(|k| k == "infra_error")
+}
+
+/// SIGINT and SIGTERM (Unix); Ctrl+C elsewhere. `next` resolves to the exit code
+/// for the signal: 130 or 143.
+#[cfg(unix)]
+struct Signals {
+    int: tokio::signal::unix::Signal,
+    term: tokio::signal::unix::Signal,
+}
+
+#[cfg(unix)]
+impl Signals {
+    fn new() -> std::io::Result<Self> {
+        use tokio::signal::unix::{SignalKind, signal};
+        Ok(Self {
+            int: signal(SignalKind::interrupt())?,
+            term: signal(SignalKind::terminate())?,
+        })
+    }
+
+    async fn next(&mut self) -> i32 {
+        tokio::select! {
+            _ = self.int.recv() => 130,
+            _ = self.term.recv() => 143,
+        }
+    }
+}
+
+#[cfg(not(unix))]
+struct Signals;
+
+#[cfg(not(unix))]
+impl Signals {
+    fn new() -> std::io::Result<Self> {
+        Ok(Self)
+    }
+
+    async fn next(&mut self) -> i32 {
+        let _ = tokio::signal::ctrl_c().await;
+        130
+    }
 }
 
 async fn open_history() -> Option<Arc<EvalRunStore>> {

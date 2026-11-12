@@ -21,6 +21,10 @@ pub const DEFAULT_PROFILE: &str = "default";
 struct RawEval {
     base_profile: Option<String>,
     repeats: Option<u32>,
+    /// Directories (relative to the tasks file) hashed before the first run and
+    /// after every check (F31).
+    #[serde(default)]
+    integrity: Vec<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -42,6 +46,7 @@ pub struct TasksFile {
     source_sha256: String,
     base: Option<String>,
     repeats: Option<u32>,
+    integrity: Vec<String>,
     profiles: BTreeMap<String, Config>,
     /// Whether the built-in `default` profile exists (not after `--ablate`,
     /// which keeps only the base and what it generates).
@@ -62,18 +67,27 @@ pub struct PlannedRun {
     pub repeat: u32,
 }
 
-/// Escape control characters (newlines included, so an echoed value can't forge a
-/// line) so text echoed from a config file can't reach a terminal raw.
+/// Escape control characters so text echoed from a config file can't reach a
+/// terminal raw. Newlines stay, but every line after the first is indented, so an
+/// echoed value can't forge a line of its own.
 pub fn escape_control(s: &str) -> String {
-    s.chars()
+    let escaped: String = s
+        .chars()
         .flat_map(|c| {
-            if c.is_control() {
+            if c.is_control() && c != '\n' {
                 c.escape_default().collect::<Vec<char>>()
             } else {
                 vec![c]
             }
         })
-        .collect()
+        .collect();
+    let mut lines = escaped.lines();
+    let mut out = lines.next().unwrap_or_default().to_owned();
+    for line in lines {
+        out.push_str("\n  ");
+        out.push_str(line);
+    }
+    out
 }
 
 fn invalid(msg: String) -> EvalConfigError {
@@ -142,6 +156,7 @@ impl TasksFile {
             source_sha256: hone_proto::sha256_hex(raw.as_bytes()),
             base: parsed.eval.base_profile,
             repeats: parsed.eval.repeats,
+            integrity: parsed.eval.integrity,
             profiles,
             builtin_default: true,
         };
@@ -172,6 +187,13 @@ impl TasksFile {
     /// memory fixtures. Empty when all is well.
     pub fn check_files(&self, base_dir: &std::path::Path) -> Vec<String> {
         let mut errors = Vec::new();
+        for dir in &self.integrity {
+            if !base_dir.join(dir).is_dir() {
+                errors.push(format!(
+                    "[eval] integrity: `{dir}` is not a directory (relative to the tasks file)"
+                ));
+            }
+        }
         for task in &self.tasks {
             let dir = base_dir.join(&task.working_dir);
             if !dir.is_dir() {
@@ -188,6 +210,12 @@ impl TasksFile {
             }
         }
         errors
+    }
+
+    /// `[eval] integrity`: directories (relative to the tasks file) that must not
+    /// change during a run.
+    pub fn integrity(&self) -> &[String] {
+        &self.integrity
     }
 
     /// `[eval] base_profile`, default `default`.
@@ -406,6 +434,7 @@ impl TasksFile {
             source_sha256: self.source_sha256.clone(),
             base: Some(base_name.clone()),
             repeats: self.repeats,
+            integrity: self.integrity.clone(),
             profiles,
             builtin_default: base_name == DEFAULT_PROFILE,
         };

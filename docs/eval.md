@@ -68,3 +68,25 @@ copy with `EVAL_SUITE_DIR` set to the tasks file's directory.
   still apply, so a task whose commands are denied fails the same way.
 - Cost depends on the provider reporting token usage and on the model's pricing
   entry; a provider that reports no usage shows zero cost and tokens.
+
+## Limits
+
+- A check that starts a new session (`setsid`) escapes the process-group kill:
+  the runner kills the check's process group, and a session leader is in another
+  one.
+- A copied `.git` directory has `core.worktree` cleared in its `config`, so the
+  copy's git never points at another tree. Submodules are not linked in copies:
+  a submodule's own `.git` file refers to the original's module store.
+- A task directory that is a subdirectory of a larger repository gets a fresh
+  repository with its files in one initial commit, with no link to the enclosing
+  repository, so the agent sees the same thing wherever the suite is checked out.
+  A task directory that is a repository root keeps its history.
+
+## Suite integrity
+
+`[eval] integrity = ["checks", "reference"]` lists directories (relative to the
+tasks file) that must not change during a run. The runner hashes them (every file's
+path and content) before the first run and after every check; on any change the
+current and remaining runs end `infra_error` ("suite modified during the run") and
+`report.json` has `"integrity_violated": true` (`report.md` flags the run as
+untrustworthy). `--check` rejects a path that is not a directory.

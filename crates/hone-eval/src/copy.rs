@@ -26,12 +26,14 @@ pub struct CopyReport {
 /// - FIFOs, sockets and devices are skipped with a note.
 /// - A `.git` directory is copied as is (an independent repository); a `.git`
 ///   file (a git worktree) is never copied: the copy gets its own repository at
-///   the same `HEAD` with the same working-tree contents, also when the task
-///   directory is a subdirectory of a worktree.
+///   the same `HEAD` with the same working-tree contents.
+/// - A task directory that is a subdirectory of a repository or worktree gets a
+///   fresh repository with its files in one initial commit (no link to the
+///   enclosing repository). A copied `.git/config` has `core.worktree` cleared.
 pub fn copy_task_dir(source: &Path, dest: &Path) -> Result<CopyReport, String> {
     let canonical = std::fs::canonicalize(source)
         .map_err(|e| format!("cannot read {}: {e}", source.display()))?;
-    let worktree = classify_git(&canonical)?;
+    let kind = classify_git(&canonical);
     std::fs::create_dir_all(dest).map_err(|e| format!("cannot create {}: {e}", dest.display()))?;
 
     let mut report = CopyReport::default();
@@ -87,35 +89,49 @@ pub fn copy_task_dir(source: &Path, dest: &Path) -> Result<CopyReport, String> {
     let git = canonical.join(".git");
     if git.is_dir() {
         copy_plain(&git, &dest.join(".git"), &mut report)?;
+        // A `core.worktree` would point the copy's git at another tree.
+        let config = dest.join(".git/config");
+        if config.is_file() {
+            let _ = Command::new("git")
+                .args(["config", "--file"])
+                .arg(&config)
+                .args(["--unset-all", "core.worktree"])
+                .stdin(Stdio::null())
+                .output();
+        }
     }
-    if let Some(info) = worktree {
-        init_independent_repo(dest, &info)?;
+    match kind {
+        GitKind::Worktree => init_independent_repo(dest, &canonical)?,
+        GitKind::Subdirectory => init_snapshot_repo(dest)?,
+        GitKind::Plain | GitKind::None => {}
     }
     Ok(report)
 }
 
-/// The root of the git worktree (a directory whose `.git` is a file) the task
-/// directory is, or is inside.
-struct WorktreeInfo {
-    root: PathBuf,
+/// How the task directory relates to git.
+enum GitKind {
+    /// Not in a repository.
+    None,
+    /// A repository root with a `.git` directory (copied as is).
+    Plain,
+    /// A worktree root (`.git` is a file).
+    Worktree,
+    /// A subdirectory of a repository or worktree.
+    Subdirectory,
 }
 
-/// `Some` when `dir` is, or is inside, a git worktree (a `.git` file); `None` for a
-/// plain repository (its `.git` directory is copied as is) or no repository.
-fn classify_git(dir: &Path) -> Result<Option<WorktreeInfo>, String> {
+fn classify_git(dir: &Path) -> GitKind {
     for ancestor in dir.ancestors() {
-        let git = ancestor.join(".git");
-        match std::fs::symlink_metadata(&git) {
-            Ok(m) if m.is_file() => {
-                return Ok(Some(WorktreeInfo {
-                    root: ancestor.to_path_buf(),
-                }));
-            }
-            Ok(m) if m.is_dir() => return Ok(None),
-            _ => {}
-        }
+        let Ok(meta) = std::fs::symlink_metadata(ancestor.join(".git")) else {
+            continue;
+        };
+        return match (ancestor == dir, meta.is_file()) {
+            (true, true) => GitKind::Worktree,
+            (true, false) => GitKind::Plain,
+            (false, _) => GitKind::Subdirectory,
+        };
     }
-    Ok(None)
+    GitKind::None
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -139,10 +155,8 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
 /// Give the copy its own repository at the original's `HEAD`. The new repository
 /// only reads the original's object store (through `objects/info/alternates`);
 /// everything it writes goes into the copy, so nothing reaches the original. The
-/// index matches `HEAD`, so the copy's working-tree contents show as changes (for
-/// a subdirectory of the worktree, the rest of the tree shows as deleted).
-fn init_independent_repo(copy: &Path, info: &WorktreeInfo) -> Result<(), String> {
-    let root = &info.root;
+/// index matches `HEAD`, so the copy's working-tree contents show as changes.
+fn init_independent_repo(copy: &Path, root: &Path) -> Result<(), String> {
     let setup = || -> Result<(), String> {
         let head = git(root, &["rev-parse", "--verify", "-q", "HEAD"]).ok();
         let branch = git(root, &["symbolic-ref", "-q", "--short", "HEAD"]).ok();
@@ -300,4 +314,33 @@ fn clone_file(src: &Path, dst: &Path) -> bool {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn clone_file(_src: &Path, _dst: &Path) -> bool {
     false
+}
+
+/// A fresh repository for the copy of a subdirectory of a larger repository: the
+/// task's files in one initial commit, with no link to the enclosing repository.
+fn init_snapshot_repo(copy: &Path) -> Result<(), String> {
+    let run = || -> Result<(), String> {
+        git(copy, &["init", "-q"])?;
+        git(copy, &["add", "-A"])?;
+        git(
+            copy,
+            &[
+                "-c",
+                "user.name=hone-eval",
+                "-c",
+                "user.email=eval@hone.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "task files",
+            ],
+        )?;
+        Ok(())
+    };
+    run().map_err(|e| format!("cannot create a git repository for the copy (git): {e}"))
 }

@@ -15,7 +15,16 @@ fn main() {
     let sha = git(&["rev-parse", "HEAD"]).unwrap_or_default();
     println!("cargo:rustc-env=HONE_GIT_SHA={sha}");
     println!("cargo:rerun-if-changed=build.rs");
-    if let Some(head) = git(&["rev-parse", "--git-path", "HEAD"]) {
-        println!("cargo:rerun-if-changed={head}");
+    // Re-run when HEAD moves, and when the branch it names moves (a commit changes
+    // `refs/heads/<branch>` or `packed-refs`, not `HEAD`).
+    for path in ["HEAD", "packed-refs"] {
+        if let Some(p) = git(&["rev-parse", "--git-path", path]) {
+            println!("cargo:rerun-if-changed={p}");
+        }
+    }
+    if let Some(branch) = git(&["symbolic-ref", "-q", "HEAD"]) {
+        if let Some(p) = git(&["rev-parse", "--git-path", &branch]) {
+            println!("cargo:rerun-if-changed={p}");
+        }
     }
 }
