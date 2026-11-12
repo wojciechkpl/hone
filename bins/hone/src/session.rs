@@ -546,6 +546,23 @@ mod tests {
         }
     }
 
+    /// A batch as `AgentHandle::context_receipts_after` returns it: `receipts` get
+    /// the ordinals `first`, `first + 1`, ... (ordinals are 1-based for an agent's life).
+    fn batch(
+        agent_id: &str,
+        first: u64,
+        receipts: &[hone_proto::ContextReceipt],
+    ) -> hone_core::ReceiptBatch {
+        hone_core::ReceiptBatch {
+            agent_id: agent_id.to_owned(),
+            items: receipts
+                .iter()
+                .enumerate()
+                .map(|(i, r)| (first + i as u64, r.clone()))
+                .collect(),
+        }
+    }
+
     fn pairs(v: &[StoredReceipt]) -> Vec<(u32, u32, u32, u32)> {
         v.iter()
             .map(|s| (s.run, s.seq, s.receipt.turn, s.receipt.call))
@@ -558,7 +575,7 @@ mod tests {
         store.save_session("s", &make_messages(2)).await.unwrap();
 
         store
-            .append_context_receipts("s", &[cr11_receipt(1, 1), cr11_receipt(1, 2)])
+            .append_context_receipts("s", &batch("a1", 1, &[cr11_receipt(1, 1), cr11_receipt(1, 2)]))
             .await
             .unwrap();
 
@@ -576,11 +593,11 @@ mod tests {
         let (store, _d) = open_test_store().await;
         store.save_session("s", &make_messages(2)).await.unwrap();
         let mut all = vec![cr11_receipt(1, 1), cr11_receipt(1, 2)];
-        store.append_context_receipts("s", &all).await.unwrap();
+        store.append_context_receipts("s", &batch("a1", 1, &all)).await.unwrap();
 
         all.push(cr11_receipt(2, 1));
-        store.append_context_receipts("s", &all).await.unwrap();
-        store.append_context_receipts("s", &all).await.unwrap(); // nothing new
+        store.append_context_receipts("s", &batch("a1", 1, &all)).await.unwrap();
+        store.append_context_receipts("s", &batch("a1", 1, &all)).await.unwrap(); // nothing new
 
         let got = store.list_context_receipts("s").await.unwrap();
         assert_eq!(pairs(&got), [(1, 1, 1, 1), (1, 2, 1, 2), (1, 3, 2, 1)]);
@@ -594,14 +611,14 @@ mod tests {
             let store = SessionStore::open(&path).await.unwrap();
             store.save_session("s", &make_messages(2)).await.unwrap();
             store
-                .append_context_receipts("s", &[cr11_receipt(1, 1), cr11_receipt(1, 2)])
+                .append_context_receipts("s", &batch("a1", 1, &[cr11_receipt(1, 1), cr11_receipt(1, 2)]))
                 .await
                 .unwrap();
         }
         // A second process resumes the session: turn numbers restart.
         let store = SessionStore::open(&path).await.unwrap();
         store
-            .append_context_receipts("s", &[cr11_receipt(1, 1)])
+            .append_context_receipts("s", &batch("a1", 1, &[cr11_receipt(1, 1)]))
             .await
             .unwrap();
 
@@ -616,11 +633,11 @@ mod tests {
         store.save_session("b", &make_messages(2)).await.unwrap();
 
         store
-            .append_context_receipts("a", &[cr11_receipt(1, 1)])
+            .append_context_receipts("a", &batch("a1", 1, &[cr11_receipt(1, 1)]))
             .await
             .unwrap();
         store
-            .append_context_receipts("b", &[cr11_receipt(1, 1)])
+            .append_context_receipts("b", &batch("a1", 1, &[cr11_receipt(1, 1)]))
             .await
             .unwrap();
 
@@ -639,7 +656,7 @@ mod tests {
         let (store, _d) = open_test_store().await;
         store.save_session("s", &make_messages(2)).await.unwrap();
         store
-            .append_context_receipts("s", &[cr11_receipt(1, 1)])
+            .append_context_receipts("s", &batch("a1", 1, &[cr11_receipt(1, 1)]))
             .await
             .unwrap();
 
@@ -653,7 +670,7 @@ mod tests {
         let (store, _d) = open_test_store().await;
         store.save_session("s", &make_messages(2)).await.unwrap();
         store
-            .append_context_receipts("s", &[cr11_receipt(1, 1)])
+            .append_context_receipts("s", &batch("a1", 1, &[cr11_receipt(1, 1)]))
             .await
             .unwrap();
 
@@ -675,7 +692,7 @@ mod tests {
         let (store, _d) = open_test_store().await;
         store.save_session("old", &make_messages(2)).await.unwrap();
         store
-            .append_context_receipts("old", &[cr11_receipt(1, 1)])
+            .append_context_receipts("old", &batch("a1", 1, &[cr11_receipt(1, 1)]))
             .await
             .unwrap();
 
@@ -689,7 +706,7 @@ mod tests {
     async fn cr11_appending_to_an_unknown_session_should_error() {
         let (store, _d) = open_test_store().await;
         let r = store
-            .append_context_receipts("nope", &[cr11_receipt(1, 1)])
+            .append_context_receipts("nope", &batch("a1", 1, &[cr11_receipt(1, 1)]))
             .await;
         assert!(r.is_err());
     }
@@ -725,9 +742,163 @@ mod tests {
         );
         assert!(store.list_context_receipts("old").await.unwrap().is_empty());
         store
-            .append_context_receipts("old", &[cr11_receipt(1, 1)])
+            .append_context_receipts("old", &batch("a1", 1, &[cr11_receipt(1, 1)]))
             .await
             .unwrap();
         assert_eq!(store.list_context_receipts("old").await.unwrap().len(), 1);
+    }
+
+    // ---- CR21 of docs/plans/context-receipts-spec.md ------------------------------------
+    //
+    // ASSUMED API (the spec names the type but not its home): `hone_core::ReceiptBatch`
+    // with public fields `agent_id: String` and `items: Vec<(u64, ContextReceipt)>`
+    // (ordinal, receipt). `append_context_receipts(&self, session_name: &str,
+    // batch: &hone_core::ReceiptBatch) -> Result<()>`. A run is one (store instance,
+    // session, agent id); `seq` is the ordinal.
+
+    #[tokio::test]
+    async fn cr21_a_gap_in_ordinals_should_still_store_later_receipts_with_jumping_seq() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("s", &make_messages(2)).await.unwrap();
+        // The agent dropped ordinals 1..=9_999 (the cap) before the first save.
+        store
+            .append_context_receipts("s", &batch("a1", 10_000, &[cr11_receipt(5, 1)]))
+            .await
+            .unwrap();
+        // Later: ordinals 10_001 and 10_002 exist.
+        store
+            .append_context_receipts(
+                "s",
+                &batch("a1", 10_000, &[cr11_receipt(5, 1), cr11_receipt(5, 2), cr11_receipt(6, 1)]),
+            )
+            .await
+            .unwrap();
+
+        let got = store.list_context_receipts("s").await.unwrap();
+        assert_eq!(
+            pairs(&got),
+            [(1, 10_000, 5, 1), (1, 10_001, 5, 2), (1, 10_002, 6, 1)],
+            "seq is the ordinal; nothing is silently dropped after the cap"
+        );
+    }
+
+    #[tokio::test]
+    async fn cr21_a_gap_between_two_saves_should_not_drop_the_new_receipts() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("s", &make_messages(2)).await.unwrap();
+        store
+            .append_context_receipts("s", &batch("a1", 1, &[cr11_receipt(1, 1)]))
+            .await
+            .unwrap();
+        // Ordinals 2..=20 were dropped by the agent before this save.
+        store
+            .append_context_receipts("s", &batch("a1", 21, &[cr11_receipt(9, 1), cr11_receipt(9, 2)]))
+            .await
+            .unwrap();
+
+        let got = store.list_context_receipts("s").await.unwrap();
+        assert_eq!(pairs(&got), [(1, 1, 1, 1), (1, 21, 9, 1), (1, 22, 9, 2)]);
+    }
+
+    #[tokio::test]
+    async fn cr21_a_second_agent_id_in_the_same_store_should_start_a_new_run() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("s", &make_messages(2)).await.unwrap();
+        store
+            .append_context_receipts("s", &batch("agent-1", 1, &[cr11_receipt(1, 1), cr11_receipt(1, 2)]))
+            .await
+            .unwrap();
+
+        // A fresh agent (e.g. after /new or a session switch) saving under the same
+        // session: ordinals restart at 1; its first receipts must not be skipped.
+        store
+            .append_context_receipts("s", &batch("agent-2", 1, &[cr11_receipt(1, 1), cr11_receipt(1, 2)]))
+            .await
+            .unwrap();
+        store
+            .append_context_receipts("s", &batch("agent-2", 3, &[cr11_receipt(2, 1)]))
+            .await
+            .unwrap();
+
+        let got = store.list_context_receipts("s").await.unwrap();
+        assert_eq!(
+            pairs(&got),
+            [(1, 1, 1, 1), (1, 2, 1, 2), (2, 1, 1, 1), (2, 2, 1, 2), (2, 3, 2, 1)]
+        );
+    }
+
+    #[tokio::test]
+    async fn cr21_overlapping_batches_should_not_duplicate_receipts() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("s", &make_messages(2)).await.unwrap();
+        let all = [cr11_receipt(1, 1), cr11_receipt(1, 2), cr11_receipt(2, 1)];
+        store
+            .append_context_receipts("s", &batch("a1", 1, &all[..2]))
+            .await
+            .unwrap();
+        // Overlaps ordinals 1-2 and adds 3; then the very same batch again.
+        store.append_context_receipts("s", &batch("a1", 1, &all)).await.unwrap();
+        store.append_context_receipts("s", &batch("a1", 1, &all)).await.unwrap();
+        // A batch entirely behind what is stored changes nothing.
+        store.append_context_receipts("s", &batch("a1", 2, &all[1..2])).await.unwrap();
+
+        let got = store.list_context_receipts("s").await.unwrap();
+        assert_eq!(pairs(&got), [(1, 1, 1, 1), (1, 2, 1, 2), (1, 3, 2, 1)]);
+    }
+
+    #[tokio::test]
+    async fn cr21_an_empty_batch_should_store_nothing_and_not_error() {
+        let (store, _d) = open_test_store().await;
+        store.save_session("s", &make_messages(2)).await.unwrap();
+
+        store.append_context_receipts("s", &batch("a1", 1, &[])).await.unwrap();
+
+        assert!(store.list_context_receipts("s").await.unwrap().is_empty());
+    }
+
+    // ---- CR22 ---------------------------------------------------------------------------
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn cr22_concurrent_first_saves_from_two_stores_should_get_distinct_runs() {
+        for round in 0..8 {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("sessions.db");
+            let a = std::sync::Arc::new(SessionStore::open(&path).await.unwrap());
+            let b = std::sync::Arc::new(SessionStore::open(&path).await.unwrap());
+            a.save_session("s", &make_messages(2)).await.unwrap();
+
+            let (a2, b2) = (a.clone(), b.clone());
+            let ta = tokio::spawn(async move {
+                a2.append_context_receipts(
+                    "s",
+                    &batch("agent-a", 1, &[cr11_receipt(1, 1), cr11_receipt(1, 2)]),
+                )
+                .await
+            });
+            let tb = tokio::spawn(async move {
+                b2.append_context_receipts(
+                    "s",
+                    &batch("agent-b", 1, &[cr11_receipt(2, 1), cr11_receipt(2, 2)]),
+                )
+                .await
+            });
+            ta.await.unwrap().unwrap_or_else(|e| panic!("round {round}: store A failed: {e:#}"));
+            tb.await.unwrap().unwrap_or_else(|e| panic!("round {round}: store B failed: {e:#}"));
+
+            let got = a.list_context_receipts("s").await.unwrap();
+            let runs: std::collections::BTreeSet<u32> = got.iter().map(|r| r.run).collect();
+            assert_eq!(runs, [1, 2].into(), "round {round}: distinct runs 1 and 2");
+            assert_eq!(got.len(), 4, "round {round}: no lost rows");
+            for run in [1, 2] {
+                let seqs: Vec<u32> = got.iter().filter(|r| r.run == run).map(|r| r.seq).collect();
+                assert_eq!(seqs, [1, 2], "round {round}: run {run} kept both receipts");
+            }
+            // The two writers' receipts were not mixed into one run.
+            let turns_of = |run: u32| -> std::collections::BTreeSet<u32> {
+                got.iter().filter(|r| r.run == run).map(|r| r.receipt.turn).collect()
+            };
+            assert_eq!(turns_of(1).len(), 1, "round {round}");
+            assert_eq!(turns_of(2).len(), 1, "round {round}");
+        }
     }
 }

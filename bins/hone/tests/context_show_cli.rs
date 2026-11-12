@@ -83,7 +83,21 @@ fn text(b: &[u8]) -> String {
 async fn session_with_receipts(h: &Home, name: &str, receipts: &[ContextReceipt]) {
     let store = h.store().await;
     store.save_session(name, &[]).await.unwrap();
-    store.append_context_receipts(name, receipts).await.unwrap();
+    let items = receipts
+        .iter()
+        .enumerate()
+        .map(|(i, r)| (i as u64 + 1, r.clone()))
+        .collect();
+    store
+        .append_context_receipts(
+            name,
+            &hone_core::ReceiptBatch {
+                agent_id: "a1".to_owned(),
+                items,
+            },
+        )
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -176,4 +190,100 @@ async fn test_cr12_text_output_should_show_the_run_turn_and_call() {
         stdout.contains("run 1") && stdout.contains("turn 2") && stdout.contains("call 3"),
         "{stdout}"
     );
+}
+
+// ---- CR23: `hone context show` only reads -------------------------------------------------
+
+/// A sessions.db made by an older hone: only `cli_sessions`, one session "old".
+async fn old_db(h: &Home) {
+    let opts = sqlx::sqlite::SqliteConnectOptions::new()
+        .filename(h.db())
+        .create_if_missing(true);
+    let pool = sqlx::SqlitePool::connect_with(opts).await.unwrap();
+    sqlx::query(
+        "CREATE TABLE cli_sessions (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL,
+         created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, messages TEXT NOT NULL)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO cli_sessions VALUES ('id-1', 'old', 1, 1, '[]')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+}
+
+async fn table_exists(h: &Home, name: &str) -> bool {
+    let opts = sqlx::sqlite::SqliteConnectOptions::new()
+        .filename(h.db())
+        .read_only(true);
+    let pool = sqlx::SqlitePool::connect_with(opts).await.unwrap();
+    let (n,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .bind(name)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    pool.close().await;
+    n == 1
+}
+
+#[tokio::test]
+async fn test_cr23_database_without_receipts_table_should_print_the_note_and_not_create_it() {
+    let h = Home::new();
+    old_db(&h).await;
+    assert!(!table_exists(&h, "context_receipts").await);
+
+    let out = h.run(&["--session", "old"]);
+
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", text(&out.stderr));
+    assert!(
+        text(&out.stdout)
+            .to_lowercase()
+            .contains("no context receipts"),
+        "{}",
+        text(&out.stdout)
+    );
+    assert!(
+        !table_exists(&h, "context_receipts").await,
+        "context show must not create tables"
+    );
+}
+
+#[tokio::test]
+async fn test_cr23_default_session_on_database_without_receipts_table_should_work() {
+    let h = Home::new();
+    old_db(&h).await;
+
+    let out = h.run(&[]);
+
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", text(&out.stderr));
+    assert!(
+        text(&out.stdout)
+            .to_lowercase()
+            .contains("no context receipts")
+    );
+    assert!(!table_exists(&h, "context_receipts").await);
+}
+
+#[tokio::test]
+async fn test_cr23_read_only_database_file_should_work() {
+    use std::os::unix::fs::PermissionsExt;
+    let h = Home::new();
+    session_with_receipts(&h, "s", &[receipt(1, 1)]).await;
+    let dir = h.db().parent().unwrap().to_path_buf();
+    for ext in ["db-wal", "db-shm", "db-journal"] {
+        let _ = std::fs::remove_file(h.db().with_extension(ext));
+    }
+    std::fs::set_permissions(h.db(), std::fs::Permissions::from_mode(0o444)).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let out = h.run(&["--session", "s", "--json"]);
+
+    // Restore so the temp dir can be cleaned up.
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", text(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON on stdout");
+    assert_eq!(v.as_array().unwrap().len(), 1);
 }
