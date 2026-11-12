@@ -204,6 +204,13 @@ See [routing and fallback](docs/configuration.md#routing-and-fallback).
   - A second signal stops everything at once.
   - See [shutting down `honed`](docs/configuration.md#environment-variables).
 
+### Memory and code context that reach the model
+
+- **Recall finds older memories.** Each turn ranks up to the 5,000 newest memories and keeps the best 5. It used to rank only the 5 newest. Hone's own after-turn logs no longer show up as "Relevant Memories".
+- **Plain-English prompts pull in code.** The code index matches each word of the prompt, so "fix the login bug" finds `login` and `handle_login`. Names that match more words rank first, and the "Potentially relevant code" block appears when one match clearly leads.
+- **Compaction follows the task.** When the agent moves from reading code to editing it (`edit_file`, `apply_patch`, …) or running tests through `shell`, older long tool results are shortened to summaries. The most recent results stay whole.
+- **The TUI shows injected code context.** When Hone adds repository context to the first prompt, the prompt mirror (<kbd>Ctrl</kbd>+<kbd>M</kbd>) lists the files and the skeleton strategy. It was always empty before.
+
 ### Also new
 
 - **`HONE_CONTEXT_WINDOW`** sets the context window for a model that is served with a smaller one than its name suggests.
