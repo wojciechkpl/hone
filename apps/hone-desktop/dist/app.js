@@ -1719,17 +1719,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     daemonStarting = false;
     refreshDaemon();
   } else {
-    // Nothing saved: the wizard or home depends on the result. daemon_boot is
-    // quick here, since it starts nothing unless an active profile says so.
-    daemonStarting = true;
-    refreshDaemon();
-    const booted = await startDaemon('daemon_boot', { savedMode: null });
-    daemonStarting = false;
-    if (lastStartError || (booted && booted.mode !== 'none')) {
+    // Nothing saved in local storage. An active profile in desktop.json (for
+    // example after "Reset onboarding") still means a daemon was chosen: show
+    // home now and start it in the background. Without one, daemon_boot starts
+    // nothing and returns at once, so wait for it to choose wizard or home.
+    let active = null;
+    try {
+      const list = await invoke('list_daemons');
+      active = list && list.active;
+    } catch (_) {}
+    if (active) {
       show('home');
+      daemonStarting = true;
+      refreshDaemon();
+      await startDaemon('daemon_boot', { savedMode: null });
+      daemonStarting = false;
+      refreshDaemon();
     } else {
-      show('wizard');
+      const booted = await startDaemon('daemon_boot', { savedMode: null });
+      if (lastStartError || (booted && booted.mode !== 'none')) {
+        show('home');
+      } else {
+        show('wizard');
+      }
+      refreshDaemon();
     }
-    refreshDaemon();
   }
 });
