@@ -29,6 +29,15 @@ Branch `fix/usage-and-pricing`, off `main`. Found while reviewing `hone eval` (P
 | U11 | **The TUI doesn't query the agent for unpriced models.** The agent sends `AgentEvent::UnpricedModel { model }` the first time a model is unpriced; the TUI shows the note from the event (no round trip after `Done`). The server's event maps name it `unpriced_model`. |
 | U12 | **Rebased on main.** The branch merges cleanly with `main` (which added receipts and `context` to `--json`); tests re-run after. |
 
+### Review round 2 (U13–U16)
+
+| Row | Behaviour |
+|---|---|
+| U13 | **The TUI shows the unpriced note.** `App::handle_agent_event` handles `UnpricedModel` (one system line per model), so the note appears whichever path delivers the event. |
+| U14 | **Orchestrated and ensemble runs report unpriced models.** `--orchestrate` and `--ensemble` print the same one-per-model stderr note as one-shot runs when any of their agents' models is unpriced, and their totals say the cost is incomplete. |
+| U15 | **`honed` uses the user's prices.** `honed` sets the process default from the default table plus the user's `[pricing]`. |
+| U16 | **Anthropic dated ids match too.** A trailing `-YYYYMMDD` (e.g. `anthropic:claude-sonnet-4-5-20250929`) is stripped to find the base entry, like `-YYYY-MM-DD`. Usage from a failed attempt is priced by the model that was tried. `docs/configuration.md` notes that usage arriving more than 2 s after the final chunk isn't counted, and that `AgentConfig.pricing` only applies when no price lookup is set. |
+
 ## Testing notes
 
 - **U1** in `hone-providers` with a mock SSE server (existing adapter tests show the harness): usage after the finish chunk, inline, absent, and with tool calls.
