@@ -78,7 +78,7 @@ impl Bm25Index {
         let mut total_len: u64 = 0;
 
         for &text in docs {
-            let tokens = tokenize(text);
+            let tokens = crate::fts_query::word_tokens(text);
             let len = tokens.len() as u32;
             total_len += len as u64;
 
@@ -136,7 +136,7 @@ impl Bm25Index {
         let b = self.params.b;
         let dl = doc.len as f64;
 
-        let query_tokens = tokenize(query);
+        let query_tokens = crate::fts_query::word_tokens(query);
         let mut total = 0.0_f64;
 
         for term in &query_tokens {

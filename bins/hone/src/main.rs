@@ -2488,7 +2488,13 @@ async fn init_persistence(
 
     // Memory store
     let memory_path = dir.join("memory.db");
-    let memory: Option<Arc<dyn MemoryStore>> = match SqliteStore::open(&memory_path).await {
+    // An encrypted store's database holds ciphertext: no FTS5 index for it.
+    let opened = if memory_passphrase.is_some() {
+        SqliteStore::open_without_fts(&memory_path).await
+    } else {
+        SqliteStore::open(&memory_path).await
+    };
+    let memory: Option<Arc<dyn MemoryStore>> = match opened {
         Ok(store) => {
             tracing::info!(path = %memory_path.display(), "memory store initialised");
             let passphrase_ref = memory_passphrase.as_deref();

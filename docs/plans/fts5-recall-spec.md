@@ -23,7 +23,7 @@ flowchart LR
 
 | Row | Behaviour |
 |---|---|
-| G1 | **An FTS5 index mirrors the memories.** `SqliteStore` keeps an FTS5 table over memory content (external content on `memories`, kept in sync by triggers on insert, update and delete). Opening a store creates it if missing and rebuilds it when its row count differs from `memories`. This is not a schema version change (v4 stays reserved for the ledger). Existing databases are indexed on first open. |
+| G1 | **An FTS5 index mirrors the memories.** `SqliteStore` keeps an FTS5 table over memory content (a plain FTS5 table whose rowids a mapping table `memories_fts_map` ties to the memory ids, kept in sync by triggers on insert, update of `content` or `description`, and delete). Opening a store creates it if missing and rebuilds it when its row count differs from `memories`. This is not a schema version change (v4 stays reserved for the ledger). Existing databases are indexed on first open. |
 | G2 | **`fts5` recaller.** A built-in recaller `fts5` (PR D's `[memory] recaller`) ranks with FTS5's `bm25()` in SQL, applies the kind filter and excluded kinds in the same query, and returns the top `top_k` with no corpus cap. A relevant memory older than 6,000 newer unrelated ones is found. The prompt is turned into an FTS5 query from its word tokens (letters, digits, `_`; at least 3 characters; English stop words dropped; at most 32), each quoted as a string and OR-ed, so FTS5 syntax in a prompt (`"`, `*`, `NEAR`, `-`, `:`) is never interpreted. A prompt with no usable tokens returns nothing. Scores are `-bm25()` (higher is better). |
 | G3 | **Ranking quality matches today's BM25 on the same corpus.** On a fixed corpus of memories and queries, `fts5`'s top result equals the in-Rust `bm25` recaller's top result for every query where both return something, and each returns only memories sharing at least one token with the query. |
 | G4 | **Receipts and strategies.** Receipts name the strategy `fts5` with params `{"exclude":[…],"limit":N}`. `hone strategies` lists `fts5` as a built-in recaller. The default stays `bm25` until an eval report (PR F) says otherwise. |
@@ -38,7 +38,7 @@ Found while implementing G1–G7.
 | Row | Behaviour |
 |---|---|
 | G8 | **Non-English words match.** The prompt's tokens are split on any character that isn't a Unicode letter or digit (as the in-Rust BM25's `tokenize` does), not on `[A-Za-z0-9_]`, so `zażółć gęślą jaźń`, `café` and `Zürich` are kept whole and match memories containing them (FTS5's `unicode61` tokenizer, with diacritics folding left at its default, also matches `cafe`). The 3-character minimum counts characters, not bytes. |
-| G9 | **The index doesn't depend on row numbers.** The FTS5 table stores the memory `id` (unindexed) and is kept in sync by triggers keyed on `id`, so a `VACUUM` or any rowid renumbering can't misalign it. Opening a store whose index disagrees with `memories` (count or ids) rebuilds it. |
+| G9 | **The index doesn't depend on row numbers.** The FTS5 rowids are mapped to memory ids by `memories_fts_map` and the triggers are keyed on `id`, so a `VACUUM` or any rowid renumbering can't misalign it. Opening a store whose index disagrees with `memories` (count or ids) rebuilds it. |
 | G10 | **Decay weight scales the score, as `bm25` does.** The `fts5` score is `-bm25() × weight`, so a decayed memory ranks below an equally matching fresh one, and G3's top-result parity holds on a corpus with mixed weights. |
 
 ### Review round 1 (G11–G19)

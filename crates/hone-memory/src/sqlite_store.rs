@@ -12,6 +12,9 @@ use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
 
 pub struct SqliteStore {
     pool: sqlx::SqlitePool,
+    /// Whether the store keeps an FTS5 index (an encrypted store's inner
+    /// database holds ciphertext and keeps none).
+    fts: bool,
 }
 
 /// The highest schema version this binary understands.  Bump this whenever a
@@ -56,6 +59,14 @@ const CREATE_KIND_INDEX_SQL: &str =
 /// return the best `limit` with a positive score. Shared by `SqliteStore` and
 /// `EncryptedStore` so both rank alike.
 pub(crate) fn bm25_top(memories: Vec<Memory>, text: &str, limit: usize) -> Vec<Memory> {
+    bm25_scored(memories, text, limit)
+        .into_iter()
+        .map(|(_, m)| m)
+        .collect()
+}
+
+/// [`bm25_top`] with each memory's score (BM25 x weight).
+pub(crate) fn bm25_scored(memories: Vec<Memory>, text: &str, limit: usize) -> Vec<(f64, Memory)> {
     let texts: Vec<String> = memories
         .iter()
         .map(|m| {
@@ -79,173 +90,56 @@ pub(crate) fn bm25_top(memories: Vec<Memory>, text: &str, limit: usize) -> Vec<M
         })
         .collect();
     scored.sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    scored.into_iter().take(limit).map(|(_, m)| m).collect()
+    scored.truncate(limit);
+    scored
 }
 
-/// English stop words dropped from FTS5 queries.
-const STOP_WORDS: &[&str] = &[
-    "the",
-    "and",
-    "for",
-    "with",
-    "are",
-    "was",
-    "were",
-    "been",
-    "being",
-    "but",
-    "not",
-    "you",
-    "your",
-    "yours",
-    "his",
-    "her",
-    "hers",
-    "its",
-    "our",
-    "ours",
-    "their",
-    "theirs",
-    "this",
-    "that",
-    "these",
-    "those",
-    "who",
-    "whom",
-    "whose",
-    "which",
-    "what",
-    "when",
-    "where",
-    "why",
-    "how",
-    "can",
-    "could",
-    "should",
-    "would",
-    "will",
-    "shall",
-    "may",
-    "might",
-    "must",
-    "has",
-    "have",
-    "had",
-    "having",
-    "does",
-    "did",
-    "doing",
-    "done",
-    "from",
-    "into",
-    "onto",
-    "over",
-    "under",
-    "about",
-    "above",
-    "below",
-    "between",
-    "through",
-    "during",
-    "before",
-    "after",
-    "than",
-    "then",
-    "too",
-    "very",
-    "also",
-    "just",
-    "any",
-    "all",
-    "some",
-    "such",
-    "each",
-    "both",
-    "few",
-    "more",
-    "most",
-    "other",
-    "only",
-    "own",
-    "same",
-    "out",
-    "off",
-    "again",
-    "once",
-    "here",
-    "there",
-    "because",
-    "until",
-    "while",
-    "against",
-    "per",
-    "via",
-    "let",
-    "get",
-    "got",
-    "him",
-    "she",
-    "they",
-    "them",
-    "myself",
-    "yourself",
-    "itself",
-    "themselves",
-    "ourselves",
-];
-
-/// The FTS5 `MATCH` expression for a prompt: its word tokens (split on every
-/// character that is not a Unicode letter or digit, lowercased, at least 3
-/// characters, stop words dropped, the first 32), each double-quoted and OR-ed.
-/// `None` when no token is usable. FTS5's `unicode61` tokenizer (diacritics
-/// folded, its default) then matches them against the indexed text.
-fn fts5_match_expression(text: &str) -> Option<String> {
-    let tokens: Vec<String> = text
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|t| t.chars().count() >= 3)
-        .map(str::to_lowercase)
-        .filter(|t| !STOP_WORDS.contains(&t.as_str()))
-        .take(32)
-        .map(|t| format!("\"{t}\""))
-        .collect();
-    if tokens.is_empty() {
-        None
-    } else {
-        Some(tokens.join(" OR "))
-    }
-}
-
-/// The index is keyed on the memory `id` (stored, not indexed), never on rowids,
-/// so renumbering rows (`VACUUM`, or any table rewrite) cannot misalign it.
+/// The index text lives in a plain FTS5 table; its rowids are the "docids" of
+/// `memories_fts_map`, which maps each memory `id` to its docid. Triggers delete
+/// by docid (cheap at any size) and never depend on the rowids of `memories`, so
+/// renumbering those (`VACUUM`) cannot misalign the index.
 const FTS_TABLE_SQL: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-        id UNINDEXED, content, description, tokenize = 'unicode61')";
+        content, description, tokenize = 'unicode61')";
+const FTS_MAP_SQL: &str = "CREATE TABLE IF NOT EXISTS memories_fts_map (
+        id    TEXT    PRIMARY KEY,
+        docid INTEGER NOT NULL UNIQUE
+    )";
 
 // `record` is INSERT OR REPLACE, whose implicit delete does not fire DELETE
 // triggers (recursive_triggers is off), so a BEFORE INSERT trigger removes the
-// replaced row's index entry first (a no-op for a fresh id).
-const FTS_TRIGGERS_SQL: [&str; 4] = [
-    "CREATE TRIGGER memories_fts_bi BEFORE INSERT ON memories BEGIN
-        DELETE FROM memories_fts WHERE id = new.id;
+// replaced row's index entry first (a no-op for a fresh id). The update trigger
+// fires only when the indexed columns are updated, not on weight changes (decay).
+const FTS_TRIGGERS: [(&str, &str); 4] = [
+    (
+        "memories_fts_bi",
+        "CREATE TRIGGER memories_fts_bi BEFORE INSERT ON memories BEGIN
+        DELETE FROM memories_fts WHERE rowid = (SELECT docid FROM memories_fts_map WHERE id = new.id);
+        DELETE FROM memories_fts_map WHERE id = new.id;
      END",
-    "CREATE TRIGGER memories_fts_ai AFTER INSERT ON memories BEGIN
-        INSERT INTO memories_fts(id, content, description)
-        VALUES (new.id, new.content, new.description);
+    ),
+    (
+        "memories_fts_ai",
+        "CREATE TRIGGER memories_fts_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(content, description) VALUES (new.content, new.description);
+        INSERT INTO memories_fts_map(id, docid) VALUES (new.id, last_insert_rowid());
      END",
-    "CREATE TRIGGER memories_fts_ad AFTER DELETE ON memories BEGIN
-        DELETE FROM memories_fts WHERE id = old.id;
+    ),
+    (
+        "memories_fts_ad",
+        "CREATE TRIGGER memories_fts_ad AFTER DELETE ON memories BEGIN
+        DELETE FROM memories_fts WHERE rowid = (SELECT docid FROM memories_fts_map WHERE id = old.id);
+        DELETE FROM memories_fts_map WHERE id = old.id;
      END",
-    "CREATE TRIGGER memories_fts_au AFTER UPDATE ON memories BEGIN
-        DELETE FROM memories_fts WHERE id = old.id;
-        INSERT INTO memories_fts(id, content, description)
-        VALUES (new.id, new.content, new.description);
+    ),
+    (
+        "memories_fts_au",
+        "CREATE TRIGGER memories_fts_au AFTER UPDATE OF content, description ON memories BEGIN
+        DELETE FROM memories_fts WHERE rowid = (SELECT docid FROM memories_fts_map WHERE id = old.id);
+        DELETE FROM memories_fts_map WHERE id = old.id;
+        INSERT INTO memories_fts(content, description) VALUES (new.content, new.description);
+        INSERT INTO memories_fts_map(id, docid) VALUES (new.id, last_insert_rowid());
      END",
-];
-
-const FTS_TRIGGER_NAMES: [&str; 4] = [
-    "memories_fts_bi",
-    "memories_fts_ai",
-    "memories_fts_ad",
-    "memories_fts_au",
+    ),
 ];
 
 fn embedding_to_bytes(emb: &[f32]) -> Vec<u8> {
@@ -524,6 +418,18 @@ impl SqliteStore {
         path: &Path,
         interval_secs: u64,
     ) -> Result<Self, MemoryError> {
+        Self::open_inner(path, interval_secs, true).await
+    }
+
+    /// Open (creating if needed) the database WITHOUT an FTS5 index: no FTS table,
+    /// mapping table or triggers are created. It is the inner store of an
+    /// `EncryptedStore`, whose content is ciphertext and cannot be indexed;
+    /// `recall_fts5` on it ranks with the in-Rust BM25.
+    pub async fn open_without_fts(path: &Path) -> Result<Self, MemoryError> {
+        Self::open_inner(path, 86_400, false).await
+    }
+
+    async fn open_inner(path: &Path, interval_secs: u64, fts: bool) -> Result<Self, MemoryError> {
         let url = format!("sqlite:{}?mode=rwc", path.display());
         let pool = sqlx::SqlitePool::connect(&url).await.map_err(to_io_err)?;
         sqlx::query(CREATE_TABLE_SQL)
@@ -540,8 +446,10 @@ impl SqliteStore {
             .await
             .map_err(to_io_err)?;
 
-        let store = Self { pool };
-        store.ensure_fts().await?;
+        let store = Self { pool, fts };
+        if fts {
+            store.ensure_fts().await?;
+        }
 
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -588,109 +496,174 @@ impl SqliteStore {
             .execute(&pool)
             .await
             .map_err(to_io_err)?;
-        let store = Self { pool };
+        let store = Self { pool, fts: true };
         store.ensure_fts().await?;
         Ok(store)
     }
 
-    /// Make the FTS5 table and its triggers current, and rebuild the index when
-    /// it disagrees with `memories` (a different number of rows, or different
-    /// ids). A table from an older version (keyed on rowids) is replaced.
+    /// Make the FTS5 index current, in one `BEGIN IMMEDIATE` transaction (so
+    /// concurrent opens queue instead of racing): the tables, the triggers (only
+    /// when missing or when their stored SQL differs), the `secure-delete` option,
+    /// and a rebuild when the index disagrees with `memories`.
     async fn ensure_fts(&self) -> Result<(), MemoryError> {
-        // Triggers are recreated every time, so their bodies are always current.
-        for name in FTS_TRIGGER_NAMES {
-            sqlx::query(&format!("DROP TRIGGER IF EXISTS {name}"))
-                .execute(&self.pool)
-                .await
-                .map_err(to_io_err)?;
-        }
+        self.setup_fts(false).await.map(|_| ())
+    }
+
+    /// The setup behind [`ensure_fts`](Self::ensure_fts) and
+    /// [`reindex_fts`](Self::reindex_fts); `force` rebuilds regardless. Returns the
+    /// number of memories indexed.
+    async fn setup_fts(&self, force: bool) -> Result<usize, MemoryError> {
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(to_io_err)?;
+
+        // An index from before the mapping table (keyed on the memory id inside
+        // the FTS table) is replaced.
         let existing: Option<String> =
             sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'")
-                .fetch_optional(&self.pool)
+                .fetch_optional(&mut *tx)
                 .await
                 .map_err(to_io_err)?;
-        let outdated = existing
+        if existing
             .as_deref()
-            .is_some_and(|sql| !sql.contains("UNINDEXED"));
-        if outdated {
+            .is_some_and(|sql| sql.contains("UNINDEXED"))
+        {
+            for (name, _) in FTS_TRIGGERS {
+                sqlx::query(&format!("DROP TRIGGER IF EXISTS {name}"))
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(to_io_err)?;
+            }
             sqlx::query("DROP TABLE memories_fts")
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(to_io_err)?;
         }
         sqlx::query(FTS_TABLE_SQL)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(to_io_err)?;
-        for sql in FTS_TRIGGERS_SQL {
-            sqlx::query(sql)
-                .execute(&self.pool)
+        sqlx::query(FTS_MAP_SQL)
+            .execute(&mut *tx)
+            .await
+            .map_err(to_io_err)?;
+        for (name, sql) in FTS_TRIGGERS {
+            let current: Option<String> = sqlx::query_scalar(
+                "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?1",
+            )
+            .bind(name)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(to_io_err)?;
+            if current.as_deref() != Some(sql) {
+                sqlx::query(&format!("DROP TRIGGER IF EXISTS {name}"))
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(to_io_err)?;
+                sqlx::query(sql)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(to_io_err)?;
+            }
+        }
+        // Deleted text leaves the index's stored data.
+        let secure: Option<i64> =
+            sqlx::query_scalar("SELECT v FROM memories_fts_config WHERE k = 'secure-delete'")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(to_io_err)?;
+        if secure != Some(1) {
+            sqlx::query("INSERT INTO memories_fts(memories_fts, rank) VALUES ('secure-delete', 1)")
+                .execute(&mut *tx)
                 .await
                 .map_err(to_io_err)?;
         }
-        if !self.fts_matches_memories().await? {
-            self.reindex_fts().await?;
-        }
-        Ok(())
-    }
 
-    /// Whether the index holds exactly the ids of `memories`.
-    async fn fts_matches_memories(&self) -> Result<bool, MemoryError> {
-        let indexed: i64 = sqlx::query_scalar("SELECT count(*) FROM memories_fts")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(to_io_err)?;
         let memories: i64 = sqlx::query_scalar("SELECT count(*) FROM memories")
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *tx)
             .await
             .map_err(to_io_err)?;
-        if indexed != memories {
-            return Ok(false);
+        let consistent = !force && {
+            let mapped: i64 = sqlx::query_scalar("SELECT count(*) FROM memories_fts_map")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(to_io_err)?;
+            let indexed: i64 = sqlx::query_scalar("SELECT count(*) FROM memories_fts_docsize")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(to_io_err)?;
+            let unmapped: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM memories WHERE id NOT IN (SELECT id FROM memories_fts_map)",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(to_io_err)?;
+            mapped == memories && indexed == memories && unmapped == 0
+        };
+        if !consistent {
+            sqlx::query("DELETE FROM memories_fts")
+                .execute(&mut *tx)
+                .await
+                .map_err(to_io_err)?;
+            sqlx::query("DELETE FROM memories_fts_map")
+                .execute(&mut *tx)
+                .await
+                .map_err(to_io_err)?;
+            sqlx::query(
+                "INSERT INTO memories_fts(rowid, content, description)
+                 SELECT rowid, content, description FROM memories",
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(to_io_err)?;
+            sqlx::query("INSERT INTO memories_fts_map(id, docid) SELECT id, rowid FROM memories")
+                .execute(&mut *tx)
+                .await
+                .map_err(to_io_err)?;
         }
-        let missing: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM (SELECT id FROM memories EXCEPT SELECT id FROM memories_fts)",
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(to_io_err)?;
-        Ok(missing == 0)
+        tx.commit().await.map_err(to_io_err)?;
+        Ok(memories as usize)
     }
 
-    /// Rebuild the FTS5 index from `memories` (creating the table and triggers
-    /// when missing). Returns the number of memories indexed.
+    /// Rebuild the FTS5 index from `memories`, atomically (creating the tables
+    /// and triggers when missing). Returns the number of memories indexed; `0`
+    /// for a store opened without an index.
     pub async fn reindex_fts(&self) -> Result<usize, MemoryError> {
-        sqlx::query(FTS_TABLE_SQL)
-            .execute(&self.pool)
-            .await
-            .map_err(to_io_err)?;
-        for name in FTS_TRIGGER_NAMES {
-            sqlx::query(&format!("DROP TRIGGER IF EXISTS {name}"))
-                .execute(&self.pool)
+        if !self.fts {
+            return Ok(0);
+        }
+        self.setup_fts(true).await
+    }
+
+    /// The `MATCH` expression for a prompt: its query tokens, the rarest 32 when
+    /// there are more (by document frequency in the index). `None` when no
+    /// token is usable.
+    async fn match_expression(&self, text: &str) -> Result<Option<String>, MemoryError> {
+        use crate::fts_query::{MAX_QUERY_TOKENS, match_expression, query_tokens, rarest};
+        let tokens = query_tokens(text);
+        if tokens.len() > MAX_QUERY_TOKENS {
+            let mut frequency = Vec::with_capacity(tokens.len());
+            for token in &tokens {
+                let n: i64 = sqlx::query_scalar(
+                    "SELECT count(*) FROM memories_fts WHERE memories_fts MATCH ?1",
+                )
+                .bind(format!("\"{token}\""))
+                .fetch_one(&self.pool)
                 .await
                 .map_err(to_io_err)?;
+                frequency.push(n as u64);
+            }
+            // A token no document holds matches nothing: it never takes a slot.
+            let (tokens, frequency): (Vec<String>, Vec<u64>) = tokens
+                .into_iter()
+                .zip(frequency)
+                .filter(|(_, n)| *n > 0)
+                .unzip();
+            return Ok(match_expression(&rarest(tokens, &frequency)));
         }
-        for sql in FTS_TRIGGERS_SQL {
-            sqlx::query(sql)
-                .execute(&self.pool)
-                .await
-                .map_err(to_io_err)?;
-        }
-        sqlx::query("DELETE FROM memories_fts")
-            .execute(&self.pool)
-            .await
-            .map_err(to_io_err)?;
-        sqlx::query(
-            "INSERT INTO memories_fts(id, content, description)
-             SELECT id, content, description FROM memories",
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(to_io_err)?;
-        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM memories_fts")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(to_io_err)?;
-        Ok(n as usize)
+        Ok(match_expression(&tokens))
     }
 
     /// FTS5 recall: the prompt's word tokens (see `fts5_match_expression`) are
@@ -702,7 +675,19 @@ impl SqliteStore {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
     ) -> Result<Vec<ScoredMemory>, MemoryError> {
-        let Some(expr) = fts5_match_expression(&query.text) else {
+        if !self.fts {
+            // No index to use (an encrypted store's inner database): rank in Rust.
+            return Ok(self
+                .recall_scored(query, exclude)
+                .await?
+                .into_iter()
+                .map(|(score, memory)| ScoredMemory {
+                    memory,
+                    score: score as f32,
+                })
+                .collect());
+        }
+        let Some(expr) = self.match_expression(&query.text).await? else {
             return Ok(Vec::new());
         };
         let mut conditions = vec!["memories_fts MATCH ?1".to_owned()];
@@ -724,7 +709,9 @@ impl SqliteStore {
         let sql = format!(
             "SELECT m.id, m.content, m.tags, m.weight, m.created_at, m.decay_at, m.kind,
                     m.description, m.embedding, -bm25(memories_fts) * m.weight AS score
-             FROM memories_fts JOIN memories m ON m.id = memories_fts.id
+             FROM memories_fts
+             JOIN memories_fts_map mp ON mp.docid = memories_fts.rowid
+             JOIN memories m ON m.id = mp.id
              WHERE {}
              ORDER BY score DESC, m.created_at DESC
              LIMIT ?{}",
@@ -766,6 +753,21 @@ impl SqliteStore {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
     ) -> Result<Vec<Memory>, MemoryError> {
+        Ok(self
+            .recall_scored(query, exclude)
+            .await?
+            .into_iter()
+            .map(|(_, m)| m)
+            .collect())
+    }
+
+    /// [`recall_with_exclusions`](Self::recall_with_exclusions) with each
+    /// result's BM25 x weight score (`0.0` for an enumeration).
+    async fn recall_scored(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+    ) -> Result<Vec<(f64, Memory)>, MemoryError> {
         let fetch_limit = if query.text.is_empty() {
             query.limit
         } else {
@@ -841,11 +843,15 @@ impl SqliteStore {
                     .partial_cmp(&a.weight)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-            let results = all.into_iter().take(query.limit).collect();
+            let results = all
+                .into_iter()
+                .take(query.limit)
+                .map(|m| (0.0, m))
+                .collect();
             return Ok(results);
         }
 
-        let mut results = bm25_top(memories, &query.text, query.limit);
+        let mut results = bm25_scored(memories, &query.text, query.limit);
 
         // The corpus was read without the embedding column; load the vectors of
         // the memories actually returned, in one bound query.
@@ -856,7 +862,7 @@ impl SqliteStore {
                 marks.join(", ")
             );
             let mut q = sqlx::query(&sql);
-            for m in &results {
+            for (_, m) in &results {
                 q = q.bind(&m.id);
             }
             let rows = q.fetch_all(&self.pool).await.map_err(to_io_err)?;
@@ -868,7 +874,7 @@ impl SqliteStore {
                     Some((id, bytes_to_embedding(&bytes)))
                 })
                 .collect();
-            for m in &mut results {
+            for (_, m) in &mut results {
                 m.embedding = by_id.remove(&m.id);
             }
         }

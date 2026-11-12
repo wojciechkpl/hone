@@ -1033,12 +1033,27 @@ impl Agent {
             exclude_kinds: &exclude,
             scope: None,
         };
+        // A failing built-in `fts5` recall falls back to `bm25` for this turn.
+        let mut fts5_failed = false;
         let bm25_memories: Vec<hone_memory::Memory> = match strategies
             .recaller
             .recall(store.as_ref(), &recall_query)
             .await
         {
             Ok(found) => found.into_iter().map(|s| s.memory).collect(),
+            Err(e) if strategies.recaller_kind == RecallerKind::Fts5 => {
+                tracing::warn!(error = %e, "fts5 recall failed; falling back to bm25 for this turn");
+                fts5_failed = true;
+                let query = hone_memory::MemoryQuery {
+                    text: query.to_owned(),
+                    limit: top_k,
+                    kind: None,
+                };
+                store
+                    .recall_excluding(&query, &exclude)
+                    .await
+                    .unwrap_or_default()
+            }
             Err(_) => Vec::new(),
         };
 
@@ -1117,7 +1132,7 @@ impl Agent {
                 .map(|k| crate::strategy::kind_name(*k).to_owned())
                 .collect(),
             custom,
-            fts5: strategies.recaller_kind == RecallerKind::Fts5,
+            fts5: strategies.recaller_kind == RecallerKind::Fts5 && !fts5_failed,
             dropped: cut_ids
                 .into_iter()
                 .filter(|id| !final_memories.iter().any(|m| &m.id == id))

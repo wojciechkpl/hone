@@ -91,6 +91,10 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
     }
 
     fn encrypt_content(&self, plaintext: &str) -> Result<String, MemoryError> {
+        self.encrypt_with("enc:v1:", plaintext)
+    }
+
+    fn encrypt_with(&self, prefix: &str, plaintext: &str) -> Result<String, MemoryError> {
         // Generate a random 96-bit nonce for each encryption directly into a
         // stack array.  Mirrors the salt-generation pattern at the bottom of
         // this file and removes the need for a clippy::unwrap_used escape.
@@ -110,15 +114,18 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
 
         use base64::Engine;
         let encoded = base64::engine::general_purpose::STANDARD.encode(&combined);
-        Ok(format!("enc:v1:{encoded}"))
+        Ok(format!("{prefix}{encoded}"))
     }
 
     fn decrypt_content(&self, stored: &str) -> Result<String, MemoryError> {
-        let encoded = stored.strip_prefix("enc:v1:").ok_or_else(|| {
-            MemoryError::Io(std::io::Error::other(
-                "memory content not encrypted or unknown version",
-            ))
-        })?;
+        let encoded = stored
+            .strip_prefix("enc:v1:")
+            .or_else(|| stored.strip_prefix("enc:v2:"))
+            .ok_or_else(|| {
+                MemoryError::Io(std::io::Error::other(
+                    "memory content not encrypted or unknown version",
+                ))
+            })?;
 
         use base64::Engine;
         let combined = base64::engine::general_purpose::STANDARD
@@ -144,9 +151,21 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
             .map_err(|e| MemoryError::Io(std::io::Error::other(format!("utf8: {e}"))))
     }
 
-    /// Content and description are stored as `enc:v1:` ciphertext.
+    /// Content (and, for a memory with an embedding, the embedding with it) and
+    /// the description are stored as ciphertext. A memory with an embedding is stored as `enc:v2:` (content and embedding
+    /// together in the ciphertext) and its embedding column left empty, so
+    /// listing the corpus never carries vectors; `enc:v1:` holds the content only.
     fn encrypt_memory(&self, mut memory: Memory) -> Result<Memory, MemoryError> {
-        memory.content = self.encrypt_content(&memory.content)?;
+        match memory.embedding.take() {
+            Some(embedding) => {
+                let payload = serde_json::json!({
+                    "content": memory.content,
+                    "embedding": embedding,
+                });
+                memory.content = self.encrypt_with("enc:v2:", &payload.to_string())?;
+            }
+            None => memory.content = self.encrypt_content(&memory.content)?,
+        }
         memory.description = memory
             .description
             .take()
@@ -158,7 +177,12 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
     /// Decrypt content and description; a plaintext description (written before
     /// descriptions were encrypted) is returned as it is.
     fn decrypt_memory(&self, mut memory: Memory) -> Result<Memory, MemoryError> {
-        if memory.content.starts_with("enc:v1:") {
+        if memory.content.starts_with("enc:v2:") {
+            let plain = self.decrypt_content(&memory.content)?;
+            let payload: serde_json::Value = serde_json::from_str(&plain)?;
+            memory.content = payload["content"].as_str().unwrap_or_default().to_owned();
+            memory.embedding = serde_json::from_value(payload["embedding"].clone()).ok();
+        } else if memory.content.starts_with("enc:v1:") {
             memory.content = self.decrypt_content(&memory.content)?;
         }
         if let Some(d) = memory

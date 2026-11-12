@@ -834,6 +834,8 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 | `<cwd>/.hone/plans/` | Saved plans from plan mode (`hone --plan FILE`) | |
 | `<project root>/.hone/specs/` | Output of `hone spec` | |
 
+**`memory.db` and FTS5.** Hone keeps a full-text index of the memories in `memory.db` (FTS5 tables `memories_fts` and `memories_fts_map`, kept in sync by triggers on `memories`, and used by `recaller = "fts5"`). A tool that writes to `memory.db` directly needs an SQLite build with FTS5, or the triggers fail; deleting the FTS tables and triggers is safe, Hone rebuilds them on the next open (`hone memory reindex` rebuilds on demand). With `--encrypted-memory` the database holds ciphertext and has no FTS5 index.
+
 ## Context receipts
 
 Every time Hone sends a request to a model, it records a *context receipt*: what went into that request and where it came from. A receipt lists, per block of the prompt (system prompt, recalled memories, skills, injected code, history), the strategy that produced it, its estimated tokens and its sources: memory ids, file paths with scores, skill names, and hashes of history messages. It also lists what was retrieved but cut, what compaction replaced and with what, the tools offered, and a SHA-256 of the request.

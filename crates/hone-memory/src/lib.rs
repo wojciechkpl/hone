@@ -2,6 +2,7 @@ pub mod bm25;
 pub mod embedding;
 pub mod encrypted;
 mod error;
+pub mod fts_query;
 pub mod index;
 mod in_memory;
 pub mod sqlite_store;

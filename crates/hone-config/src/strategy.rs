@@ -393,7 +393,10 @@ impl StrategySelection {
         }
         sel.apply_env_and_flags(env, flags)?;
         if flags.encrypted_memory && sel.recaller.value == "fts5" {
-            sel.recaller.value = "bm25".to_owned();
+            sel.recaller = Chosen {
+                value: "bm25".to_owned(),
+                origin: Origin::Flag,
+            };
             sel.warnings.push(Warning {
                 path: PathBuf::from("--encrypted-memory"),
                 message: "recaller \"fts5\" cannot index encrypted memory; using \"bm25\" instead"
