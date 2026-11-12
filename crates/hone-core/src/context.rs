@@ -399,11 +399,25 @@ fn segment_runs_tests(tokens: &[String]) -> bool {
             continue;
         }
         match name {
-            "env" | "time" => i += 1,
+            "time" => i += 1,
+            "env" => {
+                i += 1;
+                while let Some(opt) = t.get(i).filter(|s| s.starts_with('-')) {
+                    i += if matches!(*opt, "-u" | "--unset" | "-C" | "--chdir") {
+                        2
+                    } else {
+                        1
+                    };
+                }
+            }
             "timeout" => {
                 i += 1;
-                while t.get(i).is_some_and(|s| s.starts_with('-')) {
-                    i += 1;
+                while let Some(opt) = t.get(i).filter(|s| s.starts_with('-')) {
+                    i += if matches!(*opt, "-s" | "-k" | "--signal" | "--kill-after") {
+                        2
+                    } else {
+                        1
+                    };
                 }
                 i += 1; // the duration
             }
@@ -434,14 +448,17 @@ fn segment_runs_tests(tokens: &[String]) -> bool {
             "poetry" | "pdm" if t.get(i + 1) == Some(&"run") => i += 2,
             "pnpm" | "bundle" if t.get(i + 1) == Some(&"exec") => i += 2,
             "sh" | "bash" | "zsh" => {
-                // `sh -c '<script>'` (also `-lc`, `-ec`): match the script.
-                let flag = t
-                    .get(i + 1)
-                    .filter(|f| f.starts_with('-') && f.ends_with('c'));
-                return match (flag, t.get(i + 2)) {
-                    (Some(_), Some(script)) => command_runs_tests(script),
-                    _ => false,
-                };
+                // `sh [flags] -c '<script>'` (also `-lc`, `-ec`): match the script.
+                let mut j = i + 1;
+                while let Some(flag) = t.get(j).filter(|f| f.starts_with('-')) {
+                    if !flag.starts_with("--") && flag.ends_with('c') {
+                        return t
+                            .get(j + 1)
+                            .is_some_and(|script| command_runs_tests(script));
+                    }
+                    j += 1;
+                }
+                return false;
             }
             _ => break,
         }
@@ -460,6 +477,10 @@ fn segment_runs_tests(tokens: &[String]) -> bool {
         "pytest" | "py.test" | "jest" | "vitest" | "ctest" | "rspec" | "phpunit" | "tox"
         | "nox" => true,
         r if is_python(r) => arg(1) == Some("-m") && matches!(arg(2), Some("pytest" | "unittest")),
+        "make" => rest[1..]
+            .iter()
+            .find(|a| !a.starts_with('-'))
+            .is_some_and(|target| target.starts_with("test") || *target == "check"),
         "npm" => match arg(1) {
             Some("t") => true,
             Some("run" | "run-script") => arg(2).is_some_and(|s| s.starts_with("test")),
@@ -471,8 +492,8 @@ fn segment_runs_tests(tokens: &[String]) -> bool {
             Some(s) => s.starts_with("test"),
             None => false,
         },
-        "deno" | "go" | "mvn" | "gradle" | "gradlew" | "make" | "flutter" | "dart" | "mix"
-        | "swift" | "dotnet" | "just" | "bazel" => arg(1) == Some("test"),
+        "deno" | "go" | "mvn" | "gradle" | "gradlew" | "flutter" | "dart" | "mix" | "swift"
+        | "dotnet" | "just" | "bazel" => arg(1) == Some("test"),
         _ => false,
     }
 }
@@ -481,7 +502,7 @@ fn segment_runs_tests(tokens: &[String]) -> bool {
 fn only_lists_tests(tokens: &[&str]) -> bool {
     let after_dashes = tokens.iter().position(|t| *t == "--");
     tokens.iter().enumerate().any(|(n, t)| {
-        matches!(*t, "--no-run" | "--collect-only" | "--co")
+        matches!(*t, "--no-run" | "--collect-only" | "--co" | "-list")
             || (*t == "--list" && after_dashes.is_some_and(|d| n > d))
     })
 }
@@ -742,7 +763,10 @@ impl ContextManager {
                         // Already structural summary at this age — skip.
                         continue;
                     } else {
-                        structural_summary(&text)
+                        structural_summary(
+                            &text,
+                            self.call_paths_for(i).first().map(String::as_str),
+                        )
                     };
 
                     self.messages[i].content = Content::Text(compressed);
@@ -775,21 +799,34 @@ impl ContextManager {
             if !targets.is_empty() && self.read_path_matches(i, &text, targets) {
                 continue;
             }
-            self.messages[i].content = Content::Text(structural_summary(&text));
+            let path = self.call_paths_for(i).into_iter().next();
+            self.messages[i].content = Content::Text(structural_summary(&text, path.as_deref()));
             if let Some(m) = &self.metrics {
                 m.record_compression();
             }
         }
     }
 
+    /// `path` / `file_path` arguments of the assistant tool call the tool
+    /// result at `idx` answers.
+    fn call_paths_for(&self, idx: usize) -> Vec<String> {
+        let Some(id) = self.messages[idx].tool_call_id.as_deref() else {
+            return Vec::new();
+        };
+        self.messages[..idx]
+            .iter()
+            .rev()
+            .flat_map(|m| m.tool_calls.iter())
+            .find(|c| c.id == id)
+            .map(|c| call_paths(&c.arguments))
+            .unwrap_or_default()
+    }
+
     /// Whether the tool result at `idx` read one of `targets`: its path comes
     /// from the result JSON's `path`, or from the arguments of the assistant
     /// tool call with the same id.
     fn read_path_matches(&self, idx: usize, text: &str, targets: &[String]) -> bool {
-        let hit = |p: &str| {
-            let p = normalize_path(p);
-            targets.iter().any(|t| t == p)
-        };
+        let hit = |p: &str| targets.iter().any(|t| same_file(t, p));
         if let Some(path) = result_json(text).and_then(|v| {
             v.get("path")
                 .and_then(serde_json::Value::as_str)
@@ -798,15 +835,7 @@ impl ContextManager {
         {
             return true;
         }
-        let Some(id) = self.messages[idx].tool_call_id.as_deref() else {
-            return false;
-        };
-        self.messages[..idx]
-            .iter()
-            .rev()
-            .flat_map(|m| m.tool_calls.iter())
-            .find(|c| c.id == id)
-            .is_some_and(|c| call_paths(&c.arguments).iter().any(|p| hit(p)))
+        self.call_paths_for(idx).iter().any(|p| hit(p))
     }
 
     /// Record metadata about a message we are about to drop.
@@ -1039,6 +1068,18 @@ fn phase_compaction_from_env() -> bool {
     std::env::var("HONE_PHASE_COMPACTION").is_ok_and(|v| matches!(v.trim(), "1" | "true" | "on"))
 }
 
+/// Two paths name the same file when, after stripping a leading `./`, they are
+/// equal or one ends with `/` followed by the other (whole components).
+fn same_file(a: &str, b: &str) -> bool {
+    let (a, b) = (normalize_path(a), normalize_path(b));
+    let ends = |long: &str, short: &str| {
+        long.len() > short.len()
+            && long.ends_with(short)
+            && long.as_bytes()[long.len() - short.len() - 1] == b'/'
+    };
+    a == b || ends(a, b) || ends(b, a)
+}
+
 fn normalize_path(p: &str) -> &str {
     p.strip_prefix("./").unwrap_or(p)
 }
@@ -1056,10 +1097,18 @@ fn call_paths(args: &serde_json::Value) -> Vec<String> {
 /// `--- a/…` / `+++ b/…` header paths of its `patch` argument.
 fn write_targets(name: &str, args: &serde_json::Value) -> Vec<String> {
     let mut paths = call_paths(args);
-    if matches!(name, "apply_patch" | "apply_diff")
-        && let Some(patch) = args.get("patch").and_then(serde_json::Value::as_str)
+    if name == "multi_edit"
+        && let Some(edits) = args.get("edits").and_then(serde_json::Value::as_array)
     {
-        for line in patch.lines() {
+        for edit in edits {
+            paths.extend(call_paths(edit));
+        }
+    }
+    if matches!(name, "apply_patch" | "apply_diff") {
+        let patches = ["diff", "patch"]
+            .iter()
+            .filter_map(|k| args.get(*k).and_then(serde_json::Value::as_str));
+        for line in patches.flat_map(str::lines) {
             let Some(rest) = line
                 .strip_prefix("--- ")
                 .or_else(|| line.strip_prefix("+++ "))
@@ -1111,9 +1160,9 @@ fn is_already_compressed(text: &str) -> bool {
 /// - Test output: PASS/FAIL lines + first error
 /// - Grep results: file:line paths
 /// - Default: first 200 chars
-fn structural_summary(text: &str) -> String {
+fn structural_summary(text: &str, call_path: Option<&str>) -> String {
     let len = text.len();
-    if let Some(summary) = file_read_summary(text) {
+    if let Some(summary) = file_read_summary(text, call_path) {
         return summary;
     }
     let sample = prefix(text, 500);
@@ -1228,33 +1277,76 @@ fn structural_summary(text: &str) -> String {
 
 /// Summary of a JSON file-read result (`{"content": "...", "path": "..."}`):
 /// the path, the line count and up to 40 declaration lines of `content`.
-fn file_read_summary(text: &str) -> Option<String> {
+fn file_read_summary(text: &str, call_path: Option<&str>) -> Option<String> {
     let value = result_json(text)?;
     let content = value.get("content")?.as_str()?;
-    let path = value.get("path").and_then(serde_json::Value::as_str);
-    let lines = content.lines().count();
-    let decls: Vec<&str> = content
+    let path = value
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .or(call_path);
+    let num = |k: &str| value.get(k).and_then(serde_json::Value::as_u64);
+
+    let decls: Vec<String> = content
         .lines()
-        .filter(|l| is_declaration(l.trim()))
-        .take(40)
+        .filter_map(|l| {
+            let (n, code) = split_line_number(l);
+            is_declaration(code).then(|| match n {
+                Some(n) => format!("{n}: {code}"),
+                None => code.to_owned(),
+            })
+        })
         .collect();
+
+    let range = match (num("start_line"), num("end_line"), num("total_lines")) {
+        (Some(s), Some(e), Some(t)) => format!("lines {s}\u{2013}{e} of {t}"),
+        _ => format!("{} lines", content.lines().count()),
+    };
+    let truncated = if value.get("truncated").and_then(serde_json::Value::as_bool) == Some(true) {
+        " (truncated)"
+    } else {
+        ""
+    };
     let head = match path {
-        Some(p) => format!("file {p}, {lines} lines"),
-        None => format!("file, {lines} lines"),
+        Some(p) => format!("file {p}, {range}{truncated}"),
+        None => format!("file, {range}{truncated}"),
     };
     let len = text.len();
     Some(if decls.is_empty() {
         format!(
-            "[tool result summarized, {len} chars, {head}: {}...]",
+            "[tool result summarized, {len} chars, {head}: {}... (re-read before editing)]",
             prefix(content, 200)
         )
     } else {
+        let n = decls.len();
+        let count = match n {
+            1 => "1 declaration".to_owned(),
+            2..=40 => format!("{n} declarations"),
+            _ => format!("first 40 of {n} declarations"),
+        };
+        let kept = decls
+            .iter()
+            .take(40)
+            .map(String::as_str)
+            .collect::<Vec<_>>();
         format!(
-            "[tool result summarized, {len} chars, {head}, {} declarations:\n{}]",
-            decls.len(),
-            decls.join("\n")
+            "[tool result summarized, {len} chars, {head}, {count}:\n{}\n(re-read before editing)]",
+            kept.join("\n")
         )
     })
+}
+
+/// Split a `read_file` line of the form `"   42 | code"` into its number and
+/// the trimmed code; other lines come back trimmed with no number.
+fn split_line_number(line: &str) -> (Option<u64>, &str) {
+    let t = line.trim_start();
+    let digits = t.bytes().take_while(u8::is_ascii_digit).count();
+    if digits > 0
+        && let Some(rest) = t[digits..].strip_prefix(" | ")
+        && let Ok(n) = t[..digits].parse()
+    {
+        return (Some(n), rest.trim());
+    }
+    (None, t.trim())
 }
 
 /// Whether a trimmed line starts a declaration in a common language.
@@ -1511,7 +1603,7 @@ mod tests {
     #[test]
     fn test_structural_summary_on_code() {
         let code = "use std::io;\n\npub fn main() {\n    println!(\"hello\");\n}\n\nstruct Foo {\n    bar: i32,\n}\n";
-        let summary = structural_summary(code);
+        let summary = structural_summary(code, None);
         assert!(summary.contains("pub fn main"));
         assert!(summary.contains("struct Foo"));
         assert!(summary.contains("summarized"));
@@ -1520,7 +1612,7 @@ mod tests {
     #[test]
     fn test_structural_summary_on_test_output() {
         let output = "running 5 tests\ntest foo ... ok\ntest bar ... FAILED\ntest baz ... ok\n\ntest result: FAILED. 4 passed; 1 failed;\n";
-        let summary = structural_summary(output);
+        let summary = structural_summary(output, None);
         assert!(summary.contains("FAILED"));
         assert!(summary.contains("test result"));
     }
