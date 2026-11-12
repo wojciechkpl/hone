@@ -228,6 +228,10 @@ struct Setup {
     policy: Option<PolicyConfig>,
     workdir: PathBuf,
     system_prompt: String,
+    skills: Option<Arc<hone_core::SkillRegistry>>,
+    index: Option<Arc<hone_index::SqliteIndex>>,
+    inject: bool,
+    embedder: Option<Arc<dyn hone_memory::Embedder>>,
 }
 
 fn setup(rounds: Vec<Vec<ToolCallRequest>>) -> Setup {
@@ -240,6 +244,10 @@ fn setup(rounds: Vec<Vec<ToolCallRequest>>) -> Setup {
         policy: None,
         workdir: std::env::temp_dir(),
         system_prompt: "test".to_owned(),
+        skills: None,
+        index: None,
+        inject: false,
+        embedder: None,
     }
 }
 
@@ -259,6 +267,13 @@ fn build(s: &Setup) -> Agent {
         .register(Box::new(TextTool { name: "web_search", text: PLAIN }))
         .register(Box::new(TextTool { name: "lsp_hover", text: PLAIN }))
         .register(Box::new(McpText { name: "mcp_srv_lookup", text: PLAIN }))
+        // Tools the round-1 allowlist did not know (W16): untrusted all the same.
+        .register(Box::new(TextTool { name: "git_diff", text: PLAIN }))
+        .register(Box::new(TextTool { name: "git_status", text: PLAIN }))
+        .register(Box::new(TextTool { name: "symbol_search", text: PLAIN }))
+        .register(Box::new(TextTool { name: "memory_read", text: PLAIN }))
+        .register(Box::new(TextTool { name: "screen_capture", text: PLAIN }))
+        .register(Box::new(TextTool { name: "frobnicate", text: PLAIN }))
         .build();
     let agent = Agent::new(AgentConfig {
         provider: s.rec.clone(),
@@ -280,15 +295,15 @@ fn build(s: &Setup) -> Agent {
         working_dir: s.workdir.clone(),
         memory_store: s.store.clone(),
         retry_config: RetryConfig::default(),
-        index: None,
-        inject_context: false,
+        index: s.index.clone(),
+        inject_context: s.inject,
         skeleton_strategy: Default::default(),
         egress_log: None,
         approval_policy: s.approval.clone(),
         step_rx: s.step_rx.clone(),
         hooks: None,
-        skills: None,
-        embedder: None,
+        skills: s.skills.clone(),
+        embedder: s.embedder.clone(),
         mode: AgentMode::Build,
         policy: s.policy.clone(),
     });
@@ -1435,4 +1450,457 @@ async fn test_w14_an_updating_write_should_show_what_it_replaces_in_the_approval
     assert!(preview.chars().count() <= 120, "{} chars", preview.chars().count());
     assert!(preview.starts_with("Always run the formatter"), "{preview}");
     assert_eq!(second["kind"], "feedback", "the original arguments are still there: {second}");
+}
+
+// ============================================================================================
+// Review round 2 (W16-W20) of docs/plans/memory-write-tool-spec.md
+//
+// No new API. The harness gained optional skills, a symbol index (turn-1 injection), an
+// embedder, and six more fake tools that the round-1 allowlist did not know.
+// ============================================================================================
+
+fn request_text(s: &Setup, i: usize) -> String {
+    s.rec
+        .request(i)
+        .messages
+        .iter()
+        .map(|m| m.content.as_text())
+        .collect::<Vec<_>>()
+        .join("\n---\n")
+}
+
+fn canonical_tmp() -> (tempfile::TempDir, PathBuf) {
+    let t = tempfile::tempdir().unwrap();
+    let p = std::fs::canonicalize(t.path()).unwrap();
+    (t, p)
+}
+
+const DASHBOARD: &str = "Latency dashboards live in Grafana under the platform folder.";
+
+// ---- W16: untrusted by default ------------------------------------------------------------------------------
+
+const OTHER_TOOLS: [&str; 6] = ["git_diff", "git_status", "symbol_search", "memory_read", "screen_capture", "frobnicate"];
+
+#[tokio::test]
+async fn test_w16_a_result_of_any_tool_should_force_approval_not_just_the_known_untrusted_ones() {
+    for tool in OTHER_TOOLS {
+        let s = setup(tool_then_write(tool));
+        let store = s.store.clone().unwrap();
+
+        let (paused, events) = run_with_approver(s, "go", vec![StepAction::Proceed]).await;
+
+        assert_eq!(paused, ["memory_write"], "{tool}: forced pause under Auto");
+        assert!(!end_of(&events, "c1").1, "{tool}");
+        assert_eq!(stored(&store).await.len(), 1, "{tool}");
+    }
+
+    // memory_write's OWN results are not untrusted: a second write follows the normal policy.
+    let s = setup(vec![
+        vec![mw("c1", "reference", DASHBOARD)],
+        vec![mw("c2", "reference", "Billing exports run nightly at 02:00 UTC for the finance team.")],
+    ]);
+    let (paused, events) = run_with_approver(s, "remember two things", vec![]).await;
+    assert!(paused.is_empty(), "a conversation plus memory_write results is still conversation only");
+    assert_eq!(written(&events).len(), 2);
+}
+
+#[tokio::test]
+async fn test_w16_without_an_approver_any_tool_result_should_make_the_refusal_name_the_tool() {
+    for tool in OTHER_TOOLS {
+        let s = setup(tool_then_write(tool));
+
+        let (_, events) = run_one(&s, "go").await;
+
+        let (result, is_error) = end_of(&events, "c1");
+        assert!(is_error, "{tool}: {result}");
+        assert!(text_of(&result).contains(tool), "{tool}: names the source: {result}");
+        assert!(stored(s.store.as_ref().unwrap()).await.is_empty(), "{tool}");
+        assert!(written(&events).is_empty(), "{tool}");
+    }
+}
+
+/// Strategies for a selection WITHOUT `--no-inject`, so `skeleton` stays a source.
+fn strategies_with_injection() -> Arc<ResolvedStrategies> {
+    let user = ConfigLayer::from_toml("/home/u/.config/hone/config.toml", "[memory]\nwriter = \"tool\"\n").unwrap();
+    let sel = StrategySelection::from_sources(Some(&user), None, &|_| None, &Flags::default()).unwrap();
+    Arc::new(
+        StrategyRegistry::with_builtins()
+            .build(&sel, &StrategyDeps::default())
+            .unwrap_or_else(|e| panic!("build failed: {e}")),
+    )
+}
+
+#[tokio::test]
+async fn test_w16_the_injected_repository_skeleton_should_force_approval() {
+    let (_t, dir) = canonical_tmp();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("src/auth.rs"), "pub fn login() {}\n").unwrap();
+    let idx = hone_index::SqliteIndex::in_memory().await.unwrap();
+    idx.index_file(&PathBuf::from("src/auth.rs"), "pub fn login() {}\n").await.unwrap();
+    let mut s = setup(vec![vec![mw("c1", "reference", DASHBOARD)]]);
+    s.index = Some(Arc::new(idx));
+    s.inject = true;
+    s.workdir = dir;
+    s.strategies = Some(strategies_with_injection());
+    let probe = Setup {
+        rec: Rec::new(vec![]),
+        index: s.index.clone(),
+        inject: true,
+        workdir: s.workdir.clone(),
+        strategies: s.strategies.clone(),
+        ..setup(vec![])
+    };
+    run_one(&probe, "fix the login").await;
+    assert!(request_text(&probe, 0).contains("src/auth.rs"), "harness: the skeleton block reached the request:\n{}", request_text(&probe, 0));
+    let store = s.store.clone().unwrap();
+
+    let (paused, _) = run_with_approver(s, "fix the login", vec![StepAction::Proceed]).await;
+
+    assert_eq!(paused, ["memory_write"], "the repository skeleton is repository content");
+    assert_eq!(stored(&store).await.len(), 1);
+}
+
+struct GatheredSource {
+    id: hone_proto::StrategyId,
+}
+
+#[async_trait]
+impl hone_core::strategy::ContextSource for GatheredSource {
+    fn id(&self) -> &hone_proto::StrategyId {
+        &self.id
+    }
+    fn cadence(&self) -> hone_core::strategy::Cadence {
+        hone_core::strategy::Cadence::Once
+    }
+    async fn gather(
+        &self,
+        _view: &hone_core::strategy::TurnView<'_>,
+    ) -> Result<Vec<hone_core::strategy::ContextBlock>, hone_core::strategy::StrategyError> {
+        Ok(vec![hone_core::strategy::ContextBlock {
+            slot: hone_proto::Slot::Injection,
+            text: "GATHERED-BLOCK-MARKER facts about this machine".to_owned(),
+            sources: vec![],
+        }])
+    }
+}
+
+#[tokio::test]
+async fn test_w16_a_gathered_source_block_should_force_approval() {
+    let mut reg = StrategyRegistry::with_builtins();
+    reg.register_source(
+        "gathered",
+        hone_core::strategy::Origin::Builtin,
+        Arc::new(|_p, _d| {
+            Ok(Arc::new(GatheredSource {
+                id: hone_proto::StrategyId {
+                    slot: hone_proto::Slot::Injection,
+                    name: "gathered".to_owned(),
+                    version: "1.0".to_owned(),
+                    params_sha256: hone_proto::sha256_hex(b"{}"),
+                },
+            }) as Arc<dyn hone_core::strategy::ContextSource>)
+        }),
+    );
+    let user = ConfigLayer::from_toml("/home/u/.config/hone/config.toml", "[memory]\nwriter = \"tool\"\n").unwrap();
+    let mut sel = StrategySelection::from_sources(Some(&user), None, &|_| None, &Flags { no_inject: true, ..Default::default() }).unwrap();
+    sel.sources.value.push("gathered".to_owned());
+    let resolved = Arc::new(reg.build(&sel, &StrategyDeps::default()).unwrap_or_else(|e| panic!("{e}")));
+    let probe = Setup { rec: Rec::new(vec![]), strategies: Some(resolved.clone()), ..setup(vec![]) };
+    run_one(&probe, "hello").await;
+    assert!(request_text(&probe, 0).contains("GATHERED-BLOCK-MARKER"), "harness: the gathered block reached the request");
+    let mut s = setup(vec![vec![mw("c1", "reference", DASHBOARD)]]);
+    s.strategies = Some(resolved);
+    let store = s.store.clone().unwrap();
+
+    let (paused, _) = run_with_approver(s, "hello", vec![StepAction::Proceed]).await;
+
+    assert_eq!(paused, ["memory_write"], "a block gathered from a source is not conversation");
+    assert_eq!(stored(&store).await.len(), 1);
+}
+
+#[tokio::test]
+async fn test_w16_a_recalled_tool_written_memory_should_force_approval() {
+    let (_t, dir) = canonical_tmp();
+    let store: Arc<dyn MemoryStore> = Arc::new(InMemoryStore::new());
+    let mut first = setup(vec![vec![mw("c0", "reference", "The quuxplorer protocol needs the staging cluster handshake first.")]]);
+    first.store = Some(store.clone());
+    first.workdir = dir.clone();
+    run_one(&first, "remember the protocol").await;
+    assert_eq!(stored(&store).await.len(), 1, "harness: the first (conversation-only) write succeeded");
+    let mut second = setup(vec![vec![mw("c1", "reference", DASHBOARD)]]);
+    second.store = Some(store.clone());
+    second.workdir = dir.clone();
+    let probe = Setup { rec: Rec::new(vec![]), store: Some(store.clone()), workdir: dir, ..setup(vec![]) };
+    run_one(&probe, "how does the quuxplorer protocol start").await;
+    assert!(request_text(&probe, 0).contains("quuxplorer"), "harness: the tool memory is recalled into the request");
+
+    let (paused, _) = run_with_approver(second, "how does the quuxplorer protocol start", vec![StepAction::Proceed]).await;
+
+    assert_eq!(paused, ["memory_write"], "a recalled model-written memory is model output, not the user's words");
+}
+
+#[tokio::test]
+async fn test_w16_a_matched_project_skill_should_force_approval() {
+    let mut reg = hone_core::SkillRegistry::new();
+    reg.register(hone_core::Skill {
+        name: "deploy-helper".to_owned(),
+        description: "about deploying".to_owned(),
+        triggers: vec!["deploy".to_owned()],
+        tools: vec![],
+        model: None,
+        always: false,
+        body: "Run the smoke test after every deploy.".to_owned(),
+    });
+    let reg = Arc::new(reg);
+    let probe = Setup { rec: Rec::new(vec![]), skills: Some(reg.clone()), ..setup(vec![]) };
+    run_one(&probe, "deploy the service").await;
+    assert!(request_text(&probe, 0).contains("smoke test"), "harness: the skill block reached the request");
+    let mut s = setup(vec![vec![mw("c1", "reference", DASHBOARD)]]);
+    s.skills = Some(reg);
+    let store = s.store.clone().unwrap();
+
+    let (paused, _) = run_with_approver(s, "deploy the service", vec![StepAction::Proceed]).await;
+
+    assert_eq!(paused, ["memory_write"], "skill bodies come from the repository");
+    assert_eq!(stored(&store).await.len(), 1);
+}
+
+// ---- W17: the project filter applies before the cap ----------------------------------------------------------
+
+/// Maps text mentioning "bravo" to a slightly different direction than the rest.
+struct DirectionEmbedder;
+
+#[async_trait]
+impl hone_memory::Embedder for DirectionEmbedder {
+    fn dim(&self) -> usize {
+        2
+    }
+    async fn embed(&self, text: &str) -> Result<hone_memory::Embedding, hone_memory::EmbedError> {
+        Ok(if text.contains("bravo") { vec![0.8, 0.6] } else { vec![1.0, 0.0] })
+    }
+}
+
+const A_FACTS: [&str; 6] = [
+    "zorblax zorblax alpha handbook chapter one covers the onboarding checklist in detail",
+    "zorblax zorblax alpha build servers use the nightly toolchain with cached registries",
+    "zorblax zorblax alpha database migrations run before every release candidate branch",
+    "zorblax zorblax alpha feature flags are reviewed weekly by the platform guild members",
+    "zorblax zorblax alpha incident retrospectives happen within three working days always",
+    "zorblax zorblax alpha api keys rotate quarterly through the shared automation job",
+];
+
+async fn two_projects_store(
+    embedder: Option<Arc<dyn hone_memory::Embedder>>,
+) -> (Arc<dyn MemoryStore>, PathBuf, tempfile::TempDir, tempfile::TempDir) {
+    let (ta, a) = canonical_tmp();
+    let (tb, b) = canonical_tmp();
+    let store: Arc<dyn MemoryStore> = Arc::new(InMemoryStore::new());
+    let rounds: Vec<Vec<ToolCallRequest>> = A_FACTS
+        .iter()
+        .enumerate()
+        .map(|(i, f)| vec![mw(&format!("a{i}"), "reference", f)])
+        .collect();
+    let mut wa = setup(rounds);
+    wa.store = Some(store.clone());
+    wa.workdir = a;
+    wa.embedder = embedder.clone();
+    run_one(&wa, "remember the alpha facts").await;
+    let mut wb = setup(vec![vec![mw("b0", "reference", "zorblax bravo staging cluster notes for the other project")]]);
+    wb.store = Some(store.clone());
+    wb.workdir = b.clone();
+    wb.embedder = embedder;
+    run_one(&wb, "remember the bravo fact").await;
+    assert_eq!(stored(&store).await.len(), 7, "harness: six memories of project A and one of B");
+    (store, b, ta, tb)
+}
+
+#[tokio::test]
+async fn test_w17_other_projects_tool_memories_should_not_use_up_the_recall_slots() {
+    let (store, b, _ta, _tb) = two_projects_store(None).await;
+    let mut reader = setup(vec![]);
+    reader.store = Some(store);
+    reader.workdir = b;
+
+    run_one(&reader, "zorblax").await;
+
+    let text = request_text(&reader, 0);
+    assert!(text.contains("bravo staging cluster notes"), "project B's own memory is recalled:\n{text}");
+    assert!(!text.contains("alpha"), "project A's tool memories stay out:\n{text}");
+
+    // The same through the semantic path (with an embedder).
+    let emb: Arc<dyn hone_memory::Embedder> = Arc::new(DirectionEmbedder);
+    let (store, b, _ta, _tb) = two_projects_store(Some(emb.clone())).await;
+    let mut reader = setup(vec![]);
+    reader.store = Some(store);
+    reader.workdir = b;
+    reader.embedder = Some(emb);
+    run_one(&reader, "zorblax").await;
+    let text = request_text(&reader, 0);
+    assert!(text.contains("bravo staging cluster notes"), "semantic path: project B's own memory is recalled:\n{text}");
+    assert!(!text.contains("alpha"), "semantic path: project A's tool memories stay out:\n{text}");
+}
+
+// ---- W18: worktrees share a project; a home-directory repo does not capture everything ----------------------------
+
+fn git(dir: &Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// A repository `main` with a linked worktree `wt`, both canonical.
+fn repo_with_worktree() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let (t, root) = canonical_tmp();
+    let main = root.join("main");
+    std::fs::create_dir_all(&main).unwrap();
+    git(&main, &["init", "-q", "-b", "trunk"]);
+    std::fs::write(main.join("a.txt"), "one\n").unwrap();
+    git(&main, &["add", "."]);
+    git(&main, &["commit", "-q", "-m", "first"]);
+    let wt = root.join("wt");
+    git(&main, &["worktree", "add", "-q", "-b", "feature", wt.to_str().unwrap()]);
+    (t, main, wt)
+}
+
+async fn written_in_then_recalled_from(writer_dir: &Path, reader_dir: &Path, fact: &str, keyword: &str) -> String {
+    let store: Arc<dyn MemoryStore> = Arc::new(InMemoryStore::new());
+    let mut w = setup(vec![vec![mw("c1", "reference", fact)]]);
+    w.store = Some(store.clone());
+    w.workdir = writer_dir.to_path_buf();
+    run_one(&w, "remember it").await;
+    assert_eq!(stored(&store).await.len(), 1, "harness: the write succeeded");
+    let mut r = setup(vec![]);
+    r.store = Some(store);
+    r.workdir = reader_dir.to_path_buf();
+    run_one(&r, keyword).await;
+    request_text(&r, 0)
+}
+
+#[tokio::test]
+async fn test_w18_a_memory_written_from_a_worktree_should_be_recalled_from_the_main_checkout_and_back() {
+    let (_t, main, wt) = repo_with_worktree();
+
+    let from_wt = written_in_then_recalled_from(&wt, &main, "Zebrafish rollout notes live in the wiki.", "zebrafish rollout").await;
+    let from_main = written_in_then_recalled_from(&main, &wt, "Quokka rollout notes live in the wiki.", "quokka rollout").await;
+
+    assert!(from_wt.contains("Zebrafish rollout notes"), "written in the worktree, recalled in the main checkout:\n{from_wt}");
+    assert!(from_main.contains("Quokka rollout notes"), "written in the main checkout, recalled in the worktree:\n{from_main}");
+}
+
+#[tokio::test]
+async fn test_w18_a_subdirectory_of_a_worktree_should_share_the_project_too() {
+    let (_t, main, wt) = repo_with_worktree();
+    std::fs::create_dir_all(wt.join("src/deep")).unwrap();
+
+    let seen = written_in_then_recalled_from(&wt.join("src/deep"), &main, "Narwhal rollout notes live in the wiki.", "narwhal rollout").await;
+
+    assert!(seen.contains("Narwhal rollout notes"), "{seen}");
+}
+
+static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[tokio::test]
+async fn test_w18_a_git_directory_at_home_should_not_make_unrelated_directories_one_project() {
+    let _lock = ENV_LOCK.lock().await;
+    let (_t, root) = canonical_tmp();
+    let home = root.join("home");
+    for d in ["a", "b"] {
+        std::fs::create_dir_all(home.join(d)).unwrap();
+    }
+    git(&home, &["init", "-q", "-b", "trunk"]); // a dotfiles-style repository at $HOME
+    let old = std::env::var_os("HOME");
+    // SAFETY: serialised by ENV_LOCK; no other test of this binary changes HOME.
+    unsafe { std::env::set_var("HOME", &home) };
+
+    let same_dir = written_in_then_recalled_from(&home.join("a"), &home.join("a"), "Pangolin rollout notes live in the wiki.", "pangolin rollout").await;
+    let other_dir = written_in_then_recalled_from(&home.join("a"), &home.join("b"), "Pangolin rollout notes live in the wiki.", "pangolin rollout").await;
+
+    // SAFETY: as above.
+    unsafe {
+        match old {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+    assert!(same_dir.contains("Pangolin rollout notes"), "harness: the same directory recalls it:\n{same_dir}");
+    assert!(
+        !other_dir.contains("Pangolin rollout notes"),
+        "~/a and ~/b are different projects although a .git sits at ~:\n{other_dir}"
+    );
+}
+
+// ---- W19: line and paragraph separators --------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_w19_unicode_line_separators_should_collapse_to_single_spaces() {
+    let s = setup(vec![vec![mw(
+        "c1",
+        "reference",
+        "line one\u{2028}\u{2028}line two\u{2029}three\u{85}four\u{2028}\u{2029}\u{85}five",
+    )]]);
+
+    let (_, events) = run_one(&s, "remember").await;
+
+    let (result, is_error) = end_of(&events, "c1");
+    assert!(!is_error, "{result}");
+    let mems = stored(s.store.as_ref().unwrap()).await;
+    assert_eq!(mems.len(), 1);
+    assert_eq!(mems[0].content, "line one line two three four five");
+    assert!(!mems[0].content.contains(['\u{2028}', '\u{2029}', '\u{85}']), "{:?}", mems[0].content);
+}
+
+// ---- W20: dedup looks for the model's own match ----------------------------------------------------------------------
+
+fn trigrams(text: &str) -> std::collections::HashSet<[char; 3]> {
+    let chars: Vec<char> = text.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+    chars.windows(3).map(|w| [w[0], w[1], w[2]]).collect()
+}
+
+fn similarity(a: &str, b: &str) -> f64 {
+    let (x, y) = (trigrams(a), trigrams(b));
+    x.intersection(&y).count() as f64 / x.union(&y).count() as f64
+}
+
+#[tokio::test]
+async fn test_w20_the_models_own_near_duplicate_should_be_updated_when_a_users_memory_is_the_best_match() {
+    let user_text = BASE_RULE;
+    let tool_text = format!("{BASE_RULE} and lint");
+    let new_text = NEAR_DUP;
+    let (s_user, s_tool) = (similarity(new_text, user_text), similarity(new_text, &tool_text));
+    assert!(s_user > s_tool && s_tool >= 0.82, "harness: the user's memory is the better match ({s_user:.3} vs {s_tool:.3}), both above 0.8");
+    let s = setup(vec![
+        vec![mw("c1", "feedback", &tool_text)],
+        vec![mw("c2", "feedback", new_text)],
+    ]);
+    let store = s.store.clone().unwrap();
+    store.record(stored_mem("user-1", MemoryKind::Feedback, user_text, &["pinned"])).await.unwrap();
+
+    let (_, events) = run_one(&s, "remember twice").await;
+
+    let (r1, r2) = (end_of(&events, "c1").0, end_of(&events, "c2").0);
+    assert_eq!(r1["status"], "added", "the first write is a new memory (the user's is not updatable)");
+    assert_eq!(r2["status"], "updated", "the second updates the model's own: {r2}");
+    assert_eq!(r2["id"], r1["id"]);
+    let mems = stored(&store).await;
+    assert_eq!(mems.len(), 2, "no third memory: {:?}", mems.iter().map(|m| &m.content).collect::<Vec<_>>());
+    let user = mems.iter().find(|m| m.id == "user-1").unwrap();
+    assert_eq!(user.content, user_text, "the user's memory is untouched");
+    let own = mems.iter().find(|m| m.id == r1["id"].as_str().unwrap()).unwrap();
+    assert_eq!(own.content, new_text);
+
+    // A match of another kind is still not the model's match (W8): a new memory is added.
+    let s2 = setup(vec![
+        vec![mw("d1", "feedback", &tool_text)],
+        vec![mw("d2", "project", NEAR_DUP)],
+    ]);
+    let (_, events) = run_one(&s2, "remember twice").await;
+    assert_eq!(end_of(&events, "d2").0["status"], "added");
+    assert_eq!(stored(s2.store.as_ref().unwrap()).await.len(), 2);
 }
