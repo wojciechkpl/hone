@@ -84,3 +84,11 @@ Review found:
 | T24 | **Nothing is left behind, and nothing is shared between children.** The launcher sweeps `evalchk.*` bundles older than an hour in `$TMPDIR`; T23 removes a bundle early in the normal path. Each solution child gets its own fresh stdout and stderr files (`mkstemp`), so an escaped process holding an earlier child's descriptor can't write into a later child's output. The README says that a process that starts its own session escapes the group kill and can outlive the run. |
 | T25 | **The suite loads under `hone eval`.** The branch is rebased onto PR F's final head, which includes F31–F34. `hone eval eval/suites/starter/tasks.toml --check` exits 0 and accepts `[eval] integrity = ["checks", "reference"]`. `verify.sh` runs that check when a `hone` binary is on `PATH`, and skips it otherwise. |
 | T26 | **The claim matches the guarantee.** The README's PR summary text says that verdicts come from a judge that never runs solution code and keeps its expectations off disk while solution code runs. Suite files are integrity-checked by `hone eval`. Solution code runs as your user, so it can read the suite's reference solutions. Results are measurements of cooperative models, not proofs. |
+
+### Final review (T27)
+
+Approved. Two non-blocking notes became T27. A solution that finds the suite path, through the `hone eval` process's argv, can still brute-force the hashes in the suite's own `checks/specs/`; that falls within the T22 same-user limit, but the README doesn't say so. And `verify.sh`'s `hone eval --check` fails rather than skips on a machine with no provider key for the default model.
+
+| Row | Behaviour |
+|---|---|
+| T27 | **Honest limits, and verify.sh doesn't need a key.** The README says the salted hashes in `checks/specs/` are as exposed to same-user solution code as `reference/` (small answer spaces can be guessed from them), and that the `ancestor-ps` self-test covers only the judge's bundle. `verify.sh` treats a provider-setup error from `hone eval --check` (missing key or unreachable provider) as SKIP with a NOTE, not FAIL; any other `--check` error still fails. |
