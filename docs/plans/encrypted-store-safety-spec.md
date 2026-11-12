@@ -24,3 +24,14 @@ Branch `fix/encrypted-store-safety`, off `main`. Found while reviewing PR G (FTS
 
 - Re-encrypting existing descriptions (PR G).
 - Encrypting tags.
+
+## Review round 1 (ES4–ES7)
+
+Review found the same failure through another pre-existing path: `load_or_init_salt` finds the sentinel by listing the newest 10,000 memories, and the sentinel's `created_at` is 0. With 10,000 newer rows (plain runs on the same database, or a large encrypted store) it isn't listed, so a new salt is generated and written over the old one (`INSERT OR REPLACE`) — every encrypted memory permanently unreadable; with 10,001 encrypted memories the store refuses to open with a misleading error.
+
+| Row | Behaviour |
+|---|---|
+| ES4 | **The salt is found by id and never overwritten.** `EncryptedStore` reads the sentinel with `recall_by_id(SALT_SENTINEL_ID)`; whether encrypted rows exist is decided by a direct query (any `content LIKE 'enc:v1:%'`), not a listing; a missing sentinel is created insert-if-absent (never replacing an existing one). A store with 10,000+ newer plaintext rows keeps its salt and reads its encrypted memories; a store with 10,001+ encrypted memories opens. |
+| ES5 | **A description that fails to decrypt isn't shown as ciphertext.** It's returned as `None` and a warning is logged (content that fails to decrypt still errors, as today). |
+| ES6 | **Every inner store protects the sentinel.** `EncryptedStore::forget` never passes a filter that would remove the sentinel to its inner store (works for `InMemoryStore` too). `hone memory ls` and `show` hide the sentinel row. |
+| ES7 | **Docs.** `docs/configuration.md` says that running Hone without `--encrypted-memory` on an encrypted `memory.db` writes plaintext memories into it, and that `hone memory ls/show` don't decrypt (they show `enc:v1:…`). CHANGELOG: "the salt record is found by id, so stores with more than 10,000 memories open and a new salt is never written over an existing one." |
