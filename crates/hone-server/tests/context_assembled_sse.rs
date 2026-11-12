@@ -16,6 +16,8 @@ fn test_cr9_encode_event_should_name_and_carry_a_context_receipt() {
         dropped: vec![],
         compaction: vec![],
         tools_offered: vec!["read_file".to_owned()],
+        history_len: 4,
+        history_root: "cd".repeat(32),
     };
 
     let frame = encode_event(&AgentEvent::ContextAssembled { receipt }, 7);

@@ -26,7 +26,12 @@ fn init() {
     INIT.call_once(|| {
         // SAFETY: runs once, before any test of this binary builds an agent or
         // reads the environment (every test calls `init` first).
-        unsafe { std::env::set_var("HONE_CONTEXT_WINDOW", "4096") };
+        unsafe {
+            std::env::set_var("HONE_CONTEXT_WINDOW", "4096");
+            // Phase compaction is opt-in (PR A round 1, K11); the phase test needs it.
+            // No other test of this binary dispatches a write, so none depends on it.
+            std::env::set_var("HONE_PHASE_COMPACTION", "1");
+        };
     });
 }
 
@@ -194,29 +199,74 @@ async fn test_cr1_context_emergency_call_should_still_get_a_receipt_with_no_tool
     );
 }
 
-// ---- phase compaction (needs PR A underneath) ------------------------------------------------
+// ---- phase compaction (PR A round 1: opt-in, window counted in tool results) ----------------
 
 #[tokio::test]
 async fn test_cr8_first_write_after_reads_should_be_recorded_as_a_phase_step() {
-    init();
+    init(); // HONE_PHASE_COMPACTION=1
+    // Five reads, then an edit elsewhere. The model `mock:test` protects the newest 4
+    // tool results (r2..r5), so r1 is compacted when the write is dispatched.
     let mut r = rig(
         vec![
             vec![read("r1")],
             vec![read("r2")],
-            vec![call("e1", "edit_file", json!({ "tag": "e1" }))],
+            vec![read("r3")],
+            vec![read("r4")],
+            vec![read("r5")],
+            vec![call(
+                "e1",
+                "edit_file",
+                json!({ "path": "src/z.rs", "tag": "e1" }),
+            )],
         ],
         Opts::default(),
     );
 
     let rs = receipts(&r.turn("fix it").await);
 
-    assert_eq!(rs.len(), 4);
+    assert_eq!(rs.len(), 7);
     assert_eq!(
         with_step(&rs, "phase"),
-        [3],
+        [6],
         "reported on the call after the edit, once"
     );
-    assert!(!step(&rs[3], "phase").replaced.is_empty());
+    let s = step(&rs[6], "phase");
+    let r1_before = Message::tool_result(
+        "r1".to_owned(),
+        serde_json::to_string(&json!(long_output("r1", 20))).unwrap(),
+    );
+    assert_eq!(
+        s.replaced,
+        [SourceRef::Message {
+            index: s_index(&s.replaced),
+            sha256: message_sha256(&r1_before),
+        }],
+        "only r1, with the hash it had before compaction"
+    );
+    // The derived (summary) message is listed again by the incremental History block.
+    let Some(SourceRef::Message { sha256: derived, .. }) = &s.derived else {
+        panic!("a phase step has a derived message: {s:?}");
+    };
+    let history = rs[6]
+        .blocks
+        .iter()
+        .find(|b| b.slot == hone_proto::Slot::History)
+        .expect("a History block");
+    assert!(
+        history.sources.iter().any(|x| matches!(
+            &x.source,
+            SourceRef::Message { sha256, .. } if sha256 == derived
+        )),
+        "the rewritten message is relisted with its new hash (CR15)"
+    );
+}
+
+/// The index of the single replaced ref (the stored-history position; not pinned here).
+fn s_index(replaced: &[SourceRef]) -> usize {
+    match replaced.first() {
+        Some(SourceRef::Message { index, .. }) => *index,
+        other => panic!("{other:?}"),
+    }
 }
 
 // ---- CR17: the compaction log is consistent (review round 1) -------------------------------
