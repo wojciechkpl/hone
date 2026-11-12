@@ -49,7 +49,12 @@ mod unix_tests {
     const SERVER: &str = r#"
 import os, signal, sys, time
 name, d, mode = sys.argv[1], sys.argv[2], sys.argv[3]
-if mode == "polite":
+if mode == "counting":
+    # Appends one line per SIGTERM and carries on (so a second SIGTERM is seen).
+    def count(*a):
+        open(os.path.join(d, name + ".terms"), "a").write("x\n")
+    signal.signal(signal.SIGTERM, count)
+elif mode == "polite":
     def bye(*a):
         time.sleep(0.3)
         open(os.path.join(d, name + ".term"), "w").write("x")
@@ -100,7 +105,7 @@ while True:
     fn start_server(dir: &Path, name: &str, mode: &str) -> (hone_tools::ProcessGroupGuard, String) {
         let script = dir.join("server.py");
         std::fs::write(&script, SERVER).unwrap();
-        let child = Command::new("python3")
+        let mut child = Command::new("python3")
             .arg(&script)
             .args([name, dir.to_str().unwrap(), mode])
             .process_group(0)
@@ -111,6 +116,10 @@ while True:
             .expect("python3");
         let guard = hone_tools::ProcessGroupGuard::new(child.id());
         let pid = wait_for_file(&dir.join(format!("{name}.pid")));
+        // Reap it whenever it ends, so it never lingers as a zombie.
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
         (guard, pid)
     }
 
@@ -118,7 +127,11 @@ while True:
     /// Returns the sleeper's pid.
     fn start_command(dir: &Path) -> String {
         let pidfile = dir.join("cmd.pid");
-        let script = format!("echo $$ > '{}'; exec sleep 300", pidfile.display());
+        // Ignores SIGTERM: only an immediate SIGKILL ends it.
+        let script = format!(
+            "trap '' TERM; echo $$ > '{}'; exec sleep 300",
+            pidfile.display()
+        );
         std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -232,6 +245,45 @@ while True:
                     h.join().unwrap();
                 }
             }
+            "once" => {
+                let (g1, _) = start_server(dir, "counter", "counting");
+                std::mem::forget(g1);
+                let barrier = Arc::new(Barrier::new(4));
+                let handles: Vec<_> = (0..4)
+                    .map(|_| {
+                        let b = barrier.clone();
+                        std::thread::spawn(move || {
+                            b.wait();
+                            hone_tools::stop_groups_on_panic(Duration::from_millis(100))
+                        })
+                    })
+                    .collect();
+                for h in handles {
+                    h.join().unwrap();
+                }
+            }
+            "cmd-fast" => {
+                // A command that ignores SIGTERM plus an MCP server that does
+                // too, so the grace runs for its full ~1 s.
+                let (g1, _) = start_server(dir, "stubborn", "stubborn");
+                std::mem::forget(g1);
+                let cmd_pid = start_command(dir);
+                let start = Instant::now();
+                let watcher = std::thread::spawn(move || {
+                    while alive(&cmd_pid) {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    start.elapsed()
+                });
+                hone_tools::stop_groups_on_panic(Duration::from_millis(100));
+                let total = start.elapsed();
+                let cmd_gone = watcher.join().unwrap();
+                std::fs::write(
+                    dir.join("timing"),
+                    format!("{} {}", cmd_gone.as_millis(), total.as_millis()),
+                )
+                .unwrap();
+            }
             other => panic!("unknown child mode {other}"),
         }
     }
@@ -327,7 +379,10 @@ while True:
             r.stderr
         );
         assert!(!r.pid_alive("polite"), "polite server gone");
-        assert!(!r.pid_alive("stubborn"), "SIGTERM-ignoring server SIGKILLed");
+        assert!(
+            !r.pid_alive("stubborn"),
+            "SIGTERM-ignoring server SIGKILLed"
+        );
         assert!(!r.pid_alive("cmd"), "shell-command group killed");
     }
 
@@ -352,7 +407,11 @@ while True:
     /// C2: the previously installed hook runs, and before any group is signalled.
     fn c2_previous_hook_should_run_first_and_chain() {
         let r = run_child("prev-hook");
-        assert!(r.stderr.contains("CUSTOM-PREV-HOOK"), "stderr: {}", r.stderr);
+        assert!(
+            r.stderr.contains("CUSTOM-PREV-HOOK"),
+            "stderr: {}",
+            r.stderr
+        );
         assert_eq!(
             r.file("prev-saw-all-alive").as_deref(),
             Some("yes"),
@@ -419,6 +478,35 @@ while True:
         }
     }
 
+    /// C9 (C4): several callers at once SIGTERM an MCP group exactly once.
+    fn c9_concurrent_callers_should_sigterm_an_mcp_group_exactly_once() {
+        let r = run_child("once");
+        let n = std::fs::read_to_string(r.dir.path().join("counter.terms"))
+            .map(|t| t.lines().count())
+            .unwrap_or(0);
+        assert_eq!(n, 1, "SIGTERM count; stderr: {}", r.stderr);
+        assert!(!r.pid_alive("counter"), "SIGKILL follows the grace");
+    }
+
+    /// C9 (C1): a command group that ignores SIGTERM is SIGKILLed at once, not
+    /// after the MCP grace (which the stubborn MCP server makes last ~1 s).
+    fn c9_command_group_ignoring_sigterm_should_die_before_the_mcp_grace_ends() {
+        let r = run_child("cmd-fast");
+        let t = r.file("timing").unwrap_or_default();
+        let ms: Vec<u128> = t.split(' ').filter_map(|x| x.parse().ok()).collect();
+        assert_eq!(ms.len(), 2, "timing file: {t:?}; stderr: {}", r.stderr);
+        assert!(
+            ms[0] < 500,
+            "command gone after {} ms (SIGKILL at once expected)",
+            ms[0]
+        );
+        assert!(
+            ms[1] >= 800,
+            "the MCP grace should have run ~1 s, cleanup took {} ms",
+            ms[1]
+        );
+    }
+
     pub fn main() {
         let args: Vec<String> = std::env::args().collect();
         if let Some(mode) = args.get(1).and_then(|a| a.strip_prefix("--child-")) {
@@ -457,6 +545,14 @@ while True:
             (
                 "c4_concurrent_cleanups_should_all_wait_for_the_one_that_runs",
                 c4_concurrent_cleanups_should_all_wait_for_the_one_that_runs,
+            ),
+            (
+                "c9_concurrent_callers_should_sigterm_an_mcp_group_exactly_once",
+                c9_concurrent_callers_should_sigterm_an_mcp_group_exactly_once,
+            ),
+            (
+                "c9_command_group_ignoring_sigterm_should_die_before_the_mcp_grace_ends",
+                c9_command_group_ignoring_sigterm_should_die_before_the_mcp_grace_ends,
             ),
         ];
         let mut failed = 0;

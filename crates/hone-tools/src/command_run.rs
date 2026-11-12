@@ -482,11 +482,15 @@ mod panic_lock_tests {
 
     #[test]
     fn test_c4_registry_locked_by_another_thread_should_skip_cleanup_within_a_second() {
-        let _s = SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _s = SERIAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (mut child, mut guard) = sleeper();
         let (locked_tx, locked_rx) = mpsc::channel();
         let holder = std::thread::spawn(move || {
-            let _held = unix::RUNNING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _held = unix::RUNNING
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             locked_tx.send(()).unwrap();
             std::thread::sleep(Duration::from_millis(1500));
         });
@@ -501,16 +505,23 @@ mod panic_lock_tests {
         guard.kill();
         let _ = child.wait();
         assert!(!ran, "the registry was unavailable: nothing was stopped");
-        assert!(took < Duration::from_secs(1), "waited {took:?} for the lock");
+        assert!(
+            took < Duration::from_secs(1),
+            "waited {took:?} for the lock"
+        );
         assert!(still_running, "a skipped cleanup must not kill anything");
     }
 
     #[test]
     fn test_c4_registry_locked_by_the_calling_thread_should_skip_cleanup_within_a_second() {
-        let _s = SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _s = SERIAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (mut child, mut guard) = sleeper();
 
-        let held = unix::RUNNING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let held = unix::RUNNING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let start = Instant::now();
         let ran = stop_groups_on_panic(Duration::from_millis(100));
         let took = start.elapsed();
@@ -520,7 +531,122 @@ mod panic_lock_tests {
         guard.kill();
         let _ = child.wait();
         assert!(!ran, "the registry was unavailable: nothing was stopped");
-        assert!(took < Duration::from_secs(1), "hung {took:?} on our own lock");
+        assert!(
+            took < Duration::from_secs(1),
+            "hung {took:?} on our own lock"
+        );
         assert!(still_running, "a skipped cleanup must not kill anything");
+    }
+
+    // ---- C8: two panics at once cannot hang hone ---------------------------
+    //
+    // The scenario can deadlock for good today, and a stuck thread would hold
+    // the registry for the rest of this test binary, so it runs in a child
+    // process (this same test binary, filtered to `c8_scenario`) with a bounded
+    // wait. The child test is a no-op unless the parent set `C8_DIR_ENV`.
+
+    const C8_DIR_ENV: &str = "HONE_C8_CHILD_DIR";
+
+    fn ps_alive(pid: &str) -> bool {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", pid])
+            .output()
+            .unwrap();
+        let stat = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        !stat.is_empty() && !stat.starts_with('Z')
+    }
+
+    /// Child side. Thread A's cleanup is in the SIGTERM grace; thread B
+    /// "panicked while holding the registry" (it locks `RUNNING`, then calls the
+    /// hook body) and keeps the lock until both calls were seen. Both calls must
+    /// return within a few seconds and the SIGTERM-ignoring server must be gone
+    /// (SIGKILLed even though the registry stayed locked).
+    #[test]
+    fn c8_scenario_child_only_runs_under_the_parent() {
+        let Some(dir) = std::env::var_os(C8_DIR_ENV) else {
+            return;
+        };
+        let dir = std::path::PathBuf::from(dir);
+        let mut server = std::process::Command::new("sh")
+            .args(["-c", "trap '' TERM; exec sleep 300"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = server.id();
+        std::fs::write(dir.join("server.pid"), pid.to_string()).unwrap();
+        std::mem::forget(ProcessGroupGuard::new(pid));
+        std::thread::sleep(Duration::from_millis(300)); // `trap` and `exec` ran
+
+        let (tx, rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let tx_a = tx.clone();
+        std::thread::spawn(move || {
+            let r = stop_groups_on_panic(Duration::from_millis(100));
+            let _ = tx_a.send(("A", r));
+        });
+        std::thread::sleep(Duration::from_millis(300));
+        std::thread::spawn(move || {
+            let _held = unix::RUNNING
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let r = stop_groups_on_panic(Duration::from_millis(100));
+            let _ = tx.send(("B", r));
+            let _ = release_rx.recv_timeout(Duration::from_secs(15));
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut got = Vec::new();
+        while got.len() < 2 {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match rx.recv_timeout(left) {
+                Ok(m) => got.push(m),
+                Err(_) => break,
+            }
+        }
+        let gone = !ps_alive(&pid.to_string());
+        let _ = release_tx.send(());
+        // SAFETY: killing the group we created above (pid > 1).
+        unsafe {
+            libc::killpg(pid as i32, libc::SIGKILL);
+        }
+        let _ = server.wait();
+        assert_eq!(got.len(), 2, "DEADLOCK: only {got:?} returned within 5 s");
+        assert!(gone, "the SIGTERM-ignoring server must be SIGKILLed anyway");
+    }
+
+    #[test]
+    fn test_c8_second_panic_while_holding_the_registry_should_not_deadlock_the_cleanup() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("child.log");
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["c8_scenario", "--test-threads=1", "--nocapture"])
+            .env(C8_DIR_ENV, dir.path())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::fs::File::create(&log).unwrap())
+            .stderr(std::fs::File::options().append(true).open(&log).unwrap())
+            .spawn()
+            .unwrap();
+        let start = Instant::now();
+        let status = loop {
+            if let Some(s) = child.try_wait().unwrap() {
+                break Some(s);
+            }
+            if start.elapsed() > Duration::from_secs(25) {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        // Never leak the server, whatever happened.
+        if let Ok(pid) = std::fs::read_to_string(dir.path().join("server.pid")) {
+            let _ = std::process::Command::new("kill")
+                .args(["-9", pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+        let out = std::fs::read_to_string(&log).unwrap_or_default();
+        let status = status.unwrap_or_else(|| panic!("scenario hung; log:\n{out}"));
+        assert!(status.success(), "scenario failed; log:\n{out}");
     }
 }

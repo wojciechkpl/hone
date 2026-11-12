@@ -39,6 +39,14 @@ sequenceDiagram
 | C5 | **The TUI gives the terminal back.** If a panic that ends hone (C1's rule) happens while the TUI is running, the terminal is restored before the panic message is printed, as on a normal TUI exit:<br>• raw mode off;<br>• bracketed paste and mouse capture off;<br>• the alternate screen left;<br>• the cursor shown.<br><br>"While the TUI is running" means from entering raw mode until the normal restore after `run_tui`. Outside that window (one-shot runs, `honed`, before the TUI starts, after it ends) the hook writes nothing to the terminal. |
 | C6 | **Docs.** `docs/configuration.md` (MCP section) and the CHANGELOG say that a panic now stops MCP servers and shell commands. Only a hard kill still leaves a server that ignores its input closing: `kill -9`, the OOM killer, or a crash that isn't a panic (a segfault, a stack overflow, an abort from C code). The CHANGELOG also notes the TUI terminal fix. |
 
+### Review round 1 (C7–C9)
+
+| Row | Behaviour |
+|---|---|
+| C7 | **No TUI frame lands after the restore.** When the hook restores the terminal (C5), it holds stdout's lock from the restore until the process ends.<br>• In a release build the lock is never released. The process aborts right after the hook, so the TUI's draw loop can't write over the restored screen or the message, or hide or move the cursor. That loop may still be running on the main thread during the SIGTERM grace.<br>• For a main-thread panic in a debug build the panicking thread is the draw loop, so the lock is released after the hook.<br>• One-shot runs and `honed` don't take the lock.<br><br>(Review S1, reproduced in a pty: in a release build with other tasks busy, about 10 frames, 490–560 bytes, arrived after the panic message. With the lock held, 0 bytes arrived in 3 of 3 runs. Releasing the lock before the abort still let one frame through.) |
+| C8 | **Two panics at once can't hang hone.** On the panic path, every registry access waits at most about 100 ms: the first look, the deregistration after the grace, and the final shell-command kill. If the registry stays locked after the grace, the MCP groups get SIGKILL without being deregistered, the hook returns and the panic proceeds.<br><br>(Review S2, reproduced at function level. Thread A's cleanup held the cleanup lock and waited for the registry. Thread B had panicked while holding the registry and waited for the cleanup lock. Neither returned.) |
+| C9 | **Tests pin what C1 and C4 say.**<br>• Concurrent callers SIGTERM an MCP group exactly once.<br>• A shell-command group that ignores SIGTERM is gone well before the MCP grace ends: it got SIGKILL at once. |
+
 ## Testing notes
 
 - **C1–C4 at library level.** Use a child process that panics on its real **main** thread, for example a `harness = false` integration test that re-executes itself with an argument. The child:

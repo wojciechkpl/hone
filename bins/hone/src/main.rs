@@ -7679,13 +7679,23 @@ mod approve_flag_tests {
 ///
 /// API required (in this file):
 /// - `fn set_tui_running(running: bool)` / `fn tui_running() -> bool`: the
-///   process-wide "TUI running" flag, false at start.
+///   process-wide "TUI running" flag.
 /// - `fn tui_panic_restore<W: std::io::Write>(out: &mut W, ends_process: bool) -> bool`:
 ///   when the flag is set AND `ends_process`, switches raw mode off (an error,
 ///   e.g. no tty, is ignored), writes the restore sequence to `out` (bracketed
 ///   paste off, mouse capture off, leave the alternate screen, show the cursor)
 ///   and returns true; otherwise writes nothing and returns false.
+///
+/// C7 adds `fn tui_panic_restore_locked(ends_process: bool) ->
+/// Option<std::io::StdoutLock<'static>>`: the hook's entry point. When the flag
+/// is set AND `ends_process` it locks stdout, runs the restore (as
+/// `tui_panic_restore`) through that lock, and returns `Some(lock)` so the hook
+/// can hold it across the inner hook (and `mem::forget` it when
+/// `cfg!(panic = "abort")`). Otherwise it takes no lock and returns `None`.
+/// The `Some` test writes the real restore sequence to the process's stdout:
+/// harmless escape codes (and a no-op raw-mode switch without a tty).
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tui_panic_restore_tests {
     use super::*;
 
@@ -7696,7 +7706,7 @@ mod tui_panic_restore_tests {
     }
 
     #[test]
-    fn test_c5_tui_running_flag_should_start_false_and_follow_set() {
+    fn test_c5_tui_running_flag_should_follow_set() {
         let _g = lock();
         set_tui_running(false);
         assert!(!tui_running());
@@ -7740,5 +7750,53 @@ mod tui_panic_restore_tests {
         set_tui_running(false);
         assert!(!restored);
         assert!(out.is_empty(), "a caught task panic must not wreck the TUI: {out:?}");
+    }
+
+    // ---- C7: stdout stays locked after the restore --------------------------
+
+    /// Whether another thread gets stdout's lock within `wait`.
+    fn other_thread_can_lock_stdout(wait: std::time::Duration) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _l = io::stdout().lock();
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(wait).is_ok()
+    }
+
+    #[test]
+    fn test_c7_restore_that_ran_should_hold_stdout_locked_until_the_lock_is_dropped() {
+        let _g = lock();
+        set_tui_running(true);
+        let held = tui_panic_restore_locked(true);
+        set_tui_running(false);
+        assert!(held.is_some(), "the restore ran: the lock is handed back");
+        let blocked = !other_thread_can_lock_stdout(std::time::Duration::from_millis(200));
+        drop(held);
+        let freed = other_thread_can_lock_stdout(std::time::Duration::from_secs(5));
+        assert!(blocked, "a TUI frame could still be written after the restore");
+        assert!(freed, "dropping the lock (debug build) frees stdout");
+    }
+
+    #[test]
+    fn test_c7_when_tui_is_not_running_should_take_no_lock() {
+        let _g = lock();
+        set_tui_running(false);
+        let held = tui_panic_restore_locked(true);
+        assert!(held.is_none());
+        assert!(
+            other_thread_can_lock_stdout(std::time::Duration::from_secs(5)),
+            "one-shot runs and honed must not take the lock"
+        );
+    }
+
+    #[test]
+    fn test_c7_panic_that_does_not_end_hone_should_take_no_lock() {
+        let _g = lock();
+        set_tui_running(true);
+        let held = tui_panic_restore_locked(false);
+        set_tui_running(false);
+        assert!(held.is_none());
+        assert!(other_thread_can_lock_stdout(std::time::Duration::from_secs(5)));
     }
 }
