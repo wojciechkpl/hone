@@ -15,6 +15,13 @@ use hone_tools::ToolRegistry;
 use tokio::sync::mpsc;
 
 fn agent_with_store(store: Arc<InMemoryStore>) -> Agent {
+    agent_with_embedder(store, None)
+}
+
+fn agent_with_embedder(
+    store: Arc<InMemoryStore>,
+    embedder: Option<Arc<dyn hone_memory::Embedder>>,
+) -> Agent {
     Agent::new(AgentConfig {
         provider: Arc::new(MockProvider::new(vec!["ok".to_owned()])),
         tools: ToolRegistry::new(),
@@ -44,12 +51,22 @@ fn agent_with_store(store: Arc<InMemoryStore>) -> Agent {
         hooks: None,
         skills: None,
         mode: AgentMode::Build,
-        embedder: None,
+        embedder,
         policy: None,
     })
 }
 
 async fn seed(store: &Arc<InMemoryStore>, id: &str, content: &str, kind: MemoryKind) {
+    seed_with(store, id, content, kind, None).await;
+}
+
+async fn seed_with(
+    store: &Arc<InMemoryStore>,
+    id: &str,
+    content: &str,
+    kind: MemoryKind,
+    embedding: Option<Vec<f32>>,
+) {
     store
         .record(Memory {
             id: id.to_owned(),
@@ -60,7 +77,7 @@ async fn seed(store: &Arc<InMemoryStore>, id: &str, content: &str, kind: MemoryK
             decay_at: None,
             kind,
             description: None,
-            embedding: None,
+            embedding,
         })
         .await
         .unwrap();
@@ -105,4 +122,62 @@ async fn test_m3_turn_should_recall_matching_feedback_but_not_outcome_logs() {
         !recalled.iter().any(|(_, s)| s.contains("OUTCOME-LOG")),
         "outcome logs must not come back as relevant memories; got {recalled:?}"
     );
+}
+
+// ---- M9: semantic recall keeps offering 5 candidates ---------------------------
+
+/// Embeds every text to the same unit vector.
+struct FixedEmbedder;
+
+#[async_trait::async_trait]
+impl hone_memory::Embedder for FixedEmbedder {
+    fn dim(&self) -> usize {
+        2
+    }
+
+    async fn embed(&self, _text: &str) -> Result<hone_memory::Embedding, hone_memory::EmbedError> {
+        Ok(vec![1.0, 0.0])
+    }
+}
+
+#[tokio::test]
+async fn test_m9_semantic_recall_should_still_offer_five_candidates_after_dropping_outcomes() {
+    let store = Arc::new(InMemoryStore::new());
+    // Six outcome logs are the closest vectors; six feedback notes come next.
+    // None shares a word with the prompt, so only the semantic path can match.
+    for i in 0..6 {
+        seed_with(
+            &store,
+            &format!("o{i}"),
+            &format!("OUTCOME-LOG number {i} shipped"),
+            MemoryKind::Outcome,
+            Some(vec![1.0, 0.0]),
+        )
+        .await;
+        seed_with(
+            &store,
+            &format!("f{i}"),
+            &format!("FEEDBACK-NOTE number {i} observed"),
+            MemoryKind::Feedback,
+            Some(vec![0.8, 0.6]),
+        )
+        .await;
+    }
+    let mut agent = agent_with_embedder(Arc::clone(&store), Some(Arc::new(FixedEmbedder)));
+
+    let (tx, mut rx) = mpsc::channel(64);
+    agent.run_turn("quokka wrangling", tx).await.expect("turn");
+
+    let mut recalled: Vec<(String, String)> = vec![];
+    while let Ok(ev) = rx.try_recv() {
+        if let AgentEvent::MemoryRecalled { entries } = ev {
+            recalled.extend(entries);
+        }
+    }
+    let notes = recalled.iter().filter(|(_, s)| s.contains("FEEDBACK-NOTE")).count();
+    assert!(
+        !recalled.iter().any(|(_, s)| s.contains("OUTCOME-LOG")),
+        "no outcome logs; got {recalled:?}"
+    );
+    assert_eq!(notes, 5, "five non-outcome candidates remain; got {recalled:?}");
 }

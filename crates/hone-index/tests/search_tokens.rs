@@ -109,3 +109,53 @@ async fn test_m4_limit_should_cut_the_ranked_results() {
     let got = names(&idx, "login", 2).await;
     assert_eq!(got, ["login", "login_user"]);
 }
+
+// ---- M6: the score follows the ranking ----------------------------------------
+
+#[tokio::test]
+async fn test_m6_scores_should_be_non_increasing_in_result_order() {
+    let idx = index_with(&["login", "login_bug_fix", "handle_login", "bug_tracker"]).await;
+    for query in ["fix the login bug", "login bug", "login", "bug fix login handle"] {
+        let results = idx.search(query, 10).await.unwrap();
+        let scores: Vec<f64> = results.iter().map(|r| r.score).collect();
+        assert!(
+            scores.windows(2).all(|w| w[0] >= w[1]),
+            "query {query:?}: scores {scores:?} for {:?}",
+            results.iter().map(|r| r.symbol.name.as_str()).collect::<Vec<_>>()
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_m6_the_best_match_should_lead_with_a_clear_score_gap() {
+    let idx = index_with(&["login", "login_bug_fix", "handle_login"]).await;
+    let results = idx.search("fix the login bug", 10).await.unwrap();
+    assert_eq!(results[0].symbol.name, "login_bug_fix", "three tokens matched");
+    assert!(
+        results[0].score > results[1].score,
+        "top {} vs second {}: the gap drives retrieval confidence",
+        results[0].score,
+        results[1].score
+    );
+}
+
+// ---- M7: the best multi-token match always surfaces ----------------------------
+
+#[tokio::test]
+async fn test_m7_best_multi_token_match_should_surface_among_thousands_of_one_token_matches() {
+    // Every token is crowded by more than 2,000 short names that match it alone,
+    // so a per-token row cap would never see the name that matches all three.
+    let mut fns: Vec<String> = Vec::new();
+    for i in 1..=2500 {
+        fns.push(format!("fix_{i}"));
+        fns.push(format!("flaky_{i}"));
+        fns.push(format!("test_{i}"));
+    }
+    fns.push("fix_flaky_test_runner".to_owned());
+    let refs: Vec<&str> = fns.iter().map(String::as_str).collect();
+    let idx = index_with(&refs).await;
+
+    let got = names(&idx, "fix the flaky test", 10).await;
+
+    assert_eq!(got.first().map(String::as_str), Some("fix_flaky_test_runner"), "{got:?}");
+}

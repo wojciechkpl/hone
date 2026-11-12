@@ -34,6 +34,19 @@ flowchart LR
 | M4 | **Index search matches plain-English prompts.** The query is split into word tokens (letters, digits, `_`), lower-cased, without English stop words or tokens shorter than 3 characters. A symbol matches if its name contains any token, ignoring case.<br><br>Results are ranked in this order:<br>1. the number of distinct tokens the name contains;<br>2. exact name match over prefix over substring (the current tiers);<br>3. shorter name first.<br><br>Then they're cut to `limit`.<br>• `"fix the login bug"` finds `login` and `handle_login`.<br>• A single-identifier query (`"login"`, `"handle_login"`) gives the same results and order as today.<br>• A query with no usable tokens returns nothing. |
 | M5 | **The SQL stays bounded.** Each token is matched with a bound parameter, never by string-building SQL, so `%` and `_` in a token are escaped (`ESCAPE`). The number of tokens is capped (16), so a long prompt can't build a huge query. The row fetch per token is bounded so that ranking can still pick the best `limit`. |
 
+### Review round 1 (M6–M9)
+
+The index has **three** production callers, all passing the user's prompt: `context_injector.rs:363` (tier 2), `context_injector.rs:843` (the hybrid skeleton) and `hierarchical_skeleton.rs:463`.
+
+| Row | Behaviour |
+|---|---|
+| M6 | **`SearchResult.score` follows the ranking.** The score folds in the number of matched tokens (for example `matched + tier`), so results come back in non-increasing score order. Callers that read the score (`compute_confidence`, the gap between the top two; `find_relevant_files`, which ranks by `score + 10`) then agree with the ranking. The doc comment states the scale.<br><br>(Review S1, reproduced: the prompt "fix the login bug" over `login`, `login_bug_fix` and `handle_login` scored `[0.8, 1.0, 0.5]`. The gap was negative, so confidence was Low and nothing was injected. With only `login` indexed it injected, so adding a better match switched injection off.) |
+| M7 | **One scan, and the best multi-token matches always surface.** Search runs a single query: a matched-token count summed from per-token `LIKE … ESCAPE` terms, OR-ed in the `WHERE`, `ORDER BY matched DESC, length(name)`, with a small multiple of `limit`. Then the tier order is applied in Rust. A name matching several tokens is found however many shorter names match one token. The old per-token cap of 2,000 rows hid them.<br><br>(Review S2, reproduced: at 200k symbols the top 10 were all 2-token matches although 3-token names existed. A 6-token prompt took 111.5 ms against 9.3 ms for the old single `LIKE`.) |
+| M8 | **The BM25 recall path doesn't fetch embeddings.** The corpus query used for lexical ranking leaves out the `embedding` column. That was about 55 ms extra per turn at 5,000 rows with 1536-dimension vectors. Not pinned by a test; the reviewer measured it. |
+| M9 | **Semantic recall still offers up to 5 candidates after excluding outcomes.** `fetch_relevant_memories` asks the semantic path for enough candidates (or excludes inside the store) so that dropping `Outcome` rows doesn't leave fewer than 5 when more non-outcome matches exist. |
+
+Doc note: words under 3 characters and common English stop words (`new`, `get`, `use`, …) are not searched. That's fine for the prompt-driven callers, and the doc comment on `search` says so.
+
 ## Testing notes
 
 - **M1–M3** go in `crates/hone-memory` with an in-memory or temp SQLite store.
