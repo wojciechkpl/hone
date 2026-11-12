@@ -813,3 +813,143 @@ async fn test_w7_an_encrypted_store_should_work_through_the_same_path() {
         "the inner store holds ciphertext"
     );
 }
+
+// ---- W1 regression: replacing the tool registry must not drop the agent-added tool ----------------------
+//
+// `AgentHandle::set_tools(registry)` replaces the agent's tool registry (the TUI does it for
+// `@agent` dispatch). `memory_write` is added by the agent, not by the caller, so it must
+// survive the replacement when the writer includes `tool` and a memory store exists, and must
+// stay absent for a writer without `tool`.
+
+fn replacement_registry() -> ToolRegistry {
+    ToolRegistry::builder()
+        .register(Box::new(TextTool {
+            name: "read_file",
+            text: "plain file text",
+        }))
+        .build()
+}
+
+fn handle_for(s: &Setup) -> hone_core::AgentHandle {
+    let config = AgentConfig {
+        provider: s.rec.clone(),
+        tools: replacement_registry(),
+        sandbox: Arc::new(NullSandbox),
+        sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
+        system_prompt: "test".to_owned(),
+        model: ModelId::new("mock:test"),
+        max_tokens: None,
+        temperature: None,
+        budget_limit: None,
+        pricing: PricingEntry {
+            model: ModelId::new("mock:test"),
+            input_per_million: 0.0,
+            output_per_million: 0.0,
+            cache_read_per_million: None,
+            cache_creation_per_million: None,
+        },
+        working_dir: s.workdir.clone(),
+        memory_store: s.store.clone(),
+        retry_config: RetryConfig::default(),
+        index: None,
+        inject_context: false,
+        skeleton_strategy: Default::default(),
+        egress_log: None,
+        approval_policy: s.approval.clone(),
+        step_rx: s.step_rx.clone(),
+        hooks: None,
+        skills: None,
+        embedder: None,
+        mode: AgentMode::Build,
+        policy: s.policy.clone(),
+    };
+    hone_core::AgentHandle::spawn_with_strategies(config, s.strategies.clone())
+}
+
+async fn handle_turn(h: &hone_core::AgentHandle, prompt: &str) -> Vec<AgentEvent> {
+    let (tx, mut rx) = mpsc::channel::<AgentEvent>(4096);
+    tokio::time::timeout(Duration::from_secs(30), h.run_turn(prompt, tx))
+        .await
+        .expect("turn hung")
+        .expect("turn failed");
+    let mut all = Vec::new();
+    while let Ok(e) = rx.try_recv() {
+        all.push(e);
+    }
+    all
+}
+
+fn receipt_tools(events: &[AgentEvent]) -> Vec<String> {
+    events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::ContextAssembled { receipt } => Some(receipt.tools_offered.clone()),
+            _ => None,
+        })
+        .expect("a receipt")
+}
+
+#[tokio::test]
+async fn test_w1_memory_write_should_survive_a_tool_registry_replacement() {
+    let s = setup(vec![vec![mw("c1", "feedback", "Prefer small commits when refactoring.")]]);
+    let h = handle_for(&s);
+    h.set_tools(replacement_registry()).await;
+
+    let events = handle_turn(&h, "remember something").await;
+
+    let names = tool_names(&s.rec.request(0));
+    assert!(names.contains(&"memory_write".to_owned()), "schemas after replacement: {names:?}");
+    assert!(names.contains(&"read_file".to_owned()), "the replacement's own tools stay: {names:?}");
+    let offered = receipt_tools(&events);
+    assert!(offered.contains(&"memory_write".to_owned()), "tools_offered: {offered:?}");
+    let (result, is_error) = end_of(&events, "c1");
+    assert!(!is_error, "memory_write must still run after the replacement: {result}");
+    assert_eq!(written(&events).len(), 1);
+    let mems = stored(s.store.as_ref().unwrap()).await;
+    assert!(mems.iter().any(|m| m.content == "Prefer small commits when refactoring."), "{mems:?}");
+}
+
+#[tokio::test]
+async fn test_w1_memory_write_should_survive_repeated_replacements_between_turns() {
+    let s = setup(vec![]);
+    let h = handle_for(&s);
+    handle_turn(&h, "first").await;
+    h.set_tools(replacement_registry()).await;
+    handle_turn(&h, "second").await;
+    h.set_tools(replacement_registry()).await;
+    handle_turn(&h, "third").await;
+
+    for i in 0..s.rec.count() {
+        let names = tool_names(&s.rec.request(i));
+        assert!(names.contains(&"memory_write".to_owned()), "request {i}: {names:?}");
+    }
+    assert!(s.rec.count() >= 3);
+}
+
+#[tokio::test]
+async fn test_w1_a_writer_without_the_tool_should_stay_without_it_after_a_replacement() {
+    for toml in ["[memory]\nwriter = \"triggers\"\n", "[memory]\nwriter = \"off\"\n", ""] {
+        let mut s = setup(vec![]);
+        s.strategies = Some(selection_toml(toml));
+        let h = handle_for(&s);
+        h.set_tools(replacement_registry()).await;
+
+        let events = handle_turn(&h, "hello").await;
+
+        let names = tool_names(&s.rec.request(0));
+        assert!(!names.contains(&"memory_write".to_owned()), "{toml:?}: {names:?}");
+        assert!(!receipt_tools(&events).contains(&"memory_write".to_owned()), "{toml:?}");
+    }
+}
+
+#[tokio::test]
+async fn test_w1_no_memory_store_should_stay_without_the_tool_after_a_replacement() {
+    let mut s = setup(vec![]);
+    s.store = None;
+    let h = handle_for(&s);
+    h.set_tools(replacement_registry()).await;
+
+    handle_turn(&h, "hello").await;
+
+    assert!(!tool_names(&s.rec.request(0)).contains(&"memory_write".to_owned()));
+}
