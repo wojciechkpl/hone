@@ -640,7 +640,6 @@ pub struct ResolvedStrategies {
     pub(crate) skeleton_max_tokens: u32,
     pub(crate) skeleton_gap_threshold: f32,
     pub(crate) trim_only: bool,
-    #[allow(dead_code)] // wired into the context manager with phase compaction's opt-in
     pub(crate) graduated_phase: bool,
     pub(crate) budget_ratio: Option<f32>,
     pub(crate) recaller: Arc<dyn Recaller>,

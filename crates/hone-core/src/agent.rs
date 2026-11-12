@@ -17,8 +17,6 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
-use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
-use crate::strategy::{RecallerKind, ResolvedStrategies, WriterKind};
 use crate::context::{ContextManager, estimate_text_tokens};
 use crate::context_injector::{ContextInjector, SkeletonStrategy};
 use crate::cost::CostAccumulator;
@@ -30,10 +28,12 @@ use crate::memory_format::format_memory_body;
 use crate::memory_worthy::MemoryCandidate;
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
+use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
 use crate::session_approvals::SessionApprovals;
 use crate::skills::SkillRegistry;
+use crate::strategy::{RecallerKind, ResolvedStrategies, WriterKind};
 use crate::turn::TurnResult;
 use hone_tools::policy_gate::{
     GateDecision, PolicyConfig, decide, read_filter, session_approval_entries,
@@ -742,6 +742,8 @@ impl Agent {
     /// `AgentConfig`'s `inject_context` and `skeleton_strategy`.
     pub fn with_strategies(mut self, strategies: Arc<ResolvedStrategies>) -> Self {
         self.context.set_trim_only(strategies.trim_only);
+        self.context
+            .set_phase_compaction(strategies.graduated_phase);
         if let Some(ratio) = strategies.budget_ratio {
             self.context.set_budget_ratio(ratio);
         }
@@ -842,7 +844,11 @@ impl Agent {
                 blocked: false,
                 block_reason: None,
                 injection_risk: None,
-                duration_ms: receipt.blocks.iter().map(|b| u64::from(b.duration_ms)).sum(),
+                duration_ms: receipt
+                    .blocks
+                    .iter()
+                    .map(|b| u64::from(b.duration_ms))
+                    .sum(),
                 trace_id: trace.trace_id.clone(),
                 span_id,
                 parent_span_id,
@@ -905,68 +911,68 @@ impl Agent {
             Err(_) => Vec::new(),
         };
 
-        let final_memories: Vec<hone_memory::Memory> =
-            if strategies.recaller_kind == RecallerKind::Custom {
-                custom = Some(strategies.recaller.id().clone());
-                bm25_memories
-            } else {
-                // Semantic (when embedder present)
-                let mut embedder_ran = false;
-                let semantic_memories: Vec<hone_memory::Memory> =
-                    if let Some(embedder) = &self.config.embedder {
-                        match embedder.embed(query).await {
-                            Ok(query_vec) => {
-                                embedder_ran = true;
-                                store
-                                    .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
-                                    .await
-                                    .map(|scored| {
-                                        scored
-                                            .into_iter()
-                                            .map(|s| s.memory)
-                                            .filter(|m| !exclude.contains(&m.kind))
-                                            .collect()
-                                    })
-                                    .unwrap_or_default()
-                            }
-                            Err(_) => Vec::new(),
+        let final_memories: Vec<hone_memory::Memory> = if strategies.recaller_kind
+            == RecallerKind::Custom
+        {
+            custom = Some(strategies.recaller.id().clone());
+            bm25_memories
+        } else {
+            // Semantic (when embedder present)
+            let mut embedder_ran = false;
+            let semantic_memories: Vec<hone_memory::Memory> =
+                if let Some(embedder) = &self.config.embedder {
+                    match embedder.embed(query).await {
+                        Ok(query_vec) => {
+                            embedder_ran = true;
+                            store
+                                .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
+                                .await
+                                .map(|scored| {
+                                    scored
+                                        .into_iter()
+                                        .map(|s| s.memory)
+                                        .filter(|m| !exclude.contains(&m.kind))
+                                        .collect()
+                                })
+                                .unwrap_or_default()
                         }
-                    } else {
-                        Vec::new()
-                    };
-
-                // An embedder was configured and ran for this query (even if it found nothing).
-                semantic = embedder_ran;
-                let mut semantic_memories = semantic_memories;
-                if semantic_memories.len() > top_k {
-                    cut_ids.extend(semantic_memories.split_off(top_k).into_iter().map(|m| m.id));
-                }
-
-                // Fuse via RRF when both signals are present; otherwise use whichever is non-empty
-                if !semantic_memories.is_empty() {
-                    let bm25_ids: Vec<String> =
-                        bm25_memories.iter().map(|m| m.id.clone()).collect();
-                    let semantic_ids: Vec<String> =
-                        semantic_memories.iter().map(|m| m.id.clone()).collect();
-                    let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], RECALL_RRF_K);
-                    cut_ids.extend(fused_ids.iter().skip(top_k).cloned());
-                    let mut by_id: std::collections::HashMap<String, hone_memory::Memory> =
-                        std::collections::HashMap::new();
-                    for m in bm25_memories
-                        .into_iter()
-                        .chain(semantic_memories.into_iter())
-                    {
-                        by_id.entry(m.id.clone()).or_insert(m);
+                        Err(_) => Vec::new(),
                     }
-                    fused_ids
-                        .into_iter()
-                        .take(top_k)
-                        .filter_map(|id| by_id.remove(&id))
-                        .collect()
                 } else {
-                    bm25_memories
+                    Vec::new()
+                };
+
+            // An embedder was configured and ran for this query (even if it found nothing).
+            semantic = embedder_ran;
+            let mut semantic_memories = semantic_memories;
+            if semantic_memories.len() > top_k {
+                cut_ids.extend(semantic_memories.split_off(top_k).into_iter().map(|m| m.id));
+            }
+
+            // Fuse via RRF when both signals are present; otherwise use whichever is non-empty
+            if !semantic_memories.is_empty() {
+                let bm25_ids: Vec<String> = bm25_memories.iter().map(|m| m.id.clone()).collect();
+                let semantic_ids: Vec<String> =
+                    semantic_memories.iter().map(|m| m.id.clone()).collect();
+                let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], RECALL_RRF_K);
+                cut_ids.extend(fused_ids.iter().skip(top_k).cloned());
+                let mut by_id: std::collections::HashMap<String, hone_memory::Memory> =
+                    std::collections::HashMap::new();
+                for m in bm25_memories
+                    .into_iter()
+                    .chain(semantic_memories.into_iter())
+                {
+                    by_id.entry(m.id.clone()).or_insert(m);
                 }
-            };
+                fused_ids
+                    .into_iter()
+                    .take(top_k)
+                    .filter_map(|id| by_id.remove(&id))
+                    .collect()
+            } else {
+                bm25_memories
+            }
+        };
 
         if final_memories.is_empty() {
             return (String::new(), vec![], RecallInfo::default());

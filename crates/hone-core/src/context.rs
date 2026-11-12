@@ -601,6 +601,12 @@ impl ContextManager {
         }
     }
 
+    /// Set phase compaction in place (the `[context.graduated] phase` choice of
+    /// a strategy selection).
+    pub fn set_phase_compaction(&mut self, enabled: bool) {
+        self.phase_compaction = enabled;
+    }
+
     /// Turn compaction on phase transitions on or off, overriding
     /// `HONE_PHASE_COMPACTION` (read when the manager was built).
     pub fn with_phase_compaction(mut self, enabled: bool) -> Self {
