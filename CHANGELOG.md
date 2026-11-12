@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed: `honed` drains with its tools, then stops MCP servers gracefully
+
+- **Before:** the first SIGINT, SIGTERM or SIGHUP killed every running shell command and sent every MCP server SIGTERM at once, and only then began waiting for open requests, with no time limit. A worker's running task lost its tools mid-task, and the task stayed claimed until its lease ran out. A request held open (an SSE stream, a run waiting for approval) kept `honed` running for as long as it stayed open. MCP servers never got a graceful shutdown.
+- **Now:**
+  - The first signal stops `honed` accepting connections and a worker claiming tasks. Running requests and a running worker task finish with their commands and MCP servers, and the task is reported to the coordinator as usual.
+  - The wait is limited by `HONE_SHUTDOWN_GRACE_SECS` (default 25; `0` means no wait; an invalid value logs a warning). When it passes, a worker task still running is dropped (the coordinator requeues it) and open responses are closed.
+  - Then the worker's MCP servers shut down gracefully (up to 5 s, all at once), anything still running is stopped, and `honed` exits 0.
+  - A second signal stops everything at once and ends `honed` by that signal. A signal that was ignored at start stays ignored.
+- Contract: `docs/plans/honed-graceful-shutdown-spec.md`.
+
 ### Corrected: SWE-bench claims withdrawn
 
 - The README, docs and earlier changelog entries reported 86% and 95% SWE-bench "pass rates". These were patch-generation rates (any non-empty diff) on 50- and 20-task samples, extrapolated to 300 tasks, and were never graded. They are withdrawn, along with the cost comparisons built on them. The only graded result is **58/300 (19.3%)** on SWE-bench Lite (DeepSeek V3, April 2026, official harness). A pre-registered, harness-controlled comparison is in progress (`docs/plans/trust-defaults-daemon-2026-11.md`, `benchmarks/harness-compare/`).
