@@ -2682,6 +2682,7 @@ dependencies = [
  "hone-tools",
  "httpmock",
  "ignore",
+ "libc",
  "mockall",
  "proptest",
  "regex",
@@ -2731,13 +2732,18 @@ name = "hone-eval"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "hone-config",
  "hone-core",
+ "hone-memory",
  "hone-proto",
  "hone-providers",
  "hone-sandbox",
  "hone-tools",
+ "ignore",
+ "libc",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
@@ -2846,6 +2852,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -2865,6 +2872,7 @@ name = "hone-provenance"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "hone-proto",
  "serde",
  "serde_json",
  "sha2",

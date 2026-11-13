@@ -1,0 +1,17 @@
+# Excerpt of eval/suites/starter/tasks.toml (two tasks) used by F11 tests.
+
+[[tasks]]
+id = "c01-py-fix-median"
+prompt = "The median() function in stats.py gives the wrong answer for some inputs. Fix the bug so that `python3 -m unittest` passes. Do not change the tests."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/c01-py-fix-median.sh\""
+working_dir = "c01-py-fix-median"
+timeout_secs = 300
+
+[[tasks]]
+id = "m02-mem-staging-port"
+prompt = "Set the port in config.json to the staging service port we agreed on. Change nothing else in the file."
+success_check = "sh \"$EVAL_SUITE_DIR/checks/m02-mem-staging-port.sh\""
+working_dir = "m02-mem-staging-port"
+memory_fixture = "fixtures/m02-mem-staging-port.jsonl"
+timeout_secs = 300
+

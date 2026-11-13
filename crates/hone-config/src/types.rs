@@ -189,6 +189,53 @@ pub struct Config {
     /// The `[provider]` table written by `hone configure`.
     #[serde(default)]
     pub provider: Option<WizardProviderConfig>,
+
+    /// The `[context]` table: context sources, skeleton, compactor, budget.
+    #[serde(default)]
+    pub context: Option<crate::strategy::ContextTable>,
+
+    /// The `[memory]` table: recaller, writer, top_k, excluded kinds.
+    #[serde(default)]
+    pub memory: Option<crate::strategy::MemoryTable>,
+
+    /// `[pricing."provider:model"]` tables: the user's own per-million-token prices.
+    #[serde(default)]
+    pub pricing: std::collections::BTreeMap<String, PricingTableEntry>,
+}
+
+/// One `[pricing."provider:model"]` table.
+///
+/// `input_per_million` and `output_per_million` are required; a missing one is
+/// reported by key name (the parser's own message would cut it off).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PricingTableEntry {
+    pub input_per_million: f64,
+    pub output_per_million: f64,
+    pub cache_read_per_million: Option<f64>,
+    pub cache_creation_per_million: Option<f64>,
+}
+
+impl<'de> Deserialize<'de> for PricingTableEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Raw {
+            input_per_million: Option<f64>,
+            output_per_million: Option<f64>,
+            cache_read_per_million: Option<f64>,
+            cache_creation_per_million: Option<f64>,
+        }
+        let raw = Raw::deserialize(d)?;
+        let need = |v: Option<f64>, key: &str| {
+            v.ok_or_else(|| serde::de::Error::custom(format!("a pricing entry needs {key}")))
+        };
+        Ok(Self {
+            input_per_million: need(raw.input_per_million, "input_per_million")?,
+            output_per_million: need(raw.output_per_million, "output_per_million")?,
+            cache_read_per_million: raw.cache_read_per_million,
+            cache_creation_per_million: raw.cache_creation_per_million,
+        })
+    }
 }
 
 impl Config {

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use futures::StreamExt;
 use hone_index::SqliteIndex;
-use hone_memory::{Memory, MemoryQuery, MemoryStore};
+use hone_memory::{Memory, MemoryStore};
 use hone_proto::{
     AgentEvent, Content, Message, ModelId, PricingEntry, ProviderEvent, StepAction, TokenUsage,
     ToolApprovalPolicy, ToolCallRequest, WorkerRef,
@@ -25,19 +25,59 @@ use crate::error::AgentError;
 use crate::hooks::{HookEvent, HookOutcome, HookRegistry};
 use crate::injection_detector::InjectionDetector;
 use crate::memory_format::format_memory_body;
-use crate::memory_worthy::{MemoryCandidate, classify_turn};
+use crate::memory_worthy::MemoryCandidate;
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
-use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
+/// What one gathered source returned this turn.
+struct GatheredSource {
+    name: String,
+    once: bool,
+    extras: Vec<ExtraBlock>,
+}
+
+use crate::receipts::{ExtraBlock, InjectionInfo, RecallInfo, TurnContextInfo};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
 use crate::session_approvals::SessionApprovals;
 use crate::skills::SkillRegistry;
+use crate::strategy::{RecallerKind, ResolvedStrategies, WriterKind};
 use crate::turn::TurnResult;
 use hone_tools::policy_gate::{
     GateDecision, PolicyConfig, decide, read_filter, session_approval_entries,
 };
 use hone_tools::redact::{redact_json, redact_secrets};
+
+/// Prices a model's usage; `None` means no price (the call costs nothing).
+pub type PriceLookup = Arc<dyn Fn(&ModelId) -> Option<PricingEntry> + Send + Sync>;
+
+static DEFAULT_PRICE_LOOKUP: std::sync::RwLock<Option<PriceLookup>> = std::sync::RwLock::new(None);
+
+/// Set the process-wide price lookup, used by every agent that has none of its
+/// own (orchestrator leads and workers, ensemble candidates, the reviewer loop,
+/// `honed`'s executors, eval runs). Call it once at start.
+pub fn set_default_price_lookup(lookup: PriceLookup) {
+    if let Ok(mut slot) = DEFAULT_PRICE_LOOKUP.write() {
+        *slot = Some(lookup);
+    }
+}
+
+/// The price of `model` by the process-wide default lookup, if one is set and
+/// knows the model.
+pub fn default_price(model: &ModelId) -> Option<PricingEntry> {
+    default_price_lookup().and_then(|lookup| lookup(model))
+}
+
+static UNPRICED_SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Models any agent of this process has had an unpriced call for, in first-seen
+/// order (orchestrator and ensemble agents included).
+pub fn unpriced_models_seen() -> Vec<String> {
+    UNPRICED_SEEN.lock().map(|v| v.clone()).unwrap_or_default()
+}
+
+fn default_price_lookup() -> Option<PriceLookup> {
+    DEFAULT_PRICE_LOOKUP.read().ok().and_then(|slot| slot.clone())
+}
 
 /// Configuration for creating an `Agent`.
 #[derive(Clone)]
@@ -620,13 +660,47 @@ pub struct Agent {
     config: AgentConfig,
     context: ContextManager,
     cost: CostAccumulator,
+    /// Prices each call by the model that served it; without one,
+    /// `config.pricing` applies.
+    price_lookup: Option<PriceLookup>,
+    /// Models with at least one unpriced call, in first-seen order.
+    unpriced_models: Vec<String>,
+    /// Unpriced models not yet announced with `AgentEvent::UnpricedModel`.
+    unannounced_unpriced: Vec<String>,
+    /// Successful calls that reported no usage at all.
+    calls_without_usage: u32,
     /// Monotonically increasing counter of completed turns this session.
     turn_count: u32,
+    /// Successful `memory_write` calls this session (capped).
+    memory_writes: usize,
+    /// Set when a tool result this turn was labelled with a Medium/High injection
+    /// risk: a `memory_write` then needs approval even in auto-approve modes.
+    injection_seen: std::sync::atomic::AtomicBool,
+    /// Tools whose results (file, shell, web, LSP or MCP content) are in this
+    /// agent's context: a `memory_write` then needs approval, in this turn or any
+    /// later one. Kept for the life of the agent: results can leave the context
+    /// window, but not as a way to skip the approval.
+    untrusted_sources: std::sync::Mutex<Vec<String>>,
+    /// The strategies this agent runs with (derived from `AgentConfig` unless
+    /// set with `with_strategies`).
+    strategies: Arc<ResolvedStrategies>,
     /// Inputs of the current turn's context receipts (recall, skills, injection).
     receipt_info: TurnContextInfo,
     /// Hashes of the non-system messages of the previous receipt (for the incremental
     /// `History` listing).
     receipt_history: std::collections::HashSet<String>,
+    /// Blocks of gathered context sources, in source order: `Once` sources are
+    /// gathered before the first model call and kept; `EachTurn` ones every turn.
+    extra_blocks: Vec<(String, bool, Vec<ExtraBlock>)>,
+    /// Names of the `Once` sources already gathered.
+    once_gathered: HashSet<String>,
+    /// The context receipts of this agent's life, oldest first (newest
+    /// `MAX_KEPT_RECEIPTS` at most).
+    receipts: Vec<hone_proto::ContextReceipt>,
+    /// Receipts dropped by the cap so far (ordinal of `receipts[0]` is this + 1).
+    receipts_dropped: u64,
+    /// Identifies this agent's receipt ordinals (UUID v7).
+    receipt_agent_id: String,
     metrics: Arc<ContextMetrics>,
     /// Per-turn guard state (reset at the top of each `run_turn` call).
     guards: TurnGuards,
@@ -662,10 +736,15 @@ pub struct Agent {
 /// Candidates asked of the semantic recall: more than the 5 used, because
 /// `Outcome` logs are dropped afterwards and must not leave fewer than 5.
 pub(crate) const SEMANTIC_RECALL_FETCH: usize = 20;
-/// Memories recalled per turn.
-pub(crate) const RECALL_LIMIT: usize = 5;
+
+/// Most same-kind, same-project memories scanned for a near-duplicate the
+/// model may update.
+const DEDUP_CANDIDATES: usize = 1000;
 /// The RRF constant `k` for fusing BM25 and semantic recall.
 pub(crate) const RECALL_RRF_K: usize = 60;
+
+/// How many context receipts an agent keeps (the newest).
+const MAX_KEPT_RECEIPTS: usize = 10_000;
 
 impl Agent {
     pub fn new(mut config: AgentConfig) -> Self {
@@ -697,13 +776,30 @@ impl Agent {
             config.tools = read_only_registry(&base_tools);
         }
 
+        let strategies = Arc::new(ResolvedStrategies::derived(
+            config.inject_context,
+            config.skeleton_strategy,
+        ));
         Self {
             config,
             context,
             cost: CostAccumulator::new(),
+            price_lookup: None,
+            unpriced_models: Vec::new(),
+            unannounced_unpriced: Vec::new(),
+            calls_without_usage: 0,
             turn_count: 0,
+            memory_writes: 0,
+            injection_seen: std::sync::atomic::AtomicBool::new(false),
+            untrusted_sources: std::sync::Mutex::new(Vec::new()),
+            strategies,
             receipt_info: TurnContextInfo::default(),
             receipt_history: std::collections::HashSet::new(),
+            extra_blocks: Vec::new(),
+            once_gathered: HashSet::new(),
+            receipts: Vec::new(),
+            receipts_dropped: 0,
+            receipt_agent_id: uuid::Uuid::now_v7().to_string(),
             metrics,
             guards: TurnGuards::default(),
             error_event_sent: false,
@@ -714,6 +810,46 @@ impl Agent {
             session_approvals: Arc::new(SessionApprovals::default()),
             worker: None,
             context_window_override,
+        }
+    }
+
+    /// Run with the strategies the selection resolved (context sources, skeleton,
+    /// compactor, budget, recaller, writer) instead of the ones derived from
+    /// `AgentConfig`'s `inject_context` and `skeleton_strategy`.
+    pub fn with_strategies(mut self, strategies: Arc<ResolvedStrategies>) -> Self {
+        self.context.set_trim_only(strategies.trim_only);
+        self.context
+            .set_phase_compaction(strategies.graduated_phase);
+        if let Some(ratio) = strategies.budget_ratio {
+            self.context.set_budget_ratio(ratio);
+        }
+        // A project file's ratio only ever lowers: min(user or per-model, cap).
+        if let Some(cap) = strategies.budget_cap {
+            self.context.cap_budget_ratio(cap);
+        }
+        self.strategies = strategies;
+        // The saved base registry (restored on a mode change) always carries the
+        // tool; the active one does too unless the agent is in Plan mode.
+        self.base_tools = self.with_memory_write(&self.base_tools);
+        if self.config.mode != AgentMode::Plan {
+            self.config.tools = self.with_memory_write(&self.config.tools);
+        }
+        self
+    }
+
+    /// `tools` plus the `memory_write` facade when this agent offers it: the
+    /// resolved writer includes the tool and there is a memory store. The one
+    /// place that rule lives, used wherever the registry is set or replaced.
+    fn with_memory_write(&self, tools: &ToolRegistry) -> ToolRegistry {
+        if self.strategies.writer_kind.offers_tool() && self.config.memory_store.is_some() {
+            if tools.get(crate::memory_write::NAME).is_some() {
+                tracing::warn!(
+                    "a registered tool named `memory_write` (an MCP server's?) is shadowed by the built-in memory_write tool"
+                );
+            }
+            tools.with_tool(Arc::new(crate::memory_write::MemoryWriteTool))
+        } else {
+            tools.clone()
         }
     }
 
@@ -790,6 +926,156 @@ impl Agent {
         self.metrics.snapshot()
     }
 
+    /// Keep `receipt` for `get_context_receipts`, and add its audit line when an
+    /// egress log is configured: span kind `context`, the receipt as arguments,
+    /// the sum of the blocks' durations, the turn's trace and span as parent.
+    async fn keep_receipt(&mut self, receipt: &hone_proto::ContextReceipt, trace: &TraceContext) {
+        self.receipts.push(receipt.clone());
+        if self.receipts.len() > MAX_KEPT_RECEIPTS {
+            let excess = self.receipts.len() - MAX_KEPT_RECEIPTS;
+            self.receipts.drain(..excess);
+            self.receipts_dropped += excess as u64;
+        }
+        if let Some(log) = &self.config.egress_log {
+            let (span_id, parent_span_id) = trace.child_span();
+            let entry = EgressEntry {
+                timestamp: now_rfc3339(),
+                tool: "context_assembled".to_owned(),
+                arguments: serde_json::to_value(receipt).unwrap_or(serde_json::Value::Null),
+                result_preview: String::new(),
+                blocked: false,
+                block_reason: None,
+                injection_risk: None,
+                duration_ms: receipt
+                    .blocks
+                    .iter()
+                    .map(|b| u64::from(b.duration_ms))
+                    .sum(),
+                trace_id: trace.trace_id.clone(),
+                span_id,
+                parent_span_id,
+                span_kind: SpanKind::Context,
+            };
+            log.lock().await.record(entry);
+        }
+    }
+
+    /// Gather the context sources that are due: `Once` sources before the first
+    /// model call of the session (the result is kept), `EachTurn` sources on every
+    /// turn. A source that fails or adds nothing leaves no block. The text is
+    /// redacted like injected skeletons.
+    async fn gather_context_sources(&self, prompt: &str) -> Vec<GatheredSource> {
+        let strategies = Arc::clone(&self.strategies);
+        let due: Vec<(String, Arc<dyn crate::strategy::ContextSource>)> = strategies
+            .gatherable()
+            .filter(|(name, src)| {
+                !(src.cadence() == crate::strategy::Cadence::Once
+                    && self.once_gathered.contains(name))
+            })
+            .map(|(name, src)| (name.clone(), Arc::clone(src)))
+            .collect();
+        if due.is_empty() {
+            return Vec::new();
+        }
+        let history = self.context.messages();
+        let budget_tokens = self.context.max_context_tokens();
+        let redact = self.redacting();
+        let turn = self.turn_count;
+        let working_dir = self.config.working_dir.clone();
+        // All due sources at once, each under its own deadline.
+        futures::future::join_all(due.iter().map(|(name, src)| {
+            let history = &history;
+            let working_dir = &working_dir;
+            async move {
+                let view = crate::strategy::TurnView {
+                    prompt,
+                    turn,
+                    history,
+                    working_dir,
+                    budget_tokens,
+                };
+                let gathered = tokio::time::timeout(src.deadline(), src.gather(&view)).await;
+                let blocks = match gathered {
+                    Ok(Ok(blocks)) => blocks,
+                    Ok(Err(e)) => {
+                        tracing::debug!(source = %name, error = %e, "context source failed; skipped");
+                        Vec::new()
+                    }
+                    Err(_) => {
+                        tracing::debug!(source = %name, "context source missed its deadline; skipped");
+                        Vec::new()
+                    }
+                };
+                // One system message per block, each keeping its own slot.
+                let extras: Vec<ExtraBlock> = blocks
+                    .into_iter()
+                    .map(|b| ExtraBlock {
+                        slot: b.slot,
+                        strategy: src.id().clone(),
+                        text: redacted_text(redact, &b.text),
+                        sources: b.sources,
+                    })
+                    .collect();
+                GatheredSource {
+                    name: name.clone(),
+                    once: src.cadence() == crate::strategy::Cadence::Once,
+                    extras,
+                }
+            }
+        }))
+        .await
+    }
+
+    /// Gather the due context sources and recall memories at the same time. A
+    /// closed events channel (the listener is gone) stops the wait.
+    async fn gather_and_recall(
+        &mut self,
+        prompt: &str,
+        events: &mpsc::Sender<AgentEvent>,
+    ) -> Result<(String, Vec<(String, String)>, RecallInfo), AgentError> {
+        let (gathered, recalled) = {
+            let this = &*self;
+            let work = async {
+                tokio::join!(
+                    this.gather_context_sources(prompt),
+                    this.fetch_relevant_memories(prompt)
+                )
+            };
+            tokio::select! {
+                r = work => r,
+                () = events.closed() => return Err(AgentError::Cancelled),
+            }
+        };
+        self.store_gathered(gathered);
+        Ok(recalled)
+    }
+
+    /// Keep what `gather_context_sources` returned.
+    fn store_gathered(&mut self, gathered: Vec<GatheredSource>) {
+        for g in gathered {
+            if g.extras.iter().any(|e| !e.text.is_empty()) {
+                self.note_untrusted_label(&format!("context source {}", g.name));
+            }
+            if g.once {
+                self.once_gathered.insert(g.name.clone());
+            }
+            match self.extra_blocks.iter_mut().find(|(n, _, _)| *n == g.name) {
+                Some(slot) => slot.2 = g.extras,
+                None => self.extra_blocks.push((g.name, g.once, g.extras)),
+            }
+        }
+    }
+
+    /// The gathered blocks that have text: `Once` sources first, then `EachTurn`
+    /// ones (so the cached prefix stays stable), each in source order.
+    fn active_extras(&self) -> Vec<ExtraBlock> {
+        let once = self.extra_blocks.iter().filter(|(_, o, _)| *o);
+        let each = self.extra_blocks.iter().filter(|(_, o, _)| !*o);
+        once.chain(each)
+            .flat_map(|(_, _, blocks)| blocks.iter().cloned())
+            .collect()
+    }
+
     /// Names of the skills whose triggers match `prompt` (for context receipts).
     fn matched_skill_names(&self, prompt: &str) -> Vec<String> {
         self.config.skills.as_ref().map_or_else(Vec::new, |reg| {
@@ -813,91 +1099,149 @@ impl Agent {
             return (String::new(), vec![], RecallInfo::default());
         };
 
-        let memory_query = MemoryQuery {
-            text: query.to_string(),
-            limit: RECALL_LIMIT,
-            kind: None,
-        };
-
-        // BM25 (existing path)
-        // Outcome logs record the task text and would match it: leave them out.
-        let bm25_memories = match store
-            .recall_excluding(&memory_query, &[hone_memory::MemoryKind::Outcome])
-            .await
-        {
-            Ok(m) => m,
-            Err(_) => Vec::new(),
-        };
-
-        // Semantic (when embedder present)
-        let mut embedder_ran = false;
-        let semantic_memories: Vec<hone_memory::Memory> =
-            if let Some(embedder) = &self.config.embedder {
-                match embedder.embed(query).await {
-                    Ok(query_vec) => {
-                        embedder_ran = true;
-                        store
-                            .recall_semantic(&query_vec, SEMANTIC_RECALL_FETCH)
-                            .await
-                            .map(|scored| {
-                                scored
-                                    .into_iter()
-                                    .map(|s| s.memory)
-                                    .filter(|m| m.kind != hone_memory::MemoryKind::Outcome)
-                                    .collect()
-                            })
-                            .unwrap_or_default()
-                    }
-                    Err(_) => Vec::new(),
-                }
-            } else {
-                Vec::new()
-            };
+        let strategies = Arc::clone(&self.strategies);
+        let top_k = strategies.top_k;
+        let exclude = strategies.exclude_kinds.clone();
+        if strategies.recaller_kind == RecallerKind::None || !strategies.has_source("recall") {
+            return (String::new(), vec![], RecallInfo::default());
+        }
 
         // Candidates fetched and then cut, for the context receipt.
         let mut cut_ids: Vec<String> = Vec::new();
-        // An embedder was configured and ran for this query (even if it found nothing).
-        let semantic = embedder_ran;
-        let mut semantic_memories = semantic_memories;
-        if semantic_memories.len() > RECALL_LIMIT {
-            cut_ids.extend(
-                semantic_memories
-                    .split_off(RECALL_LIMIT)
-                    .into_iter()
-                    .map(|m| m.id),
-            );
-        }
+        let mut semantic = false;
+        let mut custom: Option<hone_proto::StrategyId> = None;
 
-        // Fuse via RRF when both signals are present; otherwise use whichever is non-empty
-        let final_memories: Vec<hone_memory::Memory> = if !semantic_memories.is_empty() {
-            let bm25_ids: Vec<String> = bm25_memories.iter().map(|m| m.id.clone()).collect();
-            let semantic_ids: Vec<String> =
-                semantic_memories.iter().map(|m| m.id.clone()).collect();
-            let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], RECALL_RRF_K);
-            cut_ids.extend(fused_ids.iter().skip(RECALL_LIMIT).cloned());
-            let mut by_id: std::collections::HashMap<String, hone_memory::Memory> =
-                std::collections::HashMap::new();
-            for m in bm25_memories
+        // The recaller: the built-in BM25 recall, or a registered one. Outcome
+        // logs (by default) record the task text and would match it: the
+        // exclusion is applied inside the store, before its cap.
+        // A memory the model wrote is recalled only in its own project; the
+        // store filters it out before its candidate cap.
+        let project = crate::memory_write::project_tag(&self.config.working_dir);
+        let project_id = project.strip_prefix("project:").unwrap_or(&project);
+        let recall_query = crate::strategy::RecallQuery {
+            text: query,
+            k: top_k,
+            exclude_kinds: &exclude,
+            scope: Some(project_id),
+        };
+        // A failing built-in `fts5` recall falls back to `bm25` for this turn.
+        let mut fts5_failed = false;
+        let in_project =
+            |m: &hone_memory::Memory| crate::memory_write::visible_in_project(&m.tags, &project);
+        let bm25_memories: Vec<hone_memory::Memory> = match strategies
+            .recaller
+            .recall(store.as_ref(), &recall_query)
+            .await
+        {
+            Ok(found) => found
                 .into_iter()
-                .chain(semantic_memories.into_iter())
-            {
-                by_id.entry(m.id.clone()).or_insert(m);
+                .map(|s| s.memory)
+                .filter(|m| in_project(m))
+                .collect(),
+            Err(e) if strategies.recaller_kind == RecallerKind::Fts5 => {
+                tracing::warn!(error = %e, "fts5 recall failed; falling back to bm25 for this turn");
+                fts5_failed = true;
+                let query = hone_memory::MemoryQuery {
+                    text: query.to_owned(),
+                    limit: top_k,
+                    kind: None,
+                };
+                store
+                    .recall_excluding(&query, &exclude)
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|m| in_project(m))
+                    .collect()
             }
-            fused_ids
-                .into_iter()
-                .take(RECALL_LIMIT)
-                .filter_map(|id| by_id.remove(&id))
-                .collect()
-        } else {
+            Err(_) => Vec::new(),
+        };
+
+        let final_memories: Vec<hone_memory::Memory> = if strategies.recaller_kind
+            == RecallerKind::Custom
+        {
+            custom = Some(strategies.recaller.id().clone());
             bm25_memories
+        } else {
+            // Semantic (when embedder present)
+            let mut embedder_ran = false;
+            let semantic_memories: Vec<hone_memory::Memory> =
+                if let Some(embedder) = &self.config.embedder {
+                    match embedder.embed(query).await {
+                        Ok(query_vec) => {
+                            embedder_ran = true;
+                            // Similarity is scored over every embedded memory; the
+                            // project filter runs before the cut to the best few.
+                            store
+                                .recall_semantic(&query_vec, usize::MAX)
+                                .await
+                                .map(|scored| {
+                                    scored
+                                        .into_iter()
+                                        .map(|s| s.memory)
+                                        .filter(|m| !exclude.contains(&m.kind) && in_project(m))
+                                        .take(SEMANTIC_RECALL_FETCH)
+                                        .collect()
+                                })
+                                .unwrap_or_default()
+                        }
+                        Err(_) => Vec::new(),
+                    }
+                } else {
+                    Vec::new()
+                };
+
+            // An embedder was configured and ran for this query (even if it found nothing).
+            semantic = embedder_ran;
+            let mut semantic_memories = semantic_memories;
+            if semantic_memories.len() > top_k {
+                cut_ids.extend(semantic_memories.split_off(top_k).into_iter().map(|m| m.id));
+            }
+
+            // Fuse via RRF when both signals are present; otherwise use whichever is non-empty
+            if !semantic_memories.is_empty() {
+                let bm25_ids: Vec<String> = bm25_memories.iter().map(|m| m.id.clone()).collect();
+                let semantic_ids: Vec<String> =
+                    semantic_memories.iter().map(|m| m.id.clone()).collect();
+                let fused_ids = hone_memory::rrf_fuse(&[bm25_ids, semantic_ids], RECALL_RRF_K);
+                cut_ids.extend(fused_ids.iter().skip(top_k).cloned());
+                let mut by_id: std::collections::HashMap<String, hone_memory::Memory> =
+                    std::collections::HashMap::new();
+                for m in bm25_memories
+                    .into_iter()
+                    .chain(semantic_memories.into_iter())
+                {
+                    by_id.entry(m.id.clone()).or_insert(m);
+                }
+                fused_ids
+                    .into_iter()
+                    .take(top_k)
+                    .filter_map(|id| by_id.remove(&id))
+                    .collect()
+            } else {
+                bm25_memories
+            }
         };
 
         if final_memories.is_empty() {
             return (String::new(), vec![], RecallInfo::default());
         }
+        if final_memories
+            .iter()
+            .any(|m| crate::memory_write::is_model_written(&m.tags))
+        {
+            self.note_untrusted_label("recalled model-written memory");
+        }
         let info = RecallInfo {
             ids: final_memories.iter().map(|m| m.id.clone()).collect(),
             semantic,
+            top_k,
+            exclude: exclude
+                .iter()
+                .map(|k| crate::strategy::kind_name(*k).to_owned())
+                .collect(),
+            custom,
+            fts5: strategies.recaller_kind == RecallerKind::Fts5 && !fts5_failed,
             dropped: cut_ids
                 .into_iter()
                 .filter(|id| !final_memories.iter().any(|m| &m.id == id))
@@ -916,7 +1260,12 @@ impl Agent {
             .collect();
         let mut prompt = String::from("\n\n## Relevant context from memory:\n");
         for mem in &final_memories {
-            prompt.push_str(&format!("- {}\n", mem.content));
+            let label = if crate::memory_write::is_model_written(&mem.tags) {
+                "(model-written) "
+            } else {
+                ""
+            };
+            prompt.push_str(&format!("- {label}{}\n", mem.content));
         }
         (prompt, entries, info)
     }
@@ -936,9 +1285,27 @@ impl Agent {
     /// use case (single-agent sessions).  PR4/R12 will address races across
     /// multiple agents sharing the same backing file via explicit transactions.
     pub async fn record_memory(&self, candidate: MemoryCandidate) {
-        let Some(store) = &self.config.memory_store else {
-            return;
-        };
+        let _ = self
+            .apply_memory_candidate(candidate, Vec::new(), None)
+            .await;
+    }
+
+    /// The write path: embedding, near-duplicate upsert (`find_similar` 0.8),
+    /// UUID v7 ids. `extra_tags` are added to the memory (kept when updating).
+    /// Returns the memory's id and `"added"` or `"updated"`; `None` when there
+    /// is no store or the store refused.
+    ///
+    /// `model_project` is `Some(project tag)` for a write made by the model: it
+    /// may only update a memory the model wrote itself, of the same kind, in
+    /// the same project. A near-duplicate of any other memory (the user's, a
+    /// trigger's, an import's) is left alone and a new memory is added.
+    async fn apply_memory_candidate(
+        &self,
+        candidate: MemoryCandidate,
+        extra_tags: Vec<String>,
+        model_project: Option<&str>,
+    ) -> Option<(String, &'static str)> {
+        let store = self.config.memory_store.as_ref()?;
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -961,27 +1328,39 @@ impl Agent {
         };
 
         // R6: check for a near-duplicate and upsert instead of inserting twice.
-        let existing = store.find_similar(&body, 0.8).await.ok().flatten();
+        let existing =
+            Self::find_updatable(store.as_ref(), &body, candidate.kind, model_project).await;
 
         if let Some(existing) = existing {
+            let mut tags = existing.tags;
+            for t in extra_tags {
+                if !tags.contains(&t) {
+                    tags.push(t);
+                }
+            }
+            if model_project.is_some() {
+                crate::memory_write::keep_newest_call_tags(&mut tags);
+            }
+            let id = existing.id.clone();
             let updated = Memory {
                 id: existing.id,
                 content: body,
                 weight: 1.0,
                 created_at: now,
                 description: candidate.description.or(existing.description),
-                kind: candidate.kind,
-                tags: existing.tags,
+                kind: existing.kind,
+                tags,
                 decay_at: existing.decay_at,
                 embedding,
             };
-            let _ = store.record(updated).await;
+            store.record(updated).await.ok()?;
+            Some((id, "updated"))
         } else {
             let id = uuid::Uuid::now_v7().to_string();
             let memory = Memory {
-                id,
+                id: id.clone(),
                 content: body,
-                tags: vec![],
+                tags: extra_tags,
                 weight: 1.0,
                 created_at: now,
                 decay_at: None,
@@ -989,8 +1368,117 @@ impl Agent {
                 description: candidate.description,
                 embedding,
             };
-            let _ = store.record(memory).await;
+            store.record(memory).await.ok()?;
+            Some((id, "added"))
         }
+    }
+
+    /// Whether a write by the model (`model_project` is `Some`) may update
+    /// `existing`: only a memory of the same kind that the model itself wrote in
+    /// the same project. Writes that aren't the model's may update anything.
+    fn updatable_by_model(
+        existing: &Memory,
+        kind: hone_memory::MemoryKind,
+        model_project: Option<&str>,
+    ) -> bool {
+        match model_project {
+            None => true,
+            Some(project) => {
+                existing.kind == kind
+                    && crate::memory_write::is_model_written(&existing.tags)
+                    && existing.tags.iter().any(|t| t == project)
+            }
+        }
+    }
+
+    /// The memory a `memory_write` with these (valid) arguments would update,
+    /// for the approval prompt. Looks only at what the write itself may update.
+    async fn memory_write_target(&self, args: &Value) -> Option<Memory> {
+        let store = self.config.memory_store.as_ref()?;
+        let v = crate::memory_write::validate(args).ok()?;
+        let project = crate::memory_write::project_tag(&self.config.working_dir);
+        Self::find_updatable(store.as_ref(), &v.content, v.kind, Some(&project)).await
+    }
+
+    /// The best near-duplicate (similarity >= 0.8) the write may update. When
+    /// the overall best match is one the model may not update, the best match
+    /// among the memories it may update is used instead.
+    async fn find_updatable(
+        store: &dyn MemoryStore,
+        body: &str,
+        kind: hone_memory::MemoryKind,
+        model_project: Option<&str>,
+    ) -> Option<Memory> {
+        let best = store.find_similar(body, 0.8).await.ok().flatten();
+        if let Some(best) = best {
+            if Self::updatable_by_model(&best, kind, model_project) {
+                return Some(best);
+            }
+        }
+        // Either the best match isn't the model's to update, or the store's
+        // similarity window (the newest memories) didn't reach the model's own.
+        let project = model_project?;
+        // Only the candidates: the model's own memories of this kind in this
+        // project (the store drops other projects' tool memories itself).
+        let candidates = store
+            .recall_tool_memories(kind, project.strip_prefix("project:")?, DEDUP_CANDIDATES)
+            .await
+            .ok()?;
+        candidates
+            .into_iter()
+            .filter(|m| Self::updatable_by_model(m, kind, model_project))
+            .map(|m| (hone_memory::trigram_jaccard(body, &m.content), m))
+            .filter(|(score, _)| *score >= 0.8)
+            .max_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(_, m)| m)
+    }
+
+    /// Apply a `memory_write` call: validate, check the session cap, write
+    /// through the shared path with the attribution tags. On success returns the
+    /// result for the model and what to announce as `MemoryWritten`.
+    async fn memory_write_call(
+        &mut self,
+        call: &ToolCallRequest,
+    ) -> Result<(ToolOutput, (String, String, String)), AgentError> {
+        let tool_err = |e: ToolError| AgentError::Tool {
+            name: call.name.clone(),
+            source: e,
+        };
+        if self.memory_writes >= crate::memory_write::MAX_WRITES_PER_SESSION {
+            return Err(tool_err(ToolError::Other(format!(
+                "memory_write limit reached: at most {} writes per session",
+                crate::memory_write::MAX_WRITES_PER_SESSION
+            ))));
+        }
+        let v = crate::memory_write::validate(&call.arguments)
+            .map_err(|reason| tool_err(ToolError::InvalidInput { reason }))?;
+        let mut tags = v.tags;
+        let project = crate::memory_write::project_tag(&self.config.working_dir);
+        tags.push("source:tool".to_owned());
+        tags.push(project.clone());
+        tags.push(format!("call:{}", call.id));
+        let kind_name = crate::strategy::kind_name(v.kind).to_owned();
+        let candidate = MemoryCandidate {
+            kind: v.kind,
+            description: None,
+            body: crate::memory_format::StructuredBody {
+                rule: v.content,
+                why: None,
+                how: None,
+            },
+        };
+        let Some((id, status)) = self
+            .apply_memory_candidate(candidate, tags, Some(&project))
+            .await
+        else {
+            return Err(tool_err(ToolError::ExecutionFailed {
+                tool: call.name.clone(),
+                message: "the memory store did not accept the write".to_owned(),
+            }));
+        };
+        self.memory_writes += 1;
+        let out = ToolOutput::new(serde_json::json!({ "id": id, "status": status }));
+        Ok((out, (id, kind_name, status.to_owned())))
     }
 
     /// Fire hooks for `event`, returning all outcomes.
@@ -1018,12 +1506,47 @@ impl Agent {
         }
     }
 
+    /// Add `usage` of a call served by `model` to the session: priced by the
+    /// lookup (or `config.pricing` without one); no price means no cost, the
+    /// usage still counts and the model is remembered.
+    fn add_priced(&mut self, usage: TokenUsage, model: &ModelId) {
+        // The agent's own lookup, else the process default, else the config's price.
+        let lookup = self.price_lookup.clone().or_else(default_price_lookup);
+        let entry = match lookup {
+            Some(lookup) => lookup(model),
+            None => Some(self.config.pricing.clone()),
+        };
+        match entry {
+            Some(price) => self.cost.add(usage, &price),
+            None => {
+                self.cost.add_unpriced(usage);
+                if let Ok(mut seen) = UNPRICED_SEEN.lock() {
+                    if !seen.iter().any(|m| m == model.as_str()) {
+                        seen.push(model.as_str().to_owned());
+                    }
+                }
+                if !self.unpriced_models.iter().any(|m| m == model.as_str()) {
+                    self.unpriced_models.push(model.as_str().to_owned());
+                    self.unannounced_unpriced.push(model.as_str().to_owned());
+                }
+            }
+        }
+    }
+
+    /// Tell the surface about models that just turned out to have no price.
+    async fn announce_unpriced(&mut self, events: &mpsc::Sender<AgentEvent>) {
+        for model in std::mem::take(&mut self.unannounced_unpriced) {
+            let _ = events.send(AgentEvent::UnpricedModel { model }).await;
+        }
+    }
+
     /// Count `Usage` events of failed attempts in the turn and the session cost.
     fn count_usage(&mut self, events: Vec<ProviderEvent>, turn_usage: &mut TokenUsage) {
         for event in events {
             if let ProviderEvent::Usage(usage) = event {
                 *turn_usage = *turn_usage + usage;
-                self.cost.add(usage, &self.config.pricing);
+                let model = self.config.model.clone();
+                self.add_priced(usage, &model);
             }
         }
     }
@@ -1051,12 +1574,53 @@ impl Agent {
         self.context.add_message(message);
     }
 
+    /// Remember that content the user didn't write is in context. Deny by
+    /// default: a result of any tool except `memory_write`'s own counts, and so
+    /// do the other non-conversation blocks (`note_untrusted_label`).
+    fn note_untrusted_source(&self, tool: &str) {
+        if tool == crate::memory_write::NAME {
+            return;
+        }
+        self.note_untrusted_label(tool);
+    }
+
+    /// Remember a named piece of non-conversation context (skeleton, skill, ...).
+    fn note_untrusted_label(&self, label: &str) {
+        if let Ok(mut seen) = self.untrusted_sources.lock() {
+            if !seen.iter().any(|t| t == label) {
+                seen.push(label.to_owned());
+            }
+        }
+    }
+
+    /// What untrusted content is in this agent's context: the tools whose
+    /// results were seen and `HONE.md` when the system prompt carries a section.
+    fn untrusted_context(&self) -> Vec<String> {
+        let mut sources = self
+            .untrusted_sources
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default();
+        if self.config.system_prompt.contains("(from HONE.md)") {
+            sources.push("HONE.md".to_owned());
+        }
+        if self.config.system_prompt.lines().any(|l| {
+            l.trim_start().starts_with("- [") && l.contains("(model-written)")
+        }) {
+            sources.push("memory index (model-written entries)".to_owned());
+        }
+        sources
+    }
+
     /// Scan a tool result for prompt injection. Returns the egress risk label
     /// and the SECURITY prefix for the history message (empty when clean).
     /// Shared by every path that turns a tool outcome into a result.
     fn scan_for_injection(&self, tool: &str, result_str: &str) -> (Option<String>, &'static str) {
+        self.note_untrusted_source(tool);
         let risk = InjectionDetector::scan_tool_result(tool, result_str);
         if risk.is_actionable() {
+            self.injection_seen
+                .store(true, std::sync::atomic::Ordering::SeqCst);
             self.metrics.record_injection_detection();
             tracing::warn!(
                 tool = %tool,
@@ -1282,6 +1846,8 @@ impl Agent {
 
         // Reset per-turn guard state for each new turn.
         self.guards.reset();
+        self.injection_seen
+            .store(false, std::sync::atomic::Ordering::SeqCst);
 
         // Create a fresh trace context for this turn.  The turn's span_id
         // becomes the parent for every tool call dispatched below.
@@ -1320,19 +1886,28 @@ impl Agent {
         // Compute skills block using the original user prompt (before context
         // injection prefixes it with file skeletons).  The raw intent is a better
         // trigger signal than the augmented effective_input.
+        let skills_on = self.strategies.has_source("skills");
         let skills_block = match &self.config.skills {
-            Some(reg) => reg.render_for_prompt(user_input),
-            None => String::new(),
+            Some(reg) if skills_on => reg.render_for_prompt(user_input),
+            _ => String::new(),
         };
+        if !skills_block.is_empty() {
+            self.note_untrusted_label("skill");
+        }
 
         // Fetch memories before adding the user message so the query is clean.
         let (memories, memory_entries, recall_info) =
-            self.fetch_relevant_memories(user_input).await;
+            self.gather_and_recall(user_input, &events).await?;
         // Inputs of this turn's context receipts.
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
-            skills: self.matched_skill_names(user_input),
+            skills: if self.strategies.has_source("skills") {
+                self.matched_skill_names(user_input)
+            } else {
+                Vec::new()
+            },
             injection: None,
+            ..TurnContextInfo::default()
         };
         if !memory_entries.is_empty() {
             let _ = events
@@ -1345,9 +1920,12 @@ impl Agent {
         // Proactive context injection — runs on the first turn only and only
         // when explicitly enabled via `inject_context`.
         let effective_input: std::borrow::Cow<'_, str> =
-            if self.turn_count == 1 && self.config.inject_context {
-                let mut injector =
-                    ContextInjector::with_defaults().with_strategy(self.config.skeleton_strategy);
+            if self.turn_count == 1 && self.strategies.has_source("skeleton") {
+                let mut injector = ContextInjector::new(
+                    self.strategies.skeleton_max_tokens,
+                    self.strategies.skeleton_gap_threshold,
+                )
+                .with_strategy(self.strategies.skeleton);
                 let index_ref = self.config.index.as_deref();
                 let injection = injector
                     .inject(user_input, &self.config.working_dir, index_ref)
@@ -1356,7 +1934,7 @@ impl Agent {
                 if !injection.context_block.is_empty() {
                     let _ = events
                         .send(AgentEvent::ContextInjected {
-                            strategy: self.config.skeleton_strategy.as_str().to_string(),
+                            strategy: self.strategies.skeleton.as_str().to_string(),
                             tokens_used: injection.tokens_used,
                             bm25_hits: injection.bm25_hits.clone(),
                             confidence: injection.confidence.label().to_string(),
@@ -1370,8 +1948,13 @@ impl Agent {
                     );
                     // Skeletons and snippets can carry secret-shaped names or text.
                     let block = redacted_text(self.redacting(), &injection.context_block);
+                    if injection.has_repo_text {
+                        self.note_untrusted_label("repository skeleton");
+                    }
                     self.receipt_info.injection = Some(InjectionInfo {
-                        strategy: self.config.skeleton_strategy.as_str().to_string(),
+                        strategy: self.strategies.skeleton.as_str().to_string(),
+                        max_tokens: self.strategies.skeleton_max_tokens,
+                        gap_threshold: self.strategies.skeleton_gap_threshold,
                         // The text actually sent.
                         tokens: estimate_text_tokens(&block),
                         hits: injection.bm25_hits.clone(),
@@ -1460,7 +2043,13 @@ impl Agent {
                     0
                 } else {
                     estimate_text_tokens(&skills_block)
-                };
+                }
+                // Gathered source blocks are part of every request too.
+                + self
+                    .active_extras()
+                    .iter()
+                    .map(|e| estimate_text_tokens(&e.text))
+                    .sum::<u32>();
             if !context_emergency && self.context.is_over_ratio(0.95, extra_tokens) {
                 context_emergency = true;
                 tracing::warn!(
@@ -1498,6 +2087,22 @@ impl Agent {
                 .context
                 .build_messages_hashed(&self.config.system_prompt);
 
+            // Gathered sources: one system message each, right after the base
+            // system prompt and before the memories and skills.
+            let extras = self.active_extras();
+            for (i, extra) in extras.iter().enumerate() {
+                let msg = Message {
+                    role: hone_proto::Role::System,
+                    content: hone_proto::Content::Text(extra.text.clone()),
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                };
+                let at = (1 + i).min(messages.len());
+                message_hashes.insert(at, hone_proto::message_sha256(&msg));
+                messages.insert(at, msg);
+            }
+            let shift = extras.len();
+
             if !memories.is_empty() {
                 let memory_msg = Message {
                     role: hone_proto::Role::System,
@@ -1513,8 +2118,8 @@ impl Agent {
                     .first()
                     .is_some_and(|m| matches!(m.role, hone_proto::Role::System))
                 {
-                    message_hashes.insert(1, hone_proto::message_sha256(&memory_msg));
-                    messages.insert(1, memory_msg);
+                    message_hashes.insert(1 + shift, hone_proto::message_sha256(&memory_msg));
+                    messages.insert(1 + shift, memory_msg);
                 } else {
                     message_hashes.insert(0, hone_proto::message_sha256(&memory_msg));
                     messages.insert(0, memory_msg);
@@ -1534,7 +2139,7 @@ impl Agent {
                 };
                 // Position: after memories (index 2) when memories are present,
                 // otherwise right after the base system prompt (index 1).
-                let pos = if !memories.is_empty() { 2 } else { 1 };
+                let pos = shift + if !memories.is_empty() { 2 } else { 1 };
                 let skills_hash = hone_proto::message_sha256(&skills_msg);
                 if messages.len() > pos {
                     message_hashes.insert(pos, skills_hash);
@@ -1561,9 +2166,13 @@ impl Agent {
             {
                 let tool_names: Vec<String> =
                     request.tools.iter().map(|t| t.name.clone()).collect();
-                let recall_at = (!memories.is_empty()).then_some(1);
-                let skills_at =
-                    (!skills_block.is_empty()).then_some(if memories.is_empty() { 1 } else { 2 });
+                let recall_at = (!memories.is_empty()).then_some(1 + shift);
+                let skills_at = (!skills_block.is_empty())
+                    .then_some(shift + if memories.is_empty() { 1 } else { 2 });
+                self.receipt_info.trim_only = self.context.trim_only();
+                // trim-only never runs phase compaction.
+                self.receipt_info.phase_compaction =
+                    self.context.phase_compaction() && !self.receipt_info.trim_only;
                 let receipt = crate::receipts::build_receipt(
                     self.turn_count,
                     model_call,
@@ -1573,10 +2182,12 @@ impl Agent {
                     recall_at,
                     skills_at,
                     &self.receipt_info,
+                    &extras,
                     self.context.drain_compaction_log(),
                     &message_hashes,
                     &mut self.receipt_history,
                 );
+                self.keep_receipt(&receipt, &turn_trace).await;
                 let _ = events.send(AgentEvent::ContextAssembled { receipt }).await;
             }
 
@@ -1657,6 +2268,9 @@ impl Agent {
             // a retry-hint user message after the stream drains so the model
             // knows to produce smaller calls.
             let mut truncated_tools: Option<Vec<String>> = None;
+            // The model serving this call: the session's, or a fallback's.
+            let mut call_model = self.config.model.clone();
+            let mut call_usage_seen = false;
 
             while let Some(event) = stream.next().await {
                 match event {
@@ -1672,10 +2286,15 @@ impl Agent {
 
                     ProviderEvent::Usage(usage) => {
                         turn_usage = turn_usage + usage;
-                        self.cost.add(usage, &self.config.pricing);
+                        call_usage_seen = true;
+                        self.add_priced(usage, &call_model);
+                        self.announce_unpriced(&events).await;
                     }
 
                     ProviderEvent::Done => {
+                        if !call_usage_seen {
+                            self.calls_without_usage += 1;
+                        }
                         // Emit ModelInfo exactly once per session on the first
                         // successful provider completion so the TUI can show the
                         // real context-window size for this model.
@@ -1768,6 +2387,7 @@ impl Agent {
                         fallback,
                         reason,
                     } => {
+                        call_model = ModelId::new(fallback.clone());
                         let _ = events
                             .send(AgentEvent::ModelFallback {
                                 requested,
@@ -1852,8 +2472,12 @@ impl Agent {
             // A read-only call joins the parallel batch only if the approval
             // policy would not pause it; otherwise (e.g. `AlwaysAsk`/--step) it
             // takes the sequential path, which owns the approval gate.
+            // `memory_write` is never read-only and is applied by the agent itself
+            // on the sequential path (approval, cap, event); keep it out of the
+            // parallel batch even if a registry ever said otherwise.
             let parallel_ok = |agent: &Self, name: &str| {
-                tool_is_read_only(&agent.config.tools, name)
+                name != crate::memory_write::NAME
+                    && tool_is_read_only(&agent.config.tools, name)
                     && (agent.config.mode == AgentMode::AutoApprove
                         || !agent.config.approval_policy.requires_approval(name, true))
             };
@@ -2117,6 +2741,8 @@ impl Agent {
                                 ));
                             }
                             Err(AgentError::ToolNotFound { name }) => {
+                                // The error text carries the model's own tool name.
+                                self.note_untrusted_source(&name);
                                 let err_val = serde_json::json!({
                                     "error": format!("tool '{name}' not found")
                                 });
@@ -2502,20 +3128,48 @@ impl Agent {
                     // pause, except under `--step` (AlwaysAsk), which asks every time.
                     let always_ask =
                         matches!(self.config.approval_policy, ToolApprovalPolicy::AlwaysAsk);
+                    // A `memory_write` after a tool result that looked like prompt
+                    // injection needs approval whatever the mode or earlier
+                    // "always" answers: injected text must not become a stored
+                    // fact silently.
+                    // Also after any file, shell, web, LSP or MCP result, or with
+                    // a HONE.md section in the prompt (this turn or an earlier one
+                    // still in context): that text may have steered the model.
+                    let untrusted = if call.name == crate::memory_write::NAME {
+                        self.untrusted_context()
+                    } else {
+                        Vec::new()
+                    };
+                    let forced = call.name == crate::memory_write::NAME
+                        && (!untrusted.is_empty()
+                            || self
+                                .injection_seen
+                                .load(std::sync::atomic::Ordering::SeqCst));
                     if !policy_prompted
-                        && !(session_cleared && !always_ask)
+                        && (forced || !(session_cleared && !always_ask))
                         && self.config.tools.get(&call.name).is_some()
-                        && self.config.mode != AgentMode::AutoApprove
-                        && self
-                            .config
-                            .approval_policy
-                            .requires_approval(&call.name, is_ro)
+                        && (forced || self.config.mode != AgentMode::AutoApprove)
+                        && (forced
+                            || self
+                                .config
+                                .approval_policy
+                                .requires_approval(&call.name, is_ro))
                     {
                         let Some(rx) = self.config.step_rx.clone() else {
                             // Approval is required but nobody can answer: deny,
                             // and do not show a menu that cannot be answered.
+                            let reason = if forced && untrusted.is_empty() {
+                                "denied: a tool result looked like prompt injection, and nobody can approve this memory write".to_owned()
+                            } else if forced {
+                                format!(
+                                    "denied: content from {} is in the conversation, and nobody can approve this memory write",
+                                    untrusted.join(", ")
+                                )
+                            } else {
+                                "denied: no approval channel".to_owned()
+                            };
                             let err_val = serde_json::json!({
-                                "error": "denied: no approval channel",
+                                "error": reason,
                             });
                             let _ = events
                                 .send(AgentEvent::ToolCallEnd {
@@ -2530,15 +3184,30 @@ impl Agent {
                                 redact,
                                 call.id.clone(),
                                 "",
-                                ToolText::Text("(denied: no approval channel)".to_string()),
+                                ToolText::Text(format!("({reason})")),
                             );
                             i += 1;
                             continue;
                         };
+                        // An update shows what it would replace.
+                        let mut paused_args = call.arguments.clone();
+                        if call.name == crate::memory_write::NAME {
+                            if let Some(old) = self.memory_write_target(&call.arguments).await {
+                                if let Some(obj) = paused_args.as_object_mut() {
+                                    obj.insert(
+                                        "replaces".to_owned(),
+                                        serde_json::json!({
+                                            "id": old.id,
+                                            "preview": old.content.chars().take(120).collect::<String>(),
+                                        }),
+                                    );
+                                }
+                            }
+                        }
                         let paused = AgentEvent::ToolCallPaused {
                             id: call.id.clone(),
                             name: call.name.clone(),
-                            args: call.arguments.clone(),
+                            args: paused_args,
                             worker: self.worker.clone(),
                         };
                         // Re-check once this call holds the channel: another
@@ -2547,7 +3216,7 @@ impl Agent {
                         let covered = {
                             let shared = Arc::clone(&self.session_approvals);
                             let name = call.name.clone();
-                            move || !always_ask && shared.covers_tool(&name)
+                            move || !always_ask && !forced && shared.covers_tool(&name)
                         };
                         // Record an "always" while the step lock is still held,
                         // so a worker queued behind us always sees it. `--step`
@@ -2653,10 +3322,22 @@ impl Agent {
                     let tool = self.config.tools.get(&call.name).map(Arc::clone);
                     let tool_found = tool.is_some();
                     let ctx = self.tool_context();
+                    let mut memory_written: Option<(String, String, String)> = None;
                     let result = match tool {
                         None => Err(AgentError::ToolNotFound {
                             name: call.name.clone(),
                         }),
+                        // The agent applies `memory_write` itself.
+                        Some(_)
+                            if call.name == crate::memory_write::NAME
+                                && self.strategies.writer_kind.offers_tool() =>
+                        {
+                            let call = call.clone();
+                            self.memory_write_call(&call).await.map(|(out, written)| {
+                                memory_written = Some(written);
+                                out
+                            })
+                        }
                         Some(t) => {
                             let dispatch = dispatch_with_recovery(
                                 t,
@@ -2778,6 +3459,11 @@ impl Agent {
                                     cache_hit: tool_cache_hit,
                                 })
                                 .await;
+                            if let Some((id, kind, status)) = memory_written.take() {
+                                let _ = events
+                                    .send(AgentEvent::MemoryWritten { id, kind, status })
+                                    .await;
+                            }
 
                             // Fire PostToolUse hook (advisory — log denial, no unwind).
                             {
@@ -2809,6 +3495,8 @@ impl Agent {
                             );
                         }
                         Err(AgentError::ToolNotFound { name }) => {
+                            // The error text carries the model's own tool name.
+                            self.note_untrusted_source(&name);
                             let err_val = serde_json::json!({
                                 "error": format!("tool '{name}' not found")
                             });
@@ -2873,7 +3561,8 @@ impl Agent {
             // now included).
         }
 
-        let cost_usd = self.cost.total_usd();
+        // This turn's cost (the session's total minus what it was before).
+        let cost_usd = self.cost.total_usd() - cost_before_turn;
         tracing::debug!(
             tokens = turn_usage.total(),
             tool_calls = tool_calls_count,
@@ -2892,8 +3581,16 @@ impl Agent {
 
         // Persist memory (fire-and-forget). The classifier gates writes:
         // noisy turns return None and write nothing.
-        if let Some(candidate) = classify_turn(user_text, &response_text) {
-            self.record_memory(candidate).await;
+        if self.strategies.writer_kind != WriterKind::Off {
+            let record = crate::strategy::TurnRecord {
+                turn: self.turn_count,
+                user_text: user_text.to_owned(),
+                response_text: response_text.clone(),
+            };
+            let strategies = Arc::clone(&self.strategies);
+            for candidate in strategies.writer.propose(&record).await {
+                self.record_memory(candidate).await;
+            }
         }
 
         // Flush egress audit log to disk (errors are logged but not fatal).
@@ -2939,7 +3636,7 @@ impl Agent {
         let _ = events
             .send(AgentEvent::Done {
                 usage: turn_usage,
-                cost_usd: self.cost.total_usd() - cost_before_turn,
+                cost_usd,
                 plan: None,
             })
             .await;
@@ -2987,17 +3684,24 @@ impl Agent {
         tracing::debug!(turn_number = self.turn_count, "starting turn (content)");
 
         self.guards.reset();
+        self.injection_seen
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         let turn_trace = TraceContext::new();
 
         self.cost.check_budget(self.config.budget_limit)?;
         let cost_before_turn = self.cost.total_usd();
 
         let (memories, memory_entries, recall_info) =
-            self.fetch_relevant_memories(&text_for_memory).await;
+            self.gather_and_recall(&text_for_memory, &events).await?;
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
-            skills: self.matched_skill_names(&text_for_memory),
+            skills: if self.strategies.has_source("skills") {
+                self.matched_skill_names(&text_for_memory)
+            } else {
+                Vec::new()
+            },
             injection: None,
+            ..TurnContextInfo::default()
         };
         if !memory_entries.is_empty() {
             let _ = events
@@ -3012,10 +3716,14 @@ impl Agent {
 
         // run_turn_content is multimodal — skills are matched against the text
         // portion only (image bytes don't drive trigger regexes).
+        let skills_on = self.strategies.has_source("skills");
         let skills_block = match &self.config.skills {
-            Some(reg) => reg.render_for_prompt(&text_for_memory),
-            None => String::new(),
+            Some(reg) if skills_on => reg.render_for_prompt(&text_for_memory),
+            _ => String::new(),
         };
+        if !skills_block.is_empty() {
+            self.note_untrusted_label("skill");
+        }
         self.run_turn_inner(
             &text_for_memory,
             memories,
@@ -3292,6 +4000,15 @@ enum AgentCommand {
     GetMessages {
         reply: oneshot::Sender<Vec<Message>>,
     },
+    /// Return the context receipts kept so far, oldest first.
+    GetContextReceipts {
+        reply: oneshot::Sender<Vec<hone_proto::ContextReceipt>>,
+    },
+    /// Return the kept receipts with ordinals above `after`.
+    GetContextReceiptsAfter {
+        after: u64,
+        reply: oneshot::Sender<crate::ReceiptBatch>,
+    },
     /// Replace the agent's system prompt (for inline @agent persona dispatch).
     SetSystemPrompt {
         prompt: String,
@@ -3303,6 +4020,18 @@ enum AgentCommand {
     /// Replace the agent's active tool registry (for inline @agent tool allowlists).
     SetTools {
         tools: ToolRegistry,
+    },
+    /// Price every call with the entry of the model that served it.
+    SetPriceLookup {
+        lookup: PriceLookup,
+    },
+    /// The models that had an unpriced call, first seen first.
+    UnpricedModels {
+        reply: oneshot::Sender<Vec<String>>,
+    },
+    /// Whether every successful call reported usage.
+    UsageKnown {
+        reply: oneshot::Sender<bool>,
     },
     /// Change the agent's operational mode.  Automatically adjusts the tool
     /// registry: Plan → read-only subset; Build/AutoApprove → full base registry.
@@ -3378,17 +4107,40 @@ pub struct RunSettings {
 pub struct AgentHandle {
     cmd_tx: mpsc::Sender<AgentCommand>,
     context_tokens_cache: Arc<AtomicU32>,
+    /// Identifies the agent's receipt ordinals (see `context_receipts_after`).
+    agent_id: Arc<str>,
 }
 
 impl AgentHandle {
+    /// The id of the agent behind this handle, as in `ReceiptBatch::agent_id`
+    /// (stable for the agent's life, distinct between agents).
+    pub fn agent_id(&self) -> &str {
+        &self.agent_id
+    }
+
     /// Spawn an agent actor task and return a handle to it.
     pub fn spawn(config: AgentConfig) -> Self {
+        Self::spawn_with_strategies(config, None)
+    }
+
+    /// Like [`spawn`](Self::spawn), with the strategies a selection resolved
+    /// (see [`Agent::with_strategies`]).
+    pub fn spawn_with_strategies(
+        config: AgentConfig,
+        strategies: Option<Arc<ResolvedStrategies>>,
+    ) -> Self {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<AgentCommand>(32);
         let context_tokens_cache = Arc::new(AtomicU32::new(0));
         let tokens_writer = Arc::clone(&context_tokens_cache);
+        let agent_id: Arc<str> = Arc::from(uuid::Uuid::now_v7().to_string());
+        let actor_agent_id = agent_id.to_string();
 
         tokio::spawn(async move {
             let mut agent = Agent::new(config);
+            agent.receipt_agent_id = actor_agent_id;
+            if let Some(strategies) = strategies {
+                agent = agent.with_strategies(strategies);
+            }
             while let Some(cmd) = cmd_rx.recv().await {
                 match cmd {
                     AgentCommand::RunTurn {
@@ -3419,13 +4171,37 @@ impl AgentHandle {
                         let _ = reply.send(agent.context_token_count());
                     }
                     AgentCommand::LoadHistory { messages } => {
+                        // A resumed session starts a fresh write cap; the tools it
+                        // used still count as untrusted content in context.
+                        agent.memory_writes = 0;
                         for msg in messages {
+                            for call in &msg.tool_calls {
+                                agent.note_untrusted_source(&call.name);
+                            }
                             agent.context.add_message(msg);
                         }
                         tokens_writer.store(agent.context_token_count(), Ordering::Relaxed);
                     }
                     AgentCommand::GetMessages { reply } => {
                         let _ = reply.send(agent.messages());
+                    }
+                    AgentCommand::GetContextReceipts { reply } => {
+                        let _ = reply.send(agent.receipts.clone());
+                    }
+                    AgentCommand::GetContextReceiptsAfter { after, reply } => {
+                        let first = agent.receipts_dropped + 1;
+                        let items = agent
+                            .receipts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, r)| (first + i as u64, r))
+                            .filter(|(o, _)| *o > after)
+                            .map(|(o, r)| (o, r.clone()))
+                            .collect();
+                        let _ = reply.send(crate::ReceiptBatch {
+                            agent_id: agent.receipt_agent_id.clone(),
+                            items,
+                        });
                     }
                     AgentCommand::SetSystemPrompt { prompt } => {
                         agent.config.system_prompt = prompt;
@@ -3434,7 +4210,22 @@ impl AgentHandle {
                         agent.config.model = model;
                     }
                     AgentCommand::SetTools { tools } => {
-                        agent.config.tools = tools;
+                        // A replacement registry keeps `memory_write` (not in Plan
+                        // mode, which offers read-only tools only).
+                        agent.config.tools = if agent.config.mode == AgentMode::Plan {
+                            tools
+                        } else {
+                            agent.with_memory_write(&tools)
+                        };
+                    }
+                    AgentCommand::SetPriceLookup { lookup } => {
+                        agent.price_lookup = Some(lookup);
+                    }
+                    AgentCommand::UnpricedModels { reply } => {
+                        let _ = reply.send(agent.unpriced_models.clone());
+                    }
+                    AgentCommand::UsageKnown { reply } => {
+                        let _ = reply.send(agent.calls_without_usage == 0);
                     }
                     AgentCommand::SetMode { mode } => {
                         if agent.config.mode != mode {
@@ -3493,6 +4284,7 @@ impl AgentHandle {
         Self {
             cmd_tx,
             context_tokens_cache,
+            agent_id,
         }
     }
 
@@ -3596,6 +4388,43 @@ impl AgentHandle {
         rx.await.unwrap_or_default()
     }
 
+    /// The context receipts of this agent's life (one per model call), oldest
+    /// first; the newest 10,000 at most. Used by the session save.
+    pub async fn get_context_receipts(&self) -> Vec<hone_proto::ContextReceipt> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .cmd_tx
+            .send(AgentCommand::GetContextReceipts { reply: tx })
+            .await
+            .is_err()
+        {
+            return Vec::new();
+        }
+        rx.await.unwrap_or_default()
+    }
+
+    /// The kept context receipts with ordinals above `ordinal` (1-based for the
+    /// agent's whole life), with the agent's id.
+    pub async fn context_receipts_after(&self, ordinal: u64) -> crate::ReceiptBatch {
+        let (tx, rx) = oneshot::channel();
+        let empty = || crate::ReceiptBatch {
+            agent_id: String::new(),
+            items: Vec::new(),
+        };
+        if self
+            .cmd_tx
+            .send(AgentCommand::GetContextReceiptsAfter {
+                after: ordinal,
+                reply: tx,
+            })
+            .await
+            .is_err()
+        {
+            return empty();
+        }
+        rx.await.unwrap_or_else(|_| empty())
+    }
+
     /// Replace the agent's active system prompt.
     ///
     /// Fire-and-forget — the command is queued; it takes effect before the next
@@ -3621,6 +4450,44 @@ impl AgentHandle {
     /// allowlists for one turn.
     pub async fn set_tools(&self, tools: ToolRegistry) {
         let _ = self.cmd_tx.send(AgentCommand::SetTools { tools }).await;
+    }
+
+    /// Price each call with `lookup(model that served it)` from now on; it wins
+    /// over `AgentConfig.pricing`. Fire-and-forget like `set_tools`.
+    pub async fn set_price_lookup(&self, lookup: PriceLookup) {
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::SetPriceLookup { lookup })
+            .await;
+    }
+
+    /// False once a successful call of this session reported no usage at all.
+    pub async fn usage_known(&self) -> bool {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .cmd_tx
+            .send(AgentCommand::UsageKnown { reply: tx })
+            .await
+            .is_err()
+        {
+            return true;
+        }
+        rx.await.unwrap_or(true)
+    }
+
+    /// The model ids that had at least one unpriced call this session, in
+    /// first-seen order.
+    pub async fn unpriced_models(&self) -> Vec<String> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .cmd_tx
+            .send(AgentCommand::UnpricedModels { reply: tx })
+            .await
+            .is_err()
+        {
+            return Vec::new();
+        }
+        rx.await.unwrap_or_default()
     }
 
     /// Change the agent's operational mode.

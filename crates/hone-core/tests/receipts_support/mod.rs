@@ -178,6 +178,7 @@ pub struct Opts {
     pub working_dir: Option<std::path::PathBuf>,
     pub hooks: Option<Arc<hone_core::hooks::HookRegistry>>,
     pub policy: Option<hone_core::PolicyConfig>,
+    pub egress_log: Option<Arc<tokio::sync::Mutex<hone_core::EgressLog>>>,
 }
 
 pub struct Rig {
@@ -185,8 +186,7 @@ pub struct Rig {
     pub agent: Agent,
 }
 
-pub fn rig(rounds: Vec<Vec<ToolCallRequest>>, o: Opts) -> Rig {
-    let provider = Script::new(rounds);
+pub fn config(provider: Arc<Script>, o: Opts) -> AgentConfig {
     let mut b = ToolRegistry::builder();
     for (name, read_only) in [
         ("read_file", true),
@@ -196,8 +196,8 @@ pub fn rig(rounds: Vec<Vec<ToolCallRequest>>, o: Opts) -> Rig {
     ] {
         b = b.register(Box::new(FakeTool { name, read_only }));
     }
-    let agent = Agent::new(AgentConfig {
-        provider: provider.clone(),
+    AgentConfig {
+        provider,
         tools: b.build(),
         sandbox: Arc::new(NullSandbox),
         sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
@@ -219,7 +219,7 @@ pub fn rig(rounds: Vec<Vec<ToolCallRequest>>, o: Opts) -> Rig {
         index: o.index,
         inject_context: o.inject,
         skeleton_strategy: o.strategy,
-        egress_log: None,
+        egress_log: o.egress_log,
         approval_policy: ToolApprovalPolicy::Auto,
         step_rx: None,
         hooks: o.hooks,
@@ -227,8 +227,20 @@ pub fn rig(rounds: Vec<Vec<ToolCallRequest>>, o: Opts) -> Rig {
         embedder: o.embedder,
         mode: AgentMode::Build,
         policy: o.policy,
-    });
+    }
+}
+
+pub fn rig(rounds: Vec<Vec<ToolCallRequest>>, o: Opts) -> Rig {
+    let provider = Script::new(rounds);
+    let agent = Agent::new(config(provider.clone(), o));
     Rig { provider, agent }
+}
+
+/// Like `rig`, but a spawned `AgentHandle` (what the CLI and server hold).
+pub fn handle(rounds: Vec<Vec<ToolCallRequest>>, o: Opts) -> (Arc<Script>, hone_core::AgentHandle) {
+    let provider = Script::new(rounds);
+    let h = hone_core::AgentHandle::spawn(config(provider.clone(), o));
+    (provider, h)
 }
 
 impl Rig {

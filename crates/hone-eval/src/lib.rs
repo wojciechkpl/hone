@@ -2,12 +2,18 @@
 
 pub mod bisect;
 pub mod config;
+pub mod copy;
+pub mod fixture;
 pub mod history;
 pub mod report;
 pub mod runner;
+pub mod stats;
+pub mod tasks;
 
 pub use bisect::{AttributionCandidate, RegressionBisector, RegressionReport};
 pub use config::{EvalConfig, EvalConfigError, TaskSpec};
-pub use history::{EvalHistoryError, EvalRunRecord, EvalRunStore, RunSummary};
+pub use history::{EvalHistoryError, EvalRunRecord, EvalRunStore, ProfileRunSummary, RunSummary};
 pub use report::{EvalReport, write_json, write_markdown};
-pub use runner::{EvalRunner, EvalRunnerError, TaskOutcome, TaskStatus};
+pub use runner::{
+    AgentBuild, AgentBuilder, EvalOptions, EvalRunner, EvalRunnerError, TaskOutcome, TaskStatus,
+};

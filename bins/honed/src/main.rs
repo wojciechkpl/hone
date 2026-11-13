@@ -11,6 +11,23 @@ use hone_server::{
 #[tokio::main]
 async fn main() -> Result<()> {
     hone_tools::install_panic_cleanup();
+    // Every executor's agents are priced per model: the default table plus the
+    // user's `[pricing]` (a broken config file falls back to the table alone).
+    {
+        let user = std::env::var("HOME").ok().and_then(|home| {
+            hone_config::resolve::ConfigLayer::load(
+                &std::path::PathBuf::from(home).join(".config/hone/config.toml"),
+            )
+            .map_err(|e| eprintln!("honed: ignoring [pricing] of the user config: {e}"))
+            .ok()
+            .flatten()
+        });
+        if let Ok(lookup) = hone_server::build_price_lookup(user.as_ref(), None)
+            .or_else(|_| hone_server::build_price_lookup(None, None))
+        {
+            hone_core::set_default_price_lookup(lookup);
+        }
+    }
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -426,8 +443,9 @@ async fn main() -> Result<()> {
                     let model = hone_proto::ModelId::new("anthropic:claude-sonnet-4-5");
                     let pricing = hone_proto::PricingEntry {
                         model: model.clone(),
-                        input_per_million: 3.0,
-                        output_per_million: 15.0,
+                        // A placeholder: the process-wide price lookup prices every call.
+                        input_per_million: 0.0,
+                        output_per_million: 0.0,
                         cache_read_per_million: None,
                         cache_creation_per_million: None,
                     };
@@ -446,11 +464,22 @@ async fn main() -> Result<()> {
                             std::process::exit(2);
                         }
                     };
+                    // `[context]` / `[memory]` from the user's and the project's
+                    // config.toml, with honed's default of no skeleton injection.
+                    let strategies = match build_strategies(&working_dir) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("honed: {e}");
+                            hone_tools::kill_running_commands();
+                            std::process::exit(2);
+                        }
+                    };
                     let executor = Arc::new(
                         hone_server::AgentTaskExecutor::new(
                             registry, base_tools, provider, model, pricing, working_dir,
                         )
-                        .with_policy(policy),
+                        .with_policy(policy)
+                        .with_strategies(strategies),
                     );
                     let client = Arc::new(hone_core::queue_client::QueueClient::new(
                         coordinator_url.clone(),
@@ -524,6 +553,49 @@ async fn main() -> Result<()> {
 
     tracing::info!("honed stopped");
     Ok(())
+}
+
+/// Resolve the context strategies for the worker's agents: the user's
+/// `~/.config/hone/config.toml` and the working directory's `.hone/config.toml`
+/// (which can only narrow), the environment, and honed's default of no skeleton
+/// injection (a config can turn it on). Warnings go to stderr.
+fn build_strategies(
+    working_dir: &Path,
+) -> Result<Arc<hone_core::strategy::ResolvedStrategies>, String> {
+    use hone_config::resolve::ConfigLayer;
+    let user = match std::env::var("HOME") {
+        Ok(home) => {
+            ConfigLayer::load(&Path::new(&home).join(".config/hone/config.toml"))
+                .map_err(|e| e.to_string())?
+        }
+        Err(_) => None,
+    };
+    let project = ConfigLayer::load_project(working_dir).map_err(|e| e.to_string())?;
+    let flags = hone_config::strategy::Flags {
+        daemon: true,
+        encrypted_memory: false,
+        ..Default::default()
+    };
+    let selection = hone_config::strategy::StrategySelection::from_sources(
+        user.as_ref(),
+        project.as_ref(),
+        &|k| std::env::var(k).ok(),
+        &flags,
+    )
+    .map_err(|e| e.to_string())?;
+    for w in &selection.warnings {
+        // Straight to stderr: a tracing subscriber with no `RUST_LOG` prints nothing
+        // at this level, and a repository's ignored values should be seen.
+        eprintln!("honed: warning: {}: {}", w.path.display(), w.message);
+    }
+    let deps = hone_core::strategy::StrategyDeps {
+        working_dir: Some(working_dir.to_path_buf()),
+        ..Default::default()
+    };
+    hone_core::strategy::StrategyRegistry::with_builtins()
+        .build(&selection, &deps)
+        .map(Arc::new)
+        .map_err(|e| e.to_string())
 }
 
 /// SIGINT, SIGTERM and SIGHUP, minus the ones that were ignored at start

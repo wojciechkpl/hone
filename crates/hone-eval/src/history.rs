@@ -21,6 +21,17 @@ pub struct EvalRunRecord {
     pub tag: Option<String>,
     /// All task outcomes for this run, in run order.
     pub outcomes: Vec<TaskOutcome>,
+    /// Per-profile summaries of a `hone eval` run (empty for older records).
+    #[serde(default)]
+    pub profiles: Vec<ProfileRunSummary>,
+}
+
+/// One profile's totals within a recorded run.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProfileRunSummary {
+    pub profile: String,
+    pub runs: usize,
+    pub passes: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -73,6 +84,17 @@ impl EvalRunStore {
         .execute(&pool)
         .await?;
 
+        // Databases from before profiles: add the column in place.
+        let columns: Vec<(i64, String, String, i64, Option<String>, i64)> =
+            sqlx::query_as("PRAGMA table_info(eval_runs)")
+                .fetch_all(&pool)
+                .await?;
+        if !columns.iter().any(|c| c.1 == "profiles") {
+            sqlx::query("ALTER TABLE eval_runs ADD COLUMN profiles TEXT NOT NULL DEFAULT '[]'")
+                .execute(&pool)
+                .await?;
+        }
+
         Ok(Self { pool })
     }
 
@@ -85,6 +107,20 @@ impl EvalRunStore {
         tag: Option<String>,
         outcomes: Vec<TaskOutcome>,
     ) -> Result<EvalRunRecord, EvalHistoryError> {
+        self.record_with_profiles(commit_sha, model, config_hash, tag, outcomes, Vec::new())
+            .await
+    }
+
+    /// Like [`record`](Self::record), with the per-profile totals of a profile run.
+    pub async fn record_with_profiles(
+        &self,
+        commit_sha: Option<String>,
+        model: String,
+        config_hash: String,
+        tag: Option<String>,
+        outcomes: Vec<TaskOutcome>,
+        profiles: Vec<ProfileRunSummary>,
+    ) -> Result<EvalRunRecord, EvalHistoryError> {
         let id = Uuid::now_v7().to_string();
         let timestamp = Utc::now();
         let timestamp_micros = timestamp.timestamp_micros();
@@ -93,10 +129,11 @@ impl EvalRunStore {
         let total = outcomes.len();
 
         let outcomes_json = serde_json::to_string(&outcomes)?;
+        let profiles_json = serde_json::to_string(&profiles)?;
 
         sqlx::query(
-            "INSERT INTO eval_runs (id, timestamp, commit_sha, model, config_hash, tag, outcomes, passed, total)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO eval_runs (id, timestamp, commit_sha, model, config_hash, tag, outcomes, passed, total, profiles)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         )
         .bind(&id)
         .bind(timestamp_micros)
@@ -107,6 +144,7 @@ impl EvalRunStore {
         .bind(&outcomes_json)
         .bind(passed as i64)
         .bind(total as i64)
+        .bind(&profiles_json)
         .execute(&self.pool)
         .await?;
 
@@ -118,26 +156,29 @@ impl EvalRunStore {
             config_hash,
             tag,
             outcomes,
+            profiles,
         })
     }
 
     /// Look up by id.
     pub async fn get(&self, id: &str) -> Result<Option<EvalRunRecord>, EvalHistoryError> {
-        let row: Option<(String, i64, Option<String>, String, String, Option<String>, String)> =
+        let row: Option<(String, i64, Option<String>, String, String, Option<String>, String, String)> =
             sqlx::query_as(
-                "SELECT id, timestamp, commit_sha, model, config_hash, tag, outcomes
+                "SELECT id, timestamp, commit_sha, model, config_hash, tag, outcomes, profiles
                  FROM eval_runs WHERE id = ?1",
             )
             .bind(id)
             .fetch_optional(&self.pool)
             .await?;
 
-        row.map(|(id, ts_micros, commit_sha, model, config_hash, tag, outcomes_json)| {
+        row.map(|(id, ts_micros, commit_sha, model, config_hash, tag, outcomes_json, profiles_json)| {
             let timestamp = Utc
                 .timestamp_micros(ts_micros)
                 .single()
                 .unwrap_or_else(Utc::now);
             let outcomes: Vec<TaskOutcome> = serde_json::from_str(&outcomes_json)?;
+            let profiles: Vec<ProfileRunSummary> =
+                serde_json::from_str(&profiles_json).unwrap_or_default();
             Ok(EvalRunRecord {
                 id,
                 timestamp,
@@ -146,6 +187,7 @@ impl EvalRunStore {
                 config_hash,
                 tag,
                 outcomes,
+                profiles,
             })
         })
         .transpose()
@@ -202,21 +244,23 @@ impl EvalRunStore {
 
     /// Most recent run with the given tag, or None.
     pub async fn latest_with_tag(&self, tag: &str) -> Result<Option<EvalRunRecord>, EvalHistoryError> {
-        let row: Option<(String, i64, Option<String>, String, String, Option<String>, String)> =
+        let row: Option<(String, i64, Option<String>, String, String, Option<String>, String, String)> =
             sqlx::query_as(
-                "SELECT id, timestamp, commit_sha, model, config_hash, tag, outcomes
+                "SELECT id, timestamp, commit_sha, model, config_hash, tag, outcomes, profiles
                  FROM eval_runs WHERE tag = ?1 ORDER BY timestamp DESC LIMIT 1",
             )
             .bind(tag)
             .fetch_optional(&self.pool)
             .await?;
 
-        row.map(|(id, ts_micros, commit_sha, model, config_hash, tag, outcomes_json)| {
+        row.map(|(id, ts_micros, commit_sha, model, config_hash, tag, outcomes_json, profiles_json)| {
             let timestamp = Utc
                 .timestamp_micros(ts_micros)
                 .single()
                 .unwrap_or_else(Utc::now);
             let outcomes: Vec<TaskOutcome> = serde_json::from_str(&outcomes_json)?;
+            let profiles: Vec<ProfileRunSummary> =
+                serde_json::from_str(&profiles_json).unwrap_or_default();
             Ok(EvalRunRecord {
                 id,
                 timestamp,
@@ -225,6 +269,7 @@ impl EvalRunStore {
                 config_hash,
                 tag,
                 outcomes,
+                profiles,
             })
         })
         .transpose()

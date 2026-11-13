@@ -1,5 +1,7 @@
 mod approve;
 mod configure;
+mod context_cmd;
+mod eval_cmd;
 mod image_input;
 mod memory_cmd;
 mod memory_init;
@@ -9,6 +11,7 @@ mod reports_cmd;
 mod session;
 mod settings;
 mod spec_cmd;
+mod strategies_cmd;
 mod system_prompt;
 mod tools;
 mod trace;
@@ -48,7 +51,6 @@ use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, ModelProvider, adapters::anthropic::AnthropicProvider,
     adapters::ollama::OllamaProvider, adapters::openai::OpenAiProvider,
 };
-use hone_eval::{EvalConfig, EvalReport, EvalRunner};
 use hone_recipes::Recipe;
 use hone_sandbox::SandboxBuilder;
 use hone_tools::{
@@ -91,6 +93,26 @@ enum SessionCmd {
     },
 }
 
+/// Subcommands for `hone context <sub>`.
+#[derive(Subcommand, Debug)]
+enum ContextCmd {
+    /// Show the context receipts stored with a session, per model call.
+    Show {
+        /// Session name (default: the most recently updated one).
+        #[arg(long)]
+        session: Option<String>,
+        /// Only this run (a run is one process that saved to the session).
+        #[arg(long)]
+        run: Option<u32>,
+        /// Only this turn (of the latest run unless --run is given).
+        #[arg(long)]
+        turn: Option<u32>,
+        /// Print the stored receipts as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 /// Top-level subcommands (optional — the default behaviour is the agent loop).
 #[derive(Subcommand, Debug)]
 enum HoneCmd {
@@ -101,6 +123,22 @@ enum HoneCmd {
     },
     /// Interactive setup wizard — writes ~/.config/hone/config.toml.
     Configure,
+    /// Show the active context and memory strategies, with their parameters and
+    /// what chose each (flag, environment variable, file or default).
+    Strategies {
+        /// Print the same as one JSON object.
+        #[arg(long)]
+        json: bool,
+        /// Print nothing and exit 0 when the config is valid; otherwise print
+        /// the error and exit 2.
+        #[arg(long)]
+        check: bool,
+    },
+    /// Inspect what the model was given: the context receipts of a saved session.
+    Context {
+        #[command(subcommand)]
+        cmd: ContextCmd,
+    },
     /// Inspect hierarchical tracing data from the egress audit log.
     Trace {
         #[command(subcommand)]
@@ -116,14 +154,11 @@ enum HoneCmd {
         #[command(subcommand)]
         cmd: memory_cmd::MemoryCmd,
     },
-    /// Run evaluation tasks from a TOML file and produce a report.
-    Eval {
-        /// Path to the tasks.toml file.
-        tasks: PathBuf,
-        /// Output directory for report.json and report.md (default: parent dir of tasks file).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-    },
+    /// Run evaluation tasks from a TOML file with real agents, and compare profiles.
+    ///
+    /// Runs are hermetic: no MCP servers, no language server, no tool cache, and the
+    /// model is pinned. Tasks that need MCP are not supported yet.
+    Eval(eval_cmd::EvalArgs),
     /// Generate a Kiro-style spec (requirements + design + tasks) for a goal.
     Spec {
         /// Natural-language goal describing what to build.
@@ -1044,10 +1079,49 @@ fn build_agent_config(
     memory_store: Option<Arc<dyn MemoryStore>>,
     tool_cache: Option<Arc<ToolResultCache>>,
     mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
-    no_inject_flag: bool,
-    skeleton_strategy_arg: Option<&str>,
+    inject_context: bool,
+    skeleton_strategy: SkeletonStrategy,
     audit_flag: bool,
     session_limit_usd: Option<f64>,
+) -> AgentConfig {
+    // One source of truth for the directory: tools and policy share it.
+    let agent_working_dir = std::env::current_dir().unwrap_or_default();
+    let policy = load_permission_policy(&agent_working_dir);
+    build_agent_config_at(
+        detected,
+        model_id,
+        system_prompt,
+        lsp,
+        index,
+        memory_store,
+        tool_cache,
+        mcp_tools,
+        inject_context,
+        skeleton_strategy,
+        audit_flag,
+        session_limit_usd,
+        agent_working_dir,
+        policy,
+    )
+}
+
+/// [`build_agent_config`] for an explicit working directory and permission
+/// policy (`hone eval` runs each task in its own copy).
+fn build_agent_config_at(
+    detected: &DetectedProvider,
+    model_id: ModelId,
+    system_prompt: String,
+    lsp: Arc<dyn LspBridge>,
+    index: Option<Arc<SqliteIndex>>,
+    memory_store: Option<Arc<dyn MemoryStore>>,
+    tool_cache: Option<Arc<ToolResultCache>>,
+    mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
+    inject_context: bool,
+    skeleton_strategy: SkeletonStrategy,
+    audit_flag: bool,
+    session_limit_usd: Option<f64>,
+    agent_working_dir: PathBuf,
+    policy: Option<hone_core::PolicyConfig>,
 ) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
@@ -1062,44 +1136,19 @@ fn build_agent_config(
         ToolRegistry::new()
     };
 
-    // Proactive context injection is ENABLED by default. Its effect on resolve
-    // rate is being measured by the pre-registered ablation in
-    // benchmarks/harness-compare. Disable with --no-inject or HONE_NO_INJECTION=1.
-    let inject_context = !no_inject_flag
-        && std::env::var("HONE_NO_INJECTION")
-            .map(|v| v != "1")
-            .unwrap_or(true);
-
-    // Skeleton strategy: CLI arg wins over env var; env var is read inside
-    // SkeletonStrategy::from_str fallback via ContextInjector::new(). We
-    // resolve explicitly here so the value is stored in AgentConfig.
-    let skeleton_strategy = skeleton_strategy_arg
-        .and_then(SkeletonStrategy::from_str)
-        .or_else(|| {
-            std::env::var("HONE_SKELETON_STRATEGY")
-                .ok()
-                .and_then(|v| SkeletonStrategy::from_str(&v))
-        })
-        .unwrap_or_default();
-
     // Egress audit log: enabled via --audit or HONE_AUDIT_LOG=1.
     let enable_audit = audit_flag
         || std::env::var("HONE_AUDIT_LOG")
             .map(|v| v == "1")
             .unwrap_or(false);
     let egress_log = if enable_audit {
-        let working_dir = std::env::current_dir().unwrap_or_default();
-        let log_path = working_dir.join(".hone").join("audit.jsonl");
+        let log_path = agent_working_dir.join(".hone").join("audit.jsonl");
         Some(Arc::new(tokio::sync::Mutex::new(
             hone_core::EgressLog::new(log_path),
         )))
     } else {
         None
     };
-
-    // One source of truth for the directory: tools and policy share it.
-    let agent_working_dir = std::env::current_dir().unwrap_or_default();
-    let policy = load_permission_policy(&agent_working_dir);
 
     AgentConfig {
         provider: Arc::clone(&detected.provider),
@@ -1111,10 +1160,12 @@ fn build_agent_config(
         max_tokens: None,
         temperature: None,
         budget_limit: session_limit_usd,
+        // The fallback when an agent has no price lookup. Real prices come from
+        // `price_lookup` (the default table and `[pricing]`), set on the agent.
         pricing: PricingEntry {
             model: model_id.clone(),
-            input_per_million: 3.0,
-            output_per_million: 15.0,
+            input_per_million: 0.0,
+            output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
         },
@@ -1661,10 +1712,11 @@ fn spawn_orchestrated_turn(
                         .await;
                 }
                 let summary = format!(
-                    "\n\n--- Orchestration complete ---\n{}\n\nTotal cost: ${:.6} | workers: {}",
+                    "\n\n--- Orchestration complete ---\n{}\n\nTotal cost: ${:.6} | workers: {}{}",
                     result.merged_response,
                     result.total_cost_usd,
-                    result.workers.len()
+                    result.workers.len(),
+                    incomplete_mark()
                 );
                 let _ = tx.send(AgentEvent::Token { text: summary }).await;
                 let _ = tx
@@ -1816,10 +1868,12 @@ async fn run_orchestrate(
             let _ = printer.await;
             println!("\n\n--- Final Response ---");
             println!("{}", result.merged_response);
+            note_unpriced_seen();
             println!(
-                "\nTotal cost: ${:.6} | workers: {}",
+                "\nTotal cost: ${:.6} | workers: {}{}",
                 result.total_cost_usd,
-                result.workers.len()
+                result.workers.len(),
+                incomplete_mark()
             );
         }
         Err(e) => {
@@ -1871,7 +1925,12 @@ async fn print_ensemble_events<O: io::Write, E: io::Write>(
 
 /// Run a prompt through N parallel candidates with varied temperatures, then
 /// let a ranker agent pick the best response (MASAI Ranker pattern).
-async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result<()> {
+async fn run_ensemble(
+    base_config: &AgentConfig,
+    strategies: Arc<hone_core::strategy::ResolvedStrategies>,
+    prompt: &str,
+    n: u32,
+) -> Result<()> {
     // Temperature ladder: diverse but bounded.  We only use as many slots as
     // requested, so `--ensemble 2` picks the first two entries.
     const TEMPS: [f32; 5] = [0.0, 0.3, 0.5, 0.7, 0.9];
@@ -1884,7 +1943,7 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
     // the same system prompt; the ranker prompt is assembled by the ensemble
     // from the candidate responses, so the system prompt here just sets the
     // overall assistant persona.
-    let ensemble = AgentEnsemble::new(base_config.clone(), temperatures);
+    let ensemble = AgentEnsemble::new(base_config.clone(), temperatures).with_strategies(strategies);
 
     let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
@@ -1895,11 +1954,13 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
     let result = ensemble.run(prompt, tx).await?;
     let _ = printer.await;
 
+    note_unpriced_seen();
     println!(
-        "\n\n[Ensemble: picked candidate {}/{} (${:.4} total)]\n\n{}",
+        "\n\n[Ensemble: picked candidate {}/{} (${:.4} total{})]\n\n{}",
         result.winner_index + 1,
         result.all_candidates.len(),
         result.total_cost_usd,
+        if incomplete_mark().is_empty() { "" } else { " (incomplete: unpriced models)" },
         result.winner.response,
     );
 
@@ -1962,6 +2023,7 @@ async fn run_one_shot(agent: AgentHandle, prompt: &str) -> Result<()> {
     });
 
     let result = agent.run_turn(prompt, tx).await;
+    note_unpriced(&agent).await;
     finish_one_shot(result, printer).await
 }
 
@@ -1996,6 +2058,7 @@ async fn run_one_shot_content(agent: AgentHandle, content: Content) -> Result<()
     });
 
     let result = agent.run_turn_content(content, tx).await;
+    note_unpriced(&agent).await;
     finish_one_shot(result, printer).await
 }
 
@@ -2066,8 +2129,9 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
     // One fresh agent per run, so the session's spend is this run's spend,
     // including model calls of a turn that failed or was cancelled.
     let spend = agent.session_spend().await;
+    let cost_known = !note_unpriced(&agent).await;
 
-    let output = json_mode_output(
+    let mut output = json_mode_output(
         &turn_result,
         response,
         tool_calls,
@@ -2076,6 +2140,9 @@ async fn run_json_mode(agent: AgentHandle, prompt: &str, model_id: &str) -> Resu
         model_id,
         &fallbacks,
     );
+    let usage_known = agent.usage_known().await;
+    output["usage_known"] = serde_json::json!(usage_known);
+    output["cost_known"] = serde_json::json!(cost_known && usage_known);
     let output = attach_context(output, &receipts);
     println!("{}", serde_json::to_string_pretty(&output)?);
 
@@ -2154,7 +2221,11 @@ async fn auto_save_session(agent: &AgentHandle, name: Option<&str>) {
         return;
     }
 
-    let Some(store) = open_session_store().await else {
+    // One store for the whole process, so receipts saved by later calls land in
+    // the same run (see `SessionStore::append_context_receipts`).
+    static AUTO_SAVE_STORE: tokio::sync::OnceCell<Option<session::SessionStore>> =
+        tokio::sync::OnceCell::const_new();
+    let Some(store) = AUTO_SAVE_STORE.get_or_init(open_session_store).await.as_ref() else {
         return;
     };
 
@@ -2166,6 +2237,34 @@ async fn auto_save_session(agent: &AgentHandle, name: Option<&str>) {
         tracing::warn!("auto-save session failed: {e}");
     } else {
         tracing::info!(name = %resolved_name, messages = messages.len(), "session auto-saved");
+        // Last stored ordinal per (agent id, session name) in this process.
+        static STORED: std::sync::Mutex<Vec<(String, String, u64)>> =
+            std::sync::Mutex::new(Vec::new());
+        let find = |agent_id: &str| {
+            STORED.lock().ok().and_then(|v| {
+                v.iter()
+                    .find(|(a, n, _)| a == agent_id && *n == resolved_name)
+                    .map(|(_, _, o)| *o)
+            })
+        };
+        let after = find(agent.agent_id()).unwrap_or(0);
+        let batch = agent.context_receipts_after(after).await;
+        if let Some(last) = batch.items.last().map(|(o, _)| *o) {
+            match store.append_context_receipts(&resolved_name, &batch).await {
+                Ok(()) => {
+                    if let Ok(mut v) = STORED.lock() {
+                        match v
+                            .iter_mut()
+                            .find(|(a, n, _)| *a == batch.agent_id && *n == resolved_name)
+                        {
+                            Some(e) => e.2 = last,
+                            None => v.push((batch.agent_id.clone(), resolved_name.clone(), last)),
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!("saving context receipts failed: {e}"),
+            }
+        }
     }
 }
 
@@ -2194,6 +2293,32 @@ async fn open_session_store() -> Option<session::SessionStore> {
             None
         }
     }
+}
+
+/// Handle `hone context show`. Needs no provider or network.
+async fn cmd_context_show(
+    session: Option<&str>,
+    run: Option<u32>,
+    turn: Option<u32>,
+    json: bool,
+) -> Result<()> {
+    let path = sessions_db_path();
+    anyhow::ensure!(
+        path.exists(),
+        "no saved sessions (no database at {})",
+        path.display()
+    );
+    let store = session::SessionStore::open_read_only(&path).await?;
+    let name = match store.resolve_session_name(session).await? {
+        Some(n) => n,
+        None => match session {
+            Some(n) => anyhow::bail!("session '{n}' not found"),
+            None => anyhow::bail!("no saved sessions"),
+        },
+    };
+    let stored = store.list_context_receipts(&name).await?;
+    print!("{}", context_cmd::render_context_show(&stored, run, turn, json)?);
+    Ok(())
 }
 
 /// Handle `hone session list`.
@@ -2250,65 +2375,6 @@ async fn cmd_session_delete(name: &str) -> Result<()> {
     };
     store.delete_session(name).await?;
     println!("Session '{name}' deleted.");
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Eval subcommand
-// ---------------------------------------------------------------------------
-
-/// Run evaluation tasks from a TOML file and write report.json + report.md.
-///
-/// Provider support in v1: Anthropic and OpenAI(-compatible), built from the
-/// resolved settings (environment, user `config.toml`, wizard key). Other
-/// providers (Ollama, CLI pass-throughs) are a follow-up.
-async fn cmd_eval(
-    tasks_path: &std::path::Path,
-    output_dir: Option<PathBuf>,
-    eff: &Effective,
-) -> Result<()> {
-    use std::path::Path;
-
-    let config = EvalConfig::from_toml_file(tasks_path)
-        .map_err(|e| anyhow::anyhow!("failed to load tasks file: {e}"))?;
-
-    let base_dir = tasks_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf();
-
-    let out_dir = output_dir.unwrap_or_else(|| base_dir.clone());
-
-    std::fs::create_dir_all(&out_dir)
-        .map_err(|e| anyhow::anyhow!("cannot create output dir {}: {e}", out_dir.display()))?;
-
-    // The factory must be 'static: build one provider from the resolved
-    // settings and hand out clones of the Arc.
-    let provider = api_provider_from_settings(eff, "eval")?;
-    let provider_factory: Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync> =
-        Box::new(move || Arc::clone(&provider));
-
-    let outcomes = EvalRunner::new(config, base_dir, provider_factory)
-        .run_all()
-        .await;
-
-    let report = EvalReport::from_outcomes(outcomes);
-
-    hone_eval::report::write_json(&report, &out_dir.join("report.json"))
-        .map_err(|e| anyhow::anyhow!("failed to write report.json: {e}"))?;
-    hone_eval::report::write_markdown(&report, &out_dir.join("report.md"))
-        .map_err(|e| anyhow::anyhow!("failed to write report.md: {e}"))?;
-
-    let pass_pct = report.pass_rate() * 100.0;
-    println!(
-        "{}/{} passed ({:.0}%) — total cost ${:.4} — see {}/report.md for details",
-        report.passed,
-        report.total,
-        pass_pct,
-        report.total_cost_usd,
-        out_dir.display(),
-    );
-
     Ok(())
 }
 
@@ -2407,7 +2473,13 @@ async fn init_persistence(
 
     // Memory store
     let memory_path = dir.join("memory.db");
-    let memory: Option<Arc<dyn MemoryStore>> = match SqliteStore::open(&memory_path).await {
+    // An encrypted store's database holds ciphertext: no FTS5 index for it.
+    let opened = if memory_passphrase.is_some() {
+        SqliteStore::open_without_fts(&memory_path).await
+    } else {
+        SqliteStore::open(&memory_path).await
+    };
+    let memory: Option<Arc<dyn MemoryStore>> = match opened {
         Ok(store) => {
             tracing::info!(path = %memory_path.display(), "memory store initialised");
             let passphrase_ref = memory_passphrase.as_deref();
@@ -2613,6 +2685,16 @@ fn install_panic_hooks() {
     }));
 }
 
+/// The command-line inputs of the `[context]` selection.
+fn strategy_flags(cli: &Cli) -> hone_config::strategy::Flags {
+    hone_config::strategy::Flags {
+        skeleton_strategy: cli.skeleton_strategy.clone(),
+        no_inject: cli.no_inject,
+        daemon: false,
+        encrypted_memory: cli.encrypted_memory,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     install_panic_hooks();
@@ -2652,6 +2734,49 @@ async fn main() -> Result<()> {
                 if !matches!(session_cmd, SessionCmd::Resume { .. }) {
                     return Ok(());
                 }
+            }
+            HoneCmd::Strategies { json, check } => {
+                let flags = strategy_flags(&cli);
+                let sel = match settings::load_strategy_selection(&flags) {
+                    Ok(sel) => sel,
+                    Err(e) => {
+                        eprintln!("{}", settings::format_config_error(&e));
+                        std::process::exit(2);
+                    }
+                };
+                let registry = hone_core::strategy::StrategyRegistry::with_builtins();
+                if let Err(e) = registry.build(
+                    &sel,
+                    &hone_core::strategy::StrategyDeps {
+                        encrypted_memory: cli.encrypted_memory,
+                        ..Default::default()
+                    },
+                )
+                {
+                    eprintln!("hone: config error: {e}");
+                    std::process::exit(2);
+                }
+                if !*check {
+                    let listed = registry.list();
+                    if *json {
+                        print!("{}", strategies_cmd::render_json(&sel, &listed));
+                    } else {
+                        print!("{}", strategies_cmd::render_text(&sel, &listed));
+                    }
+                }
+                return Ok(());
+            }
+            HoneCmd::Context {
+                cmd:
+                    ContextCmd::Show {
+                        session,
+                        run,
+                        turn,
+                        json,
+                    },
+            } => {
+                cmd_context_show(session.as_deref(), *run, *turn, *json).await?;
+                return Ok(());
             }
             HoneCmd::Trace { cmd: trace_cmd } => {
                 let audit_path = std::env::current_dir()
@@ -2694,9 +2819,10 @@ async fn main() -> Result<()> {
                 // Handled below, outside the `Some(ref cmd)` borrow scope,
                 // so we can take ownership of the MemoryCmd variant.
             }
-            HoneCmd::Eval { tasks, output } => {
-                let eff = settings::load_effective_or_exit(cli.model.as_deref());
-                cmd_eval(tasks, output.clone(), &eff).await?;
+            HoneCmd::Eval(args) => {
+                let model = args.model.clone().or_else(|| cli.model.clone());
+                let eff = settings::load_effective_or_exit(model.as_deref());
+                eval_cmd::run(args.clone(), eff, model).await?;
                 return Ok(());
             }
             HoneCmd::Spec { goal, cwd } => {
@@ -2730,6 +2856,26 @@ async fn main() -> Result<()> {
     // Read config.toml (user + project) once. A broken file stops here with
     // exit 2; warnings go to stderr once.
     let eff = settings::load_effective_or_exit(cli.model.as_deref());
+    // The `[context]` / `[memory]` choices: flag, env var, project file, user
+    // file, default. A broken value stops here with exit 2, before any model call.
+    let strategy_selection = settings::load_strategy_selection_or_exit(&strategy_flags(&cli));
+    // Build the registry now, before any language server or MCP server starts, so
+    // a failure exits (2) with nothing left running. The built-ins do not need the
+    // memory store or the index at build time.
+    let resolved_strategies = match hone_core::strategy::StrategyRegistry::with_builtins().build(
+        &strategy_selection,
+        &hone_core::strategy::StrategyDeps {
+            working_dir: std::env::current_dir().ok(),
+            encrypted_memory: cli.encrypted_memory,
+            ..Default::default()
+        },
+    ) {
+        Ok(r) => Arc::new(r),
+        Err(e) => {
+            eprintln!("hone: config error: {e}");
+            std::process::exit(2);
+        }
+    };
     let hone_md = load_hone_md();
 
     // Initialise SQLite persistence (non-blocking; errors are warnings only).
@@ -2816,10 +2962,17 @@ async fn main() -> Result<()> {
     // 5000-row cap on non-empty queries, but uncapped here. Tens of ms at
     // most for typical corpora; consider caching if startup latency becomes
     // a concern.
-    let memory_index_str = if let Some(store) = memory_store.as_ref() {
-        match hone_core::memory_index::render_index(
+    let memory_index_on = strategy_selection
+        .sources
+        .value
+        .iter()
+        .any(|n| n == "memory-index");
+    let memory_index_str = if let Some(store) = memory_store.as_ref().filter(|_| memory_index_on) {
+        let index_dir = std::env::current_dir().unwrap_or_default();
+        match hone_core::memory_index::render_index_in(
             store.as_ref(),
             hone_core::memory_index::IndexBudget::default(),
+            &index_dir,
         )
         .await
         {
@@ -3023,6 +3176,9 @@ async fn main() -> Result<()> {
         "MCP manager initialised"
     );
 
+    let resolved_skeleton =
+        SkeletonStrategy::from_str(&strategy_selection.skeleton.value).unwrap_or_default();
+
     // Build a single clonable config; share it across all code paths.
     let mut base_config = build_agent_config(
         &detected,
@@ -3033,14 +3189,43 @@ async fn main() -> Result<()> {
         memory_store.clone(),
         tool_cache,
         mcp_tools,
-        cli.no_inject,
-        cli.skeleton_strategy.as_deref(),
+        resolved_strategies.has_source("skeleton"),
+        resolved_skeleton,
         cli.audit,
         eff.session_limit_usd,
     );
     apply_policy_flags(&mut base_config, &cli.approve);
 
-    let agent = AgentHandle::spawn(base_config.clone());
+    let agent = AgentHandle::spawn_with_strategies(
+        base_config.clone(),
+        Some(Arc::clone(&resolved_strategies)),
+    );
+    let prices = price_lookup(&eff.pricing);
+    // Every agent of this process (orchestrator leads and workers, ensemble
+    // candidates, the reviewer loop) is priced the same way.
+    hone_core::set_default_price_lookup(Arc::clone(&prices));
+    agent.set_price_lookup(Arc::clone(&prices)).await;
+
+    // With a session limit, say up front which models it can't limit.
+    let budget_warnings = if eff.session_limit_usd.is_some() {
+        let mut models: Vec<ModelId> = vec![model_id.clone()];
+        for tier in [
+            hone_config::resolve::Tier::Simple,
+            hone_config::resolve::Tier::Medium,
+            hone_config::resolve::Tier::Complex,
+        ] {
+            if let Some(routed) = eff.routing.get(tier) {
+                models.push(routed.model.clone());
+            }
+        }
+        models.extend(eff.fallback_models.iter().cloned());
+        budget_warnings(&prices, &models)
+    } else {
+        Vec::new()
+    };
+    for w in &budget_warnings {
+        eprintln!("{w}");
+    }
 
     // Session resume: load history into the freshly spawned agent.
     let is_resume = matches!(
@@ -3109,6 +3294,9 @@ async fn main() -> Result<()> {
             dispatch,
             pinned: pinned_choice,
         }),
+        prices,
+        budget_warnings,
+        Arc::clone(&resolved_strategies),
     )
     .await;
 
@@ -3160,6 +3348,9 @@ async fn run_selected_mode(
     session_name: Option<String>,
     no_clarify: bool,
     routing: Option<TuiRouting>,
+    prices: hone_core::PriceLookup,
+    budget_warnings: Vec<String>,
+    resolved_strategies: Arc<hone_core::strategy::ResolvedStrategies>,
 ) -> Result<()> {
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -3215,7 +3406,7 @@ async fn run_selected_mode(
             }
         };
 
-        return run_ensemble(&base_config, &prompt, n).await;
+        return run_ensemble(&base_config, Arc::clone(&resolved_strategies), &prompt, n).await;
     }
 
     // --plan: load a saved plan file and execute its plan_body as a one-shot prompt.
@@ -3311,6 +3502,9 @@ async fn run_selected_mode(
         cli.vim,
         step_tx,
         routing,
+        prices,
+        budget_warnings,
+        Arc::clone(&resolved_strategies),
     )
     .await;
 
@@ -3612,6 +3806,68 @@ impl FallbackPrinter {
     }
 }
 
+/// Prices by model: `PricingTable::default_table()` with the user's
+/// `[pricing."provider:model"]` entries on top. `None` = no price.
+fn price_lookup(user_entries: &[PricingEntry]) -> hone_core::PriceLookup {
+    let mut table = hone_providers::PricingTable::default_table();
+    for entry in user_entries {
+        table.insert(entry.clone());
+    }
+    Arc::new(move |model: &ModelId| table.get(model).cloned())
+}
+
+/// `(input, output)` rates per million tokens of `model`; zero without a price.
+fn rates_for(lookup: &hone_core::PriceLookup, model: &str) -> (f64, f64) {
+    lookup(&ModelId::new(model)).map_or((0.0, 0.0), |p| {
+        (p.input_per_million, p.output_per_million)
+    })
+}
+
+/// `[budget]` warnings for `models` (deduplicated, in order) that have no price.
+fn budget_warnings(lookup: &hone_core::PriceLookup, models: &[ModelId]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    models
+        .iter()
+        .filter(|m| lookup(m).is_none() && seen.insert(m.as_str().to_owned()))
+        .map(|m| {
+            format!(
+                "hone: [budget] can't limit {m}: it has no price; add [pricing.\"{m}\"] to your config"
+            )
+        })
+        .collect()
+}
+
+/// Print the stderr note for every model of this process that had an unpriced
+/// call (orchestrated and ensemble runs spawn their own agents).
+fn note_unpriced_seen() {
+    for m in hone_core::unpriced_models_seen() {
+        eprintln!("{}", unpriced_note(&m));
+    }
+}
+
+/// ` (incomplete: unpriced models)` when any call of this process was unpriced.
+fn incomplete_mark() -> &'static str {
+    if hone_core::unpriced_models_seen().is_empty() {
+        ""
+    } else {
+        " (incomplete: unpriced models)"
+    }
+}
+
+/// The stderr note for a model without a price.
+fn unpriced_note(model: &str) -> String {
+    format!("hone: no price for {model}; its usage isn't counted towards cost or [budget]")
+}
+
+/// Print one stderr note per unpriced model of the session; true when any.
+async fn note_unpriced(agent: &AgentHandle) -> bool {
+    let models = agent.unpriced_models().await;
+    for m in &models {
+        eprintln!("{}", unpriced_note(m));
+    }
+    !models.is_empty()
+}
+
 fn record_outcome_for_event(
     event: &AgentEvent,
     adaptive: &Option<Arc<AdaptiveClassifier>>,
@@ -3670,8 +3926,14 @@ async fn run_tui(
     vim: bool,
     step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
     routing: Option<TuiRouting>,
+    prices: hone_core::PriceLookup,
+    budget_warnings: Vec<String>,
+    strategies: Arc<hone_core::strategy::ResolvedStrategies>,
 ) -> Result<()> {
     let mut app = if vim { App::with_vim() } else { App::new() };
+    for w in budget_warnings {
+        app.push_system_message(w);
+    }
     // Wire step-mode sender into app so it can unblock the agent.
     if let Some(tx) = &step_tx {
         app.set_step_tx(tx.clone());
@@ -3782,7 +4044,7 @@ async fn run_tui(
     let adaptive: Option<Arc<AdaptiveClassifier>> = base_config
         .memory_store
         .as_ref()
-        .map(|store| Arc::new(AdaptiveClassifier::new(Arc::clone(store))));
+        .map(|store| Arc::new(AdaptiveClassifier::with_strategies(Arc::clone(store), &strategies)));
     let mut current_tier: Option<ComplexityTier> = None;
     let mut current_turn_prompt = String::new();
     // The model the running turn was sent to (for outcome records).
@@ -4242,7 +4504,7 @@ async fn run_tui(
             maybe_agent = agent_rx.recv() => {
                 if let Some(event) = maybe_agent {
                     note_turn_fallback(&event, &mut turn_fallback_model);
-                    record_outcome_for_event(&event, &adaptive, &mut current_tier, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str()), base_config.pricing.input_per_million, base_config.pricing.output_per_million, &current_turn_prompt);
+                    record_outcome_for_event(&event, &adaptive, &mut current_tier, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str()), rates_for(&prices, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str())).0, rates_for(&prices, turn_fallback_model.as_deref().unwrap_or(current_turn_model.as_str())).1, &current_turn_prompt);
                     end_turn_fallback(&event, &mut turn_fallback_model);
                     app.handle_agent_event(event);
                     // When a turn completes, clear the abort handle and restore
@@ -4300,8 +4562,20 @@ async fn run_tui(
                 turn_fallback_model
                     .as_deref()
                     .unwrap_or(current_turn_model.as_str()),
-                base_config.pricing.input_per_million,
-                base_config.pricing.output_per_million,
+                rates_for(
+                    &prices,
+                    turn_fallback_model
+                        .as_deref()
+                        .unwrap_or(current_turn_model.as_str()),
+                )
+                .0,
+                rates_for(
+                    &prices,
+                    turn_fallback_model
+                        .as_deref()
+                        .unwrap_or(current_turn_model.as_str()),
+                )
+                .1,
                 &current_turn_prompt,
             );
             end_turn_fallback(&event, &mut turn_fallback_model);
@@ -4443,14 +4717,12 @@ fn write_session_report(
 }
 
 fn chrono_like_timestamp() -> String {
-    // Simple RFC3339-like timestamp without pulling in the chrono crate.
+    // Seconds since the Unix epoch: sortable and filesystem-safe, used as a
+    // report id (not a calendar date).
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    // Format as approximate UTC datetime (seconds since epoch → rough date).
-    // This gives a sortable, filesystem-safe string.
-    // We use the same approach as egress_log: best-effort; not perfect UTC.
     format!("{secs}")
 }
 

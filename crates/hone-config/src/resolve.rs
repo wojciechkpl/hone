@@ -32,6 +32,23 @@ pub struct ConfigLayer {
     pub config: Config,
 }
 
+/// [`toml_location`], plus the name of an unknown key. The message otherwise
+/// carries no file text; a key name is short and not a secret, and the user needs
+/// it to fix the file.
+fn named_unknown_field(raw: &str, e: &toml::de::Error) -> String {
+    let located = toml_location(raw, e);
+    let key = e.span().and_then(|span| raw.get(span)).filter(|k| {
+        !k.is_empty()
+            && k.len() <= 64
+            && k.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    });
+    match (key, located.strip_prefix("unknown field")) {
+        (Some(key), Some(rest)) => format!("unknown field `{key}`{rest}"),
+        _ => located,
+    }
+}
+
 impl ConfigLayer {
     /// Parse `raw` as the file at `path`. A parse error carries the message and
     /// `line:column` only, never a line of the file.
@@ -41,7 +58,7 @@ impl ConfigLayer {
             Ok(config) => Ok(ConfigLayer { path, config }),
             Err(e) => Err(ConfigError::InvalidField {
                 path,
-                reason: toml_location(raw, &e),
+                reason: named_unknown_field(raw, &e),
             }),
         }
     }
@@ -152,6 +169,8 @@ pub struct Effective {
     pub fallback_models: Vec<ModelId>,
     /// The file `fallback_models` came from.
     pub fallback_path: Option<PathBuf>,
+    /// The user's `[pricing]` entries, sorted by model id.
+    pub pricing: Vec<hone_proto::PricingEntry>,
 }
 
 fn invalid(path: &Path, reason: impl Into<String>) -> ConfigError {
@@ -245,6 +264,32 @@ fn validate(layer: &ConfigLayer) -> Result<(), ConfigError> {
     for m in &cfg.fallback_models {
         if let Err(why) = check_api_or_cli_model(m.as_str()) {
             return Err(invalid(path, format!("fallback_models '{m}': {why}")));
+        }
+    }
+    for (key, p) in &cfg.pricing {
+        let provider_ok = key
+            .split_once(':')
+            .is_some_and(|(prov, name)| !prov.is_empty() && !name.is_empty());
+        if !provider_ok {
+            return Err(invalid(
+                path,
+                format!("[pricing.\"{key}\"]: the key must be 'provider:model'"),
+            ));
+        }
+        for (name, v) in [
+            ("input_per_million", Some(p.input_per_million)),
+            ("output_per_million", Some(p.output_per_million)),
+            ("cache_read_per_million", p.cache_read_per_million),
+            ("cache_creation_per_million", p.cache_creation_per_million),
+        ] {
+            if let Some(v) = v {
+                if !v.is_finite() || v < 0.0 {
+                    return Err(invalid(
+                        path,
+                        format!("[pricing.\"{key}\"] {name} = {v} must not be negative"),
+                    ));
+                }
+            }
         }
     }
     if let Some(b) = &cfg.budget {
@@ -616,6 +661,14 @@ pub fn resolve(
     }
     if let Some(l) = project {
         collect_warnings(l, false, &mut warnings);
+        if !l.config.pricing.is_empty() {
+            warn(
+                &mut warnings,
+                &l.path,
+                "[pricing] is ignored in a project config (a repository must not set prices: \
+                 it could hide spend from [budget]; set it in the user config)",
+            );
+        }
     }
 
     // [[routing]] and fallback_models: per task / as a whole, the project file's
@@ -772,5 +825,20 @@ pub fn resolve(
         routing,
         fallback_models,
         fallback_path,
+        pricing: user
+            .map(|l| {
+                l.config
+                    .pricing
+                    .iter()
+                    .map(|(model, p)| hone_proto::PricingEntry {
+                        model: ModelId::new(model.clone()),
+                        input_per_million: p.input_per_million,
+                        output_per_million: p.output_per_million,
+                        cache_read_per_million: p.cache_read_per_million,
+                        cache_creation_per_million: p.cache_creation_per_million,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
