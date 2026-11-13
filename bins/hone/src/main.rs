@@ -4606,14 +4606,12 @@ fn write_session_report(
 }
 
 fn chrono_like_timestamp() -> String {
-    // Simple RFC3339-like timestamp without pulling in the chrono crate.
+    // Seconds since the Unix epoch: sortable and filesystem-safe, used as a
+    // report id (not a calendar date).
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    // Format as approximate UTC datetime (seconds since epoch → rough date).
-    // This gives a sortable, filesystem-safe string.
-    // We use the same approach as egress_log: best-effort; not perfect UTC.
     format!("{secs}")
 }
 
