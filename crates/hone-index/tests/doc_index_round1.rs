@@ -244,3 +244,67 @@ async fn test_r25_a_sync_blocked_by_another_writer_should_give_up_within_the_ret
         "the blocked sync was still waiting after {took:?} (busy timeout should be the 3 s deadline)"
     );
 }
+
+// ---- R28 (index level): the text after a rule is retrievable -------------------------------------------------
+
+#[tokio::test]
+async fn test_r28_text_after_a_leading_rule_should_be_indexed_and_retrievable() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap();
+    let notes = root.join("notes");
+    write(&notes, "rule.md", "---\n# Title\nquokka real text\n\n---\nmore\n");
+    let idx = DocIndex::open(&root.join("docs.db")).await.unwrap();
+    idx.sync(&notes).await.unwrap();
+    assert!(!ids(&idx, "quokka").await.is_empty(), "the text after the rule is retrievable");
+}
+
+// ---- R30: a root with no last-used time ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_r30_a_root_without_a_last_used_time_should_get_one_on_open_and_be_pruned_later() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap();
+    let notes = root.join("notes");
+    write(&notes, "n.md", "# N\nquokka note\n");
+    let db = root.join("docs.db");
+    {
+        let idx = DocIndex::open(&db).await.unwrap();
+        idx.sync(&notes).await.unwrap();
+    }
+    let key = notes.to_string_lossy().into_owned();
+    // An index from before last-used tracking: the root's time column is empty (NULL).
+    let url = format!("sqlite:{}?mode=rw", db.display());
+    let p = sqlx::SqlitePool::connect(&url).await.unwrap();
+    for sql in [
+        "ALTER TABLE doc_roots RENAME TO doc_roots_old",
+        "CREATE TABLE doc_roots (root TEXT PRIMARY KEY, synced_at INTEGER)",
+        "INSERT INTO doc_roots (root, synced_at) SELECT root, NULL FROM doc_roots_old",
+        "DROP TABLE doc_roots_old",
+    ] {
+        sqlx::query(sql).execute(&p).await.unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+    p.close().await;
+
+    drop(DocIndex::open(&db).await.unwrap());
+
+    let p = sqlx::SqlitePool::connect(&url).await.unwrap();
+    let stamped: Option<i64> = sqlx::query("SELECT synced_at FROM doc_roots WHERE root = ?1")
+        .bind(&key)
+        .fetch_one(&p)
+        .await
+        .unwrap_or_else(|e| panic!("the root row must survive its first open: {e}"))
+        .get(0);
+    let stamped = stamped.expect("the first open gives the root a last-used time");
+    assert!((now() - stamped).abs() < 120, "stamped with the current time, got {stamped}");
+    // Thirty-one days later the root is pruned like any other.
+    sqlx::query("UPDATE doc_roots SET synced_at = ?1 WHERE root = ?2")
+        .bind(now() - 31 * 86_400)
+        .bind(&key)
+        .execute(&p)
+        .await
+        .unwrap();
+    p.close().await;
+    drop(DocIndex::open(&db).await.unwrap());
+    assert_eq!(rows(&db, "SELECT count(*) FROM doc_files WHERE root = ?1", &key).await, 0, "the old root is pruned");
+    assert_eq!(rows(&db, "SELECT count(*) FROM doc_roots WHERE root = ?1", &key).await, 0);
+}

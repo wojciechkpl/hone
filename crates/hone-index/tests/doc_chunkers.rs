@@ -399,3 +399,25 @@ fn test_r13_setext_headings_should_start_sections() {
     assert_eq!(shape(&md("f.md", "# T\ntext\n\n---\nmore\n")), [(1, 5, Some("T"))]);
     assert_eq!(shape(&md("f.md", "```\nTitle\n=====\n```\nbody\n")), [(1, 5, None)]);
 }
+
+// ---- R28: a horizontal rule is not front matter --------------------------------------------------------
+
+#[test]
+fn test_r28_a_leading_rule_should_not_hide_the_text_after_it_but_real_front_matter_still_is_skipped() {
+    // An `---` rule, text that is not `key: value`, and a second rule later in the file.
+    let text = "---\n# Title\nreal text\n\n---\nmore text\n";
+    let chunks = MarkdownChunker::new().chunk(&doc("rule.md", text));
+    let all: String = chunks.iter().map(|c| c.text.clone()).collect::<Vec<_>>().join("\n");
+    assert!(all.contains("real text"), "the text after a rule is indexed: {chunks:?}");
+    assert!(all.contains("more text"), "{chunks:?}");
+
+    // Without a closing rule it was never front matter.
+    let open = MarkdownChunker::new().chunk(&doc("open.md", "---\n# Title\nreal text\n"));
+    assert!(open.iter().any(|c| c.text.contains("real text")), "{open:?}");
+
+    // Real front matter: comment and `key: value` lines between the rules are skipped.
+    let fm = MarkdownChunker::new().chunk(&doc("fm.md", "---\n# a comment\ntitle: x\n\ntags: [a]\n---\nbody\n"));
+    let fm_text: String = fm.iter().map(|c| c.text.clone()).collect::<Vec<_>>().join("\n");
+    assert!(fm_text.contains("body"), "{fm:?}");
+    assert!(!fm_text.contains("title: x"), "front matter is still skipped: {fm:?}");
+}
