@@ -71,3 +71,20 @@ pub use session_storage::SessionStorage;
 pub use sqlite_session::SqliteSessionStore;
 pub use state::{AppState, resolve_policy_builtins, resolve_policy_home};
 pub use tunnel::{MockTunnelManager, TunnelManager};
+
+/// The price lookup `honed` installs as the process default: the default
+/// pricing table with the user's `[pricing."provider:model"]` entries on top
+/// (a project file's `[pricing]` is ignored, as in the CLI).
+pub fn build_price_lookup(
+    user: Option<&hone_config::resolve::ConfigLayer>,
+    project: Option<&hone_config::resolve::ConfigLayer>,
+) -> Result<hone_core::PriceLookup, hone_config::ConfigError> {
+    let effective = hone_config::resolve::resolve(user, project, None, &|_| None)?;
+    let mut table = hone_providers::PricingTable::default_table();
+    for entry in effective.pricing {
+        table.insert(entry);
+    }
+    Ok(std::sync::Arc::new(move |model: &hone_proto::ModelId| {
+        table.get(model).cloned()
+    }))
+}

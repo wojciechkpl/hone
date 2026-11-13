@@ -232,6 +232,9 @@ pub enum AgentEvent {
         fallback: String,
         reason: String,
     },
+    /// The first call served by a model that has no price: its usage costs
+    /// nothing and isn't counted towards `[budget]`. Sent once per model.
+    UnpricedModel { model: String },
 }
 
 /// Action sent from the TUI to the agent when step mode is active and the

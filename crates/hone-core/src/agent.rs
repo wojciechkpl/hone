@@ -47,6 +47,38 @@ use hone_tools::policy_gate::{
 };
 use hone_tools::redact::{redact_json, redact_secrets};
 
+/// Prices a model's usage; `None` means no price (the call costs nothing).
+pub type PriceLookup = Arc<dyn Fn(&ModelId) -> Option<PricingEntry> + Send + Sync>;
+
+static DEFAULT_PRICE_LOOKUP: std::sync::RwLock<Option<PriceLookup>> = std::sync::RwLock::new(None);
+
+/// Set the process-wide price lookup, used by every agent that has none of its
+/// own (orchestrator leads and workers, ensemble candidates, the reviewer loop,
+/// `honed`'s executors, eval runs). Call it once at start.
+pub fn set_default_price_lookup(lookup: PriceLookup) {
+    if let Ok(mut slot) = DEFAULT_PRICE_LOOKUP.write() {
+        *slot = Some(lookup);
+    }
+}
+
+/// The price of `model` by the process-wide default lookup, if one is set and
+/// knows the model.
+pub fn default_price(model: &ModelId) -> Option<PricingEntry> {
+    default_price_lookup().and_then(|lookup| lookup(model))
+}
+
+static UNPRICED_SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Models any agent of this process has had an unpriced call for, in first-seen
+/// order (orchestrator and ensemble agents included).
+pub fn unpriced_models_seen() -> Vec<String> {
+    UNPRICED_SEEN.lock().map(|v| v.clone()).unwrap_or_default()
+}
+
+fn default_price_lookup() -> Option<PriceLookup> {
+    DEFAULT_PRICE_LOOKUP.read().ok().and_then(|slot| slot.clone())
+}
+
 /// Configuration for creating an `Agent`.
 #[derive(Clone)]
 pub struct AgentConfig {
@@ -628,6 +660,15 @@ pub struct Agent {
     config: AgentConfig,
     context: ContextManager,
     cost: CostAccumulator,
+    /// Prices each call by the model that served it; without one,
+    /// `config.pricing` applies.
+    price_lookup: Option<PriceLookup>,
+    /// Models with at least one unpriced call, in first-seen order.
+    unpriced_models: Vec<String>,
+    /// Unpriced models not yet announced with `AgentEvent::UnpricedModel`.
+    unannounced_unpriced: Vec<String>,
+    /// Successful calls that reported no usage at all.
+    calls_without_usage: u32,
     /// Monotonically increasing counter of completed turns this session.
     turn_count: u32,
     /// Successful `memory_write` calls this session (capped).
@@ -743,6 +784,10 @@ impl Agent {
             config,
             context,
             cost: CostAccumulator::new(),
+            price_lookup: None,
+            unpriced_models: Vec::new(),
+            unannounced_unpriced: Vec::new(),
+            calls_without_usage: 0,
             turn_count: 0,
             memory_writes: 0,
             injection_seen: std::sync::atomic::AtomicBool::new(false),
@@ -1461,12 +1506,47 @@ impl Agent {
         }
     }
 
+    /// Add `usage` of a call served by `model` to the session: priced by the
+    /// lookup (or `config.pricing` without one); no price means no cost, the
+    /// usage still counts and the model is remembered.
+    fn add_priced(&mut self, usage: TokenUsage, model: &ModelId) {
+        // The agent's own lookup, else the process default, else the config's price.
+        let lookup = self.price_lookup.clone().or_else(default_price_lookup);
+        let entry = match lookup {
+            Some(lookup) => lookup(model),
+            None => Some(self.config.pricing.clone()),
+        };
+        match entry {
+            Some(price) => self.cost.add(usage, &price),
+            None => {
+                self.cost.add_unpriced(usage);
+                if let Ok(mut seen) = UNPRICED_SEEN.lock() {
+                    if !seen.iter().any(|m| m == model.as_str()) {
+                        seen.push(model.as_str().to_owned());
+                    }
+                }
+                if !self.unpriced_models.iter().any(|m| m == model.as_str()) {
+                    self.unpriced_models.push(model.as_str().to_owned());
+                    self.unannounced_unpriced.push(model.as_str().to_owned());
+                }
+            }
+        }
+    }
+
+    /// Tell the surface about models that just turned out to have no price.
+    async fn announce_unpriced(&mut self, events: &mpsc::Sender<AgentEvent>) {
+        for model in std::mem::take(&mut self.unannounced_unpriced) {
+            let _ = events.send(AgentEvent::UnpricedModel { model }).await;
+        }
+    }
+
     /// Count `Usage` events of failed attempts in the turn and the session cost.
     fn count_usage(&mut self, events: Vec<ProviderEvent>, turn_usage: &mut TokenUsage) {
         for event in events {
             if let ProviderEvent::Usage(usage) = event {
                 *turn_usage = *turn_usage + usage;
-                self.cost.add(usage, &self.config.pricing);
+                let model = self.config.model.clone();
+                self.add_priced(usage, &model);
             }
         }
     }
@@ -2188,6 +2268,9 @@ impl Agent {
             // a retry-hint user message after the stream drains so the model
             // knows to produce smaller calls.
             let mut truncated_tools: Option<Vec<String>> = None;
+            // The model serving this call: the session's, or a fallback's.
+            let mut call_model = self.config.model.clone();
+            let mut call_usage_seen = false;
 
             while let Some(event) = stream.next().await {
                 match event {
@@ -2203,10 +2286,15 @@ impl Agent {
 
                     ProviderEvent::Usage(usage) => {
                         turn_usage = turn_usage + usage;
-                        self.cost.add(usage, &self.config.pricing);
+                        call_usage_seen = true;
+                        self.add_priced(usage, &call_model);
+                        self.announce_unpriced(&events).await;
                     }
 
                     ProviderEvent::Done => {
+                        if !call_usage_seen {
+                            self.calls_without_usage += 1;
+                        }
                         // Emit ModelInfo exactly once per session on the first
                         // successful provider completion so the TUI can show the
                         // real context-window size for this model.
@@ -2299,6 +2387,7 @@ impl Agent {
                         fallback,
                         reason,
                     } => {
+                        call_model = ModelId::new(fallback.clone());
                         let _ = events
                             .send(AgentEvent::ModelFallback {
                                 requested,
@@ -3472,7 +3561,8 @@ impl Agent {
             // now included).
         }
 
-        let cost_usd = self.cost.total_usd();
+        // This turn's cost (the session's total minus what it was before).
+        let cost_usd = self.cost.total_usd() - cost_before_turn;
         tracing::debug!(
             tokens = turn_usage.total(),
             tool_calls = tool_calls_count,
@@ -3546,7 +3636,7 @@ impl Agent {
         let _ = events
             .send(AgentEvent::Done {
                 usage: turn_usage,
-                cost_usd: self.cost.total_usd() - cost_before_turn,
+                cost_usd,
                 plan: None,
             })
             .await;
@@ -3931,6 +4021,18 @@ enum AgentCommand {
     SetTools {
         tools: ToolRegistry,
     },
+    /// Price every call with the entry of the model that served it.
+    SetPriceLookup {
+        lookup: PriceLookup,
+    },
+    /// The models that had an unpriced call, first seen first.
+    UnpricedModels {
+        reply: oneshot::Sender<Vec<String>>,
+    },
+    /// Whether every successful call reported usage.
+    UsageKnown {
+        reply: oneshot::Sender<bool>,
+    },
     /// Change the agent's operational mode.  Automatically adjusts the tool
     /// registry: Plan → read-only subset; Build/AutoApprove → full base registry.
     SetMode {
@@ -4115,6 +4217,15 @@ impl AgentHandle {
                         } else {
                             agent.with_memory_write(&tools)
                         };
+                    }
+                    AgentCommand::SetPriceLookup { lookup } => {
+                        agent.price_lookup = Some(lookup);
+                    }
+                    AgentCommand::UnpricedModels { reply } => {
+                        let _ = reply.send(agent.unpriced_models.clone());
+                    }
+                    AgentCommand::UsageKnown { reply } => {
+                        let _ = reply.send(agent.calls_without_usage == 0);
                     }
                     AgentCommand::SetMode { mode } => {
                         if agent.config.mode != mode {
@@ -4339,6 +4450,44 @@ impl AgentHandle {
     /// allowlists for one turn.
     pub async fn set_tools(&self, tools: ToolRegistry) {
         let _ = self.cmd_tx.send(AgentCommand::SetTools { tools }).await;
+    }
+
+    /// Price each call with `lookup(model that served it)` from now on; it wins
+    /// over `AgentConfig.pricing`. Fire-and-forget like `set_tools`.
+    pub async fn set_price_lookup(&self, lookup: PriceLookup) {
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::SetPriceLookup { lookup })
+            .await;
+    }
+
+    /// False once a successful call of this session reported no usage at all.
+    pub async fn usage_known(&self) -> bool {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .cmd_tx
+            .send(AgentCommand::UsageKnown { reply: tx })
+            .await
+            .is_err()
+        {
+            return true;
+        }
+        rx.await.unwrap_or(true)
+    }
+
+    /// The model ids that had at least one unpriced call this session, in
+    /// first-seen order.
+    pub async fn unpriced_models(&self) -> Vec<String> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .cmd_tx
+            .send(AgentCommand::UnpricedModels { reply: tx })
+            .await
+            .is_err()
+        {
+            return Vec::new();
+        }
+        rx.await.unwrap_or_default()
     }
 
     /// Change the agent's operational mode.
