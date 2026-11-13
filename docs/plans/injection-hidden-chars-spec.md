@@ -12,6 +12,20 @@ Branch `fix/injection-hidden-chars`, off `main`. Found while reviewing workspace
 | TR4 | **ASCII stays fast.** Text that is entirely ASCII is scanned as before, with no normalized copy allocated. Scanning stays linear in the text's length. |
 | TR5 | **JSON escapes don't hide a phrase.** Tool results are scanned as JSON text, so a hidden character can arrive as a JSON string escape. Before the TR1 normalization, the scan copy decodes JSON string escapes (`\uXXXX`, including surrogate pairs, plus `\n`, `\t`, `\r`, `\"` and `\\`). So `Ign\u0007ore all previous instructions` or `\u200b` inside the phrase is caught, as are tag characters written as escaped surrogate pairs. |
 
+### Review (TR6–TR7)
+
+Approved end to end (`read_file` and MCP results, errors included). Two small fixes:
+
+| Row | Behaviour |
+|---|---|
+| TR6 | **Flag emoji aren't a warning.** A well-formed emoji tag sequence isn't counted as hidden tag characters for TR3: U+1F3F4, then one or more of U+E0030–E0039 or U+E0061–E007A, then U+E007F. These are the Scotland, England and Wales flags, and other subdivision flags. Tag characters outside such a sequence still trigger TR3, and the decoded text of every tag sequence is still scanned (TR2). |
+| TR7 | **The fast path covers ordinary tool results.** For TR4, the simple JSON escapes `\n`, `\t`, `\r`, `\"`, `\\` and `\/` count as plain. Only a `\u` escape, or a non-ASCII character, makes the scan build a decoded copy. |
+
+**Known limits.**
+- `read_file`'s line-number gutter breaks a phrase that is split across lines.
+- Only one level of JSON escaping is decoded.
+- Look-alike letters from other scripts, such as a Cyrillic `І`, aren't detected.
+
 ## Testing notes
 
 - Unit tests in `injection_detector.rs` or `crates/hone-core/tests/`: the variants in TR1, a tag-encoded phrase for TR2, tag characters with a benign payload for TR3, and benign non-Latin text (Persian with ZWNJ, Hindi with ZWJ, Vietnamese) that isn't flagged.
