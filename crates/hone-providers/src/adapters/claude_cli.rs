@@ -117,6 +117,13 @@ const DEFAULT_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 
 type ProcessSlot = Arc<Mutex<Option<CliProcess>>>;
 
+/// Successful turns a pool entry has served (counted by `complete()` after the
+/// turn's first output line arrives).
+type TurnCount = Arc<std::sync::atomic::AtomicU32>;
+
+/// Turns after which a process is protected like main's (CC11).
+const PROTECTED_AFTER_TURNS: u32 = 2;
+
 /// The base-prompt-keyed process pool (see `ClaudeCliProvider::pool`).
 #[derive(Default)]
 struct Pool {
@@ -133,6 +140,13 @@ struct PoolEntry {
     last_used: u64,
     last_used_at: std::time::Instant,
     slot: ProcessSlot,
+    turns: TurnCount,
+}
+
+impl PoolEntry {
+    fn turns(&self) -> u32 {
+        self.turns.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 impl Pool {
@@ -141,7 +155,11 @@ impl Pool {
     /// is not mid-turn; at the limit, evicts the least recently used side
     /// process (never main's). An evicted slot that is mid-turn finishes that
     /// turn and its process then drops.
-    fn slot_for(&mut self, base_prompt: &str, idle_timeout: std::time::Duration) -> ProcessSlot {
+    fn slot_for(
+        &mut self,
+        base_prompt: &str,
+        idle_timeout: std::time::Duration,
+    ) -> (ProcessSlot, TurnCount) {
         self.clock += 1;
         let now = self.clock;
         let at = std::time::Instant::now();
@@ -153,7 +171,10 @@ impl Pool {
         // Close idle side processes. `try_lock` never waits: a slot that is
         // locked is mid-turn (or about to be) and stays.
         self.slots.retain(|e| {
-            if e.base_prompt == main || at.duration_since(e.last_used_at) <= idle_timeout {
+            if e.base_prompt == main
+                || e.turns() >= PROTECTED_AFTER_TURNS
+                || at.duration_since(e.last_used_at) <= idle_timeout
+            {
                 return true;
             }
             match e.slot.try_lock() {
@@ -168,7 +189,7 @@ impl Pool {
         if let Some(entry) = self.slots.iter_mut().find(|e| e.base_prompt == base_prompt) {
             entry.last_used = now;
             entry.last_used_at = at;
-            return Arc::clone(&entry.slot);
+            return (Arc::clone(&entry.slot), Arc::clone(&entry.turns));
         }
         if self.slots.len() >= MAX_PROCESSES {
             if let Some(oldest) = self
@@ -176,20 +197,22 @@ impl Pool {
                 .iter()
                 .enumerate()
                 .filter(|(_, e)| e.base_prompt != main)
-                .min_by_key(|(_, e)| e.last_used)
+                .min_by_key(|(_, e)| (e.turns(), e.last_used))
                 .map(|(i, _)| i)
             {
                 self.slots.swap_remove(oldest);
             }
         }
         let slot: ProcessSlot = Arc::new(Mutex::new(None));
+        let turns: TurnCount = Arc::default();
         self.slots.push(PoolEntry {
             base_prompt: base_prompt.to_owned(),
             last_used: now,
             last_used_at: at,
             slot: Arc::clone(&slot),
+            turns: Arc::clone(&turns),
         });
-        slot
+        (slot, turns)
     }
 }
 
@@ -759,7 +782,7 @@ impl ModelProvider for ClaudeCliProvider {
         // task) serialise callers of the same base prompt, so two first turns
         // can't both spawn: the second sees the process the first spawned.
         let (base_prompt, context_messages) = split_system_messages(&request.messages);
-        let slot = {
+        let (slot, turn_count) = {
             let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
             pool.slot_for(&base_prompt, self.idle_timeout)
         };
@@ -930,6 +953,9 @@ impl ModelProvider for ClaudeCliProvider {
             break;
         }
 
+        if write_and_first_read_succeeded {
+            turn_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         if !write_and_first_read_succeeded {
             let msg = last_err.unwrap_or_else(|| "unknown failure".to_owned());
             return Err(ProviderError::Http {
