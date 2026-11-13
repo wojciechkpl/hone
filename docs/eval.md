@@ -100,3 +100,12 @@ lies under an integrity directory. The eval's own output directory and the syste
 temp directory are not hashed, and `--check` errors if an integrity directory
 contains the output directory. Checks must not write inside integrity directories
 (not even temporary files): any write counts as tampering.
+
+A violated eval fails visibly: `hone eval` prints that the suite changed during the
+run (naming the first changed path) and that the results can't be trusted, exits 1
+whatever the pass rate, and does not record the run in the eval history. On Unix
+each file's fingerprint is its size, mtime, ctime, inode and a content hash taken
+once at the start; later checks re-read only files whose metadata changed (ctime
+catches a rewrite whose content and mtime were restored). Directory symlinks under
+an integrity directory that point outside the integrity directories are not
+protected: `--check` warns for each.

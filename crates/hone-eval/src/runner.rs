@@ -134,13 +134,16 @@ struct Ctx {
     integrity: Arc<Integrity>,
 }
 
-/// The suite directories that must not change during a run (F31, F32, F33).
+/// The suite directories that must not change during a run (F31–F36).
 struct Integrity {
     dirs: Vec<PathBuf>,
-    /// Never hashed: the eval's own output directory and the system temp directory.
+    /// Never fingerprinted: the eval's own output directory and the system temp
+    /// directory, when they lie inside an integrity directory.
     excludes: Vec<PathBuf>,
-    baseline: String,
+    baseline: Snapshot,
     violated: std::sync::atomic::AtomicBool,
+    /// The first path found changed (absolute).
+    first_change: std::sync::Mutex<Option<String>>,
 }
 
 const INTEGRITY_MESSAGE: &str = "suite modified during the run";
@@ -157,12 +160,13 @@ impl Integrity {
             .into_iter()
             .filter(|x| dirs.iter().any(|d| x != d && x.starts_with(d)))
             .collect();
-        let baseline = hash_dirs_blocking(dirs.clone(), excludes.clone()).await;
+        let baseline = snapshot_blocking(dirs.clone(), excludes.clone(), None).await;
         Self {
             dirs,
             excludes,
             baseline,
             violated: false.into(),
+            first_change: std::sync::Mutex::new(None),
         }
     }
 
@@ -170,123 +174,227 @@ impl Integrity {
         self.violated.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// Re-hash the directories (after every run, and at the end of the eval); true
-    /// when anything changed, now or before.
+    /// The first changed path, relative to `base` when it lies under it.
+    fn first_change(&self, base: &Path) -> Option<String> {
+        let path = self
+            .first_change
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()?;
+        let p = Path::new(&path);
+        Some(
+            p.strip_prefix(base)
+                .unwrap_or(p)
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+
+    /// Fingerprint the directories again (before and after every run, and at the
+    /// end of the eval); true when anything changed, now or before. Only files whose
+    /// metadata changed are re-read.
     async fn check(&self) -> bool {
-        if !self.dirs.is_empty()
-            && hash_dirs_blocking(self.dirs.clone(), self.excludes.clone()).await != self.baseline
-        {
+        if self.dirs.is_empty() {
+            return false;
+        }
+        let now = snapshot_blocking(
+            self.dirs.clone(),
+            self.excludes.clone(),
+            Some(self.baseline.clone()),
+        )
+        .await;
+        if let Some(path) = first_difference(&self.baseline, &now) {
             self.violated
                 .store(true, std::sync::atomic::Ordering::SeqCst);
+            let mut first = self.first_change.lock().unwrap_or_else(|e| e.into_inner());
+            if first.is_none() {
+                *first = Some(path);
+            }
         }
         self.is_violated()
     }
 }
 
-/// [`hash_dirs`] on a blocking thread.
-async fn hash_dirs_blocking(dirs: Vec<PathBuf>, excludes: Vec<PathBuf>) -> String {
+/// What identifies one entry: its kind, size, times and inode (Unix), and a hash
+/// of its content (files), or its target (links).
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+struct Fingerprint {
+    kind: char,
+    /// size, mtime ns, ctime ns, device, inode (zeros off Unix)
+    meta: [i128; 5],
+    content: String,
+}
+
+type Snapshot = std::collections::BTreeMap<String, Fingerprint>;
+
+/// The first path (in order) whose fingerprint differs, or is new or gone.
+fn first_difference(a: &Snapshot, b: &Snapshot) -> Option<String> {
+    let mut keys: Vec<&String> = a.keys().chain(b.keys()).collect();
+    keys.sort();
+    keys.dedup();
+    keys.into_iter()
+        .find(|k| a.get(*k) != b.get(*k))
+        .map(|k| k.trim_end_matches("@target").to_owned())
+}
+
+async fn snapshot_blocking(
+    dirs: Vec<PathBuf>,
+    excludes: Vec<PathBuf>,
+    prev: Option<Snapshot>,
+) -> Snapshot {
     if dirs.is_empty() {
-        return String::new();
+        return Snapshot::new();
     }
-    tokio::task::spawn_blocking(move || hash_dirs(&dirs, &excludes))
+    tokio::task::spawn_blocking(move || snapshot(&dirs, &excludes, prev.as_ref()))
         .await
         .unwrap_or_default()
 }
 
-/// SHA-256 over every entry's relative path, and for files their size, mtime (ns)
-/// and content, streamed. A symlink is hashed by its target text, and by its
-/// target's size, mtime and content when the target lies under one of `dirs`.
-/// Paths under `excludes` are skipped.
-fn hash_dirs(dirs: &[PathBuf], excludes: &[PathBuf]) -> String {
+#[cfg(unix)]
+fn meta_of(m: &std::fs::Metadata) -> [i128; 5] {
+    use std::os::unix::fs::MetadataExt;
+    [
+        i128::from(m.size()),
+        i128::from(m.mtime()) * 1_000_000_000 + i128::from(m.mtime_nsec()),
+        i128::from(m.ctime()) * 1_000_000_000 + i128::from(m.ctime_nsec()),
+        i128::from(m.dev()),
+        i128::from(m.ino()),
+    ]
+}
+
+/// Off Unix there is no ctime or inode: the metadata never matches, so every
+/// later fingerprint re-reads the content.
+#[cfg(not(unix))]
+fn meta_of(m: &std::fs::Metadata) -> [i128; 5] {
+    let mtime = m
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos() as i128);
+    [i128::from(m.len() as u64), mtime, -1, 0, 0]
+}
+
+/// Fingerprint every entry under `dirs` (skipping `excludes`). Content is hashed
+/// (streamed); with `prev`, a file whose metadata matches its entry there reuses
+/// the hash instead of being read again. A symlink is fingerprinted by its target
+/// text, and its target file too when that lies under `dirs`.
+fn snapshot(dirs: &[PathBuf], excludes: &[PathBuf], prev: Option<&Snapshot>) -> Snapshot {
     use sha2::{Digest, Sha256};
     use std::io::Read;
 
-    fn hash_file(path: &Path, hasher: &mut Sha256) {
-        let Ok(mut file) = std::fs::File::open(path) else {
-            hasher.update(b"unreadable");
-            return;
-        };
-        if let Ok(meta) = file.metadata() {
-            hasher.update(meta.len().to_le_bytes());
-            let mtime = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0, |d| d.as_nanos());
-            hasher.update(mtime.to_le_bytes());
-        }
-        let mut buf = [0u8; 64 * 1024];
-        loop {
-            match file.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => hasher.update(&buf[..n]),
-                Err(_) => {
-                    hasher.update(b"read-error");
-                    break;
+    fn file_print(
+        path: &Path,
+        key: &str,
+        meta: &std::fs::Metadata,
+        prev: Option<&Snapshot>,
+    ) -> Fingerprint {
+        let m = meta_of(meta);
+        // On Unix the metadata includes ctime and inode, so a match means unchanged.
+        if cfg!(unix) {
+            if let Some(old) = prev.and_then(|p| p.get(key)) {
+                if old.kind == 'f' && old.meta == m {
+                    return old.clone();
                 }
             }
         }
-    }
-
-    struct Ctx<'a> {
-        dirs: &'a [PathBuf],
-        excludes: &'a [PathBuf],
-    }
-
-    fn walk(c: &Ctx, root: &Path, dir: &Path, hasher: &mut Sha256) {
-        let Ok(read) = std::fs::read_dir(dir) else {
-            hasher.update(b"unreadable:");
-            hasher.update(dir.to_string_lossy().as_bytes());
-            return;
-        };
-        let mut entries: Vec<_> = read.flatten().collect();
-        entries.sort_by_key(|e| e.file_name());
-        for entry in entries {
-            let path = entry.path();
-            if c.excludes.iter().any(|x| path.starts_with(x)) {
-                continue;
-            }
-            let rel = path.strip_prefix(root).unwrap_or(&path);
-            hasher.update(rel.to_string_lossy().as_bytes());
-            hasher.update([0]);
-            match entry.file_type() {
-                Ok(t) if t.is_dir() => {
-                    hasher.update(b"d");
-                    walk(c, root, &path, hasher);
-                }
-                Ok(t) if t.is_symlink() => {
-                    hasher.update(b"l");
-                    if let Ok(target) = std::fs::read_link(&path) {
-                        hasher.update(target.to_string_lossy().as_bytes());
-                    }
-                    if let Ok(real) = std::fs::canonicalize(&path) {
-                        if c.dirs.iter().any(|d| real.starts_with(d)) && real.is_file() {
-                            hasher.update(b"->");
-                            hash_file(&real, hasher);
+        let mut hasher = Sha256::new();
+        match std::fs::File::open(path) {
+            Ok(mut file) => {
+                let mut buf = [0u8; 64 * 1024];
+                loop {
+                    match file.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => hasher.update(&buf[..n]),
+                        Err(_) => {
+                            hasher.update(b"read-error");
+                            break;
                         }
                     }
                 }
-                Ok(t) if t.is_file() => {
-                    hasher.update(b"f");
-                    hash_file(&path, hasher);
-                }
-                _ => {}
             }
-            hasher.update([0]);
+            Err(_) => hasher.update(b"unreadable"),
+        }
+        Fingerprint {
+            kind: 'f',
+            meta: m,
+            content: hasher
+                .finalize()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
         }
     }
-    let c = Ctx { dirs, excludes };
-    let mut hasher = Sha256::new();
-    for dir in dirs {
-        hasher.update(dir.to_string_lossy().as_bytes());
-        hasher.update([1]);
-        walk(&c, dir, dir, &mut hasher);
+
+    fn walk(
+        dirs: &[PathBuf],
+        excludes: &[PathBuf],
+        prev: Option<&Snapshot>,
+        dir: &Path,
+        out: &mut Snapshot,
+    ) {
+        let Ok(read) = std::fs::read_dir(dir) else {
+            out.insert(
+                dir.to_string_lossy().into_owned(),
+                Fingerprint {
+                    kind: '!',
+                    ..Fingerprint::default()
+                },
+            );
+            return;
+        };
+        for entry in read.flatten() {
+            let path = entry.path();
+            if excludes.iter().any(|x| path.starts_with(x)) {
+                continue;
+            }
+            let key = path.to_string_lossy().into_owned();
+            let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if meta.is_dir() {
+                out.insert(
+                    key,
+                    Fingerprint {
+                        kind: 'd',
+                        ..Fingerprint::default()
+                    },
+                );
+                walk(dirs, excludes, prev, &path, out);
+            } else if meta.file_type().is_symlink() {
+                let target = std::fs::read_link(&path)
+                    .map(|t| t.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                out.insert(
+                    key.clone(),
+                    Fingerprint {
+                        kind: 'l',
+                        meta: [0; 5],
+                        content: target,
+                    },
+                );
+                if let Ok(real) = std::fs::canonicalize(&path) {
+                    if dirs.iter().any(|d| real.starts_with(d)) {
+                        if let Ok(real_meta) = std::fs::metadata(&real) {
+                            if real_meta.is_file() {
+                                let tkey = format!("{key}@target");
+                                let fp = file_print(&real, &tkey, &real_meta, prev);
+                                out.insert(tkey, fp);
+                            }
+                        }
+                    }
+                }
+            } else if meta.is_file() {
+                let fp = file_print(&path, &key, &meta, prev);
+                out.insert(key, fp);
+            }
+        }
     }
-    hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+
+    let mut out = Snapshot::new();
+    for dir in dirs {
+        walk(dirs, excludes, prev, dir, &mut out);
+    }
+    out
 }
 
 impl EvalRunner {
@@ -404,6 +512,7 @@ impl EvalRunner {
         );
         manifest["outcomes"] = status_counts(&results, planned_total);
         manifest["integrity_violated"] = json!(ctx.integrity.is_violated());
+        manifest["integrity_first_change"] = json!(ctx.integrity.first_change(&base_dir));
         write_json(&run_dir.join("manifest.json"), &manifest)?;
 
         // Unfinished runs are marked in their outcome.json; the report covers the rest.
@@ -422,7 +531,11 @@ impl EvalRunner {
         write_json(&run_dir.join("report.json"), &report.json)?;
         std::fs::write(run_dir.join("report.md"), &report.markdown)?;
 
-        if let Some(store) = opts.history.as_ref().filter(|_| !interrupted) {
+        if let Some(store) = opts
+            .history
+            .as_ref()
+            .filter(|_| !interrupted && !ctx.integrity.is_violated())
+        {
             let base = self.tasks.base_profile();
             let outcomes: Vec<TaskOutcome> = results
                 .iter()

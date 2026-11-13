@@ -218,6 +218,53 @@ impl TasksFile {
         &self.integrity
     }
 
+    /// Warnings for directory symlinks under an integrity directory that point
+    /// outside the integrity directories (files reached through them are not
+    /// protected), named relative to `base_dir`.
+    pub fn integrity_warnings(&self, base_dir: &std::path::Path) -> Vec<String> {
+        let dirs: Vec<PathBuf> = self
+            .integrity
+            .iter()
+            .filter_map(|d| std::fs::canonicalize(base_dir.join(d)).ok())
+            .collect();
+        let base = std::fs::canonicalize(base_dir).unwrap_or_else(|_| base_dir.to_path_buf());
+        let mut warnings = Vec::new();
+        fn walk(
+            dirs: &[PathBuf],
+            base: &std::path::Path,
+            dir: &std::path::Path,
+            warnings: &mut Vec<String>,
+        ) {
+            let Ok(read) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in read.flatten() {
+                let path = entry.path();
+                let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                    continue;
+                };
+                if meta.is_dir() {
+                    walk(dirs, base, &path, warnings);
+                } else if meta.file_type().is_symlink() {
+                    if let Ok(real) = std::fs::canonicalize(&path) {
+                        if real.is_dir() && !dirs.iter().any(|d| real.starts_with(d)) {
+                            let rel = path.strip_prefix(base).unwrap_or(&path);
+                            warnings.push(format!(
+                                "[eval] integrity: `{}` is a symlink to the directory {}, outside the integrity directories: files reached through it are not protected",
+                                rel.display(),
+                                real.display()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        for dir in &dirs {
+            walk(&dirs, &base, dir, &mut warnings);
+        }
+        warnings
+    }
+
     /// `[eval] base_profile`, default `default`.
     pub fn base_profile(&self) -> String {
         self.base

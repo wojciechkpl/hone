@@ -207,6 +207,9 @@ pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> 
         fail(&errors);
     }
 
+    for w in tasks.integrity_warnings(&base_dir) {
+        eprintln!("hone eval: warning: {w}");
+    }
     let repeats = args.repeats.unwrap_or_else(|| tasks.repeats());
     let profile_count = {
         let mut names: Vec<&str> = planned.iter().map(|p| p.profile.as_str()).collect();
@@ -287,6 +290,20 @@ pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> 
     print_summary(&run_dir);
     if let Some(code) = got {
         crate::exit_now(code);
+    }
+    // A violated eval fails visibly, whatever the pass rate (F35).
+    if let Some(manifest) = std::fs::read_to_string(run_dir.join("manifest.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .filter(|m| m["integrity_violated"] == true)
+    {
+        let path = manifest["integrity_first_change"]
+            .as_str()
+            .unwrap_or("an integrity directory");
+        eprintln!(
+            "hone eval: the suite changed during the run (first change: {path}); the results can't be trusted"
+        );
+        crate::exit_now(1);
     }
     // A run in which every outcome is an infrastructure error measured nothing.
     if all_infra_errors(&run_dir) {
