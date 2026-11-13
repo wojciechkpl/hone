@@ -521,6 +521,15 @@ impl StrategySelection {
         Ok(sel)
     }
 
+    /// Apply `layer` as a trusted file: any value stands, including widening
+    /// ones. For the evaluator's own profiles (`hone eval`), which are written by
+    /// the person running the evaluation. The layer's names are validated first.
+    pub fn with_trusted_layer(mut self, layer: &ConfigLayer) -> Result<Self, ConfigError> {
+        validate(layer)?;
+        self.apply_trusted(layer);
+        Ok(self)
+    }
+
     /// The user file: any value stands.
     fn apply_trusted(&mut self, layer: &ConfigLayer) {
         let origin = || Origin::File(layer.path.clone());

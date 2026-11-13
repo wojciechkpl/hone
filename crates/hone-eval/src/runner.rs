@@ -1,23 +1,46 @@
+//! Running a tasks file: a fresh copy of each task's directory, a fresh memory
+//! store, a real agent from a pluggable builder, the success check, and the run
+//! directory with its report (F1, F2, F4, F7, F8, F9, F10).
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use hone_core::{AgentConfig, AgentHandle, AgentMode, RetryConfig};
-use hone_proto::{ModelId, PricingEntry, ToolApprovalPolicy};
-use hone_providers::ModelProvider;
-use hone_sandbox::NullSandbox;
-use hone_tools::ToolRegistry;
+use chrono::{DateTime, Utc};
+use hone_config::resolve::ConfigLayer;
+use hone_config::strategy::StrategySelection;
+use hone_core::Agent;
+use hone_memory::MemoryStore;
+use hone_proto::{AgentEvent, ContextReceipt, canonical_json_sha256};
+use serde_json::{Value, json};
+use tokio::sync::{Semaphore, mpsc};
 
-use crate::config::EvalConfig;
+use crate::config::TaskSpec;
+use crate::history::{EvalRunStore, ProfileRunSummary};
+use crate::stats::{
+    BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED, RunStat, paired_comparison, pareto_flags, summarize,
+};
+use crate::tasks::{ExpandOptions, PlannedRun, TasksFile};
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
+    #[serde(alias = "Pass")]
     Pass,
+    #[serde(alias = "Fail")]
     Fail,
+    #[serde(alias = "Timeout")]
     Timeout,
+    #[serde(alias = "AgentError")]
     AgentError,
+    /// The run could not start: a failed copy, fixture or agent build.
+    #[serde(alias = "InfraError")]
+    InfraError,
+    /// Unfinished when `hone eval` was interrupted by a signal.
+    Interrupted,
 }
 
+/// One task outcome as the history store and the regression bisector see it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TaskOutcome {
     pub id: String,
@@ -31,429 +54,1282 @@ pub struct TaskOutcome {
     pub success_check_exit_code: Option<i32>,
 }
 
-pub struct EvalRunner {
-    config: EvalConfig,
-    /// Provider factory: returns a fresh ModelProvider for each task so
-    /// sessions are truly ephemeral.
-    provider_factory: Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync>,
-    base_dir: PathBuf,
+/// What the runner hands to the agent builder for one run.
+pub struct AgentBuild {
+    pub task: TaskSpec,
+    pub profile: String,
+    pub repeat: u32,
+    /// The fresh copy of the task directory.
+    pub workdir: PathBuf,
+    /// A fresh store, loaded from the task's fixture.
+    pub memory: Arc<dyn MemoryStore>,
+    /// `--model`, else the tasks file's `model`, else the default.
+    pub model: String,
+    /// The profile, resolved.
+    pub selection: StrategySelection,
+}
+
+pub type AgentBuilder = Arc<dyn Fn(AgentBuild) -> Result<Agent, String> + Send + Sync>;
+
+#[derive(Default)]
+pub struct EvalOptions {
+    pub out_dir: PathBuf,
+    pub profiles: Vec<String>,
+    pub repeats: Option<u32>,
+    /// 0 or 1 = sequential.
+    pub jobs: usize,
+    pub keep_workdirs: bool,
+    pub model: Option<String>,
+    pub tag: Option<String>,
+    pub history: Option<Arc<EvalRunStore>>,
+    /// Set to `true` to interrupt the run: running agents are stopped, their copies
+    /// removed, unfinished runs marked `interrupted`, and the reports written for
+    /// what finished.
+    pub interrupt: Option<tokio::sync::watch::Receiver<bool>>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum EvalRunnerError {
-    #[error("unknown task id: {0}")]
-    UnknownId(String),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Config(#[from] crate::config::EvalConfigError),
+    #[error("history: {0}")]
+    History(#[from] crate::history::EvalHistoryError),
+}
+
+pub struct EvalRunner {
+    tasks: Arc<TasksFile>,
+    base_dir: PathBuf,
+    default_model: String,
+    builder: AgentBuilder,
+    user: Option<Arc<ConfigLayer>>,
+    copy_warn_bytes: u64,
+}
+
+/// The size above which a task's copy is reported (F21).
+const DEFAULT_COPY_WARN_BYTES: u64 = 200 * 1024 * 1024;
+
+/// What one run produced, for the report and the history.
+struct RunResult {
+    planned: PlannedRun,
+    stat: RunStat,
+    outcome: TaskOutcome,
+}
+
+/// Everything a spawned run needs, cloned out of the runner.
+#[derive(Clone)]
+struct Ctx {
+    tasks: Arc<TasksFile>,
+    base_dir: PathBuf,
+    model: String,
+    builder: AgentBuilder,
+    user: Option<Arc<ConfigLayer>>,
+    run_dir: PathBuf,
+    keep_workdirs: bool,
+    copy_warn_bytes: u64,
+    /// Tasks whose copy was already reported, and the warnings for the manifest.
+    warned: Arc<std::sync::Mutex<(std::collections::HashSet<String>, Vec<String>)>>,
+    interrupt: Option<tokio::sync::watch::Receiver<bool>>,
+    integrity: Arc<Integrity>,
+}
+
+/// The suite directories that must not change during a run (F31–F36).
+struct Integrity {
+    dirs: Vec<PathBuf>,
+    /// Never fingerprinted: the eval's own output directory and the system temp
+    /// directory, when they lie inside an integrity directory.
+    excludes: Vec<PathBuf>,
+    baseline: Snapshot,
+    violated: std::sync::atomic::AtomicBool,
+    /// The first path found changed (absolute).
+    first_change: std::sync::Mutex<Option<String>>,
+}
+
+const INTEGRITY_MESSAGE: &str = "suite modified during the run";
+
+impl Integrity {
+    async fn new(dirs: Vec<PathBuf>, excludes: Vec<PathBuf>) -> Self {
+        let dirs: Vec<PathBuf> = dirs
+            .into_iter()
+            .map(|d| std::fs::canonicalize(&d).unwrap_or(d))
+            .collect();
+        // Only what lies strictly below an integrity directory needs excluding: an
+        // integrity directory that is itself under the temp directory is not skipped.
+        let excludes: Vec<PathBuf> = excludes
+            .into_iter()
+            .filter(|x| dirs.iter().any(|d| x != d && x.starts_with(d)))
+            .collect();
+        let baseline = snapshot_blocking(dirs.clone(), excludes.clone(), None).await;
+        Self {
+            dirs,
+            excludes,
+            baseline,
+            violated: false.into(),
+            first_change: std::sync::Mutex::new(None),
+        }
+    }
+
+    fn is_violated(&self) -> bool {
+        self.violated.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// The first changed path, relative to `base` when it lies under it.
+    fn first_change(&self, base: &Path) -> Option<String> {
+        let path = self
+            .first_change
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()?;
+        let p = Path::new(&path);
+        Some(
+            p.strip_prefix(base)
+                .unwrap_or(p)
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+
+    /// Fingerprint the directories again (before and after every run, and at the
+    /// end of the eval); true when anything changed, now or before. Only files whose
+    /// metadata changed are re-read.
+    async fn check(&self) -> bool {
+        if self.dirs.is_empty() {
+            return false;
+        }
+        let now = snapshot_blocking(
+            self.dirs.clone(),
+            self.excludes.clone(),
+            Some(self.baseline.clone()),
+        )
+        .await;
+        if let Some(path) = first_difference(&self.baseline, &now) {
+            self.violated
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let mut first = self.first_change.lock().unwrap_or_else(|e| e.into_inner());
+            if first.is_none() {
+                *first = Some(path);
+            }
+        }
+        self.is_violated()
+    }
+}
+
+/// What identifies one entry: its kind, size, times and inode (Unix), and a hash
+/// of its content (files), or its target (links).
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+struct Fingerprint {
+    kind: char,
+    /// size, mtime ns, ctime ns, device, inode (zeros off Unix)
+    meta: [i128; 5],
+    content: String,
+}
+
+type Snapshot = std::collections::BTreeMap<String, Fingerprint>;
+
+/// The first path (in order) whose fingerprint differs, or is new or gone.
+fn first_difference(a: &Snapshot, b: &Snapshot) -> Option<String> {
+    let mut keys: Vec<&String> = a.keys().chain(b.keys()).collect();
+    keys.sort();
+    keys.dedup();
+    keys.into_iter()
+        .find(|k| a.get(*k) != b.get(*k))
+        .map(|k| k.trim_end_matches("@target").to_owned())
+}
+
+async fn snapshot_blocking(
+    dirs: Vec<PathBuf>,
+    excludes: Vec<PathBuf>,
+    prev: Option<Snapshot>,
+) -> Snapshot {
+    if dirs.is_empty() {
+        return Snapshot::new();
+    }
+    tokio::task::spawn_blocking(move || snapshot(&dirs, &excludes, prev.as_ref()))
+        .await
+        .unwrap_or_default()
+}
+
+#[cfg(unix)]
+fn meta_of(m: &std::fs::Metadata) -> [i128; 5] {
+    use std::os::unix::fs::MetadataExt;
+    [
+        i128::from(m.size()),
+        i128::from(m.mtime()) * 1_000_000_000 + i128::from(m.mtime_nsec()),
+        i128::from(m.ctime()) * 1_000_000_000 + i128::from(m.ctime_nsec()),
+        i128::from(m.dev()),
+        i128::from(m.ino()),
+    ]
+}
+
+/// Off Unix there is no ctime or inode: the metadata never matches, so every
+/// later fingerprint re-reads the content.
+#[cfg(not(unix))]
+fn meta_of(m: &std::fs::Metadata) -> [i128; 5] {
+    let mtime = m
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos() as i128);
+    [i128::from(m.len() as u64), mtime, -1, 0, 0]
+}
+
+/// Fingerprint every entry under `dirs` (skipping `excludes`). Content is hashed
+/// (streamed); with `prev`, a file whose metadata matches its entry there reuses
+/// the hash instead of being read again. A symlink is fingerprinted by its target
+/// text, and its target file too when that lies under `dirs`.
+fn snapshot(dirs: &[PathBuf], excludes: &[PathBuf], prev: Option<&Snapshot>) -> Snapshot {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+
+    fn file_print(
+        path: &Path,
+        key: &str,
+        meta: &std::fs::Metadata,
+        prev: Option<&Snapshot>,
+    ) -> Fingerprint {
+        let m = meta_of(meta);
+        // On Unix the metadata includes ctime and inode, so a match means unchanged.
+        if cfg!(unix) {
+            if let Some(old) = prev.and_then(|p| p.get(key)) {
+                if old.kind == 'f' && old.meta == m {
+                    return old.clone();
+                }
+            }
+        }
+        let mut hasher = Sha256::new();
+        match std::fs::File::open(path) {
+            Ok(mut file) => {
+                let mut buf = [0u8; 64 * 1024];
+                loop {
+                    match file.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => hasher.update(&buf[..n]),
+                        Err(_) => {
+                            hasher.update(b"read-error");
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(_) => hasher.update(b"unreadable"),
+        }
+        Fingerprint {
+            kind: 'f',
+            meta: m,
+            content: hasher
+                .finalize()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+        }
+    }
+
+    fn walk(
+        dirs: &[PathBuf],
+        excludes: &[PathBuf],
+        prev: Option<&Snapshot>,
+        dir: &Path,
+        out: &mut Snapshot,
+    ) {
+        let Ok(read) = std::fs::read_dir(dir) else {
+            out.insert(
+                dir.to_string_lossy().into_owned(),
+                Fingerprint {
+                    kind: '!',
+                    ..Fingerprint::default()
+                },
+            );
+            return;
+        };
+        for entry in read.flatten() {
+            let path = entry.path();
+            if excludes.iter().any(|x| path.starts_with(x)) {
+                continue;
+            }
+            let key = path.to_string_lossy().into_owned();
+            let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if meta.is_dir() {
+                out.insert(
+                    key,
+                    Fingerprint {
+                        kind: 'd',
+                        ..Fingerprint::default()
+                    },
+                );
+                walk(dirs, excludes, prev, &path, out);
+            } else if meta.file_type().is_symlink() {
+                let target = std::fs::read_link(&path)
+                    .map(|t| t.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                out.insert(
+                    key.clone(),
+                    Fingerprint {
+                        kind: 'l',
+                        meta: [0; 5],
+                        content: target,
+                    },
+                );
+                if let Ok(real) = std::fs::canonicalize(&path) {
+                    if dirs.iter().any(|d| real.starts_with(d)) {
+                        if let Ok(real_meta) = std::fs::metadata(&real) {
+                            if real_meta.is_file() {
+                                let tkey = format!("{key}@target");
+                                let fp = file_print(&real, &tkey, &real_meta, prev);
+                                out.insert(tkey, fp);
+                            }
+                        }
+                    }
+                }
+            } else if meta.is_file() {
+                let fp = file_print(&path, &key, &meta, prev);
+                out.insert(key, fp);
+            }
+        }
+    }
+
+    let mut out = Snapshot::new();
+    for dir in dirs {
+        walk(dirs, excludes, prev, dir, &mut out);
+    }
+    out
 }
 
 impl EvalRunner {
-    pub fn new(
-        config: EvalConfig,
+    pub fn with_builder(
+        tasks: TasksFile,
         base_dir: PathBuf,
-        provider_factory: Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync>,
+        default_model: impl Into<String>,
+        builder: AgentBuilder,
     ) -> Self {
         Self {
-            config,
-            provider_factory,
+            tasks: Arc::new(tasks),
             base_dir,
+            default_model: default_model.into(),
+            builder,
+            user: None,
+            copy_warn_bytes: DEFAULT_COPY_WARN_BYTES,
         }
     }
 
-    /// Run all tasks sequentially. Failures do NOT abort — every task is
-    /// attempted. Outcomes are returned in the same order as `config.tasks`.
-    pub async fn run_all(&self) -> Vec<TaskOutcome> {
-        let mut outcomes = Vec::with_capacity(self.config.tasks.len());
-        for task in &self.config.tasks {
-            let outcome = match self.run_one(&task.id).await {
-                Ok(o) => o,
-                Err(e) => TaskOutcome {
-                    id: task.id.clone(),
-                    status: TaskStatus::AgentError,
-                    duration_ms: 0,
-                    tokens_input: 0,
-                    tokens_output: 0,
-                    cost_usd: 0.0,
-                    success_check_stdout: String::new(),
-                    success_check_stderr: e.to_string(),
-                    success_check_exit_code: None,
-                },
-            };
-            outcomes.push(outcome);
-        }
-        outcomes
+    /// Report a task's copy in the manifest's `warnings` when it exceeds `bytes`.
+    pub fn with_copy_warn_bytes(mut self, bytes: u64) -> Self {
+        self.copy_warn_bytes = bytes;
+        self
     }
 
-    /// Run a single task by id. Returns `Err` if the id is unknown.
-    pub async fn run_one(&self, id: &str) -> Result<TaskOutcome, EvalRunnerError> {
-        let task = self
-            .config
+    /// Resolve each profile over this user config layer (`config.toml`).
+    pub fn with_user_layer(mut self, layer: ConfigLayer) -> Self {
+        self.user = Some(Arc::new(layer));
+        self
+    }
+
+    /// Run every planned run and return `<out_dir>/<run-id>`.
+    pub async fn run(&self, opts: &EvalOptions) -> Result<PathBuf, EvalRunnerError> {
+        let planned = self.tasks.expand(&ExpandOptions {
+            profiles: opts.profiles.clone(),
+            repeats: opts.repeats,
+        })?;
+        let model = opts
+            .model
+            .clone()
+            .or_else(|| self.tasks.model.clone())
+            .unwrap_or_else(|| self.default_model.clone());
+        let base_dir = std::fs::canonicalize(&self.base_dir)
+            .or_else(|_| std::path::absolute(&self.base_dir))?;
+
+        let started = Utc::now();
+        let hash = self.tasks.source_sha256().to_owned();
+        let (run_id, run_dir) = unique_run_dir(&opts.out_dir, started, &hash)?;
+        let repeats = opts.repeats.unwrap_or_else(|| self.tasks.repeats());
+
+        let profile_names: Vec<String> = self
             .tasks
-            .iter()
-            .find(|t| t.id == id)
-            .ok_or_else(|| EvalRunnerError::UnknownId(id.to_owned()))?
-            .clone();
-
-        // Resolve working directory against base_dir.
-        let working_dir = self.base_dir.join(&task.working_dir);
-
-        // Use a dummy model id — the mock provider ignores it.
-        let model_id = ModelId::new("eval:mock");
-
-        let config = AgentConfig {
-            provider: (self.provider_factory)(),
-            tools: ToolRegistry::default(),
-            sandbox: Arc::new(NullSandbox),
-            sandbox_policy: Arc::new(hone_sandbox::SandboxPolicy::permissive()),
-            system_prompt: String::new(),
-            model: model_id.clone(),
-            max_tokens: None,
-            temperature: None,
-            budget_limit: task.budget_usd,
-            pricing: PricingEntry {
-                model: model_id,
-                input_per_million: 0.0,
-                output_per_million: 0.0,
-                cache_read_per_million: None,
-                cache_creation_per_million: None,
-            },
-            working_dir: working_dir.clone(),
-            memory_store: None,
-            retry_config: RetryConfig::default(),
-            index: None,
-            inject_context: false,
-            skeleton_strategy: Default::default(),
-            egress_log: None,
-            approval_policy: ToolApprovalPolicy::Auto,
-            step_rx: None,
-            hooks: None,
-            skills: None,
-            mode: AgentMode::Build,
-            embedder: None,
-            policy: None,
-        };
-
-        let handle = AgentHandle::spawn(config);
-
-        // Create event drain channel — we don't need the events for eval.
-        let (events_tx, mut events_rx) = tokio::sync::mpsc::channel(64);
-        tokio::spawn(async move {
-            while events_rx.recv().await.is_some() {}
+            .profile_names()
+            .into_iter()
+            .filter(|n| opts.profiles.is_empty() || opts.profiles.contains(n))
+            .collect();
+        let suite_sha = git_sha(&base_dir);
+        let mut manifest = json!({
+            "run_id": run_id,
+            "hone_version": env!("CARGO_PKG_VERSION"),
+            "suite_git_sha": suite_sha,
+            "hone_git_sha": hone_git_sha(),
+            "env": run_env(),
+            "interrupted": false,
+            "warnings": [],
+            "model": model,
+            "profiles": self.manifest_profiles(&profile_names),
+            "tasks_sha256": hash,
+            "repeats": repeats,
+            "started_at": started.to_rfc3339(),
+            "ended_at": Value::Null,
         });
+        write_json(&run_dir.join("manifest.json"), &manifest)?;
 
-        let start = Instant::now();
+        let ctx = Ctx {
+            tasks: self.tasks.clone(),
+            base_dir: base_dir.clone(),
+            model: model.clone(),
+            builder: self.builder.clone(),
+            user: self.user.clone(),
+            run_dir: run_dir.clone(),
+            keep_workdirs: opts.keep_workdirs,
+            copy_warn_bytes: self.copy_warn_bytes,
+            warned: Arc::default(),
+            interrupt: opts.interrupt.clone(),
+            integrity: Arc::new(
+                Integrity::new(
+                    self.tasks
+                        .integrity()
+                        .iter()
+                        .map(|d| base_dir.join(d))
+                        .collect(),
+                    [opts.out_dir.clone(), std::env::temp_dir()]
+                        .into_iter()
+                        .map(|p| std::fs::canonicalize(&p).unwrap_or(p))
+                        .collect(),
+                )
+                .await,
+            ),
+        };
+        let planned_total = planned.len();
+        let results = run_all(&ctx, planned, opts.jobs).await;
+        // Once more at the end of the eval (F32).
+        ctx.integrity.check().await;
+        let interrupted = ctx.interrupt.as_ref().is_some_and(|rx| *rx.borrow());
 
-        let turn_result = tokio::time::timeout(
-            std::time::Duration::from_secs(task.timeout_secs),
-            handle.run_turn(task.prompt.clone(), events_tx),
-        )
-        .await;
+        manifest["ended_at"] = json!(Utc::now().to_rfc3339());
+        manifest["interrupted"] = json!(interrupted);
+        manifest["warnings"] = json!(
+            ctx.warned
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .1
+                .clone()
+        );
+        manifest["outcomes"] = status_counts(&results, planned_total);
+        manifest["integrity_violated"] = json!(ctx.integrity.is_violated());
+        manifest["integrity_first_change"] = json!(ctx.integrity.first_change(&base_dir));
+        write_json(&run_dir.join("manifest.json"), &manifest)?;
 
-        let duration_ms = start.elapsed().as_millis() as u64;
-
-        match turn_result {
-            Err(_elapsed) => {
-                // Timeout
-                handle.shutdown().await;
-                Ok(TaskOutcome {
-                    id: task.id.clone(),
-                    status: TaskStatus::Timeout,
-                    duration_ms,
-                    tokens_input: 0,
-                    tokens_output: 0,
-                    cost_usd: 0.0,
-                    success_check_stdout: String::new(),
-                    success_check_stderr: String::new(),
-                    success_check_exit_code: None,
-                })
-            }
-            Ok(Err(_agent_err)) => {
-                handle.shutdown().await;
-                Ok(TaskOutcome {
-                    id: task.id.clone(),
-                    status: TaskStatus::AgentError,
-                    duration_ms,
-                    tokens_input: 0,
-                    tokens_output: 0,
-                    cost_usd: 0.0,
-                    success_check_stdout: String::new(),
-                    success_check_stderr: String::new(),
-                    success_check_exit_code: None,
-                })
-            }
-            Ok(Ok(turn)) => {
-                // Run success check.
-                let (exit_code, stdout, stderr) =
-                    Self::run_success_check(&task.success_check, &working_dir)
-                        .await
-                        .unwrap_or_else(|e| (None, String::new(), e.to_string()));
-
-                let status = if exit_code == Some(0) {
-                    TaskStatus::Pass
-                } else {
-                    TaskStatus::Fail
-                };
-
-                handle.shutdown().await;
-
-                Ok(TaskOutcome {
-                    id: task.id.clone(),
-                    status,
-                    duration_ms,
-                    tokens_input: turn.usage.input,
-                    tokens_output: turn.usage.output,
-                    cost_usd: turn.cost_usd,
-                    success_check_stdout: stdout,
-                    success_check_stderr: stderr,
-                    success_check_exit_code: exit_code,
-                })
-            }
+        // Unfinished runs are marked in their outcome.json; the report covers the rest.
+        let finished: Vec<RunResult> = results
+            .into_iter()
+            .filter(|r| r.stat.status != TaskStatus::Interrupted)
+            .collect();
+        let results = finished;
+        let mut report = self.report(&profile_names, &results);
+        report.json["integrity_violated"] = json!(ctx.integrity.is_violated());
+        if ctx.integrity.is_violated() {
+            report
+                .markdown
+                .push_str("\n**Untrustworthy run: the suite was modified during the run.**\n");
         }
+        write_json(&run_dir.join("report.json"), &report.json)?;
+        std::fs::write(run_dir.join("report.md"), &report.markdown)?;
+
+        if let Some(store) = opts
+            .history
+            .as_ref()
+            .filter(|_| !interrupted && !ctx.integrity.is_violated())
+        {
+            let base = self.tasks.base_profile();
+            let outcomes: Vec<TaskOutcome> = results
+                .iter()
+                .filter(|r| r.planned.profile == base && r.planned.repeat == 1)
+                .map(|r| r.outcome.clone())
+                .collect();
+            let profiles: Vec<ProfileRunSummary> = report
+                .summaries
+                .iter()
+                .map(|s| ProfileRunSummary {
+                    profile: s.profile.clone(),
+                    runs: s.runs,
+                    passes: s.passes,
+                })
+                .collect();
+            store
+                .record_with_profiles(
+                    manifest["suite_git_sha"].as_str().map(str::to_owned),
+                    model,
+                    manifest["tasks_sha256"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
+                    opts.tag.clone(),
+                    outcomes,
+                    profiles,
+                )
+                .await?;
+        }
+        Ok(run_dir)
     }
 
-    /// Shell out a success-check command and return (exit_code, stdout, stderr).
-    pub async fn run_success_check(
-        cmd: &str,
-        working_dir: &Path,
-    ) -> std::io::Result<(Option<i32>, String, String)> {
-        use tokio::process::Command;
+    /// `[{ "name", "strategies": [{ "slot", "name", "params_sha256" }] }]`.
+    fn manifest_profiles(&self, names: &[String]) -> Value {
+        let entries: Vec<Value> = names
+            .iter()
+            .map(|name| {
+                let strategies = match self.tasks.profile_selection(name, self.user.as_deref()) {
+                    Ok(sel) => strategy_ids(&sel),
+                    Err(_) => Vec::new(),
+                };
+                json!({ "name": name, "strategies": strategies })
+            })
+            .collect();
+        Value::Array(entries)
+    }
 
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .current_dir(working_dir)
-            .output()
-            .await?;
+    fn report(&self, profile_names: &[String], results: &[RunResult]) -> Report {
+        let stats_of = |profile: &str| -> Vec<RunStat> {
+            results
+                .iter()
+                .filter(|r| r.planned.profile == profile)
+                .map(|r| r.stat.clone())
+                .collect()
+        };
+        let ran: Vec<&String> = profile_names
+            .iter()
+            .filter(|n| results.iter().any(|r| &r.planned.profile == *n))
+            .collect();
+        let summaries: Vec<_> = ran.iter().map(|n| summarize(n, &stats_of(n))).collect();
+        let by_cost: Vec<(f64, f64)> = summaries
+            .iter()
+            .map(|s| (s.pass_rate, s.mean_cost_usd))
+            .collect();
+        let by_context: Vec<(f64, f64)> = summaries
+            .iter()
+            .map(|s| (s.pass_rate, s.mean_context_tokens))
+            .collect();
+        let (pareto_cost, pareto_context) = (pareto_flags(&by_cost), pareto_flags(&by_context));
 
-        let exit_code = output.status.code();
-        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-        Ok((exit_code, stdout, stderr))
+        let base = self.tasks.base_profile();
+        let base_stats = ran.iter().any(|n| **n == base).then(|| stats_of(&base));
+        let mut profiles = Vec::new();
+        let mut md = String::from("# Hone eval report\n\n");
+        md.push_str(
+            "| profile | runs | pass rate | 95% CI | timeouts | errors | mean cost $ | median cost $ | mean context tokens | mean calls | pareto (cost) | pareto (context) |\n",
+        );
+        md.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|\n");
+        let mut compare = String::new();
+        for (i, s) in summaries.iter().enumerate() {
+            let vs_base = match (&base_stats, s.profile != base) {
+                (Some(b), true) => {
+                    let p = paired_comparison(
+                        b,
+                        &stats_of(&s.profile),
+                        BOOTSTRAP_RESAMPLES,
+                        BOOTSTRAP_SEED,
+                    );
+                    compare.push_str(&format!(
+                        "| {} | {} | {:+.3} | {} / {} / {} | [{:+.3}, {:+.3}] |\n",
+                        s.profile,
+                        p.tasks,
+                        p.mean_diff,
+                        p.better,
+                        p.worse,
+                        p.tied,
+                        p.ci_low,
+                        p.ci_high
+                    ));
+                    json!({
+                        "tasks": p.tasks, "mean_diff": p.mean_diff, "better": p.better,
+                        "worse": p.worse, "tied": p.tied, "ci_low": p.ci_low, "ci_high": p.ci_high,
+                    })
+                }
+                _ => Value::Null,
+            };
+            md.push_str(&format!(
+                "| {} | {} | {:.0}% | {:.0}%-{:.0}% | {} | {} | {:.4} | {:.4} | {:.0} | {:.1} | {} | {} |\n",
+                s.profile,
+                s.runs,
+                s.pass_rate * 100.0,
+                s.wilson_low * 100.0,
+                s.wilson_high * 100.0,
+                s.timeouts,
+                s.errors,
+                s.mean_cost_usd,
+                s.median_cost_usd,
+                s.mean_context_tokens,
+                s.mean_model_calls,
+                if pareto_cost[i] { "yes" } else { "" },
+                if pareto_context[i] { "yes" } else { "" },
+            ));
+            let mut entry = serde_json::to_value(s).unwrap_or(Value::Null);
+            entry["pareto_cost"] = json!(pareto_cost[i]);
+            entry["pareto_context"] = json!(pareto_context[i]);
+            entry["vs_base"] = vs_base;
+            profiles.push(entry);
+        }
+        if !compare.is_empty() {
+            md.push_str(&format!(
+                "\n## Paired comparison with `{base}`\n\n| profile | tasks | mean diff | better / worse / tied | 95% bootstrap CI |\n|---|---|---|---|---|\n{compare}"
+            ));
+        }
+        Report {
+            json: json!({ "base_profile": base, "profiles": profiles }),
+            markdown: md,
+            summaries,
+        }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
+struct Report {
+    json: Value,
+    markdown: String,
+    summaries: Vec<crate::stats::ProfileSummary>,
+}
 
-    use hone_proto::TokenUsage;
-    use hone_providers::MockProvider;
-    use tempfile::TempDir;
+/// The resolved strategies of a selection, as `{ slot, name, params_sha256 }`.
+fn strategy_ids(sel: &StrategySelection) -> Vec<Value> {
+    let id = |slot: &str, name: &str, params: Value| json!({ "slot": slot, "name": name, "params_sha256": canonical_json_sha256(&params) });
+    let mut out: Vec<Value> = sel
+        .sources
+        .value
+        .iter()
+        .map(|s| id("source", s, json!({})))
+        .collect();
+    out.push(id(
+        "skeleton",
+        &sel.skeleton.value,
+        json!({
+            "max_tokens": sel.skeleton_max_tokens.value,
+            "gap_threshold": sel.skeleton_gap_threshold.value,
+        }),
+    ));
+    out.push(id(
+        "compactor",
+        &sel.compactor.value,
+        json!({ "phase": sel.graduated_phase.value, "budget_ratio": sel.budget_ratio.value }),
+    ));
+    out.push(id(
+        "recaller",
+        &sel.recaller.value,
+        json!({ "top_k": sel.top_k.value, "exclude_kinds": sel.exclude_kinds.value }),
+    ));
+    out.push(id("writer", &sel.writer.value, json!({})));
+    out
+}
 
-    use super::*;
-    use crate::config::{EvalConfig, TaskSpec};
+/// `<out>/<%Y%m%dT%H%M%SZ>-<8 hex of the file hash>`, one second later while taken.
+fn unique_run_dir(
+    out: &Path,
+    mut at: DateTime<Utc>,
+    hash: &str,
+) -> std::io::Result<(String, PathBuf)> {
+    let short = &hash[..8.min(hash.len())];
+    std::fs::create_dir_all(out)?;
+    loop {
+        let id = format!("{}-{short}", at.format("%Y%m%dT%H%M%SZ"));
+        let dir = out.join(&id);
+        match std::fs::create_dir(&dir) {
+            Ok(()) => return Ok((id, dir)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                at += chrono::Duration::seconds(1);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
 
-    // --------------------------------------------------------------------------
-    // Helpers
-    // --------------------------------------------------------------------------
+/// `git rev-parse HEAD` in `dir`, or null outside git.
+fn git_sha(dir: &Path) -> Value {
+    std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(dir)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .map_or(Value::Null, Value::String)
+}
 
-    fn single_task_config(id: &str, success_check: &str) -> EvalConfig {
-        EvalConfig {
-            tasks: vec![TaskSpec {
-                id: id.to_owned(),
-                prompt: "test prompt".to_owned(),
-                success_check: success_check.to_owned(),
-                timeout_secs: 60,
-                working_dir: ".".to_owned(),
-                budget_usd: None,
-            }],
+/// The git SHA hone was built from (build metadata), or null.
+fn hone_git_sha() -> Value {
+    match option_env!("HONE_GIT_SHA") {
+        Some(sha) if !sha.is_empty() => Value::String(sha.to_owned()),
+        _ => Value::Null,
+    }
+}
+
+/// The environment variables that change runs, as strings or null.
+fn run_env() -> Value {
+    let mut vars = serde_json::Map::new();
+    for name in [
+        "HONE_AUDIT_LOG",
+        "HONE_CONTEXT_WINDOW",
+        "HONE_POLICY_BUILTINS",
+        "HONE_PHASE_COMPACTION",
+    ] {
+        vars.insert(
+            name.to_owned(),
+            std::env::var(name).map_or(Value::Null, Value::String),
+        );
+    }
+    Value::Object(vars)
+}
+
+/// Statuses of the planned runs; those that never started (an interrupt) count as
+/// `interrupted`.
+fn status_counts(results: &[RunResult], planned_total: usize) -> Value {
+    let mut counts = serde_json::Map::new();
+    for r in results {
+        let key = serde_json::to_value(r.stat.status)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_default();
+        let n = counts.get(&key).and_then(Value::as_u64).unwrap_or(0);
+        counts.insert(key, json!(n + 1));
+    }
+    let missing = planned_total.saturating_sub(results.len());
+    if missing > 0 {
+        let n = counts
+            .get("interrupted")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        counts.insert("interrupted".to_owned(), json!(n + missing as u64));
+    }
+    Value::Object(counts)
+}
+
+fn write_json(path: &Path, value: &Value) -> std::io::Result<()> {
+    let text = serde_json::to_string_pretty(value).map_err(std::io::Error::other)?;
+    std::fs::write(path, text)
+}
+
+fn interrupted(ctx: &Ctx) -> bool {
+    ctx.interrupt.as_ref().is_some_and(|rx| *rx.borrow())
+}
+
+/// Resolves when the interrupt flag is set; never when there is none.
+async fn wait_interrupt(rx: Option<tokio::sync::watch::Receiver<bool>>) {
+    let Some(mut rx) = rx else {
+        std::future::pending::<()>().await;
+        return;
+    };
+    loop {
+        if *rx.borrow() {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
+async fn run_all(ctx: &Ctx, planned: Vec<PlannedRun>, jobs: usize) -> Vec<RunResult> {
+    if jobs <= 1 {
+        let mut out = Vec::with_capacity(planned.len());
+        for p in planned {
+            if interrupted(ctx) {
+                break;
+            }
+            if let Some(r) = run_one(ctx, p).await {
+                out.push(r);
+            }
+        }
+        return out;
+    }
+    let gate = Arc::new(Semaphore::new(jobs));
+    let mut handles = Vec::with_capacity(planned.len());
+    for p in planned {
+        let (ctx, gate) = (ctx.clone(), gate.clone());
+        handles.push(tokio::spawn(async move {
+            let _permit = gate.acquire().await;
+            if interrupted(&ctx) {
+                return None;
+            }
+            run_one(&ctx, p).await
+        }));
+    }
+    let mut out = Vec::with_capacity(handles.len());
+    for h in handles {
+        if let Ok(Some(r)) = h.await {
+            out.push(r);
+        }
+    }
+    out
+}
+
+/// How a run ended, with what it produced.
+struct Finished {
+    status: TaskStatus,
+    message: Option<String>,
+    duration_ms: u64,
+    usage: hone_proto::TokenUsage,
+    cost_usd: f64,
+    check: Option<CheckOutput>,
+    receipts: Vec<ContextReceipt>,
+    transcript: Value,
+    /// Notes for `check.txt` (skipped special files).
+    notes: Vec<String>,
+}
+
+struct CheckOutput {
+    exit_code: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
+impl Finished {
+    fn without_agent(status: TaskStatus, message: String, duration_ms: u64) -> Self {
+        Self {
+            status,
+            message: Some(message),
+            duration_ms,
+            usage: hone_proto::TokenUsage::default(),
+            cost_usd: 0.0,
+            check: None,
+            receipts: Vec::new(),
+            transcript: json!([]),
+            notes: Vec::new(),
         }
     }
 
-    fn two_task_config(
-        id1: &str,
-        check1: &str,
-        id2: &str,
-        check2: &str,
-    ) -> EvalConfig {
-        EvalConfig {
-            tasks: vec![
-                TaskSpec {
-                    id: id1.to_owned(),
-                    prompt: "first".to_owned(),
-                    success_check: check1.to_owned(),
-                    timeout_secs: 60,
-                    working_dir: ".".to_owned(),
-                    budget_usd: None,
+    fn infra(message: String, duration_ms: u64) -> Self {
+        Self::without_agent(TaskStatus::InfraError, message, duration_ms)
+    }
+
+    fn context_tokens(&self) -> u64 {
+        self.receipts
+            .iter()
+            .flat_map(|r| &r.blocks)
+            .map(|b| u64::from(b.tokens))
+            .sum()
+    }
+}
+
+/// The message of a panic payload.
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_owned())
+}
+
+/// Run one planned run in its own task, so a panic is a recorded `agent_error`
+/// and an interrupt can drop it (stopping its commands and removing its copy).
+/// `None`: interrupted before it started.
+async fn run_one(ctx: &Ctx, planned: PlannedRun) -> Option<RunResult> {
+    if interrupted(ctx) {
+        return None;
+    }
+    let dir = ctx
+        .run_dir
+        .join(&planned.profile)
+        .join(&planned.task)
+        .join(format!("r{}", planned.repeat));
+    let started = Instant::now();
+    let finished = match std::fs::create_dir_all(&dir) {
+        Err(e) => Finished::infra(format!("cannot create {}: {e}", dir.display()), 0),
+        Ok(()) => {
+            let (c, p, d) = (ctx.clone(), planned.clone(), dir.clone());
+            let mut handle = tokio::spawn(async move { execute(&c, &p, &d, started).await });
+            tokio::select! {
+                joined = &mut handle => match joined {
+                    Ok(f) => f,
+                    Err(e) if e.is_panic() => Finished::without_agent(
+                        TaskStatus::AgentError,
+                        format!("panic: {}", panic_message(e.into_panic())),
+                        started.elapsed().as_millis() as u64,
+                    ),
+                    Err(e) => Finished::without_agent(
+                        TaskStatus::AgentError,
+                        format!("the run was cancelled: {e}"),
+                        started.elapsed().as_millis() as u64,
+                    ),
                 },
-                TaskSpec {
-                    id: id2.to_owned(),
-                    prompt: "second".to_owned(),
-                    success_check: check2.to_owned(),
-                    timeout_secs: 60,
-                    working_dir: ".".to_owned(),
-                    budget_usd: None,
-                },
-            ],
+                () = wait_interrupt(ctx.interrupt.clone()) => {
+                    // Dropping the task's future stops its commands and removes its copy.
+                    handle.abort();
+                    let _ = (&mut handle).await;
+                    Finished::without_agent(
+                        TaskStatus::Interrupted,
+                        "interrupted by a signal".to_owned(),
+                        started.elapsed().as_millis() as u64,
+                    )
+                }
+            }
+        }
+    };
+    // Every run is checked, whatever its status (F32): the agent may have written
+    // into the suite and then timed out or failed.
+    let mut finished = finished;
+    if ctx.integrity.check().await && finished.status != TaskStatus::Interrupted {
+        finished.status = TaskStatus::InfraError;
+        finished.message = Some(INTEGRITY_MESSAGE.to_owned());
+    }
+    persist(&dir, &finished);
+
+    let check = finished.check.as_ref();
+    Some(RunResult {
+        stat: RunStat {
+            task: planned.task.clone(),
+            status: finished.status,
+            cost_usd: finished.cost_usd,
+            context_tokens: finished.context_tokens(),
+            model_calls: finished.receipts.len() as u32,
+        },
+        outcome: TaskOutcome {
+            id: planned.task.clone(),
+            status: finished.status,
+            duration_ms: finished.duration_ms,
+            tokens_input: finished.usage.input,
+            tokens_output: finished.usage.output,
+            cost_usd: finished.cost_usd,
+            success_check_stdout: check.map(|c| c.stdout.clone()).unwrap_or_default(),
+            success_check_stderr: check.map(|c| c.stderr.clone()).unwrap_or_default(),
+            success_check_exit_code: check.and_then(|c| c.exit_code),
+        },
+        planned,
+    })
+}
+
+/// Write the per-run files.
+fn persist(dir: &Path, f: &Finished) {
+    let mut outcome = json!({
+        "status": f.status,
+        "duration_ms": f.duration_ms,
+        "tokens_input": f.usage.input,
+        "tokens_output": f.usage.output,
+        "tokens_cache": u64::from(f.usage.cache_read) + u64::from(f.usage.cache_creation),
+        "cost_usd": f.cost_usd,
+        "model_calls": f.receipts.len(),
+        "context_tokens": f.context_tokens(),
+        "check_exit_code": f.check.as_ref().and_then(|c| c.exit_code),
+    });
+    if let Some(m) = &f.message {
+        outcome["message"] = json!(m);
+    }
+    let mut check_txt = String::new();
+    for note in &f.notes {
+        check_txt.push_str(&format!("note: {note}\n"));
+    }
+    match &f.check {
+        Some(c) => check_txt.push_str(&format!(
+            "exit code: {}\n--- stdout ---\n{}\n--- stderr ---\n{}\n",
+            c.exit_code.map_or("none".to_owned(), |n| n.to_string()),
+            c.stdout,
+            c.stderr
+        )),
+        None => check_txt.push_str("check not run\n"),
+    }
+    let receipts = serde_json::to_value(&f.receipts).unwrap_or_else(|_| json!([]));
+    for (name, result) in [
+        (
+            "outcome.json",
+            write_json(&dir.join("outcome.json"), &outcome),
+        ),
+        (
+            "receipts.json",
+            write_json(&dir.join("receipts.json"), &receipts),
+        ),
+        (
+            "transcript.json",
+            write_json(&dir.join("transcript.json"), &f.transcript),
+        ),
+        (
+            "check.txt",
+            std::fs::write(dir.join("check.txt"), check_txt),
+        ),
+    ] {
+        if let Err(e) = result {
+            tracing::warn!("eval: cannot write {}: {e}", dir.join(name).display());
+        }
+    }
+}
+
+/// Removes files and directories when dropped (also when a run's future is dropped).
+struct Cleanup(Vec<PathBuf>);
+
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = std::fs::remove_dir_all(path);
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+async fn execute(ctx: &Ctx, planned: &PlannedRun, dir: &Path, started: Instant) -> Finished {
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+    let Some(task) = ctx
+        .tasks
+        .tasks
+        .iter()
+        .find(|t| t.id == planned.task)
+        .cloned()
+    else {
+        return Finished::infra(format!("unknown task `{}`", planned.task), 0);
+    };
+
+    if ctx.integrity.is_violated() {
+        return Finished::infra(INTEGRITY_MESSAGE.to_owned(), 0);
+    }
+    // The fixture is read first, so a malformed one stops the run cheaply.
+    let fixture = match &task.memory_fixture {
+        Some(f) => match crate::fixture::load(&ctx.base_dir.join(f)) {
+            Ok(m) => m,
+            Err(e) => return Finished::infra(e, ms(started)),
+        },
+        None => Vec::new(),
+    };
+    let selection = match ctx
+        .tasks
+        .profile_selection(&planned.profile, ctx.user.as_deref())
+    {
+        Ok(s) => s,
+        Err(e) => return Finished::infra(e.to_string(), ms(started)),
+    };
+
+    // A fresh store, as the CLI has: a SQLite file in the temp dir, deleted with the run.
+    let id = uuid::Uuid::now_v7();
+    let db = std::env::temp_dir().join(format!("hone-eval-mem-{id}.db"));
+    let mut cleanup = Cleanup(vec![
+        db.clone(),
+        PathBuf::from(format!("{}-wal", db.display())),
+        PathBuf::from(format!("{}-shm", db.display())),
+        PathBuf::from(format!("{}-journal", db.display())),
+    ]);
+    let memory = match hone_memory::SqliteStore::open_with_decay_interval(&db, u64::MAX).await {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            return Finished::infra(format!("cannot open the memory store: {e}"), ms(started));
+        }
+    };
+    for m in fixture {
+        if let Err(e) = memory.record(m).await {
+            return Finished::infra(
+                format!(
+                    "memory fixture {}: {e}",
+                    task.memory_fixture.as_deref().unwrap_or("")
+                ),
+                ms(started),
+            );
         }
     }
 
-    fn mock_factory(tokens: Vec<String>) -> Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync> {
-        Box::new(move || Arc::new(MockProvider::new(tokens.clone())))
+    // A fresh copy of the task directory, outside the repository.
+    let copy = std::env::temp_dir().join(format!("hone-eval-{id}"));
+    cleanup.0.push(copy.clone());
+    let source = ctx.base_dir.join(&task.working_dir);
+    let report = match crate::copy::copy_task_dir(&source, &copy) {
+        Ok(r) => r,
+        Err(e) => return Finished::infra(e, ms(started)),
+    };
+    if report.bytes > ctx.copy_warn_bytes {
+        let mut warned = ctx.warned.lock().unwrap_or_else(|e| e.into_inner());
+        if warned.0.insert(task.id.clone()) {
+            let msg = format!(
+                "task `{}`: its working-directory copy is {} MB; add large directories to \
+                 .gitignore to keep copies lean",
+                task.id,
+                report.bytes / (1024 * 1024)
+            );
+            tracing::warn!("eval: {msg}");
+            warned.1.push(msg);
+        }
     }
 
-    fn mock_factory_with_usage(
-        tokens: Vec<String>,
-        usage: TokenUsage,
-    ) -> Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync> {
-        Box::new(move || Arc::new(MockProvider::new(tokens.clone()).with_usage(usage)))
+    let mut result = run_in_copy(ctx, planned, &task, &copy, memory, selection, started).await;
+    result.notes = report.notes;
+
+    if ctx.keep_workdirs {
+        if let Err(e) = crate::copy::copy_task_dir(&copy, &dir.join("workdir")) {
+            tracing::warn!("eval: cannot keep the working directory: {e}");
+        }
     }
+    drop(cleanup);
+    result
+}
 
-    fn temp_base() -> TempDir {
-        tempfile::tempdir().expect("tempdir")
+async fn run_in_copy(
+    ctx: &Ctx,
+    planned: &PlannedRun,
+    task: &TaskSpec,
+    workdir: &Path,
+    memory: Arc<hone_memory::SqliteStore>,
+    selection: StrategySelection,
+    started: Instant,
+) -> Finished {
+    let ms = |s: Instant| s.elapsed().as_millis() as u64;
+    let build = AgentBuild {
+        task: task.clone(),
+        profile: planned.profile.clone(),
+        repeat: planned.repeat,
+        workdir: workdir.to_path_buf(),
+        memory,
+        model: ctx.model.clone(),
+        selection,
+    };
+    let mut agent = match (ctx.builder)(build) {
+        Ok(a) => a,
+        Err(e) => return Finished::infra(format!("cannot build the agent: {e}"), ms(started)),
+    };
+
+    // Receipts come from the event stream.
+    let (tx, mut rx) = mpsc::channel::<AgentEvent>(256);
+    let collector = tokio::spawn(async move {
+        let mut receipts = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let AgentEvent::ContextAssembled { receipt } = event {
+                receipts.push(receipt);
+            }
+        }
+        receipts
+    });
+
+    // Dropping the turn's future on a timeout stops its commands.
+    let turn = tokio::time::timeout(
+        Duration::from_secs(task.timeout_secs),
+        agent.run_turn(&task.prompt, tx),
+    )
+    .await;
+    let duration_ms = ms(started);
+    let receipts = collector.await.unwrap_or_default();
+    let transcript = redacted_transcript(&agent);
+
+    let finish = |status, message, usage, cost_usd, check| Finished {
+        status,
+        message,
+        duration_ms,
+        usage,
+        cost_usd,
+        check,
+        receipts,
+        transcript,
+        notes: Vec::new(),
+    };
+    match turn {
+        Err(_) => finish(
+            TaskStatus::Timeout,
+            Some(format!("timed out after {}s", task.timeout_secs)),
+            agent.session_usage(),
+            agent.session_cost(),
+            None,
+        ),
+        Ok(Err(e)) => finish(
+            TaskStatus::AgentError,
+            Some(e.to_string()),
+            agent.session_usage(),
+            agent.session_cost(),
+            None,
+        ),
+        Ok(Ok(turn)) => {
+            // Re-hash right before the check starts (F34): once the suite has
+            // changed, no further check is started.
+            if ctx.integrity.check().await {
+                return finish(
+                    TaskStatus::InfraError,
+                    Some(INTEGRITY_MESSAGE.to_owned()),
+                    turn.usage,
+                    turn.cost_usd,
+                    None,
+                );
+            }
+            let check = run_check(
+                &task.success_check,
+                workdir,
+                &ctx.base_dir,
+                task.timeout_secs,
+            )
+            .await;
+            let status = if check.exit_code == Some(0) {
+                TaskStatus::Pass
+            } else {
+                TaskStatus::Fail
+            };
+            finish(status, None, turn.usage, turn.cost_usd, Some(check))
+        }
     }
+}
 
-    // --------------------------------------------------------------------------
-    // run_success_check tests
-    // --------------------------------------------------------------------------
+fn redacted_transcript(agent: &Agent) -> Value {
+    let messages = serde_json::to_value(agent.messages()).unwrap_or_else(|_| json!([]));
+    hone_tools::redact::redact_json(&messages).0
+}
 
-    #[tokio::test]
-    async fn run_success_check_zero_exit_returns_zero() {
-        let dir = temp_base();
-        let (code, _stdout, _stderr) =
-            EvalRunner::run_success_check("true", dir.path()).await.expect("should not io-error");
-        assert_eq!(code, Some(0));
+/// Kill a process group (and so every process the check left behind).
+#[cfg(unix)]
+fn kill_group(pgid: u32) {
+    if pgid > 1 {
+        // SAFETY: `killpg` only sends a signal; the group id is that of a child
+        // this function started with `process_group(0)`.
+        unsafe {
+            libc::killpg(pgid as libc::pid_t, libc::SIGKILL);
+        }
     }
+}
 
-    #[tokio::test]
-    async fn run_success_check_non_zero_exit_returns_one() {
-        let dir = temp_base();
-        let (code, _stdout, _stderr) =
-            EvalRunner::run_success_check("false", dir.path()).await.expect("should not io-error");
-        assert_eq!(code, Some(1));
+/// Run the success check in the copy, in its own process group that is killed
+/// when the check times out and after it finishes (F25). `EVAL_SUITE_DIR` is set
+/// on the check's process only, never on this process: the agent runs in-process
+/// and its shell would inherit it. Output goes to temp files, not pipes, so a
+/// background process holding them open cannot keep this waiting.
+async fn run_check(cmd: &str, workdir: &Path, suite_dir: &Path, timeout_secs: u64) -> CheckOutput {
+    let limit = Duration::from_secs(timeout_secs.max(60));
+    let id = uuid::Uuid::now_v7();
+    let (out_path, err_path) = (
+        std::env::temp_dir().join(format!("hone-eval-check-{id}.out")),
+        std::env::temp_dir().join(format!("hone-eval-check-{id}.err")),
+    );
+    let _cleanup = Cleanup(vec![out_path.clone(), err_path.clone()]);
+    let fail = |msg: String| CheckOutput {
+        exit_code: None,
+        stdout: String::new(),
+        stderr: msg,
+    };
+    let (Ok(out_file), Ok(err_file)) = (
+        std::fs::File::create(&out_path),
+        std::fs::File::create(&err_path),
+    ) else {
+        return fail("cannot create the check's output files".to_owned());
+    };
+
+    let mut command = tokio::process::Command::new("sh");
+    command
+        .arg("-c")
+        .arg(cmd)
+        .current_dir(workdir)
+        .env("EVAL_SUITE_DIR", suite_dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(out_file)
+        .stderr(err_file)
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = match command.spawn() {
+        Ok(c) => c,
+        Err(e) => return fail(format!("cannot run the check: {e}")),
+    };
+    let pgid = child.id();
+
+    let waited = tokio::time::timeout(limit, child.wait()).await;
+    #[cfg(unix)]
+    if let Some(pgid) = pgid {
+        kill_group(pgid);
     }
-
-    #[tokio::test]
-    async fn run_success_check_captures_stdout() {
-        let dir = temp_base();
-        let (_code, stdout, _stderr) =
-            EvalRunner::run_success_check("echo hello", dir.path())
-                .await
-                .expect("should not io-error");
-        assert!(stdout.contains("hello"), "stdout was: {stdout:?}");
-    }
-
-    #[tokio::test]
-    async fn run_success_check_captures_stderr() {
-        let dir = temp_base();
-        let (_code, _stdout, stderr) =
-            EvalRunner::run_success_check("sh -c 'echo err 1>&2'", dir.path())
-                .await
-                .expect("should not io-error");
-        assert!(stderr.contains("err"), "stderr was: {stderr:?}");
-    }
-
-    #[tokio::test]
-    async fn run_success_check_runs_in_working_dir() {
-        let dir = temp_base();
-        std::fs::write(dir.path().join("test.txt"), "expected-content")
-            .expect("write test file");
-        let (_code, stdout, _stderr) =
-            EvalRunner::run_success_check("cat test.txt", dir.path())
-                .await
-                .expect("should not io-error");
-        assert!(
-            stdout.contains("expected-content"),
-            "stdout was: {stdout:?}"
-        );
-    }
-
-    // --------------------------------------------------------------------------
-    // run_one / run_all agent-driving tests
-    // --------------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn run_one_unknown_id_errors() {
-        let config = single_task_config("known", "true");
-        let base = temp_base();
-        let runner = EvalRunner::new(config, base.path().to_path_buf(), mock_factory(vec![]));
-        let err = runner
-            .run_one("does-not-exist")
-            .await
-            .expect_err("should fail with unknown id");
-        assert!(matches!(err, EvalRunnerError::UnknownId(id) if id == "does-not-exist"));
-    }
-
-    #[tokio::test]
-    async fn run_one_with_passing_success_check_returns_pass() {
-        let config = single_task_config("pass-task", "true");
-        let base = temp_base();
-        let runner = EvalRunner::new(
-            config,
-            base.path().to_path_buf(),
-            mock_factory(vec!["done".to_owned()]),
-        );
-        let outcome = runner.run_one("pass-task").await.expect("run_one should not error");
-        assert_eq!(outcome.status, TaskStatus::Pass);
-        assert_eq!(outcome.id, "pass-task");
-        assert_eq!(outcome.success_check_exit_code, Some(0));
-    }
-
-    #[tokio::test]
-    async fn run_one_with_failing_success_check_returns_fail() {
-        let config = single_task_config("fail-task", "false");
-        let base = temp_base();
-        let runner = EvalRunner::new(
-            config,
-            base.path().to_path_buf(),
-            mock_factory(vec!["done".to_owned()]),
-        );
-        let outcome = runner.run_one("fail-task").await.expect("run_one should not error");
-        assert_eq!(outcome.status, TaskStatus::Fail);
-        assert_ne!(outcome.success_check_exit_code, Some(0));
-    }
-
-    #[tokio::test]
-    async fn run_all_runs_all_tasks_in_order() {
-        let config = two_task_config("first", "true", "second", "true");
-        let base = temp_base();
-        let runner = EvalRunner::new(
-            config,
-            base.path().to_path_buf(),
-            mock_factory(vec!["ok".to_owned()]),
-        );
-        let outcomes = runner.run_all().await;
-        assert_eq!(outcomes.len(), 2, "expected 2 outcomes");
-        assert_eq!(outcomes[0].id, "first");
-        assert_eq!(outcomes[1].id, "second");
-        assert_eq!(outcomes[0].status, TaskStatus::Pass);
-        assert_eq!(outcomes[1].status, TaskStatus::Pass);
-    }
-
-    #[tokio::test]
-    async fn run_all_continues_after_failure() {
-        let config = two_task_config("fail-first", "false", "pass-second", "true");
-        let base = temp_base();
-        let runner = EvalRunner::new(
-            config,
-            base.path().to_path_buf(),
-            mock_factory(vec!["ok".to_owned()]),
-        );
-        let outcomes = runner.run_all().await;
-        assert_eq!(outcomes.len(), 2, "both tasks must be attempted");
-        assert_eq!(outcomes[0].status, TaskStatus::Fail);
-        assert_eq!(outcomes[1].status, TaskStatus::Pass);
-    }
-
-    #[tokio::test]
-    async fn run_one_records_cost_and_tokens() {
-        let usage = TokenUsage {
-            input: 42,
-            output: 17,
-            cache_read: 0,
-            cache_creation: 0,
-        };
-        let config = single_task_config("cost-task", "true");
-        let base = temp_base();
-        let runner = EvalRunner::new(
-            config,
-            base.path().to_path_buf(),
-            mock_factory_with_usage(vec!["ok".to_owned()], usage),
-        );
-        let outcome = runner.run_one("cost-task").await.expect("should not error");
-        assert_eq!(outcome.tokens_input, 42, "input tokens mismatch");
-        assert_eq!(outcome.tokens_output, 17, "output tokens mismatch");
-        // Cost must be > 0 when tokens are consumed
-        assert!(outcome.cost_usd >= 0.0, "cost must be non-negative");
+    #[cfg(not(unix))]
+    let _ = pgid;
+    let status = match waited {
+        Ok(Ok(status)) => status,
+        Ok(Err(e)) => return fail(format!("cannot run the check: {e}")),
+        Err(_) => {
+            let _ = child.kill().await;
+            let mut out = fail(format!("the check timed out after {}s", limit.as_secs()));
+            out.stdout = std::fs::read_to_string(&out_path).unwrap_or_default();
+            return out;
+        }
+    };
+    CheckOutput {
+        exit_code: status.code(),
+        stdout: String::from_utf8_lossy(&std::fs::read(&out_path).unwrap_or_default()).into_owned(),
+        stderr: String::from_utf8_lossy(&std::fs::read(&err_path).unwrap_or_default()).into_owned(),
     }
 }
