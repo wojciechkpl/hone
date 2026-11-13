@@ -216,7 +216,8 @@ pub(crate) fn build_receipt(
         ));
     }
 
-    if let Some(r) = &info.retrieval {
+    // A retrieval that timed out has no sources and adds no block (only its mark in `dropped`).
+    if let Some(r) = info.retrieval.as_ref().filter(|r| !r.sources.is_empty()) {
         blocks.push(BlockReceipt {
             slot: Slot::Retrieval,
             strategy: r.strategy.clone(),

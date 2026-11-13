@@ -570,8 +570,17 @@ fn build_strategies(
         // at this level, and a repository's ignored values should be seen.
         eprintln!("honed: warning: {}: {}", w.path.display(), w.message);
     }
+    // A persistent document index next to honed's other data, shared by every
+    // agent; in memory when persistence is disabled.
+    let persistence_off = std::env::var("HONE_EPHEMERAL").is_ok()
+        || std::env::var("HONE_DISABLE_PERSISTENT_STORES").is_ok_and(|v| v == "1");
+    let docs_db = (!persistence_off)
+        .then(|| std::env::var("HOME").ok())
+        .flatten()
+        .map(|home| Path::new(&home).join(".local/share/hone/docs.db"));
     let deps = hone_core::strategy::StrategyDeps {
         working_dir: Some(working_dir.to_path_buf()),
+        docs_db,
         ..Default::default()
     };
     hone_core::strategy::StrategyRegistry::with_builtins()

@@ -17,6 +17,8 @@ use crate::strategy::{
 
 /// How long a turn waits for the index to catch up with the files.
 const SYNC_TIMEOUT: Duration = Duration::from_secs(2);
+/// The whole of retrieval (index open, sync, ranking) is bounded by this.
+const RETRIEVAL_DEADLINE: Duration = Duration::from_secs(3);
 
 /// What retrieval added to one turn.
 #[derive(Debug, Clone)]
@@ -101,13 +103,43 @@ impl RetrievalSource {
             .clone()
     }
 
-    /// Bring the index up to date (bounded) and retrieve for `prompt`. `None`
-    /// when there is nothing to add.
+    /// Bring the index up to date (bounded) and retrieve for `prompt`, all
+    /// within one deadline. `None` when there is nothing to add; past the
+    /// deadline the outcome has no text and a `timed out` mark in `dropped`.
     pub async fn retrieve(&self, prompt: &str, working_dir: &Path) -> Option<RetrievalOutcome> {
+        match tokio::time::timeout(
+            RETRIEVAL_DEADLINE,
+            self.retrieve_within(prompt, working_dir),
+        )
+        .await
+        {
+            Ok(outcome) => outcome,
+            Err(_) => {
+                tracing::warn!(
+                    "document retrieval timed out; the turn goes ahead without documents"
+                );
+                Some(RetrievalOutcome {
+                    text: String::new(),
+                    id: self.id.clone(),
+                    sources: Vec::new(),
+                    dropped: vec![SourceRef::Opaque {
+                        plugin: "fts5-docs".to_owned(),
+                        note: format!(
+                            "retrieval timed out after {}s",
+                            RETRIEVAL_DEADLINE.as_secs()
+                        ),
+                    }],
+                })
+            }
+        }
+    }
+
+    async fn retrieve_within(&self, prompt: &str, working_dir: &Path) -> Option<RetrievalOutcome> {
         let index = self.index().await?;
-        // One sync at a time: while one runs (a slow walk of an earlier turn, for
-        // instance) this turn uses what is indexed.
-        match tokio::time::timeout(SYNC_TIMEOUT, index.sync_if_idle(working_dir)).await {
+        // One sync at a time: a turn that starts while one runs (another agent's
+        // first sync, say) waits for it, within the deadline, so every agent gets
+        // the same documents.
+        match tokio::time::timeout(SYNC_TIMEOUT, index.sync(working_dir)).await {
             Ok(Ok(_)) => {}
             Ok(Err(e)) => tracing::warn!("document sync failed: {e}"),
             Err(_) => tracing::warn!("document sync timed out; using what is indexed"),
@@ -125,17 +157,6 @@ impl RetrievalSource {
         let mut sources = Vec::new();
         let mut dropped = Vec::new();
         for h in hits {
-            // Text the injection detector labels never reaches the model.
-            if InjectionDetector::scan(&h.hit.text).is_actionable()
-                || InjectionDetector::scan(&h.path).is_actionable()
-                || h.heading
-                    .as_deref()
-                    .is_some_and(|t| InjectionDetector::scan(t).is_actionable())
-            {
-                tracing::warn!(path = %h.path, "retrieved text looks like a prompt injection; left out");
-                dropped.push(h.hit.source);
-                continue;
-            }
             let mut header = format!("{}:{}-{}", shown(&h.path), h.start_line, h.end_line);
             if let Some(heading) = &h.heading {
                 header.push_str(&format!(" \u{2014} {}", shown(heading)));
@@ -146,6 +167,14 @@ impl RetrievalSource {
                 _ => h.hit.text.as_str(),
             };
             let entry = format!("<<<doc {header}>>>\n{}\n<<<end doc>>>", chunk_text(text));
+            // The detector sees exactly what would be sent (header and sanitized
+            // text), normalized so a phrase split by control or format
+            // characters is whole again; a flagged hit never reaches the model.
+            if InjectionDetector::scan(&normalized_for_scan(&entry)).is_actionable() {
+                tracing::warn!(path = %h.path, "retrieved text looks like a prompt injection; left out");
+                dropped.push(h.hit.source);
+                continue;
+            }
             let cost = estimate_text_tokens(&entry);
             if used.saturating_add(cost) > self.max_tokens {
                 dropped.push(h.hit.source);
@@ -169,6 +198,33 @@ impl RetrievalSource {
             dropped,
         })
     }
+}
+
+/// `text` as the injection detector should see it: control and Unicode format
+/// (Cf) characters removed, NFKC applied.
+fn normalized_for_scan(text: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    text.chars()
+        // Line breaks and tabs still separate words; other controls vanish.
+        .map(|c| {
+            if matches!(c, '\n' | '\t' | '\r') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .filter(|c| !c.is_control() && !is_format_char(*c))
+        .nfkc()
+        .collect()
+}
+
+/// Unicode format characters (category Cf) that are invisible in text.
+fn is_format_char(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}' | '\u{0600}'..='\u{0605}' | '\u{061C}' | '\u{06DD}' | '\u{070F}'
+        | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206F}' | '\u{FEFF}'
+        | '\u{FFF9}'..='\u{FFFB}')
 }
 
 /// The line that opens the section.
@@ -213,6 +269,7 @@ impl ContextSource for RetrievalSource {
         Ok(self
             .retrieve(view.prompt, view.working_dir)
             .await
+            .filter(|o| !o.text.is_empty())
             .map(|o| ContextBlock {
                 slot: Slot::Retrieval,
                 text: o.text,

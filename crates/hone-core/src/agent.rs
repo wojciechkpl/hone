@@ -951,6 +951,7 @@ impl Agent {
         &mut self,
         prompt: &str,
         events: &mpsc::Sender<AgentEvent>,
+        with_retrieval: bool,
     ) -> Result<(String, Vec<(String, String)>, RecallInfo), AgentError> {
         let (gathered, recalled, retrieved) = {
             let this = &*self;
@@ -958,7 +959,7 @@ impl Agent {
                 tokio::join!(
                     this.gather_context_sources(prompt),
                     this.fetch_relevant_memories(prompt),
-                    this.gather_retrieval(prompt)
+                    this.gather_retrieval(prompt, with_retrieval)
                 )
             };
             tokio::select! {
@@ -973,7 +974,14 @@ impl Agent {
 
     /// Document retrieval for this turn's prompt (redacted); `None` when it is
     /// off or finds nothing.
-    async fn gather_retrieval(&self, prompt: &str) -> Option<crate::retrieval::RetrievalOutcome> {
+    async fn gather_retrieval(
+        &self,
+        prompt: &str,
+        enabled: bool,
+    ) -> Option<crate::retrieval::RetrievalOutcome> {
+        if !enabled {
+            return None;
+        }
         let retrieval = self.strategies.retrieval.as_ref()?;
         let mut outcome = retrieval.retrieve(prompt, &self.config.working_dir).await?;
         outcome.text = redacted_text(self.redacting(), &outcome.text);
@@ -1589,7 +1597,7 @@ impl Agent {
 
         // Fetch memories before adding the user message so the query is clean.
         let (memories, memory_entries, recall_info) =
-            self.gather_and_recall(user_input, &events).await?;
+            self.gather_and_recall(user_input, &events, true).await?;
         // Inputs of this turn's context receipts.
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
@@ -1660,7 +1668,10 @@ impl Agent {
         // Retrieved documents: quoted data at the front of the turn's user
         // message (stored with it, so later requests stay byte-identical).
         let effective_input: std::borrow::Cow<'_, str> = match &self.retrieval_turn {
-            Some(r) => std::borrow::Cow::Owned(format!("{}\n\n{effective_input}", r.text)),
+            Some(r) if !r.text.is_empty() => {
+                std::borrow::Cow::Owned(format!("{}\n\n{effective_input}", r.text))
+            }
+            Some(_) => effective_input,
             None => effective_input,
         };
 
@@ -3309,9 +3320,7 @@ impl Agent {
         let cost_before_turn = self.cost.total_usd();
 
         let (memories, memory_entries, recall_info) =
-            self.gather_and_recall(&text_for_memory, &events).await?;
-        // The caller owns a multimodal message's content: no documents are added to it.
-        self.retrieval_turn = None;
+            self.gather_and_recall(&text_for_memory, &events, false).await?;
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
             skills: if self.strategies.has_source("skills") {
