@@ -168,6 +168,9 @@ pub struct InjectionResult {
     /// exact/prefix/substring tier), not a BM25 score; the field keeps its name
     /// so the wire format does not change. Empty when tier 2 did not fire.
     pub bm25_hits: Vec<(String, f32)>,
+    /// True when the block lists at least one repository entry or symbol (the
+    /// skeleton is not empty, or tier 2 found a match).
+    pub has_repo_text: bool,
 }
 
 impl InjectionResult {
@@ -179,6 +182,7 @@ impl InjectionResult {
             confidence: RetrievalConfidence::Low,
             exploration_budget: RetrievalConfidence::Low.exploration_budget(),
             bm25_hits: vec![],
+            has_repo_text: false,
         }
     }
 }
@@ -314,6 +318,7 @@ impl ContextInjector {
         let skeleton = self
             .get_or_refresh_skeleton(working_dir, query, index)
             .await;
+        let mut has_repo_text = !skeleton.trim().is_empty();
         let mut block = format!("## Repository Structure\n{skeleton}");
 
         // --- Tier 2: confidence-gated snippet injection ----------------------
@@ -322,6 +327,8 @@ impl ContextInjector {
         } else {
             (RetrievalConfidence::Low, vec![])
         };
+
+        has_repo_text |= !bm25_hits.is_empty();
 
         // --- Tier 3: exploration budget hint ---------------------------------
         let budget = confidence.exploration_budget();
@@ -352,6 +359,7 @@ impl ContextInjector {
             confidence,
             exploration_budget: budget,
             bm25_hits,
+            has_repo_text,
         }
     }
 

@@ -105,9 +105,9 @@ fn check_provider(
 }
 
 pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> Result<()> {
-    // TODO: when this branch meets main after the usage-and-pricing fix, call
-    // `hone_core::set_default_price_lookup` here, as the one-shot path does, so
-    // eval cost uses the real price table.
+    // Every agent of the eval is priced per model, as a one-shot run is: the
+    // built-in table with the user's `[pricing]` entries on top.
+    hone_core::set_default_price_lookup(crate::price_lookup(&eff.pricing));
     let label = args.tasks.display().to_string();
     let raw = match std::fs::read_to_string(&args.tasks) {
         Ok(r) => r,
@@ -494,6 +494,8 @@ fn build_agent(eff: &Effective, b: AgentBuild) -> std::result::Result<Agent, Str
                 memory_store: Some(b.memory.clone()),
                 index: index.clone(),
                 working_dir: Some(workdir.clone()),
+                // Each run gets its own plain SQLite memory, never an encrypted store.
+                encrypted_memory: false,
             },
         )
         .map_err(|e| format!("strategy error: {e}"))?;

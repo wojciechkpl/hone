@@ -68,7 +68,7 @@ pub struct GraduatedTable {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryTable {
-    /// `bm25` or `none`.
+    /// `bm25`, `fts5` or `none`.
     pub recaller: Option<String>,
     /// `triggers` or `off`.
     pub writer: Option<String>,
@@ -103,9 +103,9 @@ pub const SKELETON_NAMES: &[&str] = &[
 /// Valid `[context] compactor` names.
 pub const COMPACTOR_NAMES: &[&str] = &["graduated", "trim-only"];
 /// Valid `[memory] recaller` names.
-pub const RECALLER_NAMES: &[&str] = &["bm25", "none"];
+pub const RECALLER_NAMES: &[&str] = &["bm25", "fts5", "none"];
 /// Valid `[memory] writer` names.
-pub const WRITER_NAMES: &[&str] = &["triggers", "off"];
+pub const WRITER_NAMES: &[&str] = &["triggers", "off", "tool", "triggers+tool"];
 
 /// Valid `[memory] exclude_kinds` entries (any case).
 pub const KIND_NAMES: &[&str] = &[
@@ -186,6 +186,9 @@ pub struct Flags {
     pub no_inject: bool,
     /// `honed`: the default sources omit `skeleton`.
     pub daemon: bool,
+    /// `--encrypted-memory`: FTS5 cannot index ciphertext, so `recaller =
+    /// "fts5"` falls back to `bm25` with a warning.
+    pub encrypted_memory: bool,
 }
 
 // ── The selection ─────────────────────────────────────────────────────────────
@@ -389,6 +392,17 @@ impl StrategySelection {
             sel.apply_project(p);
         }
         sel.apply_env_and_flags(env, flags)?;
+        if flags.encrypted_memory && sel.recaller.value == "fts5" {
+            sel.recaller = Chosen {
+                value: "bm25".to_owned(),
+                origin: Origin::Flag,
+            };
+            sel.warnings.push(Warning {
+                path: PathBuf::from("--encrypted-memory"),
+                message: "recaller \"fts5\" cannot index encrypted memory; using \"bm25\" instead"
+                    .to_owned(),
+            });
+        }
         Ok(sel)
     }
 

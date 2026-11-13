@@ -155,8 +155,8 @@ impl Orchestrator {
         events: mpsc::Sender<AgentEvent>,
     ) -> Result<OrchestratorResult, AgentError> {
         // 1. Decompose the request into a TaskPlan.
-        let (plan, _lead_cost, _lead_usage) = self.decompose(user_request, events.clone()).await?;
-        self.run_plan(plan, events).await
+        let (plan, lead_cost, _lead_usage) = self.decompose(user_request, events.clone()).await?;
+        self.run_plan_costed(plan, events, lead_cost).await
     }
 
     /// Run a given plan: announce it, execute the subtasks in dependency
@@ -166,6 +166,17 @@ impl Orchestrator {
         &mut self,
         plan: TaskPlan,
         events: mpsc::Sender<AgentEvent>,
+    ) -> Result<OrchestratorResult, AgentError> {
+        self.run_plan_costed(plan, events, 0.0).await
+    }
+
+    /// [`run_plan`](Self::run_plan) with the cost already spent by the lead
+    /// (the decompose call) added to the total.
+    async fn run_plan_costed(
+        &mut self,
+        plan: TaskPlan,
+        events: mpsc::Sender<AgentEvent>,
+        lead_cost: f64,
     ) -> Result<OrchestratorResult, AgentError> {
         let _ = events
             .send(AgentEvent::PlanCreated {
@@ -192,11 +203,11 @@ impl Orchestrator {
         }
 
         // 3. Merge all worker results into a single response.
-        let merged = self
-            .merge_results(&plan.goal, &workers, events.clone())
+        let (merged, merge_cost) = self
+            .merge_results_costed(&plan.goal, &workers, events.clone())
             .await;
 
-        let total_cost = workers.iter().map(|w| w.cost_usd).sum::<f64>();
+        let total_cost = workers.iter().map(|w| w.cost_usd).sum::<f64>() + lead_cost + merge_cost;
 
         Ok(OrchestratorResult {
             goal: plan.goal,
@@ -276,11 +287,11 @@ impl Orchestrator {
         let mut all_workers = checkpoint.completed_workers;
         all_workers.append(&mut new_workers);
 
-        let merged = self
-            .merge_results(&checkpoint.goal, &all_workers, events.clone())
+        let (merged, merge_cost) = self
+            .merge_results_costed(&checkpoint.goal, &all_workers, events.clone())
             .await;
 
-        let total_cost = all_workers.iter().map(|w| w.cost_usd).sum::<f64>();
+        let total_cost = all_workers.iter().map(|w| w.cost_usd).sum::<f64>() + merge_cost;
 
         Ok(OrchestratorResult {
             goal: checkpoint.goal,
@@ -768,6 +779,16 @@ impl Orchestrator {
         results: &[WorkerResult],
         events: mpsc::Sender<AgentEvent>,
     ) -> String {
+        self.merge_results_costed(goal, results, events).await.0
+    }
+
+    /// The merged response and what the merge call cost.
+    async fn merge_results_costed(
+        &mut self,
+        goal: &str,
+        results: &[WorkerResult],
+        events: mpsc::Sender<AgentEvent>,
+    ) -> (String, f64) {
         let summaries: String = results
             .iter()
             .map(|r| {
@@ -794,8 +815,8 @@ impl Orchestrator {
 
         let mut lead = Agent::new(self.build_lead_config());
         match lead.run_turn(&merge_prompt, events).await {
-            Ok(turn) => turn.response,
-            Err(e) => format!("Merge failed: {e}"),
+            Ok(turn) => (turn.response, turn.cost_usd),
+            Err(e) => (format!("Merge failed: {e}"), 0.0),
         }
     }
 

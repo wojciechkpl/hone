@@ -11,6 +11,23 @@ use hone_server::{
 #[tokio::main]
 async fn main() -> Result<()> {
     hone_tools::install_panic_cleanup();
+    // Every executor's agents are priced per model: the default table plus the
+    // user's `[pricing]` (a broken config file falls back to the table alone).
+    {
+        let user = std::env::var("HOME").ok().and_then(|home| {
+            hone_config::resolve::ConfigLayer::load(
+                &std::path::PathBuf::from(home).join(".config/hone/config.toml"),
+            )
+            .map_err(|e| eprintln!("honed: ignoring [pricing] of the user config: {e}"))
+            .ok()
+            .flatten()
+        });
+        if let Ok(lookup) = hone_server::build_price_lookup(user.as_ref(), None)
+            .or_else(|_| hone_server::build_price_lookup(None, None))
+        {
+            hone_core::set_default_price_lookup(lookup);
+        }
+    }
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -426,8 +443,9 @@ async fn main() -> Result<()> {
                     let model = hone_proto::ModelId::new("anthropic:claude-sonnet-4-5");
                     let pricing = hone_proto::PricingEntry {
                         model: model.clone(),
-                        input_per_million: 3.0,
-                        output_per_million: 15.0,
+                        // A placeholder: the process-wide price lookup prices every call.
+                        input_per_million: 0.0,
+                        output_per_million: 0.0,
                         cache_read_per_million: None,
                         cache_creation_per_million: None,
                     };
@@ -555,6 +573,7 @@ fn build_strategies(
     let project = ConfigLayer::load_project(working_dir).map_err(|e| e.to_string())?;
     let flags = hone_config::strategy::Flags {
         daemon: true,
+        encrypted_memory: false,
         ..Default::default()
     };
     let selection = hone_config::strategy::StrategySelection::from_sources(

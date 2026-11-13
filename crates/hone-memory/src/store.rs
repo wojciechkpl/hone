@@ -38,7 +38,7 @@ fn trigrams(text: &str) -> HashSet<[char; 3]> {
 /// Jaccard similarity between the trigram sets of `a` and `b`.
 ///
 /// Returns a value in `[0.0, 1.0]`.  Returns `0.0` when both sets are empty.
-fn trigram_jaccard(a: &str, b: &str) -> f64 {
+pub fn trigram_jaccard(a: &str, b: &str) -> f64 {
     let set_a = trigrams(a);
     let set_b = trigrams(b);
     if set_a.is_empty() && set_b.is_empty() {
@@ -50,6 +50,15 @@ fn trigram_jaccard(a: &str, b: &str) -> f64 {
         return 0.0;
     }
     intersection as f64 / union as f64
+}
+
+/// True unless `tags` mark a model-written memory (`source:tool`) of a project
+/// other than `project` (the id in `project:<id>`).
+pub fn visible_in_project(tags: &[String], project: &str) -> bool {
+    let wanted = format!("project:{project}");
+    !tags.iter().any(|t| t == "source:tool")
+        || !tags.iter().any(|t| t.starts_with("project:"))
+        || tags.iter().any(|t| *t == wanted)
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +89,121 @@ pub trait MemoryStore: Send + Sync {
     ) -> Result<Vec<Memory>, MemoryError> {
         let mut found = self.recall(query).await?;
         found.retain(|m| !exclude.contains(&m.kind));
+        Ok(found)
+    }
+
+    /// Ranked full-text recall through the store's own search index (SQLite's
+    /// FTS5), with the kind filter and `exclude` applied in the index query.
+    /// `None` when the store has no such index (the default); callers then fall
+    /// back to [`recall_excluding`](Self::recall_excluding).
+    async fn recall_indexed(
+        &self,
+        _query: &MemoryQuery,
+        _exclude: &[MemoryKind],
+    ) -> Result<Option<Vec<ScoredMemory>>, MemoryError> {
+        Ok(None)
+    }
+
+    /// [`recall_indexed`](Self::recall_indexed) that, when `project` is `Some(id)`,
+    /// leaves out a model-written memory of another project (see
+    /// [`recall_visible`](Self::recall_visible)). The default filters after the
+    /// index query; `SqliteStore` filters inside it, before the cap.
+    async fn recall_indexed_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Option<Vec<ScoredMemory>>, MemoryError> {
+        let Some(mut found) = self.recall_indexed(query, exclude).await? else {
+            return Ok(None);
+        };
+        if let Some(project) = project {
+            found.retain(|s| visible_in_project(&s.memory.tags, project));
+        }
+        Ok(Some(found))
+    }
+
+    /// Rebuild the store's search index; returns the number of memories
+    /// indexed, or `None` when the store has no index (the default).
+    async fn reindex(&self) -> Result<Option<usize>, MemoryError> {
+        Ok(None)
+    }
+
+    /// Up to `limit` memories whose content is `enc:v1:` or `enc:v2:` ciphertext
+    /// (not the encryption salt record), chosen without regard to recency: what
+    /// `EncryptedStore` tries a passphrase on. The default scans a listing;
+    /// stores with a query override it.
+    async fn encrypted_rows_sample(&self, limit: usize) -> Result<Vec<Memory>, MemoryError> {
+        let all = self
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: usize::MAX / 2,
+                kind: None,
+            })
+            .await?;
+        Ok(all
+            .into_iter()
+            .filter(|m| {
+                m.id != crate::encrypted::SALT_SENTINEL_ID
+                    && (m.content.starts_with("enc:v1:") || m.content.starts_with("enc:v2:"))
+            })
+            .take(limit)
+            .collect())
+    }
+
+    /// Like [`recall_excluding`](Self::recall_excluding), and when `project` is
+    /// `Some(id)` a memory the model wrote (`source:tool`) that is tagged with a
+    /// project (`project:<x>`) is returned only when `<x>` is `id`. Memories that
+    /// are not tagged `source:tool`, or carry no project tag, are never affected.
+    /// The default recalls without the cap, filters, then caps; a store that caps its candidates
+    /// (`SqliteStore`) overrides it to filter BEFORE the cap.
+    async fn recall_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let Some(project) = project else {
+            return self.recall_excluding(query, exclude).await;
+        };
+        // Rank without the cap, filter, then cap, so invisible memories can't
+        // use up the slots.
+        let uncapped = MemoryQuery {
+            text: query.text.clone(),
+            limit: usize::MAX,
+            kind: query.kind,
+        };
+        let mut found = self.recall_excluding(&uncapped, exclude).await?;
+        found.retain(|m| visible_in_project(&m.tags, project));
+        found.truncate(query.limit);
+        Ok(found)
+    }
+
+    /// The memories the model wrote (`source:tool`) of `kind` in `project` (the
+    /// id in `project:<id>`), newest first, at most `limit`. Nothing else is read:
+    /// user and trigger memories can't push the model's own out of the window.
+    async fn recall_tool_memories(
+        &self,
+        kind: MemoryKind,
+        project: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let all = self
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: usize::MAX,
+                kind: Some(kind),
+            })
+            .await?;
+        let wanted = format!("project:{project}");
+        let mut found: Vec<Memory> = all
+            .into_iter()
+            .filter(|m| {
+                m.tags.iter().any(|t| t == "source:tool") && m.tags.iter().any(|t| *t == wanted)
+            })
+            .collect();
+        found.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        found.truncate(limit);
         Ok(found)
     }
 
@@ -175,4 +299,62 @@ pub trait MemoryStore: Send + Sync {
 
         Ok(best.map(|(_, m)| m))
     }
+}
+
+/// What a store must offer to sit under an `EncryptedStore`: atomic
+/// insert-if-absent for the salt and key check, a side table of sealed vectors,
+/// and the one-time move of vectors an older binary left in the `embedding`
+/// column. There are no defaults: a store that can't do these atomically can't
+/// be wrapped, which is a compile error rather than a failure after a write.
+///
+/// `SqliteStore` and `InMemoryStore` implement it. A wrapper around one of them
+/// must forward every method.
+#[async_trait]
+pub trait SealedVectorStore: Send + Sync {
+    /// Insert `memory` only when no memory has its id. Returns whether it was
+    /// inserted. Atomic.
+    async fn record_if_absent(&self, memory: Memory) -> Result<bool, MemoryError>;
+
+    /// Set the `description` of memory `id` only when it has none. Returns
+    /// whether it was set. Atomic.
+    async fn set_description_if_absent(
+        &self,
+        id: &str,
+        description: &str,
+    ) -> Result<bool, MemoryError>;
+
+    /// Whether any memory (but the encryption salt record) holds `enc:v1:` or
+    /// `enc:v2:` content, i.e. was written by an `EncryptedStore`.
+    async fn has_encrypted_rows(&self) -> Result<bool, MemoryError>;
+
+    /// The sealed vector kept for memory `id`, if any.
+    async fn sealed_vector(&self, id: &str) -> Result<Option<Vec<u8>>, MemoryError>;
+
+    /// Up to a batch of `(id, raw embedding bytes)` of the `enc:v1` memories
+    /// whose `embedding` column is set: what `EncryptedStore` still has to move
+    /// to the side table. Callers repeat until it returns nothing (or nothing
+    /// they can move).
+    async fn vector_migration_candidates(&self) -> Result<Vec<(String, Vec<u8>)>, MemoryError>;
+
+    /// Store `blob` as memory `id`'s sealed vector and set its `embedding`
+    /// column to NULL, together.
+    async fn move_vector_to_sealed(&self, id: &str, blob: &[u8]) -> Result<(), MemoryError>;
+
+    /// [`move_vector_to_sealed`](Self::move_vector_to_sealed) for several rows;
+    /// stores with transactions override it to use one. This default is the
+    /// plain loop (each move is atomic on its own).
+    async fn move_vectors_to_sealed(&self, moves: &[(String, Vec<u8>)]) -> Result<(), MemoryError> {
+        for (id, blob) in moves {
+            self.move_vector_to_sealed(id, blob).await?;
+        }
+        Ok(())
+    }
+
+    /// Write `memory` and, in the same transaction, its sealed vector: `Some`
+    /// sets it, `None` clears the previous one.
+    async fn record_sealed(
+        &self,
+        memory: Memory,
+        sealed: Option<Vec<u8>>,
+    ) -> Result<(), MemoryError>;
 }

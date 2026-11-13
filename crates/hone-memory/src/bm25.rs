@@ -28,18 +28,18 @@ impl Default for Bm25Params {
 // Tokenisation
 // ---------------------------------------------------------------------------
 
-/// Tokenise `text` for BM25 indexing / querying.
+/// Tokenise `text` for BM25 indexing / querying (the shared tokenizer of
+/// [`crate::fts_query`], also used for `recall_fts5`).
 ///
 /// Rules:
-/// - Lowercases all characters.
-/// - Splits on any character that is **not** Unicode-alphanumeric (`char::is_alphanumeric()`).
-///   This means `_` and `-` are separators, but accented letters like `é` are kept.
+/// - Lowercases all characters and folds the diacritics of Latin letters
+///   (`café` is `cafe`, `ł` stays `ł`); other scripts are kept whole (no jamo
+///   decomposition, kana voicing marks and Devanagari signs stay).
+/// - Splits on any character that is **not** Unicode-alphanumeric
+///   (`char::is_alphanumeric()`): `_` and `-` are separators.
 /// - Drops empty tokens.
 pub fn tokenize(text: &str) -> Vec<String> {
-    text.split(|c: char| !c.is_alphanumeric())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_lowercase())
-        .collect()
+    crate::fts_query::word_tokens(text)
 }
 
 // ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ impl Bm25Index {
         let mut total_len: u64 = 0;
 
         for &text in docs {
-            let tokens = tokenize(text);
+            let tokens = crate::fts_query::word_tokens(text);
             let len = tokens.len() as u32;
             total_len += len as u64;
 
@@ -136,7 +136,7 @@ impl Bm25Index {
         let b = self.params.b;
         let dl = doc.len as f64;
 
-        let query_tokens = tokenize(query);
+        let query_tokens = crate::fts_query::word_tokens(query);
         let mut total = 0.0_f64;
 
         for term in &query_tokens {
