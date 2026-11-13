@@ -10,6 +10,7 @@ Branch `fix/injection-hidden-chars`, off `main`. Found while reviewing workspace
 | TR2 | **Hidden tag text is scanned.** Unicode tag characters U+E0020–U+E007E are also decoded to their ASCII counterparts (U+0020–U+007E), and that decoded text is scanned. An instruction written invisibly in tag characters is matched like a visible one. |
 | TR3 | **Tag characters alone are a warning.** A tool result that contains any tag character (U+E0000–E007F) is at least a medium risk, labelled as hidden Unicode tag characters, even when the decoded text matches no pattern. So it gets the existing SECURITY prefix. The result's content isn't changed, because the model needs exact bytes to edit files. |
 | TR4 | **ASCII stays fast.** Text that is entirely ASCII is scanned as before, with no normalized copy allocated. Scanning stays linear in the text's length. |
+| TR5 | **JSON escapes don't hide a phrase.** Tool results are scanned as JSON text, so a hidden character can arrive as a JSON string escape. Before the TR1 normalization, the scan copy decodes JSON string escapes (`\uXXXX`, including surrogate pairs, plus `\n`, `\t`, `\r`, `\"` and `\\`). So `Ign\u0007ore all previous instructions` or `\u200b` inside the phrase is caught, as are tag characters written as escaped surrogate pairs. |
 
 ## Testing notes
 
