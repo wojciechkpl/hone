@@ -21,6 +21,8 @@ pub enum Slot {
     Skills,
     Injection,
     History,
+    /// The memory writer strategy (ids of `memory.writer`).
+    MemoryWriter,
     /// Reserved for pluggable retrieval.
     Retrieval,
 }

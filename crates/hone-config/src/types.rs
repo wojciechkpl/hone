@@ -189,6 +189,14 @@ pub struct Config {
     /// The `[provider]` table written by `hone configure`.
     #[serde(default)]
     pub provider: Option<WizardProviderConfig>,
+
+    /// The `[context]` table: context sources, skeleton, compactor, budget.
+    #[serde(default)]
+    pub context: Option<crate::strategy::ContextTable>,
+
+    /// The `[memory]` table: recaller, writer, top_k, excluded kinds.
+    #[serde(default)]
+    pub memory: Option<crate::strategy::MemoryTable>,
 }
 
 impl Config {

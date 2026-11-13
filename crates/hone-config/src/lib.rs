@@ -3,6 +3,7 @@ pub mod mcp;
 pub mod permissions;
 pub mod policy;
 pub mod resolve;
+pub mod strategy;
 mod types;
 
 pub use hone_md::{find_project_root, HoneMd};

@@ -86,15 +86,35 @@ impl OutcomeRecord {
 /// historical performance.
 pub struct AdaptiveClassifier {
     store: Arc<dyn MemoryStore>,
+    /// `false` when the selection's memory writer is `off`: nothing is written.
+    writes: bool,
 }
 
 impl AdaptiveClassifier {
     pub fn new(store: Arc<dyn MemoryStore>) -> Self {
-        Self { store }
+        Self {
+            store,
+            writes: true,
+        }
+    }
+
+    /// Like [`new`](Self::new), but honouring the memory writer of `strategies`:
+    /// with `writer = "off"` no outcome is recorded.
+    pub fn with_strategies(
+        store: Arc<dyn MemoryStore>,
+        strategies: &crate::strategy::ResolvedStrategies,
+    ) -> Self {
+        Self {
+            store,
+            writes: strategies.writer_kind != crate::strategy::WriterKind::Off,
+        }
     }
 
     /// Record an outcome for future learning.
     pub async fn record_outcome(&self, outcome: OutcomeRecord) {
+        if !self.writes {
+            return;
+        }
         let id = uuid::Uuid::now_v7().to_string();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

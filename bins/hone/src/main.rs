@@ -10,6 +10,7 @@ mod reports_cmd;
 mod session;
 mod settings;
 mod spec_cmd;
+mod strategies_cmd;
 mod system_prompt;
 mod tools;
 mod trace;
@@ -122,6 +123,17 @@ enum HoneCmd {
     },
     /// Interactive setup wizard — writes ~/.config/hone/config.toml.
     Configure,
+    /// Show the active context and memory strategies, with their parameters and
+    /// what chose each (flag, environment variable, file or default).
+    Strategies {
+        /// Print the same as one JSON object.
+        #[arg(long)]
+        json: bool,
+        /// Print nothing and exit 0 when the config is valid; otherwise print
+        /// the error and exit 2.
+        #[arg(long)]
+        check: bool,
+    },
     /// Inspect what the model was given: the context receipts of a saved session.
     Context {
         #[command(subcommand)]
@@ -1070,8 +1082,8 @@ fn build_agent_config(
     memory_store: Option<Arc<dyn MemoryStore>>,
     tool_cache: Option<Arc<ToolResultCache>>,
     mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
-    no_inject_flag: bool,
-    skeleton_strategy_arg: Option<&str>,
+    inject_context: bool,
+    skeleton_strategy: SkeletonStrategy,
     audit_flag: bool,
     session_limit_usd: Option<f64>,
 ) -> AgentConfig {
@@ -1087,26 +1099,6 @@ fn build_agent_config(
     } else {
         ToolRegistry::new()
     };
-
-    // Proactive context injection is ENABLED by default. Its effect on resolve
-    // rate is being measured by the pre-registered ablation in
-    // benchmarks/harness-compare. Disable with --no-inject or HONE_NO_INJECTION=1.
-    let inject_context = !no_inject_flag
-        && std::env::var("HONE_NO_INJECTION")
-            .map(|v| v != "1")
-            .unwrap_or(true);
-
-    // Skeleton strategy: CLI arg wins over env var; env var is read inside
-    // SkeletonStrategy::from_str fallback via ContextInjector::new(). We
-    // resolve explicitly here so the value is stored in AgentConfig.
-    let skeleton_strategy = skeleton_strategy_arg
-        .and_then(SkeletonStrategy::from_str)
-        .or_else(|| {
-            std::env::var("HONE_SKELETON_STRATEGY")
-                .ok()
-                .and_then(|v| SkeletonStrategy::from_str(&v))
-        })
-        .unwrap_or_default();
 
     // Egress audit log: enabled via --audit or HONE_AUDIT_LOG=1.
     let enable_audit = audit_flag
@@ -1897,7 +1889,12 @@ async fn print_ensemble_events<O: io::Write, E: io::Write>(
 
 /// Run a prompt through N parallel candidates with varied temperatures, then
 /// let a ranker agent pick the best response (MASAI Ranker pattern).
-async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result<()> {
+async fn run_ensemble(
+    base_config: &AgentConfig,
+    strategies: Arc<hone_core::strategy::ResolvedStrategies>,
+    prompt: &str,
+    n: u32,
+) -> Result<()> {
     // Temperature ladder: diverse but bounded.  We only use as many slots as
     // requested, so `--ensemble 2` picks the first two entries.
     const TEMPS: [f32; 5] = [0.0, 0.3, 0.5, 0.7, 0.9];
@@ -1910,7 +1907,7 @@ async fn run_ensemble(base_config: &AgentConfig, prompt: &str, n: u32) -> Result
     // the same system prompt; the ranker prompt is assembled by the ensemble
     // from the candidate responses, so the system prompt here just sets the
     // overall assistant persona.
-    let ensemble = AgentEnsemble::new(base_config.clone(), temperatures);
+    let ensemble = AgentEnsemble::new(base_config.clone(), temperatures).with_strategies(strategies);
 
     let (tx, rx) = mpsc::channel::<AgentEvent>(256);
 
@@ -2697,6 +2694,15 @@ fn install_panic_hooks() {
     }));
 }
 
+/// The command-line inputs of the `[context]` selection.
+fn strategy_flags(cli: &Cli) -> hone_config::strategy::Flags {
+    hone_config::strategy::Flags {
+        skeleton_strategy: cli.skeleton_strategy.clone(),
+        no_inject: cli.no_inject,
+        daemon: false,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     install_panic_hooks();
@@ -2736,6 +2742,31 @@ async fn main() -> Result<()> {
                 if !matches!(session_cmd, SessionCmd::Resume { .. }) {
                     return Ok(());
                 }
+            }
+            HoneCmd::Strategies { json, check } => {
+                let flags = strategy_flags(&cli);
+                let sel = match settings::load_strategy_selection(&flags) {
+                    Ok(sel) => sel,
+                    Err(e) => {
+                        eprintln!("{}", settings::format_config_error(&e));
+                        std::process::exit(2);
+                    }
+                };
+                let registry = hone_core::strategy::StrategyRegistry::with_builtins();
+                if let Err(e) = registry.build(&sel, &hone_core::strategy::StrategyDeps::default())
+                {
+                    eprintln!("hone: config error: {e}");
+                    std::process::exit(2);
+                }
+                if !*check {
+                    let listed = registry.list();
+                    if *json {
+                        print!("{}", strategies_cmd::render_json(&sel, &listed));
+                    } else {
+                        print!("{}", strategies_cmd::render_text(&sel, &listed));
+                    }
+                }
+                return Ok(());
             }
             HoneCmd::Context {
                 cmd:
@@ -2826,6 +2857,25 @@ async fn main() -> Result<()> {
     // Read config.toml (user + project) once. A broken file stops here with
     // exit 2; warnings go to stderr once.
     let eff = settings::load_effective_or_exit(cli.model.as_deref());
+    // The `[context]` / `[memory]` choices: flag, env var, project file, user
+    // file, default. A broken value stops here with exit 2, before any model call.
+    let strategy_selection = settings::load_strategy_selection_or_exit(&strategy_flags(&cli));
+    // Build the registry now, before any language server or MCP server starts, so
+    // a failure exits (2) with nothing left running. The built-ins do not need the
+    // memory store or the index at build time.
+    let resolved_strategies = match hone_core::strategy::StrategyRegistry::with_builtins().build(
+        &strategy_selection,
+        &hone_core::strategy::StrategyDeps {
+            working_dir: std::env::current_dir().ok(),
+            ..Default::default()
+        },
+    ) {
+        Ok(r) => Arc::new(r),
+        Err(e) => {
+            eprintln!("hone: config error: {e}");
+            std::process::exit(2);
+        }
+    };
     let hone_md = load_hone_md();
 
     // Initialise SQLite persistence (non-blocking; errors are warnings only).
@@ -2912,7 +2962,12 @@ async fn main() -> Result<()> {
     // 5000-row cap on non-empty queries, but uncapped here. Tens of ms at
     // most for typical corpora; consider caching if startup latency becomes
     // a concern.
-    let memory_index_str = if let Some(store) = memory_store.as_ref() {
+    let memory_index_on = strategy_selection
+        .sources
+        .value
+        .iter()
+        .any(|n| n == "memory-index");
+    let memory_index_str = if let Some(store) = memory_store.as_ref().filter(|_| memory_index_on) {
         match hone_core::memory_index::render_index(
             store.as_ref(),
             hone_core::memory_index::IndexBudget::default(),
@@ -3119,6 +3174,9 @@ async fn main() -> Result<()> {
         "MCP manager initialised"
     );
 
+    let resolved_skeleton =
+        SkeletonStrategy::from_str(&strategy_selection.skeleton.value).unwrap_or_default();
+
     // Build a single clonable config; share it across all code paths.
     let mut base_config = build_agent_config(
         &detected,
@@ -3129,14 +3187,17 @@ async fn main() -> Result<()> {
         memory_store.clone(),
         tool_cache,
         mcp_tools,
-        cli.no_inject,
-        cli.skeleton_strategy.as_deref(),
+        resolved_strategies.has_source("skeleton"),
+        resolved_skeleton,
         cli.audit,
         eff.session_limit_usd,
     );
     apply_policy_flags(&mut base_config, &cli.approve);
 
-    let agent = AgentHandle::spawn(base_config.clone());
+    let agent = AgentHandle::spawn_with_strategies(
+        base_config.clone(),
+        Some(Arc::clone(&resolved_strategies)),
+    );
 
     // Session resume: load history into the freshly spawned agent.
     let is_resume = matches!(
@@ -3205,6 +3266,7 @@ async fn main() -> Result<()> {
             dispatch,
             pinned: pinned_choice,
         }),
+        Arc::clone(&resolved_strategies),
     )
     .await;
 
@@ -3256,6 +3318,7 @@ async fn run_selected_mode(
     session_name: Option<String>,
     no_clarify: bool,
     routing: Option<TuiRouting>,
+    resolved_strategies: Arc<hone_core::strategy::ResolvedStrategies>,
 ) -> Result<()> {
     // --list-recipes: print available recipes and exit.
     if cli.list_recipes {
@@ -3311,7 +3374,7 @@ async fn run_selected_mode(
             }
         };
 
-        return run_ensemble(&base_config, &prompt, n).await;
+        return run_ensemble(&base_config, Arc::clone(&resolved_strategies), &prompt, n).await;
     }
 
     // --plan: load a saved plan file and execute its plan_body as a one-shot prompt.
@@ -3407,6 +3470,7 @@ async fn run_selected_mode(
         cli.vim,
         step_tx,
         routing,
+        Arc::clone(&resolved_strategies),
     )
     .await;
 
@@ -3766,6 +3830,7 @@ async fn run_tui(
     vim: bool,
     step_tx: Option<tokio::sync::mpsc::Sender<hone_proto::StepAction>>,
     routing: Option<TuiRouting>,
+    strategies: Arc<hone_core::strategy::ResolvedStrategies>,
 ) -> Result<()> {
     let mut app = if vim { App::with_vim() } else { App::new() };
     // Wire step-mode sender into app so it can unblock the agent.
@@ -3878,7 +3943,7 @@ async fn run_tui(
     let adaptive: Option<Arc<AdaptiveClassifier>> = base_config
         .memory_store
         .as_ref()
-        .map(|store| Arc::new(AdaptiveClassifier::new(Arc::clone(store))));
+        .map(|store| Arc::new(AdaptiveClassifier::with_strategies(Arc::clone(store), &strategies)));
     let mut current_tier: Option<ComplexityTier> = None;
     let mut current_turn_prompt = String::new();
     // The model the running turn was sent to (for outcome records).
