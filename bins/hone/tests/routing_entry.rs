@@ -361,6 +361,7 @@ fn test_g9_without_routing_or_fallback_the_request_and_json_output_are_the_estab
         out_keys,
         [
             "context",
+            "cost_known",
             "cost_usd",
             "error",
             "fallbacks",
@@ -368,10 +369,13 @@ fn test_g9_without_routing_or_fallback_the_request_and_json_output_are_the_estab
             "response",
             "success",
             "tool_calls",
-            "usage"
+            "usage",
+            "usage_known"
         ]
     );
     assert_eq!(v["model"], "openai:gpt-4o");
+    assert_eq!(v["cost_known"], true, "U3: a priced model's cost is known");
+    assert_eq!(v["usage_known"], true, "U10: the calls reported usage");
     assert_eq!(v["fallbacks"], json!([]), "N8: always present, empty");
     assert!(v["context"].is_array(), "CR9: context is always an array");
     assert_eq!(v["response"], "mock reply");
@@ -1020,12 +1024,15 @@ fn test_n8_json_without_a_fallback_has_an_empty_array_and_no_other_key_changes()
     let v = o.json();
     assert_eq!(v["fallbacks"], json!([]));
     assert!(v["context"].is_array(), "CR9: context is always an array");
+    assert_eq!(v["cost_known"], true, "U3: a priced model's cost is known");
+    assert_eq!(v["usage_known"], true, "U10: the calls reported usage");
     let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
     keys.sort_unstable();
     assert_eq!(
         keys,
         [
             "context",
+            "cost_known",
             "cost_usd",
             "error",
             "fallbacks",
@@ -1033,7 +1040,8 @@ fn test_n8_json_without_a_fallback_has_an_empty_array_and_no_other_key_changes()
             "response",
             "success",
             "tool_calls",
-            "usage"
+            "usage",
+            "usage_known"
         ]
     );
 }

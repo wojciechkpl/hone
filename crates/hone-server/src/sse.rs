@@ -28,6 +28,7 @@ pub fn encode_event(event: &AgentEvent, event_id: u64) -> String {
         AgentEvent::MemoryWritten { .. } => "memory_written",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
         AgentEvent::ModelFallback { .. } => "model_fallback",
+        AgentEvent::UnpricedModel { .. } => "unpriced_model",
         // Forward-compat: new event variants added in the future are forwarded
         // as an "unknown" SSE event type so connected clients can log and ignore
         // them rather than missing the event entirely.

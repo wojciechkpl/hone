@@ -208,6 +208,7 @@ fn event_type(event: &AgentEvent) -> &'static str {
         AgentEvent::MemoryWritten { .. } => "memory_written",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
         AgentEvent::ModelFallback { .. } => "model_fallback",
+        AgentEvent::UnpricedModel { .. } => "unpriced_model",
         _ => "unknown",
     }
 }
@@ -386,8 +387,8 @@ pub async fn run_handler(
                     let prefixed = ModelId::new(format!("anthropic:{}", model_id.as_str()));
                     table.get(&prefixed).cloned().unwrap_or(PricingEntry {
                         model: model_id.clone(),
-                        input_per_million: 3.0,
-                        output_per_million: 15.0,
+                        input_per_million: 0.0,
+                        output_per_million: 0.0,
                         cache_read_per_million: None,
                         cache_creation_per_million: None,
                     })
@@ -528,6 +529,15 @@ mod tests {
     fn cr9_event_type_names_a_context_assembled_event() {
         let ev = AgentEvent::ContextAssembled { receipt: cr9_receipt(1, 1) };
         assert_eq!(event_type(&ev), "context_assembled");
+    }
+
+    // U11 of docs/plans/usage-and-pricing-spec.md: the unpriced-model event has its own SSE name.
+    #[test]
+    fn u11_event_type_names_an_unpriced_model_event() {
+        let ev = AgentEvent::UnpricedModel {
+            model: "ollama:llama3".into(),
+        };
+        assert_eq!(event_type(&ev), "unpriced_model");
     }
 
     // W7 of docs/plans/memory-write-tool-spec.md: a memory write has its own SSE name.
