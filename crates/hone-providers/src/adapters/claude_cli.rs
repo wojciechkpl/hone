@@ -107,8 +107,13 @@ struct CliProcess {
 // Provider
 // ---------------------------------------------------------------------------
 
-/// Most `claude` processes kept alive at once, one per base prompt.
+/// Most `claude` processes kept alive at once, one per base prompt (main's
+/// included).
 const MAX_PROCESSES: usize = 4;
+
+/// How long a process other than main's may sit unused before the next pool use
+/// closes it.
+const DEFAULT_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 type ProcessSlot = Arc<Mutex<Option<CliProcess>>>;
 
@@ -118,23 +123,51 @@ struct Pool {
     slots: Vec<PoolEntry>,
     /// Monotonic counter stamping each use, for least-recently-used eviction.
     clock: u64,
+    /// The first base prompt the provider saw: the main conversation. Its
+    /// process is never evicted and never closed for idleness (CC9, CC10).
+    main: Option<String>,
 }
 
 struct PoolEntry {
     base_prompt: String,
     last_used: u64,
+    last_used_at: std::time::Instant,
     slot: ProcessSlot,
 }
 
 impl Pool {
-    /// The slot for `base_prompt`, created (evicting the least recently used
-    /// entry at the limit) when absent. Marks it most recently used. An evicted
-    /// slot that is mid-turn finishes that turn and its process then drops.
-    fn slot_for(&mut self, base_prompt: &str) -> ProcessSlot {
+    /// The slot for `base_prompt`, created when absent. Marks it most recently
+    /// used. First closes every side process idle longer than `idle_timeout` that
+    /// is not mid-turn; at the limit, evicts the least recently used side
+    /// process (never main's). An evicted slot that is mid-turn finishes that
+    /// turn and its process then drops.
+    fn slot_for(&mut self, base_prompt: &str, idle_timeout: std::time::Duration) -> ProcessSlot {
         self.clock += 1;
         let now = self.clock;
+        let at = std::time::Instant::now();
+        if self.main.is_none() {
+            self.main = Some(base_prompt.to_owned());
+        }
+        let main = self.main.clone().unwrap_or_default();
+
+        // Close idle side processes. `try_lock` never waits: a slot that is
+        // locked is mid-turn (or about to be) and stays.
+        self.slots.retain(|e| {
+            if e.base_prompt == main || at.duration_since(e.last_used_at) <= idle_timeout {
+                return true;
+            }
+            match e.slot.try_lock() {
+                Ok(mut process) => {
+                    *process = None; // dropping the process closes its stdin
+                    false
+                }
+                Err(_) => true,
+            }
+        });
+
         if let Some(entry) = self.slots.iter_mut().find(|e| e.base_prompt == base_prompt) {
             entry.last_used = now;
+            entry.last_used_at = at;
             return Arc::clone(&entry.slot);
         }
         if self.slots.len() >= MAX_PROCESSES {
@@ -142,6 +175,7 @@ impl Pool {
                 .slots
                 .iter()
                 .enumerate()
+                .filter(|(_, e)| e.base_prompt != main)
                 .min_by_key(|(_, e)| e.last_used)
                 .map(|(i, _)| i)
             {
@@ -152,6 +186,7 @@ impl Pool {
         self.slots.push(PoolEntry {
             base_prompt: base_prompt.to_owned(),
             last_used: now,
+            last_used_at: at,
             slot: Arc::clone(&slot),
         });
         slot
@@ -205,6 +240,8 @@ pub struct ClaudeCliProvider {
     /// been read. `None` in a slot means "not yet spawned" or "tombstoned (dead
     /// process)"; `complete()` spawns or re-spawns when it finds `None`.
     pool: StdMutex<Pool>,
+    /// How long a side process may sit unused before it is closed (CC10).
+    idle_timeout: std::time::Duration,
 }
 
 impl ClaudeCliProvider {
@@ -231,7 +268,16 @@ impl ClaudeCliProvider {
             mcp_config_path: None,
             strict_mcp_config: false,
             pool: StdMutex::new(Pool::default()),
+            idle_timeout: DEFAULT_IDLE_TIMEOUT,
         }
+    }
+
+    /// How long a `claude` process other than the main conversation's may sit
+    /// unused before the next pool use closes it (default 5 minutes). A process
+    /// that is mid-turn is never closed, and main's never is for idleness.
+    pub fn with_idle_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.idle_timeout = timeout;
+        self
     }
 
     /// Configure the MCP config file path passed to `claude --mcp-config`.
@@ -715,7 +761,7 @@ impl ModelProvider for ClaudeCliProvider {
         let (base_prompt, context_messages) = split_system_messages(&request.messages);
         let slot = {
             let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
-            pool.slot_for(&base_prompt)
+            pool.slot_for(&base_prompt, self.idle_timeout)
         };
         let mut guard: OwnedMutexGuard<Option<CliProcess>> = slot.lock_owned().await;
         let spawn_prompt: Option<String> = (!base_prompt.is_empty()).then_some(base_prompt);

@@ -99,11 +99,15 @@ uses the provider its prefix names:
 - `ollama:` connects to `[providers.ollama].base_url`, by default `http://localhost:11434`.
 - `claude-cli:` and `gemini-cli:` run those CLIs, even when an API key is set.
   `claude-cli:` keeps one long-lived `claude` process per base prompt (the first system
-  message), up to four, and sends each turn's memories, skills and other context with the
-  turn. The main conversation, each orchestrator worker and each `@persona` turn have
-  different base prompts, so a persona or worker turn uses its own `claude` process and
-  doesn't see the main conversation's earlier turns (nor does the main conversation see
-  theirs). The least recently used process is dropped when a fifth is needed.
+  message) and sends each turn's memories, skills and other context with the turn. The
+  first base prompt it sees is the main conversation: that process is never evicted and
+  never closed for idleness. The main conversation, each orchestrator worker and each
+  `@persona` turn have different base prompts, so a persona or worker turn uses its own
+  `claude` process and doesn't see the main conversation's earlier turns (nor does the main
+  conversation see theirs). At most four processes are kept; when a new base prompt needs
+  one more, the least recently used process other than main's is closed. A process other than
+  main's that has been unused for more than 5 minutes is closed the next time the provider
+  is used, so finished workers don't keep `claude` processes alive.
 
 **Where each setting comes from**, highest first:
 
