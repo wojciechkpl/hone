@@ -2502,7 +2502,13 @@ async fn init_persistence(
 
     // Memory store
     let memory_path = dir.join("memory.db");
-    let memory: Option<Arc<dyn MemoryStore>> = match SqliteStore::open(&memory_path).await {
+    // An encrypted store's database holds ciphertext: no FTS5 index for it.
+    let opened = if memory_passphrase.is_some() {
+        SqliteStore::open_without_fts(&memory_path).await
+    } else {
+        SqliteStore::open(&memory_path).await
+    };
+    let memory: Option<Arc<dyn MemoryStore>> = match opened {
         Ok(store) => {
             tracing::info!(path = %memory_path.display(), "memory store initialised");
             let passphrase_ref = memory_passphrase.as_deref();
@@ -2714,6 +2720,7 @@ fn strategy_flags(cli: &Cli) -> hone_config::strategy::Flags {
         skeleton_strategy: cli.skeleton_strategy.clone(),
         no_inject: cli.no_inject,
         daemon: false,
+        encrypted_memory: cli.encrypted_memory,
     }
 }
 
@@ -2767,7 +2774,13 @@ async fn main() -> Result<()> {
                     }
                 };
                 let registry = hone_core::strategy::StrategyRegistry::with_builtins();
-                if let Err(e) = registry.build(&sel, &hone_core::strategy::StrategyDeps::default())
+                if let Err(e) = registry.build(
+                    &sel,
+                    &hone_core::strategy::StrategyDeps {
+                        encrypted_memory: cli.encrypted_memory,
+                        ..Default::default()
+                    },
+                )
                 {
                     eprintln!("hone: config error: {e}");
                     std::process::exit(2);
@@ -2881,6 +2894,7 @@ async fn main() -> Result<()> {
         &strategy_selection,
         &hone_core::strategy::StrategyDeps {
             working_dir: std::env::current_dir().ok(),
+            encrypted_memory: cli.encrypted_memory,
             ..Default::default()
         },
     ) {

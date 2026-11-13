@@ -187,7 +187,18 @@ pub fn render_text(
                 origin.as_str().unwrap_or_default()
             ));
         }
-        out.push_str(&format!("  chosen by: {}\n\n", s.origin));
+        // The encrypted-memory fallback to `bm25` is the recaller's flag origin
+        // (JSON keeps `flag`); it is named only when that fallback happened.
+        let fell_back = sel
+            .warnings
+            .iter()
+            .any(|w| w.path == std::path::Path::new("--encrypted-memory"));
+        let origin = if s.slot == "memory.recaller" && s.origin == "flag" && fell_back {
+            "--encrypted-memory".to_owned()
+        } else {
+            s.origin.clone()
+        };
+        out.push_str(&format!("  chosen by: {origin}\n\n"));
     }
     if !sel.warnings.is_empty() {
         out.push_str("warnings:\n");

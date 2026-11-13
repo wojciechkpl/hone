@@ -69,6 +69,9 @@ pub struct StrategyDeps {
     pub memory_store: Option<Arc<dyn MemoryStore>>,
     pub index: Option<Arc<SqliteIndex>>,
     pub working_dir: Option<PathBuf>,
+    /// The memory store is encrypted: the `fts5` recaller cannot index it and
+    /// is replaced by `bm25`.
+    pub encrypted_memory: bool,
 }
 
 /// A factory builds a strategy from its parameters (JSON) and the dependencies.
@@ -322,6 +325,43 @@ impl Recaller for Bm25Recaller {
     }
 }
 
+/// The built-in `fts5` recaller: SQLite FTS5 ranking in the store's index.
+/// A store without an index is recalled as `bm25` does.
+struct Fts5Recaller {
+    id: StrategyId,
+}
+
+#[async_trait]
+impl Recaller for Fts5Recaller {
+    fn id(&self) -> &StrategyId {
+        &self.id
+    }
+    async fn recall(
+        &self,
+        store: &dyn MemoryStore,
+        q: &RecallQuery<'_>,
+    ) -> Result<Vec<ScoredMemory>, MemoryError> {
+        let query = MemoryQuery {
+            text: q.text.to_owned(),
+            limit: q.k,
+            kind: None,
+        };
+        if let Some(found) = store
+            .recall_indexed_visible(&query, q.exclude_kinds, q.scope)
+            .await?
+        {
+            return Ok(found);
+        }
+        let found = store
+            .recall_visible(&query, q.exclude_kinds, q.scope)
+            .await?;
+        Ok(found
+            .into_iter()
+            .map(|memory| ScoredMemory { memory, score: 0.0 })
+            .collect())
+    }
+}
+
 /// Recall switched off.
 struct NoRecaller {
     id: StrategyId,
@@ -500,6 +540,22 @@ impl StrategyRegistry {
             }),
         );
         r.register_recaller(
+            "fts5",
+            Origin::Builtin,
+            Arc::new(|params, deps| {
+                let (k, exclude) = recall_args(params);
+                if deps.encrypted_memory {
+                    // FTS5 cannot index ciphertext (the CLI warns about it).
+                    return Ok(Arc::new(Bm25Recaller {
+                        id: id(Slot::Recall, "bm25", &recall_params(k, &exclude)),
+                    }) as Arc<dyn Recaller>);
+                }
+                Ok(Arc::new(Fts5Recaller {
+                    id: id(Slot::Recall, "fts5", &recall_params(k, &exclude)),
+                }) as Arc<dyn Recaller>)
+            }),
+        );
+        r.register_recaller(
             "none",
             Origin::Builtin,
             Arc::new(|_p, _d| {
@@ -658,6 +714,8 @@ impl StrategyRegistry {
         let builtin = |o: &Origin| *o == Origin::Builtin;
         let recaller_kind = match (sel.recaller.value.as_str(), builtin(recaller_origin)) {
             ("bm25", true) => RecallerKind::Bm25,
+            ("fts5", true) if deps.encrypted_memory => RecallerKind::Bm25,
+            ("fts5", true) => RecallerKind::Fts5,
             ("none", true) => RecallerKind::None,
             _ => RecallerKind::Custom,
         };
@@ -718,6 +776,8 @@ fn recall_args(params: &serde_json::Value) -> (usize, Vec<MemoryKind>) {
 pub enum RecallerKind {
     /// The built-in BM25 recall (fused with semantic recall when an embedder runs).
     Bm25,
+    /// The built-in FTS5 recall (fused with semantic recall like BM25).
+    Fts5,
     /// Recall is off.
     None,
     /// A registered strategy: its results are used as they are.

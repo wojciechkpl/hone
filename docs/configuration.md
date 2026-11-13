@@ -838,6 +838,7 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 | `<cwd>/.hone/plans/` | Saved plans from plan mode (`hone --plan FILE`) | |
 | `<project root>/.hone/specs/` | Output of `hone spec` | |
 
+**`memory.db` and FTS5.** Hone keeps a full-text index of the memories in `memory.db` (FTS5 tables `memories_fts` and `memories_fts_map`, kept in sync by triggers on `memories`, and used by `recaller = "fts5"`). A tool that writes to `memory.db` directly needs an SQLite build with FTS5, or the triggers fail; deleting the FTS tables and triggers is safe, Hone rebuilds them on the next open (`hone memory reindex` rebuilds on demand). With `--encrypted-memory` the database holds ciphertext and has no FTS5 index (opening it removes any FTS5 tables and triggers). For prompts with more than 32 distinct words, `recaller = "fts5"` searches the 32 rarest and `bm25` all of them, so the two can rank differently. With `--encrypted-memory`, semantic recall scores only the newest 1,024 memories (their vectors are decrypted for it). Their vectors are kept sealed in the table `memory_vectors_sealed`, not in `memories.embedding`, and opening the database moves any vector an older Hone left in that column into it (once).
 
 **What `--encrypted-memory` encrypts.** The content of every memory and, for memories saved after this change, their description (AES-256-GCM, key from `HONE_MEMORY_PASSPHRASE`). It does not encrypt tags, kind, timestamps or weight, and descriptions written by earlier versions stay in plain text (Hone does not rewrite them). The salt that the key derives from is stored in a reserved record, which `hone memory forget` and the daily decay leave alone; with an older version of Hone, don't run `hone memory forget` on an encrypted database, because it could delete that record and make every memory unreadable. Running Hone without `--encrypted-memory` on an encrypted `memory.db` writes new memories into it as plain text, and `hone memory ls` and `hone memory show` don't decrypt (they show `enc:v1:…`).
 
@@ -923,6 +924,7 @@ Don't attach audit logs or receipts from private work to public bug reports.
 **What the request hash covers.** `request_sha256` covers the messages and the names of the tools offered, not tool schemas or sampling parameters.
 
 **Reading history refs.** A receipt lists only the history messages that are new or changed since the agent's previous receipt, so a message identical to one sent earlier isn't listed again and messages that only moved aren't relisted. `hone context show` prints each receipt's history as `history: 5 messages (2 new listed), root e09db7e7317a`: the number of non-system messages in the request, how many of them are listed, and the first 12 hex digits of `history_root`. The root is the SHA-256 of the newline-joined hashes of those messages, in request order; `--json` gives it in full. It is for tools that hold the transcript to verify against, not something to check by hand.
+
 
 ## Environment variables
 

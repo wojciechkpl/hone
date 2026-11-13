@@ -26,6 +26,8 @@ pub(crate) struct RecallInfo {
     pub exclude: Vec<String>,
     /// The id of a registered (non built-in) recaller, named as it is.
     pub custom: Option<StrategyId>,
+    /// The built-in `fts5` recaller ran (named `fts5` in the receipt).
+    pub fts5: bool,
 }
 
 /// What turn-1 context injection added.
@@ -155,14 +157,15 @@ pub(crate) fn build_receipt(
                     "exclude": info.recall.exclude,
                     "limit": info.recall.top_k,
                 });
+                let base = if info.recall.fts5 { "fts5" } else { "bm25" };
                 let name = if info.recall.semantic {
                     params["rrf_k"] = serde_json::json!(RECALL_RRF_K);
                     params["semantic_fetch"] = serde_json::json!(SEMANTIC_RECALL_FETCH);
-                    "bm25+semantic:rrf"
+                    format!("{base}+semantic:rrf")
                 } else {
-                    "bm25"
+                    base.to_owned()
                 };
-                strategy(Slot::Recall, name, &params)
+                strategy(Slot::Recall, &name, &params)
             }
         };
         let sources = info
