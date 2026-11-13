@@ -2016,6 +2016,8 @@ impl Agent {
         // message (stored with it, so later requests stay byte-identical).
         let effective_input: std::borrow::Cow<'_, str> = match &self.retrieval_turn {
             Some(r) if !r.text.is_empty() => {
+                // Repository text steering `memory_write` is untrusted context.
+                self.note_untrusted_label("retrieved documents");
                 std::borrow::Cow::Owned(format!("{}\n\n{effective_input}", r.text))
             }
             Some(_) => effective_input,
@@ -4233,6 +4235,12 @@ impl AgentHandle {
                         for msg in messages {
                             for call in &msg.tool_calls {
                                 agent.note_untrusted_source(&call.name);
+                            }
+                            // A resumed turn that carried retrieved documents.
+                            if msg.role == hone_proto::Role::User
+                                && msg.content.as_text().contains(crate::retrieval::FRAMING)
+                            {
+                                agent.note_untrusted_label("retrieved documents");
                             }
                             agent.context.add_message(msg);
                         }
