@@ -27,6 +27,10 @@ pub async fn build_memory_store(
         None => Ok(Arc::new(sqlite)),
         Some(pp) => {
             let enc = EncryptedStore::new(sqlite, pp).await?;
+            // What opening did is shown whatever RUST_LOG says.
+            if enc.open_report().has_news() {
+                eprintln!("hone: encrypted memory: {}", enc.open_report());
+            }
             Ok(Arc::new(enc))
         }
     }

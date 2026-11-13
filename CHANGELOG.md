@@ -26,6 +26,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Receipts name the compactor (`graduated` or `trim-only`, with `{"phase":…}`) on the history block and give writers their own slot.
 - `docs/configuration.md` documents `[context]` and `[memory]`.
 
+### Fixed: encrypted memory (`--encrypted-memory`) survives `hone memory forget`, and descriptions are encrypted
+
+- **Before:** `hone memory forget` (and the daily decay) could delete the record that holds an encrypted store's salt, which made every encrypted memory permanently unreadable. A memory's `description` (the first 80 characters of your message, for trigger-phrase memories) was stored in plain text.
+- **Now:** the salt record is never forgotten or expired, and is not counted in the number of memories forgotten. New memories' descriptions are encrypted (`enc:v1:`) and decrypted on read. Descriptions written by earlier versions stay in plain text until you re-save the memory.
+- The salt record is found by id, so stores with more than 10,000 memories open and a new salt is never written over an existing one.
+- If an encrypted database was written by an older version, don't run `hone memory forget` on it with that older version.
+
+### Changed: encrypted memory format (`--encrypted-memory`)
+
+This builds on the entry above: the salt record stays protected, descriptions are encrypted with the content, and an encrypted database is recognised by `enc:v1:` or `enc:v2:` rows.
+
+- A memory's content (and its description) stays `enc:v1:<base64>`, as before, so older binaries read the content.
+- **Sealed vectors live in a side table.** An embedding is stored, sealed (a 12-byte nonce and the AES-256-GCM ciphertext of the little-endian f32s), in the table `memory_vectors_sealed(id TEXT PRIMARY KEY, blob BLOB NOT NULL)`, created if absent (the schema version does not change). `memories.embedding` stays NULL for encrypted rows, so an older Hone sees no embedding for them: no bogus vector, no panic in semantic recall. Replacing a memory replaces or removes its sealed vector, and forgetting or decaying it removes the sealed vector (a trigger on `memories`).
+- Vectors are decrypted only for the memories a recall returns or a semantic recall scores.
+- **Migration.** Rows written as `enc:v2:` by earlier builds of this branch still decrypt. On open with the right passphrase, `enc:v1` rows that still hold a vector in the `embedding` column (a plaintext vector from an older Hone, including one whose first byte happens to be `0xE1`, or a sealed blob from an earlier build of this branch with the 8-byte magic or the 1-byte marker) are sealed into the side table and the column is set to NULL. Only those rows are selected (in SQL), so an open with nothing to migrate reads no embeddings. A blob from an earlier build that fails to decrypt is left in place, skipped with a warning, and read as no embedding.
+- **A wrong passphrase changes no memory, vector or key check.** Opening verifies the passphrase first: by a key-check value stored with the salt sentinel, or, for a database that has none (one written by an older Hone), by trial-decrypting up to 5 encrypted rows (any success accepts). A database with a sentinel but no memories pins the first passphrase used, and says so. A wrong passphrase is an error at open. (Schema setup, the daily decay and removing the FTS5 index may still run, as they don't depend on the passphrase.)
+- The trial decryption chooses its rows by a direct query for encrypted rows, however old they are, so newer plaintext rows (from plain runs on the same database) can't make a wrong passphrase look acceptable. A sealed vector is bound to its memory id and to the row's ciphertext: if the row is replaced outside the encrypted store, or the blob is copied to another memory, it reads as no embedding.
+- Opening says what it did on stderr, whatever `RUST_LOG` is: a pinned first passphrase, or the number of embeddings moved or skipped. A store type that wraps a SQLite or in-memory store under `EncryptedStore` must implement the new `SealedVectorStore` trait (no defaults).
+- **Concurrent first opens are safe.** The salt sentinel and the key check are written insert-if-absent and read back before use, so two processes opening a new database at once agree on one salt; with the same passphrase both succeed, with different passphrases only one does.
+- An encrypted database never gets an FTS5 index: opening it removes any FTS5 tables and triggers.
+
 ### Fixed: memory recall finds older memories, skips outcome logs, and code search understands prompts
 
 - **Before:**
