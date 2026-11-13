@@ -277,36 +277,41 @@ async fn test_cc5_alternating_base_prompts_should_keep_two_processes_and_route_b
 }
 
 #[tokio::test]
-async fn test_cc5_a_fifth_base_prompt_should_evict_the_least_recently_used_process() {
+async fn test_cc5_a_fifth_base_prompt_should_evict_the_least_recently_used_side_process() {
+    // CC9: the first base seen is main and is never evicted; the LRU of the others goes.
     let dir = tempfile::tempdir().unwrap();
     let provider = ClaudeCliProvider::with_binary(&stub(dir.path(), false));
-    for i in 1..=5 {
-        turn(&provider, msgs(&format!("BASE {i}"), &[], &format!("t{i}"))).await;
+    turn(&provider, msgs("BASE MAIN", &[], "m1")).await;
+    for i in 1..=4 {
+        turn(&provider, msgs(&format!("BASE S{i}"), &[], &format!("t{i}"))).await;
     }
-    assert_eq!(spawns(dir.path()), 5, "five distinct bases, five spawns (the first was evicted)");
+    assert_eq!(spawns(dir.path()), 5, "main plus four side bases: the pool holds 4, S1 was evicted");
 
-    turn(&provider, msgs("BASE 2", &[], "again 2")).await;
-    assert_eq!(spawns(dir.path()), 5, "base 2 is still alive (up to 4 processes are kept)");
+    turn(&provider, msgs("BASE S2", &[], "again 2")).await;
+    assert_eq!(spawns(dir.path()), 5, "S2 is still alive");
+    turn(&provider, msgs("BASE MAIN", &[], "m2")).await;
+    assert_eq!(spawns(dir.path()), 5, "main is untouched by the eviction");
 
-    turn(&provider, msgs("BASE 1", &[], "again 1")).await;
-    assert_eq!(spawns(dir.path()), 6, "base 1 was evicted: its sixth use spawns anew");
+    turn(&provider, msgs("BASE S1", &[], "again 1")).await;
+    assert_eq!(spawns(dir.path()), 6, "S1 (the least recently used side process) was evicted: its next use spawns anew");
 }
 
 #[tokio::test]
 async fn test_cc5_eviction_follows_recency_not_creation_order() {
     let dir = tempfile::tempdir().unwrap();
     let provider = ClaudeCliProvider::with_binary(&stub(dir.path(), false));
-    for i in 1..=4 {
-        turn(&provider, msgs(&format!("BASE {i}"), &[], &format!("t{i}"))).await;
+    turn(&provider, msgs("BASE MAIN", &[], "m1")).await;
+    for i in 1..=3 {
+        turn(&provider, msgs(&format!("BASE S{i}"), &[], &format!("t{i}"))).await;
     }
-    turn(&provider, msgs("BASE 1", &[], "touch 1")).await; // 1 is now the most recent
-    turn(&provider, msgs("BASE 5", &[], "t5")).await; // evicts 2, the least recently used
+    turn(&provider, msgs("BASE S1", &[], "touch 1")).await; // S1 is now the most recent side process
+    turn(&provider, msgs("BASE S4", &[], "t4")).await; // evicts S2, the least recently used side process
     assert_eq!(spawns(dir.path()), 5);
 
-    turn(&provider, msgs("BASE 1", &[], "again 1")).await;
-    assert_eq!(spawns(dir.path()), 5, "1 survived");
-    turn(&provider, msgs("BASE 2", &[], "again 2")).await;
-    assert_eq!(spawns(dir.path()), 6, "2 was the one evicted");
+    turn(&provider, msgs("BASE S1", &[], "again 1")).await;
+    assert_eq!(spawns(dir.path()), 5, "S1 survived although it is the oldest by creation");
+    turn(&provider, msgs("BASE S2", &[], "again 2")).await;
+    assert_eq!(spawns(dir.path()), 6, "S2 was the one evicted");
 }
 
 #[tokio::test]
