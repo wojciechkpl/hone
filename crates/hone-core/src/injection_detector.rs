@@ -222,27 +222,79 @@ fn decode_json_escapes(text: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
-/// Whether `text` needs no preparation: ASCII, no backslash (a possible JSON
-/// escape) and no control character other than whitespace.
+/// Whether `text` is ASCII with no control character other than whitespace
+/// and no JSON escape beyond the simple ones (`\n \t \r \" \\ \/`). Such text
+/// needs no Unicode work: it can hold no tag, format or combining character,
+/// because those can only arrive as non-ASCII text or a `\u` escape.
 fn is_plain_ascii(text: &str) -> bool {
-    text.bytes().all(|b| {
-        b < 0x80 && b != b'\\' && (b >= 0x20 && b != 0x7F || matches!(b, b'\n' | b'\t' | b'\r'))
-    })
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'\\' {
+            match bytes.get(i + 1) {
+                Some(b'n' | b't' | b'r' | b'"' | b'\\' | b'/') => i += 2,
+                _ => return false,
+            }
+            continue;
+        }
+        if !(b < 0x80 && (b >= 0x20 && b != 0x7F || matches!(b, b'\n' | b'\t' | b'\r'))) {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// Length in chars of a well-formed emoji tag sequence starting at `chars[0]`:
+/// U+1F3F4, one or more of U+E0030..=E0039 / U+E0061..=E007A, then U+E007F
+/// (the Scotland, England and Wales flags and other subdivision flags).
+fn flag_sequence_len(chars: &[char]) -> Option<usize> {
+    if chars.first() != Some(&'\u{1F3F4}') {
+        return None;
+    }
+    let mut n = 1;
+    while chars
+        .get(n)
+        .is_some_and(|c| matches!(*c, '\u{E0030}'..='\u{E0039}' | '\u{E0061}'..='\u{E007A}'))
+    {
+        n += 1;
+    }
+    (n > 1 && chars.get(n) == Some(&'\u{E007F}')).then_some(n + 1)
 }
 
 fn prepare(text: &str) -> Prepared<'_> {
     if is_plain_ascii(text) {
         return Prepared {
-            text: Cow::Borrowed(text),
+            text: decode_json_escapes(text),
             tag_text: String::new(),
             has_tag: false,
         };
     }
     let decoded = decode_json_escapes(text);
+    let chars: Vec<char> = decoded.chars().collect();
     let mut tag_text = String::new();
     let mut has_tag = false;
     let mut cleaned = String::with_capacity(decoded.len());
-    for c in decoded.chars() {
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        // A flag emoji's tag characters aren't hidden text (TR6), but their
+        // decoded text is still scanned.
+        let in_flag = flag_sequence_len(&chars[i..]);
+        if let Some(len) = in_flag {
+            cleaned.push(c);
+            for t in &chars[i + 1..i + len] {
+                if ('\u{E0020}'..='\u{E007E}').contains(t) {
+                    if let Some(a) = char::from_u32(*t as u32 - 0xE0000) {
+                        tag_text.push(a);
+                    }
+                }
+            }
+            i += len;
+            continue;
+        }
+        i += 1;
         if is_tag(c) {
             has_tag = true;
             if ('\u{E0020}'..='\u{E007E}').contains(&c) {
