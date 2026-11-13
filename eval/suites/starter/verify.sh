@@ -182,11 +182,31 @@ if [ -z "$only" ]; then
   fi
 fi
 
-# T25: when a `hone` binary is on PATH, the suite must load under `hone eval` (including
-# `[eval] integrity = ["checks", "reference"]`); `--check` validates without running anything.
+# T25: the suite must load under `hone eval` (including `[eval] integrity = ["checks", "reference"]`);
+# `--check` validates without running anything. The binary is $HONE_BIN when set; otherwise `hone`
+# on PATH, but only when it supports `eval --check` (an older hone on PATH is skipped with a NOTE).
 if [ -z "$only" ]; then
-  if command -v hone >/dev/null 2>&1; then
-    if (cd "$work" && hone eval "$tasks" --check) >"$work/hone-check.out" 2>&1; then
+  hone_bin=""
+  hone_note=""
+  if [ -n "$HONE_BIN" ]; then
+    if [ -x "$HONE_BIN" ]; then
+      hone_bin=$HONE_BIN
+    else
+      echo "FAIL  HONE_BIN=$HONE_BIN is not an executable file"
+      echo "x" >>"$work/failed"
+    fi
+  elif command -v hone >/dev/null 2>&1; then
+    found=$(command -v hone)
+    if "$found" eval --help 2>/dev/null | grep -q -- "--check"; then
+      hone_bin=$found
+    else
+      hone_note="NOTE  $found has no \`hone eval --check\` (an older build): skipping the hone eval --check test; set HONE_BIN to a current build"
+    fi
+  else
+    hone_note="NOTE  hone is not on PATH (and HONE_BIN is not set): skipping the hone eval --check test"
+  fi
+  if [ -n "$hone_bin" ]; then
+    if (cd "$work" && "$hone_bin" eval "$tasks" --check) >"$work/hone-check.out" 2>&1; then
       echo "OK    hone eval --check accepts the suite ($(tail -1 "$work/hone-check.out"))"
     elif grep -qE "needs an API key|no model:|requires a provider" "$work/hone-check.out"; then
       # a provider-setup problem of this machine (no key / no default model), not of the suite
@@ -195,8 +215,8 @@ if [ -z "$only" ]; then
       echo "FAIL  hone eval --check rejects the suite: $(tail -3 "$work/hone-check.out" | tr '\n' ' ')"
       echo "x" >>"$work/failed"
     fi
-  else
-    echo "NOTE  hone is not on PATH: skipping the hone eval --check test"
+  elif [ -n "$hone_note" ]; then
+    echo "$hone_note"
   fi
 fi
 
