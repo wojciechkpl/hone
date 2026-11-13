@@ -98,6 +98,12 @@ uses the provider its prefix names:
   `OPENAI_API_KEY=local`.
 - `ollama:` connects to `[providers.ollama].base_url`, by default `http://localhost:11434`.
 - `claude-cli:` and `gemini-cli:` run those CLIs, even when an API key is set.
+  `claude-cli:` keeps one long-lived `claude` process per base prompt (the first system
+  message), up to four, and sends each turn's memories, skills and other context with the
+  turn. The main conversation, each orchestrator worker and each `@persona` turn have
+  different base prompts, so a persona or worker turn uses its own `claude` process and
+  doesn't see the main conversation's earlier turns (nor does the main conversation see
+  theirs). The least recently used process is dropped when a fifth is needed.
 
 **Where each setting comes from**, highest first:
 

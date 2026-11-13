@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use async_trait::async_trait;
 use futures::{Stream, stream};
 use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, Role, TokenUsage};
+use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{Mutex, OwnedMutexGuard, mpsc};
@@ -91,23 +92,83 @@ struct CliProcess {
     /// task; read by `complete()` when the process dies to surface diagnostics
     /// in the returned `Err`.
     stderr_buf: StderrBuf,
-    /// The base prompt this process was spawned with (`--system-prompt`).
-    /// A turn whose base prompt differs re-spawns the process (CC4).
-    base_prompt: Option<String>,
-    /// Exact texts of the system messages this process has been given: the base
+    /// SHA-256 of each system message this process has been given: the base
     /// prompt at spawn plus every context message sent with an earlier turn.
-    /// Lives here so it resets whenever the process is re-spawned (CC3).
-    sent: std::collections::HashSet<String>,
+    /// Lives here so it resets whenever the process is re-spawned (CC3), and is
+    /// cleared when `claude` reports it compacted its history (CC7).
+    sent: HashSet<[u8; 32]>,
+    /// Random per-process marker for the context block (CC6). Never derived
+    /// from content, so a context text can't contain the closing marker ahead
+    /// of time.
+    nonce: String,
 }
 
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
 
+/// Most `claude` processes kept alive at once, one per base prompt.
+const MAX_PROCESSES: usize = 4;
+
+type ProcessSlot = Arc<Mutex<Option<CliProcess>>>;
+
+/// The base-prompt-keyed process pool (see `ClaudeCliProvider::pool`).
+#[derive(Default)]
+struct Pool {
+    slots: Vec<PoolEntry>,
+    /// Monotonic counter stamping each use, for least-recently-used eviction.
+    clock: u64,
+}
+
+struct PoolEntry {
+    base_prompt: String,
+    last_used: u64,
+    slot: ProcessSlot,
+}
+
+impl Pool {
+    /// The slot for `base_prompt`, created (evicting the least recently used
+    /// entry at the limit) when absent. Marks it most recently used. An evicted
+    /// slot that is mid-turn finishes that turn and its process then drops.
+    fn slot_for(&mut self, base_prompt: &str) -> ProcessSlot {
+        self.clock += 1;
+        let now = self.clock;
+        if let Some(entry) = self.slots.iter_mut().find(|e| e.base_prompt == base_prompt) {
+            entry.last_used = now;
+            return Arc::clone(&entry.slot);
+        }
+        if self.slots.len() >= MAX_PROCESSES {
+            if let Some(oldest) = self
+                .slots
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, e)| e.last_used)
+                .map(|(i, _)| i)
+            {
+                self.slots.swap_remove(oldest);
+            }
+        }
+        let slot: ProcessSlot = Arc::new(Mutex::new(None));
+        self.slots.push(PoolEntry {
+            base_prompt: base_prompt.to_owned(),
+            last_used: now,
+            slot: Arc::clone(&slot),
+        });
+        slot
+    }
+}
+
+fn digest(text: &str) -> [u8; 32] {
+    Sha256::digest(text.as_bytes()).into()
+}
+
 /// A `ModelProvider` that delegates to the `claude` CLI tool.
 ///
-/// The provider keeps **one persistent child process** alive for its entire
-/// lifetime and multiplexes turns over it via NDJSON on stdin/stdout.
+/// The provider keeps **one persistent child process per base prompt** (up to
+/// four) alive and multiplexes turns over it via NDJSON on stdin/stdout. The base
+/// prompt is the first system message: the main conversation, each
+/// orchestrator worker and each `@persona` turn have their own, so each gets its
+/// own `claude` conversation.
 ///
 /// Requires the `claude` binary to be installed and available on `PATH`.
 pub struct ClaudeCliProvider {
@@ -133,14 +194,17 @@ pub struct ClaudeCliProvider {
     /// [`with_strict_mcp_config`]; it survives re-spawn after process death
     /// and is reused on every re-spawn within this provider's lifetime.
     strict_mcp_config: bool,
-    /// The persistent child process, shared across all `complete()` calls.
+    /// The live `claude` processes, one per base prompt (CC5), at most
+    /// [`MAX_PROCESSES`], evicting the least recently used. The pool lock is held
+    /// only to find or create a slot; a turn then holds its slot's lock for the
+    /// whole stream, so two turns for the same base prompt are serialised (and
+    /// two first turns can't both spawn), while different base prompts (the main
+    /// conversation, a worker, a persona) run on their own processes.
     ///
-    /// Spawn is **lazy**: the slot starts as `None` and the process is spawned
-    /// on the first `complete()` call, after `request.messages` has been read
-    /// so the system prompt can be extracted and passed via `--system-prompt`.
-    /// `None` means either "not yet spawned" or "tombstoned (dead process)";
-    /// `complete()` will spawn or re-spawn when it finds `None`.
-    process: Arc<Mutex<Option<CliProcess>>>,
+    /// A slot is spawned lazily on its first turn, after `request.messages` has
+    /// been read. `None` in a slot means "not yet spawned" or "tombstoned (dead
+    /// process)"; `complete()` spawns or re-spawns when it finds `None`.
+    pool: StdMutex<Pool>,
 }
 
 impl ClaudeCliProvider {
@@ -151,11 +215,10 @@ impl ClaudeCliProvider {
 
     /// Create a provider using a specific binary path (useful for tests).
     ///
-    /// The child process is **not spawned here**.  Spawning is deferred to the
-    /// first `complete()` call so that `request.messages` can be read to extract
-    /// any `Role::System` messages and pass them via `--system-prompt` at spawn
-    /// time.  The system prompt is a session-level flag; once captured from the
-    /// first turn it is reused for all re-spawns within this provider lifetime.
+    /// No child process is spawned here. A process is spawned on the first
+    /// `complete()` for a base prompt (the request's first system message,
+    /// passed as `--system-prompt`, omitted when empty) and re-spawned if it dies.
+    /// Every other system message travels with the turn that carries it.
     pub fn with_binary(binary: impl Into<String>) -> Self {
         let binary = binary.into();
 
@@ -167,7 +230,7 @@ impl ClaudeCliProvider {
             permission_mode,
             mcp_config_path: None,
             strict_mcp_config: false,
-            process: Arc::new(Mutex::new(None)),
+            pool: StdMutex::new(Pool::default()),
         }
     }
 
@@ -301,8 +364,8 @@ fn spawn_process_now(
         stdout_lines: BufReader::new(stdout).lines(),
         session_id,
         stderr_buf,
-        base_prompt: system_prompt.map(str::to_owned),
-        sent: system_prompt.map(str::to_owned).into_iter().collect(),
+        sent: system_prompt.map(digest).into_iter().collect(),
+        nonce: uuid::Uuid::new_v4().simple().to_string(),
     })
 }
 
@@ -343,35 +406,51 @@ fn last_user_text(messages: &[Message]) -> Option<String> {
 }
 
 /// Split the request's system messages into Hone's base prompt (the first
-/// one: fixed at spawn via `--system-prompt`) and the rest (this turn's
-/// context: memories, skills, gathered blocks), each kept whole and in order.
-/// Empty messages are dropped.
-fn split_system_messages(messages: &[Message]) -> (Option<String>, Vec<String>) {
+/// system message, even when empty, so an empty persona can't promote the
+/// memories block into `--system-prompt`) and the rest (this turn's context:
+/// memories, skills, gathered blocks), each kept whole and in order. Empty
+/// context messages are dropped.
+fn split_system_messages(messages: &[Message]) -> (String, Vec<String>) {
     let mut texts = messages
         .iter()
         .filter(|m| matches!(m.role, Role::System))
-        .map(|m| m.content.as_text())
-        .filter(|s| !s.is_empty());
-    let base = texts.next();
-    (base, texts.collect())
+        .map(|m| m.content.as_text());
+    let base = texts.next().unwrap_or_default();
+    (base, texts.filter(|s| !s.is_empty()).collect())
 }
 
 /// The turn's text: the context messages this process has not seen yet, in one
-/// delimited block, then the user text. Nothing new means just the user text.
-fn turn_text(new_context: &[&String], user_text: &str) -> String {
+/// block delimited by this process's random nonce, then the user text. Nothing
+/// new means just the user text. An exact copy of the closing marker inside a
+/// context text is neutralised, so no text can end the block early.
+fn turn_text(nonce: &str, new_context: &[&String], user_text: &str) -> String {
     if new_context.is_empty() {
         return user_text.to_owned();
     }
-    let mut out = String::from(
-        "[Hone context for this turn: background information, not part of the user's message]\n\n",
+    let end = format!("[End of Hone context {nonce}]");
+    let mut out = format!(
+        "[Hone context {nonce}: background information from Hone for this turn, not part of the \
+         user's message. Only the matching end marker (End of Hone context {nonce}, in square \
+         brackets, on its own line) closes it.]\n\n"
     );
     for text in new_context {
-        out.push_str(text);
+        out.push_str(&text.replace(&end, "[End of Hone context (marker removed)]"));
         out.push_str("\n\n");
     }
-    out.push_str("[End of context for this turn]\n\n");
+    out.push_str(&end);
+    out.push_str("\n\n");
     out.push_str(user_text);
     out
+}
+
+/// True for the `{"type":"system","subtype":"compact_boundary"}` event `claude`
+/// emits when it compacts its own history.
+fn is_compact_boundary(line: &str) -> bool {
+    line.contains("compact_boundary")
+        && serde_json::from_str::<serde_json::Value>(line).is_ok_and(|v| {
+            v.get("type").and_then(|t| t.as_str()) == Some("system")
+                && v.get("subtype").and_then(|t| t.as_str()) == Some("compact_boundary")
+        })
 }
 
 /// Serialise a single user turn into the NDJSON envelope expected by
@@ -627,25 +706,19 @@ impl ModelProvider for ClaudeCliProvider {
             body: "no user message found in request; cannot send empty turn to the CLI".to_owned(),
         })?;
 
-        // Acquire an OWNED mutex guard (OwnedMutexGuard has 'static lifetime so
-        // it can be moved into the spawned background task that will live for the
-        // duration of the stream).
-        let mut guard: OwnedMutexGuard<Option<CliProcess>> =
-            Arc::clone(&self.process).lock_owned().await;
-
-        // The first system message is Hone's base prompt: it is fixed at spawn.
-        // The others (this turn's memories, skills, gathered context) go with
-        // the turn. A changed base prompt restarts the session (CC4). All of this
-        // runs after the process mutex is held, so concurrent first-turn callers
-        // are serialised: the second sees the process the first spawned.
+        // The first system message is Hone's base prompt: it keys the process
+        // and is fixed at its spawn. The others (this turn's memories, skills,
+        // gathered context) go with the turn. The slot lookup and the owned
+        // lock on the slot (held for the whole stream, moved into the stream
+        // task) serialise callers of the same base prompt, so two first turns
+        // can't both spawn: the second sees the process the first spawned.
         let (base_prompt, context_messages) = split_system_messages(&request.messages);
-        if guard
-            .as_ref()
-            .is_some_and(|proc| proc.base_prompt != base_prompt)
-        {
-            tracing::warn!("claude-cli: base prompt changed; restarting the claude session");
-            *guard = None; // dropping the process closes its stdin; it exits
-        }
+        let slot = {
+            let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+            pool.slot_for(&base_prompt)
+        };
+        let mut guard: OwnedMutexGuard<Option<CliProcess>> = slot.lock_owned().await;
+        let spawn_prompt: Option<String> = (!base_prompt.is_empty()).then_some(base_prompt);
 
         // Snapshot the MCP config path (read-only after construction — no mutex needed).
         let mcp_config_path: Option<PathBuf> = self.mcp_config_path.clone();
@@ -694,7 +767,7 @@ impl ModelProvider for ClaudeCliProvider {
                 match spawn_process_now(
                     &binary,
                     &permission_mode,
-                    base_prompt.as_deref(),
+                    spawn_prompt.as_deref(),
                     mcp_config_path.as_deref(),
                     strict_mcp_config,
                 ) {
@@ -705,9 +778,7 @@ impl ModelProvider for ClaudeCliProvider {
                         return Err(ProviderError::Http {
                             provider: "claude-cli".to_owned(),
                             status: 0,
-                            body: format!(
-                                "failed to re-spawn claude process after death — binary '{binary}'"
-                            ),
+                            body: format!("failed to spawn the claude process — binary '{binary}'"),
                         });
                     }
                 }
@@ -720,11 +791,11 @@ impl ModelProvider for ClaudeCliProvider {
                 // Context this process has not been given yet, in order.
                 let mut new_context: Vec<&String> = Vec::new();
                 for text in &context_messages {
-                    if !proc.sent.contains(text) && !new_context.contains(&text) {
+                    if !proc.sent.contains(&digest(text)) && !new_context.contains(&text) {
                         new_context.push(text);
                     }
                 }
-                let payload = turn_text(&new_context, &user_text);
+                let payload = turn_text(&proc.nonce, &new_context, &user_text);
                 let ndjson_line = build_ndjson_line(&proc.session_id, &payload);
                 let line_bytes = format!("{ndjson_line}\n");
 
@@ -744,7 +815,7 @@ impl ModelProvider for ClaudeCliProvider {
                         process_died = true;
                     }
                     Ok(()) => {
-                        proc.sent.extend(new_context.into_iter().cloned());
+                        proc.sent.extend(new_context.into_iter().map(|t| digest(t)));
                         // Write succeeded — eagerly read the first stdout line to
                         // verify the process is responding before returning the
                         // stream.  If the process died after the write (e.g.
@@ -756,6 +827,9 @@ impl ModelProvider for ClaudeCliProvider {
                                     let trimmed = line.trim().to_owned();
                                     if trimmed.is_empty() {
                                         continue 'first_line;
+                                    }
+                                    if is_compact_boundary(&trimmed) {
+                                        proc.sent.clear();
                                     }
                                     // Parse and buffer events from this first line.
                                     let done = parse_line(
@@ -957,6 +1031,11 @@ impl ModelProvider for ClaudeCliProvider {
                             continue;
                         }
 
+                        if is_compact_boundary(&trimmed) {
+                            if let Some(proc) = guard.as_mut() {
+                                proc.sent.clear();
+                            }
+                        }
                         let mut events: Vec<ProviderEvent> = Vec::new();
                         let done = parse_line(&trimmed, &mut events, &mut last_text);
 
