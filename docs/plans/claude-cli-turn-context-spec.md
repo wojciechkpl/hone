@@ -29,6 +29,15 @@ CC1–CC3 work. CC4 restarted `claude` far more often than assumed. One provider
 |  | - The deduplication set stores SHA-256 hashes, not full texts. |
 |  | - The `with_binary` doc comment and the spawn-failure error text describe the current behaviour. |
 
+### Review round 2 (CC9–CC10)
+
+The pool works for workers and personas (3 spawns instead of 5, and turn 5 reaches the process that saw turn 1). But the orchestrator runs up to 4 workers at once, each with a unique base prompt (the persona plus `## Task …`). The main conversation sits idle while the lead waits, so it is the least recently used: one 4-subtask orchestration evicted and killed it.
+
+| Row | Behaviour |
+|---|---|
+| CC9 | **The main conversation is never evicted.** The first base prompt the provider sees is the main conversation, and its process is never evicted. When the pool is full, the least recently used of the other processes is evicted. Main plus 4 or more other bases in a burst leaves main's process alive, and the next main turn goes to it. |
+| CC10 | **Idle side processes are closed.** A process other than main's that has been idle for more than 5 minutes is closed the next time the pool is used, so finished workers don't keep `claude` processes alive. A process mid-turn is never closed. `docs/configuration.md` describes the pool, CC9 and CC10. |
+
 ## Testing notes
 
 - Use the existing stub-binary harness in the claude-cli tests, which records argv and the NDJSON written to stdin.
