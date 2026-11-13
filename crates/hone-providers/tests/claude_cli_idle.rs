@@ -157,3 +157,55 @@ async fn test_cc10_a_process_mid_turn_should_not_be_closed() {
     assert!(events.iter().any(|e| matches!(e, ProviderEvent::Done)), "the mid-turn process answered: {events:?}");
     assert!(!exited(dir.path(), 2), "it was not closed under the turn");
 }
+
+// ---- CC11: use decides what is protected, not order ---------------------------------------------------
+
+fn received_count(dir: &Path, n: u32) -> usize {
+    std::fs::read_to_string(dir.join(format!("received_{n}")))
+        .map(|t| t.lines().count())
+        .unwrap_or(0)
+}
+
+#[tokio::test]
+async fn test_cc11_a_session_starting_with_a_persona_should_keep_the_real_conversation_through_an_idle_pause() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = ClaudeCliProvider::with_binary(&stub(dir.path())).with_idle_timeout(IDLE);
+    turn(&provider, "BASE PERSONA", "@code-reviewer hello").await; // process 1: the first base seen
+    turn(&provider, "BASE MAIN", "m1").await; // process 2: the real conversation
+    turn(&provider, "BASE MAIN", "m2").await;
+
+    tokio::time::sleep(IDLE * 3).await;
+    turn(&provider, "BASE MAIN", "m3").await;
+
+    assert_eq!(spawns(dir.path()), 2, "the conversation's third turn did not land in a fresh process");
+    assert_eq!(received_count(dir.path(), 2), 3, "m1, m2 and m3 all went to process 2");
+    assert!(!exited(dir.path(), 2), "never closed for idleness: it served two turns");
+}
+
+#[tokio::test]
+async fn test_cc11_a_process_with_two_turns_should_not_be_closed_when_another_base_uses_the_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = ClaudeCliProvider::with_binary(&stub(dir.path())).with_idle_timeout(IDLE);
+    turn(&provider, "BASE FIRST", "f1").await;
+    turn(&provider, "BASE SECOND", "s1").await;
+    turn(&provider, "BASE SECOND", "s2").await; // two turns: protected like main
+
+    tokio::time::sleep(IDLE * 3).await;
+    turn(&provider, "BASE THIRD", "t1").await; // pool use long after SECOND went idle
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    assert!(!exited(dir.path(), 2), "a two-turn process is never closed for idleness");
+}
+
+#[tokio::test]
+async fn test_cc11_a_process_with_one_turn_that_is_not_first_should_still_be_closed_when_idle() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = ClaudeCliProvider::with_binary(&stub(dir.path())).with_idle_timeout(IDLE);
+    turn(&provider, "BASE FIRST", "f1").await;
+    turn(&provider, "BASE WORKER", "w1").await; // one turn only
+
+    tokio::time::sleep(IDLE * 3).await;
+    turn(&provider, "BASE FIRST", "f2").await;
+
+    assert!(wait_exited(dir.path(), 2).await, "CC10 still holds for one-turn side processes");
+}

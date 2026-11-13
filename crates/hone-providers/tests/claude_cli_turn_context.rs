@@ -499,3 +499,50 @@ async fn test_cc9_the_first_base_seen_is_main_even_when_it_is_idle_the_longest()
     assert_eq!(spawns(dir.path()), before, "A's process is still the original");
     assert_eq!(payloads_of(dir.path(), 1)[1], "a2", "and it remembers the context it was sent (no block)");
 }
+
+// ---- CC11: use decides what is protected, not order ---------------------------------------------------
+
+#[tokio::test]
+async fn test_cc11_a_burst_of_worker_bases_should_not_evict_the_real_conversation_behind_a_persona() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = ClaudeCliProvider::with_binary(&stub(dir.path(), false));
+    turn(&provider, msgs("BASE PERSONA", &[], "@code-reviewer hello")).await; // process 1
+    turn(&provider, msgs("BASE MAIN", &[], "m1")).await; // process 2
+    turn(&provider, msgs("BASE MAIN", &[], "m2")).await;
+    for i in 1..=4 {
+        turn(&provider, msgs(&format!("BASE W{i}"), &[], &format!("w{i}"))).await;
+    }
+    assert_eq!(spawns(dir.path()), 6, "persona, main, and four workers (two of them evicted others)");
+
+    turn(&provider, msgs("BASE MAIN", &[], "m3")).await;
+
+    assert_eq!(spawns(dir.path()), 6, "the real conversation kept its process");
+    assert_eq!(user_texts(&payloads_of(dir.path(), 2)), ["m1", "m2", "m3"]);
+    // The evicted ones were one-turn worker processes (the oldest of them first).
+    turn(&provider, msgs("BASE W1", &[], "again w1")).await;
+    assert_eq!(spawns(dir.path()), 7, "W1, a one-turn process, was evicted");
+}
+
+#[tokio::test]
+async fn test_cc11_when_every_process_has_two_or_more_turns_eviction_should_pick_the_lru_among_the_fewest() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = ClaudeCliProvider::with_binary(&stub(dir.path(), false));
+    // M0 is the first base. Turns per process: M0 2, Z 2, Y 3, X 2. Recency, oldest first:
+    // M0, Z, Y, X. Fewest turns (2): M0 (protected as first), Z, X -> LRU of those is Z.
+    for (base, n) in [("M0", 2), ("Z", 2), ("Y", 3), ("X", 2)] {
+        for k in 0..n {
+            turn(&provider, msgs(&format!("BASE {base}"), &[], &format!("{base}{k}"))).await;
+        }
+    }
+    assert_eq!(spawns(dir.path()), 4);
+
+    turn(&provider, msgs("BASE W", &[], "w")).await; // the pool is full: one process goes
+    assert_eq!(spawns(dir.path()), 5);
+
+    for base in ["M0", "Y", "X"] {
+        turn(&provider, msgs(&format!("BASE {base}"), &[], "again")).await;
+        assert_eq!(spawns(dir.path()), 5, "{base} survived");
+    }
+    turn(&provider, msgs("BASE Z", &[], "again")).await;
+    assert_eq!(spawns(dir.path()), 6, "Z, the least recently used among the fewest-turn processes, was evicted");
+}
