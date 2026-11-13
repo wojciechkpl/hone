@@ -170,6 +170,7 @@ mod tests {
             config_hash: config_hash.to_owned(),
             tag: tag.map(str::to_owned),
             outcomes,
+            profiles: Vec::new(),
         }
     }
 

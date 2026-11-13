@@ -1,6 +1,7 @@
 mod approve;
 mod configure;
 mod context_cmd;
+mod eval_cmd;
 mod image_input;
 mod memory_cmd;
 mod memory_init;
@@ -50,7 +51,6 @@ use hone_providers::{
     ClaudeCliProvider, GeminiCliProvider, ModelProvider, adapters::anthropic::AnthropicProvider,
     adapters::ollama::OllamaProvider, adapters::openai::OpenAiProvider,
 };
-use hone_eval::{EvalConfig, EvalReport, EvalRunner};
 use hone_recipes::Recipe;
 use hone_sandbox::SandboxBuilder;
 use hone_tools::{
@@ -154,14 +154,11 @@ enum HoneCmd {
         #[command(subcommand)]
         cmd: memory_cmd::MemoryCmd,
     },
-    /// Run evaluation tasks from a TOML file and produce a report.
-    Eval {
-        /// Path to the tasks.toml file.
-        tasks: PathBuf,
-        /// Output directory for report.json and report.md (default: parent dir of tasks file).
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-    },
+    /// Run evaluation tasks from a TOML file with real agents, and compare profiles.
+    ///
+    /// Runs are hermetic: no MCP servers, no language server, no tool cache, and the
+    /// model is pinned. Tasks that need MCP are not supported yet.
+    Eval(eval_cmd::EvalArgs),
     /// Generate a Kiro-style spec (requirements + design + tasks) for a goal.
     Spec {
         /// Natural-language goal describing what to build.
@@ -1087,6 +1084,45 @@ fn build_agent_config(
     audit_flag: bool,
     session_limit_usd: Option<f64>,
 ) -> AgentConfig {
+    // One source of truth for the directory: tools and policy share it.
+    let agent_working_dir = std::env::current_dir().unwrap_or_default();
+    let policy = load_permission_policy(&agent_working_dir);
+    build_agent_config_at(
+        detected,
+        model_id,
+        system_prompt,
+        lsp,
+        index,
+        memory_store,
+        tool_cache,
+        mcp_tools,
+        inject_context,
+        skeleton_strategy,
+        audit_flag,
+        session_limit_usd,
+        agent_working_dir,
+        policy,
+    )
+}
+
+/// [`build_agent_config`] for an explicit working directory and permission
+/// policy (`hone eval` runs each task in its own copy).
+fn build_agent_config_at(
+    detected: &DetectedProvider,
+    model_id: ModelId,
+    system_prompt: String,
+    lsp: Arc<dyn LspBridge>,
+    index: Option<Arc<SqliteIndex>>,
+    memory_store: Option<Arc<dyn MemoryStore>>,
+    tool_cache: Option<Arc<ToolResultCache>>,
+    mcp_tools: Vec<Box<dyn hone_tools::Tool>>,
+    inject_context: bool,
+    skeleton_strategy: SkeletonStrategy,
+    audit_flag: bool,
+    session_limit_usd: Option<f64>,
+    agent_working_dir: PathBuf,
+    policy: Option<hone_core::PolicyConfig>,
+) -> AgentConfig {
     // Only register tools when the provider can actually use them.
     let tools = if detected.supports_tools {
         build_tool_registry(
@@ -1106,18 +1142,13 @@ fn build_agent_config(
             .map(|v| v == "1")
             .unwrap_or(false);
     let egress_log = if enable_audit {
-        let working_dir = std::env::current_dir().unwrap_or_default();
-        let log_path = working_dir.join(".hone").join("audit.jsonl");
+        let log_path = agent_working_dir.join(".hone").join("audit.jsonl");
         Some(Arc::new(tokio::sync::Mutex::new(
             hone_core::EgressLog::new(log_path),
         )))
     } else {
         None
     };
-
-    // One source of truth for the directory: tools and policy share it.
-    let agent_working_dir = std::env::current_dir().unwrap_or_default();
-    let policy = load_permission_policy(&agent_working_dir);
 
     AgentConfig {
         provider: Arc::clone(&detected.provider),
@@ -2348,66 +2379,6 @@ async fn cmd_session_delete(name: &str) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Eval subcommand
-// ---------------------------------------------------------------------------
-
-/// Run evaluation tasks from a TOML file and write report.json + report.md.
-///
-/// Provider support in v1: Anthropic and OpenAI(-compatible), built from the
-/// resolved settings (environment, user `config.toml`, wizard key). Other
-/// providers (Ollama, CLI pass-throughs) are a follow-up.
-async fn cmd_eval(
-    tasks_path: &std::path::Path,
-    output_dir: Option<PathBuf>,
-    eff: &Effective,
-) -> Result<()> {
-    use std::path::Path;
-
-    hone_core::set_default_price_lookup(price_lookup(&eff.pricing));
-    let config = EvalConfig::from_toml_file(tasks_path)
-        .map_err(|e| anyhow::anyhow!("failed to load tasks file: {e}"))?;
-
-    let base_dir = tasks_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf();
-
-    let out_dir = output_dir.unwrap_or_else(|| base_dir.clone());
-
-    std::fs::create_dir_all(&out_dir)
-        .map_err(|e| anyhow::anyhow!("cannot create output dir {}: {e}", out_dir.display()))?;
-
-    // The factory must be 'static: build one provider from the resolved
-    // settings and hand out clones of the Arc.
-    let provider = api_provider_from_settings(eff, "eval")?;
-    let provider_factory: Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync> =
-        Box::new(move || Arc::clone(&provider));
-
-    let outcomes = EvalRunner::new(config, base_dir, provider_factory)
-        .run_all()
-        .await;
-
-    let report = EvalReport::from_outcomes(outcomes);
-
-    hone_eval::report::write_json(&report, &out_dir.join("report.json"))
-        .map_err(|e| anyhow::anyhow!("failed to write report.json: {e}"))?;
-    hone_eval::report::write_markdown(&report, &out_dir.join("report.md"))
-        .map_err(|e| anyhow::anyhow!("failed to write report.md: {e}"))?;
-
-    let pass_pct = report.pass_rate() * 100.0;
-    println!(
-        "{}/{} passed ({:.0}%) — total cost ${:.4} — see {}/report.md for details",
-        report.passed,
-        report.total,
-        pass_pct,
-        report.total_cost_usd,
-        out_dir.display(),
-    );
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
 // Spec subcommand
 // ---------------------------------------------------------------------------
 
@@ -2848,9 +2819,10 @@ async fn main() -> Result<()> {
                 // Handled below, outside the `Some(ref cmd)` borrow scope,
                 // so we can take ownership of the MemoryCmd variant.
             }
-            HoneCmd::Eval { tasks, output } => {
-                let eff = settings::load_effective_or_exit(cli.model.as_deref());
-                cmd_eval(tasks, output.clone(), &eff).await?;
+            HoneCmd::Eval(args) => {
+                let model = args.model.clone().or_else(|| cli.model.clone());
+                let eff = settings::load_effective_or_exit(model.as_deref());
+                eval_cmd::run(args.clone(), eff, model).await?;
                 return Ok(());
             }
             HoneCmd::Spec { goal, cwd } => {
