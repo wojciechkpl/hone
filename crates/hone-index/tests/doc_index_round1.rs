@@ -175,3 +175,41 @@ async fn test_r16_roots_not_synced_for_thirty_days_should_be_pruned_on_open() {
     idx.sync(&fresh).await.unwrap();
     assert_eq!(ids(&idx, "quokka").await, ["n.md#1"]);
 }
+
+// ---- R21 (seam review): the tokenizer rebuild ------------------------------------------------------------
+
+#[tokio::test]
+async fn test_r21_a_docs_db_with_another_tokenizer_should_be_rebuilt_on_open() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap();
+    let notes = root.join("notes");
+    write(&notes, "vn.md", "# Hà Nội\nTiếng Việt cơ bản cho người mới\n");
+    let db = root.join("docs.db");
+    {
+        let idx = DocIndex::open(&db).await.unwrap();
+        idx.sync(&notes).await.unwrap();
+        assert_eq!(ids(&idx, "viet").await, ["vn.md#1"], "harness: the current tokenizer folds Việt to viet");
+    }
+    // An older docs.db: the FTS table uses the default `unicode61` (remove_diacritics 1).
+    let p = sqlx::SqlitePool::connect(&format!("sqlite:{}?mode=rw", db.display())).await.unwrap();
+    sqlx::query("DROP TABLE doc_chunks_fts").execute(&p).await.unwrap();
+    sqlx::query("CREATE VIRTUAL TABLE doc_chunks_fts USING fts5(text, heading, content='doc_chunks', content_rowid='id', tokenize = 'unicode61')")
+        .execute(&p)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO doc_chunks_fts(doc_chunks_fts) VALUES ('rebuild')").execute(&p).await.unwrap();
+    p.close().await;
+    {
+        let stale = DocIndex::open(&db).await.unwrap_or_else(|e| panic!("{e}"));
+        drop(stale);
+    }
+
+    // After the open, the table is declared with remove_diacritics 2 again and `viet` matches `Việt`.
+    let p = sqlx::SqlitePool::connect(&format!("sqlite:{}?mode=rw", db.display())).await.unwrap();
+    let sql: String = sqlx::query("SELECT sql FROM sqlite_master WHERE name = 'doc_chunks_fts'").fetch_one(&p).await.unwrap().get(0);
+    p.close().await;
+    assert!(sql.contains("remove_diacritics 2"), "rebuilt with the shared tokenizer's setting: {sql}");
+    let idx = DocIndex::open(&db).await.unwrap();
+    idx.sync(&notes).await.unwrap();
+    assert_eq!(ids(&idx, "viet").await, ["vn.md#1"], "`viet` matches `Việt` after the rebuild");
+}
