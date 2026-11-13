@@ -98,6 +98,18 @@ uses the provider its prefix names:
   `OPENAI_API_KEY=local`.
 - `ollama:` connects to `[providers.ollama].base_url`, by default `http://localhost:11434`.
 - `claude-cli:` and `gemini-cli:` run those CLIs, even when an API key is set.
+  `claude-cli:` keeps one long-lived `claude` process per base prompt (the first system
+  message) and sends each turn's memories, skills and other context with the turn. The
+  first base prompt it sees is treated as the main conversation, and any process that has
+  served two or more turns is protected the same way: neither is closed for idleness or
+  evicted ahead of less-used ones. The main conversation, each orchestrator worker and each
+  `@persona` turn have different base prompts, so a persona or worker turn uses its own
+  `claude` process and doesn't see the main conversation's earlier turns (nor does the main
+  conversation see theirs). At most four processes are kept; when a new base prompt needs
+  one more, Hone closes the process with the fewest turns (least recently used first),
+  never the first one. A process with fewer than two turns, other than the first, that has
+  been unused for more than 5 minutes is closed the next time the provider is used, so
+  finished workers don't keep `claude` processes alive.
 
 **Where each setting comes from**, highest first:
 
