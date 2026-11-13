@@ -13,6 +13,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The salt record is found by id, so stores with more than 10,000 memories open and a new salt is never written over an existing one.
 - If an encrypted database was written by an older version, don't run `hone memory forget` on it with that older version.
 
+### Context and memory strategies: configurable, with receipts
+
+- `[context]` and `[memory]` in `config.toml` (and env vars and flags) choose the sources, skeleton, compactor, recaller and writer; `hone strategies` shows what chose each parameter and where each strategy is registered from, prints floats as written, and lists a project file's `budget_ratio` as its own `budget_cap` parameter with the file that set it. `honed` prints its config warnings to stderr at startup.
+- A project file's `[context] budget_ratio` is a cap: the effective ratio is the smaller of yours (or the model's default) and the project's, so a repository can't raise the budget. Ignored values and sources the user doesn't have on are reported as warnings naming the file.
+- An unknown `HONE_SKELETON_STRATEGY` or `--skeleton-strategy` exits 2 with the valid names.
+- Invalid values in config errors and warnings (from files, environment variables and flags) are shown escaped and cut to 80 characters, so a project file can't write terminal escapes or forge `hone:` lines.
+- `[memory] exclude_kinds` is validated, `top_k = 0` is an error, and the strategy registry is built before any language server or MCP server starts.
+- `--ensemble` and the TUI's outcome records follow the selection: `writer = "off"` stops all memory writes, including outcome logs, and the recaller, sources, budget and compactor apply to every candidate and the ranker.
+- `trim-only` keeps tracking task phases (the `phase_transitions` metric still counts) and only skips the compaction; its receipt reports `{"phase":false}` whatever the phase setting.
+- `HONE_PHASE_COMPACTION` is parsed one way everywhere: trimmed, case-insensitive `1`, `true` or `on`.
+- Receipts name the compactor (`graduated` or `trim-only`, with `{"phase":…}`) on the history block and give writers their own slot.
+- `docs/configuration.md` documents `[context]` and `[memory]`.
+
 ### Fixed: memory recall finds older memories, skips outcome logs, and code search understands prompts
 
 - **Before:**

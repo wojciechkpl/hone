@@ -8,7 +8,7 @@ use hone_proto::{
     StrategyId, canonical_json_sha256, request_sha256, sha256_hex,
 };
 
-use crate::agent::{RECALL_LIMIT, RECALL_RRF_K, SEMANTIC_RECALL_FETCH};
+use crate::agent::{RECALL_RRF_K, SEMANTIC_RECALL_FETCH};
 use crate::context::estimate_text_tokens;
 
 /// What recall did for the current turn.
@@ -21,6 +21,11 @@ pub(crate) struct RecallInfo {
     /// Candidates that were fetched and then cut.
     pub dropped: Vec<String>,
     pub duration_ms: u32,
+    /// The recall limit and excluded kinds in effect.
+    pub top_k: usize,
+    pub exclude: Vec<String>,
+    /// The id of a registered (non built-in) recaller, named as it is.
+    pub custom: Option<StrategyId>,
 }
 
 /// What turn-1 context injection added.
@@ -28,9 +33,22 @@ pub(crate) struct RecallInfo {
 pub(crate) struct InjectionInfo {
     /// `SkeletonStrategy::as_str`.
     pub strategy: String,
+    pub max_tokens: u32,
+    pub gap_threshold: f32,
     pub tokens: u32,
     /// Tier-2 hits: (path, score), best first.
     pub hits: Vec<(String, f32)>,
+}
+
+/// A block a gathered context source added to the prompt (as one system message
+/// right after the base system prompt).
+#[derive(Debug, Clone)]
+pub(crate) struct ExtraBlock {
+    pub slot: Slot,
+    pub strategy: StrategyId,
+    /// The text that is sent (already redacted).
+    pub text: String,
+    pub sources: Vec<ScoredSource>,
 }
 
 /// The per-turn inputs of the context blocks (the history comes from the
@@ -40,6 +58,10 @@ pub(crate) struct TurnContextInfo {
     pub recall: RecallInfo,
     pub skills: Vec<String>,
     pub injection: Option<InjectionInfo>,
+    /// The active compactor: `trim-only`, else `graduated` (with phase compaction
+    /// as `phase_compaction`).
+    pub trim_only: bool,
+    pub phase_compaction: bool,
 }
 
 fn strategy(slot: Slot, name: &str, params: &serde_json::Value) -> StrategyId {
@@ -93,6 +115,7 @@ pub(crate) fn build_receipt(
     recall_at: Option<usize>,
     skills_at: Option<usize>,
     info: &TurnContextInfo,
+    extras: &[ExtraBlock],
     compaction: Vec<CompactionStep>,
     hashes: &[String],
     prev: &mut std::collections::HashSet<String>,
@@ -113,22 +136,34 @@ pub(crate) fn build_receipt(
         0,
     ));
 
+    // Gathered sources sit right after the system prompt, in source order.
+    for (i, extra) in extras.iter().enumerate() {
+        blocks.push(BlockReceipt {
+            slot: extra.slot,
+            strategy: extra.strategy.clone(),
+            tokens: tokens_of(1 + i),
+            sources: extra.sources.clone(),
+            duration_ms: 0,
+        });
+    }
+
     if let Some(at) = recall_at {
-        let (name, params) = if info.recall.semantic {
-            (
-                "bm25+semantic:rrf",
-                serde_json::json!({
-                    "exclude": ["outcome"],
-                    "limit": RECALL_LIMIT,
-                    "rrf_k": RECALL_RRF_K,
-                    "semantic_fetch": SEMANTIC_RECALL_FETCH,
-                }),
-            )
-        } else {
-            (
-                "bm25",
-                serde_json::json!({ "exclude": ["outcome"], "limit": RECALL_LIMIT }),
-            )
+        let strategy_id = match &info.recall.custom {
+            Some(id) => id.clone(),
+            None => {
+                let mut params = serde_json::json!({
+                    "exclude": info.recall.exclude,
+                    "limit": info.recall.top_k,
+                });
+                let name = if info.recall.semantic {
+                    params["rrf_k"] = serde_json::json!(RECALL_RRF_K);
+                    params["semantic_fetch"] = serde_json::json!(SEMANTIC_RECALL_FETCH);
+                    "bm25+semantic:rrf"
+                } else {
+                    "bm25"
+                };
+                strategy(Slot::Recall, name, &params)
+            }
         };
         let sources = info
             .recall
@@ -141,14 +176,13 @@ pub(crate) fn build_receipt(
                 })
             })
             .collect();
-        blocks.push(block(
-            Slot::Recall,
-            name,
-            &params,
-            tokens_of(at),
+        blocks.push(BlockReceipt {
+            slot: Slot::Recall,
+            strategy: strategy_id,
+            tokens: tokens_of(at),
             sources,
-            info.recall.duration_ms,
-        ));
+            duration_ms: info.recall.duration_ms,
+        });
     }
 
     if let Some(at) = skills_at {
@@ -183,7 +217,7 @@ pub(crate) fn build_receipt(
         blocks.push(block(
             Slot::Injection,
             &format!("skeleton:{}", inj.strategy),
-            &serde_json::json!({ "strategy": inj.strategy }),
+            &crate::strategy::skeleton_params(inj.max_tokens, inj.gap_threshold),
             inj.tokens,
             sources,
             0,
@@ -217,8 +251,12 @@ pub(crate) fn build_receipt(
     if history_len > 0 {
         blocks.push(block(
             Slot::History,
-            "history",
-            &serde_json::json!({}),
+            if info.trim_only {
+                "trim-only"
+            } else {
+                "graduated"
+            },
+            &serde_json::json!({ "phase": info.phase_compaction }),
             history_tokens,
             sources,
             0,

@@ -182,6 +182,7 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
         &self,
         query: &MemoryQuery,
         exclude: &[MemoryKind],
+        project: Option<&str>,
     ) -> Result<Vec<Memory>, MemoryError> {
         // Note: encrypted content cannot be searched server-side. We fetch all
         // and filter in-memory after decryption. For typical memory stores
@@ -191,7 +192,10 @@ impl<S: MemoryStore + Send + Sync> EncryptedStore<S> {
             limit: 10_000,
             kind: query.kind, // push kind filter into the inner store
         };
-        let encrypted_memories = self.inner.recall_excluding(&all_query, exclude).await?;
+        let encrypted_memories = self
+            .inner
+            .recall_visible(&all_query, exclude, project)
+            .await?;
 
         let query_lower = query.text.to_lowercase();
         let mut results: Vec<Memory> = Vec::new();
@@ -227,7 +231,7 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
     }
 
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_filtered(query, &[]).await
+        self.recall_filtered(query, &[], None).await
     }
 
     async fn recall_excluding(
@@ -235,7 +239,33 @@ impl<S: MemoryStore + Send + Sync> MemoryStore for EncryptedStore<S> {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
     ) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_filtered(query, exclude).await
+        self.recall_filtered(query, exclude, None).await
+    }
+
+    async fn recall_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        self.recall_filtered(query, exclude, project).await
+    }
+
+    async fn recall_tool_memories(
+        &self,
+        kind: MemoryKind,
+        project: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let found = self
+            .inner
+            .recall_tool_memories(kind, project, limit)
+            .await?;
+        found
+            .into_iter()
+            .filter(|m| m.id != SALT_SENTINEL_ID)
+            .map(|m| self.decrypt_memory(m))
+            .collect()
     }
 
     async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError> {

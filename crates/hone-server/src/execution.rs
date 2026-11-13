@@ -205,6 +205,7 @@ fn event_type(event: &AgentEvent) -> &'static str {
         AgentEvent::ToolCallPaused { .. } => "tool_call_paused",
         AgentEvent::ContextInjected { .. } => "context_injected",
         AgentEvent::ContextAssembled { .. } => "context_assembled",
+        AgentEvent::MemoryWritten { .. } => "memory_written",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
         AgentEvent::ModelFallback { .. } => "model_fallback",
         _ => "unknown",
@@ -527,5 +528,16 @@ mod tests {
     fn cr9_event_type_names_a_context_assembled_event() {
         let ev = AgentEvent::ContextAssembled { receipt: cr9_receipt(1, 1) };
         assert_eq!(event_type(&ev), "context_assembled");
+    }
+
+    // W7 of docs/plans/memory-write-tool-spec.md: a memory write has its own SSE name.
+    #[test]
+    fn w7_event_type_names_a_memory_written_event() {
+        let ev = AgentEvent::MemoryWritten {
+            id: "0190-abc".to_owned(),
+            kind: "feedback".to_owned(),
+            status: "added".to_owned(),
+        };
+        assert_eq!(event_type(&ev), "memory_written");
     }
 }

@@ -559,6 +559,8 @@ pub struct ContextManager {
     /// Hash of each stored message (parallel to `messages`), filled lazily and
     /// reset when a message is rewritten.
     hashes: Vec<Option<String>>,
+    /// Only drop-oldest trimming (no dedup, graduated or phase compaction).
+    trim_only: bool,
 }
 
 impl ContextManager {
@@ -576,6 +578,7 @@ impl ContextManager {
             phase_compaction: phase_compaction_from_env(),
             compaction_log: Vec::new(),
             hashes: Vec::new(),
+            trim_only: false,
         }
     }
 
@@ -594,7 +597,14 @@ impl ContextManager {
             phase_compaction: phase_compaction_from_env(),
             compaction_log: Vec::new(),
             hashes: Vec::new(),
+            trim_only: false,
         }
+    }
+
+    /// Set phase compaction in place (the `[context.graduated] phase` choice of
+    /// a strategy selection).
+    pub fn set_phase_compaction(&mut self, enabled: bool) {
+        self.phase_compaction = enabled;
     }
 
     /// Turn compaction on phase transitions on or off, overriding
@@ -608,6 +618,37 @@ impl ContextManager {
     pub fn with_metrics(mut self, metrics: Arc<ContextMetrics>) -> Self {
         self.metrics = Some(metrics);
         self
+    }
+
+    /// Keep only drop-oldest trimming (needed to fit the budget): no tool-result
+    /// dedup, no graduated compression and no phase compaction.
+    pub fn set_trim_only(&mut self, trim_only: bool) {
+        self.trim_only = trim_only;
+    }
+
+    /// Whether only trimming is on.
+    pub fn trim_only(&self) -> bool {
+        self.trim_only
+    }
+
+    /// Whether compaction on phase transitions is on.
+    pub fn phase_compaction(&self) -> bool {
+        self.phase_compaction
+    }
+
+    /// Lower the budget ratio to at most `cap` (a project file's `budget_ratio`):
+    /// `min(current ratio, cap)`, never higher.
+    pub fn cap_budget_ratio(&mut self, cap: f32) {
+        if cap < self.config.effective_budget_ratio {
+            self.set_budget_ratio(cap);
+        }
+    }
+
+    /// Use `ratio` of the advertised window as the token budget instead of the
+    /// per-model ratio.
+    pub fn set_budget_ratio(&mut self, ratio: f32) {
+        self.config.effective_budget_ratio = ratio;
+        self.max_context_tokens = self.config.effective_budget();
     }
 
     /// Notify the context manager about a tool call (for phase tracking).
@@ -634,11 +675,13 @@ impl ContextManager {
     }
 
     fn notify_kind(&mut self, kind: ToolPhaseKind, targets: &[String]) {
+        // The tracker and the transition metric always run; only the compaction
+        // is skipped under trim-only.
         if let Some((from, to)) = self.phase_tracker.observe_kind(kind) {
             if from == TaskPhase::Exploration
                 && (to == TaskPhase::Editing || to == TaskPhase::Verification)
             {
-                if self.phase_compaction {
+                if self.phase_compaction && !self.trim_only {
                     self.force_compress_exploration_results(targets);
                 }
                 if let Some(m) = &self.metrics {
@@ -692,7 +735,7 @@ impl ContextManager {
         // Dedup: for Tool messages with substantial content, check whether we
         // have already seen identical content.  If so, replace the incoming
         // message with a one-line pointer instead of storing the full text again.
-        let message = if matches!(message.role, Role::Tool) {
+        let message = if matches!(message.role, Role::Tool) && !self.trim_only {
             let text = message.content.as_text();
             if text.len() > 500 {
                 let hash = hash_content(&text);
@@ -746,8 +789,10 @@ impl ContextManager {
     /// 4. Flush a synthetic "[session history: …]" system message so the model
     ///    knows context was compacted.
     fn trim_to_budget(&mut self) {
-        // Step 1: graduated compression — runs unconditionally.
-        self.compress_old_tool_results();
+        // Step 1: graduated compression — runs unconditionally (unless trim-only).
+        if !self.trim_only {
+            self.compress_old_tool_results();
+        }
 
         if self.total_tokens() <= self.max_context_tokens {
             return;
@@ -1217,7 +1262,8 @@ pub fn estimate_text_tokens(text: &str) -> u32 {
 /// Whether `HONE_PHASE_COMPACTION` enables compaction on phase transitions
 /// (`1`, `true` or `on`). Read each time a manager is built.
 fn phase_compaction_from_env() -> bool {
-    std::env::var("HONE_PHASE_COMPACTION").is_ok_and(|v| matches!(v.trim(), "1" | "true" | "on"))
+    std::env::var("HONE_PHASE_COMPACTION")
+        .is_ok_and(|v| hone_config::strategy::phase_env_enabled(&v))
 }
 
 /// Two paths name the same file when, after stripping a leading `./`, they are
