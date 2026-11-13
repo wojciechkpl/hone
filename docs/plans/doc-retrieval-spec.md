@@ -73,3 +73,13 @@ The restack seams are sound. The review found:
 | R20 | **Multimodal turns don't retrieve.** A turn with non-text content doesn't run retrieval at all. |
 | R21 | **The tokenizer rebuild is tested.** A `docs.db` whose FTS table uses another tokenizer is rebuilt on open with `unicode61 remove_diacritics 2`, and `viet` then matches `Việt`. |
 | R22 | **Shared indexes.** `honed` passes a persistent `docs_db` under its data directory, unless persistence is disabled. Ensemble candidates that start while the first sync is still running wait for it, within R19's deadline, instead of skipping, so every candidate gets the same documents on turn 1. |
+
+### Re-review (R23–R25)
+
+R19–R22 hold. R18 is only partly met: `is_format_char` is a hand-written list that leaves out the Unicode tag characters (U+E0000–E007F, category Cf). An instruction written in tag characters is invisible to a reader and reached the model intact. Combining marks (U+0301), the combining grapheme joiner (U+034F) and variation selectors (U+FE0F) inside a trigger phrase also passed the detector.
+
+| Row | Behaviour |
+|---|---|
+| R23 | **Invisible characters never reach the model.** Text sent from a retrieved document drops every Unicode format (Cf) character, chosen by general category rather than a list, including the tag characters U+E0000–E007F. U+200C and U+200D are the exception and are kept, because some scripts need them. It also drops U+034F and the variation selectors U+FE00–FE0F and U+E0100–E01EF. An instruction encoded in tag characters is never delivered. |
+| R24 | **The detector sees through combining marks.** Before matching, the scan copy also drops every Cf character (including U+200C and U+200D), applies NFKD and drops nonspacing marks (Mn). A trigger phrase with a combining mark, CGJ or a variation selector inside it is caught. The spec notes the limit: homoglyphs from other scripts, such as a Cyrillic `І`, aren't detected, and the framing line and delimiters remain the main defence. |
+| R25 | **Quicker release and less ranker work.** The busy timeout on `docs.db` connections is set to the retrieval deadline (3 s), so an abandoned open stops waiting soon after. An ensemble's ranker doesn't run retrieval. |
