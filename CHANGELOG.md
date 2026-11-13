@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed: the injection detector sees through hidden characters and JSON escapes
+
+- **Before:** a trigger phrase split by a control or zero-width character, or written in fullwidth or math-bold letters, or in Unicode tag characters, or with those characters written as JSON `\uXXXX` escapes, was not matched. Tool results, tool errors and MCP output shared the blind spot.
+- **Now:** the patterns are matched against a normalized copy: JSON string escapes decoded; control characters removed (newlines and tabs become spaces); format characters removed; NFKD applied; combining marks removed. Text written in tag characters (U+E0020 to U+E007E) is decoded and scanned too, at the same level as visible text. A tool result with any tag character is at least a medium risk, labelled as hidden Unicode tag characters, and gets the SECURITY prefix. The result's content is not changed. Plain ASCII is scanned in place with no copy. Benign Persian, Hindi and Vietnamese text is not flagged.
+
 ### Fixed: memory recall finds older memories, skips outcome logs, and code search understands prompts
 
 - **Before:**
