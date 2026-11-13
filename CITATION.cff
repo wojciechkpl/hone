@@ -5,7 +5,6 @@ type: software
 authors:
   - given-names: Wojciech
     family-names: Kowalinski
-    email: wojciech.kowalinski@protonmail.com
 repository-code: "https://github.com/wojciechkpl/hone"
 url: "https://github.com/wojciechkpl/hone"
 license:

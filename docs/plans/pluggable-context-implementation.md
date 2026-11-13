@@ -44,7 +44,7 @@ flowchart LR
 
 | When | Decision | Why it can't be defaulted |
 |---|---|---|
-| After A | Re-run the `hone-inject` arm of `benchmarks/harness-compare` before and after #101 + A, and with `HONE_PHASE_COMPACTION=1`, to decide whether phase compaction becomes the default | It costs model API spend (or needs a local model on wk-system) |
+| After A | Re-run the `hone-inject` arm of `benchmarks/harness-compare` before and after #101 + A, and with `HONE_PHASE_COMPACTION=1`, to decide whether phase compaction becomes the default | It costs model API spend (or time on a machine running a local model) |
 | Before G–J | Each Phase 4 built-in merges with an eval report from F | Running the report costs model calls |
 | Before H, I | Adding heavy optional dependencies (an ONNX embedder, sqlite-vec, which is pre-v1) behind Cargo features | New native dependencies and a larger feature matrix |
 | Before K | Consolidation needs the Belief Ledger's tombstones and supersession | That ledger is a separate, unbuilt design |
