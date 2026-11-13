@@ -26,6 +26,11 @@ impl CostAccumulator {
         self.total_usage = self.total_usage + usage;
     }
 
+    /// Record usage that has no price: counted, but costs nothing.
+    pub fn add_unpriced(&mut self, usage: TokenUsage) {
+        self.total_usage = self.total_usage + usage;
+    }
+
     /// Total accumulated cost in USD.
     pub fn total_usd(&self) -> f64 {
         self.total_usd

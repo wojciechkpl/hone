@@ -5,6 +5,7 @@ use sqlx::Row;
 
 use crate::bm25::{Bm25Index, Bm25Params};
 use crate::embedding::{ScoredMemory, cosine_similarity};
+use crate::encrypted::SALT_SENTINEL_ID;
 use crate::error::MemoryError;
 use crate::store::MemoryStore;
 use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
@@ -403,6 +404,8 @@ impl SqliteStore {
         &self,
         query: &MemoryQuery,
         exclude: &[MemoryKind],
+        project: Option<&str>,
+        owned_only: bool,
     ) -> Result<Vec<Memory>, MemoryError> {
         let fetch_limit = if query.text.is_empty() {
             query.limit
@@ -426,6 +429,30 @@ impl SqliteStore {
                 })
                 .collect();
             conditions.push(format!("kind NOT IN ({})", marks.join(", ")));
+        }
+        // A model-written memory of another project is dropped here, before the
+        // corpus window. Tags are a JSON array, so a tag is matched as its quoted
+        // JSON string; `\` escapes the LIKE wildcards in the project id.
+        let project_pattern = project.map(|id| {
+            let quoted = serde_json::to_string(&format!("project:{id}")).unwrap_or_default();
+            let escaped = quoted
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            format!("%{escaped}%")
+        });
+        if project_pattern.is_some() && owned_only {
+            // Only the model's own memories of this project.
+            n += 1;
+            conditions.push(format!(
+                "tags LIKE '%\"source:tool\"%' AND tags LIKE ?{n} ESCAPE '\\'"
+            ));
+        } else if project_pattern.is_some() {
+            n += 1;
+            conditions.push(format!(
+                "NOT (tags LIKE '%\"source:tool\"%' AND tags LIKE '%\"project:%' \
+                 AND tags NOT LIKE ?{n} ESCAPE '\\')"
+            ));
         }
         let where_clause = if conditions.is_empty() {
             String::new()
@@ -453,6 +480,9 @@ impl SqliteStore {
         }
         for kind in exclude {
             q = q.bind(kind_to_str(*kind));
+        }
+        if let Some(pattern) = &project_pattern {
+            q = q.bind(pattern);
         }
         let rows = q
             .bind(fetch_limit.min(i64::MAX as usize) as i64)
@@ -577,7 +607,7 @@ impl MemoryStore for SqliteStore {
     }
 
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_with_exclusions(query, &[]).await
+        self.recall_with_exclusions(query, &[], None, false).await
     }
 
     async fn recall_excluding(
@@ -585,7 +615,68 @@ impl MemoryStore for SqliteStore {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
     ) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_with_exclusions(query, exclude).await
+        self.recall_with_exclusions(query, exclude, None, false)
+            .await
+    }
+
+    async fn recall_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        self.recall_with_exclusions(query, exclude, project, false)
+            .await
+    }
+
+    async fn recall_tool_memories(
+        &self,
+        kind: MemoryKind,
+        project: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let query = MemoryQuery {
+            text: String::new(),
+            limit,
+            kind: Some(kind),
+        };
+        self.recall_with_exclusions(&query, &[], Some(project), true)
+            .await
+    }
+
+    async fn record_if_absent(&self, memory: Memory) -> Result<bool, MemoryError> {
+        let tags_json = serde_json::to_string(&memory.tags)?;
+        let embedding_bytes = memory.embedding.as_deref().map(embedding_to_bytes);
+        let inserted = sqlx::query(
+            "INSERT OR IGNORE INTO memories
+             (id, content, tags, weight, created_at, decay_at, kind, description, embedding)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        )
+        .bind(&memory.id)
+        .bind(&memory.content)
+        .bind(&tags_json)
+        .bind(memory.weight)
+        .bind(memory.created_at as i64)
+        .bind(memory.decay_at.map(|t| t as i64))
+        .bind(kind_to_str(memory.kind))
+        .bind(&memory.description)
+        .bind(embedding_bytes)
+        .execute(&self.pool)
+        .await
+        .map_err(to_io_err)?
+        .rows_affected();
+        Ok(inserted > 0)
+    }
+
+    async fn has_encrypted_rows(&self) -> Result<bool, MemoryError> {
+        let found: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM memories WHERE content LIKE 'enc:v1:%' AND id != ?1 LIMIT 1",
+        )
+        .bind(SALT_SENTINEL_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+        Ok(found.is_some())
     }
 
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
@@ -609,8 +700,9 @@ impl MemoryStore for SqliteStore {
                 // Tags are stored as a JSON array, e.g. ["project:foo","bar"].
                 // Match the quoted tag string anywhere inside that array.
                 let pattern = format!("%\"{}\"%", tag);
-                sqlx::query("DELETE FROM memories WHERE tags LIKE ?1")
+                sqlx::query("DELETE FROM memories WHERE tags LIKE ?1 AND id != ?2")
                     .bind(&pattern)
+                    .bind(SALT_SENTINEL_ID)
                     .execute(&self.pool)
                     .await
                     .map_err(to_io_err)?
@@ -618,8 +710,9 @@ impl MemoryStore for SqliteStore {
             }
             MemoryFilter::Before(ts) => {
                 let ts = *ts as i64;
-                sqlx::query("DELETE FROM memories WHERE created_at < ?1")
+                sqlx::query("DELETE FROM memories WHERE created_at < ?1 AND id != ?2")
                     .bind(ts)
+                    .bind(SALT_SENTINEL_ID)
                     .execute(&self.pool)
                     .await
                     .map_err(to_io_err)?
@@ -627,8 +720,9 @@ impl MemoryStore for SqliteStore {
             }
             MemoryFilter::After(ts) => {
                 let ts = *ts as i64;
-                sqlx::query("DELETE FROM memories WHERE created_at > ?1")
+                sqlx::query("DELETE FROM memories WHERE created_at > ?1 AND id != ?2")
                     .bind(ts)
+                    .bind(SALT_SENTINEL_ID)
                     .execute(&self.pool)
                     .await
                     .map_err(to_io_err)?
@@ -636,8 +730,9 @@ impl MemoryStore for SqliteStore {
             }
             MemoryFilter::Kind(kind) => {
                 let kind_str = kind_to_str(*kind);
-                sqlx::query("DELETE FROM memories WHERE kind = ?1")
+                sqlx::query("DELETE FROM memories WHERE kind = ?1 AND id != ?2")
                     .bind(kind_str)
+                    .bind(SALT_SENTINEL_ID)
                     .execute(&self.pool)
                     .await
                     .map_err(to_io_err)?
@@ -659,8 +754,11 @@ impl MemoryStore for SqliteStore {
         // Remove memories whose decay_at has been reached.
         let now = now as i64;
         let rows_affected =
-            sqlx::query("DELETE FROM memories WHERE decay_at IS NOT NULL AND decay_at <= ?1")
-                .bind(now)
+            sqlx::query(
+                "DELETE FROM memories WHERE decay_at IS NOT NULL AND decay_at <= ?1 AND id != ?2",
+            )
+            .bind(now)
+            .bind(SALT_SENTINEL_ID)
                 .execute(&self.pool)
                 .await
                 .map_err(to_io_err)?
@@ -846,7 +944,11 @@ mod tests {
         let store = SqliteStore::in_memory().await.expect("in_memory");
         let emb = vec![0.1_f32, 0.2, 0.3];
         store
-            .record(make_memory_with_embedding("id-emb", "content with embedding", emb.clone()))
+            .record(make_memory_with_embedding(
+                "id-emb",
+                "content with embedding",
+                emb.clone(),
+            ))
             .await
             .expect("record");
 
@@ -924,7 +1026,10 @@ mod tests {
 
         // Query aligned with "alpha".
         let query = vec![1.0_f32, 0.0, 0.0, 0.0];
-        let results = store.recall_semantic(&query, 1).await.expect("recall_semantic");
+        let results = store
+            .recall_semantic(&query, 1)
+            .await
+            .expect("recall_semantic");
 
         assert_eq!(results.len(), 1, "expected exactly 1 result");
         assert_eq!(

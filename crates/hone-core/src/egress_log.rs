@@ -206,29 +206,28 @@ impl EgressLog {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Current time formatted as RFC-3339 (UTC, second precision).
-///
-/// We avoid pulling in the `time` crate's formatting machinery; a plain
-/// `std::time::SystemTime` conversion is sufficient here.
+/// Current time formatted as RFC-3339 (UTC, second precision), e.g.
+/// `2026-11-12T09:30:00Z`. See [`format_rfc3339_utc`].
 pub fn now_rfc3339() -> String {
-    // Use the time crate's OffsetDateTime since it's already in the workspace.
-    // Fallback to a simple epoch-based string if formatting fails.
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    // Format as a minimal ISO-8601 UTC string: 2006-01-02T15:04:05Z
-    let s = secs % 60;
-    let m = (secs / 60) % 60;
-    let h = (secs / 3600) % 24;
-    let days = secs / 86400;
-    // Simplified Gregorian calendar (good enough for log timestamps)
-    let year = 1970 + days / 365;
-    let day_of_year = days % 365;
-    let month = day_of_year / 30 + 1;
-    let day = day_of_year % 30 + 1;
-    format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{s:02}Z")
+    format_rfc3339_utc(secs)
+}
+
+/// Format seconds since the Unix epoch as RFC 3339 UTC with whole seconds,
+/// `YYYY-MM-DDTHH:MM:SSZ`, on the proleptic Gregorian calendar.
+///
+/// Values beyond chrono's representable range fall back to the epoch, which
+/// can't happen for a clock reading.
+pub fn format_rfc3339_utc(secs_since_epoch: u64) -> String {
+    let secs = i64::try_from(secs_since_epoch).unwrap_or(0);
+    chrono::DateTime::<chrono::Utc>::from_timestamp(secs, 0)
+        .unwrap_or_default()
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }
 
 /// Truncate a string to at most `max_chars` Unicode scalar values.
