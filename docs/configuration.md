@@ -791,13 +791,42 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 |---|---|---|
 | `~/.local/share/hone/memory.db` | Long-term memory (SQLite) | `--ephemeral`, `HONE_DISABLE_PERSISTENT_STORES=1` |
 | `~/.local/share/hone/index.db` | Symbol index of `.rs` and `.py` files in the working dir | same |
-| `~/.local/share/hone/sessions.db` | Conversations from one-shot runs (saved under a generated name unless you pass `--session`); `honed` sessions (`HONE_SESSION_DB` overrides) | `--ephemeral`; `HONE_EPHEMERAL` for `honed` |
+| `~/.local/share/hone/sessions.db` | Conversations from one-shot runs (saved under a generated name unless you pass `--session`) and their [context receipts](#context-receipts); `honed` sessions (`HONE_SESSION_DB` overrides) | `--ephemeral`; `HONE_EPHEMERAL` for `honed` |
 | `~/.local/share/hone/tool-cache.db` | Cache of read-only tool results | `HONE_TOOL_CACHE=0` |
-| `<cwd>/.hone/audit.jsonl` | Egress audit log of every tool call | off unless `--audit` or `HONE_AUDIT_LOG=1` |
+| `<cwd>/.hone/audit.jsonl` | Egress audit log of every tool call, plus one `context` line per model call | off unless `--audit` or `HONE_AUDIT_LOG=1` |
 | `<cwd>/.hone/reports/` | Session reports (`hone reports`) | |
 | `<cwd>/.hone/plan.md` | Orchestrator plan and worker status | |
 | `<cwd>/.hone/plans/` | Saved plans from plan mode (`hone --plan FILE`) | |
 | `<project root>/.hone/specs/` | Output of `hone spec` | |
+
+## Context receipts
+
+Every time Hone sends a request to a model, it records a *context receipt*: what went into that request and where it came from. A receipt lists, per block of the prompt (system prompt, recalled memories, skills, injected code, history), the strategy that produced it, its estimated tokens and its sources: memory ids, file paths with scores, skill names, and hashes of history messages. It also lists what was retrieved but cut, what compaction replaced and with what, the tools offered, and a SHA-256 of the request.
+
+```bash
+hone context show                      # the most recent session, every call
+hone context show --session my-fix --turn 2
+hone context show --json               # [{run, seq, receipt}, …]
+```
+
+**Where receipts go.**
+- One-shot runs store them with the session in `sessions.db`.
+- `--json` output has a `context` array with one receipt per model call.
+- `honed` streams them as `context_assembled` events and adds a `context_assembled` entry to each run's provenance chain.
+- With `--audit`, each receipt is also one line of `.hone/audit.jsonl` (`span_kind: "context"`). `hone trace` counts these as model calls, not tools.
+
+**Runs and turns.** Each process that saves to a session, for each agent it saves from, starts a new *run*, and turn numbers restart in each run. `hone --session NAME "prompt"` starts with an empty history and then saves over the session's messages, so an older run's message hashes may not match the messages the session holds now.
+
+**Privacy.** Receipts hold ids, paths, names, scores and hashes, never message, memory or file text. They are still diagnostics for your own machine:
+- Message hashes are unsalted SHA-256, so someone holding a receipt can confirm a short or common message ("yes", "continue") by guessing it.
+- File paths are as the index stored them, which may be absolute and show your home directory.
+- Memories imported from files may have descriptive ids.
+
+Don't attach audit logs or receipts from private work to public bug reports.
+
+**What the request hash covers.** `request_sha256` covers the messages and the names of the tools offered, not tool schemas or sampling parameters.
+
+**Reading history refs.** A receipt lists only the history messages that are new or changed since the agent's previous receipt, so a message identical to one sent earlier isn't listed again and messages that only moved aren't relisted. `hone context show` prints each receipt's history as `history: 5 messages (2 new listed), root e09db7e7317a`: the number of non-system messages in the request, how many of them are listed, and the first 12 hex digits of `history_root`. The root is the SHA-256 of the newline-joined hashes of those messages, in request order; `--json` gives it in full. It is for tools that hold the transcript to verify against, not something to check by hand.
 
 ## Environment variables
 

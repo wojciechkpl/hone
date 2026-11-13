@@ -42,6 +42,8 @@ pub enum SpanKind {
     Review,
     /// Ensemble candidate.
     Ensemble,
+    /// A context receipt: what one model call was given.
+    Context,
 }
 
 /// Lightweight tracing context passed through the agent call chain.

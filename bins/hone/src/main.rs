@@ -1,5 +1,6 @@
 mod approve;
 mod configure;
+mod context_cmd;
 mod image_input;
 mod memory_cmd;
 mod memory_init;
@@ -91,6 +92,26 @@ enum SessionCmd {
     },
 }
 
+/// Subcommands for `hone context <sub>`.
+#[derive(Subcommand, Debug)]
+enum ContextCmd {
+    /// Show the context receipts stored with a session, per model call.
+    Show {
+        /// Session name (default: the most recently updated one).
+        #[arg(long)]
+        session: Option<String>,
+        /// Only this run (a run is one process that saved to the session).
+        #[arg(long)]
+        run: Option<u32>,
+        /// Only this turn (of the latest run unless --run is given).
+        #[arg(long)]
+        turn: Option<u32>,
+        /// Print the stored receipts as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 /// Top-level subcommands (optional — the default behaviour is the agent loop).
 #[derive(Subcommand, Debug)]
 enum HoneCmd {
@@ -101,6 +122,11 @@ enum HoneCmd {
     },
     /// Interactive setup wizard — writes ~/.config/hone/config.toml.
     Configure,
+    /// Inspect what the model was given: the context receipts of a saved session.
+    Context {
+        #[command(subcommand)]
+        cmd: ContextCmd,
+    },
     /// Inspect hierarchical tracing data from the egress audit log.
     Trace {
         #[command(subcommand)]
@@ -2154,7 +2180,11 @@ async fn auto_save_session(agent: &AgentHandle, name: Option<&str>) {
         return;
     }
 
-    let Some(store) = open_session_store().await else {
+    // One store for the whole process, so receipts saved by later calls land in
+    // the same run (see `SessionStore::append_context_receipts`).
+    static AUTO_SAVE_STORE: tokio::sync::OnceCell<Option<session::SessionStore>> =
+        tokio::sync::OnceCell::const_new();
+    let Some(store) = AUTO_SAVE_STORE.get_or_init(open_session_store).await.as_ref() else {
         return;
     };
 
@@ -2166,6 +2196,34 @@ async fn auto_save_session(agent: &AgentHandle, name: Option<&str>) {
         tracing::warn!("auto-save session failed: {e}");
     } else {
         tracing::info!(name = %resolved_name, messages = messages.len(), "session auto-saved");
+        // Last stored ordinal per (agent id, session name) in this process.
+        static STORED: std::sync::Mutex<Vec<(String, String, u64)>> =
+            std::sync::Mutex::new(Vec::new());
+        let find = |agent_id: &str| {
+            STORED.lock().ok().and_then(|v| {
+                v.iter()
+                    .find(|(a, n, _)| a == agent_id && *n == resolved_name)
+                    .map(|(_, _, o)| *o)
+            })
+        };
+        let after = find(agent.agent_id()).unwrap_or(0);
+        let batch = agent.context_receipts_after(after).await;
+        if let Some(last) = batch.items.last().map(|(o, _)| *o) {
+            match store.append_context_receipts(&resolved_name, &batch).await {
+                Ok(()) => {
+                    if let Ok(mut v) = STORED.lock() {
+                        match v
+                            .iter_mut()
+                            .find(|(a, n, _)| *a == batch.agent_id && *n == resolved_name)
+                        {
+                            Some(e) => e.2 = last,
+                            None => v.push((batch.agent_id.clone(), resolved_name.clone(), last)),
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!("saving context receipts failed: {e}"),
+            }
+        }
     }
 }
 
@@ -2194,6 +2252,32 @@ async fn open_session_store() -> Option<session::SessionStore> {
             None
         }
     }
+}
+
+/// Handle `hone context show`. Needs no provider or network.
+async fn cmd_context_show(
+    session: Option<&str>,
+    run: Option<u32>,
+    turn: Option<u32>,
+    json: bool,
+) -> Result<()> {
+    let path = sessions_db_path();
+    anyhow::ensure!(
+        path.exists(),
+        "no saved sessions (no database at {})",
+        path.display()
+    );
+    let store = session::SessionStore::open_read_only(&path).await?;
+    let name = match store.resolve_session_name(session).await? {
+        Some(n) => n,
+        None => match session {
+            Some(n) => anyhow::bail!("session '{n}' not found"),
+            None => anyhow::bail!("no saved sessions"),
+        },
+    };
+    let stored = store.list_context_receipts(&name).await?;
+    print!("{}", context_cmd::render_context_show(&stored, run, turn, json)?);
+    Ok(())
 }
 
 /// Handle `hone session list`.
@@ -2652,6 +2736,18 @@ async fn main() -> Result<()> {
                 if !matches!(session_cmd, SessionCmd::Resume { .. }) {
                     return Ok(());
                 }
+            }
+            HoneCmd::Context {
+                cmd:
+                    ContextCmd::Show {
+                        session,
+                        run,
+                        turn,
+                        json,
+                    },
+            } => {
+                cmd_context_show(session.as_deref(), *run, *turn, *json).await?;
+                return Ok(());
             }
             HoneCmd::Trace { cmd: trace_cmd } => {
                 let audit_path = std::env::current_dir()
