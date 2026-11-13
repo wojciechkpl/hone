@@ -25,6 +25,7 @@ pub fn encode_event(event: &AgentEvent, event_id: u64) -> String {
         AgentEvent::ToolCallPaused { .. } => "tool_call_paused",
         AgentEvent::ContextInjected { .. } => "context_injected",
         AgentEvent::ContextAssembled { .. } => "context_assembled",
+        AgentEvent::MemoryWritten { .. } => "memory_written",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
         AgentEvent::ModelFallback { .. } => "model_fallback",
         // Forward-compat: new event variants added in the future are forwarded

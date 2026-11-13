@@ -105,7 +105,7 @@ pub const COMPACTOR_NAMES: &[&str] = &["graduated", "trim-only"];
 /// Valid `[memory] recaller` names.
 pub const RECALLER_NAMES: &[&str] = &["bm25", "none"];
 /// Valid `[memory] writer` names.
-pub const WRITER_NAMES: &[&str] = &["triggers", "off"];
+pub const WRITER_NAMES: &[&str] = &["triggers", "off", "tool", "triggers+tool"];
 
 /// Valid `[memory] exclude_kinds` entries (any case).
 pub const KIND_NAMES: &[&str] = &[

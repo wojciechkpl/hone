@@ -2968,9 +2968,11 @@ async fn main() -> Result<()> {
         .iter()
         .any(|n| n == "memory-index");
     let memory_index_str = if let Some(store) = memory_store.as_ref().filter(|_| memory_index_on) {
-        match hone_core::memory_index::render_index(
+        let index_dir = std::env::current_dir().unwrap_or_default();
+        match hone_core::memory_index::render_index_in(
             store.as_ref(),
             hone_core::memory_index::IndexBudget::default(),
+            &index_dir,
         )
         .await
         {
