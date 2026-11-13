@@ -2698,6 +2698,8 @@ dependencies = [
  "tokio-util",
  "toml 0.8.2",
  "tracing",
+ "unicode-normalization",
+ "unicode-properties",
  "uuid",
 ]
 
@@ -2770,7 +2772,9 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "criterion",
+ "hone-memory",
  "hone-proto",
+ "ignore",
  "notify",
  "serde",
  "serde_json",

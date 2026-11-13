@@ -2859,6 +2859,12 @@ async fn main() -> Result<()> {
     // The `[context]` / `[memory]` choices: flag, env var, project file, user
     // file, default. A broken value stops here with exit 2, before any model call.
     let strategy_selection = settings::load_strategy_selection_or_exit(&strategy_flags(&cli));
+    // Persistence (and so the document index file) is skipped under --ephemeral
+    // and HONE_DISABLE_PERSISTENT_STORES=1.
+    let skip_persistence = cli.ephemeral
+        || std::env::var("HONE_DISABLE_PERSISTENT_STORES")
+            .map(|v| v == "1")
+            .unwrap_or(false);
     // Build the registry now, before any language server or MCP server starts, so
     // a failure exits (2) with nothing left running. The built-ins do not need the
     // memory store or the index at build time.
@@ -2867,6 +2873,8 @@ async fn main() -> Result<()> {
         &hone_core::strategy::StrategyDeps {
             working_dir: std::env::current_dir().ok(),
             encrypted_memory: cli.encrypted_memory,
+            // Next to the code index; in memory when persistence is skipped.
+            docs_db: (!skip_persistence).then(|| data_dir().join("docs.db")),
             ..Default::default()
         },
     ) {
@@ -2884,10 +2892,6 @@ async fn main() -> Result<()> {
     //
     // Persistence is skipped when `--ephemeral` is passed OR when the env var
     // `HONE_DISABLE_PERSISTENT_STORES=1` is set (useful for automated tests).
-    let skip_persistence = cli.ephemeral
-        || std::env::var("HONE_DISABLE_PERSISTENT_STORES")
-            .map(|v| v == "1")
-            .unwrap_or(false);
 
     // Resolve the memory passphrase: only read the env var when
     // `--encrypted-memory` is explicitly set; otherwise ignore it entirely.

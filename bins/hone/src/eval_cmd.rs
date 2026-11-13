@@ -496,6 +496,9 @@ fn build_agent(eff: &Effective, b: AgentBuild) -> std::result::Result<Agent, Str
                 working_dir: Some(workdir.clone()),
                 // Each run gets its own plain SQLite memory, never an encrypted store.
                 encrypted_memory: false,
+                // The strategies are built per run, so the document index is in
+                // memory and indexes only this run's isolated copy of the workspace.
+                docs_db: None,
             },
         )
         .map_err(|e| format!("strategy error: {e}"))?;
