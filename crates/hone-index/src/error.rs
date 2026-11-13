@@ -8,6 +8,9 @@ pub enum IndexError {
     #[error("Directory walk error: {0}")]
     WalkDir(#[from] walkdir::Error),
 
+    #[error("Database error: {0}")]
+    Database(String),
+
     #[error("Path not found: {path}")]
     NotFound { path: PathBuf },
 }

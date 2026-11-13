@@ -27,6 +27,8 @@ pub enum MemoryCmd {
         /// Memory id (or an 8-char prefix).
         id: String,
     },
+    /// Rebuild the full-text (FTS5) search index.
+    Reindex,
     /// Bulk delete memories matching exactly one filter.
     Forget {
         /// Delete all memories with this tag.
@@ -124,6 +126,14 @@ pub async fn run(cmd: MemoryCmd, store: Arc<dyn MemoryStore>, out: &mut dyn Writ
                 writeln!(out, "{id_prefix}  {kind_label}  {timestamp}  {snippet}")?;
             }
 
+            Ok(())
+        }
+
+        MemoryCmd::Reindex => {
+            match store.reindex().await? {
+                Some(n) => writeln!(out, "indexed {n} memories")?,
+                None => writeln!(out, "this memory store has no search index")?,
+            }
             Ok(())
         }
 

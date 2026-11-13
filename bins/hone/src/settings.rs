@@ -34,6 +34,14 @@ pub fn load_effective(cli_model: Option<&str>) -> Result<Effective, ConfigError>
     })
 }
 
+/// The user's `config.toml` as a layer, for `hone eval` profiles to apply over.
+pub fn load_user_layer() -> Result<Option<ConfigLayer>, ConfigError> {
+    match user_config_path() {
+        Some(p) => ConfigLayer::load(&p),
+        None => Ok(None),
+    }
+}
+
 /// Resolve again as if the project file had no `default_model`: the next
 /// choice is the user's `default_model`, then the wizard model, else none.
 /// Used when the repository's choice cannot be built. Warnings were already

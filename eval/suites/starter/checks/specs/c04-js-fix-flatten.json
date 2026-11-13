@@ -1,0 +1,210 @@
+{
+ "runtime": "node",
+ "module": "flatten.js",
+ "advisory": "node",
+ "assets": [
+  "probe_child.js"
+ ],
+ "base": "checks/data/c04-js-fix-flatten",
+ "take": [
+  {
+   "file": "flatten.js"
+  }
+ ],
+ "cases": [
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     1,
+     [
+      2,
+      3
+     ]
+    ]
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "ab58bec1950b6719",
+   "hash": "aab1b155e98816257ba8dae9c5d67735e1143555f45d19eac3b31ead03576dd7"
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     1,
+     [
+      2,
+      [
+       3,
+       [
+        4
+       ]
+      ]
+     ]
+    ]
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "ee43665802ab9565",
+   "hash": "7d07a3a6fd54bb31d2b8aaefa7cc081f625cfa57443483a5bbd200dacf991e43"
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     1,
+     [
+      2,
+      [
+       3,
+       [
+        4
+       ]
+      ]
+     ]
+    ],
+    1
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "59b25febce6d989e",
+   "hash": "de92ead667f72aefe329d6408cbb229571c694ea85ad6f01f24b185473686ab8"
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     1,
+     [
+      2
+     ]
+    ],
+    0
+   ],
+   "keys": [
+    "ok",
+    "same0"
+   ],
+   "salt": "f59c0e3cf71f763b",
+   "hash": "245c7a35a4b3147310e58b16d92162f87732b0d4ac085ac917f97f09fccfd5bf"
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     [
+      []
+     ]
+    ]
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "2b9458202d8c6bde",
+   "hash": "c28973466002d69faa962565e633a186f5f8e9f078a91d794ee2c94b5fdbb285"
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     1,
+     [
+      2,
+      [
+       3,
+       [
+        4,
+        [
+         5
+        ]
+       ]
+      ]
+     ]
+    ],
+    2
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "e1780038da0e711b",
+   "hash": "d900f1b8bef7f467469af06c00f39930a713770de4ed802460232bdf936ac786"
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    []
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "b177c4adaeaa67fe",
+   "hash": "3fef15157de6c860710dac90a5f61b9cb227b848beb5f243c8bb658cbf00db19"
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     [
+      1
+     ],
+     [
+      2
+     ],
+     [
+      3
+     ]
+    ]
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "bef1b2ff9e8d21b8",
+   "hash": "9c229e0d11139de4b806737c9484ee6213680daabf3c8a3b026d21aecd290a3a"
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     1,
+     [
+      2,
+      [
+       3
+      ]
+     ]
+    ],
+    3
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "69aeeacf5963b6b2",
+   "hash": "7971ff89bc7bcbbd9bec23ca16fabf2e08d43d7afb6aeaac8127bd1e101a68ab"
+  },
+  {
+   "fn": "flatten",
+   "args": [
+    [
+     [
+      [
+       [
+        [
+         7
+        ]
+       ]
+      ]
+     ]
+    ]
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "791b095b1c9a643e",
+   "hash": "555aeaa4081f73c7cb0292b792abf712511a55791e2396815182ab4a2653512d"
+  }
+ ]
+}

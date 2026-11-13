@@ -114,7 +114,9 @@ fn test_s10_json_should_list_every_slot_with_defaults() {
             "context.skeleton",
             "context.compactor",
             "memory.recaller",
-            "memory.writer"
+            "memory.writer",
+            "retrieval.retriever",
+            "retrieval.chunker"
         ]
     );
     assert_eq!(slot(&v, "context.skeleton")["name"], "adaptive");
@@ -267,7 +269,7 @@ fn test_s10_check_should_exit_two_on_an_invalid_config_naming_the_file_and_key()
             "[context.skeleton]\nuse = \"bogus\"\n",
             "context.skeleton.use",
         ),
-        ("[memory]\nrecaller = \"fts5\"\n", "memory.recaller"),
+        ("[memory]\nrecaller = \"vector-db\"\n", "memory.recaller"),
     ] {
         for in_project in [false, true] {
             let e = Env::new();

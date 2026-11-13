@@ -337,6 +337,67 @@ pub fn parse_sse_chunk(
     events
 }
 
+/// How long after a `finish_reason` chunk the reader waits for the trailing
+/// usage chunk (or `[DONE]`, or the end of the stream) before ending the turn.
+const FINISH_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// What the stream reader holds back so each response yields one `Usage` and
+/// one `Done`, in that order: OpenAI-compatible servers send the usage in a
+/// chunk with `choices: []` AFTER the `finish_reason` chunk (inline usage, or a
+/// running total on every chunk, is possible too: the last report wins).
+#[derive(Default)]
+struct FinishHold {
+    /// When the `finish_reason` chunk arrived.
+    finished: Option<tokio::time::Instant>,
+    usage: Option<TokenUsage>,
+}
+
+impl FinishHold {
+    /// Feeds one `data:` payload to [`parse_sse_chunk`].
+    fn feed(
+        &mut self,
+        data: &str,
+        tool_states: &mut HashMap<usize, ToolCallState>,
+        out: &mut Vec<ProviderEvent>,
+    ) {
+        for event in parse_sse_chunk(data, tool_states) {
+            match event {
+                ProviderEvent::Usage(u) => self.usage = Some(u),
+                ProviderEvent::Done => {
+                    self.finished.get_or_insert_with(tokio::time::Instant::now);
+                }
+                // The completion stands: only note the late error.
+                ProviderEvent::Error { message, .. } if self.finished.is_some() => {
+                    tracing::warn!("ignoring an error after the response finished: {message}");
+                }
+                ProviderEvent::Error { .. } => {
+                    self.flush_usage(out);
+                    out.push(event);
+                }
+                other => out.push(other),
+            }
+        }
+        if data == "[DONE]" {
+            self.flush(out);
+        }
+    }
+
+    /// The held usage, if any (billed even when the response then fails).
+    fn flush_usage(&mut self, out: &mut Vec<ProviderEvent>) {
+        if let Some(u) = self.usage.take() {
+            out.push(ProviderEvent::Usage(u));
+        }
+    }
+
+    /// End a finished response: its usage, then `Done`.
+    fn flush(&mut self, out: &mut Vec<ProviderEvent>) {
+        if self.finished.take().is_some() {
+            self.flush_usage(out);
+            out.push(ProviderEvent::Done);
+        }
+    }
+}
+
 /// The message of an in-band `error` value (an object with `message`, or a string).
 fn in_band_error_message(err: &Value) -> String {
     err["message"]
@@ -444,8 +505,16 @@ impl ModelProvider for OpenAiProvider {
                 HashMap::<usize, ToolCallState>::new(),
                 super::http_common::Utf8Decoder::default(),
                 super::http_common::StreamProgress::default(),
+                FinishHold::default(),
             ),
-            |(mut byte_stream, mut buffer, mut tool_states, mut decoder, mut progress)| async move {
+            |(
+                mut byte_stream,
+                mut buffer,
+                mut tool_states,
+                mut decoder,
+                mut progress,
+                mut hold,
+            )| async move {
                 loop {
                     if progress.should_stop() {
                         return None;
@@ -458,8 +527,7 @@ impl ModelProvider for OpenAiProvider {
                         buffer.drain(..pos + 1);
 
                         if let Some(data) = line.strip_prefix("data: ") {
-                            let parsed = parse_sse_chunk(data, &mut tool_states);
-                            emitted.extend(parsed);
+                            hold.feed(data, &mut tool_states, &mut emitted);
                         }
                     }
                     progress.observe(&mut emitted);
@@ -467,11 +535,32 @@ impl ModelProvider for OpenAiProvider {
                     if !emitted.is_empty() {
                         return Some((
                             stream::iter(emitted),
-                            (byte_stream, buffer, tool_states, decoder, progress),
+                            (byte_stream, buffer, tool_states, decoder, progress, hold),
                         ));
                     }
 
-                    match byte_stream.next().await {
+                    // After the finish chunk, wait only briefly for what follows.
+                    let next = match hold.finished {
+                        Some(at) => {
+                            match tokio::time::timeout_at(at + FINISH_GRACE, byte_stream.next())
+                                .await
+                            {
+                                Ok(next) => next,
+                                Err(_) => {
+                                    let mut done = Vec::new();
+                                    hold.flush(&mut done);
+                                    progress.observe(&mut done);
+                                    done.extend(progress.end_events("openai", None));
+                                    return Some((
+                                        stream::iter(done),
+                                        (byte_stream, buffer, tool_states, decoder, progress, hold),
+                                    ));
+                                }
+                            }
+                        }
+                        None => byte_stream.next().await,
+                    };
+                    match next {
                         Some(Ok(chunk)) => decoder.push(&chunk, &mut buffer),
                         end => {
                             let cause = match &end {
@@ -487,16 +576,19 @@ impl ModelProvider for OpenAiProvider {
                             for line in remaining.lines() {
                                 let line = line.trim();
                                 if let Some(data) = line.strip_prefix("data: ") {
-                                    let parsed = parse_sse_chunk(data, &mut tool_states);
-                                    final_events.extend(parsed);
+                                    hold.feed(data, &mut tool_states, &mut final_events);
                                 }
                             }
+                            // A finish chunk with no `[DONE]` after it.
+                            hold.flush(&mut final_events);
+                            // Usage of a response that never finished is still billed.
+                            hold.flush_usage(&mut final_events);
                             progress.observe(&mut final_events);
                             final_events.extend(progress.end_events("openai", cause));
                             if !final_events.is_empty() {
                                 return Some((
                                     stream::iter(final_events),
-                                    (byte_stream, buffer, tool_states, decoder, progress),
+                                    (byte_stream, buffer, tool_states, decoder, progress, hold),
                                 ));
                             }
                             return None;

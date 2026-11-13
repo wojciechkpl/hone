@@ -125,6 +125,32 @@ fn slots(sel: &StrategySelection) -> Vec<Slot> {
             origin: sel.writer.origin.label(),
             param_origins: Map::new(),
         },
+        Slot {
+            slot: "retrieval.retriever",
+            name: json!("fts5-docs"),
+            params: json!({
+                "top_k": sel.retrieval_top_k.value,
+                "max_tokens": sel.retrieval_max_tokens.value,
+            }),
+            origin: sel.retrieval_top_k.origin.label(),
+            param_origins: origins(&[
+                ("top_k", sel.retrieval_top_k.origin.label()),
+                ("max_tokens", sel.retrieval_max_tokens.origin.label()),
+            ]),
+        },
+        Slot {
+            slot: "retrieval.chunker",
+            name: json!(sel.retrieval_chunker.value),
+            params: json!({
+                "lines": sel.retrieval_fixed_lines.value,
+                "overlap": sel.retrieval_fixed_overlap.value,
+            }),
+            origin: sel.retrieval_chunker.origin.label(),
+            param_origins: origins(&[
+                ("lines", sel.retrieval_fixed_lines.origin.label()),
+                ("overlap", sel.retrieval_fixed_overlap.origin.label()),
+            ]),
+        },
     ]
 }
 
@@ -187,7 +213,24 @@ pub fn render_text(
                 origin.as_str().unwrap_or_default()
             ));
         }
-        out.push_str(&format!("  chosen by: {}\n\n", s.origin));
+        if s.slot == "retrieval.chunker" {
+            out.push_str(&format!(
+                "  available: {}\n",
+                hone_config::strategy::CHUNKER_NAMES.join(", ")
+            ));
+        }
+        // The encrypted-memory fallback to `bm25` is the recaller's flag origin
+        // (JSON keeps `flag`); it is named only when that fallback happened.
+        let fell_back = sel
+            .warnings
+            .iter()
+            .any(|w| w.path == std::path::Path::new("--encrypted-memory"));
+        let origin = if s.slot == "memory.recaller" && s.origin == "flag" && fell_back {
+            "--encrypted-memory".to_owned()
+        } else {
+            s.origin.clone()
+        };
+        out.push_str(&format!("  chosen by: {origin}\n\n"));
     }
     if !sel.warnings.is_empty() {
         out.push_str("warnings:\n");

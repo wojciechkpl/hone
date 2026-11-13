@@ -174,6 +174,8 @@ impl AgentEnsemble {
         if let Some(s) = self.strategies.clone() {
             ranker = ranker.with_strategies(s);
         }
+        // The ranker judges the candidates' answers: no documents.
+        ranker = ranker.without_retrieval();
         let (ranker_tx, mut ranker_rx) = mpsc::channel(256);
 
         // Collect tokens emitted by the ranker.

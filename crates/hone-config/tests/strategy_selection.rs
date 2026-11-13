@@ -28,7 +28,7 @@
 //!     pub compactor: Chosen<String>,          // "graduated" | "trim-only"
 //!     pub graduated_phase: Chosen<bool>,      // false
 //!     pub budget_ratio: Chosen<Option<f32>>,  // None = the per-model table
-//!     pub recaller: Chosen<String>,           // "bm25" | "none"
+//!     pub recaller: Chosen<String>,           // "bm25" | "fts5" | "none"
 //!     pub top_k: Chosen<usize>,               // 5
 //!     pub exclude_kinds: Chosen<Vec<String>>, // ["outcome"]
 //!     pub writer: Chosen<String>,             // "triggers" | "off"
@@ -576,9 +576,9 @@ fn test_s4_unknown_names_should_fail_naming_the_file_the_key_and_the_valid_names
             "graduated",
         ),
         (
-            "[memory]\nrecaller = \"fts5\"\n",
+            "[memory]\nrecaller = \"vector-db\"\n",
             "memory.recaller",
-            "fts5",
+            "vector-db",
             "bm25",
         ),
         (

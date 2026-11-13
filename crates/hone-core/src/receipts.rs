@@ -26,6 +26,8 @@ pub(crate) struct RecallInfo {
     pub exclude: Vec<String>,
     /// The id of a registered (non built-in) recaller, named as it is.
     pub custom: Option<StrategyId>,
+    /// The built-in `fts5` recaller ran (named `fts5` in the receipt).
+    pub fts5: bool,
 }
 
 /// What turn-1 context injection added.
@@ -62,6 +64,18 @@ pub(crate) struct TurnContextInfo {
     /// as `phase_compaction`).
     pub trim_only: bool,
     pub phase_compaction: bool,
+    /// What document retrieval added this turn.
+    pub retrieval: Option<RetrievalInfo>,
+}
+
+/// The document retrieval block of a turn.
+#[derive(Debug, Clone)]
+pub(crate) struct RetrievalInfo {
+    pub strategy: StrategyId,
+    /// Tokens of the section prefixed to the user message.
+    pub tokens: u32,
+    pub sources: Vec<ScoredSource>,
+    pub dropped: Vec<SourceRef>,
 }
 
 fn strategy(slot: Slot, name: &str, params: &serde_json::Value) -> StrategyId {
@@ -155,14 +169,15 @@ pub(crate) fn build_receipt(
                     "exclude": info.recall.exclude,
                     "limit": info.recall.top_k,
                 });
+                let base = if info.recall.fts5 { "fts5" } else { "bm25" };
                 let name = if info.recall.semantic {
                     params["rrf_k"] = serde_json::json!(RECALL_RRF_K);
                     params["semantic_fetch"] = serde_json::json!(SEMANTIC_RECALL_FETCH);
-                    "bm25+semantic:rrf"
+                    format!("{base}+semantic:rrf")
                 } else {
-                    "bm25"
+                    base.to_owned()
                 };
-                strategy(Slot::Recall, name, &params)
+                strategy(Slot::Recall, &name, &params)
             }
         };
         let sources = info
@@ -199,6 +214,17 @@ pub(crate) fn build_receipt(
             sources,
             0,
         ));
+    }
+
+    // A retrieval that timed out has no sources and adds no block (only its mark in `dropped`).
+    if let Some(r) = info.retrieval.as_ref().filter(|r| !r.sources.is_empty()) {
+        blocks.push(BlockReceipt {
+            slot: Slot::Retrieval,
+            strategy: r.strategy.clone(),
+            tokens: r.tokens,
+            sources: r.sources.clone(),
+            duration_ms: 0,
+        });
     }
 
     if let Some(inj) = &info.injection {
@@ -271,6 +297,11 @@ pub(crate) fn build_receipt(
             id: id.clone(),
             version: None,
         })
+        .chain(
+            info.retrieval
+                .iter()
+                .flat_map(|r| r.dropped.iter().cloned()),
+        )
         .collect();
 
     ContextReceipt {

@@ -1,0 +1,48 @@
+{
+ "runtime": "python",
+ "module": "shopkit.shipping.rates",
+ "assets": [
+  "probe_child.py"
+ ],
+ "take": [
+  {
+   "tree": "shopkit",
+   "glob": "*.py"
+  }
+ ],
+ "manifest": "x01-ctx-free-shipping.manifest.json",
+ "cases": [
+  {
+   "fn": "shipping_cost",
+   "args": [
+    120,
+    "EU"
+   ],
+   "expect": 0
+  },
+  {
+   "fn": "shipping_cost",
+   "args": [
+    100.01,
+    "EU"
+   ],
+   "expect": 0
+  },
+  {
+   "fn": "shipping_cost",
+   "args": [
+    100,
+    "EU"
+   ],
+   "expect": 4.9
+  },
+  {
+   "fn": "shipping_cost",
+   "args": [
+    80,
+    "EU"
+   ],
+   "expect": 4.9
+  }
+ ]
+}

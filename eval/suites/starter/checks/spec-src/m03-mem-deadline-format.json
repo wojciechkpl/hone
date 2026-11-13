@@ -1,0 +1,41 @@
+{
+ "runtime": "python",
+ "module": "deadlines",
+ "assets": [
+  "probe_child.py"
+ ],
+ "take": [
+  {
+   "file": "deadlines.py"
+  }
+ ],
+ "cases": [
+  {
+   "fn": "format_deadline",
+   "args": [
+    {
+     "$date": "2026-03-09"
+    }
+   ],
+   "expect": "09-Mar-2026"
+  },
+  {
+   "fn": "format_deadline",
+   "args": [
+    {
+     "$date": "2026-12-01"
+    }
+   ],
+   "expect": "01-Dec-2026"
+  },
+  {
+   "fn": "format_deadline",
+   "args": [
+    {
+     "$date": "2027-08-31"
+    }
+   ],
+   "expect": "31-Aug-2027"
+  }
+ ]
+}

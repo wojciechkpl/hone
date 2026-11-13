@@ -177,7 +177,7 @@ fn test_s5_with_builtins_should_list_every_builtin_under_its_config_key() {
     };
     assert_eq!(
         names("context.sources"),
-        ["env-snapshot", "memory-index", "recall", "skeleton", "skills"]
+        ["env-snapshot", "memory-index", "recall", "retrieval", "skeleton", "skills"]
     );
     assert_eq!(
         names("context.skeleton"),
@@ -190,7 +190,7 @@ fn test_s5_with_builtins_should_list_every_builtin_under_its_config_key() {
         ]
     );
     assert_eq!(names("context.compactor"), ["graduated", "trim-only"]);
-    assert_eq!(names("memory.recaller"), ["bm25", "none"]);
+    assert_eq!(names("memory.recaller"), ["bm25", "fts5", "none"]);
     assert_eq!(names("memory.writer"), ["off", "tool", "triggers", "triggers+tool"]);
 }
 
@@ -206,13 +206,13 @@ fn test_s5_the_default_selection_should_build() {
 #[test]
 fn test_s5_an_unregistered_name_should_fail_the_build_naming_it_and_the_valid_ones() {
     let mut sel = StrategySelection::from_sources(None, None, &no_env, &Flags::default()).unwrap();
-    sel.recaller.value = "fts5".to_owned(); // plain data: nothing stops a caller setting it
+    sel.recaller.value = "vector-db".to_owned(); // plain data: nothing stops a caller setting it
     let err = StrategyRegistry::with_builtins()
         .build(&sel, &StrategyDeps::default())
         .err()
-        .expect("fts5 is not registered");
+        .expect("vector-db is not registered");
     let text = err.to_string();
-    assert!(text.contains("fts5"), "{text}");
+    assert!(text.contains("vector-db"), "{text}");
     assert!(text.contains("bm25"), "valid names are listed: {text}");
 }
 

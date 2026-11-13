@@ -22,6 +22,7 @@ tracing = { workspace = true }
 aes-gcm = { workspace = true }
 argon2 = { workspace = true }
 base64 = "0.22"
+unicode-normalization = "0.1"
 time = { workspace = true }
 
 [dev-dependencies]

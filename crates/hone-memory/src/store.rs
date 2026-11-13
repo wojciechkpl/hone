@@ -92,21 +92,48 @@ pub trait MemoryStore: Send + Sync {
         Ok(found)
     }
 
-    /// Insert `memory` only when no memory has its id. Returns whether it was
-    /// inserted. Atomic in stores that can be shared by several processes (the
-    /// default is a lookup then a write, which is not).
-    async fn record_if_absent(&self, memory: Memory) -> Result<bool, MemoryError> {
-        if self.recall_by_id(&memory.id).await?.is_some() {
-            return Ok(false);
-        }
-        self.record(memory).await?;
-        Ok(true)
+    /// Ranked full-text recall through the store's own search index (SQLite's
+    /// FTS5), with the kind filter and `exclude` applied in the index query.
+    /// `None` when the store has no such index (the default); callers then fall
+    /// back to [`recall_excluding`](Self::recall_excluding).
+    async fn recall_indexed(
+        &self,
+        _query: &MemoryQuery,
+        _exclude: &[MemoryKind],
+    ) -> Result<Option<Vec<ScoredMemory>>, MemoryError> {
+        Ok(None)
     }
 
-    /// Whether any memory (but the encryption salt record) holds `enc:v1:`
-    /// content, i.e. was written by an `EncryptedStore`. The default scans a
-    /// listing; stores with a query override it.
-    async fn has_encrypted_rows(&self) -> Result<bool, MemoryError> {
+    /// [`recall_indexed`](Self::recall_indexed) that, when `project` is `Some(id)`,
+    /// leaves out a model-written memory of another project (see
+    /// [`recall_visible`](Self::recall_visible)). The default filters after the
+    /// index query; `SqliteStore` filters inside it, before the cap.
+    async fn recall_indexed_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Option<Vec<ScoredMemory>>, MemoryError> {
+        let Some(mut found) = self.recall_indexed(query, exclude).await? else {
+            return Ok(None);
+        };
+        if let Some(project) = project {
+            found.retain(|s| visible_in_project(&s.memory.tags, project));
+        }
+        Ok(Some(found))
+    }
+
+    /// Rebuild the store's search index; returns the number of memories
+    /// indexed, or `None` when the store has no index (the default).
+    async fn reindex(&self) -> Result<Option<usize>, MemoryError> {
+        Ok(None)
+    }
+
+    /// Up to `limit` memories whose content is `enc:v1:` or `enc:v2:` ciphertext
+    /// (not the encryption salt record), chosen without regard to recency: what
+    /// `EncryptedStore` tries a passphrase on. The default scans a listing;
+    /// stores with a query override it.
+    async fn encrypted_rows_sample(&self, limit: usize) -> Result<Vec<Memory>, MemoryError> {
         let all = self
             .recall(&MemoryQuery {
                 text: String::new(),
@@ -114,9 +141,14 @@ pub trait MemoryStore: Send + Sync {
                 kind: None,
             })
             .await?;
-        Ok(all.iter().any(|m| {
-            m.id != crate::encrypted::SALT_SENTINEL_ID && m.content.starts_with("enc:v1:")
-        }))
+        Ok(all
+            .into_iter()
+            .filter(|m| {
+                m.id != crate::encrypted::SALT_SENTINEL_ID
+                    && (m.content.starts_with("enc:v1:") || m.content.starts_with("enc:v2:"))
+            })
+            .take(limit)
+            .collect())
     }
 
     /// Like [`recall_excluding`](Self::recall_excluding), and when `project` is
@@ -267,4 +299,62 @@ pub trait MemoryStore: Send + Sync {
 
         Ok(best.map(|(_, m)| m))
     }
+}
+
+/// What a store must offer to sit under an `EncryptedStore`: atomic
+/// insert-if-absent for the salt and key check, a side table of sealed vectors,
+/// and the one-time move of vectors an older binary left in the `embedding`
+/// column. There are no defaults: a store that can't do these atomically can't
+/// be wrapped, which is a compile error rather than a failure after a write.
+///
+/// `SqliteStore` and `InMemoryStore` implement it. A wrapper around one of them
+/// must forward every method.
+#[async_trait]
+pub trait SealedVectorStore: Send + Sync {
+    /// Insert `memory` only when no memory has its id. Returns whether it was
+    /// inserted. Atomic.
+    async fn record_if_absent(&self, memory: Memory) -> Result<bool, MemoryError>;
+
+    /// Set the `description` of memory `id` only when it has none. Returns
+    /// whether it was set. Atomic.
+    async fn set_description_if_absent(
+        &self,
+        id: &str,
+        description: &str,
+    ) -> Result<bool, MemoryError>;
+
+    /// Whether any memory (but the encryption salt record) holds `enc:v1:` or
+    /// `enc:v2:` content, i.e. was written by an `EncryptedStore`.
+    async fn has_encrypted_rows(&self) -> Result<bool, MemoryError>;
+
+    /// The sealed vector kept for memory `id`, if any.
+    async fn sealed_vector(&self, id: &str) -> Result<Option<Vec<u8>>, MemoryError>;
+
+    /// Up to a batch of `(id, raw embedding bytes)` of the `enc:v1` memories
+    /// whose `embedding` column is set: what `EncryptedStore` still has to move
+    /// to the side table. Callers repeat until it returns nothing (or nothing
+    /// they can move).
+    async fn vector_migration_candidates(&self) -> Result<Vec<(String, Vec<u8>)>, MemoryError>;
+
+    /// Store `blob` as memory `id`'s sealed vector and set its `embedding`
+    /// column to NULL, together.
+    async fn move_vector_to_sealed(&self, id: &str, blob: &[u8]) -> Result<(), MemoryError>;
+
+    /// [`move_vector_to_sealed`](Self::move_vector_to_sealed) for several rows;
+    /// stores with transactions override it to use one. This default is the
+    /// plain loop (each move is atomic on its own).
+    async fn move_vectors_to_sealed(&self, moves: &[(String, Vec<u8>)]) -> Result<(), MemoryError> {
+        for (id, blob) in moves {
+            self.move_vector_to_sealed(id, blob).await?;
+        }
+        Ok(())
+    }
+
+    /// Write `memory` and, in the same transaction, its sealed vector: `Some`
+    /// sets it, `None` clears the previous one.
+    async fn record_sealed(
+        &self,
+        memory: Memory,
+        sealed: Option<Vec<u8>>,
+    ) -> Result<(), MemoryError>;
 }

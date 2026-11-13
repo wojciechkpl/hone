@@ -9,17 +9,20 @@ use tokio::sync::RwLock;
 
 use crate::bm25::{Bm25Index, Bm25Params};
 use crate::error::MemoryError;
-use crate::store::MemoryStore;
+use crate::store::{MemoryStore, SealedVectorStore};
 use crate::types::{Memory, MemoryFilter, MemoryQuery};
 
 pub struct InMemoryStore {
     memories: Arc<RwLock<HashMap<String, Memory>>>,
+    /// Sealed vectors by memory id (the counterpart of `SqliteStore`'s side table).
+    sealed: Arc<RwLock<HashMap<String, Vec<u8>>>>,
 }
 
 impl InMemoryStore {
     pub fn new() -> Self {
         Self {
             memories: Arc::new(RwLock::new(HashMap::new())),
+            sealed: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -160,7 +163,95 @@ impl MemoryStore for InMemoryStore {
         let map = memories.into_iter().map(|m| (m.id.clone(), m)).collect();
         Ok(Self {
             memories: Arc::new(RwLock::new(map)),
+            sealed: Arc::new(RwLock::new(HashMap::new())),
         })
+    }
+}
+
+#[async_trait]
+impl SealedVectorStore for InMemoryStore {
+    async fn record_if_absent(&self, memory: Memory) -> Result<bool, MemoryError> {
+        let mut guard = self.memories.write().await;
+        if guard.contains_key(&memory.id) {
+            return Ok(false);
+        }
+        guard.insert(memory.id.clone(), memory);
+        Ok(true)
+    }
+
+    async fn set_description_if_absent(
+        &self,
+        id: &str,
+        description: &str,
+    ) -> Result<bool, MemoryError> {
+        let mut guard = self.memories.write().await;
+        match guard.get_mut(id) {
+            Some(m) if m.description.is_none() => {
+                m.description = Some(description.to_owned());
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    async fn has_encrypted_rows(&self) -> Result<bool, MemoryError> {
+        Ok(self.memories.read().await.values().any(|m| {
+            m.id != crate::encrypted::SALT_SENTINEL_ID
+                && (m.content.starts_with("enc:v1:") || m.content.starts_with("enc:v2:"))
+        }))
+    }
+
+    async fn sealed_vector(&self, id: &str) -> Result<Option<Vec<u8>>, MemoryError> {
+        if !self.memories.read().await.contains_key(id) {
+            return Ok(None);
+        }
+        Ok(self.sealed.read().await.get(id).cloned())
+    }
+
+    async fn vector_migration_candidates(&self) -> Result<Vec<(String, Vec<u8>)>, MemoryError> {
+        let guard = self.memories.read().await;
+        Ok(guard
+            .values()
+            .filter(|m| m.content.starts_with("enc:v1:"))
+            .filter_map(|m| {
+                let e = m.embedding.as_ref()?;
+                Some((
+                    m.id.clone(),
+                    e.iter().flat_map(|f| f.to_le_bytes()).collect(),
+                ))
+            })
+            .collect())
+    }
+
+    async fn move_vector_to_sealed(&self, id: &str, blob: &[u8]) -> Result<(), MemoryError> {
+        let mut guard = self.memories.write().await;
+        if let Some(m) = guard.get_mut(id) {
+            m.embedding = None;
+        }
+        self.sealed
+            .write()
+            .await
+            .insert(id.to_owned(), blob.to_vec());
+        Ok(())
+    }
+
+    async fn record_sealed(
+        &self,
+        memory: Memory,
+        sealed: Option<Vec<u8>>,
+    ) -> Result<(), MemoryError> {
+        let mut memories = self.memories.write().await;
+        let mut sealed_map = self.sealed.write().await;
+        match sealed {
+            Some(blob) => {
+                sealed_map.insert(memory.id.clone(), blob);
+            }
+            None => {
+                sealed_map.remove(&memory.id);
+            }
+        }
+        memories.insert(memory.id.clone(), memory);
+        Ok(())
     }
 }
 

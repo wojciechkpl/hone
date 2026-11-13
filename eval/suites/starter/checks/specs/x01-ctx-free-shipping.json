@@ -1,0 +1,64 @@
+{
+ "runtime": "python",
+ "module": "shopkit.shipping.rates",
+ "assets": [
+  "probe_child.py"
+ ],
+ "take": [
+  {
+   "tree": "shopkit",
+   "glob": "*.py"
+  }
+ ],
+ "manifest": "x01-ctx-free-shipping.manifest.json",
+ "cases": [
+  {
+   "fn": "shipping_cost",
+   "args": [
+    120,
+    "EU"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "b87c3751af21042f",
+   "hash": "09cfaf3a8f3a9ecaaee72de1ad491f5385cd1da2c2fd81cf0a9826ee6b55dc44"
+  },
+  {
+   "fn": "shipping_cost",
+   "args": [
+    100.01,
+    "EU"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "d2bd805baf59b573",
+   "hash": "5aa54829209ae20334fb54348024fd7e40893f2b7c08c7212dbb755d93099365"
+  },
+  {
+   "fn": "shipping_cost",
+   "args": [
+    100,
+    "EU"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "344b402005f87256",
+   "hash": "6b1163ea34041a386faa985fdbb83c7f0a5a96bc7ae65cce0d66b31058d745a3"
+  },
+  {
+   "fn": "shipping_cost",
+   "args": [
+    80,
+    "EU"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "bab4f38019235768",
+   "hash": "5019c45713a03146cb5f6ef6c059948d8220bccc89d06ebf01539841a01fe5a7"
+  }
+ ]
+}

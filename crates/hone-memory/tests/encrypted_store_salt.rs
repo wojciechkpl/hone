@@ -19,7 +19,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use hone_memory::{
     EncryptedStore, InMemoryStore, Memory, MemoryError, MemoryFilter, MemoryKind, MemoryQuery,
-    MemoryStore, SqliteStore,
+    MemoryStore, SealedVectorStore, SqliteStore,
 };
 
 const SENTINEL: &str = "__encrypted_store_salt__";
@@ -306,6 +306,31 @@ impl MemoryStore for Shared {
     }
     async fn import(_path: &Path) -> Result<Self, MemoryError> {
         Err(MemoryError::Io(std::io::Error::other("not supported")))
+    }
+}
+
+#[async_trait]
+impl SealedVectorStore for Shared {
+    async fn record_if_absent(&self, m: Memory) -> Result<bool, MemoryError> {
+        self.0.record_if_absent(m).await
+    }
+    async fn set_description_if_absent(&self, id: &str, description: &str) -> Result<bool, MemoryError> {
+        self.0.set_description_if_absent(id, description).await
+    }
+    async fn has_encrypted_rows(&self) -> Result<bool, MemoryError> {
+        self.0.has_encrypted_rows().await
+    }
+    async fn sealed_vector(&self, id: &str) -> Result<Option<Vec<u8>>, MemoryError> {
+        self.0.sealed_vector(id).await
+    }
+    async fn vector_migration_candidates(&self) -> Result<Vec<(String, Vec<u8>)>, MemoryError> {
+        self.0.vector_migration_candidates().await
+    }
+    async fn move_vector_to_sealed(&self, id: &str, blob: &[u8]) -> Result<(), MemoryError> {
+        self.0.move_vector_to_sealed(id, blob).await
+    }
+    async fn record_sealed(&self, m: Memory, sealed: Option<Vec<u8>>) -> Result<(), MemoryError> {
+        self.0.record_sealed(m, sealed).await
     }
 }
 

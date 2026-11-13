@@ -47,6 +47,38 @@ use hone_tools::policy_gate::{
 };
 use hone_tools::redact::{redact_json, redact_secrets};
 
+/// Prices a model's usage; `None` means no price (the call costs nothing).
+pub type PriceLookup = Arc<dyn Fn(&ModelId) -> Option<PricingEntry> + Send + Sync>;
+
+static DEFAULT_PRICE_LOOKUP: std::sync::RwLock<Option<PriceLookup>> = std::sync::RwLock::new(None);
+
+/// Set the process-wide price lookup, used by every agent that has none of its
+/// own (orchestrator leads and workers, ensemble candidates, the reviewer loop,
+/// `honed`'s executors, eval runs). Call it once at start.
+pub fn set_default_price_lookup(lookup: PriceLookup) {
+    if let Ok(mut slot) = DEFAULT_PRICE_LOOKUP.write() {
+        *slot = Some(lookup);
+    }
+}
+
+/// The price of `model` by the process-wide default lookup, if one is set and
+/// knows the model.
+pub fn default_price(model: &ModelId) -> Option<PricingEntry> {
+    default_price_lookup().and_then(|lookup| lookup(model))
+}
+
+static UNPRICED_SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Models any agent of this process has had an unpriced call for, in first-seen
+/// order (orchestrator and ensemble agents included).
+pub fn unpriced_models_seen() -> Vec<String> {
+    UNPRICED_SEEN.lock().map(|v| v.clone()).unwrap_or_default()
+}
+
+fn default_price_lookup() -> Option<PriceLookup> {
+    DEFAULT_PRICE_LOOKUP.read().ok().and_then(|slot| slot.clone())
+}
+
 /// Configuration for creating an `Agent`.
 #[derive(Clone)]
 pub struct AgentConfig {
@@ -628,6 +660,15 @@ pub struct Agent {
     config: AgentConfig,
     context: ContextManager,
     cost: CostAccumulator,
+    /// Prices each call by the model that served it; without one,
+    /// `config.pricing` applies.
+    price_lookup: Option<PriceLookup>,
+    /// Models with at least one unpriced call, in first-seen order.
+    unpriced_models: Vec<String>,
+    /// Unpriced models not yet announced with `AgentEvent::UnpricedModel`.
+    unannounced_unpriced: Vec<String>,
+    /// Successful calls that reported no usage at all.
+    calls_without_usage: u32,
     /// Monotonically increasing counter of completed turns this session.
     turn_count: u32,
     /// Successful `memory_write` calls this session (capped).
@@ -653,6 +694,10 @@ pub struct Agent {
     extra_blocks: Vec<(String, bool, Vec<ExtraBlock>)>,
     /// Names of the `Once` sources already gathered.
     once_gathered: HashSet<String>,
+    /// What document retrieval added to the current turn (redacted).
+    retrieval_turn: Option<crate::retrieval::RetrievalOutcome>,
+    /// Set for agents that must not retrieve documents (an ensemble's ranker).
+    retrieval_off: bool,
     /// The context receipts of this agent's life, oldest first (newest
     /// `MAX_KEPT_RECEIPTS` at most).
     receipts: Vec<hone_proto::ContextReceipt>,
@@ -743,6 +788,10 @@ impl Agent {
             config,
             context,
             cost: CostAccumulator::new(),
+            price_lookup: None,
+            unpriced_models: Vec::new(),
+            unannounced_unpriced: Vec::new(),
+            calls_without_usage: 0,
             turn_count: 0,
             memory_writes: 0,
             injection_seen: std::sync::atomic::AtomicBool::new(false),
@@ -752,6 +801,8 @@ impl Agent {
             receipt_history: std::collections::HashSet::new(),
             extra_blocks: Vec::new(),
             once_gathered: HashSet::new(),
+            retrieval_turn: None,
+            retrieval_off: false,
             receipts: Vec::new(),
             receipts_dropped: 0,
             receipt_agent_id: uuid::Uuid::now_v7().to_string(),
@@ -771,6 +822,13 @@ impl Agent {
     /// Run with the strategies the selection resolved (context sources, skeleton,
     /// compactor, budget, recaller, writer) instead of the ones derived from
     /// `AgentConfig`'s `inject_context` and `skeleton_strategy`.
+    /// Never retrieve documents (for an ensemble's ranker, whose prompt is the
+    /// candidates' answers).
+    pub fn without_retrieval(mut self) -> Self {
+        self.retrieval_off = true;
+        self
+    }
+
     pub fn with_strategies(mut self, strategies: Arc<ResolvedStrategies>) -> Self {
         self.context.set_trim_only(strategies.trim_only);
         self.context
@@ -987,13 +1045,15 @@ impl Agent {
         &mut self,
         prompt: &str,
         events: &mpsc::Sender<AgentEvent>,
+        with_retrieval: bool,
     ) -> Result<(String, Vec<(String, String)>, RecallInfo), AgentError> {
-        let (gathered, recalled) = {
+        let (gathered, recalled, retrieved) = {
             let this = &*self;
             let work = async {
                 tokio::join!(
                     this.gather_context_sources(prompt),
-                    this.fetch_relevant_memories(prompt)
+                    this.fetch_relevant_memories(prompt),
+                    this.gather_retrieval(prompt, with_retrieval)
                 )
             };
             tokio::select! {
@@ -1002,7 +1062,24 @@ impl Agent {
             }
         };
         self.store_gathered(gathered);
+        self.retrieval_turn = retrieved;
         Ok(recalled)
+    }
+
+    /// Document retrieval for this turn's prompt (redacted); `None` when it is
+    /// off or finds nothing.
+    async fn gather_retrieval(
+        &self,
+        prompt: &str,
+        enabled: bool,
+    ) -> Option<crate::retrieval::RetrievalOutcome> {
+        if !enabled || self.retrieval_off {
+            return None;
+        }
+        let retrieval = self.strategies.retrieval.as_ref()?;
+        let mut outcome = retrieval.retrieve(prompt, &self.config.working_dir).await?;
+        outcome.text = redacted_text(self.redacting(), &outcome.text);
+        Some(outcome)
     }
 
     /// Keep what `gather_context_sources` returned.
@@ -1019,6 +1096,18 @@ impl Agent {
                 None => self.extra_blocks.push((g.name, g.once, g.extras)),
             }
         }
+    }
+
+    /// The receipt inputs of this turn's document retrieval.
+    fn retrieval_info(&self) -> Option<crate::receipts::RetrievalInfo> {
+        self.retrieval_turn
+            .as_ref()
+            .map(|o| crate::receipts::RetrievalInfo {
+                strategy: o.id.clone(),
+                tokens: estimate_text_tokens(&o.text),
+                sources: o.sources.clone(),
+                dropped: o.dropped.clone(),
+            })
     }
 
     /// The gathered blocks that have text: `Once` sources first, then `EachTurn`
@@ -1079,6 +1168,8 @@ impl Agent {
             exclude_kinds: &exclude,
             scope: Some(project_id),
         };
+        // A failing built-in `fts5` recall falls back to `bm25` for this turn.
+        let mut fts5_failed = false;
         let in_project =
             |m: &hone_memory::Memory| crate::memory_write::visible_in_project(&m.tags, &project);
         let bm25_memories: Vec<hone_memory::Memory> = match strategies
@@ -1091,6 +1182,22 @@ impl Agent {
                 .map(|s| s.memory)
                 .filter(|m| in_project(m))
                 .collect(),
+            Err(e) if strategies.recaller_kind == RecallerKind::Fts5 => {
+                tracing::warn!(error = %e, "fts5 recall failed; falling back to bm25 for this turn");
+                fts5_failed = true;
+                let query = hone_memory::MemoryQuery {
+                    text: query.to_owned(),
+                    limit: top_k,
+                    kind: None,
+                };
+                store
+                    .recall_excluding(&query, &exclude)
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|m| in_project(m))
+                    .collect()
+            }
             Err(_) => Vec::new(),
         };
 
@@ -1178,6 +1285,7 @@ impl Agent {
                 .map(|k| crate::strategy::kind_name(*k).to_owned())
                 .collect(),
             custom,
+            fts5: strategies.recaller_kind == RecallerKind::Fts5 && !fts5_failed,
             dropped: cut_ids
                 .into_iter()
                 .filter(|id| !final_memories.iter().any(|m| &m.id == id))
@@ -1442,12 +1550,47 @@ impl Agent {
         }
     }
 
+    /// Add `usage` of a call served by `model` to the session: priced by the
+    /// lookup (or `config.pricing` without one); no price means no cost, the
+    /// usage still counts and the model is remembered.
+    fn add_priced(&mut self, usage: TokenUsage, model: &ModelId) {
+        // The agent's own lookup, else the process default, else the config's price.
+        let lookup = self.price_lookup.clone().or_else(default_price_lookup);
+        let entry = match lookup {
+            Some(lookup) => lookup(model),
+            None => Some(self.config.pricing.clone()),
+        };
+        match entry {
+            Some(price) => self.cost.add(usage, &price),
+            None => {
+                self.cost.add_unpriced(usage);
+                if let Ok(mut seen) = UNPRICED_SEEN.lock() {
+                    if !seen.iter().any(|m| m == model.as_str()) {
+                        seen.push(model.as_str().to_owned());
+                    }
+                }
+                if !self.unpriced_models.iter().any(|m| m == model.as_str()) {
+                    self.unpriced_models.push(model.as_str().to_owned());
+                    self.unannounced_unpriced.push(model.as_str().to_owned());
+                }
+            }
+        }
+    }
+
+    /// Tell the surface about models that just turned out to have no price.
+    async fn announce_unpriced(&mut self, events: &mpsc::Sender<AgentEvent>) {
+        for model in std::mem::take(&mut self.unannounced_unpriced) {
+            let _ = events.send(AgentEvent::UnpricedModel { model }).await;
+        }
+    }
+
     /// Count `Usage` events of failed attempts in the turn and the session cost.
     fn count_usage(&mut self, events: Vec<ProviderEvent>, turn_usage: &mut TokenUsage) {
         for event in events {
             if let ProviderEvent::Usage(usage) = event {
                 *turn_usage = *turn_usage + usage;
-                self.cost.add(usage, &self.config.pricing);
+                let model = self.config.model.clone();
+                self.add_priced(usage, &model);
             }
         }
     }
@@ -1798,7 +1941,7 @@ impl Agent {
 
         // Fetch memories before adding the user message so the query is clean.
         let (memories, memory_entries, recall_info) =
-            self.gather_and_recall(user_input, &events).await?;
+            self.gather_and_recall(user_input, &events, true).await?;
         // Inputs of this turn's context receipts.
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
@@ -1808,6 +1951,7 @@ impl Agent {
                 Vec::new()
             },
             injection: None,
+            retrieval: self.retrieval_info(),
             ..TurnContextInfo::default()
         };
         if !memory_entries.is_empty() {
@@ -1867,6 +2011,18 @@ impl Agent {
             } else {
                 std::borrow::Cow::Borrowed(user_input)
             };
+
+        // Retrieved documents: quoted data at the front of the turn's user
+        // message (stored with it, so later requests stay byte-identical).
+        let effective_input: std::borrow::Cow<'_, str> = match &self.retrieval_turn {
+            Some(r) if !r.text.is_empty() => {
+                // Repository text steering `memory_write` is untrusted context.
+                self.note_untrusted_label("retrieved documents");
+                std::borrow::Cow::Owned(format!("{}\n\n{effective_input}", r.text))
+            }
+            Some(_) => effective_input,
+            None => effective_input,
+        };
 
         self.context
             .add_message(Message::user(effective_input.as_ref()));
@@ -2169,6 +2325,9 @@ impl Agent {
             // a retry-hint user message after the stream drains so the model
             // knows to produce smaller calls.
             let mut truncated_tools: Option<Vec<String>> = None;
+            // The model serving this call: the session's, or a fallback's.
+            let mut call_model = self.config.model.clone();
+            let mut call_usage_seen = false;
 
             while let Some(event) = stream.next().await {
                 match event {
@@ -2184,10 +2343,15 @@ impl Agent {
 
                     ProviderEvent::Usage(usage) => {
                         turn_usage = turn_usage + usage;
-                        self.cost.add(usage, &self.config.pricing);
+                        call_usage_seen = true;
+                        self.add_priced(usage, &call_model);
+                        self.announce_unpriced(&events).await;
                     }
 
                     ProviderEvent::Done => {
+                        if !call_usage_seen {
+                            self.calls_without_usage += 1;
+                        }
                         // Emit ModelInfo exactly once per session on the first
                         // successful provider completion so the TUI can show the
                         // real context-window size for this model.
@@ -2280,6 +2444,7 @@ impl Agent {
                         fallback,
                         reason,
                     } => {
+                        call_model = ModelId::new(fallback.clone());
                         let _ = events
                             .send(AgentEvent::ModelFallback {
                                 requested,
@@ -3453,7 +3618,8 @@ impl Agent {
             // now included).
         }
 
-        let cost_usd = self.cost.total_usd();
+        // This turn's cost (the session's total minus what it was before).
+        let cost_usd = self.cost.total_usd() - cost_before_turn;
         tracing::debug!(
             tokens = turn_usage.total(),
             tool_calls = tool_calls_count,
@@ -3527,7 +3693,7 @@ impl Agent {
         let _ = events
             .send(AgentEvent::Done {
                 usage: turn_usage,
-                cost_usd: self.cost.total_usd() - cost_before_turn,
+                cost_usd,
                 plan: None,
             })
             .await;
@@ -3583,7 +3749,7 @@ impl Agent {
         let cost_before_turn = self.cost.total_usd();
 
         let (memories, memory_entries, recall_info) =
-            self.gather_and_recall(&text_for_memory, &events).await?;
+            self.gather_and_recall(&text_for_memory, &events, false).await?;
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
             skills: if self.strategies.has_source("skills") {
@@ -3592,6 +3758,7 @@ impl Agent {
                 Vec::new()
             },
             injection: None,
+            retrieval: self.retrieval_info(),
             ..TurnContextInfo::default()
         };
         if !memory_entries.is_empty() {
@@ -3912,6 +4079,18 @@ enum AgentCommand {
     SetTools {
         tools: ToolRegistry,
     },
+    /// Price every call with the entry of the model that served it.
+    SetPriceLookup {
+        lookup: PriceLookup,
+    },
+    /// The models that had an unpriced call, first seen first.
+    UnpricedModels {
+        reply: oneshot::Sender<Vec<String>>,
+    },
+    /// Whether every successful call reported usage.
+    UsageKnown {
+        reply: oneshot::Sender<bool>,
+    },
     /// Change the agent's operational mode.  Automatically adjusts the tool
     /// registry: Plan → read-only subset; Build/AutoApprove → full base registry.
     SetMode {
@@ -4057,6 +4236,12 @@ impl AgentHandle {
                             for call in &msg.tool_calls {
                                 agent.note_untrusted_source(&call.name);
                             }
+                            // A resumed turn that carried retrieved documents.
+                            if msg.role == hone_proto::Role::User
+                                && msg.content.as_text().contains(crate::retrieval::FRAMING)
+                            {
+                                agent.note_untrusted_label("retrieved documents");
+                            }
                             agent.context.add_message(msg);
                         }
                         tokens_writer.store(agent.context_token_count(), Ordering::Relaxed);
@@ -4096,6 +4281,15 @@ impl AgentHandle {
                         } else {
                             agent.with_memory_write(&tools)
                         };
+                    }
+                    AgentCommand::SetPriceLookup { lookup } => {
+                        agent.price_lookup = Some(lookup);
+                    }
+                    AgentCommand::UnpricedModels { reply } => {
+                        let _ = reply.send(agent.unpriced_models.clone());
+                    }
+                    AgentCommand::UsageKnown { reply } => {
+                        let _ = reply.send(agent.calls_without_usage == 0);
                     }
                     AgentCommand::SetMode { mode } => {
                         if agent.config.mode != mode {
@@ -4320,6 +4514,44 @@ impl AgentHandle {
     /// allowlists for one turn.
     pub async fn set_tools(&self, tools: ToolRegistry) {
         let _ = self.cmd_tx.send(AgentCommand::SetTools { tools }).await;
+    }
+
+    /// Price each call with `lookup(model that served it)` from now on; it wins
+    /// over `AgentConfig.pricing`. Fire-and-forget like `set_tools`.
+    pub async fn set_price_lookup(&self, lookup: PriceLookup) {
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::SetPriceLookup { lookup })
+            .await;
+    }
+
+    /// False once a successful call of this session reported no usage at all.
+    pub async fn usage_known(&self) -> bool {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .cmd_tx
+            .send(AgentCommand::UsageKnown { reply: tx })
+            .await
+            .is_err()
+        {
+            return true;
+        }
+        rx.await.unwrap_or(true)
+    }
+
+    /// The model ids that had at least one unpriced call this session, in
+    /// first-seen order.
+    pub async fn unpriced_models(&self) -> Vec<String> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .cmd_tx
+            .send(AgentCommand::UnpricedModels { reply: tx })
+            .await
+            .is_err()
+        {
+            return Vec::new();
+        }
+        rx.await.unwrap_or_default()
     }
 
     /// Change the agent's operational mode.

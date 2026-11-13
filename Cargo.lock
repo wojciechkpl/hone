@@ -2734,13 +2734,18 @@ name = "hone-eval"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "hone-config",
  "hone-core",
+ "hone-memory",
  "hone-proto",
  "hone-providers",
  "hone-sandbox",
  "hone-tools",
+ "ignore",
+ "libc",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
@@ -2767,7 +2772,9 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "criterion",
+ "hone-memory",
  "hone-proto",
+ "ignore",
  "notify",
  "serde",
  "serde_json",
@@ -2849,6 +2856,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "unicode-normalization",
 ]
 
 [[package]]

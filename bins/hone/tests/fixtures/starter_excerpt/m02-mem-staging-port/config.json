@@ -1,0 +1,6 @@
+{
+  "service": "staging-api",
+  "host": "staging.internal",
+  "port": 0,
+  "debug": false
+}

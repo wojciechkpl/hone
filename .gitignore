@@ -36,3 +36,6 @@ apps/hone-desktop/src-tauri/gen/
 apps/webui/dist/
 apps/webui/node_modules/
 
+
+# hone eval run directories
+eval-runs/
