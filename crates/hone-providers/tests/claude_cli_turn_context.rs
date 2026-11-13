@@ -440,3 +440,57 @@ async fn test_cc8_an_empty_first_system_message_should_not_promote_the_memories_
     assert!(text.contains(MEM_A), "the memory goes in the turn's block:\n{text}");
     assert!(nonce_of(text).is_some(), "inside a delimited block:\n{text}");
 }
+
+// ---- CC9: the main conversation is never evicted -------------------------------------------------------
+
+#[tokio::test]
+async fn test_cc9_a_burst_of_other_bases_should_not_evict_the_main_conversation() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = ClaudeCliProvider::with_binary(&stub(dir.path(), false));
+    turn(&provider, msgs("BASE A", &[], "a1")).await; // the first base seen: main
+    for (i, b) in ["B", "C", "D", "E"].iter().enumerate() {
+        turn(&provider, msgs(&format!("BASE {b}"), &[], &format!("w{i}"))).await;
+    }
+    assert_eq!(spawns(dir.path()), 5, "main plus four distinct worker bases (one was evicted)");
+
+    turn(&provider, msgs("BASE A", &[], "a2")).await;
+
+    assert_eq!(spawns(dir.path()), 5, "no new spawn for main: its process survived the burst");
+    assert_eq!(user_texts(&payloads_of(dir.path(), 1)), ["a1", "a2"], "main's later turn went to the original process");
+}
+
+#[tokio::test]
+async fn test_cc9_the_evicted_process_should_be_the_least_recently_used_of_the_others() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = ClaudeCliProvider::with_binary(&stub(dir.path(), false));
+    // A is main and stays idle the longest; B..F arrive one after another.
+    for b in ["A", "B", "C", "D", "E", "F"] {
+        turn(&provider, msgs(&format!("BASE {b}"), &[], &format!("first {b}"))).await;
+    }
+    assert_eq!(spawns(dir.path()), 6);
+
+    // Alive: A (main), D, E, F. Evicted: B and C (the LRU among the non-main ones, in order).
+    for b in ["A", "D", "E", "F"] {
+        turn(&provider, msgs(&format!("BASE {b}"), &[], &format!("again {b}"))).await;
+        assert_eq!(spawns(dir.path()), 6, "{b} is still alive");
+    }
+    turn(&provider, msgs("BASE B", &[], "again B")).await;
+    assert_eq!(spawns(dir.path()), 7, "B was evicted");
+}
+
+#[tokio::test]
+async fn test_cc9_the_first_base_seen_is_main_even_when_it_is_idle_the_longest() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = ClaudeCliProvider::with_binary(&stub(dir.path(), false));
+    turn(&provider, msgs("BASE A", &[MEM_A], "a1")).await;
+    // Many side turns, A never touched.
+    for i in 0..8 {
+        turn(&provider, msgs(&format!("BASE S{}", i % 5), &[], &format!("s{i}"))).await;
+    }
+    let before = spawns(dir.path());
+
+    turn(&provider, msgs("BASE A", &[MEM_A], "a2")).await;
+
+    assert_eq!(spawns(dir.path()), before, "A's process is still the original");
+    assert_eq!(payloads_of(dir.path(), 1)[1], "a2", "and it remembers the context it was sent (no block)");
+}
