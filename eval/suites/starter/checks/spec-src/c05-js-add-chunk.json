@@ -1,0 +1,191 @@
+{
+ "runtime": "node",
+ "module": "utils.js",
+ "advisory": "node",
+ "assets": [
+  "probe_child.js"
+ ],
+ "base": "checks/data/c05-js-add-chunk",
+ "take": [
+  {
+   "file": "utils.js"
+  }
+ ],
+ "cases": [
+  {
+   "fn": "unique",
+   "args": [
+    [
+     1,
+     1,
+     2
+    ]
+   ],
+   "expect": [
+    1,
+    2
+   ]
+  },
+  {
+   "fn": "sum",
+   "args": [
+    [
+     1,
+     2,
+     3
+    ]
+   ],
+   "expect": 6
+  },
+  {
+   "fn": "chunk",
+   "args": [
+    [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    2
+   ],
+   "expect": [
+    [
+     1,
+     2
+    ],
+    [
+     3,
+     4
+    ],
+    [
+     5
+    ]
+   ]
+  },
+  {
+   "fn": "chunk",
+   "args": [
+    [],
+    3
+   ],
+   "expect": []
+  },
+  {
+   "fn": "chunk",
+   "args": [
+    [
+     1
+    ],
+    0
+   ],
+   "raises": "RangeError"
+  },
+  {
+   "fn": "chunk",
+   "args": [
+    [
+     1,
+     2,
+     3
+    ],
+    3
+   ],
+   "expect": [
+    [
+     1,
+     2,
+     3
+    ]
+   ]
+  },
+  {
+   "fn": "chunk",
+   "args": [
+    [
+     1,
+     2,
+     3
+    ],
+    5
+   ],
+   "expect": [
+    [
+     1,
+     2,
+     3
+    ]
+   ]
+  },
+  {
+   "fn": "chunk",
+   "args": [
+    [
+     1,
+     2,
+     3,
+     4
+    ],
+    1
+   ],
+   "expect": [
+    [
+     1
+    ],
+    [
+     2
+    ],
+    [
+     3
+    ],
+    [
+     4
+    ]
+   ]
+  },
+  {
+   "fn": "chunk",
+   "args": [
+    [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    3
+   ],
+   "expect": [
+    [
+     1,
+     2,
+     3
+    ],
+    [
+     4,
+     5,
+     6
+    ],
+    [
+     7
+    ]
+   ]
+  },
+  {
+   "fn": "unique",
+   "args": [
+    [
+     3,
+     3,
+     1
+    ]
+   ],
+   "expect": [
+    3,
+    1
+   ]
+  }
+ ]
+}

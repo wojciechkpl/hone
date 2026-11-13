@@ -1,0 +1,38 @@
+{
+ "runtime": "node",
+ "module": "src/leaderboard/format.js",
+ "assets": [
+  "probe_child.js"
+ ],
+ "base": "checks/data/x02-ctx-long-names",
+ "take": [
+  {
+   "tree": "src",
+   "glob": "*.js"
+  }
+ ],
+ "manifest": "x02-ctx-long-names.manifest.json",
+ "cases": [
+  {
+   "fn": "formatPlayerName",
+   "args": [
+    "Bartholomew Jones"
+   ],
+   "expect": "Bartholomew\u2026"
+  },
+  {
+   "fn": "formatPlayerName",
+   "args": [
+    "Twelve chars"
+   ],
+   "expect": "Twelve chars"
+  },
+  {
+   "fn": "formatPlayerName",
+   "args": [
+    "Ana"
+   ],
+   "expect": "Ana"
+  }
+ ]
+}

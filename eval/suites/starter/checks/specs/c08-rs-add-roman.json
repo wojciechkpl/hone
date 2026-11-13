@@ -1,0 +1,209 @@
+{
+ "runtime": "rust-roman",
+ "advisory": "rust",
+ "assets": [
+  "rs_roman_probe.rs"
+ ],
+ "base": "checks/data/c08-rs-add-roman",
+ "take": [
+  {
+   "tree": "src",
+   "glob": "*.rs",
+   "skip": [
+    "src/bin/"
+   ]
+  }
+ ],
+ "add": {
+  "src/bin/probe.rs": "rs_roman_probe.rs"
+ },
+ "cases": [
+  {
+   "fn": "to_roman",
+   "args": [
+    1
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "191fcdb5e370bdf0",
+   "hash": "9da16e17aadf0adfd6199192dbc345b853fac6c04d3938ffda8f03422ec58e35"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    4
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "3e655468bc7a98a7",
+   "hash": "cf9929aeb287270b561aeb40db81453a8c5f92764f4d27a008b3288862950440"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    9
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "8d3ce33ea907386a",
+   "hash": "6565f825de43b5264564b66e4434078ff1448420b911467c9f65353ebdb8ae8a"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    1994
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "7e14c120743a5fb8",
+   "hash": "16660b75c796996c9eb3a79ad259a6b8ae771bb1f0752e5b3afb1606fa594a22"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    3999
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "8e37acf20c8c48fe",
+   "hash": "2ba86eb3fa306e2f6bcac26d5ba9dfb1d6f75d7e068ead46ed7cd3c9ff23e6cc"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    0
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "8eeb8d9dad391e8c",
+   "hash": "482224661e2fb74efcfec8dc2c34989b37fa79fde30aef0513d2b1379ad066c9"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    4000
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "e3ef0b21c6a84232",
+   "hash": "47657899520f32021c1b49a254dbade96d7f02b8ae995bbea4cb1ee83508fa6f"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    2
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "fb91c373ee7adc3f",
+   "hash": "59b82c540963a972cedf664acaef87058cc0861bf5407e252ba401de56292208"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    3
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "73a5bff4813b89a3",
+   "hash": "c2f6020854adfa976e07c09491e3b3c2822c5a0d2164080d173dc4988155c9da"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    14
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "90c4726a97d2f48b",
+   "hash": "2415dc5bb7a3c641c3224017fbe07b2d090fd6bd91d8f8b7f60603371ec43066"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    40
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "ebaeaddfbbfa97e1",
+   "hash": "3e35dceb65c32d96f240f039011a7a3121685787b06b2b88316f48c281df7143"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    58
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "34ed1b6ceacf316b",
+   "hash": "afdb5f6464b5f08efe80f6c6e230402b7ab473fe35ba7065cd1e2bdee874f826"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    90
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "555f6399430c687d",
+   "hash": "5dfde70d09785030733b6fd169e29750ae6ee807155f9f9a962a6475c118618d"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    400
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "372ce97b780e3850",
+   "hash": "d397e6bf832d28ba4cf7e9389d482ca6f214770d7fd6075fe45a8f297180be80"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    444
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "d28c73d6acd50f97",
+   "hash": "8859f1829601d4e0cd7c13feab96a3b068c5c025474a31abd11ecab6c8bcd5dd"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    2024
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "6a09108599ea6f2c",
+   "hash": "cf0253af1bb1ec604eaf2255a2356ba7d1062df95f908dceac258e2aeabeb49d"
+  },
+  {
+   "fn": "to_roman",
+   "args": [
+    3888
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "c5fe7af0e5014f3f",
+   "hash": "07680177fc9a6fa17b4f82e94470d3ebe1db77cade1800fa1361d8e89055b4ef"
+  }
+ ]
+}
