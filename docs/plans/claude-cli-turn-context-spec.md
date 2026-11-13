@@ -15,6 +15,20 @@ The `claude-cli:` adapter keeps one `claude` process for the whole session, and 
 | CC3 | **Nothing is repeated.** A system message whose exact text was already sent by this process (at spawn or in an earlier turn's block) isn't sent again. When a turn has nothing new, it is sent without a block. After the process is re-spawned (it died), the dedupe resets and everything is sent again. |
 | CC4 | **A changed base prompt restarts the session.** If a turn's first system message differs from the one the process was spawned with, the process is re-spawned with the new base prompt, and the dedupe resets. Hone logs a warning (`tracing::warn!`) that the `claude` session was restarted, so earlier turns aren't in its memory. It doesn't print to stderr, because under the TUI that would garble the screen. |
 
+### Review round 1 (CC5–CC8)
+
+CC1–CC3 work. CC4 restarted `claude` far more often than assumed. One provider instance also serves orchestrator workers (persona plus `## Task`) and inline `@persona` turns (`set_system_prompt`). In a 5-prompt TUI session it spawned 5 times against 1 on main. Each restart wiped the conversation, and nothing told the user. The context block's end marker could also be forged by a memory or skill. And deduplication assumed `claude` keeps everything, but it compacts its own history.
+
+| Row | Behaviour |
+|---|---|
+| CC5 | **One process per base prompt.** The adapter keeps up to 4 `claude` processes, keyed by base prompt (the first system message), each with its own deduplication set. When a fifth base prompt arrives, the least recently used process is evicted. A turn with a different base prompt uses or spawns its own process, so the main conversation's process survives orchestrator-worker and `@persona` turns, and workers no longer write into the main conversation. This replaces CC4's restart. A persona's process doesn't see earlier turns of the main conversation; the PR and `docs/configuration.md` say so. |
+| CC6 | **The context block can't be forged.** The block's opening and closing markers carry a random nonce, generated per process and never derived from content, for example `[Hone context 3f9a1c…: …]` and `[End of Hone context 3f9a1c…]`. The opening line says only the matching end marker closes the block. A context text that contains the exact current end marker has it neutralized before sending. |
+| CC7 | **Context is sent again after `claude` compacts.** When `claude`'s output stream reports a compaction (a `system` event with subtype `compact_boundary`), that process's deduplication set is cleared, so the next turn sends every context message again. |
+| CC8 | **Small fixes.** |
+|  | - The base prompt is always the first system message, even when it's empty (then no `--system-prompt` flag is sent), so an empty persona can't promote the memories block into `--system-prompt`. |
+|  | - The deduplication set stores SHA-256 hashes, not full texts. |
+|  | - The `with_binary` doc comment and the spawn-failure error text describe the current behaviour. |
+
 ## Testing notes
 
 - Use the existing stub-binary harness in the claude-cli tests, which records argv and the NDJSON written to stdin.
