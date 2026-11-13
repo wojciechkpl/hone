@@ -104,13 +104,16 @@ pub async fn run(cmd: MemoryCmd, store: Arc<dyn MemoryStore>, out: &mut dyn Writ
         MemoryCmd::Ls { limit, kind } => {
             let effective_limit = limit.unwrap_or(50);
             let target_kind = kind.as_deref().map(kind_from_str).transpose()?;
-            let memories = store
+            // One extra, so hiding the encryption salt record doesn't shorten the list.
+            let mut memories = store
                 .recall(&MemoryQuery {
                     text: String::new(),
-                    limit: effective_limit,
+                    limit: effective_limit.saturating_add(1),
                     kind: target_kind,
                 })
                 .await?;
+            memories.retain(|m| m.id != hone_memory::SALT_SENTINEL_ID);
+            memories.truncate(effective_limit);
 
             for m in &memories {
                 let kind_label = kind_label(m.kind);
@@ -128,7 +131,11 @@ pub async fn run(cmd: MemoryCmd, store: Arc<dyn MemoryStore>, out: &mut dyn Writ
             // Try exact match via recall_by_id (O(log n)).  If that misses,
             // fall back to a bounded prefix scan — handles 8-char prefixes
             // shown in `memory ls` as well as any future non-uuid id format.
-            let memory = if let Some(m) = store.recall_by_id(&id).await? {
+            let memory = if let Some(m) = store
+                .recall_by_id(&id)
+                .await?
+                .filter(|m| m.id != hone_memory::SALT_SENTINEL_ID)
+            {
                 m
             } else {
                 let all = store
@@ -139,6 +146,7 @@ pub async fn run(cmd: MemoryCmd, store: Arc<dyn MemoryStore>, out: &mut dyn Writ
                     })
                     .await?;
                 all.into_iter()
+                    .filter(|m| m.id != hone_memory::SALT_SENTINEL_ID)
                     .find(|m| m.id.starts_with(&id as &str))
                     .ok_or_else(|| anyhow!("memory not found: {id}"))?
             };

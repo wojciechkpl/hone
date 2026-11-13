@@ -834,6 +834,9 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 | `<cwd>/.hone/plans/` | Saved plans from plan mode (`hone --plan FILE`) | |
 | `<project root>/.hone/specs/` | Output of `hone spec` | |
 
+
+**What `--encrypted-memory` encrypts.** The content of every memory and, for memories saved after this change, their description (AES-256-GCM, key from `HONE_MEMORY_PASSPHRASE`). It does not encrypt tags, kind, timestamps or weight, and descriptions written by earlier versions stay in plain text (Hone does not rewrite them). The salt that the key derives from is stored in a reserved record, which `hone memory forget` and the daily decay leave alone; with an older version of Hone, don't run `hone memory forget` on an encrypted database, because it could delete that record and make every memory unreadable. Running Hone without `--encrypted-memory` on an encrypted `memory.db` writes new memories into it as plain text, and `hone memory ls` and `hone memory show` don't decrypt (they show `enc:v1:…`).
+
 ## Memory writers
 
 `[memory] writer` in `config.toml` picks who writes long-term memory:
