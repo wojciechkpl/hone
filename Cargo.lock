@@ -2682,6 +2682,7 @@ dependencies = [
  "hone-tools",
  "httpmock",
  "ignore",
+ "libc",
  "mockall",
  "proptest",
  "regex",
@@ -2867,6 +2868,7 @@ name = "hone-provenance"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "hone-proto",
  "serde",
  "serde_json",
  "sha2",

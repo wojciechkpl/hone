@@ -29,6 +29,8 @@ pub struct AgentEnsemble {
     /// One temperature per candidate slot.  `len()` determines how many
     /// candidates are spawned.
     temperatures: Vec<f32>,
+    /// Strategies applied to every candidate and the ranker.
+    strategies: Option<std::sync::Arc<crate::strategy::ResolvedStrategies>>,
 }
 
 /// The result of a completed ensemble run.
@@ -61,7 +63,19 @@ impl AgentEnsemble {
         Self {
             prototype,
             temperatures,
+            strategies: None,
         }
+    }
+
+    /// Run every candidate and the ranker with the strategies a selection
+    /// resolved (writer, recaller, sources, budget, compactor, injection).
+    #[must_use]
+    pub fn with_strategies(
+        mut self,
+        strategies: std::sync::Arc<crate::strategy::ResolvedStrategies>,
+    ) -> Self {
+        self.strategies = Some(strategies);
+        self
     }
 
     /// Run all candidates in parallel, then ask the ranker to pick the best.
@@ -88,9 +102,13 @@ impl AgentEnsemble {
             config.step_rx = None;
             let prompt_owned = prompt.to_owned();
             let fwd_tx = events.clone();
+            let strategies = self.strategies.clone();
 
             join_set.spawn(async move {
                 let mut agent = Agent::new(config);
+                if let Some(s) = strategies {
+                    agent = agent.with_strategies(s);
+                }
                 let (cand_tx, mut cand_rx) = mpsc::channel(256);
 
                 // Forward candidate events to the main channel.
@@ -153,6 +171,9 @@ impl AgentEnsemble {
         ranker_config.step_rx = None;
 
         let mut ranker = Agent::new(ranker_config);
+        if let Some(s) = self.strategies.clone() {
+            ranker = ranker.with_strategies(s);
+        }
         let (ranker_tx, mut ranker_rx) = mpsc::channel(256);
 
         // Collect tokens emitted by the ranker.

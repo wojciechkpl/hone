@@ -95,6 +95,11 @@ fn entry_label(memory: &Memory) -> String {
 /// `- [<id>] <label> (kind=<kind>, w=<weight>)`
 fn render_entry(memory: &Memory) -> String {
     let label = entry_label(memory);
+    let label = if crate::memory_write::is_model_written(&memory.tags) {
+        format!("(model-written) {label}")
+    } else {
+        label
+    };
     let kind = kind_name(memory.kind);
     // Rust's default Display for f64 prints "1" for 1.0, "1.5" for 1.5, etc.
     // when using the `{}` formatter — exactly the format the tests expect.
@@ -117,14 +122,38 @@ pub async fn render_index(
     store: &dyn MemoryStore,
     budget: IndexBudget,
 ) -> Result<String, MemoryError> {
+    render_index_filtered(store, budget, None).await
+}
+
+/// Like [`render_index`], for work in `working_dir`: a memory the model wrote
+/// (`source:tool`) is listed only when its `project:<id>` tag matches the
+/// project of `working_dir` (its git top-level, or the canonical directory).
+/// All other memories are always listed.
+pub async fn render_index_in(
+    store: &dyn MemoryStore,
+    budget: IndexBudget,
+    working_dir: &std::path::Path,
+) -> Result<String, MemoryError> {
+    let project = crate::memory_write::project_tag(working_dir);
+    render_index_filtered(store, budget, Some(&project)).await
+}
+
+async fn render_index_filtered(
+    store: &dyn MemoryStore,
+    budget: IndexBudget,
+    project: Option<&str>,
+) -> Result<String, MemoryError> {
     // Fetch all live memories directly — no outer lock needed.
-    let memories = store
+    let mut memories = store
         .recall(&MemoryQuery {
             text: String::new(),
             limit: usize::MAX,
             kind: None,
         })
         .await?;
+    if let Some(project) = project {
+        memories.retain(|m| crate::memory_write::visible_in_project(&m.tags, project));
+    }
 
     if memories.is_empty() {
         return Ok(String::new());

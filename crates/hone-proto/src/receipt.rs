@@ -17,10 +17,14 @@ use crate::message::Message;
 #[serde(rename_all = "snake_case")]
 pub enum Slot {
     SystemPrompt,
+    /// A one-time snapshot of the machine and working directory.
+    Environment,
     Recall,
     Skills,
     Injection,
     History,
+    /// The memory writer strategy (ids of `memory.writer`).
+    MemoryWriter,
     /// Reserved for pluggable retrieval.
     Retrieval,
 }

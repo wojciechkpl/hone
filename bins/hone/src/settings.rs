@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use hone_config::ConfigError;
 use hone_config::resolve::{ConfigLayer, Effective, ModelChoice, ModelSource, resolve};
+use hone_config::strategy::{Flags, StrategySelection};
 
 /// Path of the (trusted) user file.
 fn user_config_path() -> Option<PathBuf> {
@@ -105,6 +106,39 @@ pub fn load_effective_or_exit(cli_model: Option<&str>) -> Effective {
                 eprintln!("hone: warning: {}: {}", w.path.display(), w.message);
             }
             eff
+        }
+        Err(e) => {
+            eprintln!("{}", format_config_error(&e));
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Read both files and resolve the `[context]` / `[memory]` selection with the
+/// process environment and the command-line `flags`.
+pub fn load_strategy_selection(flags: &Flags) -> Result<StrategySelection, ConfigError> {
+    let user = match user_config_path() {
+        Some(p) => ConfigLayer::load(&p)?,
+        None => None,
+    };
+    let project = ConfigLayer::load_project(&workdir())?;
+    StrategySelection::from_sources(
+        user.as_ref(),
+        project.as_ref(),
+        &|k| std::env::var(k).ok(),
+        flags,
+    )
+}
+
+/// Like [`load_strategy_selection`] for commands that start a model: print the
+/// warnings once to stderr and exit 2 on any error.
+pub fn load_strategy_selection_or_exit(flags: &Flags) -> StrategySelection {
+    match load_strategy_selection(flags) {
+        Ok(sel) => {
+            for w in &sel.warnings {
+                eprintln!("hone: warning: {}: {}", w.path.display(), w.message);
+            }
+            sel
         }
         Err(e) => {
             eprintln!("{}", format_config_error(&e));
