@@ -494,6 +494,8 @@ fn build_agent(eff: &Effective, b: AgentBuild) -> std::result::Result<Agent, Str
                 memory_store: Some(b.memory.clone()),
                 index: index.clone(),
                 working_dir: Some(workdir.clone()),
+                // Each run gets its own plain SQLite memory, never an encrypted store.
+                encrypted_memory: false,
             },
         )
         .map_err(|e| format!("strategy error: {e}"))?;
