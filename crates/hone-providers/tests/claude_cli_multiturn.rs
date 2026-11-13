@@ -1126,7 +1126,10 @@ async fn absent_system_prompt_means_no_system_prompt_flag() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn multiple_system_messages_are_concatenated_with_blank_line() {
+async fn only_the_first_system_message_is_the_spawn_system_prompt() {
+    // CC1 of docs/plans/claude-cli-turn-context-spec.md (replaces the earlier "joined with a
+    // blank line" contract): only the first system message (Hone's base prompt) is fixed at
+    // spawn; the others travel with the turn (see claude_cli_turn_context.rs).
     let dir = tempfile::tempdir().expect("tempdir");
     let log_dir = dir.path().to_owned();
     let script = write_argv_logging_claude(&log_dir);
@@ -1144,17 +1147,14 @@ async fn multiple_system_messages_are_concatenated_with_blank_line() {
         .await
         .expect("complete() must resolve within 5 s");
 
-    // Read the dedicated value file written by the stub: this preserves
-    // embedded newlines that an argv_args.lines() parse would strip.
     let sys_prompt_value = std::fs::read_to_string(log_dir.join("system_prompt_value")).expect(
         "system_prompt_value must be written by the stub when '--system-prompt' \
              is present in argv",
     );
 
     assert_eq!(
-        sys_prompt_value, "first rule\n\nsecond rule",
-        "multiple System messages must be joined with '\\n\\n' (blank-line separator), \
-         no trailing newline; got: {sys_prompt_value:?}"
+        sys_prompt_value, "first rule",
+        "--system-prompt holds only the first system message; got: {sys_prompt_value:?}"
     );
 }
 
@@ -1195,6 +1195,9 @@ async fn system_prompt_captured_only_on_first_spawn() {
     let req2 = make_request_with_history(
         &provider,
         vec![
+            // The base prompt is unchanged (a changed one re-spawns, CC4); only the turn's
+            // context differs.
+            Message::system("rule A"),
             Message::system("rule B"),
             Message::user("turn one"),
             Message::assistant("stub response"),
@@ -1239,8 +1242,8 @@ async fn system_prompt_captured_only_on_first_spawn() {
          not the second call's 'rule B'; got: {sys_prompt_value:?}"
     );
 
-    // Confirm "rule B" does NOT appear in the argv (it would indicate a bad
-    // re-spawn or per-turn re-injection).
+    // Confirm "rule B" (turn 2's extra context) does NOT appear in the argv: it travels with
+    // the turn, not with the spawn.
     assert!(
         !argv_args.contains("rule B"),
         "second call's System message 'rule B' must never appear in spawn argv; \
