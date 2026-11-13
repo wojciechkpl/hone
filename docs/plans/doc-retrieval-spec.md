@@ -83,3 +83,13 @@ R19–R22 hold. R18 is only partly met: `is_format_char` is a hand-written list 
 | R23 | **Invisible characters never reach the model.** Text sent from a retrieved document drops every Unicode format (Cf) character, chosen by general category rather than a list, including the tag characters U+E0000–E007F. U+200C and U+200D are the exception and are kept, because some scripts need them. It also drops U+034F and the variation selectors U+FE00–FE0F and U+E0100–E01EF. An instruction encoded in tag characters is never delivered. |
 | R24 | **The detector sees through combining marks.** Before matching, the scan copy also drops every Cf character (including U+200C and U+200D), applies NFKD and drops nonspacing marks (Mn). A trigger phrase with a combining mark, CGJ or a variation selector inside it is caught. The spec notes the limit: homoglyphs from other scripts, such as a Cyrillic `І`, aren't detected, and the framing line and delimiters remain the main defence. |
 | R25 | **Quicker release and less ranker work.** The busy timeout on `docs.db` connections is set to the retrieval deadline (3 s), so an abandoned open stops waiting soon after. An ensemble's ranker doesn't run retrieval. |
+
+### Follow-ups from earlier reviews (R26–R30)
+
+| Row | Behaviour |
+|---|---|
+| R26 | **Passages can't forge delimiters.** In a passage's text and in its header fields (path and heading), every `<<<` and `>>>` sequence is neutralized, for example by inserting a space between the characters. The sent text then has exactly one `<<<doc …>>>` opening and one `<<<end doc>>>` closing per passage, even when a document contains `<<<end doc>>>` followed by instructions. |
+| R27 | **Line and paragraph separators become newlines.** U+2028 and U+2029 in passages and headers become `\n` (headers stay on one line, so they become spaces there). |
+| R28 | **A rule isn't front matter.** A leading `---` is treated as YAML front matter only when a closing `---` or `...` line follows within the first 50 lines and every line between is blank, a comment, or `key: value`-shaped. Otherwise it is a horizontal rule and the text after it is indexed. |
+| R29 | **The framing line counts against the budget.** The "Excerpts from files in the working directory…" line, and each passage's delimiters, count towards `[retrieval] max_tokens`. |
+| R30 | **Old roots are pruned too.** A root indexed before last-used tracking existed (no last-used time) gets one the first time the index is opened. It is then pruned after 30 days unused, like any other root. |
