@@ -127,9 +127,12 @@ why the bundle must not exist while solution code runs. Suite files are integrit
 change to `checks/` or `reference/` during a run fails it.
 
 What they do not guarantee: solution code runs as your user, so it can read any file your user can,
-including the suite's `reference/` solutions and the plaintext `checks/spec-src/`; the runner
-(`verify.sh`, `hone eval <suite>`) is an ancestor whose command line names the suite. A process
-that starts its own session escapes the group kill and can outlive the run (each child gets its
-own output files, so it cannot write into a later child's output, and the checks never wait for
-it). Run suites on a machine or account where that matters, and treat results as measurements of
-cooperative models, not proofs.
+including the suite's `reference/` solutions and the plaintext `checks/spec-src/`. The salted hashes
+in `checks/specs/` are just as exposed to same-user solution code as `reference/`: a solution that
+finds the suite's path (the runner is an ancestor whose command line names the suite: `verify.sh`,
+`hone eval <suite>`) can read them and brute-force small answer spaces (one reviewer recovered c01
+that way, from 32,001 numerics and 5 exception names). The `ancestor-ps` self-test covers only the
+judge's own bundle, not that route. A process that starts its own session escapes the group kill
+and can outlive the run (each child gets its own output files, so it cannot write into a later
+child's output, and the checks never wait for it). Run suites on a machine or account where that
+matters, and treat results as measurements of cooperative models, not proofs.

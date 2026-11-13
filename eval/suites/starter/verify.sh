@@ -188,6 +188,9 @@ if [ -z "$only" ]; then
   if command -v hone >/dev/null 2>&1; then
     if (cd "$work" && hone eval "$tasks" --check) >"$work/hone-check.out" 2>&1; then
       echo "OK    hone eval --check accepts the suite ($(tail -1 "$work/hone-check.out"))"
+    elif grep -qE "needs an API key|no model:|requires a provider" "$work/hone-check.out"; then
+      # a provider-setup problem of this machine (no key / no default model), not of the suite
+      echo "NOTE  hone eval --check skipped: no provider is configured ($(tail -1 "$work/hone-check.out" | cut -c1-100))"
     else
       echo "FAIL  hone eval --check rejects the suite: $(tail -3 "$work/hone-check.out" | tr '\n' ' ')"
       echo "x" >>"$work/failed"
