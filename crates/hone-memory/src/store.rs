@@ -38,7 +38,7 @@ fn trigrams(text: &str) -> HashSet<[char; 3]> {
 /// Jaccard similarity between the trigram sets of `a` and `b`.
 ///
 /// Returns a value in `[0.0, 1.0]`.  Returns `0.0` when both sets are empty.
-fn trigram_jaccard(a: &str, b: &str) -> f64 {
+pub fn trigram_jaccard(a: &str, b: &str) -> f64 {
     let set_a = trigrams(a);
     let set_b = trigrams(b);
     if set_a.is_empty() && set_b.is_empty() {
@@ -50,6 +50,15 @@ fn trigram_jaccard(a: &str, b: &str) -> f64 {
         return 0.0;
     }
     intersection as f64 / union as f64
+}
+
+/// True unless `tags` mark a model-written memory (`source:tool`) of a project
+/// other than `project` (the id in `project:<id>`).
+pub fn visible_in_project(tags: &[String], project: &str) -> bool {
+    let wanted = format!("project:{project}");
+    !tags.iter().any(|t| t == "source:tool")
+        || !tags.iter().any(|t| t.starts_with("project:"))
+        || tags.iter().any(|t| *t == wanted)
 }
 
 // ---------------------------------------------------------------------------
@@ -95,6 +104,25 @@ pub trait MemoryStore: Send + Sync {
         Ok(None)
     }
 
+    /// [`recall_indexed`](Self::recall_indexed) that, when `project` is `Some(id)`,
+    /// leaves out a model-written memory of another project (see
+    /// [`recall_visible`](Self::recall_visible)). The default filters after the
+    /// index query; `SqliteStore` filters inside it, before the cap.
+    async fn recall_indexed_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Option<Vec<ScoredMemory>>, MemoryError> {
+        let Some(mut found) = self.recall_indexed(query, exclude).await? else {
+            return Ok(None);
+        };
+        if let Some(project) = project {
+            found.retain(|s| visible_in_project(&s.memory.tags, project));
+        }
+        Ok(Some(found))
+    }
+
     /// Rebuild the store's search index; returns the number of memories
     /// indexed, or `None` when the store has no index (the default).
     async fn reindex(&self) -> Result<Option<usize>, MemoryError> {
@@ -121,6 +149,62 @@ pub trait MemoryStore: Send + Sync {
             })
             .take(limit)
             .collect())
+    }
+
+    /// Like [`recall_excluding`](Self::recall_excluding), and when `project` is
+    /// `Some(id)` a memory the model wrote (`source:tool`) that is tagged with a
+    /// project (`project:<x>`) is returned only when `<x>` is `id`. Memories that
+    /// are not tagged `source:tool`, or carry no project tag, are never affected.
+    /// The default recalls without the cap, filters, then caps; a store that caps its candidates
+    /// (`SqliteStore`) overrides it to filter BEFORE the cap.
+    async fn recall_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let Some(project) = project else {
+            return self.recall_excluding(query, exclude).await;
+        };
+        // Rank without the cap, filter, then cap, so invisible memories can't
+        // use up the slots.
+        let uncapped = MemoryQuery {
+            text: query.text.clone(),
+            limit: usize::MAX,
+            kind: query.kind,
+        };
+        let mut found = self.recall_excluding(&uncapped, exclude).await?;
+        found.retain(|m| visible_in_project(&m.tags, project));
+        found.truncate(query.limit);
+        Ok(found)
+    }
+
+    /// The memories the model wrote (`source:tool`) of `kind` in `project` (the
+    /// id in `project:<id>`), newest first, at most `limit`. Nothing else is read:
+    /// user and trigger memories can't push the model's own out of the window.
+    async fn recall_tool_memories(
+        &self,
+        kind: MemoryKind,
+        project: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let all = self
+            .recall(&MemoryQuery {
+                text: String::new(),
+                limit: usize::MAX,
+                kind: Some(kind),
+            })
+            .await?;
+        let wanted = format!("project:{project}");
+        let mut found: Vec<Memory> = all
+            .into_iter()
+            .filter(|m| {
+                m.tags.iter().any(|t| t == "source:tool") && m.tags.iter().any(|t| *t == wanted)
+            })
+            .collect();
+        found.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        found.truncate(limit);
+        Ok(found)
     }
 
     /// O(log n) (or better) exact lookup by `id`. Returns `None` when no

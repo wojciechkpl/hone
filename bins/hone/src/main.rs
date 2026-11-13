@@ -2982,9 +2982,11 @@ async fn main() -> Result<()> {
         .iter()
         .any(|n| n == "memory-index");
     let memory_index_str = if let Some(store) = memory_store.as_ref().filter(|_| memory_index_on) {
-        match hone_core::memory_index::render_index(
+        let index_dir = std::env::current_dir().unwrap_or_default();
+        match hone_core::memory_index::render_index_in(
             store.as_ref(),
             hone_core::memory_index::IndexBudget::default(),
+            &index_dir,
         )
         .await
         {
@@ -4618,14 +4620,12 @@ fn write_session_report(
 }
 
 fn chrono_like_timestamp() -> String {
-    // Simple RFC3339-like timestamp without pulling in the chrono crate.
+    // Seconds since the Unix epoch: sortable and filesystem-safe, used as a
+    // report id (not a calendar date).
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    // Format as approximate UTC datetime (seconds since epoch → rough date).
-    // This gives a sortable, filesystem-safe string.
-    // We use the same approach as egress_log: best-effort; not perfect UTC.
     format!("{secs}")
 }
 

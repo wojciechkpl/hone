@@ -191,7 +191,7 @@ fn test_s5_with_builtins_should_list_every_builtin_under_its_config_key() {
     );
     assert_eq!(names("context.compactor"), ["graduated", "trim-only"]);
     assert_eq!(names("memory.recaller"), ["bm25", "fts5", "none"]);
-    assert_eq!(names("memory.writer"), ["off", "triggers"]);
+    assert_eq!(names("memory.writer"), ["off", "tool", "triggers", "triggers+tool"]);
 }
 
 #[test]

@@ -8,6 +8,7 @@ pub mod clarify;
 mod code_mode;
 pub mod complexity;
 mod context;
+mod memory_write;
 mod receipts;
 pub mod strategy;
 pub mod context_injector;

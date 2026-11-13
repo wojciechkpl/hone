@@ -496,6 +496,7 @@ impl<S: MemoryStore + SealedVectorStore> EncryptedStore<S> {
         &self,
         query: &MemoryQuery,
         exclude: &[MemoryKind],
+        project: Option<&str>,
     ) -> Result<Vec<Memory>, MemoryError> {
         // Encrypted content cannot be searched server-side: the inner store
         // applies the kind filter and the exclusions, then the newest
@@ -506,7 +507,10 @@ impl<S: MemoryStore + SealedVectorStore> EncryptedStore<S> {
                 limit: 10_000,
                 kind: query.kind,
             };
-            let encrypted_memories = self.inner.recall_excluding(&all_query, exclude).await?;
+            let encrypted_memories = self
+                .inner
+                .recall_visible(&all_query, exclude, project)
+                .await?;
             let mut results: Vec<Memory> = Vec::new();
             let mut ciphertexts = std::collections::HashMap::new();
             for mem in encrypted_memories {
@@ -531,7 +535,10 @@ impl<S: MemoryStore + SealedVectorStore> EncryptedStore<S> {
             limit: RANKED_CORPUS + 1,
             kind: query.kind,
         };
-        let encrypted_memories = self.inner.recall_excluding(&corpus_query, exclude).await?;
+        let encrypted_memories = self
+            .inner
+            .recall_visible(&corpus_query, exclude, project)
+            .await?;
         let mut corpus: Vec<Memory> = Vec::with_capacity(encrypted_memories.len());
         let mut ciphertexts = std::collections::HashMap::new();
         for mem in encrypted_memories {
@@ -591,7 +598,7 @@ impl<S: MemoryStore + SealedVectorStore> MemoryStore for EncryptedStore<S> {
     }
 
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_filtered(query, &[]).await
+        self.recall_filtered(query, &[], None).await
     }
 
     async fn recall_excluding(
@@ -599,7 +606,40 @@ impl<S: MemoryStore + SealedVectorStore> MemoryStore for EncryptedStore<S> {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
     ) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_filtered(query, exclude).await
+        self.recall_filtered(query, exclude, None).await
+    }
+
+    async fn recall_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        self.recall_filtered(query, exclude, project).await
+    }
+
+    async fn recall_tool_memories(
+        &self,
+        kind: MemoryKind,
+        project: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let found = self
+            .inner
+            .recall_tool_memories(kind, project, limit)
+            .await?;
+        let mut memories: Vec<Memory> = Vec::with_capacity(found.len());
+        let mut ciphertexts = std::collections::HashMap::new();
+        for m in found {
+            if m.id == SALT_SENTINEL_ID {
+                continue;
+            }
+            let (plain, raw) = self.decrypt_row(m)?;
+            ciphertexts.insert(plain.id.clone(), raw);
+            memories.push(plain);
+        }
+        self.attach_embeddings(&mut memories, &ciphertexts).await?;
+        Ok(memories)
     }
 
     async fn recall_semantic(
@@ -616,6 +656,7 @@ impl<S: MemoryStore + SealedVectorStore> MemoryStore for EncryptedStore<S> {
                     kind: None,
                 },
                 &[],
+                None,
             )
             .await?;
         candidates.retain(|m| m.embedding.is_some());

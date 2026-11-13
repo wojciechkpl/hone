@@ -100,6 +100,8 @@ pub struct RecallQuery<'a> {
     pub text: &'a str,
     pub k: usize,
     pub exclude_kinds: &'a [MemoryKind],
+    /// The project id (`project:<id>` without the prefix): a memory the model
+    /// wrote in another project is not recalled.
     pub scope: Option<&'a str>,
 }
 
@@ -313,7 +315,9 @@ impl Recaller for Bm25Recaller {
             limit: q.k,
             kind: None,
         };
-        let found = store.recall_excluding(&query, q.exclude_kinds).await?;
+        let found = store
+            .recall_visible(&query, q.exclude_kinds, q.scope)
+            .await?;
         Ok(found
             .into_iter()
             .map(|memory| ScoredMemory { memory, score: 0.0 })
@@ -342,10 +346,15 @@ impl Recaller for Fts5Recaller {
             limit: q.k,
             kind: None,
         };
-        if let Some(found) = store.recall_indexed(&query, q.exclude_kinds).await? {
+        if let Some(found) = store
+            .recall_indexed_visible(&query, q.exclude_kinds, q.scope)
+            .await?
+        {
             return Ok(found);
         }
-        let found = store.recall_excluding(&query, q.exclude_kinds).await?;
+        let found = store
+            .recall_visible(&query, q.exclude_kinds, q.scope)
+            .await?;
         Ok(found
             .into_iter()
             .map(|memory| ScoredMemory { memory, score: 0.0 })
@@ -386,6 +395,22 @@ impl MemoryWriter for TriggersWriter {
         classify_turn(&turn.user_text, &turn.response_text)
             .into_iter()
             .collect()
+    }
+}
+
+/// The model writes memories through the `memory_write` tool; nothing is
+/// proposed from turns.
+struct ToolWriter {
+    id: StrategyId,
+}
+
+#[async_trait]
+impl MemoryWriter for ToolWriter {
+    fn id(&self) -> &StrategyId {
+        &self.id
+    }
+    async fn propose(&self, _turn: &TurnRecord) -> Vec<MemoryCandidate> {
+        Vec::new()
     }
 }
 
@@ -549,6 +574,24 @@ impl StrategyRegistry {
             }),
         );
         r.register_writer(
+            "tool",
+            Origin::Builtin,
+            Arc::new(|_p, _d| {
+                Ok(Arc::new(ToolWriter {
+                    id: id(Slot::Recall, "tool", &serde_json::json!({})),
+                }) as Arc<dyn MemoryWriter>)
+            }),
+        );
+        r.register_writer(
+            "triggers+tool",
+            Origin::Builtin,
+            Arc::new(|_p, _d| {
+                Ok(Arc::new(TriggersWriter {
+                    id: id(Slot::Recall, "triggers+tool", &serde_json::json!({})),
+                }) as Arc<dyn MemoryWriter>)
+            }),
+        );
+        r.register_writer(
             "off",
             Origin::Builtin,
             Arc::new(|_p, _d| {
@@ -679,6 +722,8 @@ impl StrategyRegistry {
         let writer_kind = match (sel.writer.value.as_str(), builtin(writer_origin)) {
             ("triggers", true) => WriterKind::Triggers,
             ("off", true) => WriterKind::Off,
+            ("tool", true) => WriterKind::Tool,
+            ("triggers+tool", true) => WriterKind::TriggersTool,
             _ => WriterKind::Custom,
         };
 
@@ -744,7 +789,18 @@ pub enum RecallerKind {
 pub enum WriterKind {
     Triggers,
     Off,
+    /// The model writes through `memory_write`; no trigger writes.
+    Tool,
+    /// Trigger writes and the `memory_write` tool.
+    TriggersTool,
     Custom,
+}
+
+impl WriterKind {
+    /// Whether the model is offered the `memory_write` tool.
+    pub fn offers_tool(self) -> bool {
+        matches!(self, WriterKind::Tool | WriterKind::TriggersTool)
+    }
 }
 
 /// The strategies an agent runs with.
