@@ -38,6 +38,7 @@
 //! `StrategySelection` is `hone_config::strategy::StrategySelection` (PR D).
 
 use hone_config::strategy::StrategySelection;
+use hone_core::strategy::StrategyRegistry;
 use hone_eval::tasks::{ExpandOptions, PlannedRun, TasksFile};
 
 const FILE: &str = "/evals/tasks.toml";
@@ -269,21 +270,50 @@ fn test_f5_ablating_the_skeleton_should_add_one_profile_per_other_builtin_value(
     }
 }
 
+/// The alternatives to a slot's default, from the strategy registry (sorted), so a new
+/// strategy does not break the expectations.
+fn alternatives(slot: &str, default: &str) -> Vec<String> {
+    let mut v: Vec<String> = StrategyRegistry::with_builtins()
+        .list()
+        .into_iter()
+        .filter(|(s, n, _)| s == slot && n != default)
+        .map(|(_, n, _)| n)
+        .collect();
+    v.sort();
+    v
+}
+
 #[test]
 fn test_f5_each_slot_should_vary_only_itself() {
-    let cases: [(&str, &str, &str); 4] = [
-        ("context.compactor", "context.compactor=trim-only", "compactor"),
-        ("context.graduated.phase", "context.graduated.phase=true", "phase"),
-        ("memory.recaller", "memory.recaller=none", "recaller"),
-        ("context.sources:recall", "context.sources:recall=off", "sources"),
+    let base_sel = ablated("memory.recaller").0.profile_selection("default", None).unwrap();
+    let recaller_alts = alternatives("memory.recaller", &base_sel.recaller.value);
+    assert!(!recaller_alts.is_empty(), "the registry has an alternative recaller");
+    let mut cases: Vec<(String, String, &str)> = vec![
+        ("context.compactor".into(), "context.compactor=trim-only".into(), "compactor"),
+        ("context.graduated.phase".into(), "context.graduated.phase=true".into(), "phase"),
+        ("context.sources:recall".into(), "context.sources:recall=off".into(), "sources"),
     ];
-    for (slot, profile, field) in cases {
+    // Every recaller other than the default is one profile, each differing only in `recaller`.
+    for alt in &recaller_alts {
+        cases.push(("memory.recaller".into(), format!("memory.recaller={alt}"), "recaller"));
+    }
+    for (slot, profile, field) in &cases {
         let (ab, names) = ablated(slot);
-        assert_eq!(names, ["default", profile], "{slot}");
+        assert!(names.contains(profile), "{slot}: {names:?} lacks {profile}");
+        assert_eq!(names[0], "default", "{slot}");
         let base = ab.profile_selection("default", None).unwrap();
         let sel = ab.profile_selection(profile, None).unwrap();
-        assert_eq!(differing(&base, &sel), [field], "{slot}");
+        assert_eq!(differing(&base, &sel), [*field], "{slot}");
     }
+    for slot in ["context.compactor", "context.graduated.phase", "context.sources:recall"] {
+        let (_, names) = ablated(slot);
+        assert_eq!(names.len(), 2, "{slot}: one alternative: {names:?}");
+    }
+    let (_, names) = ablated("memory.recaller");
+    let want: Vec<String> = std::iter::once("default".to_owned())
+        .chain(recaller_alts.iter().map(|a| format!("memory.recaller={a}")))
+        .collect();
+    assert_eq!(names, want, "memory.recaller: the registry's alternatives, sorted");
     let (ab, _) = ablated("context.sources:recall");
     let sel = ab.profile_selection("context.sources:recall=off", None).unwrap();
     assert!(!sel.sources.value.contains(&"recall".to_owned()));
@@ -318,7 +348,9 @@ fn test_f5_an_unknown_slot_or_base_should_be_an_error() {
 fn test_f5_ablation_runs_should_expand_like_any_profiles() {
     let (ab, names) = ablated("memory.recaller");
     let runs = ab.expand(&ExpandOptions { profiles: vec![], repeats: Some(1) }).unwrap();
-    assert_eq!(runs.len(), 2 * names.len());
-    assert_eq!(runs[0], run("default", "t1", 1));
-    assert_eq!(runs[1], run("memory.recaller=none", "t1", 1));
+    assert!(names.len() >= 2, "{names:?}");
+    assert_eq!(runs.len(), 2 * names.len(), "every profile on both tasks");
+    for (r, name) in runs.iter().zip(&names) {
+        assert_eq!(*r, run(name, "t1", 1));
+    }
 }
