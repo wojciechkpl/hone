@@ -490,3 +490,117 @@ async fn test_tr5_agent_should_prefix_a_result_with_tag_characters_that_json_lea
 
     assert!(msg.starts_with("[SECURITY"), "{msg:?}");
 }
+
+// -- TR6: flag emoji are not hidden tag text --------------------------------------------------------
+//
+// A well-formed emoji tag sequence (U+1F3F4, then one or more of U+E0030-E0039 / U+E0061-E007A,
+// then U+E007F) is the Scotland/England/Wales (and other subdivision) flag. It is not counted as
+// hidden tag characters for TR3; every other tag character still is; decoded tag text is still
+// scanned (TR2).
+
+fn flag(subdivision: &str) -> String {
+    format!("\u{1F3F4}{}\u{E007F}", tag_encode(subdivision))
+}
+
+const FLAGS: [(&str, &str); 3] = [("Scotland", "gbsct"), ("England", "gbeng"), ("Wales", "gbwls")];
+
+#[test]
+fn test_tr6_a_well_formed_flag_should_not_be_flagged_raw_or_json_escaped() {
+    for (name, sub) in FLAGS {
+        let raw = format!("Based in {} {name} office", flag(sub));
+        let escaped = format!("\"Based in {} {name} office\"", json_escape_all(&flag(sub)));
+        let serialized = serde_json::to_string(&raw).unwrap();
+        for (form, text) in [("raw", raw), ("escaped surrogate pairs", escaped), ("serde_json", serialized)] {
+            let risk = InjectionDetector::scan_tool_result("read_file", &text);
+            assert_eq!(risk, InjectionRisk::None, "{name} ({form}): {risk:?}");
+        }
+    }
+}
+
+#[test]
+fn test_tr6_several_flags_in_a_row_should_not_be_flagged() {
+    let text = format!("{}{}{}", flag("gbsct"), flag("gbeng"), flag("gbwls"));
+    assert_eq!(InjectionDetector::scan_tool_result("read_file", &text), InjectionRisk::None);
+}
+
+#[tokio::test]
+async fn test_tr6_agent_should_not_prefix_a_result_containing_a_flag() {
+    let payload = format!("Team locations: {} Edinburgh, {} London, {} Cardiff", flag("gbsct"), flag("gbeng"), flag("gbwls"));
+
+    let msg = history_message_for(&payload).await;
+
+    assert!(!msg.contains("[SECURITY"), "{msg:?}");
+    assert!(msg.contains(&payload), "content unchanged: {msg:?}");
+}
+
+#[test]
+fn test_tr6_a_flag_followed_by_stray_tag_characters_should_still_be_flagged() {
+    for stray in [tag_encode("x"), "\u{E0001}".to_owned(), "\u{E007F}".to_owned(), tag_encode("hello")] {
+        let text = format!("{}{stray}", flag("gbsct"));
+        let risk = InjectionDetector::scan_tool_result("read_file", &text);
+        assert!(risk.is_actionable() && mentions_hidden(&risk), "stray {stray:?}: {risk:?}");
+    }
+}
+
+#[test]
+fn test_tr6_malformed_tag_sequences_should_still_be_flagged() {
+    let tags = tag_encode("gbsct");
+    for (name, text) in [
+        ("no U+1F3F4 lead", format!("{tags}\u{E007F}")),
+        ("no U+E007F cancel", format!("\u{1F3F4}{tags}")),
+        ("empty payload", "\u{1F3F4}\u{E007F}".to_owned()),
+        ("uppercase payload", format!("\u{1F3F4}{}\u{E007F}", tag_encode("GB"))),
+        ("space in payload", format!("\u{1F3F4}{}\u{E007F}", tag_encode("gb sct"))),
+        ("language tag inside", format!("\u{1F3F4}\u{E0001}{tags}\u{E007F}")),
+        ("lead of another emoji", format!("\u{1F600}{tags}\u{E007F}")),
+    ] {
+        let risk = InjectionDetector::scan_tool_result("read_file", &text);
+        assert!(risk.is_actionable() && mentions_hidden(&risk), "{name}: {risk:?}");
+        let escaped = json_escape_all(&text);
+        let risk = InjectionDetector::scan_tool_result("read_file", &format!("\"{escaped}\""));
+        assert!(risk.is_actionable() && mentions_hidden(&risk), "{name} (escaped): {risk:?}");
+    }
+}
+
+#[test]
+fn test_tr6_a_valid_flag_next_to_a_tag_encoded_phrase_should_still_be_flagged_like_the_phrase() {
+    // A flag's own payload can only decode to a-z/0-9, so the phrase is a separate tag run.
+    let visible = InjectionDetector::scan(PHRASE);
+    for text in [
+        format!("{} {}", flag("gbsct"), tag_encode(PHRASE)),
+        format!("{}{}", tag_encode(PHRASE), flag("gbwls")),
+        format!("{}{}{}", flag("gbeng"), tag_encode(PHRASE), flag("gbeng")),
+        format!("\"{}{}\"", json_escape_all(&flag("gbsct")), json_escape_all(&tag_encode(PHRASE))),
+    ] {
+        let risk = InjectionDetector::scan_tool_result("read_file", &text);
+        assert_eq!(risk.label(), visible.label(), "{text:?}: {risk:?}");
+    }
+}
+
+// -- TR7: ordinary tool results take the fast path ----------------------------------------------------
+//
+// `is_plain_ascii` is private to the module, so the decision isn't observable from here; this is
+// the timing guard instead: a 20 MB serde_json-encoded multi-line ASCII string (full of `\n`, `\"`
+// escapes, no `\u`) must scan in about the time of the raw ASCII text of the same size. The bound
+// is generous (4x plus 3 s) and may already hold; it fails only if simple escapes force a slow
+// decoded copy.
+
+#[test]
+fn test_tr7_a_serde_json_encoded_multi_line_ascii_result_should_scan_like_raw_ascii() {
+    let line = "fn main() { println!(\"hello, world\"); } // plain code\n";
+    let raw = line.repeat(20 * 1024 * 1024 / line.len());
+    let encoded = serde_json::to_string(&raw).unwrap();
+    assert!(encoded.contains("\\n") && encoded.contains("\\\"") && !encoded.contains("\\u"), "harness");
+
+    let t = Instant::now();
+    assert_eq!(InjectionDetector::scan_tool_result("read_file", &raw), InjectionRisk::None);
+    let raw_time = t.elapsed();
+    let t = Instant::now();
+    assert_eq!(InjectionDetector::scan_tool_result("read_file", &encoded), InjectionRisk::None);
+    let encoded_time = t.elapsed();
+
+    assert!(
+        encoded_time < raw_time * 4 + Duration::from_secs(3),
+        "encoded {encoded_time:?} vs raw {raw_time:?}"
+    );
+}
