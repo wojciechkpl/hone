@@ -48,7 +48,7 @@ for a in "$@"; do
 done
 while IFS= read -r line; do
     [ -z "$line" ] && continue
-    echo "$line" >> "$LOG_DIR/received_lines"
+    printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
     printf '{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"stub response"}}]}}}}\n'
     printf '{{"type":"result","subtype":"success","session_id":"s","usage":{{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0}}}}\n'
 {exit_after}done

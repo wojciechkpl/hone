@@ -107,7 +107,7 @@ while IFS= read -r line; do
     [ -z "$line" ] && continue
 
     # Log every received line.
-    echo "$line" >> "$LOG_DIR/received_lines"
+    printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
 
     # Emit an assistant message.
     printf '{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"stub response"}}]}}}}\n'
@@ -132,7 +132,7 @@ if [ -f "$count_file" ]; then prev=$(cat "$count_file"); echo $((prev + 1)) > "$
 
 # First input line: emit error_max_turns, then success.
 IFS= read -r first_line
-echo "$first_line" >> "$LOG_DIR/received_lines"
+printf '%s\n' "$first_line" >> "$LOG_DIR/received_lines"
 printf '{{"type":"result","subtype":"error_max_turns","session_id":"s","usage":{{"input_tokens":1,"output_tokens":0,"cache_read_input_tokens":0}}}}\n'
 printf '{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"retry response"}}]}}}}\n'
 printf '{{"type":"result","subtype":"success","session_id":"s","usage":{{"input_tokens":2,"output_tokens":3,"cache_read_input_tokens":0}}}}\n'
@@ -532,7 +532,7 @@ fi
 IFS= read -r line
 [ -z "$line" ] && exit 0
 
-echo "$line" >> "$LOG_DIR/received_lines"
+printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
 
 printf '{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"stub response"}}]}}}}\n'
 printf '{{"type":"result","subtype":"success","session_id":"stub-session","usage":{{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0}}}}\n'
@@ -764,7 +764,7 @@ if [ -f "$count_file" ]; then prev=$(cat "$count_file"); echo $((prev + 1)) > "$
 # emitting any stdout.  Simulates auth-failure-style crashes where the CLI
 # dies before producing any assistant content.
 IFS= read -r line
-echo "$line" >> "$LOG_DIR/received_lines"
+printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
 echo "FATAL: simulated authentication failure (stub-marker-AUTH123)" 1>&2
 exit 1
 "#
@@ -852,7 +852,7 @@ if [ -f "$count_file" ]; then prev=$(cat "$count_file"); echo $((prev + 1)) > "$
 new_count=$(cat "$count_file")
 
 IFS= read -r line
-echo "$line" >> "$LOG_DIR/received_lines"
+printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
 
 if [ "$new_count" = "1" ]; then
     echo "first-attempt-stderr (stub-marker-A-FIRST)" 1>&2
@@ -972,7 +972,7 @@ fi
 while IFS= read -r line; do
     [ -z "$line" ] && continue
 
-    echo "$line" >> "$LOG_DIR/received_lines"
+    printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
 
     printf '{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"stub response"}}]}}}}\n'
     printf '{{"type":"result","subtype":"success","session_id":"stub-session","usage":{{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0}}}}\n'
@@ -1454,7 +1454,7 @@ fi
 IFS= read -r line
 [ -z "$line" ] && exit 0
 
-echo "$line" >> "$LOG_DIR/received_lines"
+printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
 
 printf '{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"stub response"}}]}}}}\n'
 printf '{{"type":"result","subtype":"success","session_id":"stub-session","usage":{{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0}}}}\n'
@@ -1776,7 +1776,7 @@ echo "$@" >> "$LOG_DIR/argv"
 first=1
 while IFS= read -r line; do
     [ -z "$line" ] && continue
-    echo "$line" >> "$LOG_DIR/received_lines"
+    printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
 
     if [ "$first" = "1" ]; then
         first=0
@@ -2168,7 +2168,7 @@ echo "$@" >> "$LOG_DIR/argv"
 first=1
 while IFS= read -r line; do
     [ -z "$line" ] && continue
-    echo "$line" >> "$LOG_DIR/received_lines"
+    printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
 
     if [ "$first" = "1" ]; then
         first=0
@@ -2514,7 +2514,7 @@ if [ "$new_count" = "1" ]; then
     # First spawn: read one line, emit token, sleep, emit success.
     IFS= read -r line
     [ -z "$line" ] && exit 0
-    echo "$line" >> "$LOG_DIR/received_lines"
+    printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
 
     # Emit one token immediately so complete() can return Ok(stream).
     printf '{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"pre-cancel token"}}]}}}}\n'
@@ -2528,7 +2528,7 @@ else
     # Subsequent spawns: behave like the standard fake claude.
     while IFS= read -r line; do
         [ -z "$line" ] && continue
-        echo "$line" >> "$LOG_DIR/received_lines"
+        printf '%s\n' "$line" >> "$LOG_DIR/received_lines"
         printf '{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"post-cancel response"}}]}}}}\n'
         printf '{{"type":"result","subtype":"success","session_id":"stub-session","usage":{{"input_tokens":5,"output_tokens":3,"cache_read_input_tokens":0}}}}\n'
     done
