@@ -8,10 +8,13 @@ pub mod clarify;
 mod code_mode;
 pub mod complexity;
 mod context;
+mod memory_write;
 mod receipts;
+pub mod strategy;
 pub mod context_injector;
 mod cost;
 pub mod doom_loop;
+mod env_snapshot;
 pub mod egress_log;
 pub mod ensemble;
 mod error;
@@ -40,6 +43,16 @@ pub mod session_approvals;
 pub mod task_plan;
 pub mod test_loop;
 mod turn;
+
+/// Context receipts with their per-agent ordinals (see
+/// `AgentHandle::context_receipts_after`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReceiptBatch {
+    /// Identifies the agent the ordinals belong to.
+    pub agent_id: String,
+    /// `(ordinal, receipt)`, ordinals 1-based and ascending.
+    pub items: Vec<(u64, hone_proto::ContextReceipt)>,
+}
 
 #[allow(deprecated)]
 pub use agent::{Agent, AgentConfig, AgentHandle, PriceLookup, RunSettings, unpriced_models_seen, default_price, set_default_price_lookup, is_read_only_tool};

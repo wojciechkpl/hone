@@ -2599,6 +2599,13 @@ impl App {
                 }
             }
 
+            AgentEvent::MemoryWritten { id, kind, status } => {
+                self.messages.push(DisplayMessage::new(
+                    DisplayRole::System,
+                    format!("memory {status}: {kind} {id}"),
+                ));
+            }
+
             AgentEvent::ModelFallback {
                 requested,
                 fallback,

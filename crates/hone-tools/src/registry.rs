@@ -30,6 +30,16 @@ impl ToolRegistry {
         self.tools.get(name)
     }
 
+    /// A copy of this registry with `tool` added (replacing a tool of the same name).
+    #[must_use]
+    pub fn with_tool(&self, tool: Arc<dyn Tool>) -> Self {
+        let mut tools: HashMap<String, Arc<dyn Tool>> = (*self.tools).clone();
+        tools.insert(tool.name().to_string(), tool);
+        Self {
+            tools: Arc::new(tools),
+        }
+    }
+
     /// Return the JSON Schema descriptors for all registered tools.
     ///
     /// Sorted by name, so the same registry always produces the same request

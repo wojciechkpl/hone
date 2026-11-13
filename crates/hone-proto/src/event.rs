@@ -210,6 +210,14 @@ pub enum AgentEvent {
     /// Emitted before every model call: what that call was given (ids, paths,
     /// hashes, names and scores, never text).
     ContextAssembled { receipt: ContextReceipt },
+    /// Emitted when the model's `memory_write` call stored (or updated) a memory.
+    MemoryWritten {
+        id: String,
+        /// Lowercase kind, as in config files (`user`, `feedback`, ...).
+        kind: String,
+        /// `added` or `updated`.
+        status: String,
+    },
     /// Emitted once per turn when the memory store returns relevant entries.
     MemoryRecalled {
         /// (memory_id, short_snippet ≤ 80 chars) pairs.

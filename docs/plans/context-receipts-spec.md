@@ -63,20 +63,38 @@ Doc notes for PR C's user docs: receipts are local diagnostics. Message hashes a
 
 | Row | Behaviour |
 |---|---|
-| CR11 | **The CLI stores receipts with the session.** The session store gains a `context_receipts` table (session name, turn, call, receipt JSON), written when the session is saved. Old databases upgrade in place. |
-| CR12 | **`hone context show [--session NAME] [--turn N] [--json]`.** Prints, per call: turn/call, model, request hash prefix, each block (slot, strategy, tokens, sources with scores), dropped sources, and compaction steps. Default session: the most recent. `--json` prints the stored receipts. An unknown session or turn is an error with exit code 1. |
-| CR13 | **Audit log.** With `--audit`/`HONE_AUDIT_LOG=1`, each receipt adds one `.hone/audit.jsonl` line with a new `SpanKind::Context`, its parent the turn span, carrying the receipt. |
-| CR14 | **`honed` provenance.** `ProvenanceEvent::ContextAssembled { receipt_sha256, strategies, sources }` is appended to a run's chain for each receipt, where `strategies` are the block strategy names and `sources` the source refs. Existing chains still verify; the variant is a pure addition. |
+| CR11 | **The agent keeps its receipts, and the CLI stores them with the session.**<br>• `AgentHandle::get_context_receipts().await -> Vec<ContextReceipt>` returns the receipts of this agent's life in order, like `get_messages`. The agent keeps at most the newest 10,000.<br>• The CLI session store gains a `context_receipts` table: session id, `run`, `seq`, `turn`, `call`, receipt JSON. A run is one process saving to that session: the first save of a process takes `run = max(run) + 1` for the session, and later saves in the same process append only receipts not yet stored (`seq` increasing). Turn numbers restart on resume, so `run` keeps them apart.<br>• Deleting a session deletes its receipts. Old databases gain the table in place. |
+| CR12 | **`hone context show [--session NAME] [--run R] [--turn N] [--json]`.**<br>• Prints, per call: run/turn/call, model, the first 12 hex digits of the request hash, each block (slot, strategy, tokens, sources with scores), dropped sources, and compaction steps.<br>• Defaults: the most recently updated session; all runs; `--turn` without `--run` means the latest run.<br>• `--json` prints the stored receipts as a JSON array, each with its `run` and `seq`.<br>• An unknown session, run or turn exits with code 1 and a message on stderr. A session with no receipts prints a one-line note and exits 0. |
+| CR13 | **Audit log.** With `--audit`/`HONE_AUDIT_LOG=1`, each receipt adds one `.hone/audit.jsonl` line: `span_kind: "context"`, `tool: "context_assembled"`, `arguments`: the receipt, `result_preview: ""`, `blocked: false`, `duration_ms`: the sum of the blocks' durations, the turn's `trace_id`, and the turn span as `parent_span_id`. `EgressEntry` gains no fields. |
+| CR14 | **`honed` provenance.** `ProvenanceEvent::ContextAssembled { receipt_sha256, strategies, sources }` is appended to a run's chain for each `ContextAssembled` event: `receipt_sha256` is `sha256_hex` of the receipt's compact key-sorted JSON, `strategies` the block strategy names in order, `sources` every block's source refs in order. Existing chains (without the variant) still parse and verify, and a chain with it verifies. |
 
 ## Testing notes
 
 - **CR1–CR8, CR10** through a real `Agent` with a scripted mock provider that records the requests it receives. Compare `request_sha256` with a hash computed from the recorded request. Use an `InMemoryStore` with seeded memories, a skill registry with one trigger, and a context config small enough to force compression and trimming.
 - **CR3 byte-identity:** record requests for a fixed scripted session and compare with a golden JSON fixture captured from the base branch (generate the fixture before implementing).
 - **CR9** in `bins/hone` (the `--json` builder) and `hone-server` (event-name maps).
-- **CR11–CR14** in their crates; CR12 runs the binary against a temp `HOME`.
+- **CR11–CR14** in their crates. CR11 and CR12 run the `hone` binary against a temp `HOME` with a scripted provider where one exists, or exercise the store and the `context show` renderer directly.
 
 ## Out of scope
 
 - Strategy selection by config (PR D); until then `params_sha256` hashes built-in parameters.
 - Showing receipts in the TUI or desktop app.
 - `hone memory blame`.
+
+## Review round 1 for PR C (CR20–CR24)
+
+| Row | Behaviour |
+|---|---|
+| CR20 | **`hone trace` doesn't count receipts as tools.** `hone trace stats` and `hone trace list` skip audit lines with `span_kind: "context"` in tool counts and tool tables, and show them as a separate "model calls" count per session and in total. |
+| CR21 | **Receipts are stored by ordinal, not position.** Each agent numbers its receipts 1, 2, 3, … for its whole life and has an id. `AgentHandle::context_receipts_after(ordinal) -> ReceiptBatch { agent_id, items: Vec<(u64, ContextReceipt)> }` returns the kept receipts with ordinals above `ordinal`. `SessionStore::append_context_receipts` takes a `ReceiptBatch`; a run is one (process, session, agent id), so a new agent saving under the same session starts a new run, and `seq` is the ordinal. When the agent has dropped receipts that were never stored (the 10,000 cap), the first stored `seq` jumps and a warning is logged; later receipts are still stored. `get_context_receipts()` stays. |
+| CR22 | **Concurrent first saves don't collide.** The new run number is computed and the rows inserted in one `BEGIN IMMEDIATE` transaction, so two processes first-saving the same session get runs N and N+1, and neither loses its receipts. |
+| CR23 | **`hone context show` only reads.** It opens the sessions database read-only, doesn't create tables (a database without the receipts table shows the "no context receipts" note), and resolves the session by id without loading its messages. |
+| CR24 | **User docs.** A "Context receipts" section in `docs/configuration.md` (or its own page linked from the README) says what receipts record, where they're stored (`sessions.db`, `.hone/audit.jsonl` with `--audit`, `honed` provenance), how runs and turns are numbered (a new run per process; `hone --session NAME` replaces the session's messages, so older runs' message refs may no longer match), and the privacy notes: receipts hold ids, paths and hashes, never text; hashes are unsalted, so short messages can be confirmed by guessing; paths are as indexed; don't share audit logs from private work. Docs only. |
+
+## Review round 2 for PR C (CR25–CR27)
+
+| Row | Behaviour |
+|---|---|
+| CR25 | **`hone context show` never prints raw control characters.** Every string taken from a receipt (file paths, command argv, skill names, memory ids, opaque notes, the model name, strategy names) is shown with control characters escaped (`\u{1b}` style), so a repository file name or a model-chosen argument can't move the cursor, retitle the terminal or forge lines. `--json` is unchanged (serde already escapes). |
+| CR26 | **The text output shows the whole history, not only what's listed.** Each receipt's history line reads like `history: 5 messages (2 new listed), root e09db7e7317a` (the first 12 hex digits of `history_root`), followed by the listed refs. The docs' "Reading history refs" paragraph says what the root is (the SHA-256 of the newline-joined hashes of the request's non-system messages, in order), that `--json` gives it in full, and that it's for tools holding the transcript to verify against; it drops the instruction to check it by hand. |
+| CR27 | **Small cleanups.** `ReceiptBatch` is declared above the `#[allow(deprecated)]` re-export in `hone-core/src/lib.rs` so builds don't warn; `append_context_receipts` uses sqlx's `begin_with("BEGIN IMMEDIATE")` so a dropped future or failed rollback can't return a connection mid-transaction; the docs say a run is one (process, session, agent). |

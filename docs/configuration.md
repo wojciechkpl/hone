@@ -246,6 +246,41 @@ session_limit_usd = 2.0
 
 Cost is computed per call from the price of the model that served it: the built-in table, with your `[pricing."provider:model"]` tables on top (`input_per_million`, `output_per_million`, optional `cache_read_per_million` and `cache_creation_per_million`; a project file's `[pricing]` is ignored). A model id ending in `-YYYY-MM-DD` or `-YYYYMMDD` uses its base id's price. A model with no price costs nothing and Hone says so once per model (`--json` sets `cost_known` to false); with a session limit it also warns before the first call. `AgentConfig.pricing` (the single price an embedding program passes) applies only when no price lookup is set. Usage that arrives more than 2 seconds after an OpenAI-compatible stream's final chunk isn't counted.
 
+### Context and memory strategies
+
+`[context]` and `[memory]` choose what goes into the prompt and how memories are recalled and
+written. Without them Hone behaves as before. `hone strategies` shows what is active
+([below](#hone-strategies)).
+
+| Key | Default | Effect | In the project file |
+|---|---|---|---|
+| `[context] sources` | `["memory-index", "recall", "skills", "skeleton"]` | Which context sources are on. The prompt order stays fixed whatever the list's order | intersected with the user's list; a name the user doesn't have is dropped with a warning |
+| `[context] compactor` | `"graduated"` | `graduated` (tool-result dedup, graduated compression, trimming) or `trim-only` (only the trimming needed to fit the budget) | allowed |
+| `[context] budget_ratio` | the per-model ratio | Fraction of the model's context window to use (above 0, at most 1) | a cap: the effective ratio is the smaller of your value (or the model's default) and the project's; a higher value is ignored with a warning |
+| `[context.skeleton] use` | `"adaptive"` | `adaptive`, `flat`, `dependency-graph`, `call-graph` or `hybrid` | allowed |
+| `[context.skeleton] max_tokens` | `2000` | Token budget of the injected block | can only lower it |
+| `[context.skeleton] gap_threshold` | `0.4` | Score gap (0–1) above which code snippets are injected | can only raise it |
+| `[context.graduated] phase` | `false` | Compact older tool results when the task moves from reading to editing or testing | can only set `false` |
+| `[memory] recaller` | `"bm25"` | `bm25` or `none` (no recall) | can only set `none` |
+| `[memory] top_k` | `5` | Memories recalled per turn, at least 1 (use `recaller = "none"` to turn recall off) | can only lower it |
+| `[memory] exclude_kinds` | `["outcome"]` | Memory kinds never recalled: `conversation`, `user`, `feedback`, `project`, `reference`, `outcome` | can only add kinds |
+| `[memory] writer` | `"triggers"` | `triggers` (trigger phrases), `tool` (the model's `memory_write`, see [Memory writers](#memory-writers)), `triggers+tool` or `off`. `off` stops every memory write, outcome logs included | can only set `off` |
+
+**Precedence,** highest first: a command-line flag, an environment variable, the project
+file, the user file, the default. `--skeleton-strategy` and `HONE_SKELETON_STRATEGY` set
+`[context.skeleton] use`; `--no-inject` and `HONE_NO_INJECTION=1` remove `skeleton` from
+`sources`; `HONE_PHASE_COMPACTION` (`1`, `true` or `on`, any case) sets
+`[context.graduated] phase`. An unknown name or an out-of-range value is a config error that
+names the file (or the variable or flag) and the key, and Hone exits 2 before any model call.
+Invalid values are shown escaped and cut to 80 characters.
+
+<a id="hone-strategies"></a>
+**`hone strategies [--json] [--check]`** prints each slot with the active strategy, its
+parameters, what chose each parameter (flag, `env:NAME`, `file:<path>` or `default`) and where
+the strategy is registered from, then any warnings. `--check` prints nothing and exits 0 when
+the config is valid, otherwise prints the error and exits 2. `honed` reads the same tables for
+its worker's agents; its default leaves out `skeleton`, and a config can turn it on.
+
 ### Routing and fallback
 
 Hone sorts every prompt as **simple**, **medium** or **complex** (short single-file fixes
@@ -795,13 +830,96 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 |---|---|---|
 | `~/.local/share/hone/memory.db` | Long-term memory (SQLite) | `--ephemeral`, `HONE_DISABLE_PERSISTENT_STORES=1` |
 | `~/.local/share/hone/index.db` | Symbol index of `.rs` and `.py` files in the working dir | same |
-| `~/.local/share/hone/sessions.db` | Conversations from one-shot runs (saved under a generated name unless you pass `--session`); `honed` sessions (`HONE_SESSION_DB` overrides) | `--ephemeral`; `HONE_EPHEMERAL` for `honed` |
+| `~/.local/share/hone/sessions.db` | Conversations from one-shot runs (saved under a generated name unless you pass `--session`) and their [context receipts](#context-receipts); `honed` sessions (`HONE_SESSION_DB` overrides) | `--ephemeral`; `HONE_EPHEMERAL` for `honed` |
 | `~/.local/share/hone/tool-cache.db` | Cache of read-only tool results | `HONE_TOOL_CACHE=0` |
-| `<cwd>/.hone/audit.jsonl` | Egress audit log of every tool call | off unless `--audit` or `HONE_AUDIT_LOG=1` |
+| `<cwd>/.hone/audit.jsonl` | Egress audit log of every tool call, plus one `context` line per model call | off unless `--audit` or `HONE_AUDIT_LOG=1` |
 | `<cwd>/.hone/reports/` | Session reports (`hone reports`) | |
 | `<cwd>/.hone/plan.md` | Orchestrator plan and worker status | |
 | `<cwd>/.hone/plans/` | Saved plans from plan mode (`hone --plan FILE`) | |
 | `<project root>/.hone/specs/` | Output of `hone spec` | |
+
+## Memory writers
+
+`[memory] writer` in `config.toml` picks who writes long-term memory:
+
+| Writer | Who writes |
+|---|---|
+| `triggers` | Hone, from conversation triggers (the default) |
+| `off` | nobody |
+| `tool` | the model, through the `memory_write` tool |
+| `triggers+tool` | both |
+
+With a `tool` writer the model gets `memory_write(kind, content, tags?)`: `kind` is `user`,
+`feedback`, `project` or `reference`; `content` is 1 to 2000 characters, stored as one line
+(newlines, other control characters and the Unicode line and paragraph separators become single spaces); at most 8 tags. Tags starting
+with `source:`, `call:`, `project:` or `__` are refused: the runtime sets those itself.
+
+- **It only updates its own memories.** A near-duplicate of a memory the model wrote, of the
+  same kind and in the same project, is updated; anything else (yours, a trigger's, an
+  import) is never changed, and a new memory is added instead.
+- **Provenance.** Each write is tagged `source:tool`, `project:<id>` (a hash of the git
+  repository, or of the working directory; a checkout and its git worktrees are one project,
+  and a `.git` in your home directory is ignored) and `call:<id>` (the newest 5 are kept). The tags
+  are stored unencrypted even with `--encrypted-memory`; the content is encrypted.
+  Recall and the memory index show a model-written memory with a `(model-written)` prefix,
+  and only in its own project. Memories of yours are shown everywhere.
+- **Approval, deny by default.** Under `--yes`, auto-approve or a session "always", a write
+  still asks you whenever anything but your own words is in the conversation, in this turn
+  or an earlier one: a result of **any** tool except `memory_write` itself (file, shell,
+  web, git, symbol search, `memory_read`, screenshots, LSP, MCP and every future tool), a
+  HONE.md section, the injected repository skeleton (when it lists at least one file or
+  symbol; an empty directory injects none), a block gathered by a context source, a memory
+  index or recall that includes a model-written memory, an unknown tool's error, or a matched
+  skill. Only a conversation holding none of these follows the normal policy. In practice,
+  inside a project with the default context (the skeleton is injected on turn 1) every
+  `memory_write` asks, and headless runs don't write. The prompt of an update shows the memory it replaces
+  (`replaces`). With nobody to ask (headless) the write is refused, and the error names
+  what is in the conversation.
+- **Permission rules** see the call as the command `memory_write`:
+
+  ```toml
+  [[rules]]
+  command = "memory_write"
+  decision = "deny"
+  ```
+
+  A broad `command = "*"` rule covers it too.
+- **Limit.** 20 successful writes per agent. Loading another session's history
+  into the same agent (the TUI's session switch) resets the count; the untrusted-content
+  record is kept.
+- **When it shows up.** The memory index in the system prompt is built at start, so a new
+  memory reaches it on the next start. Recall finds it from the next turn.
+- If an MCP server offers a tool also called `memory_write`, the built-in one replaces it
+  and Hone logs a warning.
+
+## Context receipts
+
+Every time Hone sends a request to a model, it records a *context receipt*: what went into that request and where it came from. A receipt lists, per block of the prompt (system prompt, recalled memories, skills, injected code, history), the strategy that produced it, its estimated tokens and its sources: memory ids, file paths with scores, skill names, and hashes of history messages. It also lists what was retrieved but cut, what compaction replaced and with what, the tools offered, and a SHA-256 of the request.
+
+```bash
+hone context show                      # the most recent session, every call
+hone context show --session my-fix --turn 2
+hone context show --json               # [{run, seq, receipt}, …]
+```
+
+**Where receipts go.**
+- One-shot runs store them with the session in `sessions.db`.
+- `--json` output has a `context` array with one receipt per model call.
+- `honed` streams them as `context_assembled` events and adds a `context_assembled` entry to each run's provenance chain.
+- With `--audit`, each receipt is also one line of `.hone/audit.jsonl` (`span_kind: "context"`). `hone trace` counts these as model calls, not tools.
+
+**Runs and turns.** Each process that saves to a session, for each agent it saves from, starts a new *run*, and turn numbers restart in each run. `hone --session NAME "prompt"` starts with an empty history and then saves over the session's messages, so an older run's message hashes may not match the messages the session holds now.
+
+**Privacy.** Receipts hold ids, paths, names, scores and hashes, never message, memory or file text. They are still diagnostics for your own machine:
+- Message hashes are unsalted SHA-256, so someone holding a receipt can confirm a short or common message ("yes", "continue") by guessing it.
+- File paths are as the index stored them, which may be absolute and show your home directory.
+- Memories imported from files may have descriptive ids.
+
+Don't attach audit logs or receipts from private work to public bug reports.
+
+**What the request hash covers.** `request_sha256` covers the messages and the names of the tools offered, not tool schemas or sampling parameters.
+
+**Reading history refs.** A receipt lists only the history messages that are new or changed since the agent's previous receipt, so a message identical to one sent earlier isn't listed again and messages that only moved aren't relisted. `hone context show` prints each receipt's history as `history: 5 messages (2 new listed), root e09db7e7317a`: the number of non-system messages in the request, how many of them are listed, and the first 12 hex digits of `history_root`. The root is the SHA-256 of the newline-joined hashes of those messages, in request order; `--json` gives it in full. It is for tools that hold the transcript to verify against, not something to check by hand.
 
 ## Environment variables
 
@@ -949,8 +1067,10 @@ ollama pull llama3.2      # with `ollama serve` running
 
 A `config.toml` failed to parse, has a key Hone doesn't know, or has an invalid value. The
 message names the file and the line. Compare it with the [schema](#schema). Older docs
-showed `[agent]`, `[memory]` and `[pricing]` tables: Hone never read them, and they are now
-rejected, so delete them. `hone configure` still works and rewrites the user file.
+showed `[agent]` and `[pricing]` tables: Hone never read them, and they are rejected, so
+delete them. (`[context]` and `[memory]` are real tables now; see
+[context and memory strategies](#context-and-memory-strategies).) `hone configure` still
+works and rewrites the user file.
 
 </details>
 

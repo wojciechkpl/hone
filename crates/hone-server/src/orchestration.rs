@@ -132,6 +132,7 @@ fn make_sse_event(event: AgentEvent, id: u64) -> Event {
         AgentEvent::ToolCallPaused { .. } => "tool_call_paused",
         AgentEvent::ContextInjected { .. } => "context_injected",
         AgentEvent::ContextAssembled { .. } => "context_assembled",
+        AgentEvent::MemoryWritten { .. } => "memory_written",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
         AgentEvent::ModelFallback { .. } => "model_fallback",
         AgentEvent::UnpricedModel { .. } => "unpriced_model",
@@ -555,5 +556,18 @@ mod tests {
             (3.0, 15.0),
             "an unpriced model must not be costed as Sonnet"
         );
+    }
+
+    // W7 of docs/plans/memory-write-tool-spec.md: a memory write has its own SSE name.
+    #[test]
+    fn w7_make_sse_event_names_a_memory_written_event() {
+        let ev = AgentEvent::MemoryWritten {
+            id: "0190-abc".to_owned(),
+            kind: "feedback".to_owned(),
+            status: "added".to_owned(),
+        };
+        let frame = format!("{:?}", make_sse_event(ev, 3));
+        assert!(frame.contains("event: memory_written"), "{frame}");
+        assert!(!frame.contains("event: unknown"), "{frame}");
     }
 }

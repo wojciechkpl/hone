@@ -190,6 +190,14 @@ pub struct Config {
     #[serde(default)]
     pub provider: Option<WizardProviderConfig>,
 
+    /// The `[context]` table: context sources, skeleton, compactor, budget.
+    #[serde(default)]
+    pub context: Option<crate::strategy::ContextTable>,
+
+    /// The `[memory]` table: recaller, writer, top_k, excluded kinds.
+    #[serde(default)]
+    pub memory: Option<crate::strategy::MemoryTable>,
+
     /// `[pricing."provider:model"]` tables: the user's own per-million-token prices.
     #[serde(default)]
     pub pricing: std::collections::BTreeMap<String, PricingTableEntry>,

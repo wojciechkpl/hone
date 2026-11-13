@@ -205,6 +205,7 @@ fn event_type(event: &AgentEvent) -> &'static str {
         AgentEvent::ToolCallPaused { .. } => "tool_call_paused",
         AgentEvent::ContextInjected { .. } => "context_injected",
         AgentEvent::ContextAssembled { .. } => "context_assembled",
+        AgentEvent::MemoryWritten { .. } => "memory_written",
         AgentEvent::MemoryRecalled { .. } => "memory_recalled",
         AgentEvent::ModelFallback { .. } => "model_fallback",
         AgentEvent::UnpricedModel { .. } => "unpriced_model",
@@ -537,5 +538,16 @@ mod tests {
             model: "ollama:llama3".into(),
         };
         assert_eq!(event_type(&ev), "unpriced_model");
+    }
+
+    // W7 of docs/plans/memory-write-tool-spec.md: a memory write has its own SSE name.
+    #[test]
+    fn w7_event_type_names_a_memory_written_event() {
+        let ev = AgentEvent::MemoryWritten {
+            id: "0190-abc".to_owned(),
+            kind: "feedback".to_owned(),
+            status: "added".to_owned(),
+        };
+        assert_eq!(event_type(&ev), "memory_written");
     }
 }

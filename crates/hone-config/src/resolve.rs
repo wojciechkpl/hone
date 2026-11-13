@@ -32,6 +32,23 @@ pub struct ConfigLayer {
     pub config: Config,
 }
 
+/// [`toml_location`], plus the name of an unknown key. The message otherwise
+/// carries no file text; a key name is short and not a secret, and the user needs
+/// it to fix the file.
+fn named_unknown_field(raw: &str, e: &toml::de::Error) -> String {
+    let located = toml_location(raw, e);
+    let key = e.span().and_then(|span| raw.get(span)).filter(|k| {
+        !k.is_empty()
+            && k.len() <= 64
+            && k.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    });
+    match (key, located.strip_prefix("unknown field")) {
+        (Some(key), Some(rest)) => format!("unknown field `{key}`{rest}"),
+        _ => located,
+    }
+}
+
 impl ConfigLayer {
     /// Parse `raw` as the file at `path`. A parse error carries the message and
     /// `line:column` only, never a line of the file.
@@ -41,7 +58,7 @@ impl ConfigLayer {
             Ok(config) => Ok(ConfigLayer { path, config }),
             Err(e) => Err(ConfigError::InvalidField {
                 path,
-                reason: toml_location(raw, &e),
+                reason: named_unknown_field(raw, &e),
             }),
         }
     }

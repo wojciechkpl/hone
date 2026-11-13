@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use clap::Subcommand;
-use hone_core::egress_log::EgressEntry;
+use hone_core::egress_log::{EgressEntry, SpanKind};
 
 // ---------------------------------------------------------------------------
 // CLI subcommand definitions
@@ -38,6 +38,10 @@ pub enum TraceCmd {
 // Data model
 // ---------------------------------------------------------------------------
 
+fn is_context(e: &EgressEntry) -> bool {
+    matches!(e.span_kind, SpanKind::Context)
+}
+
 /// Aggregated data for a single trace (one `trace_id` group).
 struct TraceSummary {
     trace_id: String,
@@ -47,8 +51,14 @@ struct TraceSummary {
 }
 
 impl TraceSummary {
+    /// Tool calls (everything but the per-model-call context lines).
     fn tool_count(&self) -> usize {
-        self.entries.len()
+        self.entries.iter().filter(|e| !is_context(e)).count()
+    }
+
+    /// Model calls (audit lines with span kind `context`).
+    fn model_call_count(&self) -> usize {
+        self.entries.iter().filter(|e| is_context(e)).count()
     }
 
     fn total_duration_ms(&self) -> u64 {
@@ -198,18 +208,19 @@ pub fn cmd_list(audit_path: &Path, limit: usize) -> Result<()> {
     traces.truncate(limit);
 
     println!(
-        "{:<12}  {:<11}  {:>5}  {:>5}  {:>8}",
-        "TRACE ID", "DATE", "TURNS", "TOOLS", "DURATION"
+        "{:<12}  {:<11}  {:>5}  {:>5}  {:>11}  {:>8}",
+        "TRACE ID", "DATE", "TURNS", "TOOLS", "MODEL CALLS", "DURATION"
     );
-    println!("{}", "-".repeat(52));
+    println!("{}", "-".repeat(64));
 
     for t in &traces {
         println!(
-            "{:<12}  {:<11}  {:>5}  {:>5}  {:>8}",
+            "{:<12}  {:<11}  {:>5}  {:>5}  {:>11}  {:>8}",
             short_id(&t.trace_id),
             fmt_ts_short(&t.first_ts),
             t.turn_count(),
             t.tool_count(),
+            t.model_call_count(),
             fmt_duration(t.total_duration_ms()),
         );
     }
@@ -258,9 +269,10 @@ fn print_trace_tree(trace: &TraceSummary) {
     let total_ms = trace.total_duration_ms();
 
     println!(
-        "Session {} ({} tools, {})",
+        "Session {} ({} tools, {} model calls, {})",
         short_id(&trace.trace_id),
         trace.tool_count(),
+        trace.model_call_count(),
         fmt_duration(total_ms),
     );
 
@@ -335,6 +347,7 @@ pub fn cmd_stats(audit_path: &Path) -> Result<()> {
     let traces = group_by_trace(entries.clone());
     let session_count = traces.len();
     let total_tools: usize = traces.iter().map(|t| t.tool_count()).sum();
+    let total_model_calls: usize = traces.iter().map(|t| t.model_call_count()).sum();
 
     // Per-tool aggregation.
     #[derive(Default)]
@@ -345,7 +358,7 @@ pub fn cmd_stats(audit_path: &Path) -> Result<()> {
 
     let mut tool_stats: HashMap<String, ToolStats> = HashMap::new();
 
-    for entry in &entries {
+    for entry in entries.iter().filter(|e| !is_context(e)) {
         let s = tool_stats.entry(entry.tool.clone()).or_default();
         s.calls += 1;
         s.total_ms += entry.duration_ms;
@@ -356,6 +369,7 @@ pub fn cmd_stats(audit_path: &Path) -> Result<()> {
     tool_rows.sort_by(|a, b| b.1.calls.cmp(&a.1.calls));
 
     println!("SESSIONS: {session_count}  |  TOTAL TOOLS: {total_tools}");
+    println!("MODEL CALLS: {total_model_calls}");
     println!();
     println!("Tool Usage:");
 
@@ -397,9 +411,10 @@ pub fn cmd_stats(audit_path: &Path) -> Result<()> {
 
     for t in &sorted_traces {
         println!(
-            "  {}  {:>5} tools  {}",
+            "  {}  {:>5} tools  {:>5} model calls  {}",
             short_id(&t.trace_id),
             t.tool_count(),
+            t.model_call_count(),
             fmt_duration(t.total_duration_ms()),
         );
     }

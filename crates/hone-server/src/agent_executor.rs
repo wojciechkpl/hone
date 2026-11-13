@@ -47,6 +47,9 @@ pub struct AgentTaskExecutor {
     default_budget_usd: Option<f64>,
     /// Permission policy applied to every spawned agent (`None` = no policy).
     policy: Option<hone_tools::policy_gate::PolicyConfig>,
+    /// Context strategies applied to every spawned agent (`None` = derived from
+    /// the `AgentConfig` fields, which turn injection off).
+    strategies: Option<Arc<hone_core::strategy::ResolvedStrategies>>,
 }
 
 impl AgentTaskExecutor {
@@ -70,7 +73,18 @@ impl AgentTaskExecutor {
             working_dir,
             default_budget_usd: None,
             policy: None,
+            strategies: None,
         }
+    }
+
+    /// Run every spawned agent with these context strategies (from the
+    /// `[context]` / `[memory]` selection) instead of the derived defaults.
+    pub fn with_strategies(
+        mut self,
+        strategies: Arc<hone_core::strategy::ResolvedStrategies>,
+    ) -> Self {
+        self.strategies = Some(strategies);
+        self
     }
 
     /// Apply a permission policy to every agent this executor spawns.
@@ -179,7 +193,7 @@ impl TaskExecutor for AgentTaskExecutor {
             Err(outcome) => return outcome,
         };
 
-        let handle = AgentHandle::spawn(config);
+        let handle = AgentHandle::spawn_with_strategies(config, self.strategies.clone());
 
         let (event_tx, mut event_rx) = mpsc::channel::<hone_proto::AgentEvent>(64);
         tokio::spawn(async move {
