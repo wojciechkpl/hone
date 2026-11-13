@@ -5,6 +5,7 @@ use sqlx::Row;
 
 use crate::bm25::{Bm25Index, Bm25Params};
 use crate::embedding::{ScoredMemory, cosine_similarity};
+use crate::encrypted::SALT_SENTINEL_ID;
 use crate::error::MemoryError;
 use crate::store::MemoryStore;
 use crate::types::{Memory, MemoryFilter, MemoryKind, MemoryQuery};
@@ -643,6 +644,41 @@ impl MemoryStore for SqliteStore {
             .await
     }
 
+    async fn record_if_absent(&self, memory: Memory) -> Result<bool, MemoryError> {
+        let tags_json = serde_json::to_string(&memory.tags)?;
+        let embedding_bytes = memory.embedding.as_deref().map(embedding_to_bytes);
+        let inserted = sqlx::query(
+            "INSERT OR IGNORE INTO memories
+             (id, content, tags, weight, created_at, decay_at, kind, description, embedding)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        )
+        .bind(&memory.id)
+        .bind(&memory.content)
+        .bind(&tags_json)
+        .bind(memory.weight)
+        .bind(memory.created_at as i64)
+        .bind(memory.decay_at.map(|t| t as i64))
+        .bind(kind_to_str(memory.kind))
+        .bind(&memory.description)
+        .bind(embedding_bytes)
+        .execute(&self.pool)
+        .await
+        .map_err(to_io_err)?
+        .rows_affected();
+        Ok(inserted > 0)
+    }
+
+    async fn has_encrypted_rows(&self) -> Result<bool, MemoryError> {
+        let found: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM memories WHERE content LIKE 'enc:v1:%' AND id != ?1 LIMIT 1",
+        )
+        .bind(SALT_SENTINEL_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_io_err)?;
+        Ok(found.is_some())
+    }
+
     async fn recall_by_id(&self, id: &str) -> Result<Option<Memory>, MemoryError> {
         let row = sqlx::query(
             "SELECT id, content, tags, weight, created_at, decay_at, kind, description, embedding
@@ -664,8 +700,9 @@ impl MemoryStore for SqliteStore {
                 // Tags are stored as a JSON array, e.g. ["project:foo","bar"].
                 // Match the quoted tag string anywhere inside that array.
                 let pattern = format!("%\"{}\"%", tag);
-                sqlx::query("DELETE FROM memories WHERE tags LIKE ?1")
+                sqlx::query("DELETE FROM memories WHERE tags LIKE ?1 AND id != ?2")
                     .bind(&pattern)
+                    .bind(SALT_SENTINEL_ID)
                     .execute(&self.pool)
                     .await
                     .map_err(to_io_err)?
@@ -673,8 +710,9 @@ impl MemoryStore for SqliteStore {
             }
             MemoryFilter::Before(ts) => {
                 let ts = *ts as i64;
-                sqlx::query("DELETE FROM memories WHERE created_at < ?1")
+                sqlx::query("DELETE FROM memories WHERE created_at < ?1 AND id != ?2")
                     .bind(ts)
+                    .bind(SALT_SENTINEL_ID)
                     .execute(&self.pool)
                     .await
                     .map_err(to_io_err)?
@@ -682,8 +720,9 @@ impl MemoryStore for SqliteStore {
             }
             MemoryFilter::After(ts) => {
                 let ts = *ts as i64;
-                sqlx::query("DELETE FROM memories WHERE created_at > ?1")
+                sqlx::query("DELETE FROM memories WHERE created_at > ?1 AND id != ?2")
                     .bind(ts)
+                    .bind(SALT_SENTINEL_ID)
                     .execute(&self.pool)
                     .await
                     .map_err(to_io_err)?
@@ -691,8 +730,9 @@ impl MemoryStore for SqliteStore {
             }
             MemoryFilter::Kind(kind) => {
                 let kind_str = kind_to_str(*kind);
-                sqlx::query("DELETE FROM memories WHERE kind = ?1")
+                sqlx::query("DELETE FROM memories WHERE kind = ?1 AND id != ?2")
                     .bind(kind_str)
+                    .bind(SALT_SENTINEL_ID)
                     .execute(&self.pool)
                     .await
                     .map_err(to_io_err)?
@@ -714,8 +754,11 @@ impl MemoryStore for SqliteStore {
         // Remove memories whose decay_at has been reached.
         let now = now as i64;
         let rows_affected =
-            sqlx::query("DELETE FROM memories WHERE decay_at IS NOT NULL AND decay_at <= ?1")
-                .bind(now)
+            sqlx::query(
+                "DELETE FROM memories WHERE decay_at IS NOT NULL AND decay_at <= ?1 AND id != ?2",
+            )
+            .bind(now)
+            .bind(SALT_SENTINEL_ID)
                 .execute(&self.pool)
                 .await
                 .map_err(to_io_err)?

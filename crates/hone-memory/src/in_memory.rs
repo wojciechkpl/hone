@@ -3,6 +3,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+
+use crate::encrypted::SALT_SENTINEL_ID;
 use tokio::sync::RwLock;
 
 use crate::bm25::{Bm25Index, Bm25Params};
@@ -106,36 +108,40 @@ impl MemoryStore for InMemoryStore {
 
     async fn forget(&self, filter: &MemoryFilter) -> Result<u32, MemoryError> {
         let mut guard = self.memories.write().await;
-        let before = guard.len();
+        // The encryption salt record is never forgotten (nor counted).
+        let before = guard.keys().filter(|id| *id != SALT_SENTINEL_ID).count();
         match filter {
             MemoryFilter::Tag(tag) => {
-                guard.retain(|_, m| !m.tags.contains(tag));
+                guard.retain(|id, m| id == SALT_SENTINEL_ID || !m.tags.contains(tag));
             }
             MemoryFilter::Before(ts) => {
-                guard.retain(|_, m| m.created_at >= *ts);
+                guard.retain(|id, m| id == SALT_SENTINEL_ID || m.created_at >= *ts);
             }
             MemoryFilter::After(ts) => {
-                guard.retain(|_, m| m.created_at <= *ts);
+                guard.retain(|id, m| id == SALT_SENTINEL_ID || m.created_at <= *ts);
             }
             MemoryFilter::Kind(kind) => {
-                guard.retain(|_, m| m.kind != *kind);
+                guard.retain(|id, m| id == SALT_SENTINEL_ID || m.kind != *kind);
             }
         }
-        let removed = before.saturating_sub(guard.len()) as u32;
+        let after = guard.keys().filter(|id| *id != SALT_SENTINEL_ID).count();
+        let removed = before.saturating_sub(after) as u32;
         Ok(removed)
     }
 
     async fn decay(&self, factor: f64, now: u64) -> Result<u32, MemoryError> {
         let mut guard = self.memories.write().await;
-        let before = guard.len();
+        let before = guard.keys().filter(|id| *id != SALT_SENTINEL_ID).count();
 
-        // Apply weight decay and remove expired memories in one pass.
-        guard.retain(|_, m| {
+        // Apply weight decay and remove expired memories in one pass (never the
+        // encryption salt record).
+        guard.retain(|id, m| {
             m.weight *= factor;
-            !matches!(m.decay_at, Some(t) if t <= now)
+            id == SALT_SENTINEL_ID || !matches!(m.decay_at, Some(t) if t <= now)
         });
 
-        let removed = before.saturating_sub(guard.len()) as u32;
+        let after = guard.keys().filter(|id| *id != SALT_SENTINEL_ID).count();
+        let removed = before.saturating_sub(after) as u32;
         Ok(removed)
     }
 
@@ -199,7 +205,11 @@ mod tests {
 
         // Three orthogonal 3-dim unit vectors: rust=[1,0,0], python=[0,1,0], js=[0,0,1]
         store
-            .record(make_memory_with_embedding("rust", "rust", vec![1.0, 0.0, 0.0]))
+            .record(make_memory_with_embedding(
+                "rust",
+                "rust",
+                vec![1.0, 0.0, 0.0],
+            ))
             .await
             .unwrap();
         store
@@ -241,7 +251,11 @@ mod tests {
         let store = InMemoryStore::new();
 
         store
-            .record(make_memory_with_embedding("has-emb", "has embedding", vec![1.0, 0.0]))
+            .record(make_memory_with_embedding(
+                "has-emb",
+                "has embedding",
+                vec![1.0, 0.0],
+            ))
             .await
             .unwrap();
         store
