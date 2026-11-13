@@ -40,6 +40,17 @@ pub(crate) struct InjectionInfo {
     pub hits: Vec<(String, f32)>,
 }
 
+/// A block a gathered context source added to the prompt (as one system message
+/// right after the base system prompt).
+#[derive(Debug, Clone)]
+pub(crate) struct ExtraBlock {
+    pub slot: Slot,
+    pub strategy: StrategyId,
+    /// The text that is sent (already redacted).
+    pub text: String,
+    pub sources: Vec<ScoredSource>,
+}
+
 /// The per-turn inputs of the context blocks (the history comes from the
 /// context manager and the request itself).
 #[derive(Debug, Clone, Default)]
@@ -104,6 +115,7 @@ pub(crate) fn build_receipt(
     recall_at: Option<usize>,
     skills_at: Option<usize>,
     info: &TurnContextInfo,
+    extras: &[ExtraBlock],
     compaction: Vec<CompactionStep>,
     hashes: &[String],
     prev: &mut std::collections::HashSet<String>,
@@ -123,6 +135,17 @@ pub(crate) fn build_receipt(
         vec![],
         0,
     ));
+
+    // Gathered sources sit right after the system prompt, in source order.
+    for (i, extra) in extras.iter().enumerate() {
+        blocks.push(BlockReceipt {
+            slot: extra.slot,
+            strategy: extra.strategy.clone(),
+            tokens: tokens_of(1 + i),
+            sources: extra.sources.clone(),
+            duration_ms: 0,
+        });
+    }
 
     if let Some(at) = recall_at {
         let strategy_id = match &info.recall.custom {

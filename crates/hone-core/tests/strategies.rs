@@ -177,7 +177,7 @@ fn test_s5_with_builtins_should_list_every_builtin_under_its_config_key() {
     };
     assert_eq!(
         names("context.sources"),
-        ["memory-index", "recall", "skeleton", "skills"]
+        ["env-snapshot", "memory-index", "recall", "skeleton", "skills"]
     );
     assert_eq!(
         names("context.skeleton"),

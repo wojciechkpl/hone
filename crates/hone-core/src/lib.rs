@@ -13,6 +13,7 @@ pub mod strategy;
 pub mod context_injector;
 mod cost;
 pub mod doom_loop;
+mod env_snapshot;
 pub mod egress_log;
 pub mod ensemble;
 mod error;

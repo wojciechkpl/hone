@@ -28,7 +28,14 @@ use crate::memory_format::format_memory_body;
 use crate::memory_worthy::MemoryCandidate;
 use crate::metrics::{ContextMetrics, MetricsSnapshot};
 use crate::plan_mode::{AgentMode, PlanModeStore, SavedPlan, read_only_registry, slugify};
-use crate::receipts::{InjectionInfo, RecallInfo, TurnContextInfo};
+/// What one gathered source returned this turn.
+struct GatheredSource {
+    name: String,
+    once: bool,
+    extras: Vec<ExtraBlock>,
+}
+
+use crate::receipts::{ExtraBlock, InjectionInfo, RecallInfo, TurnContextInfo};
 use crate::recovery::{FailureScenario, RecoveryAction};
 use crate::retry::{RetryConfig, is_transient_error, retry};
 use crate::session_approvals::SessionApprovals;
@@ -631,6 +638,11 @@ pub struct Agent {
     /// Hashes of the non-system messages of the previous receipt (for the incremental
     /// `History` listing).
     receipt_history: std::collections::HashSet<String>,
+    /// Blocks of gathered context sources, in source order: `Once` sources are
+    /// gathered before the first model call and kept; `EachTurn` ones every turn.
+    extra_blocks: Vec<(String, bool, Vec<ExtraBlock>)>,
+    /// Names of the `Once` sources already gathered.
+    once_gathered: HashSet<String>,
     /// The context receipts of this agent's life, oldest first (newest
     /// `MAX_KEPT_RECEIPTS` at most).
     receipts: Vec<hone_proto::ContextReceipt>,
@@ -721,6 +733,8 @@ impl Agent {
             strategies,
             receipt_info: TurnContextInfo::default(),
             receipt_history: std::collections::HashSet::new(),
+            extra_blocks: Vec::new(),
+            once_gathered: HashSet::new(),
             receipts: Vec::new(),
             receipts_dropped: 0,
             receipt_agent_id: uuid::Uuid::now_v7().to_string(),
@@ -860,6 +874,119 @@ impl Agent {
             };
             log.lock().await.record(entry);
         }
+    }
+
+    /// Gather the context sources that are due: `Once` sources before the first
+    /// model call of the session (the result is kept), `EachTurn` sources on every
+    /// turn. A source that fails or adds nothing leaves no block. The text is
+    /// redacted like injected skeletons.
+    async fn gather_context_sources(&self, prompt: &str) -> Vec<GatheredSource> {
+        let strategies = Arc::clone(&self.strategies);
+        let due: Vec<(String, Arc<dyn crate::strategy::ContextSource>)> = strategies
+            .gatherable()
+            .filter(|(name, src)| {
+                !(src.cadence() == crate::strategy::Cadence::Once
+                    && self.once_gathered.contains(name))
+            })
+            .map(|(name, src)| (name.clone(), Arc::clone(src)))
+            .collect();
+        if due.is_empty() {
+            return Vec::new();
+        }
+        let history = self.context.messages();
+        let budget_tokens = self.context.max_context_tokens();
+        let redact = self.redacting();
+        let turn = self.turn_count;
+        let working_dir = self.config.working_dir.clone();
+        // All due sources at once, each under its own deadline.
+        futures::future::join_all(due.iter().map(|(name, src)| {
+            let history = &history;
+            let working_dir = &working_dir;
+            async move {
+                let view = crate::strategy::TurnView {
+                    prompt,
+                    turn,
+                    history,
+                    working_dir,
+                    budget_tokens,
+                };
+                let gathered = tokio::time::timeout(src.deadline(), src.gather(&view)).await;
+                let blocks = match gathered {
+                    Ok(Ok(blocks)) => blocks,
+                    Ok(Err(e)) => {
+                        tracing::debug!(source = %name, error = %e, "context source failed; skipped");
+                        Vec::new()
+                    }
+                    Err(_) => {
+                        tracing::debug!(source = %name, "context source missed its deadline; skipped");
+                        Vec::new()
+                    }
+                };
+                // One system message per block, each keeping its own slot.
+                let extras: Vec<ExtraBlock> = blocks
+                    .into_iter()
+                    .map(|b| ExtraBlock {
+                        slot: b.slot,
+                        strategy: src.id().clone(),
+                        text: redacted_text(redact, &b.text),
+                        sources: b.sources,
+                    })
+                    .collect();
+                GatheredSource {
+                    name: name.clone(),
+                    once: src.cadence() == crate::strategy::Cadence::Once,
+                    extras,
+                }
+            }
+        }))
+        .await
+    }
+
+    /// Gather the due context sources and recall memories at the same time. A
+    /// closed events channel (the listener is gone) stops the wait.
+    async fn gather_and_recall(
+        &mut self,
+        prompt: &str,
+        events: &mpsc::Sender<AgentEvent>,
+    ) -> Result<(String, Vec<(String, String)>, RecallInfo), AgentError> {
+        let (gathered, recalled) = {
+            let this = &*self;
+            let work = async {
+                tokio::join!(
+                    this.gather_context_sources(prompt),
+                    this.fetch_relevant_memories(prompt)
+                )
+            };
+            tokio::select! {
+                r = work => r,
+                () = events.closed() => return Err(AgentError::Cancelled),
+            }
+        };
+        self.store_gathered(gathered);
+        Ok(recalled)
+    }
+
+    /// Keep what `gather_context_sources` returned.
+    fn store_gathered(&mut self, gathered: Vec<GatheredSource>) {
+        for g in gathered {
+            if g.once {
+                self.once_gathered.insert(g.name.clone());
+            }
+            match self.extra_blocks.iter_mut().find(|(n, _, _)| *n == g.name) {
+                Some(slot) => slot.2 = g.extras,
+                None => self.extra_blocks.push((g.name, g.once, g.extras)),
+            }
+        }
+    }
+
+    /// The gathered blocks that have text: `Once` sources first, then `EachTurn`
+    /// ones (so the cached prefix stays stable), each in source order.
+    fn active_extras(&self) -> Vec<ExtraBlock> {
+        let once = self.extra_blocks.iter().filter(|(_, o, _)| *o);
+        let each = self.extra_blocks.iter().filter(|(_, o, _)| !*o);
+        once.chain(each)
+            .flat_map(|(_, _, blocks)| blocks.iter().cloned())
+            .collect()
     }
 
     /// Names of the skills whose triggers match `prompt` (for context receipts).
@@ -1420,7 +1547,7 @@ impl Agent {
 
         // Fetch memories before adding the user message so the query is clean.
         let (memories, memory_entries, recall_info) =
-            self.fetch_relevant_memories(user_input).await;
+            self.gather_and_recall(user_input, &events).await?;
         // Inputs of this turn's context receipts.
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
@@ -1563,7 +1690,13 @@ impl Agent {
                     0
                 } else {
                     estimate_text_tokens(&skills_block)
-                };
+                }
+                // Gathered source blocks are part of every request too.
+                + self
+                    .active_extras()
+                    .iter()
+                    .map(|e| estimate_text_tokens(&e.text))
+                    .sum::<u32>();
             if !context_emergency && self.context.is_over_ratio(0.95, extra_tokens) {
                 context_emergency = true;
                 tracing::warn!(
@@ -1601,6 +1734,22 @@ impl Agent {
                 .context
                 .build_messages_hashed(&self.config.system_prompt);
 
+            // Gathered sources: one system message each, right after the base
+            // system prompt and before the memories and skills.
+            let extras = self.active_extras();
+            for (i, extra) in extras.iter().enumerate() {
+                let msg = Message {
+                    role: hone_proto::Role::System,
+                    content: hone_proto::Content::Text(extra.text.clone()),
+                    tool_calls: vec![],
+                    tool_call_id: None,
+                };
+                let at = (1 + i).min(messages.len());
+                message_hashes.insert(at, hone_proto::message_sha256(&msg));
+                messages.insert(at, msg);
+            }
+            let shift = extras.len();
+
             if !memories.is_empty() {
                 let memory_msg = Message {
                     role: hone_proto::Role::System,
@@ -1616,8 +1765,8 @@ impl Agent {
                     .first()
                     .is_some_and(|m| matches!(m.role, hone_proto::Role::System))
                 {
-                    message_hashes.insert(1, hone_proto::message_sha256(&memory_msg));
-                    messages.insert(1, memory_msg);
+                    message_hashes.insert(1 + shift, hone_proto::message_sha256(&memory_msg));
+                    messages.insert(1 + shift, memory_msg);
                 } else {
                     message_hashes.insert(0, hone_proto::message_sha256(&memory_msg));
                     messages.insert(0, memory_msg);
@@ -1637,7 +1786,7 @@ impl Agent {
                 };
                 // Position: after memories (index 2) when memories are present,
                 // otherwise right after the base system prompt (index 1).
-                let pos = if !memories.is_empty() { 2 } else { 1 };
+                let pos = shift + if !memories.is_empty() { 2 } else { 1 };
                 let skills_hash = hone_proto::message_sha256(&skills_msg);
                 if messages.len() > pos {
                     message_hashes.insert(pos, skills_hash);
@@ -1664,9 +1813,9 @@ impl Agent {
             {
                 let tool_names: Vec<String> =
                     request.tools.iter().map(|t| t.name.clone()).collect();
-                let recall_at = (!memories.is_empty()).then_some(1);
-                let skills_at =
-                    (!skills_block.is_empty()).then_some(if memories.is_empty() { 1 } else { 2 });
+                let recall_at = (!memories.is_empty()).then_some(1 + shift);
+                let skills_at = (!skills_block.is_empty())
+                    .then_some(shift + if memories.is_empty() { 1 } else { 2 });
                 self.receipt_info.trim_only = self.context.trim_only();
                 // trim-only never runs phase compaction.
                 self.receipt_info.phase_compaction =
@@ -1680,6 +1829,7 @@ impl Agent {
                     recall_at,
                     skills_at,
                     &self.receipt_info,
+                    &extras,
                     self.context.drain_compaction_log(),
                     &message_hashes,
                     &mut self.receipt_history,
@@ -3109,7 +3259,7 @@ impl Agent {
         let cost_before_turn = self.cost.total_usd();
 
         let (memories, memory_entries, recall_info) =
-            self.fetch_relevant_memories(&text_for_memory).await;
+            self.gather_and_recall(&text_for_memory, &events).await?;
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
             skills: if self.strategies.has_source("skills") {

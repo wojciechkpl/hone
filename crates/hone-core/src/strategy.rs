@@ -21,6 +21,7 @@ use hone_memory::{MemoryError, MemoryKind, MemoryQuery, MemoryStore, ScoredMemor
 use hone_proto::{Message, ScoredSource, Slot, SourceRef, StrategyId, canonical_json_sha256};
 
 use crate::context_injector::{ContextInjector, SkeletonStrategy};
+pub use crate::env_snapshot::{EnvBlock, EnvSnapshot};
 use crate::memory_worthy::{MemoryCandidate, classify_turn};
 
 // ── Errors and origins ────────────────────────────────────────────────────────
@@ -110,6 +111,11 @@ pub struct TurnRecord {
 pub trait ContextSource: Send + Sync {
     fn id(&self) -> &StrategyId;
     fn cadence(&self) -> Cadence;
+    /// How long the agent waits for `gather` before skipping the source for
+    /// this turn.
+    fn deadline(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(5)
+    }
     async fn gather(&self, view: &TurnView<'_>) -> Result<Vec<ContextBlock>, StrategyError>;
 }
 
@@ -228,6 +234,39 @@ impl ContextSource for SkeletonSource {
             text: result.context_block,
             sources,
         }])
+    }
+}
+
+/// The built-in `env-snapshot` source: one block about the machine and the
+/// working directory, gathered once.
+struct EnvSnapshotSource {
+    id: StrategyId,
+    timeout_secs: u64,
+}
+
+#[async_trait]
+impl ContextSource for EnvSnapshotSource {
+    fn id(&self) -> &StrategyId {
+        &self.id
+    }
+    fn cadence(&self) -> Cadence {
+        Cadence::Once
+    }
+    fn deadline(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.timeout_secs + 1)
+    }
+    async fn gather(&self, view: &TurnView<'_>) -> Result<Vec<ContextBlock>, StrategyError> {
+        // Never fails: a snapshot that gathers nothing adds no block.
+        Ok(EnvSnapshot::new(view.working_dir, self.timeout_secs)
+            .gather()
+            .await
+            .map(|b| ContextBlock {
+                slot: Slot::Environment,
+                text: b.text,
+                sources: b.sources,
+            })
+            .into_iter()
+            .collect())
     }
 }
 
@@ -405,6 +444,24 @@ impl StrategyRegistry {
             }),
         );
 
+        r.register_source(
+            "env-snapshot",
+            Origin::Builtin,
+            Arc::new(|params, _deps| {
+                let timeout_secs = params["timeout_secs"]
+                    .as_u64()
+                    .unwrap_or(hone_config::strategy::DEFAULT_ENV_TIMEOUT_SECS);
+                Ok(Arc::new(EnvSnapshotSource {
+                    id: id(
+                        Slot::Environment,
+                        "env-snapshot",
+                        &serde_json::json!({ "timeout_secs": timeout_secs }),
+                    ),
+                    timeout_secs,
+                }) as Arc<dyn ContextSource>)
+            }),
+        );
+
         for name in hone_config::strategy::SKELETON_NAMES {
             r.skeletons.insert((*name).to_owned(), Origin::Builtin);
         }
@@ -527,6 +584,9 @@ impl StrategyRegistry {
                 "max_tokens": sel.skeleton_max_tokens.value,
                 "gap_threshold": f32_json(sel.skeleton_gap_threshold.value),
             }),
+            "env-snapshot" => serde_json::json!({
+                "timeout_secs": sel.env_snapshot_timeout_secs.value,
+            }),
             _ => serde_json::json!({}),
         };
         let mut source_impls = Vec::new();
@@ -635,7 +695,6 @@ pub enum WriterKind {
 /// The strategies an agent runs with.
 pub struct ResolvedStrategies {
     sources: Vec<String>,
-    #[allow(dead_code)] // gathered by callers that drive sources themselves
     source_impls: Vec<(String, Arc<dyn ContextSource>)>,
     pub(crate) skeleton: SkeletonStrategy,
     pub(crate) skeleton_max_tokens: u32,
@@ -657,6 +716,18 @@ impl ResolvedStrategies {
     /// The active memory writer's id (slot `memory_writer`).
     pub fn writer_id(&self) -> &StrategyId {
         self.writer.id()
+    }
+
+    /// The sources the agent gathers through [`ContextSource::gather`]: the
+    /// registered ones that are not applied by the runtime itself (`memory-index`,
+    /// `recall`, `skills` and `skeleton` are).
+    pub(crate) fn gatherable(&self) -> impl Iterator<Item = &(String, Arc<dyn ContextSource>)> {
+        self.source_impls.iter().filter(|(name, _)| {
+            !matches!(
+                name.as_str(),
+                "memory-index" | "recall" | "skills" | "skeleton"
+            )
+        })
     }
 
     /// Whether the source `name` is on.
