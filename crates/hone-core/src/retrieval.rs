@@ -249,6 +249,10 @@ const FRAMING: &str =
 fn shown(text: &str) -> String {
     let mut out = String::new();
     for c in text.chars() {
+        // Invisible characters never reach the model, headers included.
+        if is_hidden(c) {
+            continue;
+        }
         if c.is_control() {
             out.push_str(&format!("\\u{{{:x}}}", u32::from(c)));
         } else {
