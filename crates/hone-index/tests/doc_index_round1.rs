@@ -213,3 +213,34 @@ async fn test_r21_a_docs_db_with_another_tokenizer_should_be_rebuilt_on_open() {
     idx.sync(&notes).await.unwrap();
     assert_eq!(ids(&idx, "viet").await, ["vn.md#1"], "`viet` matches `Việt` after the rebuild");
 }
+
+// ---- R25 (re-review): the busy timeout matches the retrieval deadline ---------------------------------------
+
+#[tokio::test]
+async fn test_r25_a_sync_blocked_by_another_writer_should_give_up_within_the_retrieval_deadline() {
+    use sqlx::sqlite::SqlitePoolOptions;
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap();
+    let notes = root.join("notes");
+    write(&notes, "n.md", "# Note\nQuokka feeding notes.\n");
+    let db = root.join("docs.db");
+    let idx = DocIndex::open(&db).await.unwrap();
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&format!("sqlite:{}?mode=rw", db.display()))
+        .await
+        .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await.unwrap(); // another process holds the write lock
+
+    let started = std::time::Instant::now();
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), idx.sync(&notes)).await;
+    let took = started.elapsed();
+
+    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+    // The connection stops waiting about when the retrieval deadline (3 s) passes, not after 30 s.
+    assert!(
+        outcome.is_ok() && took <= std::time::Duration::from_secs(5),
+        "the blocked sync was still waiting after {took:?} (busy timeout should be the 3 s deadline)"
+    );
+}
