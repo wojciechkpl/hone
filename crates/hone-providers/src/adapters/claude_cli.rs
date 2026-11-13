@@ -390,36 +390,7 @@ fn build_ndjson_line(session_id: &str, user_text: &str) -> String {
             ]
         }
     });
-    numeric_control_escapes(&payload.to_string())
-}
-
-/// Rewrite the short control-character escapes of a JSON string (`\n`, `\r`,
-/// `\t`, `\b`, `\f`) as `\u00XX`. The JSON means the same, but the line no
-/// longer contains a backslash-letter pair that a shell's `echo` (or any tool
-/// that interprets C escapes) would turn into a real newline and split the
-/// NDJSON record. Turns now carry multi-line context blocks.
-fn numeric_control_escapes(json: &str) -> String {
-    let mut out = String::with_capacity(json.len());
-    let mut chars = json.chars();
-    while let Some(c) = chars.next() {
-        if c != '\\' {
-            out.push(c);
-            continue;
-        }
-        match chars.next() {
-            Some('n') => out.push_str("\\u000a"),
-            Some('r') => out.push_str("\\u000d"),
-            Some('t') => out.push_str("\\u0009"),
-            Some('b') => out.push_str("\\u0008"),
-            Some('f') => out.push_str("\\u000c"),
-            Some(other) => {
-                out.push('\\');
-                out.push(other);
-            }
-            None => out.push('\\'),
-        }
-    }
-    out
+    payload.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -673,9 +644,6 @@ impl ModelProvider for ClaudeCliProvider {
             .is_some_and(|proc| proc.base_prompt != base_prompt)
         {
             tracing::warn!("claude-cli: base prompt changed; restarting the claude session");
-            eprintln!(
-                "hone: the system prompt changed, so the claude session was restarted (earlier turns are not in its memory)"
-            );
             *guard = None; // dropping the process closes its stdin; it exits
         }
 
