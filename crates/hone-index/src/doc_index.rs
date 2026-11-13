@@ -186,6 +186,19 @@ impl DocIndex {
             .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(db_err)?;
+        // Roots indexed before last-used tracking get a time now (and then age out).
+        let now = unix_now();
+        for sql in [
+            "INSERT OR IGNORE INTO doc_roots (root, synced_at)
+             SELECT DISTINCT root, ?1 FROM doc_files",
+            "UPDATE doc_roots SET synced_at = ?1 WHERE synced_at IS NULL",
+        ] {
+            sqlx::query(sql)
+                .bind(now)
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?;
+        }
         for sql in [
             "DELETE FROM doc_chunks WHERE file_id IN (
                 SELECT f.id FROM doc_files f JOIN doc_roots r ON r.root = f.root

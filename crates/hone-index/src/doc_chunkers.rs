@@ -135,15 +135,52 @@ fn front_matter_end(lines: &[&str]) -> usize {
     let Some(first) = lines.first().map(|l| l.trim_end()) else {
         return 0;
     };
-    if first != "---" && first != "+++" {
-        return 0;
+    match first {
+        "+++" => lines
+            .iter()
+            .take(100)
+            .skip(1)
+            .position(|l| l.trim_end() == "+++")
+            .map_or(0, |close| close + 2),
+        // YAML: a horizontal rule unless a closing `---` or `...` follows within
+        // 50 lines with only blank, comment and `key: value` lines between.
+        "---" => {
+            for (i, l) in lines.iter().enumerate().take(50).skip(1) {
+                let t = l.trim_end();
+                if t == "---" || t == "..." {
+                    return i + 1;
+                }
+                if !yaml_shaped(l) {
+                    return 0;
+                }
+            }
+            0
+        }
+        _ => 0,
     }
-    lines
-        .iter()
-        .take(100)
-        .skip(1)
-        .position(|l| l.trim_end() == first)
-        .map_or(0, |close| close + 2)
+}
+
+/// A line that can sit inside YAML front matter: blank, a comment, a list item
+/// or indented continuation, or `key: value`.
+fn yaml_shaped(line: &str) -> bool {
+    let t = line.trim_end();
+    if t.trim().is_empty()
+        || t.starts_with('#')
+        || t.starts_with("- ")
+        || t.starts_with(char::is_whitespace)
+    {
+        return true;
+    }
+    match t.split_once(':') {
+        Some((key, rest)) => {
+            !key.is_empty()
+                && key
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ' '))
+                && (rest.is_empty() || rest.starts_with(' '))
+        }
+        None => false,
+    }
 }
 
 impl Chunker for MarkdownChunker {
