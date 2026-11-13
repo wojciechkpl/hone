@@ -626,6 +626,11 @@ fn test_c15_a_file_written_by_configure_loads_cleanly_and_its_implied_model_is_u
 // -- C7 + C11: session_limit_usd reaches the agent -------------------------------------------------------------------------
 
 /// `--recipe onboarding` runs several turns on one agent; the budget is checked at each turn start.
+/// The budget tests need a priced model (U2: an unpriced one costs 0): the same $3/$15 per
+/// million the old default table gave every model.
+const BUDGET_MODEL_PRICE: &str =
+    "[pricing.\"openai:budget-model\"]\ninput_per_million = 3.0\noutput_per_million = 15.0\n";
+
 fn run_recipe(e: &Env, mock: &Mock) -> Out {
     hone(
         e,
@@ -649,11 +654,15 @@ fn test_c11_session_limit_stops_a_multi_turn_run_with_the_budget_error() {
     let e = env();
     // 1M prompt tokens per call at the default $3/M => each turn costs ~$3.
     let mock = Mock::start(1_000_000);
-    write(&e.user_config(), "[budget]\nsession_limit_usd = 0.01\n");
+    write(
+        &e.user_config(),
+        &format!("[budget]\nsession_limit_usd = 0.01\n{BUDGET_MODEL_PRICE}"),
+    );
 
     let o = run_recipe(&e, &mock);
 
     let all = format!("{}\n{}", o.stdout, o.stderr);
+    assert!(!all.contains("no price for"), "the model is priced: {all}");
     assert!(
         all.contains("budget exceeded"),
         "the cap must reach the agent: {all}"
@@ -681,12 +690,16 @@ fn test_c11_control_without_a_limit_runs_every_turn() {
 fn test_c7_a_project_file_can_only_lower_the_user_limit() {
     let e = env();
     let mock = Mock::start(1_000_000);
-    write(&e.user_config(), "[budget]\nsession_limit_usd = 1000.0\n");
+    write(
+        &e.user_config(),
+        &format!("[budget]\nsession_limit_usd = 1000.0\n{BUDGET_MODEL_PRICE}"),
+    );
     write(&e.project_config(), "[budget]\nsession_limit_usd = 0.01\n");
 
     let o = run_recipe(&e, &mock);
 
     let all = format!("{}\n{}", o.stdout, o.stderr);
+    assert!(!all.contains("no price for"), "the model is priced: {all}");
     assert!(all.contains("budget exceeded"), "{all}");
     assert_eq!(mock.requests().len(), 1, "{all}");
 }

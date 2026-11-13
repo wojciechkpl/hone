@@ -54,6 +54,42 @@ const CREATE_META_TABLE_SQL: &str = "
 const CREATE_KIND_INDEX_SQL: &str =
     "CREATE INDEX IF NOT EXISTS memories_kind_idx ON memories(kind)";
 
+/// The SQL for "a model-written memory of another project is invisible": a
+/// condition on the `tags` JSON column (`prefix` is a table alias such as `m.`),
+/// and the LIKE pattern to bind for it. `owned_only` selects only the model's own
+/// memories of the project. `None` (no condition) when `project` is `None`.
+fn project_condition(
+    project: Option<&str>,
+    owned_only: bool,
+    prefix: &str,
+    n: &mut usize,
+    conditions: &mut Vec<String>,
+) -> Option<String> {
+    // Tags are a JSON array, so a tag is matched as its quoted JSON string; `\`
+    // escapes the LIKE wildcards in the project id.
+    let pattern = project.map(|id| {
+        let quoted = serde_json::to_string(&format!("project:{id}")).unwrap_or_default();
+        let escaped = quoted
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        format!("%{escaped}%")
+    })?;
+    *n += 1;
+    let n = *n;
+    if owned_only {
+        conditions.push(format!(
+            "{prefix}tags LIKE '%\"source:tool\"%' AND {prefix}tags LIKE ?{n} ESCAPE '\\'"
+        ));
+    } else {
+        conditions.push(format!(
+            "NOT ({prefix}tags LIKE '%\"source:tool\"%' AND {prefix}tags LIKE '%\"project:%' \
+             AND {prefix}tags NOT LIKE ?{n} ESCAPE '\\')"
+        ));
+    }
+    Some(pattern)
+}
+
 /// Rank `memories` against `text` with the in-Rust BM25 over their searchable
 /// text (description, a newline, content), weighted by the memory weight, and
 /// return the best `limit` with a positive score. Shared by `SqliteStore` and
@@ -739,10 +775,22 @@ impl SqliteStore {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
     ) -> Result<Vec<ScoredMemory>, MemoryError> {
+        self.recall_fts5_visible(query, exclude, None).await
+    }
+
+    /// [`recall_fts5`](Self::recall_fts5) that, when `project` is `Some(id)`, drops
+    /// a model-written memory of another project in the index query, before the
+    /// cap (see [`MemoryStore::recall_visible`]).
+    pub async fn recall_fts5_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Vec<ScoredMemory>, MemoryError> {
         if !self.fts {
             // No index to use (an encrypted store's inner database): rank in Rust.
             return Ok(self
-                .recall_scored(query, exclude)
+                .recall_scored(query, exclude, project, false)
                 .await?
                 .into_iter()
                 .map(|(score, memory)| ScoredMemory {
@@ -770,6 +818,7 @@ impl SqliteStore {
                 .collect();
             conditions.push(format!("m.kind NOT IN ({})", marks.join(", ")));
         }
+        let project_pattern = project_condition(project, false, "m.", &mut n, &mut conditions);
         let sql = format!(
             "SELECT m.id, m.content, m.tags, m.weight, m.created_at, m.decay_at, m.kind,
                     m.description, m.embedding, -bm25(memories_fts) * m.weight AS score
@@ -788,6 +837,9 @@ impl SqliteStore {
         }
         for kind in exclude {
             q = q.bind(kind_to_str(*kind));
+        }
+        if let Some(pattern) = &project_pattern {
+            q = q.bind(pattern);
         }
         let rows = q
             .bind(query.limit.min(i64::MAX as usize) as i64)
@@ -816,9 +868,11 @@ impl SqliteStore {
         &self,
         query: &MemoryQuery,
         exclude: &[MemoryKind],
+        project: Option<&str>,
+        owned_only: bool,
     ) -> Result<Vec<Memory>, MemoryError> {
         Ok(self
-            .recall_scored(query, exclude)
+            .recall_scored(query, exclude, project, owned_only)
             .await?
             .into_iter()
             .map(|(_, m)| m)
@@ -831,6 +885,8 @@ impl SqliteStore {
         &self,
         query: &MemoryQuery,
         exclude: &[MemoryKind],
+        project: Option<&str>,
+        owned_only: bool,
     ) -> Result<Vec<(f64, Memory)>, MemoryError> {
         let fetch_limit = if query.text.is_empty() {
             query.limit
@@ -855,6 +911,7 @@ impl SqliteStore {
                 .collect();
             conditions.push(format!("kind NOT IN ({})", marks.join(", ")));
         }
+        let project_pattern = project_condition(project, owned_only, "", &mut n, &mut conditions);
         let where_clause = if conditions.is_empty() {
             String::new()
         } else {
@@ -881,6 +938,9 @@ impl SqliteStore {
         }
         for kind in exclude {
             q = q.bind(kind_to_str(*kind));
+        }
+        if let Some(pattern) = &project_pattern {
+            q = q.bind(pattern);
         }
         let rows = q
             .bind(fetch_limit.min(i64::MAX as usize) as i64)
@@ -978,7 +1038,7 @@ impl MemoryStore for SqliteStore {
     }
 
     async fn recall(&self, query: &MemoryQuery) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_with_exclusions(query, &[]).await
+        self.recall_with_exclusions(query, &[], None, false).await
     }
 
     async fn recall_excluding(
@@ -986,7 +1046,33 @@ impl MemoryStore for SqliteStore {
         query: &MemoryQuery,
         exclude: &[MemoryKind],
     ) -> Result<Vec<Memory>, MemoryError> {
-        self.recall_with_exclusions(query, exclude).await
+        self.recall_with_exclusions(query, exclude, None, false)
+            .await
+    }
+
+    async fn recall_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        self.recall_with_exclusions(query, exclude, project, false)
+            .await
+    }
+
+    async fn recall_tool_memories(
+        &self,
+        kind: MemoryKind,
+        project: &str,
+        limit: usize,
+    ) -> Result<Vec<Memory>, MemoryError> {
+        let query = MemoryQuery {
+            text: String::new(),
+            limit,
+            kind: Some(kind),
+        };
+        self.recall_with_exclusions(&query, &[], Some(project), true)
+            .await
     }
 
     async fn recall_indexed(
@@ -995,6 +1081,17 @@ impl MemoryStore for SqliteStore {
         exclude: &[MemoryKind],
     ) -> Result<Option<Vec<ScoredMemory>>, MemoryError> {
         self.recall_fts5(query, exclude).await.map(Some)
+    }
+
+    async fn recall_indexed_visible(
+        &self,
+        query: &MemoryQuery,
+        exclude: &[MemoryKind],
+        project: Option<&str>,
+    ) -> Result<Option<Vec<ScoredMemory>>, MemoryError> {
+        self.recall_fts5_visible(query, exclude, project)
+            .await
+            .map(Some)
     }
 
     async fn reindex(&self) -> Result<Option<usize>, MemoryError> {

@@ -242,6 +242,10 @@ session_limit_usd = 2.0
 
 </details>
 
+### Pricing and `[budget]`
+
+Cost is computed per call from the price of the model that served it: the built-in table, with your `[pricing."provider:model"]` tables on top (`input_per_million`, `output_per_million`, optional `cache_read_per_million` and `cache_creation_per_million`; a project file's `[pricing]` is ignored). A model id ending in `-YYYY-MM-DD` or `-YYYYMMDD` uses its base id's price. A model with no price costs nothing and Hone says so once per model (`--json` sets `cost_known` to false); with a session limit it also warns before the first call. `AgentConfig.pricing` (the single price an embedding program passes) applies only when no price lookup is set. Usage that arrives more than 2 seconds after an OpenAI-compatible stream's final chunk isn't counted.
+
 ### Context and memory strategies
 
 `[context]` and `[memory]` choose what goes into the prompt and how memories are recalled and
@@ -260,7 +264,7 @@ written. Without them Hone behaves as before. `hone strategies` shows what is ac
 | `[memory] recaller` | `"bm25"` | `bm25` or `none` (no recall) | can only set `none` |
 | `[memory] top_k` | `5` | Memories recalled per turn, at least 1 (use `recaller = "none"` to turn recall off) | can only lower it |
 | `[memory] exclude_kinds` | `["outcome"]` | Memory kinds never recalled: `conversation`, `user`, `feedback`, `project`, `reference`, `outcome` | can only add kinds |
-| `[memory] writer` | `"triggers"` | `triggers` (trigger phrases) or `off`. `off` stops every memory write, outcome logs included | can only set `off` |
+| `[memory] writer` | `"triggers"` | `triggers` (trigger phrases), `tool` (the model's `memory_write`, see [Memory writers](#memory-writers)), `triggers+tool` or `off`. `off` stops every memory write, outcome logs included | can only set `off` |
 
 **Precedence,** highest first: a command-line flag, an environment variable, the project
 file, the user file, the default. `--skeleton-strategy` and `HONE_SKELETON_STRATEGY` set
@@ -837,6 +841,62 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 
 **`memory.db` and FTS5.** Hone keeps a full-text index of the memories in `memory.db` (FTS5 tables `memories_fts` and `memories_fts_map`, kept in sync by triggers on `memories`, and used by `recaller = "fts5"`). A tool that writes to `memory.db` directly needs an SQLite build with FTS5, or the triggers fail; deleting the FTS tables and triggers is safe, Hone rebuilds them on the next open (`hone memory reindex` rebuilds on demand). With `--encrypted-memory` the database holds ciphertext and has no FTS5 index (opening it removes any FTS5 tables and triggers). For prompts with more than 32 distinct words, `recaller = "fts5"` searches the 32 rarest and `bm25` all of them, so the two can rank differently. With `--encrypted-memory`, semantic recall scores only the newest 1,024 memories (their vectors are decrypted for it). Their vectors are kept sealed in the table `memory_vectors_sealed`, not in `memories.embedding`, and opening the database moves any vector an older Hone left in that column into it (once).
 
+**What `--encrypted-memory` encrypts.** The content of every memory and, for memories saved after this change, their description (AES-256-GCM, key from `HONE_MEMORY_PASSPHRASE`). It does not encrypt tags, kind, timestamps or weight, and descriptions written by earlier versions stay in plain text (Hone does not rewrite them). The salt that the key derives from is stored in a reserved record, which `hone memory forget` and the daily decay leave alone; with an older version of Hone, don't run `hone memory forget` on an encrypted database, because it could delete that record and make every memory unreadable. Running Hone without `--encrypted-memory` on an encrypted `memory.db` writes new memories into it as plain text, and `hone memory ls` and `hone memory show` don't decrypt (they show `enc:v1:…`).
+
+## Memory writers
+
+`[memory] writer` in `config.toml` picks who writes long-term memory:
+
+| Writer | Who writes |
+|---|---|
+| `triggers` | Hone, from conversation triggers (the default) |
+| `off` | nobody |
+| `tool` | the model, through the `memory_write` tool |
+| `triggers+tool` | both |
+
+With a `tool` writer the model gets `memory_write(kind, content, tags?)`: `kind` is `user`,
+`feedback`, `project` or `reference`; `content` is 1 to 2000 characters, stored as one line
+(newlines, other control characters and the Unicode line and paragraph separators become single spaces); at most 8 tags. Tags starting
+with `source:`, `call:`, `project:` or `__` are refused: the runtime sets those itself.
+
+- **It only updates its own memories.** A near-duplicate of a memory the model wrote, of the
+  same kind and in the same project, is updated; anything else (yours, a trigger's, an
+  import) is never changed, and a new memory is added instead.
+- **Provenance.** Each write is tagged `source:tool`, `project:<id>` (a hash of the git
+  repository, or of the working directory; a checkout and its git worktrees are one project,
+  and a `.git` in your home directory is ignored) and `call:<id>` (the newest 5 are kept). The tags
+  are stored unencrypted even with `--encrypted-memory`; the content is encrypted.
+  Recall and the memory index show a model-written memory with a `(model-written)` prefix,
+  and only in its own project. Memories of yours are shown everywhere.
+- **Approval, deny by default.** Under `--yes`, auto-approve or a session "always", a write
+  still asks you whenever anything but your own words is in the conversation, in this turn
+  or an earlier one: a result of **any** tool except `memory_write` itself (file, shell,
+  web, git, symbol search, `memory_read`, screenshots, LSP, MCP and every future tool), a
+  HONE.md section, the injected repository skeleton (when it lists at least one file or
+  symbol; an empty directory injects none), a block gathered by a context source, a memory
+  index or recall that includes a model-written memory, an unknown tool's error, or a matched
+  skill. Only a conversation holding none of these follows the normal policy. In practice,
+  inside a project with the default context (the skeleton is injected on turn 1) every
+  `memory_write` asks, and headless runs don't write. The prompt of an update shows the memory it replaces
+  (`replaces`). With nobody to ask (headless) the write is refused, and the error names
+  what is in the conversation.
+- **Permission rules** see the call as the command `memory_write`:
+
+  ```toml
+  [[rules]]
+  command = "memory_write"
+  decision = "deny"
+  ```
+
+  A broad `command = "*"` rule covers it too.
+- **Limit.** 20 successful writes per agent. Loading another session's history
+  into the same agent (the TUI's session switch) resets the count; the untrusted-content
+  record is kept.
+- **When it shows up.** The memory index in the system prompt is built at start, so a new
+  memory reaches it on the next start. Recall finds it from the next turn.
+- If an MCP server offers a tool also called `memory_write`, the built-in one replaces it
+  and Hone logs a warning.
+
 **`docs.db`.** When `retrieval` is among your `[context] sources`, Hone indexes the `*.md`, `*.markdown`, `*.txt`, `*.rst` and `*.org` files of the working directory (respecting `.gitignore` files up to the repository root, `.git/info/exclude`, your global git excludes and `.honeignore`) into `docs.db`. It holds **plain-text copies** of the indexed documents' text, so keep it as private as the files themselves. Working directories not synced for 30 days are removed from it when it is opened. To delete everything it holds, remove the file (`rm ~/.local/share/hone/docs.db`); Hone recreates it. Retrieved excerpts are added to your message as quoted data (not as system instructions). Excerpts are scanned for prompt-injection phrases (after removing invisible and combining characters) and invisible characters are never sent; look-alike letters from other scripts (a Cyrillic `І` for `I`) are not detected, so the framing line and delimiters remain the main defence: don't index documents you don't trust.
 
 ## Context receipts
@@ -868,8 +928,6 @@ Don't attach audit logs or receipts from private work to public bug reports.
 
 **Reading history refs.** A receipt lists only the history messages that are new or changed since the agent's previous receipt, so a message identical to one sent earlier isn't listed again and messages that only moved aren't relisted. `hone context show` prints each receipt's history as `history: 5 messages (2 new listed), root e09db7e7317a`: the number of non-system messages in the request, how many of them are listed, and the first 12 hex digits of `history_root`. The root is the SHA-256 of the newline-joined hashes of those messages, in request order; `--json` gives it in full. It is for tools that hold the transcript to verify against, not something to check by hand.
 
-
-**What `--encrypted-memory` encrypts.** The content of every memory and, for memories saved after this change, their description (AES-256-GCM, key from `HONE_MEMORY_PASSPHRASE`). It does not encrypt tags, kind, timestamps or weight, and descriptions written by earlier versions stay in plain text (Hone does not rewrite them). The salt that the key derives from is stored in a reserved record, which `hone memory forget` and the daily decay leave alone; with an older version of Hone, don't run `hone memory forget` on an encrypted database, because it could delete that record and make every memory unreadable. Running Hone without `--encrypted-memory` on an encrypted `memory.db` writes new memories into it as plain text, and `hone memory ls` and `hone memory show` don't decrypt (they show `enc:v1:…`).
 
 ## Environment variables
 
