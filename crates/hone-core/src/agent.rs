@@ -694,6 +694,10 @@ pub struct Agent {
     extra_blocks: Vec<(String, bool, Vec<ExtraBlock>)>,
     /// Names of the `Once` sources already gathered.
     once_gathered: HashSet<String>,
+    /// What document retrieval added to the current turn (redacted).
+    retrieval_turn: Option<crate::retrieval::RetrievalOutcome>,
+    /// Set for agents that must not retrieve documents (an ensemble's ranker).
+    retrieval_off: bool,
     /// The context receipts of this agent's life, oldest first (newest
     /// `MAX_KEPT_RECEIPTS` at most).
     receipts: Vec<hone_proto::ContextReceipt>,
@@ -797,6 +801,8 @@ impl Agent {
             receipt_history: std::collections::HashSet::new(),
             extra_blocks: Vec::new(),
             once_gathered: HashSet::new(),
+            retrieval_turn: None,
+            retrieval_off: false,
             receipts: Vec::new(),
             receipts_dropped: 0,
             receipt_agent_id: uuid::Uuid::now_v7().to_string(),
@@ -816,6 +822,13 @@ impl Agent {
     /// Run with the strategies the selection resolved (context sources, skeleton,
     /// compactor, budget, recaller, writer) instead of the ones derived from
     /// `AgentConfig`'s `inject_context` and `skeleton_strategy`.
+    /// Never retrieve documents (for an ensemble's ranker, whose prompt is the
+    /// candidates' answers).
+    pub fn without_retrieval(mut self) -> Self {
+        self.retrieval_off = true;
+        self
+    }
+
     pub fn with_strategies(mut self, strategies: Arc<ResolvedStrategies>) -> Self {
         self.context.set_trim_only(strategies.trim_only);
         self.context
@@ -1032,13 +1045,15 @@ impl Agent {
         &mut self,
         prompt: &str,
         events: &mpsc::Sender<AgentEvent>,
+        with_retrieval: bool,
     ) -> Result<(String, Vec<(String, String)>, RecallInfo), AgentError> {
-        let (gathered, recalled) = {
+        let (gathered, recalled, retrieved) = {
             let this = &*self;
             let work = async {
                 tokio::join!(
                     this.gather_context_sources(prompt),
-                    this.fetch_relevant_memories(prompt)
+                    this.fetch_relevant_memories(prompt),
+                    this.gather_retrieval(prompt, with_retrieval)
                 )
             };
             tokio::select! {
@@ -1047,7 +1062,24 @@ impl Agent {
             }
         };
         self.store_gathered(gathered);
+        self.retrieval_turn = retrieved;
         Ok(recalled)
+    }
+
+    /// Document retrieval for this turn's prompt (redacted); `None` when it is
+    /// off or finds nothing.
+    async fn gather_retrieval(
+        &self,
+        prompt: &str,
+        enabled: bool,
+    ) -> Option<crate::retrieval::RetrievalOutcome> {
+        if !enabled || self.retrieval_off {
+            return None;
+        }
+        let retrieval = self.strategies.retrieval.as_ref()?;
+        let mut outcome = retrieval.retrieve(prompt, &self.config.working_dir).await?;
+        outcome.text = redacted_text(self.redacting(), &outcome.text);
+        Some(outcome)
     }
 
     /// Keep what `gather_context_sources` returned.
@@ -1064,6 +1096,18 @@ impl Agent {
                 None => self.extra_blocks.push((g.name, g.once, g.extras)),
             }
         }
+    }
+
+    /// The receipt inputs of this turn's document retrieval.
+    fn retrieval_info(&self) -> Option<crate::receipts::RetrievalInfo> {
+        self.retrieval_turn
+            .as_ref()
+            .map(|o| crate::receipts::RetrievalInfo {
+                strategy: o.id.clone(),
+                tokens: estimate_text_tokens(&o.text),
+                sources: o.sources.clone(),
+                dropped: o.dropped.clone(),
+            })
     }
 
     /// The gathered blocks that have text: `Once` sources first, then `EachTurn`
@@ -1897,7 +1941,7 @@ impl Agent {
 
         // Fetch memories before adding the user message so the query is clean.
         let (memories, memory_entries, recall_info) =
-            self.gather_and_recall(user_input, &events).await?;
+            self.gather_and_recall(user_input, &events, true).await?;
         // Inputs of this turn's context receipts.
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
@@ -1907,6 +1951,7 @@ impl Agent {
                 Vec::new()
             },
             injection: None,
+            retrieval: self.retrieval_info(),
             ..TurnContextInfo::default()
         };
         if !memory_entries.is_empty() {
@@ -1966,6 +2011,18 @@ impl Agent {
             } else {
                 std::borrow::Cow::Borrowed(user_input)
             };
+
+        // Retrieved documents: quoted data at the front of the turn's user
+        // message (stored with it, so later requests stay byte-identical).
+        let effective_input: std::borrow::Cow<'_, str> = match &self.retrieval_turn {
+            Some(r) if !r.text.is_empty() => {
+                // Repository text steering `memory_write` is untrusted context.
+                self.note_untrusted_label("retrieved documents");
+                std::borrow::Cow::Owned(format!("{}\n\n{effective_input}", r.text))
+            }
+            Some(_) => effective_input,
+            None => effective_input,
+        };
 
         self.context
             .add_message(Message::user(effective_input.as_ref()));
@@ -3692,7 +3749,7 @@ impl Agent {
         let cost_before_turn = self.cost.total_usd();
 
         let (memories, memory_entries, recall_info) =
-            self.gather_and_recall(&text_for_memory, &events).await?;
+            self.gather_and_recall(&text_for_memory, &events, false).await?;
         self.receipt_info = TurnContextInfo {
             recall: recall_info,
             skills: if self.strategies.has_source("skills") {
@@ -3701,6 +3758,7 @@ impl Agent {
                 Vec::new()
             },
             injection: None,
+            retrieval: self.retrieval_info(),
             ..TurnContextInfo::default()
         };
         if !memory_entries.is_empty() {
@@ -4177,6 +4235,12 @@ impl AgentHandle {
                         for msg in messages {
                             for call in &msg.tool_calls {
                                 agent.note_untrusted_source(&call.name);
+                            }
+                            // A resumed turn that carried retrieved documents.
+                            if msg.role == hone_proto::Role::User
+                                && msg.content.as_text().contains(crate::retrieval::FRAMING)
+                            {
+                                agent.note_untrusted_label("retrieved documents");
                             }
                             agent.context.add_message(msg);
                         }

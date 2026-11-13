@@ -64,6 +64,18 @@ pub(crate) struct TurnContextInfo {
     /// as `phase_compaction`).
     pub trim_only: bool,
     pub phase_compaction: bool,
+    /// What document retrieval added this turn.
+    pub retrieval: Option<RetrievalInfo>,
+}
+
+/// The document retrieval block of a turn.
+#[derive(Debug, Clone)]
+pub(crate) struct RetrievalInfo {
+    pub strategy: StrategyId,
+    /// Tokens of the section prefixed to the user message.
+    pub tokens: u32,
+    pub sources: Vec<ScoredSource>,
+    pub dropped: Vec<SourceRef>,
 }
 
 fn strategy(slot: Slot, name: &str, params: &serde_json::Value) -> StrategyId {
@@ -204,6 +216,17 @@ pub(crate) fn build_receipt(
         ));
     }
 
+    // A retrieval that timed out has no sources and adds no block (only its mark in `dropped`).
+    if let Some(r) = info.retrieval.as_ref().filter(|r| !r.sources.is_empty()) {
+        blocks.push(BlockReceipt {
+            slot: Slot::Retrieval,
+            strategy: r.strategy.clone(),
+            tokens: r.tokens,
+            sources: r.sources.clone(),
+            duration_ms: 0,
+        });
+    }
+
     if let Some(inj) = &info.injection {
         let sources = inj
             .hits
@@ -274,6 +297,11 @@ pub(crate) fn build_receipt(
             id: id.clone(),
             version: None,
         })
+        .chain(
+            info.retrieval
+                .iter()
+                .flat_map(|r| r.dropped.iter().cloned()),
+        )
         .collect();
 
     ContextReceipt {

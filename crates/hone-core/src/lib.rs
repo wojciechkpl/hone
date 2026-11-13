@@ -10,6 +10,7 @@ pub mod complexity;
 mod context;
 mod memory_write;
 mod receipts;
+mod retrieval;
 pub mod strategy;
 pub mod context_injector;
 mod cost;

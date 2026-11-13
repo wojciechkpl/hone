@@ -198,6 +198,10 @@ pub struct Config {
     #[serde(default)]
     pub memory: Option<crate::strategy::MemoryTable>,
 
+    /// The `[retrieval]` table: document retrieval settings.
+    #[serde(default)]
+    pub retrieval: Option<crate::strategy::RetrievalTable>,
+
     /// `[pricing."provider:model"]` tables: the user's own per-million-token prices.
     #[serde(default)]
     pub pricing: std::collections::BTreeMap<String, PricingTableEntry>,
