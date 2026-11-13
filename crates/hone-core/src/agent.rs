@@ -645,6 +645,8 @@ pub struct Agent {
     once_gathered: HashSet<String>,
     /// What document retrieval added to the current turn (redacted).
     retrieval_turn: Option<crate::retrieval::RetrievalOutcome>,
+    /// Set for agents that must not retrieve documents (an ensemble's ranker).
+    retrieval_off: bool,
     /// The context receipts of this agent's life, oldest first (newest
     /// `MAX_KEPT_RECEIPTS` at most).
     receipts: Vec<hone_proto::ContextReceipt>,
@@ -738,6 +740,7 @@ impl Agent {
             extra_blocks: Vec::new(),
             once_gathered: HashSet::new(),
             retrieval_turn: None,
+            retrieval_off: false,
             receipts: Vec::new(),
             receipts_dropped: 0,
             receipt_agent_id: uuid::Uuid::now_v7().to_string(),
@@ -757,6 +760,13 @@ impl Agent {
     /// Run with the strategies the selection resolved (context sources, skeleton,
     /// compactor, budget, recaller, writer) instead of the ones derived from
     /// `AgentConfig`'s `inject_context` and `skeleton_strategy`.
+    /// Never retrieve documents (for an ensemble's ranker, whose prompt is the
+    /// candidates' answers).
+    pub fn without_retrieval(mut self) -> Self {
+        self.retrieval_off = true;
+        self
+    }
+
     pub fn with_strategies(mut self, strategies: Arc<ResolvedStrategies>) -> Self {
         self.context.set_trim_only(strategies.trim_only);
         self.context
@@ -979,7 +989,7 @@ impl Agent {
         prompt: &str,
         enabled: bool,
     ) -> Option<crate::retrieval::RetrievalOutcome> {
-        if !enabled {
+        if !enabled || self.retrieval_off {
             return None;
         }
         let retrieval = self.strategies.retrieval.as_ref()?;

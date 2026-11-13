@@ -200,10 +200,20 @@ impl RetrievalSource {
     }
 }
 
-/// `text` as the injection detector should see it: control and Unicode format
-/// (Cf) characters removed, NFKC applied.
+/// A Unicode format (Cf) character: invisible in text.
+fn is_format_char(c: char) -> bool {
+    use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
+    c.general_category() == GeneralCategory::Format
+}
+
+/// `text` as the injection detector should see it: every control and format
+/// (Cf) character removed, then NFKD with the nonspacing marks (Mn) dropped, so
+/// a phrase split by control or format characters or by combining marks is whole
+/// again. (Homoglyphs from other scripts, a Cyrillic `\u{406}` for `I`, are not
+/// detected: the framing line and the delimiters are the main defence.)
 fn normalized_for_scan(text: &str) -> String {
     use unicode_normalization::UnicodeNormalization;
+    use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
     text.chars()
         // Line breaks and tabs still separate words; other controls vanish.
         .map(|c| {
@@ -214,17 +224,20 @@ fn normalized_for_scan(text: &str) -> String {
             }
         })
         .filter(|c| !c.is_control() && !is_format_char(*c))
-        .nfkc()
+        .nfkd()
+        .filter(|c| c.general_category() != GeneralCategory::NonspacingMark)
         .collect()
 }
 
-/// Unicode format characters (category Cf) that are invisible in text.
-fn is_format_char(c: char) -> bool {
-    matches!(c,
-        '\u{00AD}' | '\u{0600}'..='\u{0605}' | '\u{061C}' | '\u{06DD}' | '\u{070F}'
-        | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
-        | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206F}' | '\u{FEFF}'
-        | '\u{FFF9}'..='\u{FFFB}')
+/// Characters that never reach the model from a document: Unicode format (Cf)
+/// characters (tag characters included) but for the zero-width (non-)joiner that
+/// some scripts need, the combining grapheme joiner and variation selectors.
+fn is_hidden(c: char) -> bool {
+    if matches!(c, '\u{200C}' | '\u{200D}') {
+        return false;
+    }
+    is_format_char(c)
+        || matches!(c, '\u{034F}' | '\u{FE00}'..='\u{FE0F}' | '\u{E0100}'..='\u{E01EF}')
 }
 
 /// The line that opens the section.
@@ -250,7 +263,7 @@ fn shown(text: &str) -> String {
 fn chunk_text(text: &str) -> String {
     let clean: String = text
         .chars()
-        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .filter(|c| (!c.is_control() || *c == '\n' || *c == '\t') && !is_hidden(*c))
         .collect();
     clean.replace("<<<", "<\\u{3c}<")
 }

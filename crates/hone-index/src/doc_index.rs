@@ -223,7 +223,7 @@ impl DocIndex {
         let opts = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
-            .busy_timeout(std::time::Duration::from_secs(30));
+            .busy_timeout(std::time::Duration::from_secs(3));
         let pool = SqlitePoolOptions::new()
             .max_connections(2)
             .connect_with(opts)
