@@ -194,14 +194,19 @@ fn convert_tool_cached(tool: &ToolSchema) -> Value {
 }
 
 /// Builds the Anthropic API request body from a `CompletionRequest`.
-/// Returns `(body, system_message)` where `system_message` is extracted separately.
+///
+/// Every non-empty system message becomes one text block of the top-level
+/// `system` array, in request order; no system message appears in `messages`.
 pub fn build_request_body(request: &CompletionRequest) -> Value {
-    // Extract system message (Anthropic requires it as a top-level field)
-    let system_text: Option<String> = request
+    // Every system message (Anthropic takes them as the top-level `system`
+    // field), in request order, one text block each. Empty ones are skipped.
+    let system_texts: Vec<String> = request
         .messages
         .iter()
-        .find(|m| m.role == Role::System)
-        .map(|m| m.content.as_text());
+        .filter(|m| m.role == Role::System)
+        .map(|m| m.content.as_text())
+        .filter(|t| !t.trim().is_empty())
+        .collect();
 
     let mut messages: Vec<Value> = request
         .messages
@@ -248,14 +253,24 @@ pub fn build_request_body(request: &CompletionRequest) -> Value {
         "stream": true,
     });
 
-    // Emit system as an array of text blocks with cache_control on the last block.
-    // This enables Anthropic prompt caching for the stable system prefix.
-    if let Some(system) = system_text {
-        body["system"] = json!([{
-            "type": "text",
-            "text": system,
-            "cache_control": { "type": "ephemeral" },
-        }]);
+    // Emit system as an array of text blocks. The first (the stable base
+    // prompt) carries a cache breakpoint, and so does the last when there are
+    // several, so every call of a tool loop reuses the whole system prefix.
+    // With the tools' and the conversation's breakpoints that is at most 4.
+    if !system_texts.is_empty() {
+        let last = system_texts.len() - 1;
+        let blocks: Vec<Value> = system_texts
+            .into_iter()
+            .enumerate()
+            .map(|(i, text)| {
+                let mut block = json!({ "type": "text", "text": text });
+                if i == 0 || i == last {
+                    block["cache_control"] = json!({ "type": "ephemeral" });
+                }
+                block
+            })
+            .collect();
+        body["system"] = Value::Array(blocks);
     }
 
     if !tools.is_empty() {
