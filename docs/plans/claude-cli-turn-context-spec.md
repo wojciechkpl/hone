@@ -38,6 +38,14 @@ The pool works for workers and personas (3 spawns instead of 5, and turn 5 reach
 | CC9 | **The main conversation is never evicted.** The first base prompt the provider sees is the main conversation, and its process is never evicted. When the pool is full, the least recently used of the other processes is evicted. Main plus 4 or more other bases in a burst leaves main's process alive, and the next main turn goes to it. |
 | CC10 | **Idle side processes are closed.** A process other than main's that has been idle for more than 5 minutes is closed the next time the pool is used, so finished workers don't keep `claude` processes alive. A process mid-turn is never closed. `docs/configuration.md` describes the pool, CC9 and CC10. |
 
+### Review round 3 (CC11)
+
+Approved: main survives 4-subtask and 6-subtask orchestrations, and idle closing skips a mid-turn worker. One should-fix remains. A session whose first prompt is an `@persona` turn makes the persona "main". The real conversation is then a side process that can be evicted or closed after 5 minutes idle.
+
+| Row | Behaviour |
+|---|---|
+| CC11 | **Use decides what's protected, not order.** A process that has served two or more turns is protected like main's: it is never closed for idleness. When the pool is full, eviction picks among the processes with the fewest turns, least recently used first. A session that starts with an `@persona` turn, then continues with normal turns, keeps the normal conversation's process through a pause longer than the idle timeout and through a burst of worker bases. |
+
 ## Testing notes
 
 - Use the existing stub-binary harness in the claude-cli tests, which records argv and the NDJSON written to stdin.
