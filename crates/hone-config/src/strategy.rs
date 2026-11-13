@@ -525,7 +525,7 @@ impl StrategySelection {
     /// ones. For the evaluator's own profiles (`hone eval`), which are written by
     /// the person running the evaluation. The layer's names are validated first.
     pub fn with_trusted_layer(mut self, layer: &ConfigLayer) -> Result<Self, ConfigError> {
-        validate(layer)?;
+        validate(layer, true)?;
         self.apply_trusted(layer);
         Ok(self)
     }
