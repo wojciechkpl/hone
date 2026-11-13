@@ -13,7 +13,7 @@ The `claude-cli:` adapter keeps one `claude` process for the whole session, and 
 | CC1 | **Only the base prompt is fixed at spawn.** `--system-prompt` carries only the first system message of the turn that spawns the process (Hone's base prompt). |
 | CC2 | **Turn context goes with the turn.** Every other system message of a turn is sent with that turn's user text, in one delimited block before it. The block starts with a line saying it is context from Hone for this turn, and each message is kept whole and in order. On turn N the model sees turn N's memories and skills. |
 | CC3 | **Nothing is repeated.** A system message whose exact text was already sent by this process (at spawn or in an earlier turn's block) isn't sent again. When a turn has nothing new, it is sent without a block. After the process is re-spawned (it died), the dedupe resets and everything is sent again. |
-| CC4 | **A changed base prompt restarts the session.** If a turn's first system message differs from the one the process was spawned with, the process is re-spawned with the new base prompt, and the dedupe resets. Hone prints a one-line notice to stderr that the `claude` session was restarted, so earlier turns aren't in its memory. |
+| CC4 | **A changed base prompt restarts the session.** If a turn's first system message differs from the one the process was spawned with, the process is re-spawned with the new base prompt, and the dedupe resets. Hone logs a warning (`tracing::warn!`) that the `claude` session was restarted, so earlier turns aren't in its memory. It doesn't print to stderr, because under the TUI that would garble the screen. |
 
 ## Testing notes
 
