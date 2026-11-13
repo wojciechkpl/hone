@@ -1,0 +1,38 @@
+{
+ "runtime": "python",
+ "module": "net",
+ "assets": [
+  "probe_child.py"
+ ],
+ "take": [
+  {
+   "file": "net.py"
+  }
+ ],
+ "cases": [
+  {
+   "scenario": "m04_always_fail",
+   "keys": [
+    "ok"
+   ],
+   "salt": "40cf96619043c4df",
+   "hash": "0aa5d0cab80252cc0520d90665a073bf674da7845feca49cff48572c88714a98"
+  },
+  {
+   "scenario": "m04_flaky",
+   "keys": [
+    "ok"
+   ],
+   "salt": "40f781186a693a35",
+   "hash": "1bd614976767496e7556b74fb3d3399115d17b83aedb067093dc7fa109005d5c"
+  },
+  {
+   "scenario": "m04_ok",
+   "keys": [
+    "ok"
+   ],
+   "salt": "60794f9b01bf3067",
+   "hash": "e3d592e94076b0594bbcf21ca43d4f53ef661fa89c5267250590ada615dcb1d2"
+  }
+ ]
+}

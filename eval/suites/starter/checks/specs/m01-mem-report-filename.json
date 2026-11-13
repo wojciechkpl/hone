@@ -1,0 +1,40 @@
+{
+ "runtime": "python",
+ "module": "reports",
+ "assets": [
+  "probe_child.py"
+ ],
+ "take": [
+  {
+   "file": "reports.py"
+  }
+ ],
+ "cases": [
+  {
+   "fn": "make_report_filename",
+   "args": [
+    {
+     "$date": "2026-03-09"
+    }
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "318a9cba88678b79",
+   "hash": "1ac984b8d637b0646beb378bed6f71a320a6e6bd434140d4e9804f159ccbf6e1"
+  },
+  {
+   "fn": "make_report_filename",
+   "args": [
+    {
+     "$date": "2025-12-01"
+    }
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "5c33e3fbd0f3dd4c",
+   "hash": "26ec171a347e2dced4d9277608f169c1eaaefc5a2136925c06628b6b1bc3e3b6"
+  }
+ ]
+}

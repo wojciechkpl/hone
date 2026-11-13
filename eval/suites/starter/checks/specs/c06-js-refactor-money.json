@@ -1,0 +1,100 @@
+{
+ "runtime": "node",
+ "module": "report.js",
+ "advisory": "node",
+ "assets": [
+  "probe_child.js"
+ ],
+ "base": "checks/data/c06-js-refactor-money",
+ "take": [
+  {
+   "file": "report.js"
+  }
+ ],
+ "cases": [
+  {
+   "fn": "formatPrice",
+   "args": [
+    3
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "418e3f3286d6c5c1",
+   "hash": "7948129b7c9c35d6428fe29585cfe860c3a6bf577dacccb372ee9f629ca913a8"
+  },
+  {
+   "fn": "formatRefund",
+   "args": [
+    2.5
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "44aa0bcc1aa71045",
+   "hash": "ad97cb720e18b8420eabf89337b937c2198e53d330220ebbb9be641b4c935983"
+  },
+  {
+   "fn": "formatTotal",
+   "args": [
+    [
+     1,
+     2.25
+    ]
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "d0f882a7ffbc6c80",
+   "hash": "1963e5dffe75b2e12d7808a5b92db8af1087592eafdc348a3ae02f68b7e2bc7f"
+  },
+  {
+   "fn": "formatPrice",
+   "args": [
+    3
+   ],
+   "patch": {
+    "attr": "formatMoney",
+    "with": "tag"
+   },
+   "keys": [
+    "ok"
+   ],
+   "salt": "a40a5e06250d8fd9",
+   "hash": "7505b08f47551ce6185760959e8ab2fa3a8cb11a45d57791a0e29ebf5b9d3693"
+  },
+  {
+   "fn": "formatRefund",
+   "args": [
+    2.5
+   ],
+   "patch": {
+    "attr": "formatMoney",
+    "with": "tag"
+   },
+   "keys": [
+    "ok"
+   ],
+   "salt": "7ee072d449dfeb60",
+   "hash": "470fecf0d80448d1451bc8eba9c9831f728f89bcd7021e900502eccb4d1999a8"
+  },
+  {
+   "fn": "formatTotal",
+   "args": [
+    [
+     1,
+     2.25
+    ]
+   ],
+   "patch": {
+    "attr": "formatMoney",
+    "with": "tag"
+   },
+   "keys": [
+    "ok"
+   ],
+   "salt": "f3ac2c5d8aee19bb",
+   "hash": "59cfba1911051c93052653b6f53838ae88a1ee4fdde3353f40310b88df31774e"
+  }
+ ]
+}

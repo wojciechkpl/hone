@@ -12,6 +12,8 @@ description = "Semantic indexer for Hone (tree-sitter AST symbol extraction + SQ
 
 [dependencies]
 hone-proto = { workspace = true }
+hone-memory = { workspace = true }
+ignore = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

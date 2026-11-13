@@ -1,3 +1,6 @@
+pub mod doc_chunkers;
+pub mod doc_index;
+pub mod docs;
 pub mod error;
 pub mod index;
 pub mod multi_repo;
@@ -7,6 +10,9 @@ pub mod types;
 pub mod walker;
 pub mod watcher;
 
+pub use doc_chunkers::{FixedChunker, MarkdownChunker};
+pub use doc_index::{DocHit, DocIndex, DocLimits, Fts5DocsRetriever, SyncStats};
+pub use docs::{Chunk, Chunker, Document, Hit, Retriever};
 pub use error::IndexError;
 pub use index::SemanticIndex;
 pub use multi_repo::{MultiRepoIndex, MultiRepoResult};

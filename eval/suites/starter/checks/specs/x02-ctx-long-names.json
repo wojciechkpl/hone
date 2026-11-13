@@ -1,0 +1,50 @@
+{
+ "runtime": "node",
+ "module": "src/leaderboard/format.js",
+ "assets": [
+  "probe_child.js"
+ ],
+ "base": "checks/data/x02-ctx-long-names",
+ "take": [
+  {
+   "tree": "src",
+   "glob": "*.js"
+  }
+ ],
+ "manifest": "x02-ctx-long-names.manifest.json",
+ "cases": [
+  {
+   "fn": "formatPlayerName",
+   "args": [
+    "Bartholomew Jones"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "17fd42f82bdac276",
+   "hash": "f7cf2e3516eecad3479c7f9ee91c9d19804d42f7150bc21e08f50463af252a4e"
+  },
+  {
+   "fn": "formatPlayerName",
+   "args": [
+    "Twelve chars"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "20a0b7dcaf6766eb",
+   "hash": "896b0a31aabcae99cca3a6d8a394f8e048d087402b442c12238c572271fbe351"
+  },
+  {
+   "fn": "formatPlayerName",
+   "args": [
+    "Ana"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "d637e1a5033ca6c7",
+   "hash": "c88013429202ec0c29dd08ab781c9bc671b65b33c09f4963c9358375359366fc"
+  }
+ ]
+}

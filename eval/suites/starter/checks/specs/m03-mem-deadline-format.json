@@ -1,0 +1,53 @@
+{
+ "runtime": "python",
+ "module": "deadlines",
+ "assets": [
+  "probe_child.py"
+ ],
+ "take": [
+  {
+   "file": "deadlines.py"
+  }
+ ],
+ "cases": [
+  {
+   "fn": "format_deadline",
+   "args": [
+    {
+     "$date": "2026-03-09"
+    }
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "75d206226a610426",
+   "hash": "757b970944c4bfc72ff527922590b3a2a35785319e9390f94e0dbb8de5096757"
+  },
+  {
+   "fn": "format_deadline",
+   "args": [
+    {
+     "$date": "2026-12-01"
+    }
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "a2f817d457e2da5a",
+   "hash": "6d8337d0fdfd99c1ed95c4a6899096a36b5d93791678bb5213136a4e236a9d9f"
+  },
+  {
+   "fn": "format_deadline",
+   "args": [
+    {
+     "$date": "2027-08-31"
+    }
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "33992cd2e159e338",
+   "hash": "74c3946175cddbea8134387636a0d3e13ae9762d07e1f2d8ffaf8e2cc25f8caa"
+  }
+ ]
+}

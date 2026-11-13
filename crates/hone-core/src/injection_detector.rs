@@ -5,7 +5,10 @@
 //! fatal.
 
 use regex::Regex;
+use std::borrow::Cow;
 use std::sync::OnceLock;
+use unicode_normalization::UnicodeNormalization;
+use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
 // ---------------------------------------------------------------------------
 // Compiled regex sets (initialised once, then reused across calls)
@@ -110,38 +113,276 @@ impl InjectionRisk {
 
 pub struct InjectionDetector;
 
+/// The text the patterns are matched against.
+struct Prepared<'a> {
+    /// The text with JSON escapes decoded, control and format characters removed,
+    /// NFKD applied and nonspacing marks removed. Borrowed when plain ASCII
+    /// needs none of that.
+    text: Cow<'a, str>,
+    /// Unicode tag characters (U+E0020..=U+E007E) decoded to ASCII.
+    tag_text: String,
+    /// Whether any tag character (U+E0000..=U+E007F) is present.
+    has_tag: bool,
+}
+
+fn is_tag(c: char) -> bool {
+    ('\u{E0000}'..='\u{E007F}').contains(&c)
+}
+
+/// Decode JSON string escapes in `text`: `\uXXXX` (with surrogate pairs),
+/// `\n`, `\t`, `\r`, `\b`, `\f`, `\"`, `\\`, `\/`. Anything that is not a
+/// well-formed escape (a lone surrogate, `\u12`, `\q`) is left as written.
+fn decode_json_escapes(text: &str) -> Cow<'_, str> {
+    if !text.contains('\\') {
+        return Cow::Borrowed(text);
+    }
+    let bytes = text.as_bytes();
+    let hex4 = |at: usize| -> Option<u32> {
+        let h = text.get(at..at + 4)?;
+        if h.bytes().all(|b| b.is_ascii_hexdigit()) {
+            u32::from_str_radix(h, 16).ok()
+        } else {
+            None
+        }
+    };
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'\\' || i + 1 >= bytes.len() {
+            // Copy up to the next backslash.
+            let next = text[i..].find('\\').map_or(text.len(), |p| i + p);
+            let next = if next == i { i + 1 } else { next };
+            out.push_str(&text[i..next]);
+            i = next;
+            continue;
+        }
+        match bytes[i + 1] {
+            b'n' | b't' | b'r' => {
+                out.push(' ');
+                i += 2;
+            }
+            b'b' | b'f' => {
+                i += 2;
+            }
+            b'"' => {
+                out.push('"');
+                i += 2;
+            }
+            b'\\' => {
+                out.push('\\');
+                i += 2;
+            }
+            b'/' => {
+                out.push('/');
+                i += 2;
+            }
+            b'u' => match hex4(i + 2) {
+                Some(hi) if (0xD800..0xDC00).contains(&hi) => {
+                    let low = if text.get(i + 6..i + 8) == Some("\\u") {
+                        hex4(i + 8).filter(|l| (0xDC00..0xE000).contains(l))
+                    } else {
+                        None
+                    };
+                    match low {
+                        Some(lo) => {
+                            let cp = 0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00);
+                            if let Some(c) = char::from_u32(cp) {
+                                out.push(c);
+                            }
+                            i += 12;
+                        }
+                        None => {
+                            // A lone high surrogate: as written.
+                            out.push_str("\\u");
+                            i += 2;
+                        }
+                    }
+                }
+                Some(lo) if (0xDC00..0xE000).contains(&lo) => {
+                    out.push_str("\\u");
+                    i += 2;
+                }
+                Some(cp) => {
+                    if let Some(c) = char::from_u32(cp) {
+                        out.push(c);
+                    }
+                    i += 6;
+                }
+                None => {
+                    out.push_str("\\u");
+                    i += 2;
+                }
+            },
+            _ => {
+                out.push('\\');
+                i += 1;
+            }
+        }
+    }
+    Cow::Owned(out)
+}
+
+/// Whether `text` is ASCII with no control character other than whitespace
+/// and no JSON escape beyond the simple ones (`\n \t \r \" \\ \/`). Such text
+/// needs no Unicode work: it can hold no tag, format or combining character,
+/// because those can only arrive as non-ASCII text or a `\u` escape.
+fn is_plain_ascii(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'\\' {
+            match bytes.get(i + 1) {
+                Some(b'n' | b't' | b'r' | b'"' | b'\\' | b'/') => i += 2,
+                _ => return false,
+            }
+            continue;
+        }
+        if !(b < 0x80 && (b >= 0x20 && b != 0x7F || matches!(b, b'\n' | b'\t' | b'\r'))) {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// Length in chars of a well-formed emoji tag sequence starting at `chars[0]`:
+/// U+1F3F4, one or more of U+E0030..=E0039 / U+E0061..=E007A, then U+E007F
+/// (the Scotland, England and Wales flags and other subdivision flags).
+fn flag_sequence_len(chars: &[char]) -> Option<usize> {
+    if chars.first() != Some(&'\u{1F3F4}') {
+        return None;
+    }
+    let mut n = 1;
+    while chars
+        .get(n)
+        .is_some_and(|c| matches!(*c, '\u{E0030}'..='\u{E0039}' | '\u{E0061}'..='\u{E007A}'))
+    {
+        n += 1;
+    }
+    (n > 1 && chars.get(n) == Some(&'\u{E007F}')).then_some(n + 1)
+}
+
+fn prepare(text: &str) -> Prepared<'_> {
+    if is_plain_ascii(text) {
+        return Prepared {
+            text: decode_json_escapes(text),
+            tag_text: String::new(),
+            has_tag: false,
+        };
+    }
+    let decoded = decode_json_escapes(text);
+    let chars: Vec<char> = decoded.chars().collect();
+    let mut tag_text = String::new();
+    let mut has_tag = false;
+    let mut cleaned = String::with_capacity(decoded.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        // A flag emoji's tag characters aren't hidden text (TR6), but their
+        // decoded text is still scanned.
+        let in_flag = flag_sequence_len(&chars[i..]);
+        if let Some(len) = in_flag {
+            cleaned.push(c);
+            for t in &chars[i + 1..i + len] {
+                if ('\u{E0020}'..='\u{E007E}').contains(t) {
+                    if let Some(a) = char::from_u32(*t as u32 - 0xE0000) {
+                        tag_text.push(a);
+                    }
+                }
+            }
+            i += len;
+            continue;
+        }
+        i += 1;
+        if is_tag(c) {
+            has_tag = true;
+            if ('\u{E0020}'..='\u{E007E}').contains(&c) {
+                if let Some(a) = char::from_u32(c as u32 - 0xE0000) {
+                    tag_text.push(a);
+                }
+            }
+            continue;
+        }
+        match c {
+            '\n' | '\t' | '\r' => cleaned.push(' '),
+            c if c.is_control() => {}
+            c if c.general_category() == GeneralCategory::Format => {}
+            c => cleaned.push(c),
+        }
+    }
+    let text: String = cleaned
+        .nfkd()
+        .filter(|c| {
+            !matches!(
+                c.general_category(),
+                GeneralCategory::NonspacingMark | GeneralCategory::Format
+            ) && !c.is_control()
+        })
+        .collect();
+    Prepared {
+        text: Cow::Owned(text),
+        tag_text,
+        has_tag,
+    }
+}
+
 impl InjectionDetector {
+    fn scan_prepared(p: &Prepared<'_>) -> InjectionRisk {
+        let pats = patterns();
+        let texts: [&str; 2] = [&p.text, &p.tag_text];
+        let texts: &[&str] = if p.tag_text.is_empty() {
+            &texts[..1]
+        } else {
+            &texts
+        };
+
+        for re in &pats.high {
+            for t in texts {
+                if let Some(m) = re.find(t) {
+                    return InjectionRisk::High(m.as_str().to_owned());
+                }
+            }
+        }
+        for re in &pats.medium {
+            for t in texts {
+                if let Some(m) = re.find(t) {
+                    return InjectionRisk::Medium(m.as_str().to_owned());
+                }
+            }
+        }
+        for re in &pats.low {
+            for t in texts {
+                if let Some(m) = re.find(t) {
+                    return InjectionRisk::Low(m.as_str().to_owned());
+                }
+            }
+        }
+        InjectionRisk::None
+    }
+
     /// Scan arbitrary text for prompt injection patterns.
+    ///
+    /// The patterns are matched against a normalized copy of the text, so
+    /// hidden characters (control, format, combining marks), compatibility forms
+    /// (fullwidth, math-bold) and JSON string escapes do not hide a phrase; text
+    /// written in Unicode tag characters is decoded and scanned too. The text
+    /// itself is never changed. Plain ASCII is scanned in place.
     ///
     /// The returned risk level is the highest severity match found.  The
     /// `String` payload carries the matched excerpt for diagnostics.
     pub fn scan(text: &str) -> InjectionRisk {
-        let pats = patterns();
-
-        for re in &pats.high {
-            if let Some(m) = re.find(text) {
-                return InjectionRisk::High(m.as_str().to_owned());
-            }
-        }
-
-        for re in &pats.medium {
-            if let Some(m) = re.find(text) {
-                return InjectionRisk::Medium(m.as_str().to_owned());
-            }
-        }
-
-        for re in &pats.low {
-            if let Some(m) = re.find(text) {
-                return InjectionRisk::Low(m.as_str().to_owned());
-            }
-        }
-
-        InjectionRisk::None
+        Self::scan_prepared(&prepare(text))
     }
 
     /// Scan a tool result.  The `tool_name` is used only for richer log context.
+    /// Any Unicode tag character in the result is at least a medium risk.
     pub fn scan_tool_result(tool_name: &str, result: &str) -> InjectionRisk {
-        let risk = Self::scan(result);
+        let prepared = prepare(result);
+        let mut risk = Self::scan_prepared(&prepared);
+        if prepared.has_tag && matches!(risk, InjectionRisk::None | InjectionRisk::Low(_)) {
+            risk = InjectionRisk::Medium("hidden Unicode tag characters".to_owned());
+        }
         if risk != InjectionRisk::None {
             tracing::debug!(
                 tool = tool_name,

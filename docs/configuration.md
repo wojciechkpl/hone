@@ -842,6 +842,7 @@ stops the spinner animation; `HONE_ASCII_ONLY=1` uses ASCII box drawing.
 |---|---|---|
 | `~/.local/share/hone/memory.db` | Long-term memory (SQLite) | `--ephemeral`, `HONE_DISABLE_PERSISTENT_STORES=1` |
 | `~/.local/share/hone/index.db` | Symbol index of `.rs` and `.py` files in the working dir | same |
+| `~/.local/share/hone/docs.db` | Document index (see below): chunks of the markdown and text files of each working directory | same |
 | `~/.local/share/hone/sessions.db` | Conversations from one-shot runs (saved under a generated name unless you pass `--session`) and their [context receipts](#context-receipts); `honed` sessions (`HONE_SESSION_DB` overrides) | `--ephemeral`; `HONE_EPHEMERAL` for `honed` |
 | `~/.local/share/hone/tool-cache.db` | Cache of read-only tool results | `HONE_TOOL_CACHE=0` |
 | `<cwd>/.hone/audit.jsonl` | Egress audit log of every tool call, plus one `context` line per model call | off unless `--audit` or `HONE_AUDIT_LOG=1` |
@@ -907,6 +908,8 @@ with `source:`, `call:`, `project:` or `__` are refused: the runtime sets those 
   memory reaches it on the next start. Recall finds it from the next turn.
 - If an MCP server offers a tool also called `memory_write`, the built-in one replaces it
   and Hone logs a warning.
+
+**`docs.db`.** When `retrieval` is among your `[context] sources`, Hone indexes the `*.md`, `*.markdown`, `*.txt`, `*.rst` and `*.org` files of the working directory (respecting `.gitignore` files up to the repository root, `.git/info/exclude`, your global git excludes and `.honeignore`) into `docs.db`. It holds **plain-text copies** of the indexed documents' text, so keep it as private as the files themselves. Working directories not synced for 30 days are removed from it when it is opened. To delete everything it holds, remove the file (`rm ~/.local/share/hone/docs.db`); Hone recreates it. Retrieved excerpts are added to your message as quoted data (not as system instructions). Excerpts are scanned for prompt-injection phrases (after removing invisible and combining characters) and invisible characters are never sent; look-alike letters from other scripts (a Cyrillic `І` for `I`) are not detected, so the framing line and delimiters remain the main defence: don't index documents you don't trust.
 
 ## Context receipts
 

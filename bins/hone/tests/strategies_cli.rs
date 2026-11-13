@@ -114,7 +114,9 @@ fn test_s10_json_should_list_every_slot_with_defaults() {
             "context.skeleton",
             "context.compactor",
             "memory.recaller",
-            "memory.writer"
+            "memory.writer",
+            "retrieval.retriever",
+            "retrieval.chunker"
         ]
     );
     assert_eq!(slot(&v, "context.skeleton")["name"], "adaptive");

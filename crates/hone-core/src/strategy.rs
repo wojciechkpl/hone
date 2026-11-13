@@ -72,6 +72,8 @@ pub struct StrategyDeps {
     /// The memory store is encrypted: the `fts5` recaller cannot index it and
     /// is replaced by `bm25`.
     pub encrypted_memory: bool,
+    /// The document index database; `None` keeps the index in memory.
+    pub docs_db: Option<PathBuf>,
 }
 
 /// A factory builds a strategy from its parameters (JSON) and the dependencies.
@@ -438,6 +440,8 @@ pub struct StrategyRegistry {
     compactors: BTreeMap<String, Origin>,
     recallers: BTreeMap<String, (Origin, Factory<dyn Recaller>)>,
     writers: BTreeMap<String, (Origin, Factory<dyn MemoryWriter>)>,
+    retrievers: BTreeMap<String, Origin>,
+    chunkers: BTreeMap<String, Origin>,
 }
 
 fn names<V>(m: &BTreeMap<String, V>) -> Vec<String> {
@@ -461,6 +465,8 @@ impl StrategyRegistry {
             compactors: BTreeMap::new(),
             recallers: BTreeMap::new(),
             writers: BTreeMap::new(),
+            retrievers: BTreeMap::new(),
+            chunkers: BTreeMap::new(),
         }
     }
 
@@ -479,6 +485,20 @@ impl StrategyRegistry {
                     }) as Arc<dyn ContextSource>)
                 }),
             );
+        }
+        r.register_source(
+            "retrieval",
+            Origin::Builtin,
+            Arc::new(|params, deps| {
+                Ok(
+                    Arc::new(crate::retrieval::RetrievalSource::from_params(params, deps))
+                        as Arc<dyn ContextSource>,
+                )
+            }),
+        );
+        r.retrievers.insert("fts5-docs".to_owned(), Origin::Builtin);
+        for name in hone_config::strategy::CHUNKER_NAMES {
+            r.chunkers.insert((*name).to_owned(), Origin::Builtin);
         }
         r.register_source(
             "skeleton",
@@ -633,6 +653,12 @@ impl StrategyRegistry {
         for (n, (o, _)) in &self.writers {
             out.push(("memory.writer".to_owned(), n.clone(), o.clone()));
         }
+        for (n, o) in &self.retrievers {
+            out.push(("retrieval.retriever".to_owned(), n.clone(), o.clone()));
+        }
+        for (n, o) in &self.chunkers {
+            out.push(("retrieval.chunker".to_owned(), n.clone(), o.clone()));
+        }
         out
     }
 
@@ -681,14 +707,34 @@ impl StrategyRegistry {
             "env-snapshot" => serde_json::json!({
                 "timeout_secs": sel.env_snapshot_timeout_secs.value,
             }),
+            "retrieval" => serde_json::json!({
+                "top_k": sel.retrieval_top_k.value,
+                "max_tokens": sel.retrieval_max_tokens.value,
+                "chunker": sel.retrieval_chunker.value,
+                "lines": sel.retrieval_fixed_lines.value,
+                "overlap": sel.retrieval_fixed_overlap.value,
+            }),
             _ => serde_json::json!({}),
         };
         let mut source_impls = Vec::new();
+        let mut retrieval = None;
         for name in &sel.sources.value {
             let (_, factory) = self
                 .sources
                 .get(name)
                 .ok_or_else(|| unknown("context.sources", name, names(&self.sources)))?;
+            if name == "retrieval" && matches!(self.sources.get(name), Some((Origin::Builtin, _))) {
+                let concrete = Arc::new(crate::retrieval::RetrievalSource::from_params(
+                    &source_params(name),
+                    deps,
+                ));
+                source_impls.push((
+                    name.clone(),
+                    Arc::clone(&concrete) as Arc<dyn ContextSource>,
+                ));
+                retrieval = Some(concrete);
+                continue;
+            }
             source_impls.push((name.clone(), factory(&source_params(name), deps)?));
         }
 
@@ -743,6 +789,7 @@ impl StrategyRegistry {
             exclude_kinds,
             writer,
             writer_kind,
+            retrieval,
         })
     }
 }
@@ -821,6 +868,8 @@ pub struct ResolvedStrategies {
     pub(crate) exclude_kinds: Vec<MemoryKind>,
     pub(crate) writer: Arc<dyn MemoryWriter>,
     pub(crate) writer_kind: WriterKind,
+    /// The built-in `retrieval` source, when it is on (applied by the agent).
+    pub(crate) retrieval: Option<Arc<crate::retrieval::RetrievalSource>>,
 }
 
 impl ResolvedStrategies {
@@ -833,11 +882,12 @@ impl ResolvedStrategies {
     /// registered ones that are not applied by the runtime itself (`memory-index`,
     /// `recall`, `skills` and `skeleton` are).
     pub(crate) fn gatherable(&self) -> impl Iterator<Item = &(String, Arc<dyn ContextSource>)> {
-        self.source_impls.iter().filter(|(name, _)| {
+        let retrieval_applied = self.retrieval.is_some();
+        self.source_impls.iter().filter(move |(name, _)| {
             !matches!(
                 name.as_str(),
                 "memory-index" | "recall" | "skills" | "skeleton"
-            )
+            ) && !(retrieval_applied && name == "retrieval")
         })
     }
 
@@ -878,6 +928,7 @@ impl ResolvedStrategies {
                 id: id(Slot::MemoryWriter, "triggers", &serde_json::json!({})),
             }),
             writer_kind: WriterKind::Triggers,
+            retrieval: None,
         }
     }
 }

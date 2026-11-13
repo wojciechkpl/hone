@@ -1,0 +1,154 @@
+{
+ "runtime": "rust-kv",
+ "advisory": "rust",
+ "assets": [
+  "rs_kvparse_probe.rs"
+ ],
+ "base": "checks/data/c07-rs-fix-kvparse",
+ "take": [
+  {
+   "tree": "src",
+   "glob": "*.rs",
+   "skip": [
+    "src/bin/"
+   ]
+  }
+ ],
+ "add": {
+  "src/bin/probe.rs": "rs_kvparse_probe.rs"
+ },
+ "cases": [
+  {
+   "fn": "parse_kv",
+   "args": [
+    "name = hone"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "79e7490f3e72b475",
+   "hash": "31e6076a08303596409c57cb0680a76ee57e7d203a4c3a72f31a3b509ed512dc"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "url=https://x.test/?a=1&b=2"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "4e6e705e33940e2a",
+   "hash": "121b9c2f3b72eefa0cc64b15288811311029d4f61bdb9ea8e10fc5f1319abe0f"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "flag="
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "e45b2897172aac86",
+   "hash": "07c002ce879fc56104466eedeb27ab1efc3d48efd9bdf69d5f621e5f0bb9b721"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "=value"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "22af439fbee42b8e",
+   "hash": "25c5ccb8151753f8953db33f3f5cd7bc7771fbca7171b3264af45f8716014887"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "no separator"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "08763c805305e903",
+   "hash": "bd4fa58cb9a5050e1fef3f249255a265cecaa869a0e83c6767408b235e065911"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "a=b=c=d"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "f98d8678f9de7cf5",
+   "hash": "c48e39395b9380191d6619527c6ebf1b2d2d4ab8674fe3729c1f00f8111afb8c"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "k==v"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "6e0b4070c7ade340",
+   "hash": "cc918ade5241ded2c114b861f7ae2efe2cd34b1b6822981aedeebd1cd693cda2"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "  key  =  a = b  "
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "0e1e0b36795962bb",
+   "hash": "d5650446f4e1ea31c3d1bfe158104efab50a1dfd2a3fd981849f7475d1e884e5"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "path=/usr/bin:/bin?x=1"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "ae4b94b6caaab89d",
+   "hash": "7da89e0eef2c32da7f54c20513046d7b68f894715ff04ee52e24aee97f9b2d79"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "   =x"
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "8529f0592bc947bb",
+   "hash": "66282b216f76473256a87ec8e874ee25cdf7669e202c2e1ff0763cc5bd26de8a"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    ""
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "3cf250f748df1f4c",
+   "hash": "8894ef4a3d9eee5c51d7c69a9723719281f3119ac4d7c12d7adfeb5ae5d42d3e"
+  },
+  {
+   "fn": "parse_kv",
+   "args": [
+    "x="
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "0ec4f6e3801781a5",
+   "hash": "874d7375b7e60191474cc72695412f769659726b8777193069428640324c3413"
+  }
+ ]
+}

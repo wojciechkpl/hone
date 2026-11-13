@@ -1,0 +1,117 @@
+{
+ "runtime": "python",
+ "module": "pricing",
+ "advisory": "python",
+ "assets": [
+  "probe_child.py"
+ ],
+ "base": "checks/data/c03-py-refactor-discount",
+ "take": [
+  {
+   "file": "pricing.py"
+  }
+ ],
+ "cases": [
+  {
+   "fn": "apply_discount",
+   "args": [
+    100
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "a62aa04431af294c",
+   "hash": "edabf73ba9ddd6d67dc649aa2e3dcbc5ebfd599cbca3313487d730b2cbdbe5fd"
+  },
+  {
+   "fn": "member_price",
+   "args": [
+    100
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "4e788125c1b33b63",
+   "hash": "ac6a98cdf1b7863d49e86c99890b855cdb81c5826248bddb636a16ca59f91786"
+  },
+  {
+   "fn": "bundle_price",
+   "args": [
+    [
+     100,
+     20
+    ]
+   ],
+   "keys": [
+    "ok"
+   ],
+   "salt": "5994037f27f8b060",
+   "hash": "4a7cc0bf015a117f86e1cca79fd94772f7cbd03ab585231ded0bde9858cc6079"
+  },
+  {
+   "fn": "clearance_price",
+   "args": [
+    100
+   ],
+   "kwargs": {
+    "extra_off": 5
+   },
+   "keys": [
+    "ok"
+   ],
+   "salt": "18e296f4d7714f0c",
+   "hash": "5351a277dce18803595bc464330e93c085d082506709f5292cade22d7233d28f"
+  },
+  {
+   "fn": "member_price",
+   "args": [
+    100
+   ],
+   "patch": {
+    "attr": "apply_discount",
+    "with": "minus1"
+   },
+   "keys": [
+    "ok"
+   ],
+   "salt": "4206a960b1af00eb",
+   "hash": "397bf5895dd0d5f8b332c4d464d4cd20eb220d035cbdfbbcab94be5ea787085a"
+  },
+  {
+   "fn": "bundle_price",
+   "args": [
+    [
+     100,
+     20
+    ]
+   ],
+   "patch": {
+    "attr": "apply_discount",
+    "with": "minus1"
+   },
+   "keys": [
+    "ok"
+   ],
+   "salt": "20ef74fa5ee364c1",
+   "hash": "b7b2d51b7308f0383c8fe5d4b9bdd527b55a63bcc1c6c99c06cbc5e7924e87bd"
+  },
+  {
+   "fn": "clearance_price",
+   "args": [
+    100
+   ],
+   "kwargs": {
+    "extra_off": 5
+   },
+   "patch": {
+    "attr": "apply_discount",
+    "with": "minus1"
+   },
+   "keys": [
+    "ok"
+   ],
+   "salt": "468e10860f0120d3",
+   "hash": "b829795cf5352fb0ca4ea677f38eada23feb7d9af214770cc331535a40365218"
+  }
+ ]
+}

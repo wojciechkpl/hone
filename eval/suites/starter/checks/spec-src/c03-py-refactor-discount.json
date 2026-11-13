@@ -1,0 +1,89 @@
+{
+ "runtime": "python",
+ "module": "pricing",
+ "advisory": "python",
+ "assets": [
+  "probe_child.py"
+ ],
+ "base": "checks/data/c03-py-refactor-discount",
+ "take": [
+  {
+   "file": "pricing.py"
+  }
+ ],
+ "cases": [
+  {
+   "fn": "apply_discount",
+   "args": [
+    100
+   ],
+   "expect": 85.0
+  },
+  {
+   "fn": "member_price",
+   "args": [
+    100
+   ],
+   "expect": 85.0
+  },
+  {
+   "fn": "bundle_price",
+   "args": [
+    [
+     100,
+     20
+    ]
+   ],
+   "expect": 102.0
+  },
+  {
+   "fn": "clearance_price",
+   "args": [
+    100
+   ],
+   "kwargs": {
+    "extra_off": 5
+   },
+   "expect": 80.0
+  },
+  {
+   "fn": "member_price",
+   "args": [
+    100
+   ],
+   "patch": {
+    "attr": "apply_discount",
+    "with": "minus1"
+   },
+   "expect": 99
+  },
+  {
+   "fn": "bundle_price",
+   "args": [
+    [
+     100,
+     20
+    ]
+   ],
+   "patch": {
+    "attr": "apply_discount",
+    "with": "minus1"
+   },
+   "expect": 118
+  },
+  {
+   "fn": "clearance_price",
+   "args": [
+    100
+   ],
+   "kwargs": {
+    "extra_off": 5
+   },
+   "patch": {
+    "attr": "apply_discount",
+    "with": "minus1"
+   },
+   "expect": 94
+  }
+ ]
+}
