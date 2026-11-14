@@ -40,6 +40,13 @@ fn git(dir: &Path, date: &str, args: &[&str]) -> String {
         .env("GIT_AUTHOR_DATE", date)
         .env("GIT_COMMITTER_DATE", date)
         .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        // Hermetic: never let an inherited repo (e.g. `git rebase -x`, hooks in a
+        // linked worktree) redirect these commands into the real repository.
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_COMMON_DIR")
         .output()
         .expect("spawn git");
     assert!(
@@ -287,7 +294,7 @@ fn test_resolve_when_crate_is_untracked_inside_unrelated_repo_should_be_unknown(
 }
 
 #[test]
-fn test_resolve_when_no_git_repo_should_be_unknown_and_watch_vcs_info_path() {
+fn test_resolve_when_no_git_repo_should_be_unknown_and_watch_existing_manifest_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("crate");
     write(&dir.join("Cargo.toml"), "[package]\nname = \"c\"\n");
@@ -296,11 +303,121 @@ fn test_resolve_when_no_git_repo_should_be_unknown_and_watch_vcs_info_path() {
 
     assert_eq!(r.source, Source::Unknown);
     assert!(r.info.is_none());
-    // Intentionally may not exist: lets cargo re-resolve once the file appears.
     assert!(
-        r.rerun_if_changed
-            .contains(&dir.join(".cargo_vcs_info.json")),
-        "unknown must watch <manifest_dir>/.cargo_vcs_info.json: {:?}",
+        r.rerun_if_changed.contains(&dir),
+        "unknown must watch the manifest dir itself: {:?}",
         r.rerun_if_changed
     );
+    assert_paths_exist(&r);
+}
+
+#[test]
+fn test_source_as_str_should_return_stable_names() {
+    assert_eq!(Source::Override.as_str(), "override");
+    assert_eq!(Source::CargoVcsInfo.as_str(), "cargo-vcs-info");
+    assert_eq!(Source::Git.as_str(), "git");
+    assert_eq!(Source::Unknown.as_str(), "unknown");
+}
+
+/// Snapshot of everything cargo would look at for the given watched paths:
+/// file contents, and for directories the entry names with len and mtime.
+fn watched_state(r: &Resolved) -> Vec<String> {
+    r.rerun_if_changed
+        .iter()
+        .map(|p| {
+            if p.is_dir() {
+                let mut entries: Vec<String> = fs::read_dir(p)
+                    .unwrap()
+                    .map(|e| {
+                        let e = e.unwrap();
+                        let m = e.metadata().unwrap();
+                        format!("{:?}:{}:{:?}", e.file_name(), m.len(), m.modified().ok())
+                    })
+                    .collect();
+                entries.sort();
+                format!("dir {} {entries:?}", p.display())
+            } else {
+                let bytes = fs::read(p).unwrap_or_default();
+                format!("file {} {bytes:?}", p.display())
+            }
+        })
+        .collect()
+}
+
+/// Resolve, make a new commit, and assert some watched path changed state.
+fn assert_new_commit_changes_watched_state(root: &Path) {
+    let r = resolve(&root.join("bins/x"), no_env);
+    assert_eq!(r.source, Source::Git);
+    assert_paths_exist(&r);
+    let before = watched_state(&r);
+    // Defeat coarse filesystem mtime granularity.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    commit_more(root);
+    let after = watched_state(&r);
+    assert_ne!(
+        before, after,
+        "a new commit must change something cargo watches: {:?}",
+        r.rerun_if_changed
+    );
+}
+
+#[test]
+fn test_resolve_when_branch_only_in_packed_refs_should_watch_something_a_commit_changes() {
+    need_git!();
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    init_repo(root);
+    git(root, DATE_NEW, &["pack-refs", "--all"]);
+    assert!(root.join(".git/logs/HEAD").exists(), "reflog should be on");
+
+    assert_new_commit_changes_watched_state(root);
+}
+
+#[test]
+fn test_resolve_when_reflog_disabled_and_packed_refs_should_watch_something_a_commit_changes() {
+    need_git!();
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git(root, DATE_OLD, &["init", "-q"]);
+    git(
+        root,
+        DATE_OLD,
+        &["config", "core.logAllRefUpdates", "false"],
+    );
+    write(&root.join("bins/x/Cargo.toml"), "[package]\nname = \"x\"\n");
+    git(root, DATE_OLD, &["add", "bins/x/Cargo.toml"]);
+    git(root, DATE_OLD, &["commit", "-q", "-m", "first"]);
+    git(root, DATE_NEW, &["pack-refs", "--all"]);
+    assert!(
+        !root.join(".git/logs/HEAD").exists(),
+        "reflog should be off"
+    );
+
+    assert_new_commit_changes_watched_state(root);
+}
+
+#[test]
+fn test_resolve_when_reftable_repo_should_watch_something_a_commit_changes() {
+    need_git!();
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let init = Command::new("git")
+        .args(["init", "-q", "--ref-format=reftable"])
+        .current_dir(root)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_COMMON_DIR")
+        .output();
+    if !init.map(|o| o.status.success()).unwrap_or(false) {
+        eprintln!("note: git lacks reftable support; skipping");
+        return;
+    }
+    write(&root.join("bins/x/Cargo.toml"), "[package]\nname = \"x\"\n");
+    git(root, DATE_OLD, &["add", "bins/x/Cargo.toml"]);
+    git(root, DATE_OLD, &["commit", "-q", "-m", "first"]);
+
+    assert_new_commit_changes_watched_state(root);
 }

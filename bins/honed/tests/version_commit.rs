@@ -5,6 +5,8 @@ use std::process::Command;
 
 /// The long version baked in by build.rs (reaches integration tests via cargo:rustc-env).
 const LONG: &str = env!("HONE_LONG_VERSION");
+/// Where build.rs got the commit from (override, cargo-vcs-info, git, unknown).
+const SOURCE: &str = env!("HONE_BUILD_SOURCE");
 
 fn run(args: &[&str]) -> (String, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_honed"))
@@ -79,18 +81,15 @@ fn git(args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Strict comparison with the surrounding checkout, only when the build
-/// could have read it (no packager override, commit known, git usable).
+/// Strict comparison with the surrounding checkout, only when build.rs itself
+/// resolved the commit from git (read-only git commands only).
 fn assert_matches_checkout() {
-    let (sha, date) = parse_long_version(LONG);
-    let Some(sha) = sha else {
-        eprintln!("note: version is 'commit unknown'; skipping checkout comparison");
-        return;
-    };
-    if option_env!("HONE_BUILD_GIT_SHA").is_some() {
-        eprintln!("note: HONE_BUILD_GIT_SHA override set; skipping checkout comparison");
+    if SOURCE != "git" {
+        eprintln!("note: build source is {SOURCE:?}, not git; skipping checkout comparison");
         return;
     }
+    let (sha, date) = parse_long_version(LONG);
+    let sha = sha.expect("source=git implies a known sha");
     if git(&["rev-parse", "--is-inside-work-tree"]).as_deref() != Some("true") {
         eprintln!("note: not in a git checkout; skipping checkout comparison");
         return;
@@ -107,6 +106,14 @@ fn assert_matches_checkout() {
         date.as_deref(),
         Some(cs.as_str()),
         "date should equal HEAD committer date"
+    );
+}
+
+#[test]
+fn test_build_source_should_be_one_of_the_known_names() {
+    assert!(
+        ["override", "cargo-vcs-info", "git", "unknown"].contains(&SOURCE),
+        "unexpected HONE_BUILD_SOURCE {SOURCE:?}"
     );
 }
 
