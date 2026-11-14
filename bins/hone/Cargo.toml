@@ -8,7 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Hone CLI — the universal terminal AI coding agent"
+description = "Hone CLI — The coding agent that shows its receipts"
 
 [[bin]]
 name = "hone"

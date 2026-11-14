@@ -61,19 +61,32 @@ pub fn git_info_from_overrides(get: impl Fn(&str) -> Option<String>) -> Option<G
     Some(GitInfo { sha, date })
 }
 
+fn git_cmd(dir: &Path) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(dir);
+    for var in [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+    ] {
+        cmd.env_remove(var);
+    }
+    cmd
+}
+
 fn git_output(dir: &Path, args: &[&str]) -> Option<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .ok()?;
+    let out = git_cmd(dir).args(args).output().ok()?;
     if !out.status.success() {
         return None;
     }
     let s = String::from_utf8(out.stdout).ok()?;
     let s = s.trim();
-    (!s.is_empty()).then(|| s.to_string())
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
 }
 
 fn git_path(dir: &Path, name: &str) -> Option<PathBuf> {
@@ -81,49 +94,113 @@ fn git_path(dir: &Path, name: &str) -> Option<PathBuf> {
     Some(if p.is_absolute() { p } else { dir.join(p) })
 }
 
-/// Returns the git info plus the paths whose change should trigger a rebuild.
+/// Returns the git info plus the existing paths whose change should trigger a rebuild.
 fn git_info_from_git(dir: &Path) -> Option<(GitInfo, Vec<PathBuf>)> {
-    let sha = normalize_sha(&git_output(dir, &["rev-parse", "--short=12", "HEAD"])?)?;
-    let date = git_output(dir, &["log", "-1", "--format=%cs"]).and_then(|d| normalize_date(&d));
+    // Only trust git when this crate is tracked by the repository we found.
+    git_cmd(dir)
+        .args(["ls-files", "--error-unmatch", "--", "Cargo.toml"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
 
-    let mut paths = Vec::new();
-    paths.extend(git_path(dir, "HEAD"));
-    if let Some(branch) = git_output(dir, &["symbolic-ref", "-q", "HEAD"])
-        && branch.starts_with("refs/heads/")
-    {
-        paths.extend(git_path(dir, &branch));
+    let sha = normalize_sha(&git_output(dir, &["rev-parse", "--short=12", "HEAD"])?)?;
+    let date = git_output(
+        dir,
+        &["log", "-1", "--no-show-signature", "--format=%cs", "HEAD"],
+    )
+    .and_then(|d| normalize_date(&d));
+
+    let mut names = vec!["HEAD".to_string()];
+    if let Some(branch) = git_output(dir, &["symbolic-ref", "-q", "HEAD"]) {
+        if branch.starts_with("refs/heads/") {
+            names.push(branch);
+        }
     }
-    paths.extend(git_path(dir, "packed-refs"));
+    names.extend(["packed-refs", "logs/HEAD", "reftable"].map(String::from));
+
+    // `--git-path` prints paths whether or not they exist, and cargo treats a
+    // missing rerun-if-changed path as always stale, so keep only existing ones.
+    let paths = names
+        .iter()
+        .filter_map(|n| git_path(dir, n))
+        .filter(|p| p.exists())
+        .collect();
     Some((GitInfo { sha, date }, paths))
 }
 
+/// Where the commit info came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    Override,
+    CargoVcsInfo,
+    Git,
+    Unknown,
+}
+
+/// Outcome of [`resolve`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolved {
+    pub info: Option<GitInfo>,
+    pub source: Source,
+    pub rerun_if_changed: Vec<PathBuf>,
+}
+
+/// Resolves commit info: overrides, `.cargo_vcs_info.json`, git, unknown.
+pub fn resolve(manifest_dir: &Path, get_env: impl Fn(&str) -> Option<String>) -> Resolved {
+    if let Some(info) = git_info_from_overrides(&get_env) {
+        return Resolved {
+            info: Some(info),
+            source: Source::Override,
+            rerun_if_changed: Vec::new(),
+        };
+    }
+    let vcs = manifest_dir.join(".cargo_vcs_info.json");
+    if let Some(sha) = std::fs::read_to_string(&vcs)
+        .ok()
+        .and_then(|j| sha_from_cargo_vcs_info(&j))
+    {
+        return Resolved {
+            info: Some(GitInfo { sha, date: None }),
+            source: Source::CargoVcsInfo,
+            rerun_if_changed: vec![vcs],
+        };
+    }
+    if let Some((info, paths)) = git_info_from_git(manifest_dir) {
+        return Resolved {
+            info: Some(info),
+            source: Source::Git,
+            rerun_if_changed: paths,
+        };
+    }
+    Resolved {
+        info: None,
+        source: Source::Unknown,
+        // Possibly missing on purpose: cargo then re-resolves on the next build.
+        rerun_if_changed: vec![vcs],
+    }
+}
+
 /// Resolves commit info and prints the cargo directives. Never fails the build.
-///
-/// Order: env overrides, `.cargo_vcs_info.json`, git, none.
 pub fn emit() {
     println!("cargo:rerun-if-env-changed={ENV_SHA}");
     println!("cargo:rerun-if-env-changed={ENV_DATE}");
 
-    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from);
+    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_default();
     let pkg_version = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
 
-    let info = git_info_from_overrides(|k| std::env::var(k).ok())
-        .or_else(|| {
-            let dir = manifest_dir.as_ref()?;
-            let vcs = dir.join(".cargo_vcs_info.json");
-            let sha = sha_from_cargo_vcs_info(&std::fs::read_to_string(&vcs).ok()?)?;
-            Some(GitInfo { sha, date: None })
-        })
-        .or_else(|| {
-            let (info, paths) = git_info_from_git(manifest_dir.as_ref()?)?;
-            for p in paths {
-                println!("cargo:rerun-if-changed={}", p.display());
-            }
-            Some(info)
-        });
-
+    let r = resolve(&manifest_dir, |k| std::env::var(k).ok());
+    for p in &r.rerun_if_changed {
+        println!("cargo:rerun-if-changed={}", p.display());
+    }
+    if r.source == Source::Unknown {
+        println!(
+            "cargo:warning=git commit unknown; set {ENV_SHA} (and {ENV_DATE}) to embed it in --version"
+        );
+    }
     println!(
         "cargo:rustc-env=HONE_LONG_VERSION={}",
-        long_version(&pkg_version, info.as_ref())
+        long_version(&pkg_version, r.info.as_ref())
     );
 }

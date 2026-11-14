@@ -89,3 +89,25 @@ Python-heavy teams (ML, data, science) install Hone alongside their
 existing `pip` workflow — particularly important for users behind
 corporate proxies where `cargo install` is blocked but PyPI is
 mirrored internally.
+
+## Build metadata: git commit in `--version`
+
+`hone --version` and `honed --version` print
+`<name> <version> (<12-hex sha> <YYYY-MM-DD>)`. The `hone-build-info` build
+helper resolves the commit in this order: the `HONE_BUILD_GIT_SHA` /
+`HONE_BUILD_GIT_DATE` environment variables, the `.cargo_vcs_info.json` file
+inside a crates.io package (sha only), then `git` in the crate directory (only
+if `Cargo.toml` is tracked by that repository). Otherwise it prints
+`(commit unknown)` and emits a `cargo:warning`.
+
+Builds without a `.git` directory (source tarballs, Nix, distro packages,
+Docker builds that copy a worktree without `.git`) should set the variables:
+
+```bash
+HONE_BUILD_GIT_SHA=$(git rev-parse HEAD) \
+HONE_BUILD_GIT_DATE=$(git log -1 --format=%cs) \
+cargo build --release -p hone-cli -p honed
+```
+
+Publishing: `hone-build-info` is a build-dependency of `hone-cli` and `honed`,
+so publish it to crates.io before them.
