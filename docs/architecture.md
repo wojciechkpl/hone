@@ -47,7 +47,7 @@ flowchart LR
 
 ## 2. Workspace map
 
-The repository is one Cargo workspace (`resolver = "3"`, edition 2024, Rust 1.85+).
+The repository is one Cargo workspace (`resolver = "3"`, edition 2024, Rust 1.88+).
 
 | Group | Crate | What it does |
 |---|---|---|

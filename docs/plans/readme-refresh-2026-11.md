@@ -13,7 +13,7 @@ flowchart LR
     C --> D[Installs with<br/>one command]
     D --> E{Has an API key?}
     E -- yes --> F[First task]
-    E -- no --> G[Ollama or Claude<br/>subscription path] --> F
+    E -- no --> G[Local model<br/>with Ollama] --> F
     F --> H[Sees the receipts:<br/>context show, trace, cost]
     H --> I[Stays]
 ```
@@ -38,7 +38,7 @@ Three candidates:
 
 | Hook | Unique to Hone? | Demo in 20 s? | True on main today? |
 |---|---|---|---|
-| **A. Agents with receipts:** see what the agent saw, did and spent | Yes. No other terminal agent has per-call context receipts plus an egress log. | Yes | Yes: `hone context show`, `hone trace`, `hone strategies`, `hone reports diff`, permission prompts, injection warnings |
+| **A. Agents with receipts:** see what the agent saw, did and spent | Likely. We haven't found another terminal agent with per-call context receipts plus a tool-call audit log, but that isn't checked against each one's docs yet. | Yes | Yes: `hone context show`, `hone trace`, `hone strategies`, `hone reports diff`, permission prompts, injection warnings |
 | B. Any model, local or cloud, inside a kernel sandbox | Partly. Goose, OpenCode and Aider also run any model. | Partly | Yes, with Landlock opt-in on Linux |
 | C. Multi-agent orchestration | Weak, since Claude Code has subagents | Hard | Yes |
 
@@ -51,7 +51,7 @@ Draft hero copy:
 > Hone runs any model, cloud or local, inside a kernel sandbox. It records what the model was given, what it touched and what it cost, so you can check every run.
 >
 > - **What it saw:** `hone context show` lists the memories, skills, files and token counts sent on each model call.
-> - **What it did:** `permissions.toml` decides which tools need your approval, and `hone trace` shows every network call.
+> - **What it did:** `permissions.toml` decides which tools need your approval, and with `--audit`, `hone trace` lists every tool call.
 > - **What it cost:** a live cost per turn, budget caps, and `hone reports diff` to compare runs.
 
 Wording rules from the strategy apply: "evidence" and "recorded", never "proof of honest execution".
@@ -69,11 +69,11 @@ Wording rules from the strategy apply: "evidence" and "recorded", never "proof o
    - the permission prompt appears and is approved;
    - the agent finishes;
    - `hone context show` lists what the model was given;
-   - `hone trace` lists the network calls.
+   - `hone trace` lists the tool calls (the run uses `--audit`).
 
    Use a local Ollama model, so it costs nothing and anyone can reproduce it. Keep the GIF under 3 MB, or upload an MP4 through GitHub's attachment URL so it isn't in the repo.
 3. **"Three ways to use it", with pictures.** One screenshot each of the terminal UI, the web UI and the desktop app, side by side. Today these are text walk-throughs only, and the repo has no screenshots.
-4. **One diagram, about receipts.** Replace the README's orchestration-pattern diagram with one showing where receipts are recorded: model call, tool call, network call, cost. Move the existing three Mermaid diagrams to `docs/architecture.md`.
+4. **One diagram, about receipts.** Replace the README's orchestration-pattern diagram with one showing where receipts are recorded: model call, tool call, permission decision, cost. Move the existing three Mermaid diagrams to `docs/architecture.md`.
 5. **GitHub callouts for caveats:**
    - `> [!NOTE]` for "Landlock is opt-in on Linux" and "Windows isn't supported";
    - `> [!WARNING]` for anything that spends money.
@@ -92,7 +92,7 @@ Wording rules from the strategy apply: "evidence" and "recorded", never "proof o
 3. **Make `hone --version` print the git commit and build date,** so stale builds are obvious to users, and in bug reports.
 4. **A path with no API key, written up as fully as the API-key path:**
    - **Ollama:** `hone configure` already offers it, with the default local address.
-   - **A Claude subscription:** the `claude-cli:` adapter lets Claude Code subscribers use Hone without an API key. That's a strong on-ramp, and nobody would guess it from today's README.
+   - **Not a Claude subscription, yet.** The `claude-cli:` and `gemini-cli:` adapters run the CLI's own tools (Claude Code auto-accepts file edits), which Hone can't check, sandbox or record, and Hone refuses them when permission rules are set. Auto-detection also tries them before Ollama, so a user with Claude Code installed and no key gets Hone driving Claude Code's own tools unless they choose an Ollama model. *(Corrected 2026-11-13: an earlier version of this plan called `claude-cli:` a full on-ramp, and a later one wrongly called it chat only.)*
 5. **A sample repo to try it on,** for example `examples/first-task/` with one failing test. The first run then works the same for everyone and shows the receipts.
 6. **A short troubleshooting box:**
    - no provider found;

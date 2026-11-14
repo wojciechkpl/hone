@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img alt="Rust 1.85+" src="https://img.shields.io/badge/rust-1.85%2B-orange">
+  <img alt="Rust 1.88+" src="https://img.shields.io/badge/rust-1.88%2B-orange">
   <img alt="License" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-informational">
   <img alt="MCP" src="https://img.shields.io/badge/MCP-client%20%2B%20server-6e40c9">

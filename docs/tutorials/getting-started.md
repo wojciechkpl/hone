@@ -4,7 +4,7 @@ This guide walks you through setting up Hone, configuring your first model provi
 
 ## Prerequisites
 
-- **Rust 1.85+**: Check with `rustc --version`. Install from https://rustup.rs if needed.
+- **Rust 1.88+**: Check with `rustc --version`. Install from https://rustup.rs if needed.
 - **Cargo**: Comes with Rust. Verify with `cargo --version`.
 - **Git**: For cloning and version control features. `git --version` to verify.
 - **System dependencies** (varies by platform):

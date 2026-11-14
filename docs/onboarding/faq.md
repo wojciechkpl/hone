@@ -6,7 +6,7 @@ Answers organized by topic. Click a category to jump to it, or search the page.
 
 ### How do I install Hone?
 
-Build from source using Cargo (Rust 1.85+):
+Build from source using Cargo (Rust 1.88+):
 
 ```bash
 git clone https://github.com/honelang/hone.git
@@ -20,7 +20,7 @@ See [Getting Started](../tutorials/getting-started.md) for detailed instructions
 
 ### What Rust version do I need?
 
-Rust 1.85 or later. Check your version with `rustc --version`. Upgrade via `rustup update`.
+Rust 1.88 or later. Check your version with `rustc --version`. Upgrade via `rustup update`.
 
 ### Does Hone work on Windows?
 
