@@ -6,13 +6,16 @@
   </picture>
 </p>
 
+<h3 align="center">The coding agent that shows its receipts.</h3>
+
 <p align="center">
-  <strong>The Universal Terminal AI Code Agent</strong>
+  Hone is an open-source coding agent written in Rust. It works with any model, cloud or local,
+  and records what the model was given, what the agent did and what it cost, so you can check every run.
 </p>
 
 <p align="center">
+  <a href="#quick-start">Quick start</a> •
   <a href="#installation">Installation</a> •
-  <a href="#quick-start">Quick Start</a> •
   <a href="#whats-new">What's new</a> •
   <a href="#features">Features</a> •
   <a href="#documentation">Documentation</a> •
@@ -20,13 +23,48 @@
 </p>
 
 <p align="center">
+  <img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg">
+  <img alt="Platforms: macOS and Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey.svg">
   <img alt="Rust 1.85+" src="https://img.shields.io/badge/rust-1.85+-orange.svg">
-  <img alt="MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-4300%2B%20passing-brightgreen.svg">
-  <img alt="SWE-bench" src="https://img.shields.io/badge/SWE--bench%20v1-58%2F300%20(19.3%25)-green.svg">
 </p>
 
 ---
+
+## Receipts for every run
+
+- **What it saw.** `hone context show` lists every block sent on each model call: the system prompt, recalled memories, skills, code context and history, with where each came from and how many tokens it took.
+- **What it did.** Run with `--audit` and every tool call is recorded in `.hone/audit.jsonl`: its arguments, a preview of the result, whether a rule or the sandbox blocked it, and any prompt-injection warning. `hone trace` lists and summarises those records. Rules in `permissions.toml` allow, ask about or deny tool calls by shell command, file path or network host.
+- **What it cost.** The terminal UI shows the session's cost as it grows, and `[budget]` caps it. Each interactive session leaves a report, and `hone reports diff` compares two of them.
+
+## Quick start
+
+**1. Install.** You need [Rust 1.85+](https://rustup.rs) on macOS or Linux.
+
+```bash
+cargo install --locked --git https://github.com/wojciechkpl/hone hone-cli honed
+```
+
+**2. Choose a model.** Use an API key, or run a model on your own machine with [Ollama](https://ollama.com) and no key at all.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, for OpenAI or any OpenAI-compatible endpoint
+
+# Or, with no API key:
+ollama pull qwen2.5-coder:14b         # then add --model ollama:qwen2.5-coder:14b to the commands below
+```
+
+`hone configure` walks through the same choice and saves it to `~/.config/hone/config.toml`.
+
+**3. Run a task, then read the receipts.**
+
+```bash
+cd your-project
+hone --audit "add a test for the empty-input case in the parser"
+hone context show    # what the model was given, call by call
+hone trace list      # what the agent did
+```
+
+Run `hone` with no arguments for the interactive terminal UI. See [Usage](#usage) for more, and [Installation](#installation) for other ways to install.
 
 ## Demo
 
@@ -34,8 +72,8 @@
   <img src="assets/demo.svg" alt="Hone demo — fixing a ZeroDivisionError end-to-end">
 </p>
 
-<sub><i>Step-by-step animation, ~12 s loop. Each panel fades in as the agent
-takes the next action: prompt → read_file → edit_file (diff) → cargo test
+<sub><i>A hand-drawn animation of a typical session, not a screen recording; a real recording will replace it.
+Each panel fades in as the agent takes the next action: prompt → read_file → edit_file (diff) → cargo test
 (green) → fix summary → cost line.</i></sub>
 
 ### Step-by-step
@@ -120,9 +158,11 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 
 ## Why Hone
 
-**Your models, your machine, your rules.** Hone doesn't phone home. No telemetry. No vendor lock-in. Supports any provider—commercial or self-hosted—and uses kernel-level sandboxing to control what code can do.
+**Every run leaves receipts.** You can check what the model was given, which tools the agent called and what it spent, instead of taking the agent's word for it. See [Receipts for every run](#receipts-for-every-run).
 
-**Intelligence compounds.** Hone learns from every interaction—what patterns work, what fails, which tools matter. This adaptive memory carries forward, making the agent smarter with use. Insights cross repo boundaries through semantic indexing.
+**Your models, your machine, your rules.** Hone doesn't phone home. No telemetry. No vendor lock-in. Supports any provider—commercial or self-hosted—and sandboxes shell commands at the kernel level (Seatbelt on macOS; Landlock on Linux, opt-in).
+
+**Memory you can inspect.** Hone keeps memories across sessions and recalls the relevant ones into later prompts. `hone memory ls` lists them, `hone memory forget` prunes them, and `hone context show` shows which ones reached the model on each call.
 
 **Work from anywhere.** Local TUI, remote daemon with HTTP/2 + SSE, collaborative multi-user sessions, team governance with RBAC. Run honed on a server, connect from any terminal.
 
@@ -865,7 +905,7 @@ graph TB
 
 ## Installation
 
-### Option 1: Install from crates.io (recommended)
+### Option 1: Install with cargo (recommended)
 
 Requires [Rust 1.85+](https://rustup.rs). If you don't have Rust, install it first:
 
@@ -873,13 +913,16 @@ Requires [Rust 1.85+](https://rustup.rs). If you don't have Rust, install it fir
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-Then install Hone:
+Then install Hone from this repository:
 
 ```bash
-cargo install hone-cli honed
+cargo install --locked --git https://github.com/wojciechkpl/hone hone-cli honed
 ```
 
 This installs both `hone` (CLI agent) and `honed` (server daemon) to `~/.cargo/bin/`.
+
+> [!NOTE]
+> The `hone-cli` and `honed` packages on crates.io (0.1.0) are an early build that predates most of this README. Install from the repository as above until a new release is published.
 
 ### Option 2: Build from Source
 
@@ -911,14 +954,17 @@ cargo run --release --bin hone -- "fix the bug"
 ### Verify Installation
 
 ```bash
-hone --version    # hone-cli 0.1.0
+hone --version    # hone 0.1.0
 honed --version   # honed 0.1.0
+which hone        # ~/.cargo/bin/hone
 ```
+
+Every build reports 0.1.0 for now, so the version doesn't tell an old install from a new one. If you installed from crates.io before, run the update command below.
 
 ### Update
 
 ```bash
-cargo install hone-cli honed --force
+cargo install --locked --force --git https://github.com/wojciechkpl/hone hone-cli honed
 ```
 
 ### Uninstall
@@ -942,17 +988,9 @@ ollama pull qwen2.5-coder:14b
 hone --model ollama:qwen2.5-coder:14b "hello"
 ```
 
-## Quick Start
+`hone configure` saves your choice to `~/.config/hone/config.toml`. If you haven't chosen a model and no API key is set, Hone looks for an installed Claude Code (`claude`) or Gemini CLI (`gemini`) before it looks for Ollama. Those two are chat only: the model can answer, but it can't call tools, so it can't read or edit your files. To get tool calling without a key, choose an Ollama model with `--model` or `hone configure`.
 
-### First Time Setup
-
-Run the interactive configuration wizard to set up your provider and API keys:
-
-```bash
-hone configure
-```
-
-This guides you through selecting a model provider, entering API keys, and choosing a default model. Configuration is saved to `~/.config/hone/config.toml`.
+## Usage
 
 ### One-Shot Execution with Full Tool Use
 
@@ -1398,62 +1436,65 @@ Binaries:
 
 ## How Hone Compares
 
-An honest comparison. We list where competitors are better, not just where Hone wins.
+An honest comparison, including where the others are ahead. Every competitor cell was checked against that tool's own docs or repository on 13 November 2026, and the sources are listed below. These tools change quickly, so please [open an issue](https://github.com/wojciechkpl/hone/issues) if a cell is out of date.
 
-| Feature | Hone | Claude Code | Codex CLI | Goose | Kiro | Gemini CLI |
-|---------|------|------------|-----------|-------|------|------------|
-| **Open source** | MIT/Apache-2.0 | Proprietary | Open (Apache-2.0) | Open (Apache-2.0) | Proprietary | Apache-2.0 |
-| **Terminal-native** | Yes | Yes | Yes | Yes (+ Electron) | No (VS Code only) | Yes |
-| **Multi-agent orchestration** | DAG + ensemble + RALPH | No | No | No | No | No |
-| **Kernel sandboxing** | Seatbelt (macOS); Landlock opt-in (Linux) | Container | Container | No | No | No |
-| **Encrypted memory** | AES-256-GCM | No | No | No | No | No |
-| **MCP extensions** | 70+ via .hone/mcp.json | Yes (native) | No | 70+ | Yes | Yes |
-| **Provider support** | 7+ (any OpenAI-compat) | Claude only | OpenAI only | 30+ | Bedrock only | Gemini only |
-| **Context optimization** | BM25 + call graph + adaptive | Basic | Basic | Summarization | Unknown | 1M+ window |
-| **Tool calling** | Native + text fallback | Native | Native | Native | Native | Native |
-| **Session management** | SQLite + resume | Yes | No | Yes | No | No |
-| **Recipes/workflows** | 9 built-in YAML | No | No | No | Spec-driven plans | No |
-| **Cost tracking** | Live status bar + audit | No | No | CLI command | No | No |
-| **TDD mode** | :tdd file watcher | No | No | No | No | No |
-| **Review mode** | Hunk accept/reject | No | No | No | No | No |
+| | Hone | Claude Code | Codex CLI | Goose | Kiro | Gemini CLI |
+|---|---|---|---|---|---|---|
+| **Licence** | MIT / Apache-2.0 | Proprietary | Apache-2.0 | Apache-2.0 | Proprietary | Apache-2.0 |
+| **Where it runs** | Terminal, web UI, desktop app | Terminal, IDE extensions, desktop and web apps | Terminal, IDE extension, desktop app | Terminal, desktop app | IDE, terminal (Kiro CLI) | Terminal, IDE integration |
+| **Models** | 7 adapters, any OpenAI-compatible endpoint, local via Ollama | Claude only | OpenAI, local (`--oss`), custom providers | 15+ providers | Hosted models from several vendors | Gemini only |
+| **OS sandbox for commands** | Seatbelt on macOS (on by default); Landlock on Linux (opt-in) | Seatbelt or bubblewrap (off by default) | Seatbelt, bubblewrap + seccomp, or Windows (on by default) | Permission modes | Seatbelt, bubblewrap or Windows (off by default) | Opt-in: Seatbelt, containers, gVisor and others |
+| **MCP** | Yes | Yes | Yes | Yes (70+ extensions) | Yes | Yes |
+| **Subagents** | Yes, plus DAG orchestration, ensembles and a RALPH loop | Yes; agent teams (experimental) | Yes, in parallel | Yes, in parallel | Yes, in parallel | Yes |
+| **Reusable workflows** | 9 YAML recipes, agents, skills | Skills, slash commands, plugins | Skills, plugins | Recipes, subrecipes | Specs, hooks, steering, skills | Custom commands, skills, extensions |
+| **Spend shown** | Live $ in the TUI, session cap, session reports | `/cost` | Tokens and plan usage | Estimated $ | Credits (`/usage`) | Tokens and quota (`/stats`) |
+| **Review edits by hunk** | Yes (TUI) | Per change in VS Code; per edit in the terminal | Not found | Not found | Yes (IDE, Supervised mode) | Per file in the IDE diff view |
+
+All six resume saved sessions, so that row is gone. Gemini CLI is now for Gemini Code Assist Standard and Enterprise customers: free individual access [moved to Antigravity CLI](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/) in June 2026.
 
 ### Where Competitors Are Better (honestly)
 
-| Area | Winner | Why |
-|------|--------|-----|
-| **SWE-bench resolve rate** | Claude Code (72%) | Hone: 19.3%. Claude Code uses Sonnet 4.5 ($3/task vs Hone's $0.03). |
-| **Community size** | Claude Code (~71K stars) | Hone is new. Goose has ~20K, Gemini CLI ~50K. |
-| **Context window** | Gemini CLI (1M+ tokens) | Eliminates context management complexity entirely. |
-| **IDE integration** | Kiro, Cursor | VS Code native. Hone is terminal-only (web UI planned). |
-| **Free usage** | Gemini CLI (free tier) | Corporate-subsidized. Hone requires your own API key. |
-| **Spec-driven planning** | Kiro | Generates requirements docs before coding. Hone has recipes but not specs. |
-| **Desktop GUI** | Goose (Electron) | Hone is terminal-only. |
+| Area | Ahead | Why |
+|------|-------|-----|
+| **Resolve rate** | Agents on frontier models | Hone's only graded result is 19.3% on SWE-bench Lite with DeepSeek V3 (April 2026). Agents running frontier models score far higher on SWE-bench Verified. A like-for-like comparison is in progress ([plan](docs/plans/trust-defaults-daemon-2026-11.md)). |
+| **Community** | All of them | Each has tens of thousands of GitHub stars or more. Hone is new. |
+| **IDE integration** | Kiro, Claude Code, Codex CLI, Gemini CLI | Kiro is an IDE, and the others have IDE extensions. Hone has a terminal UI, a web UI and a desktop app, but no IDE extension. |
+| **Sandbox on by default on Linux** | Codex CLI | Codex sandboxes commands by default on Linux. Hone's Landlock sandbox is opt-in. |
+| **Windows** | Codex CLI, Kiro, Claude Code | They run on Windows, and Codex and Kiro sandbox commands there. Hone doesn't support Windows. |
+| **Spec-driven planning** | Kiro | Its IDE workflow is built around specs. Hone can generate a Kiro-style spec (`hone spec`), but specs aren't central to how it works. |
 
 ### Where Hone Wins
 
 | Area | Detail |
 |------|--------|
-| **Cost efficiency** | ~$0.03/task (DeepSeek V3) vs $0.50–$3.00 for frontier-model agents: roughly 17–100× cheaper per task, at a lower resolve rate (19.3% vs 72%). |
+| **Receipts** | Per-call context receipts (`hone context show`), a tool-call audit log (`hone trace`), injection warnings, and session reports you can diff. |
+| **Model choice** | Any OpenAI-compatible endpoint, cloud or local, with routing by task and fallback models. Claude Code and Gemini CLI each run one vendor's models. |
+| **Cost efficiency** | ~$0.03/task (DeepSeek V3) vs $0.50–$3.00 for frontier-model agents: roughly 17–100× cheaper per task, at a lower resolve rate (see above). |
 | **Privacy** | Kernel sandbox (macOS; Linux opt-in) + encrypted memory + no telemetry. Nothing leaves your machine except calls to your model provider. |
-| **Multi-agent** | Only agent with DAG orchestration, ensemble voting, RALPH loop, reviewer. |
-| **Flexibility** | Works with any OpenAI-compatible model. DeepSeek, Qwen, Ollama (local, $0). |
-| **Observability** | Hierarchical tracing, egress audit, injection detection, cost tracking. |
-| **Structured workflows** | 9 recipes, TDD mode, review mode, scope clarification, @agent dispatch. |
+| **Multi-agent patterns** | Beyond subagents: DAG orchestration, ensemble voting (several candidates, the best one kept) and a RALPH loop with a reviewer. |
 
 ### Choose Hone If...
-- You want to run AI coding with **your own models** (not locked to one vendor)
-- **Privacy matters** — kernel sandbox, encrypted memory, no telemetry
-- You need **multi-agent orchestration** for complex tasks
-- You want **$0.03/task** instead of $3/task
-- You prefer **terminal-native** tools over IDE extensions
-- You need **structured workflows** (TDD, security audit, code review recipes)
+- You want to **check what the agent saw and did**, not take its word for it
+- You want to run **your own models**, cloud or local, not one vendor's
+- **Privacy matters**: kernel sandbox, encrypted memory, no telemetry
+- You want **cheap models to go further** (~$0.03/task with DeepSeek V3, at a lower resolve rate)
 
 ### Choose Something Else If...
-- You need the **highest possible SWE-bench score** → Claude Code
-- You want **IDE integration** → Kiro or Cursor
-- You want a **desktop GUI** → Goose
-- You want **free unlimited usage** → Gemini CLI
-- You need **1M+ token context** → Gemini CLI
+- You need the **highest resolve rate** today → an agent running a frontier model, such as Claude Code or Codex CLI
+- You want **IDE integration** → Kiro, or the IDE extensions of Claude Code, Codex CLI or Gemini CLI
+- You work on **Windows** → Codex CLI, Kiro or Claude Code
+- You want a **sandbox on by default on Linux** → Codex CLI
+
+<details>
+<summary>Sources (checked 13 November 2026)</summary>
+
+- **Claude Code:** [licence](https://github.com/anthropics/claude-code/blob/main/LICENSE.md), [overview](https://code.claude.com/docs/en/overview), [agent teams](https://code.claude.com/docs/en/agent-teams), [sandboxing](https://code.claude.com/docs/en/sandboxing), [MCP](https://code.claude.com/docs/en/mcp), [model providers](https://code.claude.com/docs/en/third-party-integrations), [skills](https://code.claude.com/docs/en/skills), [costs](https://code.claude.com/docs/en/costs)
+- **Codex CLI:** [repository](https://github.com/openai/codex), [subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents), [sandboxing](https://learn.chatgpt.com/docs/sandboxing), [MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [providers](https://learn.chatgpt.com/docs/config-file/config-advanced), [skills](https://learn.chatgpt.com/docs/build-skills), [commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
+- **Goose:** [repository](https://github.com/aaif-goose/goose), [subagents](https://goose-docs.ai/docs/guides/context-engineering/subagents), [providers](https://goose-docs.ai/docs/getting-started/providers), [recipes](https://goose-docs.ai/docs/guides/recipes), [sessions](https://goose-docs.ai/docs/guides/sessions/session-management), [cost display](https://goose-docs.ai/docs/guides/sessions/smart-context-management)
+- **Kiro:** [CLI](https://kiro.dev/docs/cli/), [subagents](https://kiro.dev/docs/custom-agents/subagents/), [sandbox](https://kiro.dev/docs/sandbox/), [MCP](https://kiro.dev/docs/mcp/), [models](https://kiro.dev/docs/models/available-models/), [specs](https://kiro.dev/docs/specs/), [slash commands](https://kiro.dev/docs/reference/slash-commands/), [hunk review](https://kiro.dev/changelog/ide/0-10/)
+- **Gemini CLI:** [repository](https://github.com/google-gemini/gemini-cli), [docs](https://geminicli.com/docs/), [subagents](https://geminicli.com/docs/core/subagents), [sandbox](https://geminicli.com/docs/cli/sandbox), [MCP](https://geminicli.com/docs/tools/mcp-server), [custom commands](https://geminicli.com/docs/cli/custom-commands), [commands](https://geminicli.com/docs/reference/commands), [IDE integration](https://geminicli.com/docs/ide-integration), [Antigravity CLI transition](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)
+
+</details>
 
 ## Documentation
 
@@ -1478,11 +1519,11 @@ An honest comparison. We list where competitors are better, not just where Hone 
 
 ## Testing
 
-Hone passes **1,100+ tests** (unit + integration) across 13 crates with the workspace clippy/rust lint policy applied to every crate.
+Hone has **more than 5,000 tests** (unit + integration) across the workspace's 23 crates, with the workspace clippy/rust lint policy applied to every crate.
 
 ```bash
 # Run all tests
-cargo test --lib
+cargo test --workspace
 
 # Run with logging
 RUST_LOG=debug cargo test --lib -- --nocapture
