@@ -10,7 +10,7 @@ Hone is a Rust-based AI coding agent with a Ratatui TUI. The tagline is "SHARPEN
 
 **Background:** near-black navy #0E1117. Surface layers step up in luminance: raised #161B24, overlay #1E2535.
 
-**Design spec location:** `/Users/wojciechkowalinski/Sync/work/hone/docs/tui-design-spec.md`
+**Design spec location:** `docs/tui-design-spec.md`
 
 **Key architectural decisions:**
 - The `Theme` struct needs a full expansion from 6 fields to ~35 tokens (see spec Section 18.1)

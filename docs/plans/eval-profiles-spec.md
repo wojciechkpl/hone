@@ -6,7 +6,7 @@ Branch `feat/eval-profiles`, stacked on `feat/env-snapshot` (PR E). Plan: `docs/
 
 `hone eval` can't measure anything about context or memory, and today it can't run a real task either:
 - `EvalRunner::run_one` (`crates/hone-eval/src/runner.rs`) builds an `AgentConfig` with an empty `ToolRegistry`, no memory, no index and `inject_context: false`, so the agent can't read or edit a file.
-- Its model id is the literal `eval:mock`, which a real provider rejects; `cmd_eval` only builds Anthropic or OpenAI providers, so local models (Ollama on wk-system) can't be used.
+- Its model id is the literal `eval:mock`, which a real provider rejects; `cmd_eval` only builds Anthropic or OpenAI providers, so local models (such as Ollama) can't be used.
 - Tasks share and mutate their working directory, there are no repeats, and the report has no confidence intervals.
 
 Phase 4 merges each new strategy "with its eval report", and the Meta-Harness paper's lesson is that harness changes need measuring on small, hard task sets one slot at a time. That needs this PR.
@@ -113,5 +113,5 @@ Verification approved F32–F34. Two problems remain. A violation that follows a
 ## Out of scope
 
 - The 20-task starter suite (follow-up PR F2: tasks, fixtures and checks, including non-coding tasks).
-- Running a comparison: that costs model calls, or wk-system time with a local model, and waits for the user.
+- Running a comparison: that costs model calls, or machine time with a local model, and waits for the user.
 - `hone eval search` (Phase 5).
