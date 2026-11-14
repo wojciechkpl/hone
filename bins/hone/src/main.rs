@@ -172,8 +172,8 @@ enum HoneCmd {
 #[derive(Parser)]
 #[command(
     name = "hone",
-    version,
-    about = "The universal terminal AI coding agent"
+    version = env!("HONE_LONG_VERSION"),
+    about = "The coding agent that shows its receipts"
 )]
 struct Cli {
     /// Run a single prompt and exit (one-shot mode)

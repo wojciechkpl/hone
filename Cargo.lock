@@ -2588,6 +2588,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hone-build-info"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "hone-cache"
 version = "0.1.0"
 dependencies = [
@@ -2615,6 +2623,7 @@ dependencies = [
  "crossterm",
  "dirs-next",
  "futures",
+ "hone-build-info",
  "hone-cache",
  "hone-config",
  "hone-core",
@@ -3053,6 +3062,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "hone-build-info",
  "hone-config",
  "hone-core",
  "hone-eval",
