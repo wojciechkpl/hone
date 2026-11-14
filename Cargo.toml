@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/hone-build-info",
     "crates/hone-cache",
     "crates/hone-proto",
     "crates/hone-config",
@@ -39,6 +40,7 @@ categories = ["command-line-utilities", "development-tools"]
 [workspace.dependencies]
 libc = "0.2"
 # Internal crates (path for local dev, version for crates.io publish)
+hone-build-info = { version = "0.1.0", path = "crates/hone-build-info" }
 hone-cache = { version = "0.1.0", path = "crates/hone-cache" }
 hone-proto = { version = "0.1.0", path = "crates/hone-proto" }
 hone-config = { version = "0.1.0", path = "crates/hone-config" }

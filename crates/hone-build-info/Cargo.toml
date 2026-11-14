@@ -1,0 +1,17 @@
+[package]
+name = "hone-build-info"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Build-script helper that embeds the git commit and date in --version output"
+
+[dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

@@ -33,6 +33,9 @@ axum = { workspace = true }
 uuid = { workspace = true }
 hostname = "0.4"
 
+[build-dependencies]
+hone-build-info = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 

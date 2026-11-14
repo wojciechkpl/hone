@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("honed {}", env!("CARGO_PKG_VERSION"));
+        println!("honed {}", env!("HONE_LONG_VERSION"));
         println!();
         println!("Usage: honed [PORT]");
         println!();
@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
     }
 
     if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("honed {}", env!("CARGO_PKG_VERSION"));
+        println!("honed {}", env!("HONE_LONG_VERSION"));
         return Ok(());
     }
 
