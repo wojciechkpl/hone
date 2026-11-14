@@ -3,6 +3,9 @@
 use std::path::Path;
 use std::process::Command;
 
+/// The long version baked in by build.rs (reaches integration tests via cargo:rustc-env).
+const LONG: &str = env!("HONE_LONG_VERSION");
+
 fn run(args: &[&str]) -> (String, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_honed"))
         .args(args)
@@ -14,41 +17,54 @@ fn run(args: &[&str]) -> (String, String) {
     )
 }
 
-/// Parse "honed X.Y.Z (<12 hex> YYYY-MM-DD)" strictly; returns (sha, date).
-fn parse_version_line(line: &str) -> (String, String) {
-    let rest = line.strip_prefix("honed ").unwrap_or_default();
-    assert!(!rest.is_empty(), "bad prefix: {line:?}");
-    let (semver, tail) = rest.split_once(' ').unwrap_or_default();
-    assert!(!tail.is_empty(), "no space after semver: {line:?}");
+fn all_digits(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
+}
+
+fn is_lower_hex(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+}
+
+fn is_date(s: &str) -> bool {
+    let d: Vec<&str> = s.split('-').collect();
+    d.len() == 3
+        && d[0].len() == 4
+        && d[1].len() == 2
+        && d[2].len() == 2
+        && d.iter().all(|p| all_digits(p))
+}
+
+/// Parsed long version: (sha, date). Both None for "commit unknown".
+/// Accepts `X.Y.Z (<12 hex> <date>)`, `X.Y.Z (<7..12 hex>)`, `X.Y.Z (commit unknown)`.
+fn parse_long_version(v: &str) -> (Option<String>, Option<String>) {
+    let (semver, tail) = v.split_once(' ').unwrap_or_default();
     let parts: Vec<&str> = semver.split('.').collect();
     assert!(
-        parts.len() == 3
-            && parts
-                .iter()
-                .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())),
-        "bad semver in {line:?}"
+        parts.len() == 3 && parts.iter().all(|p| all_digits(p)),
+        "bad semver in {v:?}"
     );
     let inner = tail
         .strip_prefix('(')
         .and_then(|t| t.strip_suffix(')'))
         .unwrap_or_default();
-    assert!(!inner.is_empty(), "no parens: {line:?}");
-    let (sha, date) = inner.split_once(' ').unwrap_or_default();
-    assert!(!date.is_empty(), "no sha/date split: {line:?}");
-    assert!(
-        sha.len() == 12 && sha.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')),
-        "sha must be 12 lowercase hex: {line:?}"
-    );
-    let d: Vec<&str> = date.split('-').collect();
-    assert!(
-        d.len() == 3
-            && d[0].len() == 4
-            && d[1].len() == 2
-            && d[2].len() == 2
-            && d.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())),
-        "date must be YYYY-MM-DD: {line:?}"
-    );
-    (sha.to_string(), date.to_string())
+    assert!(!inner.is_empty(), "no parenthesised part in {v:?}");
+    if inner == "commit unknown" {
+        return (None, None);
+    }
+    match inner.split_once(' ') {
+        Some((sha, date)) => {
+            assert!(sha.len() == 12 && is_lower_hex(sha), "bad sha in {v:?}");
+            assert!(is_date(date), "bad date in {v:?}");
+            (Some(sha.to_string()), Some(date.to_string()))
+        }
+        None => {
+            assert!(
+                (7..=12).contains(&inner.len()) && is_lower_hex(inner),
+                "bad sha in {v:?}"
+            );
+            (Some(inner.to_string()), None)
+        }
+    }
 }
 
 fn git(args: &[&str]) -> Option<String> {
@@ -63,46 +79,62 @@ fn git(args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-fn assert_matches_checkout(sha: &str, date: &str) {
+/// Strict comparison with the surrounding checkout, only when the build
+/// could have read it (no packager override, commit known, git usable).
+fn assert_matches_checkout() {
+    let (sha, date) = parse_long_version(LONG);
+    let Some(sha) = sha else {
+        eprintln!("note: version is 'commit unknown'; skipping checkout comparison");
+        return;
+    };
+    if option_env!("HONE_BUILD_GIT_SHA").is_some() {
+        eprintln!("note: HONE_BUILD_GIT_SHA override set; skipping checkout comparison");
+        return;
+    }
     if git(&["rev-parse", "--is-inside-work-tree"]).as_deref() != Some("true") {
-        eprintln!("note: not in a git checkout; skipping sha/date comparison");
+        eprintln!("note: not in a git checkout; skipping checkout comparison");
         return;
     }
     let (Some(head), Some(cs)) = (
         git(&["rev-parse", "--short=12", "HEAD"]),
-        git(&["log", "-1", "--format=%cs"]),
+        git(&["log", "-1", "--no-show-signature", "--format=%cs", "HEAD"]),
     ) else {
-        eprintln!("note: git queries failed; skipping sha/date comparison");
+        eprintln!("note: git queries failed; skipping checkout comparison");
         return;
     };
     assert_eq!(sha, head, "sha should equal HEAD short=12");
-    assert_eq!(date, cs, "date should equal HEAD committer date");
-}
-
-fn single_line(out: &str) -> &str {
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines.len(), 1, "expected exactly one line, got {out:?}");
-    lines[0]
+    assert_eq!(
+        date.as_deref(),
+        Some(cs.as_str()),
+        "date should equal HEAD committer date"
+    );
 }
 
 #[test]
-fn test_version_long_flag_should_print_one_line_with_commit_and_date() {
+fn test_version_long_flag_should_print_exactly_the_embedded_long_version() {
     let (out, _) = run(&["--version"]);
-    let (sha, date) = parse_version_line(single_line(&out));
-    assert_matches_checkout(&sha, &date);
+    assert_eq!(out, format!("honed {LONG}\n"));
 }
 
 #[test]
-fn test_version_short_flag_should_print_one_line_with_commit_and_date() {
+fn test_version_short_flag_should_print_exactly_the_embedded_long_version() {
     let (out, _) = run(&["-V"]);
-    let (sha, date) = parse_version_line(single_line(&out));
-    assert_matches_checkout(&sha, &date);
+    assert_eq!(out, format!("honed {LONG}\n"));
 }
 
 #[test]
-fn test_help_first_line_should_carry_commit_and_date() {
+fn test_embedded_long_version_should_have_a_valid_shape() {
+    let _ = parse_long_version(LONG);
+}
+
+#[test]
+fn test_embedded_long_version_should_match_checkout_when_resolvable() {
+    assert_matches_checkout();
+}
+
+#[test]
+fn test_help_first_line_should_be_the_embedded_long_version() {
     let (out, _) = run(&["--help"]);
     let first = out.lines().next().expect("help has a first line");
-    let (sha, date) = parse_version_line(first);
-    assert_matches_checkout(&sha, &date);
+    assert_eq!(first, format!("honed {LONG}"));
 }
