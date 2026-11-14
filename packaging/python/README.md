@@ -15,7 +15,7 @@ the workspace root and copies both binaries into the wheel's data dir.
 After install, `hone` and `honed` are on your `PATH` (under
 `~/.local/bin/` or whatever pip installed scripts to).
 
-Requires Rust 1.85+ at build time. Once installed, the binaries run
+Requires Rust 1.88+ at build time. Once installed, the binaries run
 without any Python or Rust toolchain present.
 
 ## Layout

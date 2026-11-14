@@ -29,7 +29,7 @@ Hone is built in Rust and runs entirely on your machine. Here's how to install i
 ### Prerequisites
 
 You need:
-- **Rust 1.85+** — the language Hone is written in
+- **Rust 1.88+** — the language Hone is written in
 - **Git** — for version control
 - **A command-line terminal** — bash, zsh, or similar
 
@@ -38,7 +38,7 @@ You need:
 ```bash
 # Check Rust version
 rustc --version
-# Expected: rustc 1.85.0 or higher
+# Expected: rustc 1.88.0 or higher
 
 # Check Cargo (comes with Rust)
 cargo --version

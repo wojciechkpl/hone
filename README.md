@@ -33,11 +33,11 @@
 ## Receipts
 
 - **What it saw.** After a one-shot run (`hone "task"`), `hone context show` lists every block sent on each model call: the system prompt, recalled memories, skills, code context and history, with where each came from and how many tokens it took.
-- **What it did.** Run with `--audit` (or set `HONE_AUDIT_LOG=1`) and every tool call Hone runs is recorded in `.hone/audit.jsonl`: its arguments, a preview of the result, whether a permission rule blocked it, and any prompt-injection warning. `hone trace list` shows one row per run, and `hone trace show <id>` shows its calls. Rules in `permissions.toml` allow, ask about or deny tool calls by shell command, file path or network host.
+- **What it did.** Run with `--audit` (or set `HONE_AUDIT_LOG=1`) and every tool call Hone runs is recorded in `.hone/audit.jsonl`: its arguments, a preview of the result, whether a permission rule blocked it, and any prompt-injection warning. `hone trace list` shows one row per turn, and `hone trace show <id>` shows that turn's calls. Rules in `permissions.toml` allow, ask about or deny tool calls by shell command, file path or network host.
 - **What it cost.** The terminal UI shows the session's cost as it grows, and `[budget]` caps it. Each interactive session leaves a report, and `hone reports diff` compares two of them. One-shot runs report their cost with `--json`.
 
 > [!NOTE]
-> Context receipts are saved for one-shot runs today. The interactive TUI writes a cost report but doesn't save receipts yet, and the daemon behind the web UI and desktop app records neither receipts nor the audit log. The audit log keeps full tool arguments, so keep `.hone/` out of version control.
+> Context receipts are saved for one-shot runs today. The interactive TUI writes a cost report but doesn't save receipts yet, and the daemon behind the web UI and desktop app doesn't record either by default (`HONE_PROVENANCE_DIR` turns on a hash-chained run log). The audit log keeps full tool arguments, so keep `.hone/` out of version control.
 
 ## Quick start
 
@@ -67,8 +67,8 @@ ollama pull qwen2.5-coder:14b         # then add --model ollama:qwen2.5-coder:14
 cd your-project
 hone --audit "add a test for the empty-input case in the parser"
 hone context show       # what the model was given, call by call
-hone trace list         # one row per run
-hone trace show <id>    # the tool calls in that run
+hone trace list         # one row per turn
+hone trace show <id>    # the tool calls in that turn
 ```
 
 Run `hone` with no arguments for the interactive terminal UI. See [Usage](#usage) for more, and [Installation](#installation) for other ways to install.
@@ -171,7 +171,7 @@ Hone is a privacy-first, provider-agnostic AI coding agent built entirely in Rus
 
 **Memory you can inspect.** Hone keeps memories across sessions and recalls the relevant ones into later prompts. `hone memory ls` lists them, `hone memory forget` prunes them, and `hone context show` shows which ones reached the model on each call.
 
-**Work from anywhere.** Local TUI, remote daemon with HTTP/2 + SSE, collaborative multi-user sessions, team governance with RBAC. Run honed on a server, connect from any terminal.
+**Work from anywhere.** Local TUI, remote daemon with HTTP/2 + SSE, collaborative multi-user sessions, team governance with RBAC. Run honed on a server and connect from a browser, the desktop app or the HTTP API.
 
 ## What's new
 
@@ -279,7 +279,7 @@ See [routing and fallback](docs/configuration.md#routing-and-fallback).
 - **Adaptive hierarchical skeleton** — Proactive context injection with intelligent strategy selection: auto-detects repository size and auto-selects detail level. 4-level hierarchy: directory → file list → signatures → call graph. The default strategy is **Adaptive**; `call-graph`, `hybrid`, `dependency-graph` and `flat` are selectable with `--skeleton-strategy`. Adaptive skips large files (>100KB) and slow parses (>100ms). Progressive budget filling ensures efficient token use. Disable with `--no-inject` or `HONE_NO_INJECTION=1`. Its effect on SWE-bench resolve rate is being measured (see [SWE-bench Results](#swe-bench-results)).
 - **Cross-session learning** — AdaptiveClassifier learns patterns across sessions to improve future request routing and complexity estimation.
 - **Test-verification loop** — AgentCoder pattern that runs tests after each iteration (+40% bugs caught early).
-- **Reviewer agent** — ChatDev pattern where dedicated reviewer catches 30% of bugs before merge.
+- **Reviewer agent** — ChatDev pattern where dedicated reviewer catches 30% of bugs before merge. *Library only for now, used by the RALPH loop.*
 - **Self-refine loop** — Iterative improvement (NeurIPS 2023, +8-15% quality gain).
 - **RALPH loop** — Review, Analyze, Learn, Plan, Heal: structured feedback cycle combining adversarial review with root cause analysis. Max 3 iterations (configurable), stops when reviewer approves. Captures learned patterns for cross-session improvement. Optional test verification after each Heal step. Research basis: Self-Refine (NeurIPS 2023) + ChatDev + MASAI + AgentCoder. *Library only for now: no `hone` flag, TUI command or daemon endpoint runs it yet.*
 - **Universal model support** — five backends you can pick with `--model` (`anthropic:`, `openai:`, `ollama:`, `claude-cli:`, `gemini-cli:`), plus any OpenAI-compatible endpoint via `HONE_OPENAI_BASE_URL` (DeepSeek, Qwen, Kimi, OpenRouter, and others). Hone's own tools, permission rules and receipts work on Anthropic, OpenAI and Ollama. The Claude Code and Gemini CLI backends run their own tools instead (Claude Code auto-accepts file edits), which Hone can't check, sandbox or record; with permission rules set, Hone refuses them unless `HONE_ALLOW_UNGATED_PROVIDER=1`. An ACP adapter exists in the library but can't be selected from `hone` yet.
@@ -315,7 +315,7 @@ See [routing and fallback](docs/configuration.md#routing-and-fallback).
 - **Inline agent dispatch** — Use `@agent-name` syntax to swap system prompts on the fly (e.g., `@security-auditor "audit this code"`, `@debugger "fix this bug"`). 12 built-in agents available. Restores original prompt after the turn.
 - **Safe pipe operator** — Pipes to head/tail/grep/wc/sort now allowed in shell commands (were previously blocked). Pipes to unknown commands still treated as destructive.
 - **Ollama tool calling** — OllamaProvider now supports full tool calling (previously hardcoded to skip). Qwen 2.5 Coder 14B recommended for local use.
-- **Model override fixes** — `--model ollama` now directly creates OllamaProvider without falling back to Claude CLI when Ollama is explicitly requested.
+- **Model override fixes** — `--model ollama:<model>` now directly creates OllamaProvider without falling back to Claude CLI when Ollama is explicitly requested.
 - **Text-based tool call parser** — Detects JSON tool calls in model content for Ollama (handles models that don't use tool_calls field). Strips markdown code fences automatically.
 - **DeepSeek Direct compatibility** — Works for interactive use; for SWE-bench benchmarks, OpenRouter is recommended due to token output limits.
 - **Built-in agents** — 12 specialized agent personas (code reviewer, debugger, security auditor, ML engineer, etc.) with `@agent-name` inline dispatch. Plus 9 recipe templates for common workflows.
@@ -853,7 +853,7 @@ graph TB
         Ensemble["Ensemble<br/>(N candidates)"]
         Router["Complexity Router<br/>(Simple/Medium/Complex)"]
         TestLoop["Test-Verify Loop<br/>(AgentCoder pattern)"]
-        Reviewer["Reviewer Agent<br/>(ChatDev pattern)"]
+        Reviewer["Reviewer Agent<br/>(library only)"]
         SelfRefine["Self-Refine Loop<br/>(iterative improvement)"]
     end
 
@@ -882,7 +882,7 @@ graph TB
 
     subgraph Storage["Storage & Observability"]
         Memory["SQLite Memory<br/>(pattern learning)"]
-        Index["SQLite Index<br/>(semantic search)"]
+        Index["SQLite Index<br/>(symbol search)"]
         Watcher["File Watcher<br/>(incremental updates)"]
     end
 
@@ -986,7 +986,7 @@ hone configure
 
 # Or set an API key directly
 export ANTHROPIC_API_KEY=sk-ant-...   # Claude (best tool calling)
-export OPENAI_API_KEY=sk-...          # OpenAI / DeepSeek / OpenRouter
+export OPENAI_API_KEY=sk-...          # OpenAI; for DeepSeek or OpenRouter also set HONE_OPENAI_BASE_URL
 
 # Or use a free local model
 ollama pull qwen2.5-coder:14b
@@ -1026,8 +1026,8 @@ hone
 # Work on a specific project
 cd ~/projects/my-app && hone
 
-# Use a specific model
-hone --model gpt-4o
+# Use a specific model (provider:model)
+hone --model openai:gpt-4o
 
 # Ephemeral mode (no session saved, memory not persisted)
 hone --ephemeral
@@ -1050,8 +1050,8 @@ hone session rename old-name new-name
 # Delete a session
 hone session delete old-name
 
-# Start a new session with a specific name
-hone --session my-project
+# Name the session a one-shot run saves
+hone --session my-project "add a test for the parser"
 
 # Disable auto-save for this session (ephemeral mode)
 hone --ephemeral
@@ -1062,7 +1062,6 @@ hone --ephemeral
 ```bash
 # Start the daemon (port 3117 by default; HONE_BIND sets the address, HONE_AUTH_TOKEN the token)
 honed
-
 ```
 
 Connect to it with the web UI, the desktop app or the HTTP API: see [Remote Access & Web UI](#remote-access--web-ui). `hone` itself doesn't connect to a remote daemon.
@@ -1365,23 +1364,20 @@ Between 2 and 10 candidates are supported (`--ensemble 2` to `--ensemble 10`).
 | `hone configure` | Interactive setup wizard for providers, API keys, and models |
 | `hone` | Start interactive CLI session |
 | `hone "prompt"` | One-shot mode: single prompt and exit |
-| `hone --clarify "prompt"` | Enable scope clarification mode (auto-detects ambiguous requests, asks clarifying questions) |
 | `hone --no-clarify "prompt"` | Disable scope clarification for CI/scripting |
 | `hone --orchestrate "prompt"` | Multi-agent orchestrator (decompose-execute-merge) |
 | `hone --ensemble N "prompt"` | Run N candidates with varied temperatures, rank the best |
 | `hone --recipe <name>` | Run a built-in recipe (tdd-feature, bug-fix, code-review, refactor) |
 | `hone --list-recipes` | List all available recipes |
-| `hone --session NAME` | Start named session (auto-saved after each turn) |
+| `hone --session NAME "prompt"` | Name the session a one-shot run saves when it finishes |
 | `hone --ephemeral` | No session/memory persistence for this run |
 | `hone --vim` | Start in vim mode (vim-style keybindings) |
 | `hone --json` | Output structured JSON for CI/CD automation |
 | `hone --no-inject` | Disable proactive context injection (also set HONE_NO_INJECTION=1) |
-| `hone --skeleton-strategy call_graph` | Select skeleton strategy: call_graph (default, adaptive), hybrid, flat, dependency_graph |
-| `hone --inject-context` | Explicitly enable context injection (already default, useful for config overrides) |
+| `hone --skeleton-strategy adaptive` | Select the skeleton strategy: adaptive (default), call-graph, hybrid, dependency-graph, flat |
 | `hone --audit` | Enable JSONL egress audit log (also set HONE_AUDIT_LOG=1) |
 | `hone --var KEY=VALUE` | Substitute template variables in recipes (repeatable) |
-| `hone --model <name>` | Use a specific model (e.g., `--model ollama` for Ollama, `--model gpt-4o` for OpenAI) |
-| `hone --model ollama` | Use Ollama with tool calling support (now fully enabled) |
+| `hone --model <provider:model>` | Use a specific model (e.g., `--model ollama:qwen2.5-coder:14b`, `--model openai:gpt-4o`) |
 | `hone session list` | List all saved sessions |
 | `hone session resume NAME` | Resume a previous session |
 | `hone session rename OLD NEW` | Rename a session |
@@ -1516,8 +1512,6 @@ Gemini CLI is now for Gemini Code Assist Standard and Enterprise customers: free
 - **[Tools & MCP](docs/tutorials/tools-and-mcp.md)** — Layer architecture, native tools, MCP integration
 - **[Recipes](docs/tutorials/recipes.md)** — YAML workflows, multi-step automation
 - **[Server & Remote](docs/tutorials/server-and-remote.md)** — Running the daemon, HTTP API, multi-user setup
-
-**For Contributors:**
 
 ## Testing
 

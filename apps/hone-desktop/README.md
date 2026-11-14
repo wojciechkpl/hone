@@ -39,7 +39,7 @@ apps/hone-desktop/
 The Tauri 2 toolchain needs:
 
 - A C toolchain (Xcode CLT on macOS, MSVC build tools on Windows, gcc on Linux).
-- Rust 1.85+ (already required by the workspace).
+- Rust 1.88+ (already required by the workspace).
 - Linux only: `webkit2gtk-4.1` and `libayatana-appindicator3` development packages.
 - Optionally `cargo install tauri-cli@^2` for the `cargo tauri` subcommand.
 

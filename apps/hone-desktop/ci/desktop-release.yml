@@ -50,7 +50,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.85"
+          toolchain: "1.88"
           targets: ${{ matrix.platform.target }}
 
       - name: Cache cargo registry + build artefacts
