@@ -92,7 +92,7 @@ Wording rules from the strategy apply: "evidence" and "recorded", never "proof o
 3. **Make `hone --version` print the git commit and build date,** so stale builds are obvious to users, and in bug reports.
 4. **A path with no API key, written up as fully as the API-key path:**
    - **Ollama:** `hone configure` already offers it, with the default local address.
-   - **Not a Claude subscription, yet.** The `claude-cli:` and `gemini-cli:` adapters are chat only: they can't call tools, so they can't read or edit files. Auto-detection also tries them before Ollama, so a user with Claude Code installed and no key gets a chat-only Hone unless they choose an Ollama model. *(Corrected 2026-11-13: an earlier version of this plan called `claude-cli:` a full on-ramp.)*
+   - **Not a Claude subscription, yet.** The `claude-cli:` and `gemini-cli:` adapters run the CLI's own tools (Claude Code auto-accepts file edits), which Hone can't check, sandbox or record, and Hone refuses them when permission rules are set. Auto-detection also tries them before Ollama, so a user with Claude Code installed and no key gets Hone driving Claude Code's own tools unless they choose an Ollama model. *(Corrected 2026-11-13: an earlier version of this plan called `claude-cli:` a full on-ramp, and a later one wrongly called it chat only.)*
 5. **A sample repo to try it on,** for example `examples/first-task/` with one failing test. The first run then works the same for everyone and shows the receipts.
 6. **A short troubleshooting box:**
    - no provider found;

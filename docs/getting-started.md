@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="Rust 1.85+" src="https://img.shields.io/badge/rust-1.85%2B-orange">
+  <img alt="Rust 1.88+" src="https://img.shields.io/badge/rust-1.88%2B-orange">
   <img alt="macOS and Linux" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-informational">
   <img alt="providers" src="https://img.shields.io/badge/providers-Anthropic%20%7C%20OpenAI--compatible%20%7C%20Ollama%20%7C%20CLI%20pass--through-6e40c9">
   <img alt="license" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue">
@@ -41,14 +41,15 @@ flowchart LR
 
 | You need | Check |
 |---|---|
-| Rust 1.85 or newer | `rustc --version` ([rustup.rs](https://rustup.rs)) |
+| Rust 1.88 or newer | `rustc --version` ([rustup.rs](https://rustup.rs)) |
 | A C toolchain and OpenSSL headers (tree-sitter grammars are C; `git2` links OpenSSL on Linux) | macOS: `xcode-select --install` · Debian/Ubuntu: `build-essential pkg-config libssl-dev` |
 | macOS or Linux | Windows is not supported yet |
 | Optional: Node.js 18+ | for MCP servers launched with `npx`, and to build the web UI |
 
 | Channel | Command | Status |
 |---|---|---|
-| crates.io | `cargo install hone-cli honed` | published; may lag `main` |
+| From the repository | `cargo install --locked --git https://github.com/wojciechkpl/hone hone-cli honed` | always current |
+| crates.io | `cargo install hone-cli honed` | 0.1.0, an early build; use the line above until a new release |
 | From source | `git clone https://github.com/wojciechkpl/hone && cd hone && make install` | always current |
 | Homebrew | `brew install --build-from-source ./packaging/homebrew/Formula/hone.rb` | from a checkout; tap not published yet |
 | pip | `pip install ./packaging/python` | from a checkout; wheels not published yet |
