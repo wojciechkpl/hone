@@ -100,12 +100,14 @@ inside a crates.io package (sha only), then `git` in the crate directory (only
 if `Cargo.toml` is tracked by that repository). Otherwise it prints
 `(commit unknown)` and emits a `cargo:warning`.
 
-Builds without a `.git` directory (source tarballs, Nix, distro packages,
-Docker builds that copy a worktree without `.git`) should set the variables:
+Builds without a usable `.git` directory (source tarballs, Nix, distro
+packages, Docker builds) should set the variables. The common Docker case is
+mounting a linked git worktree: its `.git` is a file pointing at a host path,
+so git fails inside the container and the override variables are required:
 
 ```bash
 HONE_BUILD_GIT_SHA=$(git rev-parse HEAD) \
-HONE_BUILD_GIT_DATE=$(git log -1 --format=%cs) \
+HONE_BUILD_GIT_DATE=$(git log -1 --no-show-signature --format=%cs HEAD) \
 cargo build --release -p hone-cli -p honed
 ```
 

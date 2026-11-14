@@ -120,28 +120,52 @@ fn git_info_from_git(dir: &Path) -> Option<(GitInfo, Vec<PathBuf>)> {
 
     // `--git-path` prints paths whether or not they exist, and cargo treats a
     // missing rerun-if-changed path as always stale, so keep only existing ones.
-    let paths = names
+    let mut paths: Vec<PathBuf> = names
         .iter()
         .filter_map(|n| git_path(dir, n))
         .filter(|p| p.exists())
         .collect();
+    // Without a reflog or loose branch ref, a commit that creates a loose ref
+    // is only visible as a change in the refs/heads directory.
+    if let Some(heads) = git_path(dir, "refs/heads").filter(|p| p.is_dir()) {
+        paths.push(heads);
+    }
     Some((GitInfo { sha, date }, paths))
 }
 
 /// Where the commit info came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
+    /// The `HONE_BUILD_GIT_SHA` / `HONE_BUILD_GIT_DATE` environment variables.
     Override,
+    /// `.cargo_vcs_info.json` inside a crates.io package (sha only).
     CargoVcsInfo,
+    /// `git` run in the crate directory.
     Git,
+    /// No source worked; the version prints "commit unknown".
     Unknown,
+}
+
+impl Source {
+    /// Stable lowercase name, exported as `HONE_BUILD_SOURCE`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Source::Override => "override",
+            Source::CargoVcsInfo => "cargo-vcs-info",
+            Source::Git => "git",
+            Source::Unknown => "unknown",
+        }
+    }
 }
 
 /// Outcome of [`resolve`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolved {
+    /// Commit info, if any source produced it.
     pub info: Option<GitInfo>,
+    /// Which source produced `info`.
     pub source: Source,
+    /// Existing paths the build script should watch with `rerun-if-changed`.
     pub rerun_if_changed: Vec<PathBuf>,
 }
 
@@ -175,8 +199,8 @@ pub fn resolve(manifest_dir: &Path, get_env: impl Fn(&str) -> Option<String>) ->
     Resolved {
         info: None,
         source: Source::Unknown,
-        // Possibly missing on purpose: cargo then re-resolves on the next build.
-        rerun_if_changed: vec![vcs],
+        // An existing directory: a missing path would make cargo rebuild every time.
+        rerun_if_changed: vec![manifest_dir.to_path_buf()],
     }
 }
 
@@ -199,6 +223,7 @@ pub fn emit() {
             "cargo:warning=git commit unknown; set {ENV_SHA} (and {ENV_DATE}) to embed it in --version"
         );
     }
+    println!("cargo:rustc-env=HONE_BUILD_SOURCE={}", r.source.as_str());
     println!(
         "cargo:rustc-env=HONE_LONG_VERSION={}",
         long_version(&pkg_version, r.info.as_ref())
