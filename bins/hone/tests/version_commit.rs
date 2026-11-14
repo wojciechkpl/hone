@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::path::Path;
 use std::process::Command;
 
@@ -14,24 +16,25 @@ fn run(args: &[&str]) -> (String, String) {
 
 /// Parse "hone X.Y.Z (<12 hex> YYYY-MM-DD)" strictly; returns (sha, date).
 fn parse_version_line(line: &str) -> (String, String) {
-    let rest = line
-        .strip_prefix("hone ")
-        .unwrap_or_else(|| panic!("bad prefix: {line:?}"));
-    let (semver, tail) = rest
-        .split_once(' ')
-        .unwrap_or_else(|| panic!("no space after semver: {line:?}"));
+    let rest = line.strip_prefix("hone ").unwrap_or_default();
+    assert!(!rest.is_empty(), "bad prefix: {line:?}");
+    let (semver, tail) = rest.split_once(' ').unwrap_or_default();
+    assert!(!tail.is_empty(), "no space after semver: {line:?}");
     let parts: Vec<&str> = semver.split('.').collect();
     assert!(
-        parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())),
+        parts.len() == 3
+            && parts
+                .iter()
+                .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())),
         "bad semver in {line:?}"
     );
     let inner = tail
         .strip_prefix('(')
         .and_then(|t| t.strip_suffix(')'))
-        .unwrap_or_else(|| panic!("no parens: {line:?}"));
-    let (sha, date) = inner
-        .split_once(' ')
-        .unwrap_or_else(|| panic!("no sha/date split: {line:?}"));
+        .unwrap_or_default();
+    assert!(!inner.is_empty(), "no parens: {line:?}");
+    let (sha, date) = inner.split_once(' ').unwrap_or_default();
+    assert!(!date.is_empty(), "no sha/date split: {line:?}");
     assert!(
         sha.len() == 12 && sha.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')),
         "sha must be 12 lowercase hex: {line:?}"
