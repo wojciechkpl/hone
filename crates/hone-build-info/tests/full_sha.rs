@@ -164,3 +164,29 @@ fn test_full_sha_when_unknown_should_be_none() {
     assert_eq!(r.source, Source::Unknown);
     assert_eq!(r.full_sha, None);
 }
+
+#[test]
+fn test_normalize_sha_should_accept_exactly_64_and_reject_63_and_65_hex() {
+    let h = |n: usize| "ab12".repeat(17)[..n].to_string();
+    assert_eq!(
+        hone_build_info::normalize_sha(&h(64)).as_deref(),
+        Some(&h(64)[..12])
+    );
+    for n in [41, 63, 65] {
+        assert_eq!(hone_build_info::normalize_sha(&h(n)), None, "{n} hex");
+    }
+}
+
+#[test]
+fn test_full_sha_when_override_is_63_or_65_hex_should_not_be_used() {
+    let tmp = tempfile::tempdir().unwrap();
+    for n in [63usize, 65] {
+        let sha = "ab12".repeat(17)[..n].to_string();
+        let env = move |k: &str| (k == "HONE_BUILD_GIT_SHA").then(|| sha.clone());
+
+        let r = resolve(tmp.path(), env);
+
+        assert_eq!(r.source, Source::Unknown, "{n} hex");
+        assert_eq!(r.full_sha, None, "{n} hex");
+    }
+}
