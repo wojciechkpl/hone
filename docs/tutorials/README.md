@@ -31,7 +31,7 @@ Start here if you're new to Hone:
 
 - **[TDD with Hone](tdd-with-hone.md)** — `/tdd` watcher (auto-detected test commands, status badges, fix-on-failure flow), `tdd-feature` recipe (full Red-Green-Refactor automation), `bug-fix` recipe (regression-first), separating test author from implementer via `@`-agents, fast inner loops (single-crate, `cargo nextest`), CI integration
 
-- **[Debugging and Troubleshooting](debugging.md)** — `--doctor` first checks, provider issues (API keys, rate limits, model not found, hot-swap), tool dispatch (no calls, timeouts, ACP-specific failures), TUI issues (size, theme, mouse), sessions and state (memory, daemon crash), sandbox failures, recipes/TDD pitfalls, logging and observability, bug reports
+- **[Debugging and Troubleshooting](debugging.md)** — first checks, provider issues (API keys, rate limits, model not found, hot-swap), tool dispatch (no calls, timeouts, ACP-specific failures), TUI issues (size, theme, mouse), sessions and state (memory, daemon crash), sandbox failures, recipes/TDD pitfalls, logging and observability, bug reports
 
 - **[Memory and Pass-Through Caching](memory.md)** — the five layers (persistent store, HONE.md, context injection, Anthropic prompt-cache pass-through, local LRU), inspecting recalls in the TUI (`Ctrl+M`), `--ephemeral` mode, deleting memories, optional `EncryptedStore` (AES-256-GCM + Argon2id), Anthropic `cache_control` markers, debugging surprising recalls. Pairs with [`../architecture/memory.md`](../architecture/memory.md) for the design reference.
 
@@ -106,7 +106,7 @@ hone --recipe code-review.yaml
 Start with [Getting Started](getting-started.md), then use [Tools and MCP](tools-and-mcp.md) to access the semantic index:
 
 ```bash
-hone -i "Find functions that handle authentication"
+hone "Find functions that handle authentication"
 ```
 
 The agent calls the `semantic_search` tool (Layer 2 native) to search by meaning.
@@ -116,7 +116,9 @@ The agent calls the `semantic_search` tool (Layer 2 native) to search by meaning
 Start with [Server and Remote](server-and-remote.md), then configure [Security](security.md) for RBAC:
 
 ```bash
-honed --port 7777 --config /etc/hone/config.toml
+# honed has no config-file option; its settings are environment variables (honed --help)
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
+honed 7777
 ```
 
 Multiple users can now create sessions and collaborate via the REST API.
@@ -180,7 +182,7 @@ docs/
 hone
 
 # One-shot command
-hone -i "List files in src/"
+hone "List files in src/"
 
 # Run a recipe
 hone --recipe my-recipe.yaml
@@ -188,14 +190,15 @@ hone --recipe my-recipe.yaml
 # Switch model
 hone --model ollama:llama2
 
-# Set budget limit
-hone --budget 10.00
+# Set budget limit: [budget] session_limit_usd = 10.00 in ~/.config/hone/config.toml,
+# or /budget 10 in the TUI
 
-# Run daemon
-honed --port 7777
+# Run daemon (loopback only; set HONE_AUTH_TOKEN to listen on other interfaces)
+HONE_BIND=127.0.0.1 honed 7777
 
-# Connect to remote daemon
-hone --server-url https://hone.example.com --auth-token "token"
+# Use the daemon: web UI at http://127.0.0.1:7777/ui, the desktop app, or the HTTP API
+# (the hone CLI doesn't connect to a daemon)
+curl -N -X POST http://127.0.0.1:7777/run -H 'Content-Type: application/json' -d '{"prompt": "List files in src/"}'
 ```
 
 ### Configuration

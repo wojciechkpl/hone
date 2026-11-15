@@ -50,19 +50,19 @@ Read, write, edit files with glob pattern matching.
 
 ```bash
 # List files matching a pattern
-hone -i "Find all Python files in src/"
+hone "Find all Python files in src/"
 # Agent calls: glob(pattern="src/**/*.py")
 
 # Read a file
-hone -i "Show me main.rs"
+hone "Show me main.rs"
 # Agent calls: read_file(path="main.rs")
 
 # Write a file
-hone -i "Create a README with instructions"
+hone "Create a README with instructions"
 # Agent calls: write_file(path="README.md", content="...")
 
 # Edit a file (precise edits)
-hone -i "Add error handling to line 42"
+hone "Add error handling to line 42"
 # Agent calls: edit_file(path="main.rs", line=42, replacement="...")
 ```
 
@@ -101,7 +101,7 @@ hone -i "Add error handling to line 42"
 Execute shell commands and capture output.
 
 ```bash
-hone -i "Run the tests and show me any failures"
+hone "Run the tests and show me any failures"
 # Agent calls: shell(cmd="cargo test", cwd="/project")
 ```
 
@@ -123,13 +123,13 @@ hone -i "Run the tests and show me any failures"
 Version control: commit, branch, diff, undo.
 
 ```bash
-hone -i "Commit my changes with a message"
+hone "Commit my changes with a message"
 # Agent calls: git_commit(message="...", files=["main.rs"])
 
-hone -i "Show me what changed"
+hone "Show me what changed"
 # Agent calls: git_diff()
 
-hone -i "Switch to feature branch"
+hone "Switch to feature branch"
 # Agent calls: git_checkout(branch="feature/new-tool")
 ```
 
@@ -147,13 +147,13 @@ hone -i "Switch to feature branch"
 Language server integration for code intelligence. Hone now supports real LSP servers via stdio JSON-RPC. The `StdioLspBridge` auto-spawns a language server based on project type.
 
 ```bash
-hone -i "What does this function do?"
+hone "What does this function do?"
 # Agent calls: lsp_hover(file="main.rs", line=10, col=5)
 
-hone -i "Show me all errors in this file"
+hone "Show me all errors in this file"
 # Agent calls: lsp_diagnostics(file="main.rs")
 
-hone -i "Fix the type error on line 42"
+hone "Fix the type error on line 42"
 # Agent calls: lsp_code_action(file="main.rs", line=42)
 ```
 
@@ -200,7 +200,7 @@ go install golang.org/x/tools/gopls@latest
 Search code by meaning (not keywords).
 
 ```bash
-hone -i "Find functions that handle authentication"
+hone "Find functions that handle authentication"
 # Agent calls: semantic_search(query="authentication", limit=10)
 ```
 
@@ -246,17 +246,17 @@ env = { SLACK_BOT_TOKEN = "xoxb-..." }
 Once configured, MCP tools appear automatically in the agent's tool registry:
 
 ```bash
-hone -i "Open a GitHub issue"
+hone "Open a GitHub issue"
 # Agent lists available tools:
 # - github_create_issue
 # - github_list_repos
 # - github_add_comment
 # ...agent calls: github_create_issue(repo="user/repo", title="...", body="...")
 
-hone -i "Query the database for users"
+hone "Query the database for users"
 # Agent calls: postgres_query(sql="SELECT * FROM users WHERE active=true")
 
-hone -i "Post a message to Slack"
+hone "Post a message to Slack"
 # Agent calls: slack_send_message(channel="general", text="...")
 ```
 
@@ -337,7 +337,7 @@ args = ["/path/to/server.js"]
 Use it:
 
 ```bash
-hone -i "Translate 'hello' to Spanish"
+hone "Translate 'hello' to Spanish"
 # Agent calls: translate(text="hello", language="Spanish")
 # Output: "Hola"
 ```
@@ -355,7 +355,7 @@ Advanced orchestration via agent-generated scripts. The agent generates TypeScri
 ### Example
 
 ```bash
-hone -i "Find all Python files, count lines of code, and report top 10 longest files"
+hone "Find all Python files, count lines of code, and report top 10 longest files"
 ```
 
 Agent generates (pseudocode):
@@ -446,10 +446,10 @@ Hone includes 9 pre-configured agents:
 
 ```bash
 # Use an agent by name
-hone --agent code-reviewer -i "Review this code"
+hone --agent code-reviewer "Review this code"
 
 # Use an agent by searching its description
-hone --agent "test-driven" -i "Implement a feature"  # finds tdd-workflow
+hone --agent "test-driven" "Implement a feature"  # finds tdd-workflow
 ```
 
 The agent registry automatically loads built-in agents and matches descriptions to agent names.

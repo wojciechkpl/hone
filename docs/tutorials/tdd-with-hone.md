@@ -92,8 +92,12 @@ test_cmd: "cargo test"
 ### Running it
 
 ```bash
-hone --recipe tdd-feature -i "add a /export-session command that writes the conversation to ./export.json"
+hone --recipe tdd-feature \
+  --var feature_name="a /export-session command that writes the conversation to ./export.json" \
+  --var test_command="cargo test"
 ```
+
+`--recipe` ignores a prompt argument: the recipe's steps get the feature and the test command through `--var` (`{{feature_name}}`, `{{test_command}}`).
 
 Or interactively, after launching `hone`:
 
@@ -166,10 +170,10 @@ Once you're done locally, the same `test_cmd` works in CI:
 If a recipe was the entry point, save the recipe under `recipes/` and add a CI step:
 
 ```yaml
-- run: hone --recipe tdd-feature -i "$FEATURE_DESC" --non-interactive
+- run: hone --recipe tdd-feature --var feature_name="$FEATURE_DESC" --var test_command="cargo test"
 ```
 
-`--non-interactive` suppresses the TUI and prints transcripts to stdout, so CI logs capture the agent's chain of reasoning.
+`--recipe` never opens the TUI or pauses between steps: it prints each step's output to stdout, so CI logs capture the agent's chain of reasoning.
 
 ## Common pitfalls
 

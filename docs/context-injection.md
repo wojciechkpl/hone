@@ -533,9 +533,9 @@ There is no `config.toml` key for this: `config.toml` rejects an `[agent]` table
    hone --no-inject "implement a parser from scratch"
    ```
 
-3. **Extremely large repositories** — Skeleton generation might timeout (>10K files). Fallback: use targeted agent with manual focus area.
+3. **Extremely large repositories** — Skeleton generation might timeout (>10K files). Fallback: use targeted agent with manual focus area. There is no `--dir` flag; start Hone in that directory instead (it then reads `.hone/` from there, not from the repository root).
    ```bash
-   hone --no-inject --dir ./src/core "fix the event loop"
+   cd src/core && hone --no-inject "fix the event loop"
    ```
 
 4. **Testing/benchmarking** — You need deterministic behavior without randomness from BM25 scoring.
@@ -856,8 +856,7 @@ hone --skeleton-strategy flat "task"            # Use Flat strategy
 hone --skeleton-strategy hybrid "task"          # Use Hybrid strategy
 hone --skeleton-strategy dependency_graph "task" # Use DependencyGraph
 
-hone --no-inject "task"              # Disable injection for this run
-hone --inject-context "task"         # Explicitly enable (already default)
+hone --no-inject "task"              # Disable injection for this run (it is on by default)
 ```
 
 ---
@@ -882,15 +881,15 @@ A: Yes. Each agent instance gets its own injected context independently. Orchest
 
 **Q: What if my repository is huge (100K files)?**
 
-A: Skeleton generation is O(files), so large repos take longer (~5s for 100K files). Consider using `hone --dir ./src` to scope the context to a subdirectory.
+A: Skeleton generation is O(files), so large repos take longer (~5s for 100K files). There is no `--dir` flag; to scope the context to a subdirectory, start Hone there: `cd src && hone "…"` (it then reads `.hone/` from `src/`, not from the repository root).
 
 **Q: Does injection affect determinism?**
 
-A: BM25 scoring is deterministic given the same query + index. However, agent behavior can vary with temperature. For deterministic benchmarks, use `--temperature 0` + `--no-inject`.
+A: BM25 scoring is deterministic given the same query + index. However, agent behavior can vary with temperature. There is no `--temperature` flag; for more repeatable benchmarks, use `--no-inject`.
 
 **Q: Can I inject custom context manually?**
 
-A: Yes. Use `--context-file ./my-context.md` to prepend additional context before injection.
+A: Not with a flag: there is no `--context-file`. Put standing context in a `HONE.md` file instead; Hone reads it from the current directory upwards and adds its sections to the system prompt.
 
 ---
 

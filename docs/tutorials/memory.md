@@ -150,7 +150,7 @@ Or `HONE_SKELETON_STRATEGY=symbols hone`.
 To skip injection entirely (one-shot pass through with no context):
 
 ```bash
-hone --no-inject-context -i "..."
+hone --no-inject "..."
 ```
 
 ## Layer 4: Anthropic prompt-cache pass-through
@@ -217,7 +217,7 @@ Every layer is independent and can be turned off in isolation:
 |---|---|
 | 1 | `--ephemeral` |
 | 2 | Don't write `HONE.md` files |
-| 3 | `--no-inject-context` |
+| 3 | `--no-inject` |
 | 4 | Switch to a non-Anthropic provider |
 | 5 | Don't wrap with `CachingProvider` (default) |
 
@@ -241,7 +241,7 @@ Layer 3 builds the skeleton on the first turn (~10 ms for medium repos, longer f
 HONE_SKELETON_STRATEGY=compact hone   # cheapest
 ```
 
-Or skip injection entirely with `--no-inject-context`.
+Or skip injection entirely with `--no-inject`.
 
 ### "I edited HONE.md mid-session — does the agent see it?"
 

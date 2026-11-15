@@ -116,25 +116,16 @@ Local models (Ollama) cost nothing. Cloud models cost per million tokens. See [P
 
 ### Can I set a spending limit?
 
-Yes. Set a budget before starting a session:
-
-```bash
-hone --budget 5.00  # stop after spending $5
-```
-
-When the limit is approached, you're asked to confirm:
-
-```
-Session cost: $4.90
-Approaching budget limit ($5.00). Continue? (y/n)
-```
-
-You can also set a default budget in `~/.config/hone/config.toml`:
+Yes. Set a session budget in `~/.config/hone/config.toml` (there is no `--budget` flag):
 
 ```toml
-[agent]
-default_budget_usd = 10.00
+[budget]
+session_limit_usd = 5.00  # stop after spending $5
 ```
+
+Hone checks the limit before each turn. Once the session has spent more, the next turn stops with `budget exceeded: limit $5.0000, current $…`.
+
+In the TUI, `/budget 5` sets the limit for the rest of the session.
 
 ---
 
@@ -198,10 +189,10 @@ Container security notes:
 
 ### How do I use ephemeral mode?
 
-Run with the `--ephemeral` (or `-E`) flag:
+Run with the `--ephemeral` flag:
 
 ```bash
-hone -E -i "Analyze this sensitive document"
+hone --ephemeral "Analyze this sensitive document"
 ```
 
 In ephemeral mode:
@@ -389,19 +380,16 @@ See [Recipes Guide](../tutorials/recipes.md) for full syntax.
 
 ### Can multiple people use the same session?
 
-Yes, via the `honed` daemon. Run the daemon on a server:
+Not as one shared conversation. Several people can use one `honed` daemon through the desktop app or the HTTP API (the `hone` CLI doesn't connect to a daemon), and its `/sessions/{id}/join` endpoints track who has joined a session. But `POST /run` is stateless: each client keeps its own conversation history.
+
+Run the daemon on a server:
 
 ```bash
-honed --port 7777
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"  # every client sends this as a bearer token
+honed 7777
 ```
 
-Multiple users connect:
-
-```bash
-hone --remote server.com:7777
-```
-
-Users see shared session history and can collaborate in real-time. See [Server and Remote Guide](../tutorials/server-and-remote.md).
+See [Run the daemon](../getting-started.md#8-run-the-daemon-honed) and the [Server and Remote Guide](../tutorials/server-and-remote.md).
 
 ### How do I set up RBAC?
 
@@ -464,16 +452,16 @@ Slow can mean different things:
 **Slow startup (takes >5 seconds):**
 - Check if semantic index is being built (`~/.local/share/hone/index/`)
 - Disable indexing: `[index] enabled = false` in config
-- Or run indexing in background: `honed --index-daemon`
+- `honed` has no background-indexing option (there is no `--index-daemon`)
 
 **Slow responses (model is slow):**
 - Use a faster model: Haiku instead of Opus, or local Ollama
-- Reduce context window: `hone --context-window 50000`
+- Reduce context window: `HONE_CONTEXT_WINDOW=50000 hone`
 - Enable memory (reduces context needed): `[memory] enabled = true`
 
 **Slow tool execution:**
 - Check sandbox overhead: try disabling sandbox (not recommended): `[sandbox] enforce = false`
-- Profile with `RUST_LOG=debug hone -i "your prompt"`
+- Profile with `RUST_LOG=debug hone "your prompt"`
 
 ### I'm getting "sandbox denied" errors
 
@@ -502,7 +490,7 @@ You: Read the config file in the project root, not system files
 The model exhausted its context window (200K tokens for Claude, 128K for GPT-4o, etc.). Solutions:
 
 1. **Switch to a model with more context:** Opus/Sonnet/Haiku (200K), not GPT-4o (128K)
-2. **Reduce context window:** `hone --context-window 100000` (use less than the full limit)
+2. **Reduce context window:** `HONE_CONTEXT_WINDOW=100000 hone` (use less than the full limit)
 3. **Enable memory:** Compacts history into learned patterns, freeing up tokens
 4. **Summarize history:** Ask the agent to summarize the first half of the conversation
 5. **Use recipes:** Break the task into smaller steps executed sequentially

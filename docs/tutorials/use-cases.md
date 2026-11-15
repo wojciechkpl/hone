@@ -1727,11 +1727,11 @@ Hone's adaptive memory learns patterns across sessions:
 
 ```bash
 # Session 1
-hone --session project-a -i "Add tests using pytest"
+hone --session project-a "Add tests using pytest"
 # Hone learns: this project uses pytest
 
 # Session 2 (next day)
-hone --session project-a -i "Add more tests"
+hone --session project-a "Add more tests"
 # Hone remembers: use pytest here (learned from session 1)
 ```
 
@@ -1808,19 +1808,7 @@ hone --session confidential-work
 
 ## Session Governance (Team Use)
 
-If using the `honed` daemon for team collaboration:
-
-```bash
-# Admin
-honed start
-
-# Developer 1
-hone --remote localhost:3117 --session my-task
-
-# Admin can audit
-hone remote cost --user dev1 --session my-task  # See cost breakdown
-hone remote audit --user dev1                    # See all actions
-```
+The `hone` CLI doesn't connect to the `honed` daemon, and there are no `hone remote …` commands. A team shares a daemon through the desktop app or the HTTP API, each with the daemon's `HONE_AUTH_TOKEN` (see [Server and Remote](server-and-remote.md)). `GET /team/usage` reports the daemon's token and USD totals, per model rather than per user.
 
 ---
 

@@ -172,30 +172,13 @@ gemini_path = "/usr/local/bin/gemini"
 
 Full bidirectional tool dispatch via a persistent JSON-RPC 2.0 subprocess. Hone speaks ACP as the **client**: it announces tool schemas on `session/prompt`, dispatches incoming `tool_call` notifications through its registered tool registry, and feeds the result back via `session/toolResult` so the agent can finish the turn. Status updates land as `ProviderEvent::ObservedToolEnd` for observability.
 
-**Built-in ACP factories:**
-
-```bash
-# Subscription Claude — claude binary spoken via --acp
-hone --model claude-acp:claude-sonnet-4-5
-
-# Free-tier Gemini — gemini binary spoken via --acp
-hone --model gemini-acp:gemini-2.5-pro
-```
-
-**Custom ACP server:**
-
-```bash
-hone --model acp:my-service --acp-endpoint /path/to/server/binary
-```
-
-**Configuration:**
-
-```toml
-[providers.acp]
-server_path = "/path/to/acp/server"
-server_args = ["--port", "9000"]
-timeout_secs = 60
-```
+> [!IMPORTANT]
+> ACP is library-only for now: `hone` can't select an ACP provider. There is no `acp:`,
+> `claude-acp:` or `gemini-acp:` model prefix and no `--acp-endpoint` flag (the prefixes
+> `hone` accepts are `anthropic:`, `openai:`, `ollama:`, `claude-cli:` and `gemini-cli:`),
+> and a `[providers.acp]` table with server settings makes `config.toml` fail to load. The
+> rest of this section describes the `AcpProvider` in the `hone-providers` crate. See
+> [ACP](acp.md).
 
 ACP allows you to:
 - Define custom tools in your own language
@@ -236,31 +219,13 @@ The context manager evaluates token count for the new model's limits and truncat
 
 ## Fallback Chains
 
-Define a priority list of providers. If one fails, the next is tried automatically.
+Define a priority list of models. If the turn's model fails before answering (an overload or outage, a rate limit, a 5xx error, or no answer at all), the next is tried automatically. Put it at the top level of your user file, `~/.config/hone/config.toml`:
 
 ```toml
-[[fallback_chains]]
-name = "production"
-providers = ["anthropic:claude-opus-4-5", "openai:gpt-4o", "ollama:llama2"]
-retry_on = ["RateLimit", "Timeout", "ServiceUnavailable"]
-retry_delay_secs = 5
-max_retries = 3
+fallback_models = ["openai:gpt-4o", "ollama:llama2"]
 ```
 
-The agent tries Anthropic first. If it rate-limits or times out, it retries after 5 seconds. After 3 failed attempts, it falls back to OpenAI. If OpenAI fails, it falls back to local Ollama.
-
-Usage:
-
-```bash
-hone --fallback-chain production
-```
-
-Or set as default in config:
-
-```toml
-[agent]
-default_fallback_chain = "production"
-```
+There are no named chains and no `--fallback-chain` flag: `fallback_models` applies to every session on an API model, except a run with `--model`, which uses exactly that model. It is read from your user file only, and only `anthropic:`, `openai:` and `ollama:` models can be fallbacks. See [routing and fallback](../configuration.md#routing-and-fallback).
 
 ## Model Routing Rules
 
@@ -321,46 +286,20 @@ Cost: $0.019 USD
 Session total: $0.24 USD
 ```
 
-Set a budget limit:
+Set a budget limit in `~/.config/hone/config.toml` (or `/budget 10` in the TUI):
 
-```bash
-hone --budget 10.00  # stop after spending $10
+```toml
+[budget]
+session_limit_usd = 10.00  # stop after spending $10
 ```
 
 ## Provider Health Checks
 
-The daemon performs periodic health checks on all configured providers. Use this to monitor uptime and detect issues early:
+The daemon doesn't check provider health: `honed` has no health-check option (there is no `--health-check-interval`) and no `/providers/health` endpoint. `GET /health` reports only that the daemon itself is up:
 
 ```bash
-honed --health-check-interval 60  # every 60 seconds
-```
-
-Health check results are logged and available via the HTTP API:
-
-```bash
-curl http://localhost:7777/providers/health
-```
-
-Response:
-
-```json
-{
-  "anthropic:claude-opus-4-5": {
-    "status": "healthy",
-    "last_checked": "2026-04-05T12:34:56Z",
-    "latency_ms": 45
-  },
-  "openai:gpt-4o": {
-    "status": "rate_limited",
-    "last_checked": "2026-04-05T12:34:55Z",
-    "retry_after_secs": 120
-  },
-  "ollama:llama2": {
-    "status": "unreachable",
-    "last_checked": "2026-04-05T12:34:52Z",
-    "error": "connection refused"
-  }
-}
+curl http://localhost:7777/health
+# {"status":"ok"}
 ```
 
 ## Customizing Timeouts

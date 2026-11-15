@@ -282,18 +282,7 @@ The agent chooses which tools to use based on your request.
 
 Hone runs code in a sandbox. If the agent tries to do something unsafe (delete system files, access the network without permission, etc.), the sandbox stops it:
 
-```bash
-# Show the sandbox policy
-hone --show-sandbox-policy
-
-# Output:
-# Sandbox: Seatbelt (macOS)
-#   Allow: Read files in /Users/you/project
-#   Allow: Execute /bin/bash, /usr/bin/python3
-#   Deny: Read /etc/passwd
-#   Deny: Access the network (except api.openai.com, github.com)
-#   Deny: Access /private/var, /tmp (except /tmp/.hone-*)
-```
+There is no command that prints the sandbox policy. [Permissions and sandbox](../permissions-and-sandbox.md) lists what it allows on each platform: on macOS, shell commands can write only the working directory, `/tmp` and `/dev/null`, and get no network.
 
 The sandbox uses your operating system's native security (Seatbelt on macOS, Landlock on Linux). It's the same technology Safari uses.
 
@@ -354,10 +343,10 @@ Hone ships with 9 pre-trained agents:
 
 ```bash
 # Use a specific agent
-hone --agent code-reviewer -i "Review this code for security issues"
+hone --agent code-reviewer "Review this code for security issues"
 
 # Find an agent by keyword
-hone --agent "test-driven" -i "Implement a new feature"
+hone --agent "test-driven" "Implement a new feature"
 # This finds "tdd-workflow" automatically
 
 # Use an agent in a recipe (we'll cover recipes next)
@@ -467,7 +456,7 @@ You are a specialized agent for [your domain].
 Then use it:
 
 ```bash
-hone --agent my-agent -i "Your task"
+hone --agent my-agent "Your task"
 ```
 
 See [Tools and MCP Guide](../tutorials/tools-and-mcp.md#agents) for detailed examples.
@@ -479,7 +468,7 @@ See [Tools and MCP Guide](../tutorials/tools-and-mcp.md#agents) for detailed exa
 ### Bug Fixing with the Debugger
 
 ```bash
-hone --agent debugger -i "The login form throws 'TypeError: cannot read password'. Fix it."
+hone --agent debugger "The login form throws 'TypeError: cannot read password'. Fix it."
 ```
 
 The debugger agent uses a systematic approach:
@@ -494,7 +483,7 @@ You review and approve the fix.
 ### Code Review with Security Focus
 
 ```bash
-hone --agent security-auditor -i "Review this code for vulnerabilities"
+hone --agent security-auditor "Review this code for vulnerabilities"
 ```
 
 The security auditor scans for:
@@ -535,7 +524,7 @@ You approve each step incrementally.
 ### Code Review (General)
 
 ```bash
-hone --agent code-reviewer -i "Review this PR"
+hone --agent code-reviewer "Review this PR"
 ```
 
 The code reviewer performs a systematic review:
@@ -548,7 +537,7 @@ The code reviewer performs a systematic review:
 ### Add Documentation
 
 ```bash
-hone --agent documentation-agent -i "Generate API documentation"
+hone --agent documentation-agent "Generate API documentation"
 ```
 
 The documentation agent can:
@@ -738,13 +727,7 @@ api_key = "sk-ant-..."
 
 ### "Model not supported"
 
-List available models:
-
-```bash
-hone --list-models
-```
-
-Use one from the list.
+Hone has no command that lists models. Check the ID against your provider's own model list (`ollama list` for local models), and give it a provider prefix: `anthropic:`, `openai:`, `ollama:`, `claude-cli:` or `gemini-cli:`.
 
 ### "Network error"
 

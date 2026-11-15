@@ -147,11 +147,7 @@ hone --model gemini-cli:gemini-pro
 
 ### 6. ACP (Agent Client Protocol)
 
-Full tool support via persistent subprocess. For advanced users integrating custom tools.
-
-```bash
-hone --model acp:my-custom-model --acp-endpoint /path/to/acp/binary
-```
+Library-only for now: `hone` can't select an ACP provider. There is no `acp:` model prefix or `--acp-endpoint` flag. See [ACP](acp.md).
 
 ## First Interactive Session
 
@@ -270,23 +266,14 @@ This is useful for sensitive work, one-off queries, or testing.
 
 ### Crash Recovery and Checkpoint Resume
 
-When using multi-agent orchestration, Hone saves checkpoints after each worker completes. If the process is interrupted (network failure, timeout, kill signal), you can resume the run from where it left off:
+`hone` doesn't checkpoint orchestration runs, so an interrupted `--orchestrate` run can't be resumed: run it again. (The orchestrator's checkpoint store exists in `hone-core`, but neither `hone` nor `honed` turns it on, and there is no `--resume` flag.)
+
+What you can resume is a conversation. Name the session, then continue it later:
 
 ```bash
-# Start an orchestrated task (auto-generates a run_id)
-hone --orchestrate "Build a complex feature" 2>&1 | tee run.log
-
-# If interrupted, resume the run using the run_id
-hone --resume run_id_from_log
+hone --session my-feature "Build a complex feature"
+hone session resume my-feature
 ```
-
-Checkpoints store:
-- The original task plan and goal
-- Completed worker results with costs and token usage
-- Pending task IDs to resume
-- Total cost accrued so far
-
-This allows long-running orchestrations to survive transient failures without re-executing completed work.
 
 ## One-Shot Mode
 
@@ -348,8 +335,8 @@ Expected output format:
 Hone automatically optimizes context to stay within model limits while preserving code relevance:
 
 ```bash
-# View context optimization details
-hone --debug-context
+# After a one-shot run: what the model was given on each call (context receipts)
+hone context show
 ```
 
 **What happens behind the scenes:**
@@ -370,7 +357,7 @@ hone --debug-context
 Set a custom context limit:
 
 ```bash
-hone --context-limit 32000  # tokens
+HONE_CONTEXT_WINDOW=32000 hone  # tokens; replaces the model's context window
 ```
 
 ## Understanding the Output
@@ -416,10 +403,11 @@ Session total: $0.24 USD
 Budget remaining: $9.76 / $10.00
 ```
 
-All costs are tracked in real USD for your chosen model. Set a budget limit to avoid surprises:
+All costs are tracked in real USD for your chosen model. Set a budget limit in `~/.config/hone/config.toml` to avoid surprises (or `/budget 5` in the TUI):
 
-```bash
-hone --budget 5.00  # max $5 per session
+```toml
+[budget]
+session_limit_usd = 5.00  # max $5 per session
 ```
 
 When you hit the limit, the session stops.
@@ -429,12 +417,10 @@ When you hit the limit, the session stops.
 For sensitive sessions, Hone can encrypt all memories and session data:
 
 ```bash
-# Build with encryption support
-cargo build --features encrypted-memory
-
-# Initialize encryption (stores key in system keychain)
-hone --init-encryption
-# Enter passphrase: ****
+# Encrypt the memory store (built in; no extra build step). The key is
+# derived from the passphrase in HONE_MEMORY_PASSPHRASE; nothing is stored in a keychain.
+export HONE_MEMORY_PASSPHRASE="your-strong-passphrase"
+hone --encrypted-memory
 
 # Run in ephemeral mode (no data saved)
 hone --ephemeral
@@ -480,11 +466,7 @@ api_key = "sk-ant-..."
 error: model 'anthropic:claude-unknown' not supported
 ```
 
-List available models:
-
-```bash
-hone --list-models
-```
+Hone has no command that lists models. Check the ID against your provider's own model list (`ollama list` for local models), and give it a provider prefix: `anthropic:`, `openai:`, `ollama:`, `claude-cli:` or `gemini-cli:`.
 
 ### Network Error (Firewall)
 

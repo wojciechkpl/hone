@@ -455,33 +455,22 @@ For very large repos (10K+ files), skeleton generation is configurable via token
 
 The skeleton exceeded the token budget. Solutions:
 
-```bash
-# Reduce token budget
-hone --skeleton-token-budget 1000 "your task"
+Reduce the token budget (default 2000) in `~/.config/hone/config.toml`; `hone strategies` shows the value in effect:
 
-# Or use a simpler strategy
+```toml
+[context.skeleton]
+max_tokens = 1000
+```
+
+Or use a simpler strategy:
+
+```bash
 hone --skeleton-strategy flat "your task"
 ```
 
 ### Cache not updating
 
-Files changed but skeleton not regenerating:
-
-```bash
-# Clear cache manually
-rm -f ~/.hone/cache/skeleton.json
-
-# Or set fresh strategy
-hone --skeleton-strategy call_graph --no-cache "your task"
-```
-
-Note: Hone automatically detects mtime changes. If cache isn't updating, check file modification times:
-
-```bash
-# Check if files are actually newer than cache
-ls -l src/*.rs | head -5
-stat ~/.hone/cache/skeleton.json
-```
+There is nothing to clear: the skeleton cache lives in memory, in one `hone` process, and is never written to disk (there is no `~/.hone/cache/skeleton.json` and no `--no-cache` flag). Each new `hone` run builds the skeleton from the files as they are, so start a new run to pick up changes.
 
 ### False positives in calls
 

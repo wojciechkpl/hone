@@ -97,11 +97,10 @@ hone --recipe bug-fix
 hone --recipe code-review
 hone --recipe refactor
 
-# Run in non-interactive mode (useful for CI/CD)
-hone --recipe tdd-feature --non-interactive
+# Recipes run every step without pausing, so the same command works in CI/CD
 
-# Override the test command
-hone --recipe tdd-feature --test-cmd "pytest tests/"
+# Set the test command (tdd-feature's steps run {{test_command}})
+hone --recipe tdd-feature --var test_command="pytest tests/"
 ```
 
 The `--list-recipes` command shows all available recipes with descriptions:
@@ -346,10 +345,10 @@ Recipe completed successfully.
 ### Batch Mode
 
 ```bash
-hone --recipe code-review.yaml --non-interactive
+hone --recipe code-review
 ```
 
-Runs all steps without pausing. Useful for CI/CD.
+Every recipe run is a batch run: Hone runs all steps without pausing, so there is no separate flag for CI/CD.
 
 ### With Model Override
 
@@ -361,53 +360,21 @@ Use a specific model for all steps in the recipe.
 
 ### With Budget Limit
 
-```bash
-hone --recipe code-review.yaml --budget 5.00
+There is no `--budget` flag. Set the limit in `~/.config/hone/config.toml`:
+
+```toml
+[budget]
+session_limit_usd = 5.00
 ```
 
-Stop if the recipe exceeds $5 in API costs.
+Once the recipe has spent more than $5 in API costs, each remaining step fails with `budget exceeded` instead of calling the model.
 
 ## Recipe Output and Export
 
-Each recipe run produces a report:
+A recipe run prints each step's output, its tool calls and the test results to stdout as plain text. There is no `--export-to` flag and no JSON report, and `--json` doesn't apply to `--recipe`. To keep the output, redirect it:
 
 ```bash
-hone --recipe code-review.yaml --export-to review-report.json
-```
-
-Report format:
-
-```json
-{
-  "recipe_name": "Code Review",
-  "started_at": "2026-04-05T14:30:00Z",
-  "completed_at": "2026-04-05T14:32:15Z",
-  "steps": [
-    {
-      "name": "Analyze Changes",
-      "output": "The pull request contains...",
-      "skipped": false,
-      "tokens_input": 1200,
-      "tokens_output": 340,
-      "cost_usd": 0.024
-    },
-    {
-      "name": "Suggest Improvements",
-      "output": "Top 3 improvements: ...",
-      "skipped": false,
-      "tokens_input": 2100,
-      "tokens_output": 520,
-      "cost_usd": 0.035
-    }
-  ],
-  "test_result": {
-    "cmd": "cargo test",
-    "status": "passed",
-    "output": "test result: ok. 5 passed"
-  },
-  "session_cost_usd": 0.059,
-  "status": "success"
-}
+hone --recipe code-review > review-report.txt
 ```
 
 ## Recipe Directory and Discovery

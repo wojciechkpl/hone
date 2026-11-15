@@ -199,7 +199,7 @@ allow_env = ["PATH", "HOME", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITT
 Attempt to access other env vars from a tool:
 
 ```bash
-$ hone -i "Print ANTHROPIC_API_KEY"
+$ hone "Print ANTHROPIC_API_KEY"
 Agent calls: shell(cmd="echo $ANTHROPIC_API_KEY")
 Output: (empty — variable not accessible)
 ```
@@ -389,9 +389,9 @@ cipher = "aes256-gcm"
 The encryption key is derived from a user passphrase via Argon2id:
 
 ```bash
-hone --init-encryption
-# Enter passphrase: ****
-# Passphrase stored securely in system keychain.
+export HONE_MEMORY_PASSPHRASE="your-strong-passphrase"
+hone --encrypted-memory
+# The passphrase is read from the environment on every run; nothing is stored in a keychain.
 ```
 
 Memory content (conversation history) is encrypted at rest. The SQLite file structure itself is not encrypted — for full disk encryption, use OS-level tools or ephemeral mode.
@@ -402,8 +402,6 @@ Run a session with all data immediately discarded after completion:
 
 ```bash
 hone --ephemeral
-# or
-hone -E
 ```
 
 In ephemeral mode:
@@ -429,7 +427,7 @@ When built with `--features encrypted-memory`, the content field of each memory 
 Full SQLite file encryption via sqlcipher is planned for a future release. Until then, for sensitive workloads where even encrypted content fields are insufficient, use `--ephemeral` to disable persistence entirely:
 
 ```bash
-hone --ephemeral -i "Sensitive query"
+hone --ephemeral "Sensitive query"
 ```
 
 Or clear memories manually:
@@ -491,7 +489,7 @@ hash = "sha256:abc123..."  # verify before running
 6. **Use ephemeral mode for sensitive prompts:**
 
 ```bash
-hone -E -i "Analyze this sensitive document"
+hone --ephemeral "Analyze this sensitive document"
 ```
 
 ## Troubleshooting

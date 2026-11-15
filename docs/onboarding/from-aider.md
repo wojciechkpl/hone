@@ -82,11 +82,11 @@ When you ask to "add two-factor auth," Aider searches by keywords ("factor", "au
 **Hone semantic index:**
 ```bash
 # Understand structure + meaning
-hone -i "Find functions that handle authentication"
+hone "Find functions that handle authentication"
 # Result: Returns auth.login(), auth.verify_token(), auth.setup_2fa()
 # (by meaning, not keywords)
 
-hone -i "Where is the user table defined?"
+hone "Where is the user table defined?"
 # Result: models.py, schema.py, migrations/ (related files)
 ```
 
@@ -163,11 +163,11 @@ When agent edits files or runs commands, the OS enforces restrictions at kernel 
 Aider has no built-in LSP. Hone bridges language servers:
 
 ```bash
-hone -i "What's the return type of this function?"
+hone "What's the return type of this function?"
 # Agent calls: lsp_hover(file="main.rs", line=42, col=10)
 # Returns: type information from Rust analyzer
 
-hone -i "Fix the type errors in this file"
+hone "Fix the type errors in this file"
 # Agent calls: lsp_diagnostics(file="main.rs")
 # Sees all errors, fixes them systematically
 ```

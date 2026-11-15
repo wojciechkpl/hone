@@ -101,7 +101,7 @@ The full TUI render cycle (header + conversation + input + status bar) takes **~
 
 ```bash
 # Start the server
-honed --port 8080 &
+HONE_BIND=127.0.0.1 honed 8080 &
 
 # Run all persona evaluations
 python benchmarks/persona_eval.py --url http://localhost:8080

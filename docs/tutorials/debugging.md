@@ -8,11 +8,11 @@ Before deep-diving, run these:
 
 ```bash
 hone --version          # confirm you're on the build you think
-hone --doctor           # built-in environment check (PATH, API keys, sandbox, deps)
+hone strategies --check # config check: exits 2 and prints the error if a config file is invalid
 ls ~/.hone/logs/        # latest session logs
 ```
 
-The `--doctor` command exits non-zero on any failure, with one suggestion per problem. If it's clean, the issue is more specific — read on.
+Hone has no all-in-one environment check. If the config is valid, the issue is more specific — read on.
 
 ## Provider issues
 
@@ -20,7 +20,6 @@ The `--doctor` command exits non-zero on any failure, with one suggestion per pr
 
 ```bash
 echo $ANTHROPIC_API_KEY     # is it set?
-hone --doctor | grep -i key
 ```
 
 Fix:
@@ -49,13 +48,11 @@ Hone retries with exponential backoff (250 ms → 500 ms → 1 s → 2 s, 4 atte
    primary = "anthropic"
    fallback = ["deepseek", "ollama"]
    ```
-3. Lower concurrency: `hone --max-parallel 1`.
+3. Make fewer calls at once. There is no concurrency flag: `--orchestrate` runs up to 4 workers at a time and `--ensemble N` runs N candidates, so avoid them while you're rate-limited.
 
 ### "model not found"
 
-```bash
-hone --list-models       # what hone thinks is available
-```
+Hone has no command that lists models. Check the ID against the provider's own list (`ollama list` for local models).
 
 Common causes:
 - Typo in model ID — anthropic uses `claude-sonnet-4-5`, not `claude-4-sonnet`.
@@ -64,7 +61,7 @@ Common causes:
 
 ### "supports_tools: false"
 
-Visible in `/configure`. The provider can't round-trip tool calls. For ACP providers, ensure you're on `--provider claude_acp`, not the legacy `--provider claude`. For raw HTTP providers, check that the model supports tool/function calling — Ollama models below 7B params often don't.
+The provider can't round-trip tool calls. `/configure` doesn't show this; with `--orchestrate` or `--ensemble`, Hone warns that the provider does not support tools. ACP providers can't be selected from `hone` (see [ACP](acp.md)), and the Claude and Gemini CLI pass-through models (`claude-cli:`, `gemini-cli:`) never use Hone's tools. For raw HTTP providers, check that the model supports tool/function calling — Ollama models below 7B params often don't.
 
 ### Hot-swap doesn't take effect
 
@@ -129,7 +126,7 @@ If the tool itself panicked, fix the tool. If the channel was closed (rare), res
 
 ### Terminal too small
 
-Hone requires 80×24. Below that you see "Terminal too small". Resize the terminal or switch to one-shot mode: `hone -i "..."`.
+Hone requires 80×24. Below that you see "Terminal too small". Resize the terminal or switch to one-shot mode: `hone "..."`.
 
 ### Garbled output / box-drawing characters wrong
 
@@ -189,7 +186,7 @@ If the directory is gone, you ran `rm -rf ~/.hone` somewhere. There's no remote 
 ### Daemon crash / `honed` won't start
 
 ```bash
-honed --port 7777 --foreground   # don't fork; logs go to stderr
+RUST_LOG=info honed 7777   # runs in the foreground (it never forks); RUST_LOG=info shows its log
 ```
 
 Read the stderr output. Common causes:
@@ -290,11 +287,11 @@ For programmatic access, the daemon exposes `/sessions/<id>/metrics` (JSON).
 Reproduce on a clean session:
 
 ```bash
-HONE_TELEMETRY=0 hone --doctor 2>&1 | tee doctor.log
-HONE_TELEMETRY=0 RUST_LOG=hone=debug hone -i "<minimal repro>" 2>&1 | tee repro.log
+hone --version 2>&1 | tee version.log
+RUST_LOG=hone=debug hone "<minimal repro>" 2>&1 | tee repro.log
 ```
 
-File an issue with `doctor.log` and `repro.log` attached. Redact API keys (hone tries to mask them but verify before posting).
+File an issue with `version.log` and `repro.log` attached. Redact API keys (hone tries to mask them but verify before posting).
 
 Issues: https://github.com/wojciechkpl/hone/issues
 

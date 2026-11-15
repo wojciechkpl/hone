@@ -76,20 +76,9 @@ Codex CLI uses seccomp. Hone uses OS-native sandboxing:
 | Linux | seccomp | Landlock (newer) | Supports deny-on-access, more flexible |
 | Other | seccomp | seccomp | Same |
 
-**Real example:**
+**Real example:** on macOS, shell commands can write only the working directory, `/tmp` and `/dev/null`, and get no network. There is no command that prints the policy; [Permissions and sandbox](../permissions-and-sandbox.md) has the full table per platform.
 
-```bash
-hone --show-sandbox-policy
-
-# Output:
-# Sandbox: Seatbelt on macOS
-#   Deny: /etc/* (except whitelisted)
-#   Deny: /var/* (except ~/.local/share/hone)
-#   Deny: Network (except api.openai.com, api.anthropic.com)
-#   Allow: read /Users/you/project, execute /bin/bash, /usr/bin/python3
-```
-
-Policies are auditable and configurable.
+Your own permission rules live in `~/.config/hone/permissions.toml` and `<repo>/.hone/permissions.toml`.
 
 ### 2. Provider Freedom (No OpenAI Lock-In)
 
@@ -193,29 +182,26 @@ Cost: $0.004 USD
 Session total: $0.28 USD
 ```
 
-Plus built-in budget limits:
-```bash
-hone --budget 5.00
-# Session stops when $5.00 is spent
+Plus built-in budget limits, in `~/.config/hone/config.toml`:
+```toml
+[budget]
+session_limit_usd = 5.00
+# The next turn stops once the session has spent more than $5.00
 ```
 
-Or in config:
-```toml
-[agent]
-max_spend_usd = 5.00
-```
+Or in the TUI: `/budget 5`.
 
 ### 5. LSP Integration (No Language Gaps)
 
 Codex CLI has basic language support. Hone bridges all language servers:
 
 ```bash
-hone -i "Fix type errors in this Rust file"
+hone "Fix type errors in this Rust file"
 # Agent calls: lsp_diagnostics(file="main.rs")
 # Sees all type errors from rust-analyzer
 # Fixes them systematically
 
-hone -i "What does this Python function do?"
+hone "What does this Python function do?"
 # Agent calls: lsp_hover(file="utils.py", line=42, col=10)
 # Returns docstring + type info from Pylance
 ```
@@ -224,32 +210,17 @@ Supports Python, Rust, TypeScript, Go, Java, C++, etc.
 
 ### 6. Multi-User & Audit Logging
 
-Codex CLI is single-user. Hone can be multi-user with full audit logging:
+Codex CLI is single-user. Hone's daemon, `honed`, serves several clients at once and can keep a tamper-evident log of every run:
 
 ```bash
-# Start daemon
-honed --port 7070 --audit-log /var/log/hone/audit.log
-
-# From your laptop
-hone --remote myserver:7070
-
-# Audit log shows:
-# 2026-04-05 12:34:56 [user=alice, session=abc123]
-#   Tool: read_file, path=/home/alice/project/src/main.rs
-#   Result: OK
-# 2026-04-05 12:34:57 [user=alice, session=abc123]
-#   Tool: shell, cmd=cargo test
-#   Result: OK (0 failures)
-# 2026-04-05 12:35:00 [user=alice, session=abc123]
-#   Tool: git_commit, message=fix: null pointer exception
-#   Result: OK
+# Start daemon. There is no --audit-log option: HONE_PROVENANCE_DIR (an existing
+# directory) gets one hash-chained JSONL file per POST /run.
+mkdir -p /var/log/hone/provenance
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
+HONE_PROVENANCE_DIR=/var/log/hone/provenance honed 7070
 ```
 
-Useful for:
-- Compliance (HIPAA, SOC 2, etc.)
-- Team accountability
-- Security investigations
-- Cost tracking per user
+From your laptop, connect the desktop app (daemon URL and token) or call the HTTP API with the token; the `hone` CLI doesn't connect to a daemon. `GET /provenance/{id}/verify` checks a log's chain.
 
 ## What's Different
 
@@ -318,10 +289,12 @@ Codex CLI is single-machine. Hone can run on a server:
 # Codex CLI: always local
 codex suggest
 
-# Hone: local or remote
-hone                        # local
-hone --remote myserver:7070 # remote (daemon)
+# Hone: local, or orchestrated across honed workers
+hone                                                       # local
+hone --orchestrate --distributed http://myserver:7070 "…"  # through a honed coordinator (needs HONE_AUTH_TOKEN)
 ```
+
+The coordinator and workers are `honed` processes; see [Run the daemon](../getting-started.md#8-run-the-daemon-honed).
 
 Remote daemon handles authentication, audit logging, cost tracking per user.
 
