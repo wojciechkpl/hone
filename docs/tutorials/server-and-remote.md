@@ -294,25 +294,18 @@ The web UI provides:
 
 ## Persistent Sessions with SQLite
 
-By default, sessions are stored in memory and lost when the daemon restarts. To persist sessions across restarts, configure a SQLite database:
+By default, `honed` persists sessions in SQLite at `~/.local/share/hone/sessions.db` (created if absent). To use another file, set `HONE_SESSION_DB`:
 
 ```bash
-HONE_BIND=127.0.0.1 HONE_SESSION_DB=~/.local/share/hone/sessions.db honed
+HONE_BIND=127.0.0.1 HONE_SESSION_DB=/srv/hone/sessions.db honed
 ```
 
-Or via config.toml:
-
-```toml
-[storage]
-sessions_db = "~/.local/share/hone/sessions.db"
-```
-
-When `HONE_SESSION_DB` is set:
+There is no `[storage]` setting in `config.toml`. With persistence on (the default):
 - New sessions are persisted immediately
 - Sessions survive daemon restarts
 - Session history is queryable via the API
 
-Without this setting, sessions live only in memory for the duration of the daemon process.
+To keep sessions in memory only, set `HONE_EPHEMERAL=1`; they are then lost when the daemon stops. If the default file can't be opened, `honed` logs a warning (at warn level) and falls back to memory.
 
 ---
 

@@ -19,7 +19,7 @@ Start here if you're new to Hone:
 
 - **[Tools and MCP](tools-and-mcp.md)** — Layer architecture (L0–L3), native tools (file, shell, git, LSP, semantic index), MCP integration (JSON-RPC, external tools), Code Mode (agent-generated orchestration), skills (HONE.md conventions), tool registry and dispatch, writing custom tools
 
-- **[Recipes](recipes.md)** — YAML recipe system, recipe format with annotations, conditional steps, TDD hook (test_cmd), running recipes interactively or in batch mode, recipe output and export, writing and sharing recipes
+- **[Recipes](recipes.md)** — YAML recipe system, recipe format with annotations, conditional steps, TDD hook (test_cmd), running the built-in recipes (runs never pause), recipe output, writing and sharing recipes
 
 - **[Orchestration GUI](orchestration-gui.md)** — `/plan` plan-preview gate (TUI + web UI), `/budget` and `/permit` per-run governance, `/workflows` saved-recipe drawer, the `POST /orchestrate?dry_run=true` and `POST /recipes` daemon endpoints. Pairs with the [research doc](../research/gui-for-non-cli-users-2026-05.md) and [TDD plan](../plans/orchestration-gui-tdd-2026-05.md).
 
@@ -81,25 +81,13 @@ You can now build custom applications on top of Hone.
 
 ### Use Case: Code Review
 
-Start with [Getting Started](getting-started.md), then use [Recipes](recipes.md) to automate the review process:
-
-```yaml
-name: "Code Review"
-steps:
-  - name: "Analyze Changes"
-    prompt: "Review the diff and identify issues"
-  - name: "Suggest Improvements"
-    prompt: "What are the top 3 improvements?"
-  - name: "Generate Summary"
-    prompt: "Write a review summary"
-test_cmd: "cargo test"
-```
-
-Run it:
+Start with [Getting Started](getting-started.md), then use the built-in `code-review` recipe ([Recipes](recipes.md)) to automate the review process. It runs six steps: overview, correctness, security, performance, tests and report.
 
 ```bash
-hone --recipe code-review.yaml
+hone --recipe code-review
 ```
+
+`--recipe` runs built-in recipes by name only, so a recipe file such as `code-review.yaml` can't be run this way yet.
 
 ### Use Case: Semantic Code Search
 
@@ -184,8 +172,8 @@ hone
 # One-shot command
 hone "List files in src/"
 
-# Run a recipe
-hone --recipe my-recipe.yaml
+# Run a built-in recipe (hone --list-recipes shows the names)
+hone --recipe code-review
 
 # Switch model
 hone --model ollama:llama2

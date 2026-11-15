@@ -8,7 +8,7 @@ You know OpenCode. You're comfortable with 75+ providers, LSP integration, clien
 |----------|-----------------|-------|
 | 75+ provider support | 75+ providers (same breadth) | Full compatibility |
 | OpenCode LSP bridge | LSP bridges (same approach) | Embedded in Hone |
-| OpenCode web UI | hone TUI + honed daemon | TUI instead of web (faster) |
+| OpenCode web UI | hone TUI, or the web UI served by honed | TUI is the main interface; the web UI needs `honed` |
 | OpenCode client-server | hone CLI + honed daemon | HTTP/2 + SSE instead of WebSocket |
 | OpenCode cost tracking | Real-time cost tracking | Per-turn granularity |
 | Custom integrations | MCP + Layer 2 tools (ACP is library-only) | More modular |
@@ -224,7 +224,7 @@ ACP providers are library-only for now: `hone` can't select one. There is no `ac
 - Web UI: Better for non-technical users, remote collaboration
 - TUI: Better for developers, lower latency, no browser overhead
 
-Web UI is planned for Hone (not yet implemented).
+Hone also has a web UI, served by `honed` at `/ui` (build it in first: `make webui`, then rebuild `honed`).
 
 ### 2. Daemon Architecture
 
@@ -408,7 +408,7 @@ Hone recipes are YAML (same format as OpenCode). Update tool names if needed.
 
 ### Can I still use the web UI?
 
-Not yet. Hone currently has a TUI. Web UI is planned.
+Yes, through `honed`: it serves a web UI at `/ui` once you build it in (`make webui`, then rebuild `honed`). See [What about the web UI? I prefer it.](#what-about-the-web-ui-i-prefer-it) below.
 
 ### Do my OpenCode recipes work in Hone?
 

@@ -358,56 +358,52 @@ A recipe is a structured workflow. Instead of manually running steps one by one,
 2. The order to do them
 3. Whether to run tests at the end
 
-Hone ships with 4 built-in recipes:
+Hone ships with 9 built-in recipes (`hone --list-recipes` lists them all), including:
 
 | Recipe | What It Does |
 |--------|-------------|
 | `tdd-feature` | Implement a feature with Red-Green-Refactor |
 | `bug-fix` | Fix a bug with a regression test |
-| `code-review` | Comprehensive code review (5 steps) |
+| `code-review` | Comprehensive code review (6 steps) |
 | `refactor` | Safely refactor with test verification |
 
 ### Running a Recipe
 
 ```bash
-# Run a built-in recipe
-hone --recipe tdd-feature
-hone --recipe bug-fix
+# Run a built-in recipe; --var fills the {{placeholders}} in its prompts
+hone --recipe tdd-feature --var feature_name="CSV export" --var test_command="cargo test"
+hone --recipe bug-fix --var test_command="cargo test"
 ```
 
 Here's what a TDD feature run looks like:
 
 ```
-Recipe: tdd-feature
-Step 1/5: Understand
-  Prompt: Read the relevant code and understand the current architecture...
-  Agent: [reads files, summarizes the codebase]
-  Continue? (y/n) y
+Running recipe: tdd-feature (5 steps)
+  Implement a feature using Test-Driven Development (Red-Green-Refactor)
 
-Step 2/5: Red
-  Prompt: Write failing tests that describe the desired behavior...
-  Agent: [writes tests, runs them to confirm failure]
-  Continue? (y/n) y
+[1/5] clarify
+[agent clarifies the requirements]
 
-Step 3/5: Green
-  Prompt: Write the minimum code to make tests pass...
-  Agent: [writes implementation]
-  Continue? (y/n) y
+  Running tests: cargo test
+  Tests passed.
 
-Step 4/5: Refactor
-  Prompt: Refactor for clarity and quality...
-  Agent: [improves code]
-  Continue? (y/n) y
+[2/5] red
+[agent writes failing tests and runs them]
 
-Step 5/5: Verify
-  Prompt: Run all tests...
-  Agent: [runs full test suite, reports success]
-  
-Test command: cargo test
-Result: PASSED (all 12 tests)
+  Running tests: cargo test
+  Tests FAILED:
+  [test output]
 
-Recipe completed successfully.
+[3/5] green
+...
+
+[5/5] verify
+...
+
+Recipe 'tdd-feature' complete.
 ```
+
+The run never pauses for input. The test command runs after every step; a failure is printed and the next step starts anyway.
 
 ### Combining Agents and Recipes
 
@@ -496,17 +492,17 @@ This runs the TDD workflow with the default persona (recipes take no `@agent`). 
 ### Refactor Code Safely
 
 ```bash
-hone --recipe refactor
+hone --recipe refactor --var test_command="cargo test"
 ```
 
-The refactor recipe enforces test verification at each step:
+The refactor recipe runs your test command after each step:
 1. Establish a green baseline
 2. Plan the refactoring
 3. Execute changes one at a time
 4. Run tests after each change
 5. Report before/after metrics
 
-You approve each step incrementally.
+It runs every step without pausing for approval, and doesn't stop when the tests fail.
 
 ### Code Review (General)
 

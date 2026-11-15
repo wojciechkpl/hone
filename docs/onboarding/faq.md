@@ -75,7 +75,7 @@ Yes. Hone integrates directly with your API keys:
 
 - **Anthropic:** Export `ANTHROPIC_API_KEY="sk-ant-..."` and use `--model anthropic:claude-opus-4-5`
 - **OpenAI:** Export `OPENAI_API_KEY="sk-..."` and use `--model openai:gpt-4o`
-- **Google:** Export `GOOGLE_API_KEY="..."` and use `--model google:gemini-pro`
+- **Google:** There is no `google:` prefix. Use `--model gemini-cli:gemini-2.5-pro`, which runs your installed `gemini` CLI with its own login and its own tools (not Hone's), or reach Gemini through an OpenAI-compatible endpoint such as OpenRouter, which `hone configure` offers
 
 See [Providers Guide](../tutorials/providers.md) for full setup.
 

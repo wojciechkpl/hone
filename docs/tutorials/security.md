@@ -31,13 +31,7 @@ let policy = SandboxPolicyBuilder::new(SandboxMode::Manual)
     .build()?;
 ```
 
-When a tool runs a subprocess, Landlock is applied via `pre_exec()` so the child cannot access files outside the policy:
-
-```bash
-# If tool reads /etc/passwd (not in allow_read)
-Agent calls: read_file(path="/etc/passwd")
-error: Permission denied (EACCES)
-```
+Only shell commands are sandboxed: the shell tool installs the sandbox on the child process it starts. File tools such as `read_file` and `write_file` run inside the Hone process, so the OS sandbox never applies to them; they are governed by permission rules instead. See [Permissions and sandbox](../permissions-and-sandbox.md#3-os-sandbox).
 
 **Requirements:**
 - Linux kernel 5.13+ (Landlock upstreamed in this release)

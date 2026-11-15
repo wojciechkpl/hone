@@ -139,11 +139,8 @@ honed 7070
 # From your laptop: the desktop app (daemon URL and token) or the HTTP API.
 # The hone CLI doesn't connect to a daemon.
 
-# In HONE.md or config, define roles
-[team.roles]
-alice = "admin"      # manage settings, users
-bob = "operator"     # run sessions, read code
-charlie = "viewer"   # read-only access
+# There are no per-user roles to define: every client uses the one HONE_AUTH_TOKEN,
+# and a [team.roles] table makes config.toml fail to load.
 ```
 
 There is no `--audit-log` option. To keep a tamper-evident log of every run, point `HONE_PROVENANCE_DIR` at an existing directory:
