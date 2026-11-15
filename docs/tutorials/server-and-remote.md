@@ -10,7 +10,7 @@ HONE_BIND=127.0.0.1 honed 7777
 
 The daemon listens on `http://localhost:7777`. The port is a positional argument (default 3117). Without `HONE_BIND=127.0.0.1`, `honed` binds `0.0.0.0` and refuses to start unless `HONE_AUTH_TOKEN` is set.
 
-`honed` has no config file of its own and serves plain HTTP only (from your `config.toml` it reads only `[pricing]`, plus the context and memory tables when it runs as a distributed worker); see [Daemon Configuration](#daemon-configuration) for the environment variables it reads.
+`honed` has no config file of its own and serves plain HTTP only (from your `config.toml` it reads only `[pricing]`, plus the `[context]`, `[memory]` and `[retrieval]` tables, from your file and the working directory's `.hone/config.toml`, when it runs as a distributed worker); see [Daemon Configuration](#daemon-configuration) for the environment variables it reads.
 
 ## REST API Overview
 

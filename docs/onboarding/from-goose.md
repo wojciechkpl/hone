@@ -389,8 +389,8 @@ No. `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`);
 ## Next Steps
 
 1. **Install:** Follow step 1 above
-2. **Config:** Migrate your Goose config to HONE.toml
-3. **Recipes:** Copy your recipes and test
+2. **Config:** Move your Goose settings to `~/.config/hone/config.toml`
+3. **Recipes:** your Goose recipe files can't be run yet; use the closest built-in (`hone --list-recipes`)
 4. **Test:** Run a built-in recipe, e.g. `hone --recipe code-review` (recipe files can't be run yet)
 5. **Extend:** Read [Tools and MCP](../tutorials/tools-and-mcp.md) for advanced integrations
 6. **Team:** Read [Server and Remote](../tutorials/server-and-remote.md) for remote daemon setup
