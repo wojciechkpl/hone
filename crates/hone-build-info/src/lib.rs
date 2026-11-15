@@ -1,6 +1,7 @@
 //! Build-script helper: embeds the git commit and date in `--version` output.
 //!
-//! Call [`emit`] from a `build.rs`; it sets `HONE_LONG_VERSION` for the crate.
+//! Call [`emit`] from a `build.rs`; it sets `HONE_LONG_VERSION`, `HONE_BUILD_SOURCE` and `HONE_GIT_SHA`
+//! (the full sha, empty when unknown) for the crate.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -27,13 +28,22 @@ pub fn long_version(pkg_version: &str, git: Option<&GitInfo>) -> String {
     }
 }
 
-/// Accepts 7..=40 hex chars (after trimming), lowercases and truncates to 12.
-pub fn normalize_sha(raw: &str) -> Option<String> {
+/// Accepts 7..=40 hex chars (sha1) or exactly 64 (sha256) after trimming, and
+/// returns the untruncated lowercase sha.
+pub fn normalize_full_sha(raw: &str) -> Option<String> {
     let s = raw.trim();
-    if !(7..=40).contains(&s.len()) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+    let len_ok = (7..=40).contains(&s.len()) || s.len() == 64;
+    if !len_ok || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    Some(s[..s.len().min(SHA_LEN)].to_ascii_lowercase())
+    Some(s.to_ascii_lowercase())
+}
+
+/// Like [`normalize_full_sha`], truncated to 12 chars.
+pub fn normalize_sha(raw: &str) -> Option<String> {
+    let mut s = normalize_full_sha(raw)?;
+    s.truncate(SHA_LEN);
+    Some(s)
 }
 
 /// Accepts exactly `YYYY-MM-DD` (after trimming).
@@ -50,15 +60,24 @@ pub fn normalize_date(raw: &str) -> Option<String> {
 
 /// Extracts the commit sha from the contents of `.cargo_vcs_info.json`.
 pub fn sha_from_cargo_vcs_info(json: &str) -> Option<String> {
+    full_sha_from_cargo_vcs_info(json).and_then(|s| normalize_sha(&s))
+}
+
+fn full_sha_from_cargo_vcs_info(json: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    normalize_sha(v.get("git")?.get("sha1")?.as_str()?)
+    normalize_full_sha(v.get("git")?.get("sha1")?.as_str()?)
 }
 
 /// Reads the override variables through `get`. A valid sha is required.
 pub fn git_info_from_overrides(get: impl Fn(&str) -> Option<String>) -> Option<GitInfo> {
-    let sha = normalize_sha(&get(ENV_SHA)?)?;
+    override_with_full_sha(&get).map(|(info, _)| info)
+}
+
+fn override_with_full_sha(get: &impl Fn(&str) -> Option<String>) -> Option<(GitInfo, String)> {
+    let full = normalize_full_sha(&get(ENV_SHA)?)?;
     let date = get(ENV_DATE).and_then(|d| normalize_date(&d));
-    Some(GitInfo { sha, date })
+    let sha = full[..full.len().min(SHA_LEN)].to_string();
+    Some((GitInfo { sha, date }, full))
 }
 
 fn git_cmd(dir: &Path) -> Command {
@@ -95,7 +114,7 @@ fn git_path(dir: &Path, name: &str) -> Option<PathBuf> {
 }
 
 /// Returns the git info plus the existing paths whose change should trigger a rebuild.
-fn git_info_from_git(dir: &Path) -> Option<(GitInfo, Vec<PathBuf>)> {
+fn git_info_from_git(dir: &Path) -> Option<(GitInfo, String, Vec<PathBuf>)> {
     // Only trust git when this crate is tracked by the repository we found.
     git_cmd(dir)
         .args(["ls-files", "--error-unmatch", "--", "Cargo.toml"])
@@ -103,7 +122,8 @@ fn git_info_from_git(dir: &Path) -> Option<(GitInfo, Vec<PathBuf>)> {
         .ok()
         .filter(|o| o.status.success())?;
 
-    let sha = normalize_sha(&git_output(dir, &["rev-parse", "--short=12", "HEAD"])?)?;
+    let full = normalize_full_sha(&git_output(dir, &["rev-parse", "HEAD"])?)?;
+    let sha = full[..full.len().min(SHA_LEN)].to_string();
     let date = git_output(
         dir,
         &["log", "-1", "--no-show-signature", "--format=%cs", "HEAD"],
@@ -130,7 +150,7 @@ fn git_info_from_git(dir: &Path) -> Option<(GitInfo, Vec<PathBuf>)> {
     if let Some(heads) = git_path(dir, "refs/heads").filter(|p| p.is_dir()) {
         paths.push(heads);
     }
-    Some((GitInfo { sha, date }, paths))
+    Some((GitInfo { sha, date }, full, paths))
 }
 
 /// Where the commit info came from.
@@ -163,6 +183,8 @@ impl Source {
 pub struct Resolved {
     /// Commit info, if any source produced it.
     pub info: Option<GitInfo>,
+    /// Untruncated lowercase sha (`info.sha` is a prefix of it), if known.
+    pub full_sha: Option<String>,
     /// Which source produced `info`.
     pub source: Source,
     /// Existing paths the build script should watch with `rerun-if-changed`.
@@ -171,33 +193,38 @@ pub struct Resolved {
 
 /// Resolves commit info: overrides, `.cargo_vcs_info.json`, git, unknown.
 pub fn resolve(manifest_dir: &Path, get_env: impl Fn(&str) -> Option<String>) -> Resolved {
-    if let Some(info) = git_info_from_overrides(&get_env) {
+    if let Some((info, full)) = override_with_full_sha(&get_env) {
         return Resolved {
             info: Some(info),
+            full_sha: Some(full),
             source: Source::Override,
             rerun_if_changed: Vec::new(),
         };
     }
     let vcs = manifest_dir.join(".cargo_vcs_info.json");
-    if let Some(sha) = std::fs::read_to_string(&vcs)
+    if let Some(full) = std::fs::read_to_string(&vcs)
         .ok()
-        .and_then(|j| sha_from_cargo_vcs_info(&j))
+        .and_then(|j| full_sha_from_cargo_vcs_info(&j))
     {
+        let sha = full[..full.len().min(SHA_LEN)].to_string();
         return Resolved {
             info: Some(GitInfo { sha, date: None }),
+            full_sha: Some(full),
             source: Source::CargoVcsInfo,
             rerun_if_changed: vec![vcs],
         };
     }
-    if let Some((info, paths)) = git_info_from_git(manifest_dir) {
+    if let Some((info, full, paths)) = git_info_from_git(manifest_dir) {
         return Resolved {
             info: Some(info),
+            full_sha: Some(full),
             source: Source::Git,
             rerun_if_changed: paths,
         };
     }
     Resolved {
         info: None,
+        full_sha: None,
         source: Source::Unknown,
         // An existing directory: a missing path would make cargo rebuild every time.
         rerun_if_changed: vec![manifest_dir.to_path_buf()],
@@ -223,6 +250,10 @@ pub fn emit() {
             "cargo:warning=git commit unknown; set {ENV_SHA} (and {ENV_DATE}) to embed it in --version"
         );
     }
+    println!(
+        "cargo:rustc-env=HONE_GIT_SHA={}",
+        r.full_sha.as_deref().unwrap_or_default()
+    );
     println!("cargo:rustc-env=HONE_BUILD_SOURCE={}", r.source.as_str());
     println!(
         "cargo:rustc-env=HONE_LONG_VERSION={}",
