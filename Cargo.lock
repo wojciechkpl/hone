@@ -2743,7 +2743,6 @@ name = "hone-eval"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "hone-build-info",
  "hone-config",
  "hone-core",
  "hone-memory",

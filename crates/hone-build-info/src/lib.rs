@@ -30,7 +30,7 @@ pub fn long_version(pkg_version: &str, git: Option<&GitInfo>) -> String {
 
 /// Accepts 7..=40 hex chars (sha1) or exactly 64 (sha256) after trimming, and
 /// returns the untruncated lowercase sha.
-pub fn normalize_full_sha(raw: &str) -> Option<String> {
+fn normalize_full_sha(raw: &str) -> Option<String> {
     let s = raw.trim();
     let len_ok = (7..=40).contains(&s.len()) || s.len() == 64;
     if !len_ok || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -39,11 +39,14 @@ pub fn normalize_full_sha(raw: &str) -> Option<String> {
     Some(s.to_ascii_lowercase())
 }
 
-/// Like [`normalize_full_sha`], truncated to 12 chars.
+/// Like `normalize_full_sha`, truncated to 12 chars.
 pub fn normalize_sha(raw: &str) -> Option<String> {
-    let mut s = normalize_full_sha(raw)?;
-    s.truncate(SHA_LEN);
-    Some(s)
+    normalize_full_sha(raw).map(|s| abbrev(&s))
+}
+
+/// The first 12 chars of a full sha.
+fn abbrev(full: &str) -> String {
+    full[..full.len().min(SHA_LEN)].to_string()
 }
 
 /// Accepts exactly `YYYY-MM-DD` (after trimming).
@@ -76,7 +79,7 @@ pub fn git_info_from_overrides(get: impl Fn(&str) -> Option<String>) -> Option<G
 fn override_with_full_sha(get: &impl Fn(&str) -> Option<String>) -> Option<(GitInfo, String)> {
     let full = normalize_full_sha(&get(ENV_SHA)?)?;
     let date = get(ENV_DATE).and_then(|d| normalize_date(&d));
-    let sha = full[..full.len().min(SHA_LEN)].to_string();
+    let sha = abbrev(&full);
     Some((GitInfo { sha, date }, full))
 }
 
@@ -123,7 +126,7 @@ fn git_info_from_git(dir: &Path) -> Option<(GitInfo, String, Vec<PathBuf>)> {
         .filter(|o| o.status.success())?;
 
     let full = normalize_full_sha(&git_output(dir, &["rev-parse", "HEAD"])?)?;
-    let sha = full[..full.len().min(SHA_LEN)].to_string();
+    let sha = abbrev(&full);
     let date = git_output(
         dir,
         &["log", "-1", "--no-show-signature", "--format=%cs", "HEAD"],
@@ -131,11 +134,9 @@ fn git_info_from_git(dir: &Path) -> Option<(GitInfo, String, Vec<PathBuf>)> {
     .and_then(|d| normalize_date(&d));
 
     let mut names = vec!["HEAD".to_string()];
-    if let Some(branch) = git_output(dir, &["symbolic-ref", "-q", "HEAD"]) {
-        if branch.starts_with("refs/heads/") {
-            names.push(branch);
-        }
-    }
+    names.extend(
+        git_output(dir, &["symbolic-ref", "-q", "HEAD"]).filter(|b| b.starts_with("refs/heads/")),
+    );
     names.extend(["packed-refs", "logs/HEAD", "reftable"].map(String::from));
 
     // `--git-path` prints paths whether or not they exist, and cargo treats a
@@ -206,7 +207,7 @@ pub fn resolve(manifest_dir: &Path, get_env: impl Fn(&str) -> Option<String>) ->
         .ok()
         .and_then(|j| full_sha_from_cargo_vcs_info(&j))
     {
-        let sha = full[..full.len().min(SHA_LEN)].to_string();
+        let sha = abbrev(&full);
         return Resolved {
             info: Some(GitInfo { sha, date: None }),
             full_sha: Some(full),

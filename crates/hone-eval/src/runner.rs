@@ -105,6 +105,7 @@ pub struct EvalRunner {
     builder: AgentBuilder,
     user: Option<Arc<ConfigLayer>>,
     copy_warn_bytes: u64,
+    hone_git_sha: Option<String>,
 }
 
 /// The size above which a task's copy is reported (F21).
@@ -411,12 +412,20 @@ impl EvalRunner {
             builder,
             user: None,
             copy_warn_bytes: DEFAULT_COPY_WARN_BYTES,
+            hone_git_sha: None,
         }
     }
 
     /// Report a task's copy in the manifest's `warnings` when it exceeds `bytes`.
     pub fn with_copy_warn_bytes(mut self, bytes: u64) -> Self {
         self.copy_warn_bytes = bytes;
+        self
+    }
+
+    /// Record the commit hone was built from as the manifest's `hone_git_sha`
+    /// (null when `None`).
+    pub fn with_hone_git_sha(mut self, sha: Option<String>) -> Self {
+        self.hone_git_sha = sha;
         self
     }
 
@@ -456,7 +465,7 @@ impl EvalRunner {
             "run_id": run_id,
             "hone_version": env!("CARGO_PKG_VERSION"),
             "suite_git_sha": suite_sha,
-            "hone_git_sha": hone_git_sha(),
+            "hone_git_sha": self.hone_git_sha.as_deref().map_or(Value::Null, Value::from),
             "env": run_env(),
             "interrupted": false,
             "warnings": [],
@@ -747,14 +756,6 @@ fn git_sha(dir: &Path) -> Value {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
         .filter(|s| !s.is_empty())
         .map_or(Value::Null, Value::String)
-}
-
-/// The git SHA hone was built from (build metadata), or null.
-fn hone_git_sha() -> Value {
-    match option_env!("HONE_GIT_SHA") {
-        Some(sha) if !sha.is_empty() => Value::String(sha.to_owned()),
-        _ => Value::Null,
-    }
 }
 
 /// The environment variables that change runs, as strings or null.

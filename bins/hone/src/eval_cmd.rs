@@ -245,6 +245,9 @@ pub async fn run(args: EvalArgs, eff: Effective, model_flag: Option<String>) -> 
     if let Some(layer) = user {
         runner = runner.with_user_layer(layer);
     }
+    // hone-cli's own build commit (empty when unknown), recorded in the manifest.
+    let git_sha = env!("HONE_GIT_SHA");
+    runner = runner.with_hone_git_sha((!git_sha.is_empty()).then(|| git_sha.to_owned()));
     let history = open_history().await;
     let opts = EvalOptions {
         out_dir: args
