@@ -10,14 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - **Before:** every build printed `0.1.0`, so an old install looked the same as a current one.
 - **Now:** `hone --version`, `honed --version`, their `-V` forms and the first line of `honed --help` print the commit and its date: `hone 0.1.0 (1030cb88121d 2026-11-14)`.
-- **Where the commit comes from, in order:** `HONE_BUILD_GIT_SHA` and `HONE_BUILD_GIT_DATE`; a crates.io package's `.cargo_vcs_info.json` (commit only, no date); git, when the crate is tracked by the repository it sits in. A build that finds none prints `(commit unknown)` and says so at build time. See `packaging/README.md`.
-- The date is the commit's, not the build's, so two builds of one commit print the same line. The build scripts re-run only when the commit changes.
-- The new `hone-build-info` crate does this. It must be published to crates.io before `hone-cli`, `honed` and `hone-eval`.
+- **Where the commit comes from, in order:** `HONE_BUILD_GIT_SHA` and `HONE_BUILD_GIT_DATE`; a crates.io package's `.cargo_vcs_info.json` (commit only, no date); git, when the crate is tracked by the repository it sits in. A build that finds none prints `(commit unknown)` and says so at build time. `HONE_BUILD_GIT_SHA` takes 7 to 40 hex characters, or 64 for a SHA-256 repository. See `packaging/README.md`.
+- The date is the commit's, not the build's, so two builds of one commit print the same line. The build scripts re-run when `HEAD`, its reflog or a local branch changes (a commit, a checkout, a branch switch, `git gc`), not on every build.
+- The new `hone-build-info` crate does this. It must be published to crates.io before `hone-cli` and `honed`.
 
-### Fixed: `hone-eval` no longer rebuilds on every build, and its manifest records the same commit as `--version`
+### Fixed: `hone-eval` no longer rebuilds on every build, and its manifest records the commit `--version` shows
 
-- **Before:** `hone-eval`'s build script watched a file that doesn't exist when the checked-out branch is only in `packed-refs` (after `git gc`, for example). Cargo treats a missing file as changed, so `hone-eval` and `hone` recompiled on every `cargo build`. The `hone_git_sha` in `hone eval` manifests ignored `HONE_BUILD_GIT_SHA` and crates.io package metadata, and a source tree unpacked inside another repository recorded that repository's commit.
-- **Now:** `hone-eval` uses `hone-build-info`, like `hone` and `honed`. A second build is a no-op until the commit changes. `hone_git_sha` comes from the same source as `--version`: the full sha (64 hex in a SHA-256 repository), the override lowercased, or `null` when the commit is unknown.
+- **Before:** `hone-eval`'s build script watched a file that doesn't exist when the checked-out branch is only in `packed-refs` (after `git gc`, for example). Cargo treats a missing file as changed, so `hone-eval` and everything built on it (`hone`, `honed`) recompiled on every `cargo build`. The `hone_git_sha` in `hone eval` manifests ignored `HONE_BUILD_GIT_SHA` and crates.io package metadata, and a source tree unpacked inside another repository recorded that repository's commit.
+- **Now:** `hone-eval` has no build script. `hone eval` passes the commit of the `hone` binary that ran it (`EvalRunner::with_hone_git_sha`), so `hone_git_sha` is the full form of the commit `hone --version` shows: 40 hex (64 in a SHA-256 repository), the override lowercased, or `null` when the commit is unknown. A change of git state no longer recompiles `hone-eval` or `hone-server`.
 
 ### Fixed: the injection detector sees through hidden characters and JSON escapes
 
