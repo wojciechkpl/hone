@@ -187,6 +187,31 @@ fn test_f17_a_run_where_every_outcome_is_infra_error_should_exit_non_zero() {
     assert_eq!(o["status"], "infra_error", "harness: this is an infra_error run: {o}");
 }
 
+#[test]
+fn test_the_manifest_written_by_hone_eval_should_carry_the_binarys_own_build_commit() {
+    use std::os::unix::fs::PermissionsExt;
+    let e = Env::with_ollama();
+    // Same model-free setup as the F17 infra_error run: the manifest is still written.
+    let secret = e.dir.join("proj/locked");
+    std::fs::create_dir_all(&secret).unwrap();
+    std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let t = e.tasks(
+        "model = \"ollama:qwen\"\n\n[[tasks]]\nid = \"t1\"\nprompt = \"p\"\nsuccess_check = \"true\"\nworking_dir = \"proj\"\n",
+    );
+
+    let out = e.run(None, &t, &["-o", "out"]);
+    std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let runs: Vec<PathBuf> = std::fs::read_dir(e.dir.join("out")).unwrap().map(|d| d.unwrap().path()).collect();
+    assert_eq!(runs.len(), 1, "the run happened: {}", text(&out.stderr));
+    let m: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(runs[0].join("manifest.json")).unwrap()).unwrap();
+    // `hone eval` passes its own build commit (the one `--version` shows); empty means unknown.
+    match env!("HONE_GIT_SHA") {
+        "" => assert!(m["hone_git_sha"].is_null(), "{m}"),
+        sha => assert_eq!(m["hone_git_sha"], sha, "{m}"),
+    }
+}
+
 // ---- F20 ---------------------------------------------------------------------------------------
 
 #[test]

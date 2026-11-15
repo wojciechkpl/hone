@@ -5,8 +5,9 @@
 //!
 //! New API pinned:
 //! - (F16 and the F21 size warning, with their API, are in `eval_review1_api.rs`.)
-//! - manifest fields: `hone_git_sha` (string or null: the build's git SHA, from build
-//!   metadata), `suite_git_sha` (the tasks file directory's `git rev-parse HEAD`, or null),
+//! - manifest fields: `hone_git_sha` (string or null: null unless set with
+//!   `EvalRunner::with_hone_git_sha`; `hone eval` passes its own build commit),
+//!   `suite_git_sha` (the tasks file directory's `git rev-parse HEAD`, or null),
 //!   `warnings`.
 //! - `outcome.json` of a run that never started because of an unsafe copy has
 //!   `status: "infra_error"` and a `message` naming the offending path.
@@ -375,7 +376,7 @@ async fn test_f23_manifest_should_record_the_suite_git_sha_separately_from_hones
     let hone_sha = &m["hone_git_sha"];
     assert!(
         hone_sha.is_null() || hone_sha.as_str().is_some_and(|s| s.len() >= 7 && s.chars().all(|c| c.is_ascii_hexdigit())),
-        "hone_git_sha is build metadata (a hex SHA) or null: {hone_sha}"
+        "hone_git_sha is a hex SHA if the caller set one, else null: {hone_sha}"
     );
     assert_ne!(m["hone_git_sha"], m["suite_git_sha"], "different things: the test suite's repository is not hone's build");
 }

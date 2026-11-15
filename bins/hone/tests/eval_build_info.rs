@@ -1,8 +1,8 @@
 #![cfg(unix)]
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 //! The eval manifest's `hone_git_sha` is supplied by the binary through
-//! `EvalRunner::with_hone_git_sha` (hone-eval has no build script). Running `hone eval`
-//! itself needs a model provider, so the binary wiring is checked via its inputs: hone-cli's
+//! `EvalRunner::with_hone_git_sha` (hone-eval has no build script). The `hone eval` wiring itself is checked in
+//! `eval_review1_cli.rs` (no model needed). Here: the runner API, and hone-cli's
 //! `HONE_GIT_SHA` must agree with the commit in `--version` (`HONE_LONG_VERSION`).
 
 mod eval_support;
