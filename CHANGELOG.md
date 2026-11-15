@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### `hone --version` and `honed --version` name the commit
+
+- **Before:** every build printed `0.1.0`, so an old install looked the same as a current one.
+- **Now:** `hone --version`, `honed --version`, their `-V` forms and the first line of `honed --help` print the commit and its date: `hone 0.1.0 (1030cb88121d 2026-11-14)`.
+- **Where the commit comes from, in order:** `HONE_BUILD_GIT_SHA` and `HONE_BUILD_GIT_DATE`; a crates.io package's `.cargo_vcs_info.json` (commit only, no date); git, when the crate is tracked by the repository it sits in. A build that finds none prints `(commit unknown)` and says so at build time. See `packaging/README.md`.
+- The date is the commit's, not the build's, so two builds of one commit print the same line. The build scripts re-run only when the commit changes.
+- The new `hone-build-info` crate does this. It must be published to crates.io before `hone-cli` and `honed`.
+
 ### Fixed: the injection detector sees through hidden characters and JSON escapes
 
 - **Before:** a trigger phrase split by a control or zero-width character, or written in fullwidth or math-bold letters, or in Unicode tag characters, or with those characters written as JSON `\uXXXX` escapes, was not matched. Tool results, tool errors and MCP output shared the blind spot.

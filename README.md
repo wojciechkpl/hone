@@ -261,6 +261,7 @@ See [routing and fallback](docs/configuration.md#routing-and-fallback).
 
 ### Also new
 
+- **`hone --version` names the commit.** `hone` and `honed` print the commit they were built from and its date, for example `hone 0.1.0 (1030cb88121d 2026-11-14)`, so an old install no longer looks like a current one.
 - **`HONE_CONTEXT_WINDOW`** sets the context window for a model that is served with a smaller one than its name suggests.
 - **Typed memories.** The model reads an index of memories and fetches the ones it needs. Recall uses BM25 ranking. Manage memories with `hone memory ls | show | forget`.
 
@@ -959,12 +960,12 @@ cargo run --release --bin hone -- "fix the bug"
 ### Verify Installation
 
 ```bash
-hone --version    # hone 0.1.0
-honed --version   # honed 0.1.0
+hone --version    # hone 0.1.0 (1030cb88121d 2026-11-14)
+honed --version   # honed 0.1.0 (1030cb88121d 2026-11-14)
 which -a hone honed   # ~/.cargo/bin should come first
 ```
 
-Every build reports 0.1.0 for now, so the version doesn't tell an old install from a new one. If you installed from crates.io before, run the update command below. If `which -a` also lists copies in `/usr/local/bin` (Option 2 and the desktop instructions put them there), remove those or rebuild them too: `cargo install` doesn't replace them, and they usually come first on PATH.
+The version number is still 0.1.0 everywhere, so the part in brackets is what tells builds apart: the commit the build came from and that commit's date. A line with nothing after `0.1.0` is an early build, such as the one on crates.io: run the update command below. `(commit unknown)` means the build couldn't find its commit, for example in a source tarball; packagers can set it with `HONE_BUILD_GIT_SHA` and `HONE_BUILD_GIT_DATE` (see [packaging](packaging/README.md)). If `which -a` also lists copies in `/usr/local/bin` (Option 2 and the desktop instructions put them there), remove those or rebuild them too: `cargo install` doesn't replace them, and they usually come first on PATH.
 
 ### Update
 
