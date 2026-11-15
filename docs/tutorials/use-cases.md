@@ -149,7 +149,7 @@ $ hone "Add a /health endpoint that returns {status: ok, timestamp: iso8601}"
 
 **Scenario:** You have an authentication module in `src/auth.py` and want to check it for security vulnerabilities.
 
-`--agent` is accepted but not applied yet. In the TUI, start a message with `@code-reviewer …` (the exact agent name) to use that persona for the turn. The agent examples on this page use that form.
+`--agent` is accepted but not applied yet. In the TUI, start a message with `@code-reviewer …` (the exact agent name) to use that persona for the turn. If Hone sorts the message as complex (for example it says "implement" or "architecture", or names three or more files), it runs through the orchestrator with the default prompt; only the persona's tool list applies. An unknown name still prints `Switching to @name persona for this turn.` but runs with the default persona. A bare `@name` with no text starts no turn and doesn't carry over to the next message. The agent examples on this page use that form.
 
 **Terminal Demo:**
 
@@ -508,13 +508,9 @@ A (append at end)
 **Terminal Demo:**
 
 ```
-$ hone --recipe tdd-feature
-
-Hone TDD Recipe
-===============
-
-What feature do you want to implement? 
-> Add rate limiting to the /api/data endpoint (max 10 requests per minute per IP)
+$ hone --recipe tdd-feature \
+    --var feature_name="rate limiting on /api/data (max 10 requests per minute per IP)" \
+    --var test_command="pytest tests/ -q"
 
 Step 1 of 4: Write the test [RED]
 ========================================
@@ -1821,7 +1817,7 @@ The `hone` CLI doesn't connect to the `honed` daemon, and there are no `hone rem
 | Fix a bug | `hone "bug description"` | $0.001 | 5s |
 | Add a feature | `hone "feature description"` | $0.002 | 10s |
 | Review code | `@code-reviewer path` (TUI) | $0.003 | 8s |
-| TDD workflow | `hone --recipe tdd-feature` | $0.004 | 20s |
+| TDD workflow | `hone --recipe tdd-feature --var feature_name="…" --var test_command="…"` | $0.004 | 20s |
 | Complex task | `hone --orchestrate "description"` | $0.010 | 45s |
 | Best solution | `hone --ensemble 3 "problem"` | $0.006 | 30s |
 | Security audit | `@security-auditor path` (TUI) | $0.005 | 12s |

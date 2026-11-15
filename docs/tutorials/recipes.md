@@ -4,7 +4,7 @@ Recipes are YAML files that define multi-step agent workflows. Each step runs a 
 
 ## Built-in Recipes
 
-Hone includes 4 bundled recipes for common development tasks:
+Hone includes 9 bundled recipes for common development tasks (`hone --list-recipes` lists them). Four are sketched below. The YAML is simplified and illustrative: the real definitions are in `bins/hone/recipes/*.yaml`, and some of them use placeholders such as `{{test_command}}` that you fill with `--var`.
 
 ### tdd-feature
 
@@ -103,15 +103,7 @@ hone --recipe refactor
 hone --recipe tdd-feature --var feature_name="CSV export" --var test_command="pytest tests/"
 ```
 
-The `--list-recipes` command shows all available recipes with descriptions:
-
-```
-Available recipes:
-  tdd-feature           Implement a feature using Test-Driven Development
-  bug-fix               Fix a bug using systematic debugging with regression test
-  code-review           Perform a comprehensive code review
-  refactor              Safely refactor code with test verification at each step
-```
+The `--list-recipes` command shows all 9 recipes with descriptions; the full output is under [Recipe Directory and Discovery](#recipe-directory-and-discovery).
 
 ## What Are Recipes?
 
@@ -234,7 +226,7 @@ Currently, `when` accepts boolean literals. Future versions will support express
 
 ## TDD Hook: test_cmd and Test Verification
 
-The `test_cmd` field automatically runs tests after each step and feeds test failures back to the agent for fixing. This creates a tight TDD feedback loop.
+`test_cmd` runs after every step. Hone prints `Tests passed.` or `Tests FAILED:` and goes on to the next step; it doesn't feed the failure back, retry or stop.
 
 ```yaml
 name: "Implementation Recipe"
@@ -246,36 +238,15 @@ steps:
   - name: "Add Tests"
     prompt: "Write tests for the feature"
 
-test_cmd: "cargo test && cargo clippy"  # Both must pass after each step
+test_cmd: "cargo test && cargo clippy"  # runs after each step
 ```
 
 **How test verification works:**
 
 1. Agent executes a step (writes code, modifies files)
 2. `test_cmd` runs automatically: `cargo test`
-3. **If tests pass:** → move to next step
-4. **If tests fail:** → feed test output to agent and retry (up to 3 times)
-5. Agent sees the failure and fixes code based on error messages
-
-**Example output:**
-
-```
-Recipe: TDD Implementation
-Step 1: Implement Authentication Function
-  Running: cargo test
-  test auth::test_login ... FAILED
-  error[E0308]: mismatched types
-  
-  [Retry 1/3] Agent re-runs step with test output as context...
-  test auth::test_login ... PASSED ✓
-  
-Step 2: Add Documentation
-  Running: cargo test && cargo clippy
-  test result: ok. 5 passed ✓
-  clippy: no warnings ✓
-
-Recipe result: SUCCESS
-```
+3. Hone prints `Tests passed.`, or `Tests FAILED:` followed by the command's stderr only (its stdout, where most test runners report failures, isn't shown)
+4. The next step starts either way; the agent isn't shown the failure
 
 **Configuration:**
 
@@ -289,20 +260,14 @@ steps:
   
   - name: implement
     prompt: "Implement the feature to pass tests"
-    # test_cmd runs here automatically
-    # If tests fail, agent retries with failure details
+    # test_cmd runs here automatically; a failure is printed, not retried
   
   - name: cleanup
     prompt: "Refactor for clarity"
     # test_cmd runs here too
 ```
 
-**Retry behavior:**
-
-- Default: retry up to 3 times if tests fail
-- Each retry includes the previous test output as context
-- If max retries exhausted, recipe halts with error
-- Successful runs advance to next step immediately
+**Retry behavior:** there is none in recipes. (The TUI has its own test-and-retry loop, up to 3 attempts, after a turn that edits files; it never runs during `--recipe`.)
 
 **When to use test verification:**
 
@@ -423,7 +388,7 @@ EOF
 
 2. Test it locally: not yet possible from the CLI. `hone --recipe my-recipe.yaml` fails with `unknown recipe: my-recipe.yaml`, because `--recipe` loads only the built-in names (see [Recipe Directory and Discovery](#recipe-directory-and-discovery)).
 
-3. Share it: Commit to your repo or publish to the Hone marketplace.
+3. Share it: commit it to your repo. There is no recipe marketplace.
 
 ## Best Practices
 
@@ -482,20 +447,6 @@ Always include a test command to catch regressions:
 
 ```yaml
 test_cmd: "cargo test && cargo clippy && cargo fmt --check"
-```
-
-## Marketplace
-
-Share recipes with the community (future feature):
-
-```bash
-hone recipe-publish my-recipe.yaml
-```
-
-This publishes your recipe to the Hone marketplace. Others can then:
-
-```bash
-hone --recipe @username/my-recipe.yaml
 ```
 
 ## Next Steps

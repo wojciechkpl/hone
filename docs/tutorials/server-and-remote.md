@@ -10,7 +10,7 @@ HONE_BIND=127.0.0.1 honed 7777
 
 The daemon listens on `http://localhost:7777`. The port is a positional argument (default 3117). Without `HONE_BIND=127.0.0.1`, `honed` binds `0.0.0.0` and refuses to start unless `HONE_AUTH_TOKEN` is set.
 
-`honed` has no config-file settings and serves plain HTTP only; see [Daemon Configuration](#daemon-configuration) for the environment variables it reads.
+`honed` has no config file of its own and serves plain HTTP only (from your `config.toml` it reads only `[pricing]`, plus the context and memory tables when it runs as a distributed worker); see [Daemon Configuration](#daemon-configuration) for the environment variables it reads.
 
 ## REST API Overview
 
@@ -217,7 +217,7 @@ HTTP/1.1 401 Unauthorized
 Clients then use the public URL from the desktop app (URL and token) or the HTTP API (`Authorization: Bearer <token>`).
 
 > [!WARNING]
-> A bore tunnel is public, plain HTTP. Never open one to a daemon without `HONE_AUTH_TOKEN`: anyone could run the agent. With a token, the token is sent unencrypted, so prefer an HTTPS tunnel (ngrok) or `ssh -L`. The web UI's tunnel button always tunnels port 3117, and because the web UI sends no token it only works on a daemon without one.
+> A bore tunnel is public, plain HTTP. Never open one to a daemon without `HONE_AUTH_TOKEN`: anyone could run the agent. With a token, the token is sent unencrypted, so prefer an HTTPS tunnel (ngrok) or `ssh -L`. The web UI's tunnel button always tunnels port 3117, and because the web UI sends no token it only works on a daemon without one, so don't use the web UI's tunnel button.
 
 ## Health Checks
 
@@ -305,7 +305,7 @@ There is no `[storage]` setting in `config.toml`. With persistence on (the defau
 - Sessions survive daemon restarts
 - Session history is queryable via the API
 
-To keep sessions in memory only, set `HONE_EPHEMERAL=1`; they are then lost when the daemon stops. If the default file can't be opened, `honed` logs a warning (at warn level) and falls back to memory.
+To keep sessions in memory only, set `HONE_EPHEMERAL` (any value, even `0`, turns it on); they are then lost when the daemon stops. If the default file can't be opened, `honed` logs a warning (at warn level) and falls back to memory.
 
 ---
 

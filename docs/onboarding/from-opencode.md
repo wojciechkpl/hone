@@ -12,7 +12,7 @@ You know OpenCode. You're comfortable with 75+ providers, LSP integration, clien
 | OpenCode client-server | hone CLI + honed daemon | HTTP/2 + SSE instead of WebSocket |
 | OpenCode cost tracking | Real-time cost tracking | Per-turn granularity |
 | Custom integrations | MCP + Layer 2 tools (ACP is library-only) | More modular |
-| OpenCode recipes | YAML recipes (same format) | 100% compatible |
+| OpenCode recipes | 9 built-in recipes | Not compatible: `--recipe` runs only built-in names, not recipe files |
 
 ## Before and After
 
@@ -396,13 +396,7 @@ When refactoring:
 
 ### 6. Migrate Your Recipes (If Any)
 
-If you had OpenCode recipes, copy them over:
-
-```bash
-cp ~/.opencode/recipes/* ~/.config/hone/recipes/
-```
-
-Hone recipes are YAML (same format as OpenCode). Update tool names if needed.
+Hone can't run your OpenCode recipes yet: `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`, and it reads no recipes directory. Use the closest built-in recipe instead.
 
 ## FAQ
 
@@ -412,7 +406,7 @@ Yes, through `honed`: it serves a web UI at `/ui` once you build it in (`make we
 
 ### Do my OpenCode recipes work in Hone?
 
-Mostly. Recipe syntax is similar. Tool names may differ. Copy recipes and test.
+No. `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`.
 
 ### How do I set per-user budgets like OpenCode?
 

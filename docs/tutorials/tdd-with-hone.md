@@ -120,7 +120,7 @@ There is no `/recipe` command in the TUI; run the recipe from the shell as above
 
 No step transcripts are saved: each step's output goes to stdout (errors to stderr). To review the agent's reasoning afterwards, redirect it: `… > tdd.log 2>&1`.
 
-The `test_cmd` field is not a gate: Hone runs it after every step, prints `Tests passed.` or `Tests FAILED:` with the output, and moves on to the next step either way. Read the test output before you trust the result.
+The `test_cmd` field is not a gate: Hone runs it after every step, prints `Tests passed.`, or `Tests FAILED:` followed by the command's stderr only (its stdout, where most test runners report failures, isn't shown), and moves on to the next step either way. Run the tests yourself before you trust the result.
 
 ## Mode 3: the `bug-fix` recipe (regression-first)
 

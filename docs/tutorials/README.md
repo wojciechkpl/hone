@@ -101,7 +101,7 @@ The agent calls the `semantic_search` tool (Layer 2 native) to search by meaning
 
 ### Use Case: Multi-User Team Workspace
 
-Start with [Server and Remote](server-and-remote.md), then configure [Security](security.md) for RBAC:
+Start with [Server and Remote](server-and-remote.md). There are no per-user roles: every client uses the daemon's one `HONE_AUTH_TOKEN`.
 
 ```bash
 # honed has no config-file option; its settings are environment variables (docs/configuration.md)
@@ -109,7 +109,7 @@ export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
 honed 7777
 ```
 
-Multiple users can now create sessions and collaborate via the REST API.
+Multiple users can now create sessions through the REST API or the desktop app (the web UI sends no token, so it can't use this daemon). Each client keeps its own conversation; `POST /run` is stateless.
 
 ### Use Case: Custom Tool Integration
 

@@ -325,7 +325,7 @@ An agent is a specialized AI persona. Instead of saying "fix this code," you can
 
 ### Built-in Agents
 
-Hone ships with 9 pre-trained agents:
+Hone ships with 12 pre-trained agents:
 
 | Agent | Use When |
 |-------|----------|
@@ -338,6 +338,9 @@ Hone ships with 9 pre-trained agents:
 | `api-designer` | You're designing an API |
 | `performance-optimizer` | You need to optimize code |
 | `documentation-agent` | You need to write docs |
+| `data-engineer` | You're building ETL pipelines or designing schemas |
+| `ml-engineer` | You're training, evaluating or deploying models |
+| `researcher` | You need a literature review or an experiment design |
 
 ### Using an Agent
 
@@ -345,10 +348,10 @@ Hone ships with 9 pre-trained agents:
 
 ```
 > @code-reviewer Review this code for security issues
-> @tdd-workflow Implement a new feature
+> @tdd-workflow Add CSV export with tests first
 ```
 
-The persona applies to that one message; the next message without an `@` prefix uses the default again. There is no `/agent` command, and recipes always run with the default persona.
+The persona applies to that one message; the next message without an `@` prefix uses the default again. If Hone sorts the message as complex (for example it says "implement" or "architecture", or names three or more files), it runs through the orchestrator with the default prompt; only the persona's tool list applies. An unknown name still prints `Switching to @name persona for this turn.` but runs with the default persona. A bare `@name` with no text starts no turn and doesn't carry over to the next message. There is no `/agent` command, and recipes always run with the default persona.
 
 ### What's a Recipe?
 
@@ -356,7 +359,7 @@ A recipe is a structured workflow. Instead of manually running steps one by one,
 
 1. What to do in each step
 2. The order to do them
-3. Whether to run tests at the end
+3. Which test command to run after every step
 
 Hone ships with 9 built-in recipes (`hone --list-recipes` lists them all), including:
 
@@ -392,7 +395,7 @@ Running recipe: tdd-feature (5 steps)
 
   Running tests: cargo test
   Tests FAILED:
-  [test output]
+  [the test command's stderr; its stdout isn't shown]
 
 [3/5] green
 ...

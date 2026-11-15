@@ -51,37 +51,13 @@ HONE_SANDBOX_ENFORCE=1 hone
 
 ## Sandbox Architecture Overview
 
-```mermaid
-flowchart TB
-    Agent["Agent executes tool"]
-    
-    subgraph Platform["Platform-Specific Sandbox"]
-        direction LR
-        macOS["macOS: Seatbelt<br/>(sandbox_init)"]
-        Linux["Linux: Landlock +<br/>seccomp-BPF"]
-        Container["Container: seccomp +<br/>no-new-privs"]
-        Fallback["Fallback: setrlimit +<br/>capabilities drop"]
-    end
-    
-    Policy["SandboxPolicy<br/>- allow_read<br/>- allow_write<br/>- allow_exec<br/>- allow_network<br/>- allow_env"]
-    
-    Agent -->|SandboxPolicy| Platform
-    Policy -->|enforced by| Platform
-    Platform -->|success| Exec["Tool Executes<br/>Sandboxed"]
-    Platform -->|failure| Fail["FAIL-CLOSED<br/>Operation Aborted"]
-```
+| Platform | Sandbox | Default |
+|---|---|---|
+| macOS | Seatbelt (via `sandbox-exec`) | On |
+| Linux | Landlock | Opt-in: `HONE_SANDBOX_ENFORCE=1` |
+| Other | None | — |
 
-## Sandbox Platform Matrix
-
-| Platform | Primary | Fallback | Notes |
-|---|---|---|---|
-| **macOS 10.5+** | Seatbelt | `setrlimit` + `no-new-privs` | Mature, production-ready |
-| **Linux 5.13+** | Landlock | seccomp-BPF + `setrlimit` | Modern, fine-grained |
-| **Linux <5.13** | seccomp-BPF | `setrlimit` + `no-new-privs` | Older kernels |
-| **Container** | seccomp + `no-new-privs` | `setrlimit` | Already sandboxed at OS level |
-| **Windows** | Job Objects | Restricted token | Future implementation |
-
-**Fail-closed invariant:** If the desired sandbox tier is unavailable and required by policy, the operation aborts with `SandboxError::PolicyNotMet`. There is no silent downgrade.
+The sandbox covers shell commands only. `SandboxBuilder::detect()` picks Seatbelt, Landlock or no sandbox by platform; there is no seccomp, container or `setrlimit` tier. See [Permissions and sandbox](../permissions-and-sandbox.md#3-os-sandbox).
 
 ## SandboxPolicy
 
@@ -99,7 +75,7 @@ pub struct SandboxPolicy {
 
 ## Configuration
 
-Sandbox policies are configured in `~/.config/hone/config.toml`:
+These `[sandbox]` settings don't exist, and a `config.toml` that contains them fails to load. The only sandbox settings are `HONE_SANDBOX_ENFORCE` and `HONE_SANDBOX_EXTRA_READ`; the example is kept for reference:
 
 ```toml
 [sandbox]

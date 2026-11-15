@@ -190,8 +190,7 @@ steps:
       prompt: "For each TODO, create a GitHub issue"
       model: anthropic:claude-opus-4-5
 
-# Run it anytime
-hone --recipe scripts/process-todos.yaml
+# Recipe files can't be run yet: --recipe loads only the built-in names (hone --list-recipes)
 ```
 
 Benefits of recipes:
@@ -318,9 +317,9 @@ steps:
     message: "fix: resolve failing tests"
 ```
 
-Run it:
+`hone --recipe` can't run this file yet: `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`. The closest built-in is `bug-fix`:
 ```bash
-hone --recipe scripts/fix-tests.yaml
+hone --recipe bug-fix --var test_command="pytest"
 ```
 
 ## FAQ

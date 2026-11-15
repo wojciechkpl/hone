@@ -49,14 +49,15 @@ hone
 # Shows diff (same as Codex)
 # You accept or reject
 
-# For automation, use a recipe
-hone --recipe scripts/add-logging.yaml
+# For automation, use a built-in recipe (recipe files can't be run yet)
+hone --recipe refactor --var test_command="cargo test"
 
-# Executes multi-step workflow:
-#   1. Find database queries
-#   2. Add structured logging
-#   3. Run tests
-#   4. Commit (if approved)
+# Executes multi-step workflow, without pausing:
+#   1. baseline (run the tests)
+#   2. analyze
+#   3. execute
+#   4. verify
+#   cargo test runs after each step
 ```
 
 **Key differences:**
@@ -146,11 +147,7 @@ steps:
     approval_before: true
 ```
 
-Run it:
-```bash
-hone --recipe scripts/add-logging.yaml
-# Executes step by step, asks for approval at each approval point
-```
+`hone --recipe` can't run this file yet: `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`. Recipes also never pause for approval.
 
 Benefits:
 - Fully composable (tools + agents + conditions)
@@ -387,10 +384,7 @@ steps:
     approval_before: true
 ```
 
-Run it:
-```bash
-hone --recipe scripts/add-type-hints.yaml
-```
+`hone --recipe` can't run this file yet: `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`.
 
 ### 5. Explore Approval Workflows
 

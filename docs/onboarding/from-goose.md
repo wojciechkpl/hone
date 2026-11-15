@@ -7,7 +7,7 @@ You know Goose. You're comfortable with MCP-native architecture, recipes, extens
 | Goose | Hone Equivalent | Notes |
 |-------|-----------------|-------|
 | Extensions (custom tools) | Layer 2 native tools + Layer 1 MCP | Hone has faster native layer + MCP |
-| Recipes (YAML workflows) | Recipes (same YAML format) | 100% compatible with Goose recipes |
+| Recipes (YAML workflows) | 9 built-in recipes | Not compatible: `--recipe` runs only built-in names, not recipe files |
 | Providers | Providers (same abstraction) | 75+ providers, same flexibility |
 | CLI providers (custom agents) | `claude-cli:` / `gemini-cli:` pass-through | ACP providers are library-only; `hone` can't select one yet |
 | MCP servers | MCP Layer 1 (JSON-RPC) | Same protocol, same servers work |
@@ -52,7 +52,7 @@ steps:
     body: "{output}"
 EOF
 
-hone --recipe recipes/analyze.yaml
+# Not yet: --recipe runs only built-in recipe names, so this file fails with "unknown recipe"
 ```
 
 **Key difference:** Hone splits tools into layers:
@@ -384,14 +384,14 @@ mcp_trace_file = "/tmp/hone-mcp.log"
 
 ### Is Hone backward-compatible with Goose recipes?
 
-Mostly. Recipe syntax is similar; tool names may differ. Test your recipes and adjust as needed.
+No. `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`.
 
 ## Next Steps
 
 1. **Install:** Follow step 1 above
 2. **Config:** Migrate your Goose config to HONE.toml
 3. **Recipes:** Copy your recipes and test
-4. **Test:** Run `hone --recipe your-recipe.yaml`
+4. **Test:** Run a built-in recipe, e.g. `hone --recipe code-review` (recipe files can't be run yet)
 5. **Extend:** Read [Tools and MCP](../tutorials/tools-and-mcp.md) for advanced integrations
 6. **Team:** Read [Server and Remote](../tutorials/server-and-remote.md) for remote daemon setup
 

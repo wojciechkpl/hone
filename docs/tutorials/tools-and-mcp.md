@@ -386,7 +386,7 @@ Hone executes this generated code in a sandboxed subprocess, streaming results b
 
 ## Agents
 
-Agents are specialized personas that combine tools, system prompts, and model preferences. Hone ships with 9 built-in agents and supports custom agents.
+Agents are specialized personas that combine tools, system prompts, and model preferences. Hone ships with 12 built-in agents and supports custom agents.
 
 ### What is an Agent?
 
@@ -428,7 +428,7 @@ The Markdown body becomes the system prompt.
 
 ### Built-in Agents
 
-Hone includes 9 pre-configured agents:
+Hone includes 12 pre-configured agents:
 
 | Agent | Purpose |
 |-------|---------|
@@ -441,6 +441,9 @@ Hone includes 9 pre-configured agents:
 | `tdd-workflow` | Test-Driven Development coach |
 | `rust-expert` | Rust best practices |
 | `python-expert` | Python best practices |
+| `data-engineer` | ETL pipelines, data warehousing, schema design |
+| `ml-engineer` | Model training, evaluation, deployment, MLOps |
+| `researcher` | Literature review, experiment design, paper analysis |
 
 ### Using Built-in Agents
 
@@ -448,10 +451,10 @@ Hone includes 9 pre-configured agents:
 
 ```
 > @code-reviewer Review this code
-> @tdd-workflow Implement a feature
+> @tdd-workflow Add CSV export with tests first
 ```
 
-For that message, the agent's system prompt replaces the default one and its `tools` list, if it has one, limits the tools. The name must match exactly; there is no search by description.
+For that message, the agent's system prompt replaces the default one and its `tools` list, if it has one, limits the tools. The name must match exactly; there is no search by description. If Hone sorts the message as complex (for example it says "implement" or "architecture", or names three or more files), it runs through the orchestrator with the default prompt; only the persona's tool list applies. An unknown name still prints `Switching to @name persona for this turn.` but runs with the default persona. A bare `@name` with no text starts no turn and doesn't carry over to the next message.
 
 ### Creating Custom Agents
 

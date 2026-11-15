@@ -366,10 +366,10 @@ steps:
     message: "refactor: upgrade to structured logging"
 ```
 
-Run a recipe:
+Run a built-in recipe by name; a file such as `refactor-logging.yaml` can't be run yet (`--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`):
 
 ```bash
-hone --recipe refactor-logging.yaml
+hone --recipe refactor --var test_command="cargo test"
 ```
 
 See [Recipes Guide](../tutorials/recipes.md) for full syntax.
