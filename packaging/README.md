@@ -100,6 +100,11 @@ inside a crates.io package (sha only), then `git` in the crate directory (only
 if `Cargo.toml` is tracked by that repository). Otherwise it prints
 `(commit unknown)` and emits a `cargo:warning`.
 
+`hone eval` records the same commit in its run manifests as `hone_git_sha`, in
+full (40 hex, or 64 in a SHA-256 repository; an override is recorded
+lowercased), or `null` when unknown. `HONE_BUILD_GIT_SHA` takes 7 to 40 hex
+characters, or 64.
+
 Builds without a usable `.git` directory (source tarballs, Nix, distro
 packages, Docker builds) should set the variables. The common Docker case is
 mounting a linked git worktree: its `.git` is a file pointing at a host path,
