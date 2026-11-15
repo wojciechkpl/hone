@@ -4,11 +4,14 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| Kernel sandbox (Landlock / Seatbelt) | Available | Linux 5.13+ and macOS |
-| Environment variable filtering | Available | Via `sandbox.defaults.allow_env` |
-| Audit logging | Available | JSON log to configurable path |
-| Memory encryption (AES-256-GCM) | Available | Requires `--features encrypted-memory` |
+| Kernel sandbox (Seatbelt / Landlock) | Available | Seatbelt on macOS; Landlock on Linux 5.13+ is opt-in (`HONE_SANDBOX_ENFORCE=1`) |
+| Environment variable filtering | **Not available** | Commands the agent runs inherit Hone's environment, including API keys. See [Environment Variable Filtering](#environment-variable-filtering) |
+| Audit logging | Opt-in | `--audit` or `HONE_AUDIT_LOG=1` writes `.hone/audit.jsonl` |
+| Memory encryption (AES-256-GCM) | Opt-in | `--encrypted-memory` with `HONE_MEMORY_PASSPHRASE` set; built in, no Cargo feature |
 | SQLite at-rest encryption (sqlcipher) | Planned | Not yet implemented |
+
+> [!WARNING]
+> The `[sandbox]`, `[audit]` and `[rbac]` examples on this page use settings Hone doesn't have. A `config.toml` that contains them fails to load (`hone strategies --check` shows the error). What Hone enforces, and how to configure it, is in [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ---
 
@@ -186,23 +189,13 @@ Tool execution aborted by sandbox.
 
 ## Environment Variable Filtering
 
-Only allow specific environment variables to reach tool processes:
+> [!WARNING]
+> Hone doesn't filter the environment, and there is no `allow_env` setting. Shell commands and other tools the agent runs inherit Hone's environment, including provider API keys, so the model can read a key with a command such as `echo $ANTHROPIC_API_KEY`.
 
-```toml
-[sandbox.defaults]
-allow_env = ["PATH", "HOME", "USER", "SHELL"]
+To limit what the model can read:
 
-[sandbox.tools.git]
-allow_env = ["PATH", "HOME", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"]
-```
-
-Attempt to access other env vars from a tool:
-
-```bash
-$ hone "Print ANTHROPIC_API_KEY"
-Agent calls: shell(cmd="echo $ANTHROPIC_API_KEY")
-Output: (empty — variable not accessible)
-```
+- Export only the keys Hone needs, and don't start Hone from a shell that holds other credentials.
+- With `HONE_POLICY_BUILTINS=1`, secret-shaped values in tool output (Anthropic and OpenAI keys, among other formats) are replaced with `[REDACTED:<kind>]` before the model sees them. The matching is pattern-based, so an encoded or unusually shaped secret still gets through. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ## File System Restrictions
 
