@@ -99,8 +99,8 @@ hone --recipe refactor
 
 # Recipes run every step without pausing, so the same command works in CI/CD
 
-# Set the test command (tdd-feature's steps run {{test_command}})
-hone --recipe tdd-feature --var test_command="pytest tests/"
+# Set the feature and the test command (tdd-feature's steps use {{feature_name}} and {{test_command}})
+hone --recipe tdd-feature --var feature_name="CSV export" --var test_command="pytest tests/"
 ```
 
 The `--list-recipes` command shows all available recipes with descriptions:
@@ -315,31 +315,28 @@ steps:
 
 ## Running Recipes
 
-### Interactive Mode
+### What a Run Looks Like
 
 ```bash
-hone --recipe code-review.yaml
+hone --recipe code-review
 ```
 
-Hone runs each step, streaming output. Press `y` at each step to proceed, `n` to skip, or `q` to quit.
+Hone runs each step in order and streams its output; it never pauses for input. When the recipe has a `test_cmd`, Hone runs it after every step, prints `Tests passed.` or `Tests FAILED:` and carries on either way.
 
 ```
-Recipe: Code Review
-Step 1/3: Analyze Changes
-Agent: I found 3 issues...
-[pause] Continue to next step? [y/n/q]
-> y
+Running recipe: code-review (6 steps)
+  Perform a comprehensive code review with security and performance analysis
 
-Step 2/3: Suggest Improvements
-Agent: Top improvements are...
-[pause] Continue to next step? [y/n/q]
-> y
+[1/6] overview
+…the agent's answer…
 
-Step 3/3: Generate Summary
-Agent: Summary of review...
-[pause] Test command: cargo test
-✓ All tests passed
-Recipe completed successfully.
+[2/6] correctness
+…
+
+[6/6] report
+…
+
+Recipe 'code-review' complete.
 ```
 
 ### Batch Mode
@@ -353,7 +350,7 @@ Every recipe run is a batch run: Hone runs all steps without pausing, so there i
 ### With Model Override
 
 ```bash
-hone --recipe code-review.yaml --model ollama:llama2
+hone --recipe code-review --model ollama:llama2
 ```
 
 Use a specific model for all steps in the recipe.
@@ -374,17 +371,12 @@ Once the recipe has spent more than $5 in API costs, each remaining step fails w
 A recipe run prints each step's output, its tool calls and the test results to stdout as plain text. There is no `--export-to` flag and no JSON report, and `--json` doesn't apply to `--recipe`. To keep the output, redirect it:
 
 ```bash
-hone --recipe code-review > review-report.txt
+hone --recipe code-review > review-report.txt 2>&1   # errors go to stderr
 ```
 
 ## Recipe Directory and Discovery
 
-Hone looks for recipes in:
-
-1. Current directory (`./*.yaml`)
-2. `~/.config/hone/recipes/` (user recipes)
-3. `/etc/hone/recipes/` (system recipes)
-4. Built-in recipes (bundled with Hone)
+`--recipe` loads only the 9 built-in recipes, by name. It doesn't read recipe files or directories, and any other name (`code-review.yaml` included) fails with `unknown recipe: <name>`.
 
 List all available recipes:
 
@@ -396,15 +388,15 @@ Output:
 
 ```
 Available recipes:
-  user:
-    code-review.yaml — Review a code change and suggest improvements
-    tdd-feature.yaml — Implement a feature test-first
-  system:
-    documentation.yaml — Auto-generate API documentation
-    refactor.yaml — Refactor code safely
-  built-in:
-    unit-test.yaml — Write comprehensive unit tests
-    integration-test.yaml — Write integration tests
+  tdd-feature          Implement a feature using Test-Driven Development
+  bug-fix              Fix a bug with regression test
+  code-review          Comprehensive code review (correctness, security, performance)
+  refactor             Safely refactor with test verification at each step
+  security-audit       Full OWASP Top 10 security audit
+  performance          Profile, analyze, and optimize performance
+  migration            Migrate between frameworks, libraries, or API versions
+  documentation        Generate or update project documentation
+  onboarding           Understand a new codebase (architecture, patterns, entry points)
 ```
 
 ## Writing Your Own Recipe
@@ -429,11 +421,7 @@ test_cmd: "echo 'All done!'"
 EOF
 ```
 
-2. Test it locally:
-
-```bash
-hone --recipe my-recipe.yaml
-```
+2. Test it locally: not yet possible from the CLI. `hone --recipe my-recipe.yaml` fails with `unknown recipe: my-recipe.yaml`, because `--recipe` loads only the built-in names (see [Recipe Directory and Discovery](#recipe-directory-and-discovery)).
 
 3. Share it: Commit to your repo or publish to the Hone marketplace.
 

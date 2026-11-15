@@ -417,7 +417,7 @@ You are a senior code reviewer. Perform systematic reviews following this proces
 ```
 
 The YAML frontmatter defines:
-- `name` — Agent identifier (used with `--agent` flag)
+- `name` — Agent identifier (what you type after `@` in the TUI)
 - `description` — One-line summary (used for discovery)
 - `tools` — List of available tools
 - `model` — Default model (e.g., "sonnet", "opus", "haiku")
@@ -444,15 +444,14 @@ Hone includes 9 pre-configured agents:
 
 ### Using Built-in Agents
 
-```bash
-# Use an agent by name
-hone --agent code-reviewer "Review this code"
+`--agent` is accepted but not applied yet. In the TUI, start a message with `@code-reviewer …` (the exact agent name) to use that persona for the turn:
 
-# Use an agent by searching its description
-hone --agent "test-driven" "Implement a feature"  # finds tdd-workflow
+```
+> @code-reviewer Review this code
+> @tdd-workflow Implement a feature
 ```
 
-The agent registry automatically loads built-in agents and matches descriptions to agent names.
+For that message, the agent's system prompt replaces the default one and its `tools` list, if it has one, limits the tools. The name must match exactly; there is no search by description.
 
 ### Creating Custom Agents
 
@@ -481,11 +480,10 @@ Place custom agents in:
 - Project level: `.hone/agents/*.md`
 - User level: `~/.config/hone/agents/*.md`
 
-Custom agents override built-in agents with the same name. Load them automatically:
+Custom agents override built-in agents with the same name and load automatically. Use one in the TUI, started in the project:
 
-```bash
-cd /your/project
-hone --agent my-custom-agent
+```
+> @my-custom-agent Your task
 ```
 
 ### Agent Registry

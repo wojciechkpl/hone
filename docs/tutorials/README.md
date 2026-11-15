@@ -23,7 +23,7 @@ Start here if you're new to Hone:
 
 - **[Orchestration GUI](orchestration-gui.md)** — `/plan` plan-preview gate (TUI + web UI), `/budget` and `/permit` per-run governance, `/workflows` saved-recipe drawer, the `POST /orchestrate?dry_run=true` and `POST /recipes` daemon endpoints. Pairs with the [research doc](../research/gui-for-non-cli-users-2026-05.md) and [TDD plan](../plans/orchestration-gui-tdd-2026-05.md).
 
-- **[ACP: Bidirectional Tool Dispatch](acp.md)** — Configure ACP providers (`claude --acp`, `gemini --acp`), the full lifecycle (initialize → schema announce → tool_call → toolResult → continuation → done), running the integration suite, schema authoring tips, cancellation semantics, troubleshooting
+- **[ACP: Bidirectional Tool Dispatch](acp.md)** — ACP providers (`claude --acp`, `gemini --acp`; library-only, not selectable from `hone` yet), the full lifecycle (initialize → schema announce → tool_call → toolResult → continuation → done), running the integration suite, schema authoring tips, cancellation semantics, troubleshooting
 
 - **[TUI Keybindings and Themes](tui-keybindings-and-themes.md)** — Layout overview, every keybinding, the command palette, autocomplete with descriptions, switching themes (`crimson`, `neon`, `chalk`, `minimal`), `~/.config/hone/theme.toml` overrides, accessibility flags (`HONE_NO_COLOR`, `HONE_REDUCED_MOTION`, `HONE_ASCII_ONLY`), vim-style bindings, mouse selection
 
@@ -116,7 +116,7 @@ The agent calls the `semantic_search` tool (Layer 2 native) to search by meaning
 Start with [Server and Remote](server-and-remote.md), then configure [Security](security.md) for RBAC:
 
 ```bash
-# honed has no config-file option; its settings are environment variables (honed --help)
+# honed has no config-file option; its settings are environment variables (docs/configuration.md)
 export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
 honed 7777
 ```

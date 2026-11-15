@@ -39,7 +39,7 @@ Hone ships a SolidJS **web UI** (served by `honed` at `/ui`) and a
 # so rust-embed picks up the bundle.
 make webui
 cargo build --release -p honed
-honed                              # then open http://127.0.0.1:3117/ui
+HONE_BIND=127.0.0.1 honed          # then open http://127.0.0.1:3117/ui
 
 # Desktop app — Tauri shell that spawns + supervises a managed honed.
 cargo build --release -p honed     # ensure honed is on PATH first
@@ -414,7 +414,7 @@ When you hit the limit, the session stops.
 
 ## Memory and Encryption
 
-For sensitive sessions, Hone can encrypt all memories and session data:
+For sensitive sessions, Hone can encrypt the content of stored memories (saved sessions in `sessions.db` are not encrypted):
 
 ```bash
 # Encrypt the memory store (built in; no extra build step). The key is

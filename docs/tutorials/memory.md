@@ -139,13 +139,14 @@ This is not memory — it's a deterministic projection of the current repo. It d
 Tune via:
 
 ```bash
-hone --skeleton-strategy compact      # paths only
-hone --skeleton-strategy symbols      # paths + top-level symbols
-hone --skeleton-strategy full         # paths + every public signature
-hone --skeleton-strategy adaptive     # auto-select based on token budget
+hone --skeleton-strategy flat              # file list with signatures (cheapest)
+hone --skeleton-strategy dependency-graph  # file list with import arrows
+hone --skeleton-strategy call-graph        # function-level call graph (most detailed)
+hone --skeleton-strategy hybrid            # dependency graph + call details for the 5 most relevant files
+hone --skeleton-strategy adaptive          # default: picks the detail level by repo size and query
 ```
 
-Or `HONE_SKELETON_STRATEGY=symbols hone`.
+Or `HONE_SKELETON_STRATEGY=flat hone`.
 
 To skip injection entirely (one-shot pass through with no context):
 
@@ -238,7 +239,7 @@ The agent additionally sees the `## Memory index` and reads bodies on demand via
 Layer 3 builds the skeleton on the first turn (~10 ms for medium repos, longer for large monorepos). Subsequent turns reuse the cache. If turn 1 is consistently slow:
 
 ```bash
-HONE_SKELETON_STRATEGY=compact hone   # cheapest
+HONE_SKELETON_STRATEGY=flat hone   # cheapest
 ```
 
 Or skip injection entirely with `--no-inject`.

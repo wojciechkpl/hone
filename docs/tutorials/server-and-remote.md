@@ -10,25 +10,7 @@ HONE_BIND=127.0.0.1 honed 7777
 
 The daemon listens on `http://localhost:7777`. The port is a positional argument (default 3117). Without `HONE_BIND=127.0.0.1`, `honed` binds `0.0.0.0` and refuses to start unless `HONE_AUTH_TOKEN` is set.
 
-**Configuration via config.toml:**
-
-```toml
-[server]
-host = "0.0.0.0"  # listen on all interfaces
-port = 7777
-auth_token = "your-bearer-token"  # optional auth
-enable_https = true
-cert_path = "/path/to/cert.pem"
-key_path = "/path/to/key.pem"
-```
-
-**Configuration via environment:**
-
-```bash
-HONE_SERVER_PORT=7777 \
-HONE_SERVER_AUTH_TOKEN="secret" \
-honed
-```
+`honed` has no config-file settings and serves plain HTTP only; see [Daemon Configuration](#daemon-configuration) for the environment variables it reads.
 
 ## REST API Overview
 
@@ -234,6 +216,9 @@ HTTP/1.1 401 Unauthorized
 
 Clients then use the public URL from the desktop app (URL and token) or the HTTP API (`Authorization: Bearer <token>`).
 
+> [!WARNING]
+> A bore tunnel is public, plain HTTP. Never open one to a daemon without `HONE_AUTH_TOKEN`: anyone could run the agent. With a token, the token is sent unencrypted, so prefer an HTTPS tunnel (ngrok) or `ssh -L`. The web UI's tunnel button always tunnels port 3117, and because the web UI sends no token it only works on a daemon without one.
+
 ## Health Checks
 
 Check daemon and provider health:
@@ -298,6 +283,8 @@ HONE_BIND=127.0.0.1 honed 7777
 open http://localhost:7777/ui
 ```
 
+Without that build step, `GET /` serves a simpler built-in chat page, on a daemon without `HONE_AUTH_TOKEN` (with a token, a browser gets 401).
+
 The web UI provides:
 - Session management
 - Real-time chat interface
@@ -310,7 +297,7 @@ The web UI provides:
 By default, sessions are stored in memory and lost when the daemon restarts. To persist sessions across restarts, configure a SQLite database:
 
 ```bash
-HONE_SESSION_DB=~/.local/share/hone/sessions.db honed
+HONE_BIND=127.0.0.1 HONE_SESSION_DB=~/.local/share/hone/sessions.db honed
 ```
 
 Or via config.toml:
@@ -342,18 +329,20 @@ cargo install bore-cli
 Run the daemon — it auto-detects Bore on PATH:
 
 ```bash
-honed
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"   # never tunnel a daemon without one
+honed 7777
 ```
 
-The daemon detects `bore` in PATH and uses `BoreTunnelManager` to spawn it as a subprocess. The tunnel URL is printed on startup:
+At startup the daemon only detects `bore` on PATH; it doesn't start a tunnel or print a URL. The tunnel starts when a client calls `POST /tunnel` with `{"local_port": 7777}`, which spawns `bore local 7777 --to bore.pub` and returns the URL, `http://bore.pub:<port>` (plain HTTP; see the warning under [Tunnel Support](#tunnel-support-for-remote-access)):
 
-```
-Daemon started on http://localhost:7777
-Tunnel: https://tunnel-abc123.bore.pub
-Share this URL to allow remote access.
+```bash
+curl -X POST http://127.0.0.1:7777/tunnel \
+  -H "Authorization: Bearer $HONE_AUTH_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"local_port": 7777}'
 ```
 
-If `bore` is not on PATH, the daemon falls back to `MockTunnelManager` (local-only access). No error is thrown — tunneling is optional.
+If `bore` is not on PATH, the daemon falls back to `MockTunnelManager`: `POST /tunnel` returns a placeholder URL that doesn't work. No error is thrown — tunneling is optional.
 
 ---
 
@@ -363,7 +352,7 @@ The daemon handles `SIGINT` and `SIGTERM` gracefully, draining in-flight request
 
 ```bash
 # Start daemon
-honed
+HONE_BIND=127.0.0.1 honed
 
 # In another terminal, send signal
 kill -TERM <pid>
@@ -419,7 +408,7 @@ Collaborators see each other's prompts and the agent's responses in real-time vi
 
 ## Daemon Configuration
 
-`honed` has no config-file option (there is no `--config`) and doesn't apply a `[server]` table. Its settings are the port argument and environment variables: `HONE_BIND`, `HONE_AUTH_TOKEN`, `HONE_SESSION_DB` and the others that `honed --help` lists. From the `~/.config/hone/config.toml` of the user it runs as, it reads `[pricing]`. `POST /run` always uses the Anthropic API with the daemon's `ANTHROPIC_API_KEY`.
+`honed` has no config-file option (there is no `--config`) and doesn't apply a `[server]` table. Its settings are the port argument and environment variables: `HONE_BIND`, `HONE_AUTH_TOKEN`, `HONE_SESSION_DB` and the others in [Environment variables](../configuration.md#environment-variables) (`honed --help` lists only some of them). From the `~/.config/hone/config.toml` of the user it runs as, it reads `[pricing]`. `POST /run` always uses the Anthropic API with the daemon's `ANTHROPIC_API_KEY`.
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."

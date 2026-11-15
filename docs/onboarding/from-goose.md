@@ -9,7 +9,7 @@ You know Goose. You're comfortable with MCP-native architecture, recipes, extens
 | Extensions (custom tools) | Layer 2 native tools + Layer 1 MCP | Hone has faster native layer + MCP |
 | Recipes (YAML workflows) | Recipes (same YAML format) | 100% compatible with Goose recipes |
 | Providers | Providers (same abstraction) | 75+ providers, same flexibility |
-| CLI providers (custom agents) | ACP providers (Agent Client Protocol) | More formalized, better integration |
+| CLI providers (custom agents) | `claude-cli:` / `gemini-cli:` pass-through | ACP providers are library-only; `hone` can't select one yet |
 | MCP servers | MCP Layer 1 (JSON-RPC) | Same protocol, same servers work |
 | Goose config | HONE.md + config.toml | Config is TOML, conventions are HONE.md |
 
@@ -149,6 +149,7 @@ charlie = "viewer"   # read-only access
 There is no `--audit-log` option. To keep a tamper-evident log of every run, point `HONE_PROVENANCE_DIR` at an existing directory:
 ```bash
 mkdir -p /var/log/hone/provenance
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
 HONE_PROVENANCE_DIR=/var/log/hone/provenance honed 7070
 # One hash-chained JSONL file per POST /run: the prompt, tool calls and results
 ```

@@ -341,23 +341,14 @@ Hone ships with 9 pre-trained agents:
 
 ### Using an Agent
 
-```bash
-# Use a specific agent
-hone --agent code-reviewer "Review this code for security issues"
-
-# Find an agent by keyword
-hone --agent "test-driven" "Implement a new feature"
-# This finds "tdd-workflow" automatically
-
-# Use an agent in a recipe (we'll cover recipes next)
-hone --recipe tdd-feature --agent rust-expert
-```
-
-During the session, you can also switch agents:
+`--agent` is accepted but not applied yet. In the TUI, start a message with `@code-reviewer …` (the exact agent name) to use that persona for the turn:
 
 ```
-/agent debugger
+> @code-reviewer Review this code for security issues
+> @tdd-workflow Implement a new feature
 ```
+
+The persona applies to that one message; the next message without an `@` prefix uses the default again. There is no `/agent` command, and recipes always run with the default persona.
 
 ### What's a Recipe?
 
@@ -420,13 +411,7 @@ Recipe completed successfully.
 
 ### Combining Agents and Recipes
 
-You can use an agent with a recipe. For example, TDD in Rust:
-
-```bash
-hone --recipe tdd-feature --agent rust-expert
-```
-
-The `rust-expert` agent will apply Rust best practices (Arc, ownership, etc.) while following the TDD workflow.
+Not yet: `--agent` isn't applied, so `hone --recipe tdd-feature --agent rust-expert` runs the recipe with the default persona. For Rust-specific help, send the TUI message `@rust-expert …` instead.
 
 ### Creating a Custom Agent
 
@@ -453,10 +438,10 @@ You are a specialized agent for [your domain].
 [Your system prompt...]
 ```
 
-Then use it:
+Then use it in the TUI:
 
-```bash
-hone --agent my-agent "Your task"
+```
+> @my-agent Your task
 ```
 
 See [Tools and MCP Guide](../tutorials/tools-and-mcp.md#agents) for detailed examples.
@@ -465,10 +450,12 @@ See [Tools and MCP Guide](../tutorials/tools-and-mcp.md#agents) for detailed exa
 
 ## Common Workflows
 
+The agent workflows below use the `@agent` prefix in the TUI (see [Using an Agent](#using-an-agent)); the recipe ones run from the shell.
+
 ### Bug Fixing with the Debugger
 
-```bash
-hone --agent debugger "The login form throws 'TypeError: cannot read password'. Fix it."
+```
+> @debugger The login form throws 'TypeError: cannot read password'. Fix it.
 ```
 
 The debugger agent uses a systematic approach:
@@ -482,8 +469,8 @@ You review and approve the fix.
 
 ### Code Review with Security Focus
 
-```bash
-hone --agent security-auditor "Review this code for vulnerabilities"
+```
+> @security-auditor Review this code for vulnerabilities
 ```
 
 The security auditor scans for:
@@ -496,10 +483,10 @@ The security auditor scans for:
 ### Implement a Feature with TDD
 
 ```bash
-hone --recipe tdd-feature --agent rust-expert
+hone --recipe tdd-feature --var feature_name="rate limiting for the login endpoint" --var test_command="cargo test"
 ```
 
-This combines the TDD workflow with Rust expertise. The agent:
+This runs the TDD workflow with the default persona (recipes take no `@agent`). The agent:
 1. Understands the architecture
 2. Writes failing tests
 3. Implements the minimum code to pass
@@ -523,8 +510,8 @@ You approve each step incrementally.
 
 ### Code Review (General)
 
-```bash
-hone --agent code-reviewer "Review this PR"
+```
+> @code-reviewer Review this PR
 ```
 
 The code reviewer performs a systematic review:
@@ -536,8 +523,8 @@ The code reviewer performs a systematic review:
 
 ### Add Documentation
 
-```bash
-hone --agent documentation-agent "Generate API documentation"
+```
+> @documentation-agent Generate API documentation
 ```
 
 The documentation agent can:

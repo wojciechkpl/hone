@@ -29,7 +29,7 @@ The foundation of context injection. Provides a complete roadmap of the codebase
 **Content:**
 - Function/class signatures (no bodies) for public APIs
 - Import statements and module structure
-- **CallGraph (default):** Function-level call relationships showing which functions call which other functions
+- **CallGraph:** Function-level call relationships showing which functions call which other functions
 - **Alternative strategies:** Flat (signatures only), DependencyGraph (imports), Hybrid (calls for top-5 files)
 
 **Size:** 800-1500 tokens
@@ -523,9 +523,10 @@ There is no `config.toml` key for this: `config.toml` rejects an `[agent]` table
 
 ### When You Might Want to Disable
 
-1. **Code review/security audit** — You want the agent to explore and verify thoroughly without guidance. Injected context might bias exploration.
+1. **Code review/security audit** — You want the agent to explore and verify thoroughly without guidance. Injected context might bias exploration. (`--agent` is accepted but not applied yet; in the TUI, start a message with `@security-auditor …`, the exact agent name, to use that persona for the turn.)
    ```bash
-   hone --agent security-auditor --no-inject "audit this code"
+   hone --no-inject
+   # then, in the TUI: @security-auditor audit this code
    ```
 
 2. **Learning/educational mode** — You want to see how the agent discovers code naturally without assistance.
@@ -533,7 +534,7 @@ There is no `config.toml` key for this: `config.toml` rejects an `[agent]` table
    hone --no-inject "implement a parser from scratch"
    ```
 
-3. **Extremely large repositories** — Skeleton generation might timeout (>10K files). Fallback: use targeted agent with manual focus area. There is no `--dir` flag; start Hone in that directory instead (it then reads `.hone/` from there, not from the repository root).
+3. **Extremely large repositories** — Skeleton generation might timeout (>10K files). Fallback: use targeted agent with manual focus area. There is no `--dir` flag; start Hone in that directory instead. Hone then reads `.hone/` from that directory, so the repository root's `.hone/permissions.toml` and `.hone/config.toml` no longer apply: their permission rules drop silently.
    ```bash
    cd src/core && hone --no-inject "fix the event loop"
    ```
@@ -775,7 +776,7 @@ graph TD
 1. User provides task description
 2. Check if skeleton is cached (mtime + file count)
 3. If cached and valid, load; otherwise regenerate
-4. Select skeleton strategy (CallGraph is default)
+4. Select skeleton strategy (Adaptive is the default)
 5. Generate skeleton based on strategy:
    - CallGraph: walk files, collect symbols, extract function calls
    - DependencyGraph: parse imports for each file
@@ -851,7 +852,7 @@ RUST_LOG=hone_core::context_injection=debug
 ### CLI Flags
 
 ```bash
-hone --skeleton-strategy call_graph "task"      # Use CallGraph (default)
+hone --skeleton-strategy call_graph "task"      # Use CallGraph (the default is adaptive)
 hone --skeleton-strategy flat "task"            # Use Flat strategy
 hone --skeleton-strategy hybrid "task"          # Use Hybrid strategy
 hone --skeleton-strategy dependency_graph "task" # Use DependencyGraph
@@ -881,7 +882,7 @@ A: Yes. Each agent instance gets its own injected context independently. Orchest
 
 **Q: What if my repository is huge (100K files)?**
 
-A: Skeleton generation is O(files), so large repos take longer (~5s for 100K files). There is no `--dir` flag; to scope the context to a subdirectory, start Hone there: `cd src && hone "…"` (it then reads `.hone/` from `src/`, not from the repository root).
+A: Skeleton generation is O(files), so large repos take longer (~5s for 100K files). There is no `--dir` flag; to scope the context to a subdirectory, start Hone there: `cd src && hone "…"`. Hone then reads `.hone/` from `src/`, so the repository root's `.hone/permissions.toml` and `.hone/config.toml` no longer apply (their permission rules drop silently).
 
 **Q: Does injection affect determinism?**
 
@@ -889,7 +890,7 @@ A: BM25 scoring is deterministic given the same query + index. However, agent be
 
 **Q: Can I inject custom context manually?**
 
-A: Not with a flag: there is no `--context-file`. Put standing context in a `HONE.md` file instead; Hone reads it from the current directory upwards and adds its sections to the system prompt.
+A: Not with a flag: there is no `--context-file`. Put standing context in a `HONE.md` file instead. Hone reads `~/.config/hone/HONE.md`, the `HONE.md` in the project root (the nearest ancestor with `.git`, `Cargo.toml` or a similar marker) and the `HONE.md` in the current directory. Only text under `##` headings reaches the system prompt.
 
 ---
 

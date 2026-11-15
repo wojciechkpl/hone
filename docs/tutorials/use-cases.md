@@ -149,10 +149,12 @@ $ hone "Add a /health endpoint that returns {status: ok, timestamp: iso8601}"
 
 **Scenario:** You have an authentication module in `src/auth.py` and want to check it for security vulnerabilities.
 
+`--agent` is accepted but not applied yet. In the TUI, start a message with `@code-reviewer …` (the exact agent name) to use that persona for the turn. The agent examples on this page use that form.
+
 **Terminal Demo:**
 
 ```
-$ hone --agent code-reviewer "Review src/auth.py for security issues"
+> @code-reviewer Review src/auth.py for security issues
 
   ✦ read_file src/auth.py
   ✦ lsp_diagnostics src/auth.py
@@ -189,7 +191,7 @@ $ hone --agent code-reviewer "Review src/auth.py for security issues"
 
 **Tips and Variations:**
 
-- **Performance review**: Use `--agent performance-optimizer` instead
+- **Performance review**: Use `@performance-optimizer` instead
 - **Automatically fix**: "Review src/auth.py for security issues AND fix the critical ones"
 - **Specific focus**: "Review src/auth.py focusing on password handling and token validation"
 
@@ -1213,7 +1215,7 @@ hone
 **Terminal Demo:**
 
 ```
-$ hone --agent security-auditor "Audit this project for OWASP Top 10 vulnerabilities"
+> @security-auditor Audit this project for OWASP Top 10 vulnerabilities
 
   ✦ read_file app.py
   ✦ read_file models.py
@@ -1309,7 +1311,7 @@ $ hone --agent security-auditor "Audit this project for OWASP Top 10 vulnerabili
 **Terminal Demo:**
 
 ```
-$ hone --agent debugger "test_user_creation fails with AttributeError: 'NoneType' has no attribute 'email'"
+> @debugger test_user_creation fails with AttributeError: 'NoneType' has no attribute 'email'
 
   ✦ read_file tests/test_models.py
   ✓ Found test at line 12
@@ -1525,17 +1527,17 @@ hone --ensemble 3 "Optimize this SQL query for performance"
 
 ## Agent Selection
 
-Use specific agents for specialized tasks:
+Use specific agents for specialized tasks. Type the example as a TUI message:
 
 | Agent | Use for | Example |
 |-------|---------|---------|
-| `code-reviewer` | Code quality, security, maintainability | `hone --agent code-reviewer "Review src/auth.py"` |
-| `debugger` | Systematic debugging, test failures | `hone --agent debugger "test_x fails with AttributeError"` |
-| `security-auditor` | Vulnerability assessment, compliance | `hone --agent security-auditor "Audit for OWASP Top 10"` |
-| `performance-optimizer` | Speed, memory, database optimization | `hone --agent performance-optimizer "Speed up the query"` |
-| `tdd-workflow` | Test-driven development | `hone --agent tdd-workflow "Add rate limiting"` |
-| `rust-expert` | Rust-specific issues (ownership, async) | `hone --agent rust-expert "Fix lifetime errors"` |
-| `python-expert` | Python-specific issues (typing, async) | `hone --agent python-expert "Fix the async handler"` |
+| `code-reviewer` | Code quality, security, maintainability | `@code-reviewer Review src/auth.py` |
+| `debugger` | Systematic debugging, test failures | `@debugger test_x fails with AttributeError` |
+| `security-auditor` | Vulnerability assessment, compliance | `@security-auditor Audit for OWASP Top 10` |
+| `performance-optimizer` | Speed, memory, database optimization | `@performance-optimizer Speed up the query` |
+| `tdd-workflow` | Test-driven development | `@tdd-workflow Add rate limiting` |
+| `rust-expert` | Rust-specific issues (ownership, async) | `@rust-expert Fix lifetime errors` |
+| `python-expert` | Python-specific issues (typing, async) | `@python-expert Fix the async handler` |
 
 ---
 
@@ -1818,12 +1820,12 @@ The `hone` CLI doesn't connect to the `honed` daemon, and there are no `hone rem
 |------|---------|------|------|
 | Fix a bug | `hone "bug description"` | $0.001 | 5s |
 | Add a feature | `hone "feature description"` | $0.002 | 10s |
-| Review code | `hone --agent code-reviewer "path"` | $0.003 | 8s |
+| Review code | `@code-reviewer path` (TUI) | $0.003 | 8s |
 | TDD workflow | `hone --recipe tdd-feature` | $0.004 | 20s |
 | Complex task | `hone --orchestrate "description"` | $0.010 | 45s |
 | Best solution | `hone --ensemble 3 "problem"` | $0.006 | 30s |
-| Security audit | `hone --agent security-auditor "path"` | $0.005 | 12s |
-| Debug test | `hone --agent debugger "error message"` | $0.003 | 10s |
+| Security audit | `@security-auditor path` (TUI) | $0.005 | 12s |
+| Debug test | `@debugger error message` (TUI) | $0.003 | 10s |
 
 ---
 

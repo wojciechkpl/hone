@@ -11,7 +11,7 @@
 | SQLite at-rest encryption (sqlcipher) | Planned | Not yet implemented |
 
 > [!WARNING]
-> The `[sandbox]`, `[audit]` and `[rbac]` examples on this page use settings Hone doesn't have. A `config.toml` that contains them fails to load (`hone strategies --check` shows the error). What Hone enforces, and how to configure it, is in [Permissions and sandbox](../permissions-and-sandbox.md).
+> The `[sandbox]`, `[audit]`, `[rbac]` and `[[mcp_servers]]` examples on this page use settings Hone doesn't have (MCP servers are configured in `~/.config/hone/mcp.json` or `.hone/mcp.json`). A `config.toml` that contains them fails to load (`hone strategies --check` shows the error). What Hone enforces, and how to configure it, is in [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ---
 
@@ -19,7 +19,7 @@ Hone implements defense-in-depth security using kernel sandboxing, network polic
 
 ## Linux Landlock Sandbox
 
-On Linux kernel 5.13+, Hone enforces filesystem access via the **Landlock LSM** (Linux Security Module). The sandbox is configured per-tool using fine-grained access rules.
+On Linux kernel 5.13+, Hone can enforce filesystem access for shell commands via the **Landlock LSM** (Linux Security Module). It is opt-in: Landlock applies only when `HONE_SANDBOX_ENFORCE` is exactly `1`. Otherwise Hone logs one warning (at warn level) and runs shell commands unsandboxed on Linux. In `hone` the sandbox covers shell commands only, and the only setting beyond that switch is `HONE_SANDBOX_EXTRA_READ` (see [Permissions and sandbox](../permissions-and-sandbox.md#3-os-sandbox)). The `hone-sandbox` library API looks like this:
 
 ```rust
 use hone_sandbox::{SandboxPolicyBuilder, SandboxMode};
@@ -45,19 +45,12 @@ error: Permission denied (EACCES)
   - Output >= 1 means Landlock is available
   - No output or error means unavailable
 
-If Landlock is unavailable, `SandboxError::Unavailable` is returned and the operation is aborted (fail-closed design):
-
-```
-error: Landlock not available on this kernel (< 5.13)
-Set [sandbox] enforce = false to disable sandboxing (not recommended).
-```
+With `HONE_SANDBOX_ENFORCE=1`, if Landlock is unavailable, `SandboxError::Unavailable` is returned and the shell command fails instead of running unsandboxed (fail-closed). Without the variable there is no fail-closed behaviour: commands run unsandboxed.
 
 To require Landlock and fail if unavailable:
 
-```toml
-[sandbox]
-enforce = true  # fail if Landlock not available
-platform = "landlock"
+```bash
+HONE_SANDBOX_ENFORCE=1 hone
 ```
 
 ---
@@ -195,7 +188,7 @@ Tool execution aborted by sandbox.
 To limit what the model can read:
 
 - Export only the keys Hone needs, and don't start Hone from a shell that holds other credentials.
-- With `HONE_POLICY_BUILTINS=1`, secret-shaped values in tool output (Anthropic and OpenAI keys, among other formats) are replaced with `[REDACTED:<kind>]` before the model sees them. The matching is pattern-based, so an encoded or unusually shaped secret still gets through. See [Permissions and sandbox](../permissions-and-sandbox.md).
+- `HONE_POLICY_BUILTINS=1` loads the built-in permission rules (including pipe-to-shell denial and tool-level asks) and turns on redaction: secret-shaped values in tool output (Anthropic and OpenAI keys, among other formats) are replaced with `[REDACTED:<kind>]` before the model sees them. The matching is pattern-based, so an encoded or unusually shaped secret still gets through. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ## File System Restrictions
 
@@ -365,19 +358,7 @@ grep "alice@example.com" /var/log/hone/audit.log | jq .
 
 > **Status: Available** — Application-layer AES-256-GCM encryption of memory content is implemented in `crates/hone-memory/src/encrypted.rs`. This encrypts the `content` field of each memory record using a key derived from a user passphrase via Argon2id. Full SQLite file encryption via sqlcipher is **not yet implemented** (Planned).
 
-Enable optional memory encryption to protect sensitive session data:
-
-```bash
-cargo build --features encrypted-memory
-```
-
-Configuration:
-
-```toml
-[memory]
-encrypted = true
-cipher = "aes256-gcm"
-```
+Enable optional memory encryption with the `--encrypted-memory` flag. It is built in: there is no Cargo feature and no `config.toml` setting.
 
 The encryption key is derived from a user passphrase via Argon2id:
 
@@ -411,11 +392,11 @@ By default, session memories are stored in SQLite at `~/.local/share/hone/memory
 
 ```bash
 ls -la ~/.local/share/hone/
-# memory.db            - session memories (content encrypted if --features encrypted-memory)
+# memory.db            - session memories (content encrypted with --encrypted-memory)
 # sessions.db          - session metadata (if HONE_SESSION_DB set)
 ```
 
-When built with `--features encrypted-memory`, the content field of each memory record is encrypted with AES-256-GCM before being written to disk (see [Memory Encryption](#memory-encryption-encrypted-memory-feature) above).
+With `--encrypted-memory`, the content field of each memory record is encrypted with AES-256-GCM before being written to disk (see [Memory Encryption](#memory-encryption-encrypted-memory-feature) above).
 
 Full SQLite file encryption via sqlcipher is planned for a future release. Until then, for sensitive workloads where even encrypted content fields are insufficient, use `--ephemeral` to disable persistence entirely:
 

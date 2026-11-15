@@ -87,7 +87,7 @@ ACP (Agent Client Protocol) is a bidirectional protocol for custom model integra
 - You need custom authentication or logging
 - You're building a multi-model orchestration layer
 
-For most users: you don't need ACP. It's for advanced integrations. See [ACP Protocol](../api/acp-protocol.md).
+For most users: you don't need ACP. It's for advanced integrations, and for now it's library-only: `hone` can't select an ACP provider. See [ACP](../tutorials/acp.md) and [ACP Protocol](../api/acp-protocol.md).
 
 ### How do I switch models mid-session?
 
@@ -450,17 +450,17 @@ For deployment details, see [Server and Remote Guide](../tutorials/server-and-re
 Slow can mean different things:
 
 **Slow startup (takes >5 seconds):**
-- Check if semantic index is being built (`~/.local/share/hone/index/`)
-- Disable indexing: `[index] enabled = false` in config
-- `honed` has no background-indexing option (there is no `--index-daemon`)
+- The symbol index (`~/.local/share/hone/index.db`) is built in the background and doesn't block startup; there is no `[index]` setting and no `--index-daemon` option
+- Skip the index and memory for a run with `--ephemeral`
+- If the first answer is the slow part, skip the repository skeleton built on turn 1 with `--no-inject`
 
 **Slow responses (model is slow):**
 - Use a faster model: Haiku instead of Opus, or local Ollama
 - Reduce context window: `HONE_CONTEXT_WINDOW=50000 hone`
-- Enable memory (reduces context needed): `[memory] enabled = true`
+- Memory is already on unless you run with `--ephemeral`; there is no `[memory] enabled` setting
 
 **Slow tool execution:**
-- Check sandbox overhead: try disabling sandbox (not recommended): `[sandbox] enforce = false`
+- Check sandbox overhead: there is no `[sandbox] enforce` setting. On macOS the shell sandbox (Seatbelt) is always on; on Linux it is off unless `HONE_SANDBOX_ENFORCE=1`
 - Profile with `RUST_LOG=debug hone "your prompt"`
 
 ### I'm getting "sandbox denied" errors

@@ -294,9 +294,9 @@ hone                                                       # local
 hone --orchestrate --distributed http://myserver:7070 "…"  # through a honed coordinator (needs HONE_AUTH_TOKEN)
 ```
 
-The coordinator and workers are `honed` processes; see [Run the daemon](../getting-started.md#8-run-the-daemon-honed).
+The coordinator and workers are `honed` processes. The coordinator needs `HONE_DISTRIBUTED_DB=<path>` (without it, `/distributed/*` returns 503) and each worker needs `HONE_WORKER_COORDINATOR=<url>`; see [Run the daemon](../getting-started.md#8-run-the-daemon-honed).
 
-Remote daemon handles authentication, audit logging, cost tracking per user.
+The daemon handles authentication (one bearer token), a run log (`HONE_PROVENANCE_DIR`) and cost totals per model (`GET /team/usage`), not per user.
 
 ## Step-by-Step Migration
 

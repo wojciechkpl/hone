@@ -99,18 +99,13 @@ hone --recipe tdd-feature \
 
 `--recipe` ignores a prompt argument: the recipe's steps get the feature and the test command through `--var` (`{{feature_name}}`, `{{test_command}}`).
 
-Or interactively, after launching `hone`:
-
-```
-/recipe tdd-feature
-> add a /export-session command that writes the conversation to ./export.json
-```
+There is no `/recipe` command in the TUI; run the recipe from the shell as above.
 
 ### What you get
 
-Each step's transcript is saved under `~/.hone/sessions/<id>/recipes/tdd-feature/<step>.md` so you can review the agent's reasoning at every stage.
+No step transcripts are saved: each step's output goes to stdout (errors to stderr). To review the agent's reasoning afterwards, redirect it: `… > tdd.log 2>&1`.
 
-The `test_cmd` field is enforced — if the `green` step finishes with a failing suite, hone refuses to advance to `refactor` and surfaces the failure. The recipe explicitly aborts rather than papering over a red bar.
+The `test_cmd` field is not a gate: Hone runs it after every step, prints `Tests passed.` or `Tests FAILED:` with the output, and moves on to the next step either way. Read the test output before you trust the result.
 
 ## Mode 3: the `bug-fix` recipe (regression-first)
 
@@ -167,10 +162,11 @@ Once you're done locally, the same `test_cmd` works in CI:
 - run: cargo test --workspace
 ```
 
-If a recipe was the entry point, save the recipe under `recipes/` and add a CI step:
+If a recipe was the entry point, add a CI step for it. Only the built-in recipe names load (`--recipe` doesn't read a file from `recipes/`), and `hone --recipe` exits 0 even when every step fails and the tests fail, so keep the separate test step: it is the one that fails the build.
 
 ```yaml
 - run: hone --recipe tdd-feature --var feature_name="$FEATURE_DESC" --var test_command="cargo test"
+- run: cargo test --workspace   # fails the build; the recipe step never does
 ```
 
 `--recipe` never opens the TUI or pauses between steps: it prints each step's output to stdout, so CI logs capture the agent's chain of reasoning.

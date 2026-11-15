@@ -9,7 +9,7 @@
 > What exists is the `AcpProvider` in the `hone-providers` crate and its integration test,
 > described below for code that embeds it.
 
-The Agent Client Protocol (ACP) lets hone drive any external agent process — `claude --acp`, `gemini --acp`, or any custom binary that speaks JSON-RPC 2.0 over stdin/stdout — and round-trip tool calls through hone's own dispatcher. This guide walks through configuring an ACP provider, what the message exchange looks like, and how to verify that tools actually round-trip end-to-end.
+The Agent Client Protocol (ACP) lets hone drive any external agent process — `claude --acp`, `gemini --acp`, or any custom binary that speaks JSON-RPC 2.0 over stdin/stdout — and round-trip tool calls through hone's own dispatcher. This guide describes what the message exchange looks like and how the integration test verifies that tools round-trip end-to-end.
 
 For the full wire-format reference, see [`docs/api/acp-protocol.md`](../api/acp-protocol.md).
 
@@ -118,9 +118,9 @@ Issuing `Esc` (or sending `request.cancel` programmatically) propagates to the A
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Agent never calls a tool | Schema rejected at `initialize` | Run with `RUST_LOG=hone_providers::acp=debug` and inspect the `initialize` response |
+| Agent never calls a tool | Schema rejected at `initialize` | Inspect the `initialize` response in your embedding code (the ACP module doesn't log, so `RUST_LOG` shows nothing) |
 | Tool call hangs | Result channel never produced a value | Check the dispatcher log; the tool's runtime probably panicked |
-| `tool_call_update` never arrives | Agent doesn't emit terminal status | Set `acp.expect_terminal_status = false` in config — `ObservedToolEnd` will be inferred from `prompt-finished` |
+| `tool_call_update` never arrives | Agent doesn't emit terminal status | No setting changes this (there is no `acp.expect_terminal_status` key): `ObservedToolEnd` is emitted only for a `tool_call_update` |
 | `session/toolResult` errors back | `sessionId` mismatch | Ensure you're not running two parallel prompts on the same agent process |
 
 ## Related

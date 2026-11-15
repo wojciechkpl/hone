@@ -95,7 +95,10 @@ The full TUI render cycle (header + conversation + input + status bar) takes **~
 - **general-purpose** (2) — helpful responses, appropriate domain jargon
 - **quant-advisor** (3) — Sharpe ratio, drawdown, backtesting caveats
 
-**Test harness:** `benchmarks/persona_eval.py` calls the Hone server (or CLI in server mode) and verifies each scenario response contains all expected keywords and no forbidden keywords.
+**Test harness:** `benchmarks/persona_eval.py` calls the Hone server and verifies each scenario response contains all expected keywords and no forbidden keywords.
+
+> [!WARNING]
+> The script currently posts to `/v1/agent/run`, an endpoint `honed` doesn't have (it returns 404), so the run below fails against `honed` until the script is updated.
 
 **Running:**
 

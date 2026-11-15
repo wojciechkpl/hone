@@ -24,7 +24,7 @@ flowchart TD
 
 ## Provider Comparison
 
-Hone supports 5 working providers + ACP. Here's how they compare:
+Hone supports 5 working providers. ACP is library-only for now and can't be selected from `hone` (see [ACP](acp.md)). Here's how they compare:
 
 | Provider | Tool Calling | Streaming | Cost | Best For |
 |----------|-------------|-----------|------|----------|
@@ -33,9 +33,6 @@ Hone supports 5 working providers + ACP. Here's how they compare:
 | **Ollama** | Yes | Yes | Free | Local/offline work with tool support |
 | **Claude CLI (legacy stdin/stdout)** | No | Yes | Subscription | Existing CLI users without ACP |
 | **Gemini CLI (legacy stdin/stdout)** | No | Yes | Free tier | No API key setup, prose-only |
-| **ACP — `claude --acp`** | Yes | Yes | Subscription | Subscription Claude with full tool dispatch |
-| **ACP — `gemini --acp`** | Yes | Yes | Free tier | Free Gemini tier with full tool dispatch |
-| **ACP — custom binary** | Yes | Yes | — | Custom model servers / self-hosted agents |
 
 ## Provider Auto-Detection
 

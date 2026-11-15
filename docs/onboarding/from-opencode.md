@@ -11,7 +11,7 @@ You know OpenCode. You're comfortable with 75+ providers, LSP integration, clien
 | OpenCode web UI | hone TUI + honed daemon | TUI instead of web (faster) |
 | OpenCode client-server | hone CLI + honed daemon | HTTP/2 + SSE instead of WebSocket |
 | OpenCode cost tracking | Real-time cost tracking | Per-turn granularity |
-| Custom integrations | MCP + ACP + Layer 2 tools | More modular |
+| Custom integrations | MCP + Layer 2 tools (ACP is library-only) | More modular |
 | OpenCode recipes | YAML recipes (same format) | 100% compatible |
 
 ## Before and After
@@ -350,7 +350,7 @@ honed 7070
 # From your laptop: the desktop app (daemon URL and token) or the HTTP API
 ```
 
-`honed` has no `--config` option; its settings are environment variables (`honed --help` lists them).
+`honed` has no `--config` option; its settings are environment variables, listed in [Environment variables](../configuration.md#environment-variables) (`honed --help` lists only some of them).
 
 ### 4. Test Your First Session
 

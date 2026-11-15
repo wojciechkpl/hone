@@ -8,11 +8,11 @@ Before deep-diving, run these:
 
 ```bash
 hone --version          # confirm you're on the build you think
-hone strategies --check # config check: exits 2 and prints the error if a config file is invalid
+hone strategies --check # parse check of config.toml: exits 2 on a TOML error, an unknown key or a bad [context]/[memory] value
 ls ~/.hone/logs/        # latest session logs
 ```
 
-Hone has no all-in-one environment check. If the config is valid, the issue is more specific — read on.
+`--check` doesn't resolve the config (a `default_model` with an unknown prefix still passes) and doesn't read `permissions.toml`. Hone has no all-in-one environment check. If the config parses, the issue is more specific — read on.
 
 ## Provider issues
 
@@ -65,12 +65,7 @@ The provider can't round-trip tool calls. `/configure` doesn't show this; with `
 
 ### Hot-swap doesn't take effect
 
-```
-/configure provider claude_acp
-> some prompt
-```
-
-If the prompt still uses the old provider, the swap was queued for the *next* turn but the current one was already in flight. Cancel with `Esc` and re-issue.
+`/configure provider` only notes the name; changing provider needs a restart. To switch model mid-session use `/model <provider:id>` (an `anthropic:`, `openai:` or `ollama:` model with a key). Typed during a turn, it applies once that turn ends.
 
 ## Tool dispatch issues
 
@@ -186,7 +181,7 @@ If the directory is gone, you ran `rm -rf ~/.hone` somewhere. There's no remote 
 ### Daemon crash / `honed` won't start
 
 ```bash
-RUST_LOG=info honed 7777   # runs in the foreground (it never forks); RUST_LOG=info shows its log
+HONE_BIND=127.0.0.1 RUST_LOG=info honed 7777   # runs in the foreground (it never forks); RUST_LOG=info shows its log
 ```
 
 Read the stderr output. Common causes:
