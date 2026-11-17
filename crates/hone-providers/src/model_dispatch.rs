@@ -115,6 +115,16 @@ impl ModelProvider for ModelDispatch {
         self.providers.values().any(|p| p.runs_own_tools())
     }
 
+    /// The configured fallback models that have a provider, without the
+    /// request's own model: the members `complete` chains after it.
+    fn fallback_models(&self, model: &ModelId) -> Vec<ModelId> {
+        self.fallback
+            .iter()
+            .filter(|m| *m != model && self.provider_for(m).is_some())
+            .cloned()
+            .collect()
+    }
+
     fn id(&self) -> &str {
         self.default_provider().map_or("model-dispatch", |p| p.id())
     }

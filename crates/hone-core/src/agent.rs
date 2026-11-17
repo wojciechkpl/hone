@@ -2141,9 +2141,21 @@ impl Agent {
             // Build the base message list with the STABLE system prompt.
             // Memories are injected as a separate system-role message right
             // after the base system prompt, so the prefix stays cache-friendly.
+            // Fitted to the model that serves it (and the fallbacks that may take
+            // over): a copy is trimmed, the stored history is not.
+            let fallback_names: Vec<String> = self
+                .config
+                .provider
+                .fallback_models(&self.config.model)
+                .iter()
+                .map(|m| m.model_name().to_owned())
+                .collect();
+            let request_budget = self
+                .context
+                .request_budget(self.config.model.model_name(), &fallback_names);
             let (mut messages, mut message_hashes) = self
                 .context
-                .build_messages_hashed(&self.config.system_prompt);
+                .build_messages_hashed_fitted(&self.config.system_prompt, request_budget);
 
             // Gathered sources: one system message each, right after the base
             // system prompt and before the memories and skills.
@@ -4076,11 +4088,6 @@ enum AgentCommand {
     SetModel {
         model: ModelId,
     },
-    /// Tell the agent which other models may serve its calls (the context budget
-    /// is the smallest over its model and these).
-    SetFallbackModels {
-        models: Vec<ModelId>,
-    },
     /// Replace the agent's active tool registry (for inline @agent tool allowlists).
     SetTools {
         tools: ToolRegistry,
@@ -4278,13 +4285,9 @@ impl AgentHandle {
                     }
                     AgentCommand::SetModel { model } => {
                         agent.config.model = model;
-                        agent.context.retarget(agent.config.model.model_name());
-                    }
-                    AgentCommand::SetFallbackModels { models } => {
-                        agent.context.set_fallback_models(
-                            models.iter().map(|m| m.model_name().to_owned()).collect(),
-                        );
-                        agent.context.retarget(agent.config.model.model_name());
+                        // Never trims: the stored budget only grows; each request
+                        // is fitted to the model that serves it.
+                        agent.context.note_model(agent.config.model.model_name());
                     }
                     AgentCommand::SetTools { tools } => {
                         // A replacement registry keeps `memory_write` (not in Plan
@@ -4585,16 +4588,6 @@ impl AgentHandle {
     /// `run_turn` call because the actor processes commands sequentially.
     pub async fn set_model(&self, model: ModelId) {
         let _ = self.cmd_tx.send(AgentCommand::SetModel { model }).await;
-    }
-
-    /// Tell the agent which other models may serve its calls (the user's
-    /// `fallback_models`). Its context budget becomes the smallest over its own
-    /// model and these, also after later `set_model` calls. Fire-and-forget.
-    pub async fn set_fallback_models(&self, models: Vec<ModelId>) {
-        let _ = self
-            .cmd_tx
-            .send(AgentCommand::SetFallbackModels { models })
-            .await;
     }
 
     /// Override the cost ceiling. Fire-and-forget; takes effect before the next

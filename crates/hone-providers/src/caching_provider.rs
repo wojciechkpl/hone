@@ -189,6 +189,10 @@ impl ModelProvider for CachingProvider {
         self.inner.runs_own_tools()
     }
 
+    fn fallback_models(&self, model: &hone_proto::ModelId) -> Vec<hone_proto::ModelId> {
+        self.inner.fallback_models(model)
+    }
+
     fn id(&self) -> &str {
         "caching" // Wrapper ID; inner.id() returns the real provider
     }

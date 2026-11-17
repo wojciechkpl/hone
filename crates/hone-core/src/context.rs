@@ -585,9 +585,6 @@ pub struct ContextManager {
     user_ratio: Option<f32>,
     /// The lowest project-file ratio (`cap_budget_ratio`); kept across retargets.
     project_cap: Option<f32>,
-    /// Names of models that may serve calls besides the primary one; the budget
-    /// is the smallest over all of them.
-    fallback_models: Vec<String>,
 }
 
 impl ContextManager {
@@ -609,7 +606,6 @@ impl ContextManager {
             window_override: None,
             user_ratio: None,
             project_cap: None,
-            fallback_models: Vec::new(),
         }
     }
 
@@ -632,7 +628,6 @@ impl ContextManager {
             window_override: None,
             user_ratio: None,
             project_cap: None,
-            fallback_models: Vec::new(),
         }
     }
 
@@ -696,41 +691,53 @@ impl ContextManager {
         self.window_override = window;
     }
 
-    /// Set the models (names without provider prefix) that may serve calls
-    /// besides the primary one. Takes effect on the next [`retarget`](Self::retarget).
-    pub fn set_fallback_models(&mut self, names: Vec<String>) {
-        self.fallback_models = names;
+    /// The config for `model_name` (without provider prefix) as for a new agent,
+    /// keeping the window override, an explicit user ratio (no cap) and a
+    /// project cap (only lowers).
+    fn config_for(&self, model_name: &str) -> ContextConfig {
+        let mut cfg =
+            ContextConfig::for_model(model_name).with_context_window(self.window_override);
+        if let Some(r) = self.user_ratio {
+            cfg.effective_budget_ratio = r;
+            cfg.budget_cap = None;
+        }
+        if let Some(c) = self.project_cap {
+            cfg.effective_budget_ratio = cfg.effective_budget_ratio.min(c);
+        }
+        cfg
     }
 
-    /// Recompute the budget for `model_name` (without provider prefix) as for a
-    /// new agent, keeping the window override, an explicit user ratio (no cap)
-    /// and a project cap (only lowers). The budget is the smallest over the
-    /// model and the fallback models. Trims the history at once if it shrank.
-    pub fn retarget(&mut self, model_name: &str) {
-        let build = |name: &str| {
-            let mut cfg = ContextConfig::for_model(name).with_context_window(self.window_override);
-            if let Some(r) = self.user_ratio {
-                cfg.effective_budget_ratio = r;
-                cfg.budget_cap = None;
-            }
-            if let Some(c) = self.project_cap {
-                cfg.effective_budget_ratio = cfg.effective_budget_ratio.min(c);
-            }
-            cfg
-        };
-        let mut config = build(model_name);
-        for name in &self.fallback_models {
-            let other = build(name);
-            if other.effective_budget() < config.effective_budget() {
-                // Take the smaller model's budget; keep the primary's trimming settings.
-                config.effective_budget_ratio = other.effective_budget_ratio;
-                config.advertised_context_length = other.advertised_context_length;
-                config.budget_cap = other.budget_cap;
-            }
+    /// The agent is now set to `model_name`: the stored history's budget becomes
+    /// the largest budget of any model it has been set to. Never trims, and never
+    /// lowers the budget; each request is fitted separately
+    /// ([`build_messages_hashed_fitted`](Self::build_messages_hashed_fitted)).
+    pub fn note_model(&mut self, model_name: &str) {
+        let cfg = self.config_for(model_name);
+        if cfg.effective_budget() > self.max_context_tokens {
+            self.max_context_tokens = cfg.effective_budget();
+            self.config.effective_budget_ratio = cfg.effective_budget_ratio;
+            self.config.advertised_context_length = cfg.advertised_context_length;
+            self.config.budget_cap = cfg.budget_cap;
         }
-        self.max_context_tokens = config.effective_budget();
-        self.config = config;
-        self.trim_to_budget();
+    }
+
+    /// The token budget of one request to `model_name`: that model's budget,
+    /// lowered to 60% of the window of each fallback model that may serve the
+    /// request instead (its window only: no cost cap, no family ratio).
+    pub fn request_budget(&self, model_name: &str, fallbacks: &[String]) -> u32 {
+        let mut budget = self.config_for(model_name).effective_budget();
+        for name in fallbacks {
+            let window = self.window_override.unwrap_or_else(|| {
+                ContextWindowTable::default_table()
+                    .lookup(&ModelId::new(format!("anthropic:{name}")))
+                    .or_else(|| {
+                        ContextWindowTable::default_table().lookup(&ModelId::new(name.as_str()))
+                    })
+                    .unwrap_or_else(|| ContextConfig::for_model(name).advertised_context_length)
+            });
+            budget = budget.min((window as f32 * 0.60) as u32);
+        }
+        budget
     }
 
     /// Notify the context manager about a tool call (for phase tracking).
@@ -1178,6 +1185,43 @@ impl ContextManager {
             messages.push(self.messages[i].clone());
         }
         (messages, hashes)
+    }
+
+    /// Like [`build_messages_hashed`](Self::build_messages_hashed), for a request
+    /// that may carry at most `budget` tokens. When the history is larger, a copy
+    /// is trimmed by the same rules as `add_message` (keeps the first system and
+    /// user messages and the most recent ones) and the stored history is left
+    /// alone. The copy's compaction steps are added to this manager's log, so the
+    /// receipt names what was dropped from this request; hashes come from the
+    /// copy, so they match the messages sent.
+    pub fn build_messages_hashed_fitted(
+        &mut self,
+        system_prompt: &str,
+        budget: u32,
+    ) -> (Vec<Message>, Vec<String>) {
+        if self.total_tokens() <= budget {
+            return self.build_messages_hashed(system_prompt);
+        }
+        let mut fitted = Self {
+            config: self.config.clone(),
+            max_context_tokens: budget,
+            messages: self.messages.clone(),
+            dropped_count: self.dropped_count,
+            dropped_role_hints: self.dropped_role_hints.clone(),
+            metrics: None,
+            content_hashes: self.content_hashes.clone(),
+            phase_tracker: PhaseTracker::new(),
+            phase_compaction: false,
+            compaction_log: Vec::new(),
+            hashes: self.hashes.clone(),
+            trim_only: self.trim_only,
+            window_override: self.window_override,
+            user_ratio: self.user_ratio,
+            project_cap: self.project_cap,
+        };
+        fitted.trim_to_budget();
+        self.compaction_log.append(&mut fitted.compaction_log);
+        fitted.build_messages_hashed(system_prompt)
     }
 
     /// Stored-message indexes in the order they are sent.
