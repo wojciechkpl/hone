@@ -227,20 +227,31 @@ async fn test_r3_orchestrate_when_model_prefixed_opus_should_price_lead_call() {
     assert_priced(spent, OPUS_COST, &body);
 }
 
+const PADDED: [&str; 2] = [" claude-opus-4-7 ", "anthropic: claude-opus-4-7"];
+
 #[tokio::test]
-async fn test_r6_run_when_model_has_surrounding_whitespace_should_trim_and_price() {
-    let (cost, keys, body) = run_and_read_spend(Some(" claude-opus-4-7 ")).await;
-    assert_priced(cost, OPUS_COST, &body);
-    assert_eq!(keys, vec!["anthropic:claude-opus-4-7".to_owned()]);
+async fn test_r6_run_when_model_has_whitespace_should_trim_and_price() {
+    for model in PADDED {
+        let (cost, keys, body) = run_and_read_spend(Some(model)).await;
+        assert_priced(cost, OPUS_COST, &body);
+        assert_eq!(
+            keys,
+            vec!["anthropic:claude-opus-4-7".to_owned()],
+            "model {model:?}"
+        );
+    }
 }
 
 #[tokio::test]
-async fn test_r6_orchestrate_when_model_has_surrounding_whitespace_should_trim_and_price() {
-    let (spent, body) = orchestrate_lead_cost(Some(" claude-opus-4-7 ")).await;
-    assert_priced(spent, OPUS_COST, &body);
+async fn test_r6_orchestrate_when_model_has_whitespace_should_trim_and_price() {
+    for model in PADDED {
+        let (spent, body) = orchestrate_lead_cost(Some(model)).await;
+        assert_priced(spent, OPUS_COST, &body);
+    }
 }
 
-const REJECTED: [&str; 6] = [
+const REJECTED: [&str; 7] = [
+    "anthropic:   ",
     "openai:claude-opus-4-7",
     "x:claude-opus-4-7",
     "ollama:llama3",
@@ -269,7 +280,7 @@ async fn test_r5_r6_run_when_model_rejected_should_answer_400_and_record_no_spen
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "model {model:?}");
         let bytes = to_bytes(resp.into_body(), 1 << 20).await.unwrap();
         let text = String::from_utf8_lossy(&bytes).to_string();
-        if !model.trim().is_empty() {
+        if model.contains(':') && !model.starts_with("anthropic:") {
             assert!(
                 text.contains(model),
                 "message should name {model:?}: {text}"
