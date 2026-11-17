@@ -10,6 +10,7 @@ import subprocess
 import pytest
 from fakebin import (
     ROOT,
+    SHA40,
     calls,
     docker_calls,
     env_file_without,
@@ -19,7 +20,7 @@ from fakebin import (
     run_script,
 )
 
-IMAGE = {"HC_VLLM_IMAGE": "vllm/vllm-openai:test", "HC_MODEL_REVISION": "abc123"}
+IMAGE = {"HC_VLLM_IMAGE": "vllm/vllm-openai:test", "HC_MODEL_REVISION": SHA40}
 REQUIRED = [
     "HC_TOP_K",
     "HC_MIN_P",

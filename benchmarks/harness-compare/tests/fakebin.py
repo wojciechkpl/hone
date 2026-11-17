@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SHA40 = "0123456789abcdef0123456789abcdef01234567"  # a pinned commit id (K47)
 
 _RECORDER = """#!{python}
 import json, sys

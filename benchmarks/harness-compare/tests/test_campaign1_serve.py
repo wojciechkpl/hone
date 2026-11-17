@@ -2,7 +2,7 @@
 
 import json
 
-from fakebin import docker_calls, make_fake_bin, make_rig, run_script
+from fakebin import SHA40, docker_calls, make_fake_bin, make_rig, run_script
 
 SPEC = '{"method":"mtp","num_speculative_tokens":3}'
 BASE = {
@@ -10,7 +10,7 @@ BASE = {
     "HC_VLLM_IMAGE": "vllm/vllm-openai:test",
     "HC_MODEL_HF": "org/model",
     # Pinned so the script never expands an empty array: macOS bash 3.2 + `set -u` dies on that.
-    "HC_MODEL_REVISION": "abc123",
+    "HC_MODEL_REVISION": SHA40,
     "HC_ENFORCE_EAGER": "0",
     "HC_LANGUAGE_MODEL_ONLY": "0",
     "HC_REASONING_PARSER": "",
@@ -103,7 +103,7 @@ def test_k4_example_defaults_should_produce_the_campaign_1_command(tmp_path):
         "02_serve_model.sh",
         ["up"],
         bindir,
-        {"HC_VLLM_IMAGE": "vllm/vllm-openai:test", "HC_MODEL_REVISION": "abc123"},
+        {"HC_VLLM_IMAGE": "vllm/vllm-openai:test", "HC_MODEL_REVISION": SHA40},
     )
     assert r.returncode == 0, r.stderr
     run = next(c for c in docker_calls(log) if c[:1] == ["run"] and "hc-llm" in c)
@@ -124,4 +124,4 @@ def test_k4_example_defaults_should_produce_the_campaign_1_command(tmp_path):
 
 def test_k4_revision_flag_should_still_be_passed_when_pinned(tmp_path):
     args = run_argv(tmp_path, HC_ENFORCE_EAGER="1")
-    assert args[args.index("--revision") + 1] == "abc123"
+    assert args[args.index("--revision") + 1] == SHA40

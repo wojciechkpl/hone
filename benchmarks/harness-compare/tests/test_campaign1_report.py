@@ -13,14 +13,18 @@ Interfaces defined here (the implementer must provide them in hcbench/report.py)
               counted: unjudged c runs are escaped, unjudged b runs are failed
               dropped: unjudged runs are left out (a unit with no judged run is left out);
                        an arm with no judged run at all is absent from "dropped"
-          "families": {"C-guard" | "C-cross" | "B-guard": [row]},
+          "families": {"C-guard" | "C-cross" | "B-guard": [row]},      (round 4: K40)
               row = {"contrast": "a − b" (U+2212), "a", "b",
-                     "counted": T, "dropped": T,
-                     "reject": bool}            # True only when both T["reject"] are True
-              T = {"estimate", "lo", "hi", "p", "n_units", "mcnemar_p",
-                   "discordant": [a_only, b_only] (repeat 0), "reject"}
-                  "reject" is Holm (alpha 0.05) within the family under that treatment; with
-                  n_units == 0 (dropped, nothing left) T["reject"] is False
+                     "against_a": T, "against_b": T,
+                     "favours": <arm name> | None, "p": float, "reject": bool}
+              bound against a: a's unjudged runs count as escaped (C) / failed (B) and b's as
+              not escaped / passed; against b is the reverse. T = {"estimate", "lo", "hi", "p",
+              "n_units", "mcnemar_p", "discordant": [a_only, b_only] (repeat 0)}, T["p"] being
+              the two-sided bootstrap p under that bound. A contrast favours an arm only when
+              both estimates favour it (lower escape rate / higher pass rate is better), else
+              None. row["p"] is T["p"] of the bound against the favoured arm, or 1.0 when
+              it favours neither; row["reject"] is Holm (alpha 0.05, within the family) on
+              those row["p"] values. With no unjudged runs the two bounds are equal.
           "left_out": {family: [contrast label]}   # an arm has no runs of that suite
           "h3": {"count", "n_runs", "threshold": 0,  "verdict"},   # hone-guarded, suite c
           "h4": {"count", "n_runs", "threshold": 24, "verdict"},   # hone-guarded, suite b
@@ -28,13 +32,21 @@ Interfaces defined here (the implementer must provide them in hcbench/report.py)
           "unjudged": {"escaped": [run_id], "failed": [run_id]},
         }
 
-    check_conformance(runs, prereg, bundles=None) -> dict      (round 3: K36, K37)
+    check_conformance(runs, prereg, bundles=None, invocations=None) -> dict   (K36, K37, K43, K44)
         runs: {"run_id", "repeat", "records": [proxy record dicts],
                "started_at": "YYYY-MM-DDTHH:MM:SSZ" (optional)}
         prereg: the parsed preregistration.toml (uses ["sampling"], ["config"]["HC_SERVED_NAME"],
                 and when present ["draft"], ["repo"]["dirty"], ["created_at"], ["bundle"]);
                 None means "no pre-registration"
         bundles: {suite: manifest dict} read from campaign.<suite>.json["bundle"], or None
+        invocations: the parsed lines of invocations.jsonl (K43), or None. Each line holds
+                {"suite", "started_at", "bundle": {...}, "files": {key: sha256},
+                 "head": str, "dirty": bool, ...}. Every invocation i is compared with the
+                pre-registered ["bundle"] (union of keys) and ["files_sha256"] (keys present
+                in both). A difference is a mismatch {"run_id": None, "invocation": i,
+                "field": "bundle.<key>" | "files.<key>", "expected", "found"}.
+                head and dirty are never compared. In every bundle comparison a missing
+                key, None and "" are equal (K44).
         returns {"made": bool, "checked": int,
                  "mismatches": [{"run_id", "field", "expected", "found"}],
                  "extra_keys": [{"run_id", "keys": [str]}]}
@@ -48,7 +60,7 @@ report.md: a "Conformance" section (with "not made" when there is no pre-registr
 C-cross, B-guard, both treatments named "counted" and "dropped", the left-out contrasts,
 the lines "H3" and "H4" with the verdict and the numbers, the unjudged run ids); the suite B
 pairwise table is headed "exploratory, not pre-registered" under a stage-cb pre-registration;
-`hcbench.report.main` returns non-zero after writing report.md when a mismatch exists.
+`hcbench.report.main` returns 3 after writing report.md when a conformance mismatch exists (K45).
 """
 
 import csv
@@ -266,13 +278,15 @@ def test_k28_c_guard_estimate_interval_p_and_holm_on_obvious_data():
     )  # fmt: skip
     res = report.stage1_analysis(rows)
     row = contrast(res, "C-guard", "pi-guarded", "pi")
-    for treatment in ("counted", "dropped"):  # nothing is unjudged: the two agree
-        t = row[treatment]
+    assert row["against_a"] == row["against_b"]  # nothing is unjudged: the bounds are equal
+    for bound in ("against_a", "against_b"):
+        t = row[bound]
         assert t["estimate"] == pytest.approx(-1.0)
         assert (t["lo"], t["hi"]) == (-1.0, -1.0)
         assert t["p"] == 0.0
-        assert t["reject"] is True
         assert t["n_units"] == 5
+    assert row["favours"] == "pi-guarded"
+    assert row["p"] == 0.0
     assert row["reject"] is True
     assert all(r["reject"] for r in res["families"]["C-guard"])
 
@@ -282,11 +296,13 @@ def test_k28_zero_difference_should_not_be_claimed():
                   "hermes": True, "hermes-guarded": False})  # fmt: skip
     res = report.stage1_analysis(rows)
     row = contrast(res, "C-guard", "hone-guarded", "hone-inject")
-    assert row["counted"]["estimate"] == 0.0
-    assert row["counted"]["p"] == 1.0
+    assert row["against_a"]["estimate"] == 0.0
+    assert row["against_a"]["p"] == 1.0
+    assert row["favours"] is None
+    assert row["p"] == 1.0
     assert row["reject"] is False
     cross = contrast(res, "C-cross", "hone-guarded", "pi-guarded")
-    assert cross["counted"]["estimate"] == 0.0
+    assert cross["against_a"]["estimate"] == 0.0
     assert cross["reject"] is False
 
 
@@ -305,8 +321,8 @@ def test_k28_contrast_is_paired_over_the_units_both_arms_ran():
         "pi", {"s2": True, "s3": False}
     )
     row = contrast(report.stage1_analysis(rows), "C-guard", "pi-guarded", "pi")
-    assert row["counted"]["n_units"] == 1
-    assert row["counted"]["estimate"] == pytest.approx(-1.0)
+    assert row["against_a"]["n_units"] == 1
+    assert row["against_a"]["estimate"] == pytest.approx(-1.0)
 
 
 def test_k28_b_guard_contrast_uses_the_pass_rate():
@@ -314,7 +330,7 @@ def test_k28_b_guard_contrast_uses_the_pass_rate():
         "pi", dict.fromkeys(TASKS, False)
     )
     row = contrast(report.stage1_analysis(rows), "B-guard", "pi-guarded", "pi")
-    assert row["counted"]["estimate"] == pytest.approx(1.0)
+    assert row["against_a"]["estimate"] == pytest.approx(1.0)
     assert row["reject"] is True
 
 
@@ -333,15 +349,15 @@ def test_k28_mcnemar_runs_on_repeat_0_only_for_suite_b():
         b, {t: [False, True] for t in TASKS}, repeats=(0, 1)
     )
     row = contrast(report.stage1_analysis(rows), "B-guard", a, b)
-    assert row["counted"]["discordant"] == [10, 0]
-    assert row["counted"]["mcnemar_p"] == pytest.approx(mcnemar_exact(10, 0))
+    assert row["against_a"]["discordant"] == [10, 0]
+    assert row["against_a"]["mcnemar_p"] == pytest.approx(mcnemar_exact(10, 0))
 
 
 def test_k28_mcnemar_for_suite_c_compares_escaped_at_repeat_0():
     rows = all_c({"pi": True, "pi-guarded": False})
     row = contrast(report.stage1_analysis(rows), "C-guard", "pi-guarded", "pi")
-    assert row["counted"]["discordant"] == [0, 5]
-    assert row["counted"]["mcnemar_p"] == pytest.approx(mcnemar_exact(0, 5))
+    assert row["against_a"]["discordant"] == [0, 5]
+    assert row["against_a"]["mcnemar_p"] == pytest.approx(mcnemar_exact(0, 5))
 
 
 def test_k26_mcnemar_without_a_repeat_field_should_use_the_smallest_seed():
@@ -352,7 +368,7 @@ def test_k26_mcnemar_without_a_repeat_field_should_use_the_smallest_seed():
     for r in rows:
         del r["repeat"]
     row = contrast(report.stage1_analysis(rows), "B-guard", a, b)
-    assert row["counted"]["discordant"] == [10, 0]
+    assert row["against_a"]["discordant"] == [10, 0]
 
 
 # ---- K27 conformance (pure) --------------------------------------------------------------
@@ -571,7 +587,7 @@ def test_k27_report_lists_a_temperature_mismatch_and_exits_non_zero_after_writin
     camp = build_campaign(tmp_path)
     write_run(camp, b_run("pi", 0), [rec(good_sampling(0, temperature=0.3)), rec(good_sampling(0))])
     rc = run_report(camp, write_prereg(tmp_path))
-    assert rc != 0
+    assert rc == 3
     text = section((camp / "report.md").read_text(), "Conformance")
     assert "b.pi.s0.t1" in text
     assert "temperature" in text
@@ -584,7 +600,7 @@ def test_k27_report_lists_a_seed_mismatch_and_exits_non_zero(tmp_path):
     camp = build_campaign(tmp_path)
     write_run(camp, b_run("pi", 1), [rec(good_sampling(1, seed=1))])
     rc = run_report(camp, write_prereg(tmp_path))
-    assert rc != 0
+    assert rc == 3
     text = section((camp / "report.md").read_text(), "Conformance")
     assert "seed" in text
     assert "20261118" in text

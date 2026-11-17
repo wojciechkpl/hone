@@ -12,6 +12,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from fakebin import SHA40
 
 from hcbench import prereg
 
@@ -47,7 +48,8 @@ SAMPLING = {
 
 def pin(env):
     for k in env["placeholders"]:
-        env["mp"].setenv(k, "pinned-for-test")
+        # K47: a non-draft stage-cb pre-registration needs a 40-hex weights revision.
+        env["mp"].setenv(k, SHA40 if k == "HC_MODEL_REVISION" else "pinned-for-test")
 
 
 def run_cb(env, *extra):

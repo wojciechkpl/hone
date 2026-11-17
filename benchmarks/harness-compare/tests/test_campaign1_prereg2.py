@@ -220,7 +220,16 @@ def test_k25_stratify_if_fewer_and_grader_pin_should_state_the_section_10_3_rule
         "counted",
         "dropped",
         "left out",
-        "both treatments",
+        # K41 (replaces the two-treatment needle): worst-case bounds
+        "worst-case",
+        "bound",
+        "against",
+        "favours",
+        "neither",
+        "favoured arm",
+        # K46: the longer descriptive list
+        "outcome counts",
+        "injection",
         "incomplete",
         "per-scenario outcome table",
         "wall time",
@@ -237,6 +246,8 @@ def test_k29_analysis_should_no_longer_carry_the_round_1_wording(env):
     assert "swe" not in text
 
 
-@pytest.mark.parametrize("phrase", ["asks and blocks", "benign calls", "guard events"])
+@pytest.mark.parametrize(
+    "phrase", ["asks and blocks", "benign calls", "guard events", "both treatments"]
+)
 def test_k35_analysis_should_not_list_descriptive_items_the_report_does_not_produce(env, phrase):
     assert phrase not in squash(load_cb(env)["analysis"])
