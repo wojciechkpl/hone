@@ -155,7 +155,7 @@ See [Security Guide](../tutorials/security.md) and [Permissions and sandbox](../
 It can, unless a rule or the sandbox stops it:
 
 - **Shell commands** can write only to the working directory, `/tmp` and `/dev/null` (always on macOS; on Linux only with `HONE_SANDBOX_ENFORCE=1`). The shell command checks also refuse destructive commands such as `rm -rf`.
-- **File tools** (`write_file`, `edit_file`, `multi_edit`) aren't sandboxed: they can write anywhere your user can. In the TUI they ask before each write unless you switch to AutoApprove.
+- **File tools** (`write_file`, `edit_file`, `multi_edit`) refuse any path that resolves outside the working directory (symlinks included), but inside it they can change or overwrite any file your user can; they aren't OS-sandboxed. In the TUI they ask before each write unless you switch to AutoApprove.
 
 To keep the agent out of a path, add a rule to `~/.config/hone/permissions.toml`:
 
@@ -213,7 +213,7 @@ Hone's **Layer 2 (native tools)**, as the `hone` CLI registers them:
 - Git: `git_status`, `git_diff`, `git_commit`
 - Code intelligence: `lsp_diagnostics`, `lsp_hover`, `lsp_code_actions`, plus `symbol_search` and `symbol_at` when the symbol index is available
 - Web: `web_fetch`, and `web_search` (returns an error unless `HONE_WEBSEARCH_PROVIDER` and `HONE_WEBSEARCH_KEY` are set)
-- Memory: `memory_read`, when long-term memory is on
+- Memory: `memory_read`, when long-term memory is on; `memory_write` too when `[memory] writer` is `tool` or `triggers+tool`
 - Screen: `screen_capture`, `computer_control`
 
 See [Tools and MCP Guide](../tutorials/tools-and-mcp.md) for full reference.
@@ -376,7 +376,7 @@ See [Run the daemon](../getting-started.md#8-run-the-daemon-honed) and the [Serv
 
 ### How do I set up RBAC?
 
-You can't: Hone has no roles and no per-user permissions or budgets. `honed` checks one bearer token (`HONE_AUTH_TOKEN`), and every client that sends it gets the same access. To limit what the agent may do in every session, write permission rules in `~/.config/hone/permissions.toml` of the user that runs `honed`. See [Permissions and sandbox](../permissions-and-sandbox.md).
+You can't: Hone has no roles and no per-user permissions or budgets. `honed` checks one bearer token (`HONE_AUTH_TOKEN`), and every client that sends it gets the same access. To limit what the agent may do in every session, write `deny` rules in `~/.config/hone/permissions.toml` of the user that runs `honed`. Use `deny`, not `ask`: a client can pre-approve `ask` rules when it starts a run. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ### Where are audit logs stored?
 

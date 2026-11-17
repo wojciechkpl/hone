@@ -65,7 +65,7 @@ This guides you step-by-step through:
 3. Choosing your default model from that provider
 4. Writing the configuration to `~/.config/hone/config.toml`
 
-Configuration is one-time. Your provider and model are remembered for future sessions.
+Configuration is one-time. Your provider and model are remembered for future sessions. Running `hone configure` again replaces the whole file with just a `[provider]` table, so anything you added to it by hand is lost.
 
 ## Starting Your First Session
 
@@ -453,7 +453,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 hone
 ```
 
-Or run `hone configure`, which saves the key in `~/.config/hone/config.toml` (in plain text).
+Or run `hone configure`, which saves the key in `~/.config/hone/config.toml` (in plain text). It replaces the whole file with just a `[provider]` table, so anything else in it, such as `[providers.*]`, `fallback_models`, `[[routing]]` and `[pricing]`, is lost.
 
 ### Model Not Found
 

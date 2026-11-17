@@ -222,7 +222,7 @@ MCP is a standardized protocol for language models to call external tools. Hone 
 
 ### Configuring MCP Servers
 
-MCP servers go in `~/.config/hone/mcp.json` (every project) or `.hone/mcp.json` in the directory you run Hone from (that project; it wins when both name the same server). Not in `config.toml`: an MCP table there makes Hone stop with a config error. The format is Claude Code's, so you can copy an existing `.claude/mcp.json`:
+MCP servers go in `~/.config/hone/mcp.json` (every project) or `.hone/mcp.json` in the directory you run Hone from (that project; it wins when both name the same server). Not in `config.toml`: an MCP table there makes Hone stop with a config error. The format is Claude Code's `mcpServers` JSON (Claude Code's project file is `.mcp.json` at the repository root), but Hone runs only stdio servers, started from a `command`. An entry with a `url` instead (an HTTP or SSE server) doesn't parse, and one bad entry makes Hone skip the whole file with only a warn-level log, which you see with `RUST_LOG=hone_config=warn`. So copy only the stdio entries:
 
 ```json
 {
@@ -246,7 +246,7 @@ MCP servers go in `~/.config/hone/mcp.json` (every project) or `.hone/mcp.json` 
 }
 ```
 
-`env` values may reference your environment as `${VAR}`, so tokens stay out of the file. Each server also takes `disabled` and `handshake_timeout_ms`; `timeout_ms` defaults to 10 000. A server that fails to start is logged and skipped. See [MCP servers](../configuration.md#mcp-servers).
+A server starts with an empty environment plus `PATH` and `HOME`, so list every other variable it needs in its `env`. `env` values may reference Hone's environment as `${VAR}`, so tokens stay out of the file. Each server also takes `disabled` and `handshake_timeout_ms`; `timeout_ms` defaults to 10 000. A server that fails to start is skipped, with a warning you see only with `RUST_LOG=hone_mcp=warn` (or `info`). See [MCP servers](../configuration.md#mcp-servers).
 
 ### Using MCP Tools
 
@@ -361,8 +361,11 @@ Use it:
 ```bash
 hone "Translate 'hello' to Spanish"
 # Agent calls: translate(text="hello", language="Spanish")
-# Tool result: "[Translation to Spanish]: hello"  (the dummy translation above)
+# The model receives the whole result object as JSON:
+# {"content":[{"type":"text","text":"[Translation to Spanish]: hello"}],"isError":false}
 ```
+
+Hone passes the `tools/call` result to the model as it is, not only its text. It doesn't treat `"isError": true` as an error; the model just sees it in the JSON. A JSON-RPC `error` reply is reported to the model as a failed tool call.
 
 ## Layer 0: Code Mode
 
@@ -664,7 +667,7 @@ registry.register(Box::new(MyTool));
 
 Not every tool call is sandboxed. Hone has these checks (details in [Permissions and sandbox](../permissions-and-sandbox.md)):
 
-- **Permission rules** in `~/.config/hone/permissions.toml` and `.hone/permissions.toml`. Each rule matches a `path`, a `command` or a `host` and allows, asks or denies. They are off until you write rules, and they don't see MCP tool calls.
+- **Permission rules** in `~/.config/hone/permissions.toml` and `.hone/permissions.toml`. Each rule matches a `path`, a `command` or a `host` and allows, asks or denies. With no permission files, no rules apply unless `HONE_POLICY_BUILTINS=1` is set, which loads the built-in rules. Rules don't see MCP tool calls.
 - **File tools** (`read_file`, `write_file`, `edit_file`, ...) refuse paths that resolve outside the working directory. They run inside the Hone process and are not OS-sandboxed.
 - **Shell command checks**: the `shell` tool always refuses privilege escalation, destructive, network and chained commands.
 - **The OS sandbox** covers commands the `shell` tool starts, and nothing else. On macOS, Seatbelt is always on: commands can write only to the working directory and `/tmp`, and have no network. On Linux, Landlock applies only with `HONE_SANDBOX_ENFORCE=1`, and restricts files only.

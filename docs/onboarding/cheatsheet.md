@@ -169,7 +169,7 @@ decision = "ask"
 
 | Path | What |
 |---|---|
-| `~/.config/hone/config.toml` · `.hone/config.toml` | `default_model`, `[budget]`, `[[routing]]`, `[context]`, `[memory]`, the wizard's `[provider]`; unknown keys exit 2 ([all keys](../configuration.md#configtoml)) |
+| `~/.config/hone/config.toml` · `.hone/config.toml` | `default_model`, `[budget]`, `[[routing]]`, `[context]`, `[memory]`, and in the user file only the wizard's `[provider]`; unknown keys exit 2 ([all keys](../configuration.md#configtoml)) |
 | `~/.config/hone/permissions.toml` · `.hone/permissions.toml` | Permission rules |
 | `~/.config/hone/mcp.json` · `.hone/mcp.json` | MCP servers |
 | `HONE.md` (user, project root, cwd) | Conventions in the system prompt |

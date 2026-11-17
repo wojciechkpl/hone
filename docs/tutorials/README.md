@@ -236,7 +236,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 hone
 ```
 
-Or run `hone configure`, which saves the key in `~/.config/hone/config.toml` (in plain text).
+Or run `hone configure`, which saves the key in `~/.config/hone/config.toml` (in plain text). It replaces the whole file with just a `[provider]` table, so anything else in it, such as `[providers.*]`, `fallback_models`, `[[routing]]` and `[pricing]`, is lost.
 
 ### Sandbox error on macOS
 

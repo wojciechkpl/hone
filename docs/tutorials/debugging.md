@@ -29,7 +29,9 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.zshrc
 ```
 
-Or run `hone configure`, which saves the key in `~/.config/hone/config.toml` (in plain text). If your key is in a variable with another name, point Hone at it in that file:
+Or run `hone configure`, which saves the key in `~/.config/hone/config.toml` (in plain text). It replaces the whole file with just a `[provider]` table, so anything else in it, such as `[providers.*]`, `fallback_models`, `[[routing]]` and `[pricing]`, is lost.
+
+If your key is in a variable with another name, point Hone at it in that file instead:
 
 ```toml
 [providers.anthropic]
@@ -73,11 +75,11 @@ The provider can't round-trip tool calls. `/configure` doesn't show this; with `
 Run with debug logging:
 
 ```bash
-RUST_LOG=hone_core::dispatcher=debug,hone_providers=debug hone
+RUST_LOG=hone_core::dispatcher=debug,hone_providers=debug,hone_mcp=info,hone_config=warn hone 2> hone.log
 ```
 
 Look for `tools=` in the request log — if the tools array is empty, hone didn't announce any. Common causes:
-- The tool comes from an MCP server that didn't start, or is `disabled`, in `mcp.json`. Hone logs that and skips the server; see [MCP servers](../configuration.md#mcp-servers).
+- The tool comes from an MCP server that didn't start, or is `disabled`, in `mcp.json`. Hone skips the server and logs why, but with `RUST_LOG` unset only errors are shown: `hone_mcp=info` shows start failures and disabled servers, and `hone_config=warn` shows an `mcp.json` that failed to parse. See [MCP servers](../configuration.md#mcp-servers).
 - Tools are registered but the active provider has `supports_tools: false`.
 - The model's `system_prompt` says "you have no tools" — check the prompt template.
 
@@ -170,10 +172,16 @@ Or compact via the existing summariser:
 
 ### Sessions disappear
 
-One-shot runs are saved in `~/.local/share/hone/sessions.db`; `honed` uses the same file unless `HONE_SESSION_DB` is set. The TUI doesn't save sessions yet, and `--ephemeral` runs save nothing. List what is saved:
+One-shot runs are saved in `~/.local/share/hone/sessions.db`. The TUI doesn't save sessions yet, and `--ephemeral` runs save nothing. List the saved runs:
 
 ```bash
 hone session list
+```
+
+`honed` keeps its sessions in the same file (unless `HONE_SESSION_DB` is set), but in a different table, so they don't appear in `hone session list`. List them through the daemon:
+
+```bash
+curl http://127.0.0.1:7777/sessions   # with a token: -H "Authorization: Bearer $HONE_AUTH_TOKEN"
 ```
 
 If `sessions.db` is gone, it was deleted. Hone has no remote backup.
@@ -207,7 +215,7 @@ Every `shell` command runs under `sandbox-exec`. There is no setting to turn tha
 
 ### Landlock on Linux
 
-Landlock is off unless `HONE_SANDBOX_ENFORCE=1` is set; without it shell commands run unsandboxed, and Hone logs that once at warn level. With it, Landlock needs kernel 5.13 or newer: on an older kernel the command fails instead of running unsandboxed. There is no fallback backend.
+Landlock is off unless `HONE_SANDBOX_ENFORCE=1` is set; without it shell commands run unsandboxed, and Hone logs that once at warn level, which you see only with `RUST_LOG=warn` (with `RUST_LOG` unset, only errors are shown). With it, Landlock needs kernel 5.13 or newer: on an older kernel the command fails instead of running unsandboxed. There is no fallback backend.
 
 ## Recipes & TDD issues
 
@@ -234,7 +242,7 @@ If you see "watching N paths" with N=0, the watcher couldn't enumerate. On NFS/S
 
 ### Where things are written
 
-Hone writes no log files. Logs go to stderr, filtered by `RUST_LOG`. Redirect them to keep them; the TUI draws on stdout, so this works there too:
+Hone writes no log files. Logs go to stderr, filtered by `RUST_LOG`; when it is unset, only errors are shown. Redirect them to keep them; the TUI draws on stdout, so this works there too:
 
 ```bash
 RUST_LOG=debug hone 2> hone.log

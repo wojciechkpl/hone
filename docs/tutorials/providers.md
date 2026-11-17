@@ -67,7 +67,7 @@ base_url = "https://api.anthropic.com"  # optional override
 api_key_env = "MY_ANTHROPIC_KEY"        # read the key from this variable, not ANTHROPIC_API_KEY
 ```
 
-There is no key setting in this table. The key comes from `ANTHROPIC_API_KEY` (or the variable `api_key_env` names), or from `hone configure`, which saves it in the same file in plain text. See [config.toml](../configuration.md#configtoml).
+There is no key setting in this table. The key comes from `ANTHROPIC_API_KEY` (or the variable `api_key_env` names), or from `hone configure`, which saves it in the same file in plain text. `hone configure` replaces the whole file with just a `[provider]` table, so anything else in it, such as this table, `fallback_models`, `[[routing]]` and `[pricing]`, is lost. See [config.toml](../configuration.md#configtoml).
 
 **Available models:**
 - `claude-opus-4-5` — 200K context, best for complex tasks

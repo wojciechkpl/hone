@@ -5,7 +5,7 @@
 | Feature | Status | Notes |
 |---|---|---|
 | Kernel sandbox (Seatbelt / Landlock) | Available | Seatbelt on macOS; Landlock on Linux 5.13+ is opt-in (`HONE_SANDBOX_ENFORCE=1`) |
-| Environment variable filtering | **Not available** | Commands the agent runs inherit Hone's environment, including API keys. See [Environment Variable Filtering](#environment-variable-filtering) |
+| Environment variable filtering | **Not available** for shell commands | Commands the `shell` tool starts inherit Hone's environment, including API keys. MCP servers get only `PATH`, `HOME` and their configured `env`. See [Environment Variable Filtering](#environment-variable-filtering) |
 | Audit logging | Opt-in | `--audit` or `HONE_AUDIT_LOG=1` writes `.hone/audit.jsonl` |
 | Memory encryption (AES-256-GCM) | Opt-in | `--encrypted-memory` with `HONE_MEMORY_PASSPHRASE` set; built in, no Cargo feature |
 | SQLite at-rest encryption (sqlcipher) | Planned | Not yet implemented |
@@ -31,7 +31,7 @@ let policy = SandboxPolicyBuilder::new(SandboxMode::Manual)
     .build()?;
 ```
 
-Only shell commands are sandboxed: the shell tool installs the sandbox on the child process it starts. File tools such as `read_file` and `write_file` run inside the Hone process, so the OS sandbox never applies to them; they are governed by permission rules instead. See [Permissions and sandbox](../permissions-and-sandbox.md#3-os-sandbox).
+Only shell commands are sandboxed: the shell tool installs the sandbox on the child process it starts. File tools such as `read_file` and `write_file` run inside the Hone process, so the OS sandbox never applies to them; Hone confines them to the working directory itself, and permission rules narrow them further. See [Permissions and sandbox](../permissions-and-sandbox.md#3-os-sandbox).
 
 **Requirements:**
 - Linux kernel 5.13+ (Landlock upstreamed in this release); check with `uname -r`
@@ -110,7 +110,7 @@ command = "git push*"
 decision = "ask"
 ```
 
-A call that matches no rule is allowed. Within a file, the first matching rule wins. In `path` rules, `~/` expands to your home directory, `{workdir}` to the working directory, and a relative pattern is joined onto the working directory. The full format is in [Permissions and sandbox](../permissions-and-sandbox.md#rule-format).
+A call that matches no rule is allowed. Within a file, the first matching rule wins. In `path` rules, `~/` expands to your home directory, `{workdir}` to the working directory, and a relative pattern is joined onto the working directory. A pattern that starts with `**` is not joined, so `**/.env` matches a `.env` file anywhere. The full format is in [Permissions and sandbox](../permissions-and-sandbox.md#rule-format).
 
 ## Network Access
 
@@ -152,7 +152,9 @@ Hone sets no CPU, memory, disk or open-file limits on commands. The only limit i
 ## Environment Variable Filtering
 
 > [!WARNING]
-> Hone doesn't filter the environment, and there is no `allow_env` setting. Shell commands and other tools the agent runs inherit Hone's environment, including provider API keys, so the model can read a key with a command such as `echo $ANTHROPIC_API_KEY`.
+> Hone doesn't filter the environment of shell commands, and there is no `allow_env` setting. Commands the `shell` tool starts inherit Hone's environment, including provider API keys, so the model can read a key with a command such as `echo $ANTHROPIC_API_KEY`. Other processes Hone starts, such as LSP servers, hooks and the TUI's test command, inherit it too.
+>
+> MCP servers are the exception: they start with a cleared environment and get only `PATH`, `HOME` and the `env` set for them in `mcp.json`.
 
 To limit what the model can read:
 
@@ -161,7 +163,9 @@ To limit what the model can read:
 
 ## File System Restrictions
 
-File tools (`read_file`, `write_file`, `edit_file`, `multi_edit`, `glob`, `grep`) aren't OS-sandboxed. Without permission rules they can read and write any path your user can; in the TUI, write tools ask before each call unless you switch to AutoApprove. `path` rules in `permissions.toml` limit them, and also the paths in shell commands (`cat`, redirections, `cp`, `tee`).
+File tools (`read_file`, `write_file`, `edit_file`, `multi_edit`, `glob`, `grep`) are confined to the working directory: each one resolves its path, symlinks included, and refuses anything that lands outside the working directory, with or without permission rules. This check is in Hone's code; the OS sandbox doesn't apply to file tools. In the TUI, write tools ask before each call unless you switch to AutoApprove.
+
+`path` rules in `permissions.toml` narrow access inside the working directory. They also apply to the paths in shell commands (`cat`, redirections, `cp`, `tee`), which can reach outside it.
 
 ### Read Rules
 
@@ -170,13 +174,13 @@ A `path` rule with `op = "read"` covers reads only:
 ```toml
 # ~/.config/hone/permissions.toml
 [[rules]]
-id = "no-shadow"
-path = "/etc/shadow"
+id = "no-secrets"
+path = "secrets/**"
 op = "read"
 decision = "deny"
 ```
 
-When the agent calls `read_file(path="/etc/shadow")`, the call is refused with `denied by policy` and the rule id `no-shadow`.
+When the agent calls `read_file(path="secrets/api.txt")`, the call is refused with `denied by policy` and the rule id `no-secrets`. A path outside the working directory, such as `/etc/shadow`, is refused even without a rule.
 
 ### Write Rules
 
@@ -193,7 +197,9 @@ decision = "deny"
 
 ### Symlink Handling
 
-Hone checks a path both as written and with symlinks resolved, and the stricter verdict wins. If `notes/key` in the working directory is a symlink to `~/.ssh/id_ed25519`, the `no-ssh-keys` rule from [Configuration](#configuration) still denies `read_file(path="notes/key")`.
+A file tool resolves symlinks before its working-directory check, so if `notes/key` is a symlink to `~/.ssh/id_ed25519`, `read_file(path="notes/key")` is refused even without a rule.
+
+Permission rules check a path both as written and with symlinks resolved, and the stricter verdict wins. If `docs/key.txt` is a symlink to `secrets/key.txt`, the `no-secrets` rule above still denies `read_file(path="docs/key.txt")`. Shell commands get the same check for the paths Hone can see in them.
 
 ## Command Restrictions
 
@@ -219,7 +225,10 @@ Both match command text. Shell aliases, interpreters (`python -c …`) and paths
 
 ## Server Mode (`honed`)
 
-Hone has no roles and no per-user permissions or budgets. `honed` checks one bearer token, `HONE_AUTH_TOKEN` (required when it binds a non-loopback address), and every client that sends it gets the same access. Permission rules apply to every run: `honed` loads the user file from its own `$HOME` and the project file from the run's working directory. See the [Server Guide](server-and-remote.md).
+Hone has no roles and no per-user permissions or budgets. `honed` checks one bearer token, `HONE_AUTH_TOKEN`, and every client that sends it gets the same access. The token is required when `honed` binds a non-loopback address, unless you set `HONE_ALLOW_UNAUTH=1`.
+
+> [!WARNING]
+> With `HONE_ALLOW_UNAUTH=1` and no token, anyone who can reach the port can run the agent on your machine. Bind to loopback (`HONE_BIND=127.0.0.1`) or set a token instead. Permission rules apply to every run: `honed` loads the user file from its own `$HOME` and the project file from the run's working directory. See the [Server Guide](server-and-remote.md).
 
 ## Audit Logging
 
@@ -329,12 +338,12 @@ rm ~/.local/share/hone/memory.db
 
 | Threat | What Hone does | What it doesn't cover |
 |---|---|---|
-| Prompt injection that runs commands | Shell command checks; permission rules; the OS sandbox limits shell writes to the working dir and `/tmp` | Landlock is off on Linux unless `HONE_SANDBOX_ENFORCE=1`; file tools aren't OS-sandboxed |
-| Supply-chain attack on an MCP server | Nothing: Hone doesn't verify, pin or hash MCP servers | MCP servers run outside the sandbox, and permission rules don't see MCP tool calls |
+| Prompt injection that runs commands or edits files | Shell command checks; permission rules; the OS sandbox limits shell writes to the working dir and `/tmp`; file tools refuse paths outside the working dir | Landlock is off on Linux unless `HONE_SANDBOX_ENFORCE=1`; inside the working dir, file tools can change anything no rule stops |
+| Supply-chain attack on an MCP server | MCP servers start with a cleared environment: only `PATH`, `HOME` and their configured `env` | Hone doesn't verify, pin or hash servers; they run outside the sandbox, and permission rules don't see MCP tool calls |
 | Model exfiltrating data | Seatbelt denies network to shell commands on macOS; command checks refuse `curl`, `ssh` and similar; `host` rules for `web_fetch` | Landlock doesn't restrict network; MCP tools and `web_search` aren't covered; host rules don't stop DNS tricks |
 | Runaway command | The shell tool's `timeout_ms` (30 s by default) kills the process group | No CPU, memory or disk limits |
-| Secret leakage via environment variables | `HONE_POLICY_BUILTINS=1` redacts secret-shaped values in tool output | No environment filtering; redaction is pattern-based |
-| Symlink escape | Path rules check the path as written and with symlinks resolved; the stricter verdict wins | Paths Hone can't see in the call, such as those inside a script |
+| Secret leakage via environment variables | MCP servers get only `PATH`, `HOME` and their configured `env`; `HONE_POLICY_BUILTINS=1` redacts secret-shaped values in tool output | Shell commands inherit Hone's full environment; redaction is pattern-based |
+| Symlink escape | File tools resolve symlinks and refuse paths outside the working dir; path rules check the path as written and with symlinks resolved, and the stricter verdict wins | Paths Hone can't see in a shell command, such as those inside a script |
 | Privilege escalation | `sudo`, `su`, `doas` and `pkexec` are blocked | The checks match command text, so a script that escalates isn't seen |
 
 ## Best Practices
@@ -378,7 +387,7 @@ Upgrade the kernel, or unset `HONE_SANDBOX_ENFORCE` to run shell commands unsand
 
 ### File Access Denied
 
-A call refused by a permission rule names the rule. Edit or remove that rule in `permissions.toml`. For an `ask` rule in a headless run (`requires approval (rule <id>)`), approve it for one run with `--approve <id>`:
+A call refused by a permission rule names the rule. Edit or remove that rule in `permissions.toml`. An `ask` rule in a headless run reports `(requires approval: rule <id>)` in the run's output (the audit log records it as `policy: requires approval (rule <id>)`). Approve it for one run with `--approve <id>`:
 
 ```bash
 hone --approve ask-npm "run the npm tests"

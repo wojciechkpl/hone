@@ -72,8 +72,9 @@ Risk: Attacker must exploit kernel itself (much harder)
 Example: the agent tries to read ~/.ssh/id_ed25519
   read_file: refused by a rule in permissions.toml
     (path = "~/.ssh/**", decision = "deny")
-  shell "cat ~/.ssh/id_ed25519" on macOS: Seatbelt denies the read
-    (~/.ssh is not a readable root): Permission denied
+  shell "cat ~/.ssh/id_ed25519": refused by the same rule (shell
+    arguments are checked as paths); without a rule, Seatbelt denies
+    the read on macOS (~/.ssh is not a readable root)
 ```
 
 The OS sandbox covers shell commands only, and has no policy file; file tools are governed
@@ -296,12 +297,11 @@ Example migration:
 // ~/.config/opencode/opencode.json
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-opus-4-5",
-  "providers": {
-    "anthropic": { "settings": { "apiKey": "{env:ANTHROPIC_API_KEY}" } }
-  }
+  "model": "anthropic/claude-opus-4-5"
 }
 ```
+
+(OpenCode keeps the API key from its `/connect` command, or reads `ANTHROPIC_API_KEY`.)
 
 **Hone:**
 ```bash

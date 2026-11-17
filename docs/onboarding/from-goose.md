@@ -226,7 +226,7 @@ default_model = "anthropic:claude-opus-4-5"
 ```
 
 MCP servers go in `~/.config/hone/mcp.json` (or `<repo>/.hone/mcp.json`), in the same
-shape as Claude Code's `.claude/mcp.json`:
+shape as Claude Code's `.mcp.json`:
 
 ```json
 {
@@ -239,7 +239,8 @@ shape as Claude Code's `.claude/mcp.json`:
 }
 ```
 
-The API key stays in `ANTHROPIC_API_KEY`; `config.toml` has no field for it. There is no
+The API key stays in `ANTHROPIC_API_KEY`. `[providers.*]` has no `api_key` field; `hone
+configure` can save one under `[provider]` instead (in plain text). There is no
 iteration-limit setting, and memory is on by default. See
 [Configuration](../configuration.md#configtoml) for every key and
 [MCP servers](../configuration.md#mcp-servers) for the JSON fields.

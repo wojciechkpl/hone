@@ -149,7 +149,8 @@ choice: they take Anthropic if a key is available, else OpenAI, with their own m
 
 The wizard asks for a provider (Anthropic, OpenAI, DeepSeek, OpenRouter, Ollama or
 Claude CLI), an API key when one is needed, and a model, then writes
-`~/.config/hone/config.toml`:
+`~/.config/hone/config.toml`. It replaces the whole file, so anything else you put there
+(`[providers.*]`, `fallback_models`, `[[routing]]`, `[pricing]`, ...) is lost; copy it first:
 
 ```toml
 [provider]
@@ -703,7 +704,7 @@ Details, including what is readable and writable, are in
 
 ## MCP servers
 
-MCP servers are configured in JSON, in the same shape as Claude Code's `.claude/mcp.json`,
+MCP servers are configured in JSON, in the same shape as Claude Code's `.mcp.json`,
 so you can copy or symlink an existing file.
 
 ```json

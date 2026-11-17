@@ -125,9 +125,11 @@ You can still control it:
 /context drop path # Manually remove
 ```
 
-### 3. Git UndoStack (Beyond Auto-Commit)
+### 3. Undo
 
-Aider auto-commits. Hone goes further with a full undo/redo system:
+Aider auto-commits each change, so `/undo` (or `git revert`) takes it back. Hone doesn't
+auto-commit and has no undo yet: the TUI lists `/undo` and `/redo`, but they do nothing.
+The agent's changes stay uncommitted until you, or the agent when you ask, commit them.
 
 **Aider:**
 ```bash
@@ -139,15 +141,10 @@ git revert HEAD
 **Hone:**
 ```bash
 # Agent makes changes (it commits only when you ask)
-# You can:
-git_undo          # Revert last change
-git_redo          # Reapply
-git_diff          # Review before accepting
-/undo             # Undo last agent turn (not just last commit)
-/redo             # Redo undone turn
+git diff              # review them
+git restore <file>    # throw away a file's changes
+git stash             # set all of them aside
 ```
-
-Hone tracks agent turns, not just commits.
 
 ### 4. Kernel Sandboxing
 
