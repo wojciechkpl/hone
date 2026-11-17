@@ -7,7 +7,11 @@ load_env
 name="${1:?campaign name}"; shift || true
 out="$(campaign_dir "${name}")"
 prereg="${HC_ROOT}/prereg/${HC_PREREG:-${name}}"
-args=(--campaign "${out}"); [[ -f "${prereg}/selection.json" ]] && args+=(--prereg "${prereg}")
+args=(--campaign "${out}")
+# The pre-registration (sampling, seeds, task digest) is what the report checks the runs against.
+if [[ -f "${prereg}/preregistration.toml" || -f "${prereg}/selection.json" ]]; then
+  args+=(--prereg "${prereg}")
+fi
 HC_PY_WITH="--with matplotlib" hc_py hcbench.report "${args[@]}"
 
 if [[ "${1:-}" == "--package" ]]; then

@@ -19,7 +19,7 @@ a)
     --concurrency "${HC_CONCURRENCY}" --out "${out}" "$@"
   ;;
 b)
-  hc_py hcbench.matrix --suite b --arms "${HC_ARMS_MAIN}" --seeds "${HC_REPEATS}" \
+  hc_py hcbench.matrix --suite b --arms "${HC_ARMS_B}" --seeds "${HC_REPEATS}" \
     --concurrency "${HC_CONCURRENCY}" --out "${out}" "$@"
   ;;
 c)

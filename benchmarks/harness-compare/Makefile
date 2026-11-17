@@ -39,7 +39,8 @@ smoke: ## P1.5 capability probes
 	$(S)/04_smoke.sh
 prereg: ## P1.6 pre-register (NAME=..., STAGE=cb for campaign 1)
 	@test -n "$(NAME)" || (echo "NAME=... required" && exit 2)
-	$(S)/05_preregister.sh $(NAME)$(if $(filter cb,$(STAGE)), --stage cb)
+	@$(if $(filter-out a cb,$(STAGE)),$(error STAGE must be a or cb, got '$(STAGE)'))true
+	$(S)/05_preregister.sh $(NAME)$(if $(STAGE), --stage $(STAGE))
 run-a: ## P1.8 suite A (CAMPAIGN=...)
 	@test -n "$(CAMPAIGN)" || (echo "CAMPAIGN=... required" && exit 2)
 	$(S)/10_run.sh a $(CAMPAIGN)

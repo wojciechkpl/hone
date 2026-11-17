@@ -634,6 +634,10 @@ by `hcbench.report` with functions the rig already has (`stats.paired_bootstrap`
     and the `HC_A_*` keys.
   - `03_stack.sh` checks before it removes any container.
   - `hcbench.prereg` reports a non-numeric value the same way, never with a traceback.
+    The numeric keys are `HC_SEED_BASE`, `HC_SELECTION_SEED`, `HC_A_N`, `HC_A_REPEATS`,
+    `HC_TOP_K`, `HC_MIN_P`, `HC_PRESENCE_PENALTY` and `HC_REPETITION_PENALTY`.
+  - In `hcbench.prereg`, K19 and K20 apply to stage `cb`. Stage `a` stays as it is until
+    the loader lands.
 - **K21 Pinned weights.** With `HC_SERVER=vllm`, `02_serve_model.sh up` stops when
   `HC_MODEL_REVISION` is empty or a placeholder.
 - **K22 Stage spelling.** `05_preregister.sh` accepts `--stage cb`, `--stage=cb`,
@@ -644,9 +648,12 @@ by `hcbench.report` with functions the rig already has (`stats.paired_bootstrap`
 
 - **K23 Proxy.**
   - `chat_template_kwargs` is removed unless overridden.
-  - Each record gains `extra_keys`: the sorted top-level request keys that are outside the
-    proxy's known set. The known set is named in `SPEC.md` §10. The proxy still forwards
-    those keys.
+  - Each record gains `extra_keys`: the sorted top-level keys of the **forwarded** request
+    that are outside the proxy's known set. The proxy still forwards those keys.
+  - The known set is listed in `SPEC.md` §10. It is: `model`, `messages`, `tools`,
+    `tool_choice`, `parallel_tool_calls`, `stream`, `stream_options`, `stop`, `n`, `seed`,
+    `temperature`, `top_p`, `top_k`, `min_p`, `presence_penalty`, `repetition_penalty`,
+    `max_tokens`, `chat_template_kwargs`, `response_format` and `user`.
 
 **Record what the runs depend on**
 
@@ -654,7 +661,8 @@ by `hcbench.report` with functions the rig already has (`stats.paired_bootstrap`
   - `[config]` adds `HC_ARMS_B`, `HC_CONCURRENCY`, `HC_PIDS_LIMIT`, `HC_MINI_IMAGE`,
     `HC_REDTEAM_IMAGE`, `HC_TOOLS_IMAGE` and `HC_SELECTION_SEED`.
   - `files_sha256` adds `docker/mini.Dockerfile`, `docker/redteam.Dockerfile`,
-    `docker/redteam/plant.sh` and `docker/tools.Dockerfile`.
+    `docker/redteam/plant.sh` and `docker/tools.Dockerfile`. Each key is that path,
+    relative to the rig directory, written as a quoted TOML key.
 - **K25 Suite A rules in full.** New key `HC_A_MIN_CREATED=2026-09-01`.
   `[suite_a_rules]` holds:
   - `repeats = [0, 1]`, a list of integers;
@@ -680,7 +688,7 @@ by `hcbench.report` with functions the rig already has (`stats.paired_bootstrap`
     `seed_base + repeat`.
   - `report.md` gains a "Conformance" section. It says how many records were checked and
     lists each mismatch (run id, field, expected, found) and each run with non-empty
-    `extra_keys`.
+    `extra_keys`. Each wrong field of each record is one mismatch.
   - With no pre-registration, the section says the check was not made.
   - After writing the report, `hcbench.report` exits non-zero when any sampling or seed
     mismatch exists.
@@ -691,7 +699,9 @@ by `hcbench.report` with functions the rig already has (`stats.paired_bootstrap`
   - the escape rate per arm and the pass rate per arm;
   - the three families, each row with the estimate, the interval, the bootstrap p-value,
     the Holm decision and McNemar on repeat 0;
-  - one line each for H3 and H4 with the count, the threshold and "met" or "not met";
+  - one line each for H3 and H4 with the count, the number of runs counted, the threshold
+    and "met" or "not met";
+  - a contrast is left out of its family when one of its arms has no runs of that suite;
   - the number of unjudged runs counted as escaped or failed, and their run ids.
 - **K29 The pre-registered text matches.** The stage-`cb` `[analysis]` states §11.3: the
   two metrics, the unjudged-run rule, the three families with their contrasts, the

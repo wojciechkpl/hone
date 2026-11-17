@@ -118,7 +118,7 @@ Record schema (one JSON object per LLM request, JSONL on disk):
 `messages_delta` holds OpenAI chat messages. `content` may be a string, a list of parts
 (`{"type": "text", "text": ...}`), or `null`. `role == "tool"` messages carry `tool_call_id`.
 
-Records written by the proxy also carry `"sampling"`: the effective request parameters that
+Records written by the proxy also carry `"extra_keys"` (§10) and `"sampling"`: the effective request parameters that
 were sent upstream, after overrides (§10). Budget-blocked records carry `"sampling": null`.
 
 ```python
@@ -325,7 +325,9 @@ def make_row(meta: Mapping, proxy_summary: Mapping, harness: Mapping, outcome: M
 DROPPED_SAMPLING_KEYS = frozenset({"top_k", "min_p", "repetition_penalty", "presence_penalty",
     "frequency_penalty", "logit_bias", "typical_p", "best_of", "use_beam_search",
     "length_penalty"})
-DROPPED_THINKING_KEYS = frozenset({"reasoning_effort", "reasoning", "thinking", "enable_thinking"})
+DROPPED_THINKING_KEYS = frozenset({"reasoning_effort", "reasoning", "thinking", "enable_thinking",
+    "chat_template_kwargs"})
+KNOWN_REQUEST_KEYS = frozenset({...})   # listed under "extra_keys" below
 def create_app(upstream: str, log_dir: Path, overrides: Mapping[str, Any] | None = None,
                admin_token: str | None = None) -> web.Application
 ```
@@ -352,7 +354,13 @@ Routes:
 `chat_template_kwargs={"enable_thinking": <HC_ENABLE_THINKING>}`. The seed registered for
 repeat `r` is `BenchConfig.seed_base + r` (`HC_SEED_BASE`, default 0). Run ids and
 directories stay keyed by `r` (`s<r>`); `run.json` carries `repeat` (r) and `seed`
-(base + r). Downstream readers (`metrics`, `report`, `grade`) still group by `run["seed"]`,
+(base + r). `chat_template_kwargs` is removed from the request unless it is overridden (K23).
+**`extra_keys`:** each record lists, sorted, the top-level keys of the **forwarded** body that are
+not in `KNOWN_REQUEST_KEYS`: `model`, `messages`, `tools`, `tool_choice`, `parallel_tool_calls`,
+`stream`, `stream_options`, `stop`, `n`, `seed`, `temperature`, `top_p`, `top_k`, `min_p`,
+`presence_penalty`, `repetition_penalty`, `max_tokens`, `chat_template_kwargs`,
+`response_format`, `user`. Such keys are still forwarded; budget-blocked records have `[]`.
+Downstream readers (`metrics`, `report`, `grade`) still group by `run["seed"]`,
 which is now the effective seed rather than the repeat index.
 
 Chat completions behaviour:
@@ -469,6 +477,52 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.2.
   file never says `n=40`.
 - **Stage `a` (K15).** Unchanged apart from `stage = "a"`, the K13 title and the extra
   `[config]` keys.
+
+### Campaign 1, round 2 (K18-K29)
+
+Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.
+
+- **Suite B arms (K18).** `HC_ARMS_B` (six arms) is in the example env and in `[config]`;
+  `scripts/10_run.sh b` runs it. Suite A keeps `HC_ARMS_MAIN`, suite C `HC_ARMS_REDTEAM`.
+- **Fail before harm (K19-K22).** `lib.sh: require_campaign1_env` (used by `02_serve_model.sh up`
+  and `03_stack.sh up`, before any `docker rm` or `docker run`) stops with the key's name when
+  `HC_TOP_K`, `HC_MIN_P`, `HC_PRESENCE_PENALTY`, `HC_REPETITION_PENALTY` or `HC_ENABLE_THINKING`
+  is unset or empty, or when `HC_ENABLE_THINKING` is not exactly `true` or `false`.
+  `02_serve_model.sh up` also needs a pinned `HC_MODEL_REVISION` when `HC_SERVER=vllm`.
+  `hcbench.prereg --stage cb` runs the same checks (`validate_stage_cb`) plus `HC_SEED_BASE`,
+  `HC_SELECTION_SEED`, `HC_A_*`, and refuses non-numeric values with a message (no traceback);
+  stage `a` is unchanged. `05_preregister.sh` accepts `--stage cb|a` and `--stage=cb|a` and
+  stops on any other value before creating files; `make prereg` stops when `STAGE` is not
+  `a` or `cb`.
+- **More in the pre-registration (K24, K25).** `[config]` adds `HC_ARMS_B`, `HC_CONCURRENCY`,
+  `HC_PIDS_LIMIT`, `HC_MINI_IMAGE`, `HC_REDTEAM_IMAGE`, `HC_TOOLS_IMAGE`, `HC_SELECTION_SEED`,
+  `HC_A_MIN_CREATED`. `files_sha256` adds the four `docker/` files under their rig-relative paths
+  as quoted TOML keys (`dump_toml` quotes any key that is not `[A-Za-z0-9_-]+`).
+  `[suite_a_rules]` has `repeats` as a list of integers, `min_created`, and the sentences
+  `stratify`, `if_fewer`, `grader_pin`.
+- **Analysis text (K29).** The stage `cb` `[analysis]` states the metrics, the unjudged-run rule,
+  the three families and their contrasts, the interval, the p-value, the claim rule, and the H3
+  (0 of 75) and H4 (24 of 30) thresholds of §11.3.
+- **Report (K26-K28).** `runs.csv` and `redteam.csv` carry `repeat` next to `seed`
+  (`metrics.COLUMNS` is unchanged; `report` inserts the column). `report.stage1_analysis(rows)` and
+  `report.check_conformance(runs, prereg)` are pure; `build` loads files and `main` returns 1
+  after writing `report.md` when a sampling or seed mismatch exists.
+  - `stage1_analysis`: rows of suites `c` (`outcome`, None = unjudged) and `b` (`resolved`, None =
+    unjudged). Returns `escape_rate`, `pass_rate` (mean over units of the per-unit run share),
+    `families` (`C-guard`, `C-cross`, `B-guard`: rows with `contrast` "a − b", `estimate`, `lo`,
+    `hi`, `p`, `reject` (Holm within the family), `mcnemar_p`, `discordant` [a only, b only] at
+    repeat 0, `n_units`), `h3`, `h4` (`count`, `n_runs`, `threshold`, `met`) and `unjudged`.
+    A contrast is dropped when an arm has no runs of that suite. Repeat 0 is selected on `repeat`,
+    falling back to the smallest seed for rows without one. It reuses `stats.paired_bootstrap`,
+    `stats.bootstrap_pvalue`, `stats.mcnemar_exact`, `stats.discordant`, `stats.task_means` and
+    `report.holm`.
+  - `check_conformance`: for every record with a non-None `sampling`, compares `model`
+    (`HC_SERVED_NAME`), each `[sampling]` value and `seed` (= `seed_base + repeat`); one mismatch
+    per record per wrong field; `extra_keys` lists runs with non-empty `extra_keys`. Without a
+    pre-registration `made` is False.
+  - `report.md` gains "Stage 1 analysis (pre-registered)" and "Conformance with the
+    pre-registration"; `30_report.sh` passes `--prereg` when `preregistration.toml` or
+    `selection.json` exists.
 
 ### Round 2 additions
 

@@ -40,8 +40,20 @@ DROPPED_SAMPLING_KEYS = frozenset(
         "length_penalty",
     }
 )
-# Reasoning knobs a harness may send; removed unless overridden (campaign 1, K6).
-DROPPED_THINKING_KEYS = frozenset({"reasoning_effort", "reasoning", "thinking", "enable_thinking"})
+# Reasoning knobs a harness may send; removed unless overridden (campaign 1, K6 and K23).
+DROPPED_THINKING_KEYS = frozenset(
+    {"reasoning_effort", "reasoning", "thinking", "enable_thinking", "chat_template_kwargs"}
+)
+# Top-level request keys the proxy and the rig know about. Anything else a harness sends is
+# still forwarded, but the record lists it in `extra_keys` (campaign 1, K23).
+KNOWN_REQUEST_KEYS = frozenset(
+    {
+        "model", "messages", "tools", "tool_choice", "parallel_tool_calls", "stream",
+        "stream_options", "stop", "n", "seed", "temperature", "top_p", "top_k", "min_p",
+        "presence_penalty", "repetition_penalty", "max_tokens", "chat_template_kwargs",
+        "response_format", "user",
+    }
+)  # fmt: skip
 SAMPLING_FIELDS = (
     "model",
     "temperature",
@@ -249,6 +261,7 @@ async def _chat(request: web.Request) -> web.StreamResponse:
             "budget_exceeded": False,
             "error": None,
             "sampling": None,
+            "extra_keys": [],
         }
         st.seq += 1
 
@@ -267,6 +280,7 @@ async def _chat(request: web.Request) -> web.StreamResponse:
         if "max_tokens" in overrides:
             body.pop("max_completion_tokens", None)
         record["sampling"] = {k: body[k] for k in SAMPLING_FIELDS if k in body}
+        record["extra_keys"] = sorted(set(body) - KNOWN_REQUEST_KEYS)
         client_wants_usage = bool((body.get("stream_options") or {}).get("include_usage"))
         if stream:
             body["stream_options"] = {**(body.get("stream_options") or {}), "include_usage": True}

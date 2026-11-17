@@ -4,21 +4,31 @@
 #
 # Usage: scripts/05_preregister.sh <name>        e.g. 2026-11
 #        scripts/05_preregister.sh <name> --draft (allow CHANGE-ME placeholders)
-#        scripts/05_preregister.sh <name> --stage cb [--draft]
+#        scripts/05_preregister.sh <name> --stage cb [--draft]   (also --stage=cb, --stage a)
 #   Stage cb (campaign 1: suites C and B) has no task list: it skips task selection and
 #   image pulls and records the suite A rules; DEVIATIONS.md is still written.
 source "$(dirname "$0")/lib.sh"
 load_env
 name="${1:?usage: $0 <name> [--draft]}"; shift || true
 dir="${HC_ROOT}/prereg/${name}"
-mkdir -p "${dir}"
 
+# --stage cb | --stage=cb | --stage a | --stage=a; anything else stops before any file is made.
 stage=a
-prev=""
+expect=0
 for arg in "$@"; do
-  [[ "${prev}" == --stage ]] && stage="${arg}"
-  prev="${arg}"
+  if (( expect )); then stage="${arg}"; expect=0; continue; fi
+  case "${arg}" in
+  --stage) expect=1 ;;
+  --stage=*) stage="${arg#--stage=}" ;;
+  *) ;;
+  esac
 done
+(( expect )) && die "--stage needs a value: a or cb"
+case "${stage}" in
+a | cb) ;;
+*) die "unknown --stage '${stage}': use a or cb" ;;
+esac
+mkdir -p "${dir}"
 
 if [[ "${stage}" == cb ]]; then
   hc_py hcbench.prereg --out "${dir}/preregistration.toml" "$@"

@@ -57,6 +57,7 @@ PY
 
 case "${1:-status}" in
 up)
+  require_campaign1_env  # before any network, image or container is touched
   docker network inspect "${HC_UPNET}" >/dev/null 2>&1 || docker network create "${HC_UPNET}" >/dev/null
   docker network inspect "${HC_NET}" >/dev/null 2>&1 || docker network create --internal "${HC_NET}" >/dev/null
   build_images

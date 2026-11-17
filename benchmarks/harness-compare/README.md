@@ -88,6 +88,15 @@ Stage 1 is done when all three hold:
 If `make serve` fails, it prints the server log. Fix `config/bench.env`; after the tag,
 log the change as a deviation.
 
+**Check during smoke (unverified):** some vLLM versions skip speculative decoding for
+requests that set a presence or repetition penalty. Look at the speculative-decoding
+counters in `make serve` logs after the smoke run. If decoding is not speculative, the
+runs are still valid and every arm is affected equally, but the compute estimate in the
+design (§10.5) is too low. Do not change the sampling to get the speed back.
+
+`make report` checks every recorded request against the pre-registration (forced sampling
+and seed) and fails if any differ. Its "Conformance" section lists what it found.
+
 ## Day-to-day
 
 | Need | Command |
