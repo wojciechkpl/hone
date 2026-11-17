@@ -57,14 +57,32 @@ pub struct HistoryMessage {
 
 /// Resolve the requested model to a provider-prefixed id.
 ///
-/// No model gives `anthropic:claude-sonnet-4-6`; an id without `:` is an
-/// Anthropic id; an id with a prefix is kept as given.
-pub(crate) fn run_model_id(requested: Option<&str>) -> ModelId {
-    match requested {
-        None => ModelId::new("anthropic:claude-sonnet-4-6"),
-        Some(id) if id.contains(':') => ModelId::new(id),
-        Some(id) => ModelId::new(format!("anthropic:{id}")),
+/// The id is trimmed. No model gives `anthropic:claude-sonnet-4-6`; an id
+/// without `:` is an Anthropic id; `anthropic:<id>` is kept. An empty id or
+/// any other prefix is a 400, because `/run` and `/orchestrate` only call
+/// Anthropic.
+pub(crate) fn run_model_id(requested: Option<&str>) -> Result<ModelId, (StatusCode, String)> {
+    let Some(raw) = requested else {
+        return Ok(ModelId::new("anthropic:claude-sonnet-4-6"));
+    };
+    let id = raw.trim();
+    let bad = |why: &str| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!(
+                "model id {raw:?} {why}: only Anthropic models are accepted, \
+                 with or without the `anthropic:` prefix"
+            ),
+        )
+    };
+    let name = id.strip_prefix("anthropic:").unwrap_or(id);
+    if name.is_empty() {
+        return Err(bad("is empty"));
     }
+    if name.contains(':') {
+        return Err(bad("has an unsupported provider prefix"));
+    }
+    Ok(ModelId::new(format!("anthropic:{name}")))
 }
 
 /// Request body for `POST /run`.
@@ -297,6 +315,8 @@ pub async fn run_handler(
     // A `request_id` names the provenance file and the run registry entry:
     // check it before it is used anywhere.
     validate_request_id(req.request_id.as_deref())?;
+    // Reject a model we cannot serve before any stream or spend exists.
+    let model_id = run_model_id(req.model.as_deref())?;
 
     // ---- Step 1: validate working_dir against workspace_root --------------
     //
@@ -315,7 +335,6 @@ pub async fn run_handler(
 
     // Hoist the model id resolution so both the agent path and the
     // provenance tee see the same string.
-    let model_id = run_model_id(req.model.as_deref());
     let model_id_str = model_id.as_str().to_owned();
 
     // ---- Provenance tee --------------------------------------

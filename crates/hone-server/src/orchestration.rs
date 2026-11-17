@@ -210,6 +210,7 @@ pub async fn orchestrate_handler(
     if !dry_run_flag.dry_run {
         crate::execution::validate_request_id(req.request_id.as_deref())?;
     }
+    let model_id = crate::execution::run_model_id(req.model.as_deref())?;
     if req.max_workers == Some(0) {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -225,7 +226,6 @@ pub async fn orchestrate_handler(
             .map(|key| -> Arc<dyn ModelProvider> { Arc::new(AnthropicProvider::new(key)) })
     });
 
-    let model_id = crate::execution::run_model_id(req.model.as_deref());
     let model_id_str = model_id.as_str().to_owned();
 
     // ---- Provenance tee --------------------------------------
