@@ -20,9 +20,10 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
 use hone_proto::{
-    CompactionStep, Content, Message, Role, Slot, SourceRef, StrategyId, canonical_json_sha256,
-    message_sha256,
+    CompactionStep, Content, Message, ModelId, Role, Slot, SourceRef, StrategyId,
+    canonical_json_sha256, message_sha256,
 };
+use hone_providers::ContextWindowTable;
 use tiktoken_rs::CoreBPE;
 
 use crate::metrics::ContextMetrics;
@@ -94,13 +95,17 @@ pub struct ContextConfig {
     /// Whether to apply BM25 relevance reordering to the middle zone.
     /// Enabled for models with weaker long-context attention.
     pub reorder_middle_zone: bool,
+    /// Default upper bound on the token budget, applied as
+    /// `min(window * ratio, cap)`. `None` means no cap.
+    pub budget_cap: Option<u32>,
 }
 
 impl ContextConfig {
     /// Build a config tuned for the given model name.
     ///
     /// Budget ratios based on RULER and Needle-in-a-Haystack research:
-    /// - Claude: effective at ~60% of advertised 200K
+    /// - Claude: effective at ~60% of the model's window (from the window
+    ///   table; 200K for an unknown Claude name)
     /// - DeepSeek/Qwen: effective at ~45% of advertised 128K
     /// - Llama: effective at ~40% of advertised 128K
     /// - Default: 50% for unknown models
@@ -109,7 +114,10 @@ impl ContextConfig {
 
         // Models with weaker long-context attention benefit from middle-zone reordering.
         let (ratio, context_len, recent, reorder) = if lower.contains("claude") {
-            (0.60, 200_000, 3, false) // Claude has strong attention across the window
+            let window = ContextWindowTable::default_table()
+                .lookup(&ModelId::new(format!("anthropic:{lower}")))
+                .unwrap_or(200_000);
+            (0.60, window, 3, false) // Claude has strong attention across the window
         } else if lower.contains("deepseek") || lower.contains("qwen") {
             (0.45, 128_000, 5, true)
         } else if lower.contains("llama") {
@@ -124,6 +132,12 @@ impl ContextConfig {
             (0.50, 128_000, 4, true) // default: enable for unknown models
         };
 
+        // Haiku 5.5 costs 5x above 100K prompt tokens. Hone's cl100k estimate
+        // counts Claude's newer tokenizer ~30% low, and the system prompt and
+        // tool schemas are sent on top of the history budget, so cap the
+        // history at 60K to keep the real prompt under 100K.
+        let budget_cap = lower.contains("claude-haiku-5-5").then_some(60_000);
+
         Self {
             effective_budget_ratio: ratio,
             advertised_context_length: context_len,
@@ -131,6 +145,7 @@ impl ContextConfig {
             tool_compress_age: 5,
             tool_oneliner_age_offset: 5,
             reorder_middle_zone: reorder,
+            budget_cap,
         }
     }
 
@@ -151,9 +166,10 @@ impl ContextConfig {
         Self::for_model(model_name).with_context_window(ov)
     }
 
-    /// Effective token budget (advertised * ratio).
+    /// Effective token budget: `min(advertised * ratio, budget_cap)`.
     pub fn effective_budget(&self) -> u32 {
-        (self.advertised_context_length as f32 * self.effective_budget_ratio) as u32
+        let budget = (self.advertised_context_length as f32 * self.effective_budget_ratio) as u32;
+        self.budget_cap.map_or(budget, |cap| budget.min(cap))
     }
 
     /// Age threshold at which tool results become one-liners.
@@ -171,6 +187,7 @@ impl Default for ContextConfig {
             tool_compress_age: 5,
             tool_oneliner_age_offset: 5,
             reorder_middle_zone: false,
+            budget_cap: None,
         }
     }
 }
@@ -640,14 +657,17 @@ impl ContextManager {
     /// `min(current ratio, cap)`, never higher.
     pub fn cap_budget_ratio(&mut self, cap: f32) {
         if cap < self.config.effective_budget_ratio {
-            self.set_budget_ratio(cap);
+            // Keeps `budget_cap`: a project file may only lower the budget.
+            self.config.effective_budget_ratio = cap;
+            self.max_context_tokens = self.config.effective_budget();
         }
     }
 
     /// Use `ratio` of the advertised window as the token budget instead of the
-    /// per-model ratio.
+    /// per-model ratio. An explicit choice, so it clears the default budget cap.
     pub fn set_budget_ratio(&mut self, ratio: f32) {
         self.config.effective_budget_ratio = ratio;
+        self.config.budget_cap = None;
         self.max_context_tokens = self.config.effective_budget();
     }
 

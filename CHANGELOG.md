@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed: Claude 4.6 and later use their 1M-token context window
+
+- **Before:** Hone compacted every Claude model's history at 120K tokens (60% of 200K), although Claude 4.6 and later (Opus 4.6+, Sonnet 4.6+, Haiku 5.5, Fable, Mythos) have a 1M-token window. The window table behind the TUI's context gauge and the `model_info` event didn't list them either, so they showed 128K, and a dated id such as `claude-haiku-4-5-20251001` didn't find its base entry.
+- **Now:** those models keep up to 600K tokens of history (60% of 1M) before Hone compacts, and the gauge shows 1M. Long sessions keep more of the conversation; each call sends more tokens, most of them as prompt-cache reads. Opus 4.5, Sonnet 4.5 and Haiku 4.5 keep 200K windows and the 120K budget, and dated ids resolve to their base entry, as prices do.
+- **Claude Haiku 5.5** is the exception: its history is held to 60K tokens, so its prompts stay under the 100K-token line above which it costs five times as much. A `[context] budget_ratio` in your user file lifts the cap; a project file can only lower it.
+
 ### Fixed: built-in Anthropic prices
 
 - **Before:** the built-in table charged Claude Opus 4.5 and Opus 4.7 at $15 / $75 per million input / output tokens (Anthropic charges $5 / $25) and Claude Haiku 4.5 at $0.80 / $4 ($1 / $5). The `claude-haiku-4-5` alias had no price, because the entry was keyed by its dated id, and `claude-cli:` had no Haiku price at all. Opus 5.5, Opus 5, Opus 4.8, Opus 4.6, Sonnet 5.5, Sonnet 5, Haiku 5.5 and the Fable and Mythos models had no price at all, so their cost showed as unknown. Opus spend was over-reported threefold, and `[budget] session_limit_usd` stopped Opus runs early.
