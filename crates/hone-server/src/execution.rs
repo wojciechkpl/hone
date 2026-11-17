@@ -75,7 +75,7 @@ pub(crate) fn run_model_id(requested: Option<&str>) -> Result<ModelId, (StatusCo
             ),
         )
     };
-    let name = id.strip_prefix("anthropic:").unwrap_or(id);
+    let name = id.strip_prefix("anthropic:").unwrap_or(id).trim();
     if name.is_empty() {
         return Err(bad("is empty"));
     }
