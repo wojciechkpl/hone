@@ -54,7 +54,7 @@ Detection order: Anthropic → OpenAI → `claude` → `gemini` → Ollama.
 | `--audit` | Log every tool call to `.hone/audit.jsonl` |
 | `--no-inject` · `--skeleton-strategy <S>` | Context injection off · `adaptive`, `call-graph`, `hybrid`, `dependency-graph`, `flat` |
 | `--no-clarify` | No clarifying questions on ambiguous one-shot prompts |
-| `--step` · `--vim` | TUI: ask before every tool (today: orchestrated turns only, [known bug](../permissions-and-sandbox.md#known-issue-tui)) · vim keys |
+| `--step` · `--vim` | TUI: ask before every tool call, read-only ones included · vim keys |
 
 ## Subcommands
 
@@ -91,8 +91,8 @@ Detection order: Anthropic → OpenAI → `claude` → `gemini` → Ollama.
 | <kbd>Esc</kbd> | Cancel the running turn · clear the input when idle |
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> | Quit |
 
-**Approval menu** (shown when a tool call pauses; today only on orchestrated turns, see the
-[known bug](../permissions-and-sandbox.md#known-issue-tui)):
+**Approval menu** (shown when a tool call pauses, on any TUI turn; see
+[how it behaves](../permissions-and-sandbox.md#known-issue-tui)):
 
 | <kbd>y</kbd> / <kbd>Enter</kbd> / <kbd>Space</kbd> | <kbd>a</kbd> | <kbd>s</kbd> / <kbd>Esc</kbd> | <kbd>d</kbd> / <kbd>n</kbd> |
 |---|---|---|---|
@@ -169,7 +169,7 @@ decision = "ask"
 
 | Path | What |
 |---|---|
-| `~/.config/hone/config.toml` | Wizard output (`[provider]`) |
+| `~/.config/hone/config.toml` · `.hone/config.toml` | `default_model`, `[budget]`, `[[routing]]`, `[context]`, `[memory]`, and in the user file only the wizard's `[provider]`; unknown keys exit 2 ([all keys](../configuration.md#configtoml)) |
 | `~/.config/hone/permissions.toml` · `.hone/permissions.toml` | Permission rules |
 | `~/.config/hone/mcp.json` · `.hone/mcp.json` | MCP servers |
 | `HONE.md` (user, project root, cwd) | Conventions in the system prompt |

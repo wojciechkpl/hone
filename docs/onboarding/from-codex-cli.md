@@ -6,11 +6,11 @@ You know Codex CLI. You're comfortable with kernel sandboxing, approval workflow
 
 | Codex CLI | Hone Equivalent | Notes |
 |-----------|-----------------|-------|
-| seccomp sandbox | Seatbelt/Landlock/seccomp | Same approach, kernel-level |
+| Sandbox (Seatbelt on macOS, bubblewrap on Linux; on by default) | Seatbelt on macOS (always on); Landlock on Linux (off by default) | Shell commands only; no OS sandbox on other platforms |
 | Approval workflow | Approval workflow + diffs | Implemented, more granular |
 | OpenAI models | 75+ providers (including OpenAI) | Not locked to OpenAI |
 | suggest mode | Agent loop with streaming | Same paradigm |
-| auto-edit mode | AutoCommitter tool | Implemented |
+| auto-edit mode | AutoApprove in the TUI (<kbd>Shift</kbd>+<kbd>Tab</kbd>) | Stops approval prompts; permission rules still apply |
 | full-auto mode | Recipes with multi-step automation | More structured, auditable |
 | Cost tracking | Real-time cost tracking per turn | Better visibility |
 | Diff review | git_diff tool + approval | Natural git integration |
@@ -63,19 +63,27 @@ hone --recipe refactor --var test_command="cargo test"
 **Key differences:**
 - Approvals are more flexible (per-turn, per-tool, per-file)
 - Recipes replace mode switching (more composable)
-- Sandbox is kernel-enforced (more secure)
+- Shell commands run under a kernel sandbox: Seatbelt on macOS; Landlock on Linux, off by default
 
 ## What You Gain
 
-### 1. Kernel Sandboxing (Better Than seccomp)
+### 1. Kernel Sandboxing
 
-Codex CLI uses seccomp. Hone uses OS-native sandboxing:
+Codex CLI sandboxes commands by default: Seatbelt on macOS and bubblewrap (`bwrap`) on
+Linux ([Codex docs](https://learn.chatgpt.com/codex/sandboxing), checked 2026-11-17).
+Hone's sandbox is on by default only on macOS.
 
-| Platform | Codex CLI | Hone | Benefit |
-|----------|-----------|------|---------|
-| macOS | seccomp (emulated) | Seatbelt (native) | Same API as Safari, more reliable |
-| Linux | seccomp | Landlock (newer) | Supports deny-on-access, more flexible |
-| Other | seccomp | seccomp | Same |
+Hone runs shell commands under the platform's own sandbox:
+
+| Platform | Codex CLI | Hone |
+|----------|-----------|------|
+| macOS | Seatbelt, on by default | Seatbelt, always on |
+| Linux | bubblewrap, on by default | Landlock (kernel 5.13+), **off by default**; turn it on with `HONE_SANDBOX_ENFORCE=1` |
+| Other | See the Codex docs | No OS sandbox |
+
+The sandbox covers only the `shell` tool. File tools refuse paths outside the working
+directory but are not OS-sandboxed; permission rules narrow them, the git tools and
+`web_fetch`.
 
 **Real example:** on macOS, shell commands can write only the working directory, `/tmp` and `/dev/null`, and get no network. There is no command that prints the policy; [Permissions and sandbox](../permissions-and-sandbox.md) has the full table per platform.
 
@@ -251,32 +259,56 @@ Codex CLI modes are implicit. Hone recipes are explicit YAML files.
 
 **Benefit:** Reusable, versionable, shareable.
 
-### 3. Sandbox Policy Is Configurable
+### 3. Permission Rules Are Configurable, the Sandbox Is Not
 
-Codex CLI sandbox is hardcoded. Hone sandbox is policy-based:
+Hone's OS sandbox has no policy file. It wraps shell commands only, and the platform picks
+it: on macOS, Seatbelt is always on (commands can write only the working directory, `/tmp`
+and `/dev/null`, and get no network); on Linux, Landlock is opt-in with
+`HONE_SANDBOX_ENFORCE=1` and restricts files only. `HONE_SANDBOX_EXTRA_READ` adds read-only
+roots. `config.toml` has no `[sandbox.*]` tables (they make it fail to load), and its
+`[sandbox]` table is not applied.
+
+Rules for files, hosts and commands go in `permissions.toml`:
 
 ```toml
-# ~/.config/hone/config.toml
+# ~/.config/hone/permissions.toml
+# Files: checked for read_file, write_file, edit_file, grep, ...
+[[rules]]
+id = "no-ssh-keys"
+path = "~/.ssh/**"
+decision = "deny"
 
-[sandbox]
-strategy = "seatbelt"  # macOS
+[[rules]]
+id = "ask-ci"
+path = ".github/**"
+op = "write"
+decision = "ask"
 
-[sandbox.policies.file_system]
-allow_read = ["/Users/you/project", "/usr/lib", "/usr/local/bin"]
-deny_read = ["/etc", "/var", "/private/var"]
-allow_write = ["/Users/you/project", "/tmp"]
-deny_write = ["/etc", "/var", "/private/var"]
+# Hosts: checked for web_fetch
+[[rules]]
+id = "github-ok"
+host = "github.com"
+decision = "allow"
 
-[sandbox.policies.network]
-deny_all = true
-allow_exceptions = ["api.openai.com", "github.com"]
+[[rules]]
+id = "other-hosts"
+host = "*"
+decision = "ask"
 
-[sandbox.policies.process]
-deny_all = true
-allow_execute = ["/bin/bash", "/usr/bin/python3", "/usr/local/bin/cargo"]
+# Commands: checked for shell and the git tools
+[[rules]]
+id = "cargo-ok"
+command = "cargo"
+decision = "allow"
+
+[[rules]]
+id = "other-commands"
+command = "*"
+decision = "ask"
 ```
 
-You can tighten or loosen policies per project.
+The first matching rule wins. A project's `<repo>/.hone/permissions.toml` can only tighten
+your rules, never loosen them. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ### 4. Distributed Execution
 
@@ -300,7 +332,7 @@ The daemon handles authentication (one bearer token), a run log (`HONE_PROVENANC
 ### 1. Install Hone
 
 ```bash
-git clone https://github.com/anthropics/hone.git
+git clone https://github.com/wojciechkpl/hone.git
 cd hone
 cargo build --release
 sudo cp target/release/hone /usr/local/bin/
@@ -316,17 +348,16 @@ export OPENAI_API_KEY="sk-..."  # same as Codex CLI
 # Create config
 mkdir -p ~/.config/hone
 cat > ~/.config/hone/config.toml << 'EOF'
-[providers.openai]
-api_key = "${OPENAI_API_KEY}"
-
-[agent]
 default_model = "openai:gpt-4o"
-max_spend_usd = 10.00  # your budget
 
-[sandbox]
-strategy = "seatbelt"  # macOS
+[budget]
+session_limit_usd = 10.0  # your budget
 EOF
 ```
+
+Hone reads the key from `OPENAI_API_KEY`, so it doesn't go in `config.toml`. There is no
+sandbox setting either: see [section 3](#3-permission-rules-are-configurable-the-sandbox-is-not)
+above.
 
 ### 3. Test Your First Session
 
@@ -409,11 +440,17 @@ steps:
 
 ### Can I use the same OpenAI API key with Hone?
 
-Yes. Set `OPENAI_API_KEY` env var or config file. Hone reads the same keys.
+Yes. Set the `OPENAI_API_KEY` environment variable (or save the key with `hone configure`).
+Hone reads the same keys.
 
 ### Is Hone's sandbox as safe as Codex CLI's?
 
-Yes, and arguably better. Hone uses OS-native sandboxing (Seatbelt on macOS, Landlock on Linux) instead of seccomp emulation. Policies are auditable.
+Not on Linux by default. Codex CLI sandboxes commands by default on macOS and Linux.
+
+On Hone's side: shell commands run under Seatbelt on macOS (always on). On Linux, Landlock
+is off by default; set `HONE_SANDBOX_ENFORCE=1` to turn it on (kernel 5.13+). Other
+platforms have no OS sandbox. File tools refuse paths outside the working directory but are
+not OS-sandboxed; permission rules narrow them further. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ### Do recipes replace approval workflows?
 
@@ -429,19 +466,21 @@ Turn them into recipes. Example:
 
 ### Can I set per-step budgets?
 
-Not yet, but you can set global budget:
+No, but you can cap the whole session in `~/.config/hone/config.toml`:
 ```toml
-[agent]
-max_spend_usd = 10.00
+[budget]
+session_limit_usd = 10.0
 ```
 
-When recipe hits the budget, it stops.
+Once the session has spent more than that, each further turn is refused, recipe steps
+included.
 
 ### What about rate limiting?
 
 Hone respects provider rate limits. If OpenAI rate-limits you:
-1. Hone waits (configurable timeout)
-2. Falls back to next provider (if configured)
+1. Hone waits and retries (there is no setting for the wait)
+2. Falls back to the next of your `fallback_models` (if configured; see
+   [Routing and fallback](../configuration.md#routing-and-fallback))
 3. Logs the event for debugging
 
 ## Next Steps
@@ -450,7 +489,7 @@ Hone respects provider rate limits. If OpenAI rate-limits you:
 2. **Config:** Create `~/.config/hone/config.toml` with OpenAI settings
 3. **Test:** Run `hone` and try a familiar task
 4. **Recipes:** Read [Recipes Guide](../tutorials/recipes.md) to automate workflows
-5. **Security:** Read [Security Guide](../security.md) for sandbox policies
+5. **Security:** Read [Permissions and sandbox](../permissions-and-sandbox.md) for permission rules and the sandbox
 6. **Team:** Read [Server and Remote](../tutorials/server-and-remote.md) for multi-user setup
 
 ---

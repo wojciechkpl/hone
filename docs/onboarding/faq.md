@@ -142,35 +142,33 @@ You can avoid cloud entirely by using local models (Ollama). See [Security Guide
 
 ### What is kernel sandboxing?
 
-Kernel sandboxing restricts what code the agent can execute. When the agent runs a shell command, it doesn't happen in your main shell—it happens in a restricted environment where it can only touch files and executables you explicitly allow.
+Kernel sandboxing restricts what the agent's shell commands can touch. Each command runs in a restricted environment: it can write only to the working directory, `/tmp` and `/dev/null`, and read system directories, the working directory and a few toolchain folders. You can't widen the write list; `HONE_SANDBOX_EXTRA_READ` adds read-only roots.
 
-On macOS, Hone uses **Seatbelt**. On Linux, it uses **Landlock** (or seccomp). Think of it like giving the agent access to a locked room: they can see what's inside, but nothing outside.
+On macOS, Hone uses **Seatbelt**, which is always on and also blocks network access. On Linux, it uses **Landlock**, which is off unless `HONE_SANDBOX_ENFORCE=1` and restricts files only. Hone doesn't use seccomp.
 
-This prevents:
-- Agent deleting `/etc` by accident
-- Malicious prompt injection exploiting agent to exfiltrate your SSH key
-- Runaway processes consuming all disk space
+The sandbox covers shell commands only. File tools such as `read_file` and `write_file` run inside Hone: they refuse paths outside the working directory, and permission rules narrow them further. The sandbox sets no CPU, memory or disk limits.
 
-See [Security Guide](../tutorials/security.md) for configuration.
+See [Security Guide](../tutorials/security.md) and [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ### Can the agent delete my files?
 
-Only if you explicitly allow it. By default, tools have write access to:
-- The current project directory
-- `/tmp` (temporary files)
+It can, unless a rule or the sandbox stops it:
 
-Everything else is blocked by the sandbox. You can further restrict this:
+- **Shell commands** can write only to the working directory, `/tmp` and `/dev/null` (always on macOS; on Linux only with `HONE_SANDBOX_ENFORCE=1`). The shell command checks also refuse destructive commands such as `rm -rf`.
+- **File tools** (`write_file`, `edit_file`, `multi_edit`) refuse any path that resolves outside the working directory (symlinks included), but inside it they can change or overwrite any file your user can; they aren't OS-sandboxed. In the TUI they ask before each write unless you switch to AutoApprove.
+
+To keep the agent out of a path, add a rule to `~/.config/hone/permissions.toml`:
 
 ```toml
-[sandbox.tools.file_writer]
-allow_write = ["{project_root}/generated"]  # only this directory
+# ~/.config/hone/permissions.toml
+[[rules]]
+id = "frozen-migrations"
+path = "migrations/**"
+op = "write"
+decision = "deny"
 ```
 
-If the agent tries to delete `/etc/passwd`, the sandbox blocks it:
-
-```
-error: access denied (path not in allowlist)
-```
+A write to `migrations/` is then refused with `denied by policy` and the rule id. Without a matching rule a write inside the working directory is allowed; a write outside it is always refused. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ### Can I run Hone in a Docker container?
 
@@ -183,8 +181,7 @@ ENTRYPOINT ["hone"]
 ```
 
 Container security notes:
-- Hone's sandboxing adds an extra security layer on top of Docker's isolation
-- Run the container with `--security-opt seccomp=unconfined` if using Linux seccomp
+- On Linux, Hone's shell sandbox (Landlock) is off unless you set `HONE_SANDBOX_ENFORCE=1`. Hone doesn't use seccomp
 - Use `--cap-drop=ALL` and `--cap-add=NET_BIND_SERVICE` for least privilege
 
 ### How do I use ephemeral mode?
@@ -209,30 +206,31 @@ Useful for analyzing sensitive data, contracts, or credentials.
 
 ### What tools does Hone have built in?
 
-Hone's **Layer 2 (native tools)** includes:
+Hone's **Layer 2 (native tools)**, as the `hone` CLI registers them:
 
-- `read_file` — Read text files
-- `write_file` — Write text files
-- `search_files` — Grep-like file search
-- `shell` — Execute shell commands
-- `git` — Git operations (commit, log, diff, push)
-- `semantic_search` — Vector-based code search
-- `lsp_hover` — Hover information (types, docs)
-- `lsp_completion` — Code completions
-- `lsp_definition` — Go to definition
-- `lsp_diagnostics` — Linter warnings and errors
+- Files: `read_file`, `write_file`, `edit_file`, `multi_edit`, `glob`, `grep`
+- Shell: `shell`
+- Git: `git_status`, `git_diff`, `git_commit`
+- Code intelligence: `lsp_diagnostics`, `lsp_hover`, `lsp_code_actions`, plus `symbol_search` and `symbol_at` when the symbol index is available
+- Web: `web_fetch`, and `web_search` (returns an error unless `HONE_WEBSEARCH_PROVIDER` and `HONE_WEBSEARCH_KEY` are set)
+- Memory: `memory_read`, when long-term memory is on; `memory_write` too when `[memory] writer` is `tool` or `triggers+tool`
+- Screen: `screen_capture`, `computer_control`
 
 See [Tools and MCP Guide](../tutorials/tools-and-mcp.md) for full reference.
 
 ### Can I add my own tools?
 
-Yes, via **Layer 1 (MCP servers)**. Write an MCP server in any language that speaks JSON-RPC, and Hone will call it:
+Yes, via **Layer 1 (MCP servers)**. Write an MCP server in any language that speaks JSON-RPC, and add it to `~/.config/hone/mcp.json` (or `.hone/mcp.json` in the project):
 
-```toml
-[[mcp_servers]]
-name = "my_custom_tool"
-command = "node"
-args = ["my_server.js"]
+```json
+{
+  "mcpServers": {
+    "my_custom_tool": {
+      "command": "node",
+      "args": ["/path/to/my_server.js"]
+    }
+  }
+}
 ```
 
 Your server defines tools by implementing the MCP protocol. See [MCP Protocol Spec](https://spec.modelcontextprotocol.io/) for details.
@@ -247,36 +245,21 @@ See [MCP Specification](https://spec.modelcontextprotocol.io/) and [Tools and MC
 
 ### How do I connect GitHub/Jira/Slack?
 
-Use official MCP servers. Examples:
+Add an MCP server for each one to `~/.config/hone/mcp.json` (or `.hone/mcp.json` in the project). GitHub, with its MCP server:
 
-**GitHub:**
-```toml
-[[mcp_servers]]
-name = "github"
-command = "npx"
-args = ["@modelcontextprotocol/server-github"]
-env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}" }
+    }
+  }
+}
 ```
 
-**Jira:**
-```toml
-[[mcp_servers]]
-name = "jira"
-command = "npx"
-args = ["@modelcontextprotocol/server-jira"]
-env = { JIRA_URL = "${JIRA_URL}", JIRA_TOKEN = "${JIRA_TOKEN}" }
-```
-
-**Slack:**
-```toml
-[[mcp_servers]]
-name = "slack"
-command = "npx"
-args = ["@modelcontextprotocol/server-slack"]
-env = { SLACK_BOT_TOKEN = "${SLACK_BOT_TOKEN}" }
-```
-
-See [Providers Guide](../tutorials/providers.md) for complete setup.
+Jira and Slack servers go in the same `mcpServers` object, each with its own `command`, `args` and `env`; the server's README lists its package and the variables it needs. `env` values may reference `${VAR}` from your environment. See [MCP servers](../configuration.md#mcp-servers) for all fields.
 
 ---
 
@@ -393,40 +376,27 @@ See [Run the daemon](../getting-started.md#8-run-the-daemon-honed) and the [Serv
 
 ### How do I set up RBAC?
 
-Define roles in `~/.config/hone/config.toml`:
-
-```toml
-[[rbac.roles]]
-name = "developer"
-permissions = ["sessions:create", "tools:file", "tools:git", "tools:shell"]
-
-[[rbac.users]]
-user_id = "alice@company.com"
-role = "developer"
-```
-
-Roles control what users can do (create sessions, call tools, etc.). See [Security Guide](../tutorials/security.md) for full permission list.
+You can't: Hone has no roles and no per-user permissions or budgets. `honed` checks one bearer token (`HONE_AUTH_TOKEN`), and every client that sends it gets the same access. To limit what the agent may do in every session, write `deny` rules in `~/.config/hone/permissions.toml` of the user that runs `honed`. Use `deny`, not `ask`: a client can pre-approve `ask` rules when it starts a run. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ### Where are audit logs stored?
 
-By default: `/var/log/hone/audit.log` (configurable via `~/.config/hone/config.toml`):
-
-```toml
-[audit]
-enabled = true
-log_file = "/var/log/hone/audit.log"
-```
-
-Logs are JSON, one event per line:
-
-```json
-{"timestamp": "2026-04-05T14:30:45Z", "session_id": "sess_abc123", "user": "alice@example.com", "event": "tool_call", "tool": "git_commit", ...}
-```
-
-Query logs:
+In `.hone/audit.jsonl` in the working directory, and only when you run with `--audit` or set `HONE_AUDIT_LOG=1`. There is no setting for the log's path or level.
 
 ```bash
-grep "alice@example.com" /var/log/hone/audit.log | jq .
+hone --audit "fix the failing test"
+```
+
+Logs are JSON, one entry per line: one per tool call, including calls a permission rule refused, plus one `context` line per model call. A refused call:
+
+```json
+{"timestamp":"2026-11-12T09:30:00Z","tool":"read_file","arguments":{"path":"/home/alice/.ssh/id_ed25519"},"result_preview":"policy: deny (rule no-ssh-keys)","blocked":true,"block_reason":"policy: deny (rule no-ssh-keys)","injection_risk":null,"duration_ms":0,"trace_id":"019a77c4-2f1e-7d0a-9b1c-5e3f2a8d4c61","span_id":"019a77c4-3a02-7e4b-8c2d-6f4a3b9e5d72","parent_span_id":"019a77c4-2f1f-7a3c-a4e5-1b2c3d4e5f60","span_kind":"tool_call"}
+```
+
+Query logs from the same directory:
+
+```bash
+hone trace list                          # recent traces, one summary line each
+jq 'select(.blocked)' .hone/audit.jsonl  # calls a rule refused
 ```
 
 ### Can I self-host everything?
@@ -465,24 +435,21 @@ Slow can mean different things:
 
 ### I'm getting "sandbox denied" errors
 
-Example error:
+Two different things refuse calls.
 
-```
-error: access denied (path not in allowlist)
-Agent called: read_file(path="/etc/shadow")
-```
+**A permission rule.** The call is refused with `denied by policy` and the rule's id, or, for an `ask` rule in a headless run, with `requires approval (rule <id>)`. Either:
 
-The sandbox is working correctly. The agent tried to access a path you didn't allow. Either:
-
-1. **Allow the path** in config:
-```toml
-[sandbox.tools.file_reader]
-allow_read = ["/new/path"]
-```
+1. **Change the rule** in `~/.config/hone/permissions.toml` (or the project's `.hone/permissions.toml`), or approve an `ask` rule for one run with `hone --approve <id>`.
 
 2. **Or, the agent made a wrong choice.** Ask it differently:
 ```
 You: Read the config file in the project root, not system files
+```
+
+**The OS sandbox.** A shell command fails with a permission error from the OS. Shell commands can write only to the working directory, `/tmp` and `/dev/null`, and that can't be widened. To let them read a directory outside the defaults, add it to `HONE_SANDBOX_EXTRA_READ` (colon-separated):
+
+```bash
+HONE_SANDBOX_EXTRA_READ="$HOME/.nvm" hone
 ```
 
 ### The model keeps running out of context

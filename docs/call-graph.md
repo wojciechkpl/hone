@@ -334,20 +334,25 @@ export HONE_SKELETON_STRATEGY=call_graph
 hone "fix the login bug"
 ```
 
-**Via config.toml:**
+**Via config.toml** (`~/.config/hone/config.toml`, or `.hone/config.toml` in the project):
 ```toml
-[agent]
-skeleton_strategy = "call_graph"  # Default
+[context.skeleton]
+use = "call-graph"  # default: "adaptive"
 ```
+
+The flag wins over the variable, and the variable over the file. `hone strategies` shows
+which one is in effect ([details](configuration.md#context-and-memory-strategies)).
 
 ### Token Budget
 
 Control how much space the skeleton gets:
 
 ```toml
-[agent]
-context_skeleton_budget = 1500  # tokens (default)
+[context.skeleton]
+max_tokens = 1500  # default: 2000
 ```
+
+A project file can only lower this value.
 
 Lower values cap the number of functions included. Higher values allow more detail but consume more context.
 

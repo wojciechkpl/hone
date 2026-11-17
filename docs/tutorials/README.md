@@ -120,16 +120,20 @@ Start with [Tools and MCP](tools-and-mcp.md) to write an MCP server:
 python3 my-mcp-server.py
 ```
 
-Then configure it in `config.toml`:
+Then add it to `~/.config/hone/mcp.json` (or `.hone/mcp.json` in the directory you run Hone from). MCP servers aren't configured in `config.toml`:
 
-```toml
-[[mcp_servers]]
-name = "custom"
-command = "python3"
-args = ["my-mcp-server.py"]
+```json
+{
+  "mcpServers": {
+    "custom": {
+      "command": "python3",
+      "args": ["/path/to/my-mcp-server.py"]
+    }
+  }
+}
 ```
 
-The agent can now call your custom tools.
+The agent can now call your custom tools. See [MCP servers](../configuration.md#mcp-servers) for the other fields.
 
 ## File Structure
 
@@ -232,12 +236,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 hone
 ```
 
-Or create `~/.config/hone/config.toml`:
-
-```toml
-[providers.anthropic]
-api_key = "sk-ant-..."
-```
+Or run `hone configure`, which saves the key in `~/.config/hone/config.toml` (in plain text). It replaces the whole file with just a `[provider]` table, so anything else in it, such as `[providers.*]`, `fallback_models`, `[[routing]]` and `[pricing]`, is lost.
 
 ### Sandbox error on macOS
 
@@ -253,9 +252,8 @@ The conversation history is too long. Clear the session:
 
 ## Support
 
-- **Bug reports:** https://github.com/anthropics/hone/issues
-- **Discussions:** https://github.com/anthropics/hone/discussions
-- **Documentation issues:** https://github.com/anthropics/hone/issues/new?labels=docs
+- **Bug reports:** https://github.com/wojciechkpl/hone/issues
+- **Documentation issues:** https://github.com/wojciechkpl/hone/issues/new?labels=docs
 
 ## License
 

@@ -69,11 +69,16 @@ Risk: Determined attacker could escape via kernel bugs
 Kernel sandboxing: OS-native restrictions (Seatbelt/Landlock)
 Risk: Attacker must exploit kernel itself (much harder)
 
-Example: Agent tries to read /etc/passwd
-  1. Hone syscall intercept (kernel level)
-  2. Policy check: deny_read = ["/etc/*"]
-  3. Error returned to process: Permission denied
+Example: the agent tries to read ~/.ssh/id_ed25519
+  read_file: refused by a rule in permissions.toml
+    (path = "~/.ssh/**", decision = "deny")
+  shell "cat ~/.ssh/id_ed25519": refused by the same rule (shell
+    arguments are checked as paths); without a rule, Seatbelt denies
+    the read on macOS (~/.ssh is not a readable root)
 ```
+
+The OS sandbox covers shell commands only, and has no policy file; file tools are governed
+by your permission rules. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 On macOS, Hone uses the same sandbox API as Safari.
 
@@ -171,9 +176,7 @@ hone "Find all calls to the deprecated API"
 # Hone returns: 12 matching locations
 ```
 
-### 5. Team Governance (RBAC)
-
-OpenCode has basic permissions. Hone has fine-grained RBAC:
+### 5. Audit Logging (No RBAC)
 
 **OpenCode:**
 ```bash
@@ -181,25 +184,16 @@ OpenCode has basic permissions. Hone has fine-grained RBAC:
 # Limited team features
 ```
 
-**Hone:**
-```bash
-# Roles: admin, operator, viewer
-# Per-user budgets
-# Audit logging (who did what, when)
-# Cost tracking per user/team
+**Hone:** no roles, users or per-user budgets either. `honed` has one bearer token
+(`HONE_AUTH_TOKEN`), and every client that has it gets the same access. A `[team.*]` table
+makes `config.toml` fail to load. What Hone has instead:
 
-[team.users]
-alice = { role = "admin", budget = "unlimited" }
-bob = { role = "operator", budget = "$500/month" }
-charlie = { role = "viewer" }
-```
-
-Audit log:
-```
-2026-04-05 12:34:56 [user=alice] Tool: edit_file, path=/src/main.rs
-2026-04-05 12:34:57 [user=alice] Tool: shell, cmd=cargo test
-2026-04-05 12:34:58 [user=bob] Tool: read_file, path=/src/main.rs
-```
+- **Tool-call log:** `hone --audit` (or `HONE_AUDIT_LOG=1`) writes every tool call, plus one
+  `context` line per model call, to `<cwd>/.hone/audit.jsonl`. Entries have no user field.
+  `hone trace list` reads it.
+- **Run log for the daemon:** with `HONE_PROVENANCE_DIR`, `honed` writes a hash-chained file
+  per `POST /run`.
+- **Cost totals per model** (not per user): `GET /team/usage` on `honed`.
 
 ### 6. ACP Protocol (Standardized Custom Agents)
 
@@ -242,32 +236,25 @@ Benefits of Hone's approach:
 
 ### 3. TOML Config Instead of JSON
 
-**OpenCode:** JSON config (UI-editable)
+**OpenCode:** JSON config
 
-```json
+```jsonc
 {
-  "providers": {
-    "default": "anthropic",
-    "anthropic": { "api_key": "sk-ant-..." }
-  },
-  "lsp": { "enabled": true }
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-opus-4-5"
 }
 ```
 
 **Hone:** TOML config (human-editable)
 
 ```toml
-[providers.anthropic]
-api_key = "sk-ant-..."
-
-[agent]
+# ~/.config/hone/config.toml
 default_model = "anthropic:claude-opus-4-5"
-
-[lsp]
-enabled = true
 ```
 
-TOML is easier to edit manually and supports comments.
+The key comes from `ANTHROPIC_API_KEY`; `config.toml` has no `api_key` field under
+`[providers.*]`. LSP has no setting: Hone detects the project's language and starts its
+language server if it is installed. TOML is easier to edit manually and supports comments.
 
 ### 4. Git-Native Diff Review
 
@@ -289,7 +276,7 @@ Why? Standard git tools are more powerful and integrate with your existing workf
 ### 1. Install Hone
 
 ```bash
-git clone https://github.com/anthropics/hone.git
+git clone https://github.com/wojciechkpl/hone.git
 cd hone
 cargo build --release
 sudo cp target/release/hone /usr/local/bin/
@@ -298,41 +285,43 @@ sudo cp target/release/honed /usr/local/bin/
 
 ### 2. Migrate Your OpenCode Config
 
-**OpenCode location:** `~/.opencode/config.json` or environment variables
+**OpenCode location:** `~/.config/opencode/opencode.json` (global) or `opencode.json` in
+the project ([OpenCode docs](https://opencode.ai/docs/config/), checked 2026-11-17)
 
 **Hone location:** `~/.config/hone/config.toml`
 
 Example migration:
 
 **OpenCode:**
-```json
+```jsonc
+// ~/.config/opencode/opencode.json
 {
-  "providers": {
-    "default": "anthropic",
-    "anthropic": {
-      "api_key": "sk-ant-...",
-      "model": "claude-opus-4-5"
-    }
-  },
-  "lsp": { "enabled": true },
-  "cost_tracking": { "enabled": true }
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-opus-4-5"
 }
 ```
 
+(OpenCode keeps the API key from its `/connect` command, or reads `ANTHROPIC_API_KEY`.)
+
 **Hone:**
-```toml
-[providers.anthropic]
-api_key = "sk-ant-..."
-
-[agent]
-default_model = "anthropic:claude-opus-4-5"
-
-[lsp]
-enabled = true
-
-[pricing.anthropic]
-"claude-opus-4-5" = { input_per_mtok = 3.00, output_per_mtok = 15.00 }
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
 ```
+
+```toml
+# ~/.config/hone/config.toml
+default_model = "anthropic:claude-opus-4-5"
+```
+
+- **LSP:** no setting; Hone starts the language server for the project's language if it
+  is installed.
+- **Cost tracking:** always on. Hone has a built-in price table; to override it or add a
+  model, put a `[pricing."provider:model"]` table in your user file,
+  `~/.config/hone/config.toml` (see
+  [Pricing and `[budget]`](../configuration.md#pricing-and-budget)).
+
+Hone rejects keys it doesn't know (exit code 2); all keys are in
+[Configuration](../configuration.md#configtoml).
 
 ### 3. Start the Daemon
 
@@ -410,15 +399,14 @@ No. `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`);
 
 ### How do I set per-user budgets like OpenCode?
 
-In config.toml:
+You can't: Hone has no per-user budgets, and a `[team.users]` table makes `config.toml` fail
+to load. `honed` has no budget options either (`--user-budget` and `--budget-period` don't
+exist). The closest is a cap per session, in `~/.config/hone/config.toml`:
 
 ```toml
-[team.users]
-alice = { budget = "unlimited" }
-bob = { budget = "$500/month" }
+[budget]
+session_limit_usd = 10.0
 ```
-
-`honed` has no budget options: `--user-budget` and `--budget-period` don't exist.
 
 ### Is Hone faster than OpenCode?
 
@@ -435,10 +423,9 @@ In session:
 /export session.json
 ```
 
-Sessions are also stored in memory database:
-```bash
-~/.local/share/hone/memory.db
-```
+One-shot runs are also saved in `~/.local/share/hone/sessions.db` (list them with
+`hone session list`); the TUI doesn't save sessions yet. `memory.db` holds long-term memory,
+not sessions.
 
 ### What about the web UI? I prefer it.
 

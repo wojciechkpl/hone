@@ -17,7 +17,7 @@ This guide walks you through setting up Hone, configuring your first model provi
 Clone the Hone repository and build:
 
 ```bash
-git clone https://github.com/anthropics/hone.git
+git clone https://github.com/wojciechkpl/hone.git
 cd hone
 cargo build --release
 ```
@@ -65,7 +65,7 @@ This guides you step-by-step through:
 3. Choosing your default model from that provider
 4. Writing the configuration to `~/.config/hone/config.toml`
 
-Configuration is one-time. Your provider and model are remembered for future sessions.
+Configuration is one-time. Your provider and model are remembered for future sessions. Running `hone configure` again replaces the whole file with just a `[provider]` table, so anything you added to it by hand is lost.
 
 ## Starting Your First Session
 
@@ -433,7 +433,7 @@ See [Security Guide](security.md) for memory encryption and ephemeral mode.
 - **Configure providers:** See [Providers Guide](providers.md) for hot-swapping, custom endpoints (DeepSeek, OpenRouter), fallback chains, and pricing tables.
 - **Context optimization:** Hone automatically optimizes context using BM25 reranking and graduated compression. See [Configuration](../configuration.md) for tuning.
 - **Write recipes:** See [Recipes Guide](recipes.md) to automate multi-step workflows.
-- **Run the daemon:** See [Server Guide](server-and-remote.md) to use Hone as a persistent HTTP service with RBAC.
+- **Run the daemon:** See [Server Guide](server-and-remote.md) to use Hone as a persistent HTTP service. It has one bearer token (`HONE_AUTH_TOKEN`) shared by all clients, with no roles.
 - **Custom tools:** See [Tools Guide](tools-and-mcp.md) to integrate external MCP servers and custom tools.
 - **Security:** See [Security Guide](security.md) for sandbox policies, audit logging, and memory encryption.
 - **Architecture:** See [Architecture Guide](../architecture.md) for deep dives into context optimization, memory encryption, and security hardening.
@@ -453,12 +453,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 hone
 ```
 
-Or create `~/.config/hone/config.toml`:
-
-```toml
-[providers.anthropic]
-api_key = "sk-ant-..."
-```
+Or run `hone configure`, which saves the key in `~/.config/hone/config.toml` (in plain text). It replaces the whole file with just a `[provider]` table, so anything else in it, such as `[providers.*]`, `fallback_models`, `[[routing]]` and `[pricing]`, is lost.
 
 ### Model Not Found
 
@@ -474,11 +469,11 @@ Hone has no command that lists models. Check the ID against your provider's own 
 error: failed to connect to Anthropic API
 ```
 
-Check your firewall and proxy settings. If behind a corporate proxy:
+Check your firewall and proxy settings. Behind a corporate proxy, set the standard proxy variable; Hone's HTTP client reads it (`HTTP_PROXY`, `ALL_PROXY` and `NO_PROXY` work too):
 
-```toml
-[http]
-proxy = "http://proxy.example.com:8080"
+```bash
+export HTTPS_PROXY="http://proxy.example.com:8080"
+hone
 ```
 
 ### Sandbox Error on macOS
@@ -501,15 +496,13 @@ The conversation history is too long. Clear the session:
 /clear
 ```
 
-Or reduce the context window in config:
+If the model is served with a smaller window than Hone assumes (a local Ollama or vLLM server, for example), give Hone the real size so it compacts the history in time:
 
-```toml
-[agent]
-context_window = 32000  # tokens
+```bash
+HONE_CONTEXT_WINDOW=32768 hone  # tokens, 4096–10000000
 ```
 
 ## Support
 
-- Bug reports: https://github.com/anthropics/hone/issues
-- Discussions: https://github.com/anthropics/hone/discussions
+- Bug reports: https://github.com/wojciechkpl/hone/issues
 - Documentation: See ../

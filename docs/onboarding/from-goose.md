@@ -11,7 +11,7 @@ You know Goose. You're comfortable with MCP-native architecture, recipes, extens
 | Providers | Providers (same abstraction) | 75+ providers, same flexibility |
 | CLI providers (custom agents) | `claude-cli:` / `gemini-cli:` pass-through | ACP providers are library-only; `hone` can't select one yet |
 | MCP servers | MCP Layer 1 (JSON-RPC) | Same protocol, same servers work |
-| Goose config | HONE.md + config.toml | Config is TOML, conventions are HONE.md |
+| Goose config | config.toml + mcp.json + HONE.md | Settings are TOML, MCP servers JSON, conventions HONE.md |
 
 ## Before and After
 
@@ -218,25 +218,32 @@ ACP is the Agent Client Protocol (same idea, standardized).
 
 **Goose:** YAML or JSON config files
 
-**Hone:** TOML config + HONE.md conventions
+**Hone:** TOML config, a JSON file for MCP servers, and HONE.md conventions
 
 ```toml
 # ~/.config/hone/config.toml
-[agent]
 default_model = "anthropic:claude-opus-4-5"
-max_iterations = 20
-
-[memory]
-enabled = true
-
-[providers.anthropic]
-api_key = "${ANTHROPIC_API_KEY}"
-
-[[mcp_servers]]
-name = "github"
-command = "npx"
-args = ["@modelcontextprotocol/server-github"]
 ```
+
+MCP servers go in `~/.config/hone/mcp.json` (or `<repo>/.hone/mcp.json`), in the same
+shape as Claude Code's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"]
+    }
+  }
+}
+```
+
+The API key stays in `ANTHROPIC_API_KEY`. `[providers.*]` has no `api_key` field; `hone
+configure` can save one under `[provider]` instead (in plain text). There is no
+iteration-limit setting, and memory is on by default. See
+[Configuration](../configuration.md#configtoml) for every key and
+[MCP servers](../configuration.md#mcp-servers) for the JSON fields.
 
 ```markdown
 # HONE.md (in your project)
@@ -254,7 +261,7 @@ Check for unwrap() calls without justification.
 ### 1. Install Hone
 
 ```bash
-git clone https://github.com/anthropics/hone.git
+git clone https://github.com/wojciechkpl/hone.git
 cd hone
 cargo build --release
 sudo cp target/release/hone /usr/local/bin/
@@ -262,42 +269,53 @@ sudo cp target/release/hone /usr/local/bin/
 
 ### 2. Copy Your Goose Config to Hone Config
 
-**Goose config location:** `.goose/config.yaml` or `~/.goose/config.json`
+**Goose config location:** `~/.config/goose/config.yaml`
 
-**Hone config location:** `~/.config/hone/config.toml`
+**Hone config location:** `~/.config/hone/config.toml` for the model,
+`~/.config/hone/mcp.json` for MCP servers
 
-Example migration (Goose YAML → Hone TOML):
+Example migration:
 
 **Goose:**
 ```yaml
-providers:
-  default: anthropic
-  anthropic:
-    api_key: sk-ant-...
-    model: claude-opus-4-5
-mcp_servers:
-  - name: github
-    command: npx
-    args:
-      - "@modelcontextprotocol/server-github"
-    env:
-      GITHUB_TOKEN: ghp_...
+# ~/.config/goose/config.yaml
+GOOSE_PROVIDER: anthropic
+GOOSE_MODEL: claude-opus-4-5
+extensions:
+  github:
+    name: github
+    type: stdio
+    cmd: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    envs:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ghp_...
+    enabled: true
 ```
 
 **Hone:**
 ```toml
-[providers.anthropic]
-api_key = "sk-ant-..."
-
-[agent]
+# ~/.config/hone/config.toml
 default_model = "anthropic:claude-opus-4-5"
-
-[[mcp_servers]]
-name = "github"
-command = "npx"
-args = ["@modelcontextprotocol/server-github"]
-env = { GITHUB_TOKEN = "ghp_..." }
 ```
+
+and `~/.config/hone/mcp.json` (`cmd` becomes `command`, `envs` becomes `env`, and
+`enabled: false` becomes `"disabled": true`):
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}" }
+    }
+  }
+}
+```
+
+`${GITHUB_TOKEN}` is read from your environment when the server starts. Hone reads the
+Anthropic key from `ANTHROPIC_API_KEY`. Only command (stdio) servers can be migrated: Hone
+has no HTTP or SSE transport for MCP.
 
 ### 3. Migrate Your Recipes
 
@@ -336,7 +354,7 @@ If you built Goose extensions in Python or Node:
 
 **Option A: Use MCP** (recommended)
 - Wrap your extension as an MCP server (same as Goose)
-- Register in config.toml (same format as Goose)
+- Register it in `~/.config/hone/mcp.json` ([step 2](#2-copy-your-goose-config-to-hone-config))
 
 **Option B: Contribute to Hone** (advanced)
 - Implement in Rust as a Layer 2 native tool
@@ -360,7 +378,10 @@ Yes, mostly. Recipe syntax is similar. Tool names may differ (check Layer 1 MCP 
 
 ### Do my Goose MCP servers work in Hone?
 
-Yes, 100%. Hone is MCP-compatible. Register them in config.toml exactly as you did in Goose.
+Servers that run as a command (stdio) do; Hone has no HTTP or SSE transport. Register them
+in `~/.config/hone/mcp.json`, not `config.toml` (see
+[step 2](#2-copy-your-goose-config-to-hone-config) and
+[MCP servers](../configuration.md#mcp-servers)).
 
 ### What about my Goose extensions?
 
@@ -374,13 +395,16 @@ Yes. They're independent. Keep Goose until you're fully comfortable with Hone.
 
 ### How do I debug MCP servers in Hone?
 
-Same as Goose. Enable logging in config:
+Hone has no logging settings in `config.toml`. Set `RUST_LOG`; logs go to stderr, so
+redirect them when you use the TUI:
 
-```toml
-[logging]
-level = "debug"
-mcp_trace_file = "/tmp/hone-mcp.log"
+```bash
+RUST_LOG=debug hone 2> hone-debug.log
 ```
+
+A server that fails to start or to finish its handshake is logged and skipped. The
+server's own stderr is discarded and there is no MCP trace file, so to see a server's
+output, run its command by hand.
 
 ### Is Hone backward-compatible with Goose recipes?
 

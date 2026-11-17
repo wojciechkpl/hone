@@ -149,7 +149,8 @@ choice: they take Anthropic if a key is available, else OpenAI, with their own m
 
 The wizard asks for a provider (Anthropic, OpenAI, DeepSeek, OpenRouter, Ollama or
 Claude CLI), an API key when one is needed, and a model, then writes
-`~/.config/hone/config.toml`:
+`~/.config/hone/config.toml`. It replaces the whole file, so anything else you put there
+(`[providers.*]`, `fallback_models`, `[[routing]]`, `[pricing]`, ...) is lost; copy it first:
 
 ```toml
 [provider]
@@ -347,7 +348,6 @@ flowchart LR
 
   The reason is cut to 200 characters, and URLs in it lose their user info and query
   string. `HONE_CACHE` never stores an answer a fallback gave.
-- Cost estimates use one flat rate for every model.
 - A turn routed to a model with a smaller context window (Ollama's default, for example)
   still gets the whole conversation, which the server may cut short.
 
@@ -704,8 +704,10 @@ Details, including what is readable and writable, are in
 
 ## MCP servers
 
-MCP servers are configured in JSON, in the same shape as Claude Code's `.claude/mcp.json`,
-so you can copy or symlink an existing file.
+MCP servers are configured in JSON, in the same shape as Claude Code's `.mcp.json`. Only
+stdio servers (with `command`) work: an HTTP or SSE entry (`url`, no `command`) fails to
+parse, and one entry that fails makes Hone skip the whole file, with only a warn-level log
+(`RUST_LOG=hone_config=warn` shows it). Copy only stdio entries from an existing file.
 
 ```json
 {
@@ -729,7 +731,7 @@ so you can copy or symlink an existing file.
 |---|---|---|
 | `command` | required | Executable to spawn (stdio transport) |
 | `args` | `[]` | Arguments |
-| `env` | `{}` | Extra environment; values may reference `${VAR}` |
+| `env` | `{}` | The server's environment besides `PATH` and `HOME`: Hone clears everything else before it starts the server. Values may reference `${VAR}` |
 | `disabled` | `false` | Skip this server at startup |
 | `timeout_ms` | `10000` | Per-request timeout: every call, tool calls included, gives up after it. `0` means no timeout |
 | `handshake_timeout_ms` | `timeout_ms` or 60000, whichever is larger | Timeout for the handshake at startup (an `npx -y …` server may download its package first). `0` means no timeout |
@@ -1087,10 +1089,14 @@ ollama pull llama3.2      # with `ollama serve` running
 
 A `config.toml` failed to parse, has a key Hone doesn't know, or has an invalid value. The
 message names the file and the line. Compare it with the [schema](#schema). Older docs
-showed `[agent]` and `[pricing]` tables: Hone never read them, and they are rejected, so
-delete them. (`[context]` and `[memory]` are real tables now; see
-[context and memory strategies](#context-and-memory-strategies).) `hone configure` still
-works and rewrites the user file.
+showed tables Hone never read, such as `[agent]`, `[http]`, `[logging]`, `[audit]`,
+`[rbac]`, `[[mcp_servers]]`, `[[routing_rules]]` and `[sandbox.*]` sub-tables; they are
+rejected, so delete them. Older docs also showed `[pricing.<provider>]` with
+`input_per_mtok`; the real form is `[pricing."provider:model"]` with `input_per_million`
+(see [Pricing and `[budget]`](#pricing-and-budget)). (`[context]` and `[memory]` are real
+tables now; see [context and memory strategies](#context-and-memory-strategies).) `hone
+strategies --check` reports a key Hone doesn't know without starting a model. `hone
+configure` still works and rewrites the user file.
 
 </details>
 
