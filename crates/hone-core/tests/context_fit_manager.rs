@@ -216,3 +216,48 @@ fn test_g4_fit_when_nothing_is_cut_should_keep_paired_tool_calls() {
     assert!(req.iter().any(|m| m.role == Role::Tool));
     assert_paired(&req);
 }
+
+#[test]
+fn test_g4_fit_when_old_cut_exchange_reuses_a_recent_tool_call_id_should_keep_the_recent_pair() {
+    // Ollama reuses ids (`call_<name>`): an old, cut `call_read_file` exchange
+    // must not make the recent call with the same id look orphaned.
+    let mut stored = vec![
+        Message::user("start"),
+        call_msg("call_read_file", big("old", 700)), // ~3k tokens, cut
+        Message::tool_result("call_read_file".to_owned(), big("res", 700)), // ~3k, cut
+    ];
+    for i in 0..6 {
+        stored.push(if i % 2 == 0 {
+            Message::user(big(&format!("u{i}x"), 250))
+        } else {
+            Message::assistant(big(&format!("a{i}x"), 250))
+        });
+    }
+    stored.push(call_msg("call_read_file", "reading again".to_owned()));
+    stored.push(Message::tool_result("call_read_file".to_owned(), "fresh"));
+    stored.push(Message::assistant("done"));
+    let mut ctx = opus_manager(&stored);
+    let budget = ctx.total_tokens() - 5_000; // dropping the old pair is enough
+
+    let (req, _) = ctx.build_messages_hashed_fitted("sys", budget);
+
+    let texts: Vec<String> = req.iter().map(|m| m.content.as_text()).collect();
+    assert!(
+        !texts.iter().any(|t| t.starts_with("old0")),
+        "precondition: the old call was cut"
+    );
+    assert!(
+        texts.iter().any(|t| t == "reading again"),
+        "recent tool call must stay in the request"
+    );
+    assert!(
+        texts.iter().any(|t| t == "fresh"),
+        "recent tool result must stay in the request"
+    );
+    assert_paired(&req);
+    assert_eq!(
+        ctx.messages().len(),
+        stored.len(),
+        "stored history unchanged"
+    );
+}
