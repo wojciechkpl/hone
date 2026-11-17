@@ -769,8 +769,9 @@ impl Agent {
                 );
             });
         }
-        let context =
+        let mut context =
             ContextManager::with_config(context_config).with_metrics(Arc::clone(&metrics));
+        context.set_window_override(context_window_override);
 
         // Snapshot the original tool registry before any mode filtering.
         let base_tools = config.tools.clone();
@@ -4075,6 +4076,11 @@ enum AgentCommand {
     SetModel {
         model: ModelId,
     },
+    /// Tell the agent which other models may serve its calls (the context budget
+    /// is the smallest over its model and these).
+    SetFallbackModels {
+        models: Vec<ModelId>,
+    },
     /// Replace the agent's active tool registry (for inline @agent tool allowlists).
     SetTools {
         tools: ToolRegistry,
@@ -4272,6 +4278,13 @@ impl AgentHandle {
                     }
                     AgentCommand::SetModel { model } => {
                         agent.config.model = model;
+                        agent.context.retarget(agent.config.model.model_name());
+                    }
+                    AgentCommand::SetFallbackModels { models } => {
+                        agent.context.set_fallback_models(
+                            models.iter().map(|m| m.model_name().to_owned()).collect(),
+                        );
+                        agent.context.retarget(agent.config.model.model_name());
                     }
                     AgentCommand::SetTools { tools } => {
                         // A replacement registry keeps `memory_write` (not in Plan
@@ -4572,6 +4585,16 @@ impl AgentHandle {
     /// `run_turn` call because the actor processes commands sequentially.
     pub async fn set_model(&self, model: ModelId) {
         let _ = self.cmd_tx.send(AgentCommand::SetModel { model }).await;
+    }
+
+    /// Tell the agent which other models may serve its calls (the user's
+    /// `fallback_models`). Its context budget becomes the smallest over its own
+    /// model and these, also after later `set_model` calls. Fire-and-forget.
+    pub async fn set_fallback_models(&self, models: Vec<ModelId>) {
+        let _ = self
+            .cmd_tx
+            .send(AgentCommand::SetFallbackModels { models })
+            .await;
     }
 
     /// Override the cost ceiling. Fire-and-forget; takes effect before the next

@@ -578,6 +578,16 @@ pub struct ContextManager {
     hashes: Vec<Option<String>>,
     /// Only drop-oldest trimming (no dedup, graduated or phase compaction).
     trim_only: bool,
+    /// `HONE_CONTEXT_WINDOW`: replaces the window of every model on a retarget.
+    window_override: Option<u32>,
+    /// The ratio the user chose (`set_budget_ratio`); kept, without the default
+    /// cap, across retargets.
+    user_ratio: Option<f32>,
+    /// The lowest project-file ratio (`cap_budget_ratio`); kept across retargets.
+    project_cap: Option<f32>,
+    /// Names of models that may serve calls besides the primary one; the budget
+    /// is the smallest over all of them.
+    fallback_models: Vec<String>,
 }
 
 impl ContextManager {
@@ -596,6 +606,10 @@ impl ContextManager {
             compaction_log: Vec::new(),
             hashes: Vec::new(),
             trim_only: false,
+            window_override: None,
+            user_ratio: None,
+            project_cap: None,
+            fallback_models: Vec::new(),
         }
     }
 
@@ -615,6 +629,10 @@ impl ContextManager {
             compaction_log: Vec::new(),
             hashes: Vec::new(),
             trim_only: false,
+            window_override: None,
+            user_ratio: None,
+            project_cap: None,
+            fallback_models: Vec::new(),
         }
     }
 
@@ -656,6 +674,7 @@ impl ContextManager {
     /// Lower the budget ratio to at most `cap` (a project file's `budget_ratio`):
     /// `min(current ratio, cap)`, never higher.
     pub fn cap_budget_ratio(&mut self, cap: f32) {
+        self.project_cap = Some(self.project_cap.map_or(cap, |c| c.min(cap)));
         if cap < self.config.effective_budget_ratio {
             // Keeps `budget_cap`: a project file may only lower the budget.
             self.config.effective_budget_ratio = cap;
@@ -668,7 +687,50 @@ impl ContextManager {
     pub fn set_budget_ratio(&mut self, ratio: f32) {
         self.config.effective_budget_ratio = ratio;
         self.config.budget_cap = None;
+        self.user_ratio = Some(ratio);
         self.max_context_tokens = self.config.effective_budget();
+    }
+
+    /// Remember the `HONE_CONTEXT_WINDOW` override so retargets keep it.
+    pub fn set_window_override(&mut self, window: Option<u32>) {
+        self.window_override = window;
+    }
+
+    /// Set the models (names without provider prefix) that may serve calls
+    /// besides the primary one. Takes effect on the next [`retarget`](Self::retarget).
+    pub fn set_fallback_models(&mut self, names: Vec<String>) {
+        self.fallback_models = names;
+    }
+
+    /// Recompute the budget for `model_name` (without provider prefix) as for a
+    /// new agent, keeping the window override, an explicit user ratio (no cap)
+    /// and a project cap (only lowers). The budget is the smallest over the
+    /// model and the fallback models. Trims the history at once if it shrank.
+    pub fn retarget(&mut self, model_name: &str) {
+        let build = |name: &str| {
+            let mut cfg = ContextConfig::for_model(name).with_context_window(self.window_override);
+            if let Some(r) = self.user_ratio {
+                cfg.effective_budget_ratio = r;
+                cfg.budget_cap = None;
+            }
+            if let Some(c) = self.project_cap {
+                cfg.effective_budget_ratio = cfg.effective_budget_ratio.min(c);
+            }
+            cfg
+        };
+        let mut config = build(model_name);
+        for name in &self.fallback_models {
+            let other = build(name);
+            if other.effective_budget() < config.effective_budget() {
+                // Take the smaller model's budget; keep the primary's trimming settings.
+                config.effective_budget_ratio = other.effective_budget_ratio;
+                config.advertised_context_length = other.advertised_context_length;
+                config.budget_cap = other.budget_cap;
+            }
+        }
+        self.max_context_tokens = config.effective_budget();
+        self.config = config;
+        self.trim_to_budget();
     }
 
     /// Notify the context manager about a tool call (for phase tracking).

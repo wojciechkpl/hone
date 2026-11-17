@@ -3209,6 +3209,13 @@ async fn main() -> Result<()> {
     // candidates, the reviewer loop) is priced the same way.
     hone_core::set_default_price_lookup(Arc::clone(&prices));
     agent.set_price_lookup(Arc::clone(&prices)).await;
+    // A fallback model can serve any call with the same history, so the context
+    // budget must fit the smallest of them (they only apply with API models).
+    if dispatch.is_some() && !eff.fallback_models.is_empty() {
+        agent
+            .set_fallback_models(eff.fallback_models.to_vec())
+            .await;
+    }
 
     // With a session limit, say up front which models it can't limit.
     let budget_warnings = if eff.session_limit_usd.is_some() {
@@ -3683,6 +3690,13 @@ fn model_context_limit(model: &str) -> u32 {
     let model_lower = model.to_ascii_lowercase();
     // Strip provider prefix (e.g. "anthropic:claude-sonnet-4-5" -> "claude-sonnet-4-5").
     let name = model_lower.split(':').last().unwrap_or(&model_lower);
+
+    // The window table is the source for models it knows.
+    if let Some(window) = hone_providers::ContextWindowTable::default_table()
+        .lookup(&ModelId::new(model_lower.as_str()))
+    {
+        return window;
+    }
 
     if name.contains("claude") {
         // All Claude 3+ models have a 200k context window.
