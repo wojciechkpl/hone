@@ -10,7 +10,7 @@ You know Claude Code. You're comfortable with CLAUDE.md, slash commands, the age
 | `/compact` (reduce verbosity) | `/compact` | Implemented |
 | `/model <name>` (switch models) | `/model <provider:model>` | Implemented |
 | Agent tools (Read, Edit, Bash) | Layer 2 tools (read_file, edit_file, shell) | Implemented |
-| Memory (remember context) | hone-memory (encrypted SQLite, adaptive learning) | Implemented |
+| Memory (remember context) | hone-memory (SQLite, optional encryption, adaptive learning) | Implemented |
 | Extended thinking | Model routing (use opus for complex, sonnet for speed) | Implemented |
 | TodoWrite tool | Recipes (YAML workflows) | Implemented |
 | Agent orchestration | Multi-agent mode (plan + execute) | Planned |
@@ -81,13 +81,15 @@ Hone: Switched to gpt-4o. Conversation preserved.
 
 ### 2. Kernel Sandboxing
 
-Claude Code relies on process isolation. Hone uses kernel-level sandboxing:
+Claude Code relies on process isolation. Hone runs shell commands under a kernel-level
+sandbox:
 
-- **macOS:** Seatbelt (same as Safari)
-- **Linux:** Landlock (same as systemd)
-- **Other:** seccomp (same as Docker)
+- **macOS:** Seatbelt, always on
+- **Linux:** Landlock (kernel 5.13+), off by default; turn it on with `HONE_SANDBOX_ENFORCE=1`
+- **Other platforms:** no OS sandbox
 
-Tool calls are auditable and confined. There is no command that prints the sandbox policy: [Permissions and sandbox](../permissions-and-sandbox.md) lists what each platform allows (on macOS, shell commands can write only the working directory, `/tmp` and `/dev/null`, and get no network), and your own permission rules live in `~/.config/hone/permissions.toml` and `<repo>/.hone/permissions.toml`.
+The sandbox covers only the `shell` tool; file tools are governed by your permission rules.
+There is no command that prints the sandbox policy: [Permissions and sandbox](../permissions-and-sandbox.md) lists what each platform allows (on macOS, shell commands can write only the working directory, `/tmp` and `/dev/null`, and get no network), and your own permission rules live in `~/.config/hone/permissions.toml` and `<repo>/.hone/permissions.toml`.
 
 ### 3. Adaptive Memory
 
@@ -101,13 +103,16 @@ You: Fix the bug in main.rs
 Hone: Based on your recent pattern, should I also run `cargo clippy` and commit?
 ```
 
-Memory is encrypted, stored locally in SQLite:
+Memory is stored locally in SQLite, at `~/.local/share/hone/memory.db` (there is no setting
+to move it). It is not encrypted unless you start Hone with `--encrypted-memory`, which
+takes its key from a passphrase (there is no key file):
 
-```toml
-[memory]
-db_path = "~/.local/share/hone/memory.db"
-encryption_key_file = "~/.config/hone/key.bin"
+```bash
+export HONE_MEMORY_PASSPHRASE="..."
+hone --encrypted-memory
 ```
+
+See [Where Hone keeps data](../configuration.md#where-hone-keeps-data) for what is encrypted.
 
 ### 4. Local Models (Free)
 
@@ -121,7 +126,7 @@ hone --model ollama:llama2
 # No API key needed, no privacy concerns
 ```
 
-### 5. Remote Daemon with Team Governance
+### 5. Remote Daemon
 
 Claude Code is single-user, single-machine. Hone can run as a server:
 
@@ -133,10 +138,8 @@ honed 7070
 
 From your laptop, connect the desktop app (daemon URL and token) or call the HTTP API with `Authorization: Bearer <token>`. The `hone` CLI doesn't connect to a daemon. See [Run the daemon](../getting-started.md#8-run-the-daemon-honed).
 
-Team governance with roles:
-- `admin` — manage settings, users, budgets
-- `operator` — run sessions, read all code
-- `viewer` — read-only access
+There are no roles, users or per-user budgets: `honed` has one bearer token, and everyone
+who has it gets the same access.
 
 See [Server and Remote](../tutorials/server-and-remote.md).
 
@@ -216,7 +219,7 @@ To run the daemon, see [Run the daemon](../getting-started.md#8-run-the-daemon-h
 ### 1. Install Hone
 
 ```bash
-git clone https://github.com/anthropics/hone.git
+git clone https://github.com/wojciechkpl/hone.git
 cd hone
 cargo build --release
 sudo cp target/release/hone /usr/local/bin/
@@ -235,11 +238,12 @@ Hone parses HONE.md at startup (zero token cost).
 
 ### 3. Configure Providers
 
-Copy your API keys from Claude Code config to Hone config:
+Hone reads API keys from environment variables:
 
 **Claude Code location:** `~/.claude/config.json` or env vars
 
-**Hone location:** `~/.config/hone/config.toml`
+**Hone location:** `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, or the key `hone configure` saves
+in `~/.config/hone/config.toml`
 
 Example migration:
 
@@ -251,21 +255,21 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 hone --model anthropic:claude-opus-4-5
 ```
 
-Or create `~/.config/hone/config.toml`:
+To make a model the default, create `~/.config/hone/config.toml`:
 
 ```toml
-[providers.anthropic]
-api_key = "sk-ant-..."
-
-[agent]
 default_model = "anthropic:claude-opus-4-5"
-context_window_tokens = 16000
-max_iterations = 20
-
-[memory]
-enabled = true
-db_path = "~/.local/share/hone/memory.db"
 ```
+
+Hone rejects keys it doesn't know (exit code 2), so add only keys listed in its reference:
+
+- **The key** stays in `ANTHROPIC_API_KEY`; `[providers.anthropic]` has no `api_key` field.
+  To read it from another variable, set `api_key_env = "MY_VAR"` there.
+- **Context window:** inferred from the model name; override it with `HONE_CONTEXT_WINDOW`.
+- **Iteration limit:** there is no setting for it.
+- **Memory:** on by default, always at `~/.local/share/hone/memory.db`.
+
+All keys are in [Configuration](../configuration.md#configtoml).
 
 ### 4. Run Your First Session
 
@@ -343,10 +347,10 @@ Same command:
 /budget 10.00  # max $10 per session
 ```
 
-Or in config.toml:
+Or in `~/.config/hone/config.toml`:
 ```toml
-[agent]
-max_spend_usd = 10.00
+[budget]
+session_limit_usd = 10.0
 ```
 
 ### What about extended thinking?

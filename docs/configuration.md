@@ -347,7 +347,6 @@ flowchart LR
 
   The reason is cut to 200 characters, and URLs in it lose their user info and query
   string. `HONE_CACHE` never stores an answer a fallback gave.
-- Cost estimates use one flat rate for every model.
 - A turn routed to a model with a smaller context window (Ollama's default, for example)
   still gets the whole conversation, which the server may cut short.
 
@@ -1087,10 +1086,14 @@ ollama pull llama3.2      # with `ollama serve` running
 
 A `config.toml` failed to parse, has a key Hone doesn't know, or has an invalid value. The
 message names the file and the line. Compare it with the [schema](#schema). Older docs
-showed `[agent]` and `[pricing]` tables: Hone never read them, and they are rejected, so
-delete them. (`[context]` and `[memory]` are real tables now; see
-[context and memory strategies](#context-and-memory-strategies).) `hone configure` still
-works and rewrites the user file.
+showed tables Hone never read, such as `[agent]`, `[http]`, `[logging]`, `[audit]`,
+`[rbac]`, `[[mcp_servers]]`, `[[routing_rules]]` and `[sandbox.*]` sub-tables; they are
+rejected, so delete them. Older docs also showed `[pricing.<provider>]` with
+`input_per_mtok`; the real form is `[pricing."provider:model"]` with `input_per_million`
+(see [Pricing and `[budget]`](#pricing-and-budget)). (`[context]` and `[memory]` are real
+tables now; see [context and memory strategies](#context-and-memory-strategies).) `hone
+strategies --check` reports a key Hone doesn't know without starting a model. `hone
+configure` still works and rewrites the user file.
 
 </details>
 

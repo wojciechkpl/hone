@@ -62,7 +62,7 @@ The events emitted by `AcpProvider` follow strict ordering: `Token*`, `ToolCall`
 
 ## Walkthrough: a single tool round-trip
 
-Given an `~/.hone/tools.toml` that exposes `fs.read`, ask the agent to read a file:
+Given a request whose `tools` list includes `fs.read`, ask the agent to read a file:
 
 ```
 > use fs.read to show me Cargo.toml

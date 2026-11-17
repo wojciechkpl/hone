@@ -9,10 +9,9 @@ Before deep-diving, run these:
 ```bash
 hone --version          # confirm you're on the build you think
 hone strategies --check # parse check of config.toml: exits 2 on a TOML error, an unknown key or a bad [context]/[memory] value
-ls ~/.hone/logs/        # latest session logs
 ```
 
-`--check` doesn't resolve the config (a `default_model` with an unknown prefix still passes) and doesn't read `permissions.toml`. Hone has no all-in-one environment check. If the config parses, the issue is more specific — read on.
+`--check` doesn't resolve the config (a `default_model` with an unknown prefix still passes) and doesn't read `permissions.toml`. Hone has no all-in-one environment check. If the config parses, the issue is more specific — read on. Hone writes no log files; its logs go to stderr (see [Logging and observability](#logging-and-observability)).
 
 ## Provider issues
 
@@ -30,23 +29,23 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.zshrc
 ```
 
-Or in `~/.config/hone/config.toml`:
+Or run `hone configure`, which saves the key in `~/.config/hone/config.toml` (in plain text). If your key is in a variable with another name, point Hone at it in that file:
 
 ```toml
 [providers.anthropic]
-api_key = "sk-ant-..."
+api_key_env = "MY_ANTHROPIC_KEY"
 ```
+
+When the variable `api_key_env` names isn't set, Hone doesn't fall back to `ANTHROPIC_API_KEY`.
 
 ### "rate limit" / "429"
 
 Hone retries with exponential backoff (250 ms → 500 ms → 1 s → 2 s, 4 attempts). If it still fails:
 
 1. Check your account's rate limit at the provider's dashboard.
-2. Configure a fallback chain in `config.toml`:
+2. List fallback models at the top level of your user file, `~/.config/hone/config.toml` (a project file's list is ignored). When the turn's model fails before answering, a rate limit included, Hone tries the next one. Runs with `--model` don't fall back:
    ```toml
-   [providers.fallback_chain]
-   primary = "anthropic"
-   fallback = ["deepseek", "ollama"]
+   fallback_models = ["openai:gpt-4o", "ollama:qwen2.5-coder"]
    ```
 3. Make fewer calls at once. There is no concurrency flag: `--orchestrate` runs up to 4 workers at a time and `--ensemble N` runs N candidates, so avoid them while you're rate-limited.
 
@@ -78,41 +77,42 @@ RUST_LOG=hone_core::dispatcher=debug,hone_providers=debug hone
 ```
 
 Look for `tools=` in the request log — if the tools array is empty, hone didn't announce any. Common causes:
-- No `[[tools]]` block in `~/.hone/tools.toml`.
+- The tool comes from an MCP server that didn't start, or is `disabled`, in `mcp.json`. Hone logs that and skips the server; see [MCP servers](../configuration.md#mcp-servers).
 - Tools are registered but the active provider has `supports_tools: false`.
 - The model's `system_prompt` says "you have no tools" — check the prompt template.
 
 ### Tool times out
 
-Default timeout is 30 s per tool call. Override per-tool in `tools.toml`:
+There is no global tool timeout setting. The `shell` tool takes a `timeout_ms` argument on each call (default 30 000 ms, at most 300 000 ms), so ask the agent to pass a longer one for a slow command.
 
-```toml
-[[tools]]
-name = "long_running_query"
-timeout_secs = 120
-```
+For an MCP server, set `timeout_ms` for that server in `mcp.json` (default 10 000 ms, `0` means no timeout):
 
-Or globally:
-
-```toml
-[dispatcher]
-default_tool_timeout_secs = 60
+```json
+{
+  "mcpServers": {
+    "db": {
+      "command": "/usr/local/bin/mcp-postgres",
+      "timeout_ms": 120000
+    }
+  }
+}
 ```
 
 ### Tool returns `isError: true`
 
 Read the error payload — it's plain text. Three common causes:
 
-1. **Path traversal blocked** — sandbox refused a path outside the workspace. Adjust `[sandbox.fs]` in `config.toml` or stop the agent from leaving the project.
-2. **Network denied** — by default the sandbox blocks outbound traffic. Allowlist hosts in `[sandbox.network]`.
+1. **Path outside the working directory** — the file tools refuse any path that resolves outside the directory Hone runs in, and no setting changes that. Start Hone from a directory that contains the files. A permission rule can also refuse a path; the message names the rule.
+2. **Network refused** — the `shell` tool refuses network commands (`curl`, `wget`, `git fetch`, ...), and on macOS the sandbox gives shell commands no network. Neither can be changed. Use `web_fetch` for HTTP; `host` rules in `permissions.toml` apply to it (see [Permissions](../configuration.md#permissions)).
 3. **Schema validation** — the model passed args that don't match the tool's schema. Inspect with `RUST_LOG=hone_core::tool_registry=debug`.
 
 ### "tool result was never sent back"
 
-For ACP only. The dispatcher executed the tool but the channel-write failed. Check for a panic in the runtime log:
+For ACP only. The dispatcher executed the tool but the channel-write failed. Check the stderr of the program that runs the `AcpProvider` for a panic (Hone writes no log files):
 
 ```bash
-grep -i panic ~/.hone/logs/<session>.log
+RUST_LOG=debug ./your-app 2> run.log
+grep -i panic run.log
 ```
 
 If the tool itself panicked, fix the tool. If the channel was closed (rare), restart hone — this is a known race surfaced when the agent process dies mid-call; hone now reaps and reports it as `ObservedToolEnd { error }`.
@@ -170,13 +170,13 @@ Or compact via the existing summariser:
 
 ### Sessions disappear
 
-Sessions live in `~/.hone/sessions/<id>/`. Verify:
+One-shot runs are saved in `~/.local/share/hone/sessions.db`; `honed` uses the same file unless `HONE_SESSION_DB` is set. The TUI doesn't save sessions yet, and `--ephemeral` runs save nothing. List what is saved:
 
 ```bash
-ls -la ~/.hone/sessions/
+hone session list
 ```
 
-If the directory is gone, you ran `rm -rf ~/.hone` somewhere. There's no remote backup unless you opted in via `[storage.remote]`.
+If `sessions.db` is gone, it was deleted. Hone has no remote backup.
 
 ### Daemon crash / `honed` won't start
 
@@ -186,45 +186,28 @@ HONE_BIND=127.0.0.1 RUST_LOG=info honed 7777   # runs in the foreground (it neve
 
 Read the stderr output. Common causes:
 - Port already in use: `lsof -i :7777`.
-- Database lock: stale `~/.hone/state.db-wal`. Delete WAL, retry.
 - Auth required but no token: see `docs/tutorials/server-and-remote.md`.
 
 ## Sandbox issues
 
 ### "permission denied" inside an agent shell call
 
-Hone's sandbox blocks file/network access by default. To allow:
+The OS sandbox covers commands the `shell` tool starts, not the file tools. On macOS it is always on: a command can write only to the working directory and `/tmp`, can read system directories, toolchain caches and the working directory, and has no network. On Linux it is off unless `HONE_SANDBOX_ENFORCE=1` is set, and then restricts files only. To let commands read another directory, add it as a read-only root before starting Hone:
 
-```toml
-[sandbox.fs]
-read_paths = ["./", "/tmp"]
-write_paths = ["./", "/tmp"]
-
-[sandbox.network]
-allowed_hosts = ["api.github.com", "registry.npmjs.org"]
+```bash
+export HONE_SANDBOX_EXTRA_READ="$HOME/.nvm:$HOME/datasets"   # colon-separated
+hone
 ```
 
-Restart hone after editing.
+There is no setting for extra writable paths or for network access, and the `[sandbox]` table in `config.toml` is not applied. File, command and host rules for the tools go in `permissions.toml`. See [OS sandbox](../permissions-and-sandbox.md#3-os-sandbox) and [Permissions](../configuration.md#permissions).
 
-### "seatbelt: cannot enable" on macOS
+### Shell commands fail under the sandbox on macOS
 
-Recent macOS versions deprecated `sandbox-exec`. Hone falls back gracefully but warns. To suppress the warning, set:
+Every `shell` command runs under `sandbox-exec`. There is no setting to turn that off or to choose another backend, and if `sandbox-exec` can't run the command, the command fails; Hone doesn't run it unsandboxed.
 
-```toml
-[sandbox]
-prefer_native = false
-```
+### Landlock on Linux
 
-### "landlock: not supported" on Linux
-
-Kernel < 5.13. Either upgrade or set:
-
-```toml
-[sandbox]
-prefer_native = false
-```
-
-(falls back to `setrlimit` + path validation; weaker but functional).
+Landlock is off unless `HONE_SANDBOX_ENFORCE=1` is set; without it shell commands run unsandboxed, and Hone logs that once at warn level. With it, Landlock needs kernel 5.13 or newer: on an older kernel the command fails instead of running unsandboxed. There is no fallback backend.
 
 ## Recipes & TDD issues
 
@@ -251,12 +234,21 @@ If you see "watching N paths" with N=0, the watcher couldn't enumerate. On NFS/S
 
 ### Where things are written
 
+Hone writes no log files. Logs go to stderr, filtered by `RUST_LOG`. Redirect them to keep them; the TUI draws on stdout, so this works there too:
+
+```bash
+RUST_LOG=debug hone 2> hone.log
 ```
-~/.hone/logs/
-├── <session-id>.log          # session-scoped: every event, every turn
-├── audit.log                 # structured audit (RBAC, tool dispatch, errors)
-└── metrics.json              # per-session counters
-```
+
+MCP servers' own stderr is discarded. The files Hone does write (full list in [Where Hone keeps data](../configuration.md#where-hone-keeps-data)):
+
+| Path | Contents |
+|---|---|
+| `~/.local/share/hone/sessions.db` | Saved sessions (one-shot runs, `honed`) |
+| `~/.local/share/hone/memory.db` | Long-term memory |
+| `~/.local/share/hone/tool-cache.db` | Cache of read-only tool results |
+| `<cwd>/.hone/audit.jsonl` | Every tool call, plus one `context` line per model call. Only with `--audit` or `HONE_AUDIT_LOG=1`; read it with `hone trace list` |
+| `<cwd>/.hone/reports/` | Session reports (`hone reports`) |
 
 ### Bumping log levels at runtime
 
@@ -275,7 +267,7 @@ Inside a session: `Ctrl+A` opens the session anatomy overlay. Each turn shows:
 - Tool calls dispatched and their latencies.
 - Cost in USD.
 
-For programmatic access, the daemon exposes `/sessions/<id>/metrics` (JSON).
+For programmatic access, a one-shot run with `--json` reports usage and cost.
 
 ## Reporting bugs
 

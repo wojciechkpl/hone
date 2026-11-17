@@ -10,12 +10,12 @@
 | Memory encryption (AES-256-GCM) | Opt-in | `--encrypted-memory` with `HONE_MEMORY_PASSPHRASE` set; built in, no Cargo feature |
 | SQLite at-rest encryption (sqlcipher) | Planned | Not yet implemented |
 
-> [!WARNING]
-> The `[sandbox]`, `[audit]`, `[rbac]` and `[[mcp_servers]]` examples on this page use settings Hone doesn't have (MCP servers are configured in `~/.config/hone/mcp.json` or `.hone/mcp.json`). A `config.toml` that contains them fails to load (`hone strategies --check` shows the error). What Hone enforces, and how to configure it, is in [Permissions and sandbox](../permissions-and-sandbox.md).
+> [!NOTE]
+> Security settings live in `permissions.toml` and environment variables, not in `config.toml`. The reference for both is [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ---
 
-Hone implements defense-in-depth security using kernel sandboxing, network policies, and audit logging. This guide covers the sandbox architecture, threat model, and how to configure security policies.
+Hone puts three checks between the model and your machine: permission rules, shell command checks, and an OS sandbox for shell commands. It can also keep an audit log of tool calls. This guide covers the sandbox, the threat model, and how to configure each part.
 
 ## Linux Landlock Sandbox
 
@@ -34,12 +34,10 @@ let policy = SandboxPolicyBuilder::new(SandboxMode::Manual)
 Only shell commands are sandboxed: the shell tool installs the sandbox on the child process it starts. File tools such as `read_file` and `write_file` run inside the Hone process, so the OS sandbox never applies to them; they are governed by permission rules instead. See [Permissions and sandbox](../permissions-and-sandbox.md#3-os-sandbox).
 
 **Requirements:**
-- Linux kernel 5.13+ (Landlock upstreamed in this release)
-- Check kernel support: `cat /proc/sys/kernel/landlock/abi_version`
-  - Output >= 1 means Landlock is available
-  - No output or error means unavailable
+- Linux kernel 5.13+ (Landlock upstreamed in this release); check with `uname -r`
+- Landlock enabled in the running kernel: `cat /sys/kernel/security/lsm` must list `landlock`
 
-With `HONE_SANDBOX_ENFORCE=1`, if Landlock is unavailable, `SandboxError::Unavailable` is returned and the shell command fails instead of running unsandboxed (fail-closed). Without the variable there is no fail-closed behaviour: commands run unsandboxed.
+With `HONE_SANDBOX_ENFORCE=1`, if Landlock is unavailable, the sandbox setup in the child process returns `SandboxError::Unavailable`, the command never runs, and the shell call fails instead of running unsandboxed (fail-closed). Without the variable there is no fail-closed behaviour: commands run unsandboxed.
 
 To require Landlock and fail if unavailable:
 
@@ -61,94 +59,95 @@ The sandbox covers shell commands only. `SandboxBuilder::detect()` picks Seatbel
 
 ## SandboxPolicy
 
-Define what each tool call is allowed to do:
+`SandboxPolicy` is the `hone-sandbox` library type that describes what a sandboxed child process may do:
 
 ```rust
 pub struct SandboxPolicy {
-    pub allow_read: Vec<PathBuf>,      // paths readable by tool
-    pub allow_write: Vec<PathBuf>,     // paths writable by tool
-    pub allow_exec: Vec<PathBuf>,      // executables callable from tool
-    pub allow_network: bool,            // network access (deny by default)
-    pub allow_env: Vec<String>,        // env vars exposed to tool
+    pub mode: SandboxMode,
+    pub allow_read: Vec<PathBuf>,      // paths the child may read
+    pub allow_write: Vec<PathBuf>,     // paths the child may write (implies read)
+    pub allow_exec: Vec<PathBuf>,      // executables the child may exec
+    pub allow_network: bool,           // outbound network (Seatbelt only)
+    pub allowed_domains: Vec<String>,  // not enforced by Seatbelt or Landlock
+    pub allow_env: Vec<String>,        // not enforced by Seatbelt or Landlock
 }
 ```
 
+You can't set it from `hone`. The shell tool builds one for every command: the working directory, `/tmp` and `/dev/null` are writable; system directories, `~/.cache`, `~/.cargo`, `~/.rustup`, your git config and any `HONE_SANDBOX_EXTRA_READ` roots are readable; network is denied (Seatbelt only: Landlock doesn't restrict it). The full table is in [Permissions and sandbox](../permissions-and-sandbox.md#3-os-sandbox).
+
 ## Configuration
 
-These `[sandbox]` settings don't exist, and a `config.toml` that contains them fails to load. The only sandbox settings are `HONE_SANDBOX_ENFORCE` and `HONE_SANDBOX_EXTRA_READ`; the example is kept for reference:
+Hone's security settings are in these places:
+
+| What | Where |
+|---|---|
+| Which files, commands and `web_fetch` hosts the agent may use | Permission rules in `~/.config/hone/permissions.toml` and `<workdir>/.hone/permissions.toml` |
+| Built-in rules and secret redaction | `HONE_POLICY_BUILTINS=1` |
+| The OS sandbox for shell commands | `HONE_SANDBOX_ENFORCE=1` (Linux) and `HONE_SANDBOX_EXTRA_READ` |
+| Audit log | `--audit` or `HONE_AUDIT_LOG=1` |
+
+There are no per-tool sandbox policies. The `[sandbox]` table in `config.toml` is not applied (Hone warns at startup), and sub-tables such as `[sandbox.tools.shell]` make the file fail to load.
+
+A starting `permissions.toml`:
 
 ```toml
-[sandbox]
-platform = "auto"  # auto-detect: seatbelt, landlock, seccomp, fallback
+# ~/.config/hone/permissions.toml
+version = 2
 
-# Default policy for all tools
-[sandbox.defaults]
-allow_network = false  # network deny-by-default
-allow_write = ["/tmp"]  # only temp writable
-allow_env = ["PATH", "HOME"]  # only safe env vars
+[[rules]]
+id = "no-ssh-keys"
+path = "~/.ssh/**"
+decision = "deny"
 
-# Per-tool policies (override defaults)
-[sandbox.tools.shell]
-allow_read = ["{project_root}", "/usr/lib"]
-allow_write = ["/tmp", "{project_root}/target"]
-allow_exec = ["/bin", "/usr/bin"]
-allow_network = false
-allow_env = ["PATH", "HOME", "RUST_BACKTRACE"]
+[[rules]]
+id = "no-dotenv"
+path = "**/.env"
+decision = "deny"
 
-[sandbox.tools.git]
-allow_read = ["{project_root}"]
-allow_write = ["{project_root}"]
-allow_exec = ["/usr/bin/git"]
-allow_network = false
-allow_env = ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL"]
-
-[sandbox.tools.semantic_search]
-allow_network = true  # needs network to PostgreSQL
-allow_read = ["{project_root}"]
-allow_env = ["DATABASE_URL"]
+[[rules]]
+id = "ask-push"
+command = "git push*"
+decision = "ask"
 ```
 
-**Variables:**
-- `{project_root}` — expands to current working directory
-- `{home}` — expands to user's home directory
+A call that matches no rule is allowed. Within a file, the first matching rule wins. In `path` rules, `~/` expands to your home directory, `{workdir}` to the working directory, and a relative pattern is joined onto the working directory. The full format is in [Permissions and sandbox](../permissions-and-sandbox.md#rule-format).
 
-## Network Policy (Deny-by-Default)
+## Network Access
 
-Network access is disabled by default for all tools. Enable explicitly for specific tools that need it:
+Hone doesn't deny network access for all tools, and there is no per-tool network setting. What applies depends on how the call reaches the network:
+
+| Route | What limits it |
+|---|---|
+| Shell commands | The shell command checks refuse `curl`, `wget`, `ssh`, `scp`, `rsync`, `nc`, `ftp` and `git push/pull/fetch/clone/remote` on every platform. On macOS, Seatbelt also denies network to every shell command. Landlock doesn't restrict network |
+| `web_fetch` | `host` permission rules |
+| MCP servers, `web_search` | Nothing in Hone: MCP servers run outside the sandbox, and permission rules don't see MCP tools or `web_search` |
+| Requests to the model provider | Not restricted: they go to the provider you chose |
+
+To limit which hosts `web_fetch` may reach:
 
 ```toml
-[sandbox.tools.github_api]
-allow_network = true  # allow for GitHub MCP
+# ~/.config/hone/permissions.toml
+[[rules]]
+id = "docs-ok"
+host = "*.rust-lang.org"
+decision = "allow"
 
-[sandbox.tools.semantic_index]
-allow_network = true  # allow for PostgreSQL
+[[rules]]
+id = "metadata-never"
+host = "169.254.169.254"
+decision = "deny"
 
-# Block everything else
-[sandbox.defaults]
-allow_network = false
+[[rules]]
+id = "other-hosts"
+host = "*"
+decision = "ask"
 ```
 
-DNS and HTTP requests are blocked unless explicitly allowed.
+Host rules match names, not resolved addresses, so they don't stop DNS tricks such as a name that resolves to a metadata IP.
 
 ## Process Resource Limits
 
-Prevent runaway processes using `rlimit`:
-
-```toml
-[sandbox.limits]
-cpu_seconds = 30      # max 30 seconds CPU per tool call
-memory_mb = 512       # max 512 MB RAM
-disk_mb = 1024        # max 1 GB disk writes per turn
-open_files = 1024     # max 1024 open files
-subprocess_count = 10 # max 10 subprocesses
-```
-
-If a process exceeds limits, it is killed:
-
-```
-error: shell tool exceeded memory limit (512 MB)
-Tool execution aborted by sandbox.
-```
+Hone sets no CPU, memory, disk or open-file limits on commands. The only limit is time: each `shell` call has a `timeout_ms` (30 s by default; the model can ask for up to 5 minutes), and when it runs out Hone kills the command's whole process group. With the default timeout, the call then fails with `tool 'shell' timed out after 30000ms`. MCP servers have a per-request `timeout_ms` in `mcp.json` (see [MCP servers](../configuration.md#mcp-servers)).
 
 ## Environment Variable Filtering
 
@@ -162,166 +161,110 @@ To limit what the model can read:
 
 ## File System Restrictions
 
-### Read Allowlist
+File tools (`read_file`, `write_file`, `edit_file`, `multi_edit`, `glob`, `grep`) aren't OS-sandboxed. Without permission rules they can read and write any path your user can; in the TUI, write tools ask before each call unless you switch to AutoApprove. `path` rules in `permissions.toml` limit them, and also the paths in shell commands (`cat`, redirections, `cp`, `tee`).
 
-Only paths in `allow_read` are readable:
+### Read Rules
 
-```toml
-[sandbox.tools.file_reader]
-allow_read = ["{project_root}", "/etc/passwd"]
-```
-
-Attempt to read a disallowed path:
-
-```
-Agent calls: read_file(path="/etc/shadow")
-error: access denied (path not in allowlist)
-```
-
-### Write Allowlist
-
-Only paths in `allow_write` are writable:
+A `path` rule with `op = "read"` covers reads only:
 
 ```toml
-[sandbox.tools.code_generator]
-allow_read = ["{project_root}"]
-allow_write = ["{project_root}/generated"]
+# ~/.config/hone/permissions.toml
+[[rules]]
+id = "no-shadow"
+path = "/etc/shadow"
+op = "read"
+decision = "deny"
 ```
 
-Attempt to write outside allowlist:
+When the agent calls `read_file(path="/etc/shadow")`, the call is refused with `denied by policy` and the rule id `no-shadow`.
 
-```
-Agent calls: write_file(path="/etc/cron.d/malicious")
-error: access denied (path not in allowlist)
+### Write Rules
+
+`op = "write"` covers writes only, so the agent can still read the files:
+
+```toml
+# <repo>/.hone/permissions.toml  (can only tighten your user rules)
+[[rules]]
+id = "frozen-migrations"
+path = "migrations/**"
+op = "write"
+decision = "deny"
 ```
 
 ### Symlink Handling
 
-Symlinks are followed if both source and target are in the allowlist:
+Hone checks a path both as written and with symlinks resolved, and the stricter verdict wins. If `notes/key` in the working directory is a symlink to `~/.ssh/id_ed25519`, the `no-ssh-keys` rule from [Configuration](#configuration) still denies `read_file(path="notes/key")`.
+
+## Command Restrictions
+
+Hone has no executable allowlist. Two things limit shell commands:
+
+- The shell command checks, always on: privilege escalation (`sudo`, `su`, `doas`, `pkexec`) is blocked, and destructive, network and chained commands are refused. See [Shell command checks](../permissions-and-sandbox.md#2-shell-command-checks).
+- `command` rules in `permissions.toml`. A pattern without `*` or `?` is a prefix at a word boundary (`cargo publish` matches `cargo publish --dry-run`); a pattern with them is a glob over the whole command.
 
 ```toml
-[sandbox.tools.safe_reader]
-allow_read = ["{project_root}", "/tmp"]
+# ~/.config/hone/permissions.toml
+[[rules]]
+id = "no-publish"
+command = "cargo publish"
+decision = "deny"
 
-# If /tmp/link -> /etc/passwd
-Agent calls: read_file(path="/tmp/link")
-error: access denied (target /etc/passwd not in allowlist)
+[[rules]]
+id = "ask-npm"
+command = "npm"
+decision = "ask"
 ```
 
-## Executable Restrictions
+Both match command text. Shell aliases, interpreters (`python -c …`) and paths hidden inside tool options are not visible to them, so treat them as a speed bump. The OS sandbox is the boundary.
 
-Only approved executables can be called by shell commands:
+## Server Mode (`honed`)
 
-```toml
-[sandbox.tools.shell]
-allow_exec = ["/usr/bin/git", "/usr/bin/cargo", "/bin/cat"]
-```
-
-Attempting to call a disallowed executable:
-
-```
-Agent calls: shell(cmd="python3 -c 'print(1)'")
-error: access denied (executable /usr/bin/python3 not in allowlist)
-```
-
-This prevents:
-- Remote code execution via arbitrary commands
-- Access to system tools that shouldn't be called
-- Privilege escalation attempts
-
-## RBAC Roles and Policies (Server Mode)
-
-When using the daemon (`honed`), multiple users can have different permissions via role-based access control:
-
-```toml
-[rbac]
-enabled = true
-
-[[rbac.roles]]
-name = "admin"
-permissions = ["sessions:create", "sessions:delete", "tools:all", "mcp:all"]
-
-[[rbac.roles]]
-name = "developer"
-permissions = ["sessions:create", "sessions:read", "tools:file", "tools:git", "tools:shell"]
-
-[[rbac.roles]]
-name = "viewer"
-permissions = ["sessions:read", "mcp:read_only"]
-
-[[rbac.users]]
-user_id = "alice@example.com"
-role = "admin"
-
-[[rbac.users]]
-user_id = "bob@example.com"
-role = "developer"
-
-[[rbac.users]]
-user_id = "carol@example.com"
-role = "viewer"
-```
-
-Permission meanings:
-- `sessions:create` — create new sessions
-- `sessions:delete` — delete sessions
-- `tools:file` — use file I/O tools
-- `tools:git` — use git tools
-- `tools:shell` — use shell tool
-- `tools:all` — use all tools
-- `mcp:all` — call any MCP server
-- `mcp:read_only` — only query tools (no mutation)
+Hone has no roles and no per-user permissions or budgets. `honed` checks one bearer token, `HONE_AUTH_TOKEN` (required when it binds a non-loopback address), and every client that sends it gets the same access. Permission rules apply to every run: `honed` loads the user file from its own `$HOME` and the project file from the run's working directory. See the [Server Guide](server-and-remote.md).
 
 ## Audit Logging
 
-All tool calls, file accesses, and security events are logged:
-
-```toml
-[audit]
-enabled = true
-log_file = "/var/log/hone/audit.log"
-log_level = "info"  # info, warn, error
-```
-
-Log entries (JSON format):
-
-```json
-{
-  "timestamp": "2026-04-05T14:30:45Z",
-  "session_id": "sess_abc123",
-  "user": "alice@example.com",
-  "event": "tool_call",
-  "tool": "read_file",
-  "input": {"path": "/home/alice/src/main.rs"},
-  "result": "success",
-  "duration_ms": 2
-}
-```
-
-```json
-{
-  "timestamp": "2026-04-05T14:30:50Z",
-  "session_id": "sess_abc123",
-  "user": "alice@example.com",
-  "event": "access_denied",
-  "tool": "read_file",
-  "input": {"path": "/etc/shadow"},
-  "reason": "path not in allowlist",
-  "policy": "sandbox.tools.file_reader.allow_read"
-}
-```
-
-Query logs:
+Hone writes an audit log only when you ask for it:
 
 ```bash
-# All events for a session
-grep "sess_abc123" /var/log/hone/audit.log | jq .
+hone --audit "fix the failing test"
 
-# All access denials
-grep "access_denied" /var/log/hone/audit.log | jq .
+# or, for every run
+export HONE_AUDIT_LOG=1
+```
 
-# Events for a specific user
-grep "alice@example.com" /var/log/hone/audit.log | jq .
+Entries are appended to `.hone/audit.jsonl` in the working directory, one JSON object per line: one per tool call, including calls a permission rule refused, plus one `context` line per model call. There is no setting for the log's path or level.
+
+A call refused by a rule (wrapped here; in the file it is one line):
+
+```json
+{
+  "timestamp": "2026-11-12T09:30:00Z",
+  "tool": "read_file",
+  "arguments": {"path": "/home/alice/.ssh/id_ed25519"},
+  "result_preview": "policy: deny (rule no-ssh-keys)",
+  "blocked": true,
+  "block_reason": "policy: deny (rule no-ssh-keys)",
+  "injection_risk": null,
+  "duration_ms": 0,
+  "trace_id": "019a77c4-2f1e-7d0a-9b1c-5e3f2a8d4c61",
+  "span_id": "019a77c4-3a02-7e4b-8c2d-6f4a3b9e5d72",
+  "parent_span_id": "019a77c4-2f1f-7a3c-a4e5-1b2c3d4e5f60",
+  "span_kind": "tool_call"
+}
+```
+
+Read the log with `hone trace` (from the same directory) or `jq`:
+
+```bash
+hone trace list          # recent traces, one summary line each
+hone trace show 019a77c4 # one trace as a tree; an id prefix is enough
+hone trace stats
+
+# Calls a rule refused
+jq 'select(.blocked)' .hone/audit.jsonl
+
+# Shell commands the agent ran
+jq -r 'select(.tool == "shell") | .arguments.command' .hone/audit.jsonl
 ```
 
 ## Memory Encryption (Encrypted Memory Feature)
@@ -363,8 +306,10 @@ By default, session memories are stored in SQLite at `~/.local/share/hone/memory
 ```bash
 ls -la ~/.local/share/hone/
 # memory.db            - session memories (content encrypted with --encrypted-memory)
-# sessions.db          - session metadata (if HONE_SESSION_DB set)
+# sessions.db          - conversations from one-shot and --plan runs (not with --ephemeral)
 ```
+
+The TUI doesn't save conversations to `sessions.db`. `HONE_SESSION_DB` changes the sessions path only for `honed`; see [Where Hone keeps data](../configuration.md#where-hone-keeps-data).
 
 With `--encrypted-memory`, the content field of each memory record is encrypted with AES-256-GCM before being written to disk (see [Memory Encryption](#memory-encryption-encrypted-memory-feature) above).
 
@@ -382,51 +327,33 @@ rm ~/.local/share/hone/memory.db
 
 ## Threat Model Summary
 
-```mermaid
-flowchart TD
-    A["Malicious Prompt Injection"] -->|mitigated by| SB["Sandbox:<br/>no arbitrary exec<br/>without allowlist"]
-    
-    B["Supply Chain Attack<br/>on MCP Server"] -->|mitigated by| HASH["Content-addressable MCP<br/>server hashes in config"]
-    
-    C["Model Exfiltrating Data"] -->|mitigated by| NET["Network deny-by-default<br/>explicit allow-listing"]
-    
-    D["Runaway Disk Write"] -->|mitigated by| RL["rlimit FSIZE<br/>per operation"]
-    
-    E["Secret Leakage<br/>via env vars"] -->|mitigated by| ENV["Explicit env allowlist<br/>in SandboxPolicy"]
-    
-    F["Symlink Escape"] -->|mitigated by| SYM["Symlink target<br/>must be in allowlist"]
-    
-    G["Privilege Escalation"] -->|mitigated by| PRIV["no-new-privs flag<br/>capability dropping"]
-```
+| Threat | What Hone does | What it doesn't cover |
+|---|---|---|
+| Prompt injection that runs commands | Shell command checks; permission rules; the OS sandbox limits shell writes to the working dir and `/tmp` | Landlock is off on Linux unless `HONE_SANDBOX_ENFORCE=1`; file tools aren't OS-sandboxed |
+| Supply-chain attack on an MCP server | Nothing: Hone doesn't verify, pin or hash MCP servers | MCP servers run outside the sandbox, and permission rules don't see MCP tool calls |
+| Model exfiltrating data | Seatbelt denies network to shell commands on macOS; command checks refuse `curl`, `ssh` and similar; `host` rules for `web_fetch` | Landlock doesn't restrict network; MCP tools and `web_search` aren't covered; host rules don't stop DNS tricks |
+| Runaway command | The shell tool's `timeout_ms` (30 s by default) kills the process group | No CPU, memory or disk limits |
+| Secret leakage via environment variables | `HONE_POLICY_BUILTINS=1` redacts secret-shaped values in tool output | No environment filtering; redaction is pattern-based |
+| Symlink escape | Path rules check the path as written and with symlinks resolved; the stricter verdict wins | Paths Hone can't see in the call, such as those inside a script |
+| Privilege escalation | `sudo`, `su`, `doas` and `pkexec` are blocked | The checks match command text, so a script that escalates isn't seen |
 
 ## Best Practices
 
-1. **Start restrictive:** Begin with minimal permissions and add as needed.
+1. **Start restrictive:** Turn on the built-in rules (credentials, persistence, `git push`, privilege escalation, pipe-to-shell, new hosts) and secret redaction, then add your own `deny` rules. [Configuration](#configuration) has a starting file.
 
-```toml
-[sandbox.defaults]
-allow_network = false
-allow_write = []  # deny all writes by default
+```bash
+export HONE_POLICY_BUILTINS=1
 ```
 
-2. **Use allowlists, not denylists:** Only permit known-safe paths and executables.
+2. **End host rules with a catch-all:** a final `host = "*"` rule with `decision = "ask"` makes every host you didn't list ask first (see [Network Access](#network-access)). Path and command rules have no default deny: a call that matches no rule is allowed.
 
-3. **Enable audit logging:** Monitor what tools actually do.
+3. **Enable audit logging:** Record what tools actually do.
 
-```toml
-[audit]
-enabled = true
+```bash
+export HONE_AUDIT_LOG=1   # same as --audit
 ```
 
-4. **Review MCP server hashes:** Verify external tool integrity.
-
-```toml
-[[mcp_servers]]
-name = "github"
-command = "npx"
-args = ["@modelcontextprotocol/server-github"]
-hash = "sha256:abc123..."  # verify before running
-```
+4. **Review MCP servers before you add them:** Hone doesn't hash or pin MCP servers, they run outside the sandbox, and permission rules don't see their tool calls. Pin the package version in `args`, and set `"disabled": true` on servers you don't use (see [MCP servers](../configuration.md#mcp-servers)).
 
 5. **Rotate secrets regularly:** If an API key is exposed, rotate it immediately.
 
@@ -440,54 +367,40 @@ hone --ephemeral "Analyze this sensitive document"
 
 ### Sandbox Not Available
 
-```
-error: sandbox policy not met (Seatbelt unavailable on this macOS version)
-```
-
-Check your platform:
+On Linux with `HONE_SANDBOX_ENFORCE=1`, a kernel without Landlock makes shell commands fail instead of running unsandboxed. Check the kernel version (5.13+ is needed) and that Landlock is enabled:
 
 ```bash
-rustc --print sysroot
-uname -r  # Linux kernel version
+uname -r
+cat /sys/kernel/security/lsm   # must list landlock
 ```
 
-Update to a supported OS version, or disable sandboxing (not recommended):
-
-```toml
-[sandbox]
-enforce = false  # WARNING: disables security
-```
+Upgrade the kernel, or unset `HONE_SANDBOX_ENFORCE` to run shell commands unsandboxed (not recommended). There is no `config.toml` setting for the sandbox, and on macOS Seatbelt is always on.
 
 ### File Access Denied
 
-```
-error: access denied (path not in allowlist)
-```
+A call refused by a permission rule names the rule. Edit or remove that rule in `permissions.toml`. For an `ask` rule in a headless run (`requires approval (rule <id>)`), approve it for one run with `--approve <id>`:
 
-Add the path to the tool's allowlist:
-
-```toml
-[sandbox.tools.file_reader]
-allow_read = ["/new/path"]
+```bash
+hone --approve ask-npm "run the npm tests"
 ```
 
-### Tool Process Killed (Resource Limit)
+A shell command that fails with a permission error from the OS hit the sandbox. Shell commands can write only to the working directory, `/tmp` and `/dev/null`, and that can't be widened. To let them read a directory outside the defaults, add it to `HONE_SANDBOX_EXTRA_READ` (colon-separated):
 
-```
-error: shell tool process killed (exceeded memory limit)
-```
-
-Increase the limit:
-
-```toml
-[sandbox.limits]
-memory_mb = 1024  # was 512
+```bash
+HONE_SANDBOX_EXTRA_READ="$HOME/.nvm:$HOME/.pyenv" hone
 ```
 
-Or optimize the tool to use less memory.
+### Shell Command Timed Out
+
+```
+tool 'shell' timed out after 30000ms
+```
+
+Hone has no memory or CPU limits to raise. A `shell` call stops after its `timeout_ms`, 30 s by default; the model can pass a larger `timeout_ms` for a slow command, up to 5 minutes. For longer jobs, run them yourself outside Hone.
 
 ## Next Steps
 
 - **Getting started:** See [Getting Started](getting-started.md) to run your first session.
-- **Tools:** Configure tool sandboxes in [Tools Guide](tools-and-mcp.md).
+- **Permissions:** Rules, command checks and the sandbox in [Permissions and sandbox](../permissions-and-sandbox.md).
+- **Tools:** Built-in tools and MCP servers in [Tools Guide](tools-and-mcp.md).
 - **Server:** Secure the daemon in [Server Guide](server-and-remote.md).

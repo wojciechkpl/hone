@@ -102,7 +102,7 @@ Execute shell commands and capture output.
 
 ```bash
 hone "Run the tests and show me any failures"
-# Agent calls: shell(cmd="cargo test", cwd="/project")
+# Agent calls: shell(command="cargo test")
 ```
 
 **Schema:**
@@ -111,12 +111,14 @@ hone "Run the tests and show me any failures"
 {
   "shell": {
     "properties": {
-      "cmd": { "type": "string", "description": "bash command" },
-      "timeout_secs": { "type": "integer" }
+      "command": { "type": "string", "description": "The shell command to execute." },
+      "timeout_ms": { "type": "integer", "description": "Optional timeout in milliseconds. Defaults to 30 000." }
     }
   }
 }
 ```
+
+Commands run in the working directory. `timeout_ms` is capped at 300 000.
 
 #### Git Operations
 
@@ -220,26 +222,31 @@ MCP is a standardized protocol for language models to call external tools. Hone 
 
 ### Configuring MCP Servers
 
-In `~/.config/hone/config.toml`:
+MCP servers go in `~/.config/hone/mcp.json` (every project) or `.hone/mcp.json` in the directory you run Hone from (that project; it wins when both name the same server). Not in `config.toml`: an MCP table there makes Hone stop with a config error. The format is Claude Code's, so you can copy an existing `.claude/mcp.json`:
 
-```toml
-[[mcp_servers]]
-name = "github"
-command = "npx"
-args = ["@modelcontextprotocol/server-github"]
-env = { GITHUB_TOKEN = "ghp_..." }
-
-[[mcp_servers]]
-name = "postgres"
-command = "/usr/local/bin/mcp-postgres"
-args = ["--connection-string", "postgresql://user:pass@localhost/db"]
-
-[[mcp_servers]]
-name = "slack"
-command = "python3"
-args = ["/path/to/mcp-slack-server"]
-env = { SLACK_BOT_TOKEN = "xoxb-..." }
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}" }
+    },
+    "postgres": {
+      "command": "/usr/local/bin/mcp-postgres",
+      "args": ["--connection-string", "postgresql://localhost/db"]
+    },
+    "slack": {
+      "command": "python3",
+      "args": ["/path/to/mcp-slack-server"],
+      "env": { "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}" },
+      "timeout_ms": 30000
+    }
+  }
+}
 ```
+
+`env` values may reference your environment as `${VAR}`, so tokens stay out of the file. Each server also takes `disabled` and `handshake_timeout_ms`; `timeout_ms` defaults to 10 000. A server that fails to start is logged and skipped. See [MCP servers](../configuration.md#mcp-servers).
 
 ### Using MCP Tools
 
@@ -262,16 +269,12 @@ hone "Post a message to Slack"
 
 ### Writing Custom MCP Servers
 
-Create your own MCP server in any language. Here's a minimal Node.js example:
+Create your own MCP server in any language. Hone talks to it over stdio, one JSON-RPC message per line: it sends `initialize` (protocol version `2024-11-05`), the `notifications/initialized` notification, `tools/list`, and then `tools/call` for each call. For a real server, use one of the official MCP SDKs listed at https://modelcontextprotocol.io. Here's a minimal Node.js example with no dependencies:
 
 ```javascript
-// server.js — MCP server that provides a custom "translate" tool
+// server.js — minimal MCP server (stdio) with one "translate" tool.
+// Each message is one JSON-RPC object per line on stdin / stdout.
 const readline = require("readline");
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
 
 const tools = [
   {
@@ -288,50 +291,69 @@ const tools = [
   }
 ];
 
-let messageId = 0;
+function send(message) {
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
+}
 
-rl.on("line", (line) => {
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  let msg;
   try {
-    const message = JSON.parse(line);
-    
-    if (message.method === "tools/list") {
-      console.log(JSON.stringify({
-        jsonrpc: "2.0",
-        id: message.id,
-        result: { tools }
-      }));
-    }
-    
-    if (message.method === "tools/call") {
-      const { name, arguments: args } = message.params;
-      let result = {};
-      
-      if (name === "translate") {
-        // Dummy translation
-        result = {
-          translated: `[Translation to ${args.language}]: ${args.text}`
-        };
+    msg = JSON.parse(line);
+  } catch {
+    return; // not JSON: ignore
+  }
+  if (msg.id === undefined) return; // a notification (e.g. notifications/initialized): no reply
+
+  switch (msg.method) {
+    case "initialize":
+      send({
+        id: msg.id,
+        result: {
+          protocolVersion: "2024-11-05",
+          capabilities: { tools: {} },
+          serverInfo: { name: "translator", version: "0.1.0" }
+        }
+      });
+      break;
+    case "ping":
+      send({ id: msg.id, result: {} });
+      break;
+    case "tools/list":
+      send({ id: msg.id, result: { tools } });
+      break;
+    case "tools/call": {
+      const { name, arguments: args = {} } = msg.params || {};
+      if (name !== "translate") {
+        send({ id: msg.id, error: { code: -32602, message: `Unknown tool: ${name}` } });
+        break;
       }
-      
-      console.log(JSON.stringify({
-        jsonrpc: "2.0",
-        id: message.id,
-        result
-      }));
+      // Dummy translation
+      send({
+        id: msg.id,
+        result: {
+          content: [{ type: "text", text: `[Translation to ${args.language}]: ${args.text}` }],
+          isError: false
+        }
+      });
+      break;
     }
-  } catch (e) {
-    console.error(e);
+    default:
+      send({ id: msg.id, error: { code: -32601, message: "Method not found" } });
   }
 });
 ```
 
-Register in config:
+Register it under `mcpServers` in `~/.config/hone/mcp.json`:
 
-```toml
-[[mcp_servers]]
-name = "translator"
-command = "node"
-args = ["/path/to/server.js"]
+```json
+{
+  "mcpServers": {
+    "translator": {
+      "command": "node",
+      "args": ["/path/to/server.js"]
+    }
+  }
+}
 ```
 
 Use it:
@@ -339,7 +361,7 @@ Use it:
 ```bash
 hone "Translate 'hello' to Spanish"
 # Agent calls: translate(text="hello", language="Spanish")
-# Output: "Hola"
+# Tool result: "[Translation to Spanish]: hello"  (the dummy translation above)
 ```
 
 ## Layer 0: Code Mode
@@ -640,11 +662,15 @@ registry.register(Box::new(MyTool));
 
 ## Sandboxing Tool Execution
 
-All tool calls are sandboxed for security. See [Security Guide](security.md) for details on:
-- Path restrictions (allow-list / deny-list)
-- Network policies (deny-by-default)
-- Environment variable filtering
-- Process resource limits
+Not every tool call is sandboxed. Hone has these checks (details in [Permissions and sandbox](../permissions-and-sandbox.md)):
+
+- **Permission rules** in `~/.config/hone/permissions.toml` and `.hone/permissions.toml`. Each rule matches a `path`, a `command` or a `host` and allows, asks or denies. They are off until you write rules, and they don't see MCP tool calls.
+- **File tools** (`read_file`, `write_file`, `edit_file`, ...) refuse paths that resolve outside the working directory. They run inside the Hone process and are not OS-sandboxed.
+- **Shell command checks**: the `shell` tool always refuses privilege escalation, destructive, network and chained commands.
+- **The OS sandbox** covers commands the `shell` tool starts, and nothing else. On macOS, Seatbelt is always on: commands can write only to the working directory and `/tmp`, and have no network. On Linux, Landlock applies only with `HONE_SANDBOX_ENFORCE=1`, and restricts files only.
+- **Environment**: commands the `shell` tool starts inherit Hone's environment, API keys included; nothing filters it (see [Security](security.md#environment-variable-filtering)).
+
+There are no resource limits (CPU, memory, disk).
 
 ## Next Steps
 

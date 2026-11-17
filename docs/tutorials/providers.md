@@ -58,14 +58,16 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 hone --model anthropic:claude-opus-4-5
 ```
 
-**Configuration:**
+**Configuration** (optional, in `~/.config/hone/config.toml`):
 
 ```toml
 [providers.anthropic]
-api_key = "sk-ant-..."  # or env var ANTHROPIC_API_KEY
+model = "claude-opus-4-5"               # used when auto-detection picks Anthropic
 base_url = "https://api.anthropic.com"  # optional override
-timeout_secs = 30
+api_key_env = "MY_ANTHROPIC_KEY"        # read the key from this variable, not ANTHROPIC_API_KEY
 ```
+
+There is no key setting in this table. The key comes from `ANTHROPIC_API_KEY` (or the variable `api_key_env` names), or from `hone configure`, which saves it in the same file in plain text. See [config.toml](../configuration.md#configtoml).
 
 **Available models:**
 - `claude-opus-4-5` — 200K context, best for complex tasks
@@ -90,14 +92,16 @@ export HONE_OPENAI_MODEL="deepseek-coder"
 hone
 ```
 
-**Configuration:**
+**Configuration** (optional, in `~/.config/hone/config.toml`):
 
 ```toml
 [providers.openai]
-api_key = "sk-..."  # or env var OPENAI_API_KEY
-base_url = "https://api.openai.com/v1"
-timeout_secs = 30
+base_url = "https://api.openai.com/v1"  # or any OpenAI-compatible endpoint
+model = "gpt-4o"                        # used when auto-detection picks OpenAI
+api_key_env = "MY_OPENAI_KEY"           # read the key from this variable, not OPENAI_API_KEY
 ```
+
+`HONE_OPENAI_BASE_URL` and `HONE_OPENAI_MODEL`, when set, win over `base_url` and `model`.
 
 **OpenAI available models:**
 - `gpt-4o` — Latest, most capable
@@ -120,13 +124,15 @@ ollama serve  # terminal 1
 hone --model ollama:qwen2.5-coder:7b  # terminal 2
 ```
 
-**Configuration:**
+**Configuration** (optional, in `~/.config/hone/config.toml`):
 
 ```toml
 [providers.ollama]
 base_url = "http://localhost:11434"
-timeout_secs = 300  # local models may be slower
+model = "qwen2.5-coder:7b"  # used when auto-detection picks Ollama
 ```
+
+Timeouts can't be changed, but a slow model isn't cut off while it keeps sending tokens (see [Timeouts](#timeouts)).
 
 **Available models:** Any model you `ollama pull`. Run `ollama list` to see installed models.
 
@@ -141,12 +147,9 @@ Use your existing `claude` command-line tool.
 hone --model claude-cli:claude-opus
 ```
 
-**Configuration:**
+**Setup:** `claude` must be on your `PATH`; there is no setting for its location. Hone runs it with permission mode `acceptEdits` unless `HONE_CLAUDE_PERMISSION_MODE` is set.
 
-```toml
-[providers.claude_cli]
-claude_path = "/usr/local/bin/claude"  # auto-detected if not specified
-```
+The CLI runs its own tools, outside Hone's permission rules, sandbox and receipts. With a non-empty permission policy, Hone refuses it unless `HONE_ALLOW_UNGATED_PROVIDER=1` is set (see [Permissions](../configuration.md#permissions)).
 
 **Why use this?** You already have Claude CLI set up with credentials. Hone integrates with it directly.
 
@@ -158,12 +161,7 @@ Use Google's `gemini` command-line tool.
 hone --model gemini-cli:gemini-pro
 ```
 
-**Configuration:**
-
-```toml
-[providers.gemini_cli]
-gemini_path = "/usr/local/bin/gemini"
-```
+**Setup:** `gemini` must be on your `PATH`; there is no setting for its location. Like the Claude CLI, it runs its own tools, and Hone refuses it under a non-empty permission policy unless `HONE_ALLOW_UNGATED_PROVIDER=1` is set.
 
 ### ACP (Agent Client Protocol)
 
@@ -226,53 +224,33 @@ There are no named chains and no `--fallback-chain` flag: `fallback_models` appl
 
 ## Model Routing Rules
 
-Route different task types to different models. Define rules by prompt pattern or turn count.
+Hone sorts every prompt as `simple`, `medium` or `complex`. A `[[routing]]` entry picks the model for one of those tiers; a tier without an entry uses the default model.
 
 ```toml
-[[routing_rules]]
-name = "quick_tasks"
-condition = "input_length < 50"  # short prompts
-provider = "anthropic:claude-haiku-3-5"
+default_model = "anthropic:claude-sonnet-4-5"  # medium turns, and any tier without a rule
 
-[[routing_rules]]
-name = "complex_reasoning"
-condition = "input_contains('analyze')"  # keyword match
-provider = "anthropic:claude-opus-4-5"
+[[routing]]
+task = "simple"
+model = "anthropic:claude-haiku-4-5"
 
-[[routing_rules]]
-name = "budget_conscious"
-condition = "true"  # fallback: default
-provider = "ollama:llama2"
+[[routing]]
+task = "complex"
+model = "anthropic:claude-opus-4-5"
 ```
 
-The router evaluates conditions top-down and dispatches to the first matching provider.
-
-Advanced condition syntax:
-- `input_length < N` — number of input characters
-- `input_contains('keyword')` — substring match
-- `turn_count > N` — number of turns in session
-- `session_cost_usd > N` — accumulated spend
-- `true` — always matches (use as default)
+There are no rules on prompt text, turn count or spend: the tier is the only condition. `--model` turns routing off for the run, and `/model` for the rest of the session. See [routing and fallback](../configuration.md#routing-and-fallback).
 
 ## Pricing Table and Cost Tracking
 
-Hone tracks real-time costs. The pricing table maps model IDs to per-token rates:
+Hone tracks real-time costs with a built-in price table. To add or override a model's price, in USD per million tokens, add a table to your user file, `~/.config/hone/config.toml` (a project file's prices are ignored):
 
 ```toml
-[pricing.anthropic]
-"claude-opus-4-5" = { input_per_mtok = 3.00, output_per_mtok = 15.00 }
-"claude-sonnet-4" = { input_per_mtok = 3.00, output_per_mtok = 15.00 }
-"claude-haiku-3-5" = { input_per_mtok = 0.80, output_per_mtok = 4.00 }
-
-[pricing.openai]
-"gpt-4o" = { input_per_mtok = 2.50, output_per_mtok = 10.00 }
-"gpt-4-turbo" = { input_per_mtok = 10.00, output_per_mtok = 30.00 }
-"gpt-3.5-turbo" = { input_per_mtok = 0.50, output_per_mtok = 1.50 }
-
-[pricing.ollama]
-# Local models are free; all rates are 0.00
-"llama2" = { input_per_mtok = 0.00, output_per_mtok = 0.00 }
+[pricing."anthropic:claude-sonnet-4-5"]
+input_per_million = 3.0
+output_per_million = 15.0
 ```
+
+`cache_read_per_million` and `cache_creation_per_million` are optional. A model with no price counts as free, and Hone says so once per model. See [Pricing and `[budget]`](../configuration.md#pricing-and-budget).
 
 After each turn, Hone calculates cost:
 
@@ -299,19 +277,9 @@ curl http://localhost:7777/health
 # {"status":"ok"}
 ```
 
-## Customizing Timeouts
+## Timeouts
 
-Each provider supports a timeout setting (default 30 seconds):
-
-```toml
-[providers.anthropic]
-timeout_secs = 60  # increase for large requests
-
-[providers.ollama]
-timeout_secs = 300  # local models may be slow
-```
-
-If a request exceeds the timeout, it is cancelled and the fallback chain is triggered (if configured).
+Timeouts are not configurable. The Anthropic, OpenAI and Ollama providers give up if they can't connect within 10 seconds, and fail a response that sends nothing for 120 seconds. There is no limit on a response's total time, so a long answer that keeps streaming is not cut off.
 
 ## Advanced: Provider Registry
 

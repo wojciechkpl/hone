@@ -53,7 +53,7 @@ If any are missing, install Rust from https://rustup.rs (it installs everything 
 
 ```bash
 # Clone the repository
-git clone https://github.com/anthropics/hone.git
+git clone https://github.com/wojciechkpl/hone.git
 cd hone
 
 # Build Hone (this takes ~3-5 minutes)
@@ -641,19 +641,18 @@ Now that you understand the fundamentals:
 
 ### 3. Set Up a Configuration
 
-Create `~/.config/hone/config.toml` to customize defaults:
+Create `~/.config/hone/config.toml` to set your default model and a spending cap per session:
 
 ```toml
-[agent]
 default_model = "anthropic:claude-opus-4-5"
-context_window_tokens = 16000
-max_spend_usd = 10.00
 
-[memory]
-enabled = true
+[budget]
+session_limit_usd = 10.0
 ```
 
-See [Configuration](../configuration.md) for all options.
+Memory is on by default; there is no setting to turn it on. Hone rejects keys it doesn't
+know (it exits with code 2), so copy keys from
+[Configuration](../configuration.md#configtoml), which lists all of them.
 
 ### 4. Create Project Conventions (HONE.md)
 
@@ -687,7 +686,6 @@ See [Recipes Guide](../tutorials/recipes.md).
 
 - Report bugs or ask questions on GitHub
 - Read the [Architecture](../architecture.md) guide for deep dives
-- Check out [Contributing](../contributing.md) if you want to extend Hone
 
 ## Troubleshooting Your First Session
 
@@ -703,13 +701,8 @@ export OPENAI_API_KEY="sk-..."
 hone
 ```
 
-Or add it to config:
-
-```toml
-# ~/.config/hone/config.toml
-[providers.anthropic]
-api_key = "sk-ant-..."
-```
+Or run `hone configure`, which saves the key in `~/.config/hone/config.toml` (in plain
+text). See [What `hone configure` writes](../configuration.md#what-hone-configure-writes).
 
 ### "Model not supported"
 
@@ -717,11 +710,13 @@ Hone has no command that lists models. Check the ID against your provider's own 
 
 ### "Network error"
 
-Check your internet connection and firewall. If behind a corporate proxy, configure it:
+Check your internet connection and firewall. Behind a corporate proxy, set the standard
+proxy variables (Hone has no proxy setting in `config.toml`):
 
-```toml
-[http]
-proxy = "http://proxy.company.com:8080"
+```bash
+export HTTPS_PROXY="http://proxy.company.com:8080"
+export NO_PROXY="localhost,127.0.0.1"   # e.g. keep a local Ollama off the proxy
+hone
 ```
 
 ### "Sandbox error"
@@ -736,12 +731,18 @@ Your conversation got too long. Clear it:
 /clear
 ```
 
-Or reduce context size:
+Or make Hone compact the history sooner. `[context] budget_ratio` is the fraction of the
+model's context window Hone uses (0.4 to 0.6 by default, depending on the model):
 
 ```toml
-[agent]
-context_window_tokens = 8000
+# ~/.config/hone/config.toml
+[context]
+budget_ratio = 0.3
 ```
+
+If your model is served with a smaller window than Hone assumes (common with Ollama), tell
+Hone the real size: `export HONE_CONTEXT_WINDOW=32768`. See
+[Context and memory strategies](../configuration.md#context-and-memory-strategies).
 
 ## You're Ready
 

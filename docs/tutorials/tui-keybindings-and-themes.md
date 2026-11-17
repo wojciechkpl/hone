@@ -128,19 +128,19 @@ HONE_THEME=chalk hone
 
 ### Custom palette overrides
 
-Create `~/.config/hone/theme.toml`:
+Create `~/.config/hone/theme.toml`, a separate file from `config.toml`. Each line is `key = "#rrggbb"`, with comments on their own lines; other values (ANSI numbers included) and unknown keys are ignored without a warning. The keys are listed under [Theme](../configuration.md#theme):
 
 ```toml
-# Override individual color tokens. Hex (#rrggbb) or ANSI-256 indices both work.
-text_primary  = "#f0f0f0"
-accent_hot    = "#ff5577"
-surface_base  = 234
+# Override individual color tokens. Hex "#rrggbb" only.
+text_primary   = "#f0f0f0"
+accent_hot     = "#ff5577"
+surface_base   = "#1c1c1c"
 role_assistant = "#80c8ff"
 ```
 
 Hone reads the file at startup (and on every `/theme` switch). RGB values you set there always win over the built-in palette.
 
-The full token list is in `crates/hone-tui/src/theme.rs` (`Theme` struct fields). The 35 tokens cover surfaces, text, roles, accents, syntax, diffs, and the budget meter.
+`theme.toml` can override 19 colours: `accent_hot`, `accent_mid`, `accent_deep`, `text_primary`, `text_secondary`, `text_muted`, `role_user`, `role_assistant`, `role_tool`, `role_tool_result`, `role_error`, `surface_base`, `surface_raised`, `surface_overlay`, `surface_focus`, `surface_border`, `budget_low`, `budget_mid` and `budget_high` (`accent`, `role_tool_call` and `surface` are aliases). The other colours of the `Theme` struct in `crates/hone-tui/src/theme.rs`, such as the syntax and diff colours, come from the base theme only.
 
 ### Quick preview
 

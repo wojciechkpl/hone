@@ -8,7 +8,7 @@ You know Aider. You're comfortable with git-centric workflows, repo maps, voice 
 |-------|-----------------|-------|
 | Repo map (code context) | Semantic index (AST + embeddings) | More powerful, adaptive |
 | `/add` / `/drop` (context management) | Context window management + agent control | Automatic in Hone |
-| Auto-commit | AutoCommitter + git tools | Implemented + git undo/redo |
+| Auto-commit | `git_commit` tool, used when you ask | Hone doesn't commit on its own |
 | Voice input | Voice input (planned) | Not yet, but CLI is stable |
 | `/architect` (plan mode) | Model routing (use opus for planning) | Implemented |
 | Multi-file editing | Multi-file edits via agent loop | Native support |
@@ -138,7 +138,7 @@ git revert HEAD
 
 **Hone:**
 ```bash
-# Agent makes changes, auto-commits (if enabled)
+# Agent makes changes (it commits only when you ask)
 # You can:
 git_undo          # Revert last change
 git_redo          # Reapply
@@ -247,27 +247,29 @@ Why? Hone's layered tool architecture allows granular, auditable changes.
 
 ### 4. Config Format
 
-**Aider:** Command-line flags or `.aider.conf.json`
+**Aider:** Command-line flags or `.aider.conf.yml`
 
 **Hone:** TOML config + HONE.md conventions
 
 ```toml
 # ~/.config/hone/config.toml
-[agent]
 default_model = "openai:gpt-4o"  # match your Aider default
-max_iterations = 20
-auto_commit = true               # same as Aider
 
-[git]
-commit_on_change = true
-require_approval = false
-
-[memory]
-enabled = true
-
-[sandbox]
-strategy = "seatbelt"  # macOS: seatbelt, Linux: landlock
+[budget]
+session_limit_usd = 10.0         # stop the session at $10
 ```
+
+Some Aider habits have no setting in Hone, and `config.toml` rejects keys it doesn't know:
+
+- **Auto-commit:** Hone doesn't commit on its own. Ask for a commit and the agent uses its
+  `git_commit` tool (see [step 5](#5-committing-no-auto-commit)).
+- **Iteration limit:** there is no setting for it.
+- **Memory:** on by default; nothing to turn on.
+- **Sandbox:** chosen by platform, not in `config.toml`. Seatbelt is always on for shell
+  commands on macOS; Landlock on Linux is opt-in with `HONE_SANDBOX_ENFORCE=1`. See
+  [Sandbox](../configuration.md#sandbox).
+
+All keys are listed in [Configuration](../configuration.md#configtoml).
 
 ```markdown
 # HONE.md (in your project)
@@ -286,7 +288,7 @@ When making related changes across multiple files:
 ### 1. Install Hone
 
 ```bash
-git clone https://github.com/anthropics/hone.git
+git clone https://github.com/wojciechkpl/hone.git
 cd hone
 cargo build --release
 sudo cp target/release/hone /usr/local/bin/
@@ -302,14 +304,11 @@ export OPENAI_API_KEY="sk-..."
 # Create config
 mkdir -p ~/.config/hone
 cat > ~/.config/hone/config.toml << 'EOF'
-[providers.openai]
-api_key = "${OPENAI_API_KEY}"
-
-[agent]
 default_model = "openai:gpt-4o"
-auto_commit = true
 EOF
 ```
+
+Hone reads the key from `OPENAI_API_KEY`, so it doesn't go in `config.toml`.
 
 ### 3. Create HONE.md for Your Project
 
@@ -358,22 +357,26 @@ Hone will:
 2. Read them automatically
 3. Make changes
 4. Test (if it finds test files)
-5. Commit (if auto_commit is true)
+5. Commit, if you asked it to
 
-### 5. Set Up Auto-Commit (Optional)
+### 5. Committing (No Auto-Commit)
 
-If you liked Aider's auto-commit:
+Hone has no auto-commit setting or command. To get Aider's habit, ask for it in the prompt
+("... and commit when the tests pass"); the agent commits with its `git_commit` tool.
+
+To have Hone ask you before every commit, add a permission rule. Both the `git_commit` tool
+and a `git commit` run through the `shell` tool are checked as the command `git commit`:
 
 ```toml
-[git]
-auto_commit = true
-require_approval = false  # false = commit automatically, true = ask first
+# ~/.config/hone/permissions.toml
+[[rules]]
+id = "ask-commit"
+command = "git commit"
+decision = "ask"
 ```
 
-Or in session:
-```
-/auto-commit on
-```
+The TUI then prompts before each commit; one-shot runs refuse it unless you pass
+`--approve ask-commit`. See [Permissions](../configuration.md#permissions).
 
 ## FAQ
 
