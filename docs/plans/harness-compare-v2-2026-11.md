@@ -933,6 +933,8 @@ report. So these report-side fixes land before the pre-registration.
 | Nothing checks that the tag was public before the first run, only that the file was created before it | The public timestamp is the point of pre-registering | Push the tag before `make run-c`; the push time on GitHub is the evidence |
 | The code check looks at the checkout, not at the running proxy and task images | A stack built from an older commit and left running passes the check | Run `make stack` after the tag and before `make run-c`; it rebuilds the images and restarts the proxy |
 | Evidence is recorded per invocation, not per run | A bundle rebuilt while an invocation is running isn't seen | Don't run `make bundle` during a campaign |
+| A file at the rig root outside the code paths is listed as information only | Python runs with the rig root first on its path, so a stray `json.py` there would be imported; a `.gitignore` change decides what the dirty check sees | Read the "Other changed or dirty paths" list in each report; it should name only docs and tests. A stricter rule (everything is code except `README.md`, `SPEC.md` and `tests/`) has to land before the tag |
+| The three Dockerfiles use an unpinned `python:3.12-slim` base | `make stack` after the tag can pull a different base image from the one used for smoke | Pin the base image by digest before the tag, or keep the images built for smoke |
 | `grade.py` names grading groups by seed | Odd names in the published suite A package; results are unaffected | Stage 2 |
 | Stage `a` has no validation and still reads SWE-bench Lite | Stage 2 can't be pre-registered yet | The SWE-rebench loader (§10.6 item 4) |
 
