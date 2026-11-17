@@ -9,8 +9,8 @@ fn test_default_table_has_known_models() {
     let entry = table
         .get(&ModelId::new("anthropic:claude-opus-4-5"))
         .expect("opus entry should exist");
-    assert_eq!(entry.input_per_million, 15.0);
-    assert_eq!(entry.output_per_million, 75.0);
+    assert_eq!(entry.input_per_million, 5.0);
+    assert_eq!(entry.output_per_million, 25.0);
 }
 
 #[test]
