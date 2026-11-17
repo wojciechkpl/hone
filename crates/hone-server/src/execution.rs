@@ -55,12 +55,25 @@ pub struct HistoryMessage {
     pub content: String,
 }
 
+/// Resolve the requested model to a provider-prefixed id.
+///
+/// No model gives `anthropic:claude-sonnet-4-6`; an id without `:` is an
+/// Anthropic id; an id with a prefix is kept as given.
+pub(crate) fn run_model_id(requested: Option<&str>) -> ModelId {
+    match requested {
+        None => ModelId::new("anthropic:claude-sonnet-4-6"),
+        Some(id) if id.contains(':') => ModelId::new(id),
+        Some(id) => ModelId::new(format!("anthropic:{id}")),
+    }
+}
+
 /// Request body for `POST /run`.
 #[derive(Debug, Deserialize)]
 pub struct RunRequest {
     /// The user's prompt for this turn.
     pub prompt: String,
-    /// Model ID (default: `claude-sonnet-4-6`).
+    /// Model ID (default: `anthropic:claude-sonnet-4-6`). An id without a
+    /// `provider:` prefix is an Anthropic id and gets `anthropic:` added.
     pub model: Option<String>,
     /// Previous conversation messages. The client is responsible for
     /// accumulating history; the server is stateless per-request.
@@ -302,7 +315,7 @@ pub async fn run_handler(
 
     // Hoist the model id resolution so both the agent path and the
     // provenance tee see the same string.
-    let model_id = ModelId::new(req.model.as_deref().unwrap_or("claude-sonnet-4-6"));
+    let model_id = run_model_id(req.model.as_deref());
     let model_id_str = model_id.as_str().to_owned();
 
     // ---- Provenance tee --------------------------------------
@@ -384,8 +397,7 @@ pub async fn run_handler(
                 budget_limit: None,
                 pricing: {
                     let table = PricingTable::default_table();
-                    let prefixed = ModelId::new(format!("anthropic:{}", model_id.as_str()));
-                    table.get(&prefixed).cloned().unwrap_or(PricingEntry {
+                    table.get(&model_id).cloned().unwrap_or(PricingEntry {
                         model: model_id.clone(),
                         input_per_million: 0.0,
                         output_per_million: 0.0,

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed: `honed` runs are priced
+
+- **Before:** `POST /run` and `POST /orchestrate` passed the requested model id to the price lookup as given. The web UI sends ids without a provider prefix (`claude-sonnet-4-6`, `claude-opus-4-7`), and the default was unprefixed too, so those runs cost $0 (in `/run`'s spend records and `/orchestrate`'s budget progress) and were reported as using an unpriced model. A request with another provider's prefix (`openai:claude-opus-4-7`) ran the Anthropic model and also cost $0.
+- **Now:** an id without a prefix is taken as an Anthropic id (`/run` and `/orchestrate` only call Anthropic): `claude-opus-4-7` becomes `anthropic:claude-opus-4-7`, the default is `anthropic:claude-sonnet-4-6`, and a prefixed id is kept as given. Runs are priced, and `/run` records spend per model under the prefixed id. Any other prefix, or an empty id, is refused with 400 before the run starts. The API still receives the bare model name.
+
 ### Fixed: built-in Anthropic prices
 
 - **Before:** the built-in table charged Claude Opus 4.5 and Opus 4.7 at $15 / $75 per million input / output tokens (Anthropic charges $5 / $25) and Claude Haiku 4.5 at $0.80 / $4 ($1 / $5). The `claude-haiku-4-5` alias had no price, because the entry was keyed by its dated id, and `claude-cli:` had no Haiku price at all. Opus 5.5, Opus 5, Opus 4.8, Opus 4.6, Sonnet 5.5, Sonnet 5, Haiku 5.5 and the Fable and Mythos models had no price at all, so their cost showed as unknown. Opus spend was over-reported threefold, and `[budget] session_limit_usd` stopped Opus runs early.

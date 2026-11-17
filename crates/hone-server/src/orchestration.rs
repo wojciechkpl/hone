@@ -55,6 +55,8 @@ const DEFAULT_MAX_WORKERS: usize = 4;
 #[derive(Debug, Deserialize)]
 pub struct OrchestrateRequest {
     pub prompt: String,
+    /// Model ID (default: `anthropic:claude-sonnet-4-6`). An id without a
+    /// `provider:` prefix is an Anthropic id and gets `anthropic:` added.
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
@@ -172,8 +174,7 @@ fn build_lead_agent_config(
         budget_limit: None,
         pricing: {
             let table = PricingTable::default_table();
-            let prefixed = ModelId::new(format!("anthropic:{}", model_id.as_str()));
-            table.get(&prefixed).cloned().unwrap_or(PricingEntry {
+            table.get(&model_id).cloned().unwrap_or(PricingEntry {
                 model: model_id,
                 input_per_million: 0.0,
                 output_per_million: 0.0,
@@ -224,7 +225,7 @@ pub async fn orchestrate_handler(
             .map(|key| -> Arc<dyn ModelProvider> { Arc::new(AnthropicProvider::new(key)) })
     });
 
-    let model_id = ModelId::new(req.model.as_deref().unwrap_or("claude-sonnet-4-6"));
+    let model_id = crate::execution::run_model_id(req.model.as_deref());
     let model_id_str = model_id.as_str().to_owned();
 
     // ---- Provenance tee --------------------------------------
