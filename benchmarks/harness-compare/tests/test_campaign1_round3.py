@@ -206,7 +206,9 @@ def test_k35_older_table_selects_repeat_0_on_the_repeat_field(tmp_path):
 
 # ---- K36 status of the pre-registration --------------------------------------------------
 
-CLEAN = {**CB, "draft": False, "created_at": EARLY, "repo": {"head": "abc", "dirty": False}}
+# No repo.head on purpose (K53): a head that is not a commit of the repository under test is a
+# code.head mismatch, and these in-process tests run against whatever working copy they are in.
+CLEAN = {**CB, "draft": False, "created_at": EARLY, "repo": {"dirty": False}}
 
 
 def status_run(started=START):
@@ -225,7 +227,7 @@ def test_k36_clean_earlier_preregistration_gives_no_mismatch():
     ("over", "field", "expected", "found"),
     [
         ({"draft": True}, "draft", False, True),
-        ({"repo": {"head": "abc", "dirty": True}}, "repo.dirty", False, True),
+        ({"repo": {"dirty": True}}, "repo.dirty", False, True),
     ],
 )
 def test_k36_draft_or_dirty_preregistration_is_a_mismatch(over, field, expected, found):
@@ -256,7 +258,7 @@ def test_k36_created_at_equal_to_the_first_start_is_not_a_mismatch():
     ("over", "word"),
     [
         ({"draft": True}, "draft"),
-        ({"repo": {"head": "abc", "dirty": True}}, "dirty"),
+        ({"repo": {"dirty": True}}, "dirty"),
         ({"created_at": "2099-01-01T00:00:00Z"}, "created_at"),
     ],
 )
