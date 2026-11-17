@@ -1259,17 +1259,24 @@ impl ContextManager {
             total = total.saturating_sub(self.tokens[i]);
         }
 
-        // Pairing: no result without its call, no call without its results.
-        let mut call_at: HashMap<&str, usize> = HashMap::new();
-        let mut results_of: HashMap<&str, Vec<usize>> = HashMap::new();
+        // Pairing: no result without its call, no call without its results. A
+        // result belongs to the nearest earlier call with its id (providers such
+        // as Ollama reuse ids).
+        let mut latest_call: HashMap<&str, usize> = HashMap::new();
+        let mut call_of: Vec<Option<usize>> = vec![None; n];
+        let mut results_of: HashMap<usize, Vec<usize>> = HashMap::new();
         for (i, m) in self.messages.iter().enumerate() {
-            for c in &m.tool_calls {
-                call_at.insert(c.id.as_str(), i);
-            }
             if matches!(m.role, Role::Tool)
-                && let Some(id) = m.tool_call_id.as_deref()
+                && let Some(call) = m
+                    .tool_call_id
+                    .as_deref()
+                    .and_then(|id| latest_call.get(id).copied())
             {
-                results_of.entry(id).or_default().push(i);
+                call_of[i] = Some(call);
+                results_of.entry(call).or_default().push(i);
+            }
+            for c in &m.tool_calls {
+                latest_call.insert(c.id.as_str(), i);
             }
         }
         loop {
@@ -1278,17 +1285,10 @@ impl ContextManager {
                 if left_out[i] {
                     continue;
                 }
-                let m = &self.messages[i];
-                let orphan_result = matches!(m.role, Role::Tool)
-                    && m.tool_call_id
-                        .as_deref()
-                        .and_then(|id| call_at.get(id))
-                        .is_some_and(|&c| left_out[c]);
-                let orphan_call = m.tool_calls.iter().any(|c| {
-                    results_of
-                        .get(c.id.as_str())
-                        .is_some_and(|rs| rs.iter().any(|&r| left_out[r]))
-                });
+                let orphan_result = call_of[i].is_some_and(|c| left_out[c]);
+                let orphan_call = results_of
+                    .get(&i)
+                    .is_some_and(|rs| rs.iter().any(|&r| left_out[r]));
                 if orphan_result || orphan_call {
                     left_out[i] = true;
                     total = total.saturating_sub(self.tokens[i]);
