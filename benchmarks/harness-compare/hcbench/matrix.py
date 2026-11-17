@@ -97,6 +97,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     args.out.mkdir(parents=True, exist_ok=True)
+    manifest = Path(cfg.bundle_dir) / "manifest.json"
+    try:
+        bundle = json.loads(manifest.read_text())
+    except (OSError, json.JSONDecodeError):
+        bundle = {}
     invocation = {
         "suite": args.suite,
         "arms": arm_names,
@@ -107,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         "tasks_file": args.tasks_file,
         "prompt": args.prompt if args.suite == "a" else None,
         "config": cfg.as_dict(),
+        "bundle": bundle,  # compared with the pre-registered [bundle] by the report
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "argv": sys.argv,
     }

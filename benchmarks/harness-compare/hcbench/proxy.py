@@ -51,7 +51,7 @@ KNOWN_REQUEST_KEYS = frozenset(
         "model", "messages", "tools", "tool_choice", "parallel_tool_calls", "stream",
         "stream_options", "stop", "n", "seed", "temperature", "top_p", "top_k", "min_p",
         "presence_penalty", "repetition_penalty", "max_tokens", "chat_template_kwargs",
-        "response_format", "user",
+        "user",
     }
 )  # fmt: skip
 SAMPLING_FIELDS = (
@@ -262,6 +262,7 @@ async def _chat(request: web.Request) -> web.StreamResponse:
             "error": None,
             "sampling": None,
             "extra_keys": [],
+            "dropped_keys": [],
         }
         st.seq += 1
 
@@ -271,6 +272,7 @@ async def _chat(request: web.Request) -> web.StreamResponse:
             return _error(400, "hcbench budget exhausted", "budget_exceeded")
 
         overrides = app[CFG_KEY]["overrides"]
+        requested = set(body)
         body.update(overrides)
         if st.seed is not None:
             body["seed"] = st.seed
@@ -281,6 +283,7 @@ async def _chat(request: web.Request) -> web.StreamResponse:
             body.pop("max_completion_tokens", None)
         record["sampling"] = {k: body[k] for k in SAMPLING_FIELDS if k in body}
         record["extra_keys"] = sorted(set(body) - KNOWN_REQUEST_KEYS)
+        record["dropped_keys"] = sorted(requested - set(body))
         client_wants_usage = bool((body.get("stream_options") or {}).get("include_usage"))
         if stream:
             body["stream_options"] = {**(body.get("stream_options") or {}), "include_usage": True}

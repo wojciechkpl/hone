@@ -88,6 +88,12 @@ Stage 1 is done when all three hold:
 If `make serve` fails, it prints the server log. Fix `config/bench.env`; after the tag,
 log the change as a deviation.
 
+**Before the tag, after any change to `config/bench.env`:** run `make serve-down serve`
+and `make stack`. `make serve` leaves a running server alone, and nothing yet checks the
+server against the pre-registration (design §11.6). Don't re-run `make bundle` after the
+tag: the report compares the bundle used with the pre-registered one and fails if they
+differ.
+
 **Check during smoke (unverified):** some vLLM versions skip speculative decoding for
 requests that set a presence or repetition penalty. Look at the speculative-decoding
 counters in `make serve` logs after the smoke run. If decoding is not speculative, the

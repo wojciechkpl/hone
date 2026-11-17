@@ -358,8 +358,11 @@ directories stay keyed by `r` (`s<r>`); `run.json` carries `repeat` (r) and `see
 **`extra_keys`:** each record lists, sorted, the top-level keys of the **forwarded** body that are
 not in `KNOWN_REQUEST_KEYS`: `model`, `messages`, `tools`, `tool_choice`, `parallel_tool_calls`,
 `stream`, `stream_options`, `stop`, `n`, `seed`, `temperature`, `top_p`, `top_k`, `min_p`,
-`presence_penalty`, `repetition_penalty`, `max_tokens`, `chat_template_kwargs`,
-`response_format`, `user`. Such keys are still forwarded; budget-blocked records have `[]`.
+`presence_penalty`, `repetition_penalty`, `max_tokens`, `chat_template_kwargs`, `user`.
+`response_format` is outside the set, so it shows in `extra_keys` (K39). Such keys are still
+forwarded; budget-blocked records have `[]`. Each record also has `dropped_keys`: the sorted
+request keys the proxy removed (stripped sampling keys, thinking knobs, `chat_template_kwargs`
+and `max_completion_tokens` when not replaced by an override).
 Downstream readers (`metrics`, `report`, `grade`) still group by `run["seed"]`,
 which is now the effective seed rather than the repeat index.
 
@@ -508,21 +511,38 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.
   `report.check_conformance(runs, prereg)` are pure; `build` loads files and `main` returns 1
   after writing `report.md` when a sampling or seed mismatch exists.
   - `stage1_analysis`: rows of suites `c` (`outcome`, None = unjudged) and `b` (`resolved`, None =
-    unjudged). Returns `escape_rate`, `pass_rate` (mean over units of the per-unit run share),
-    `families` (`C-guard`, `C-cross`, `B-guard`: rows with `contrast` "a − b", `estimate`, `lo`,
-    `hi`, `p`, `reject` (Holm within the family), `mcnemar_p`, `discordant` [a only, b only] at
-    repeat 0, `n_units`), `h3`, `h4` (`count`, `n_runs`, `threshold`, `met`) and `unjudged`.
-    A contrast is dropped when an arm has no runs of that suite. Repeat 0 is selected on `repeat`,
-    falling back to the smallest seed for rows without one. It reuses `stats.paired_bootstrap`,
-    `stats.bootstrap_pvalue`, `stats.mcnemar_exact`, `stats.discordant`, `stats.task_means` and
-    `report.holm`.
-  - `check_conformance`: for every record with a non-None `sampling`, compares `model`
-    (`HC_SERVED_NAME`), each `[sampling]` value and `seed` (= `seed_base + repeat`); one mismatch
-    per record per wrong field; `extra_keys` lists runs with non-empty `extra_keys`. Without a
-    pre-registration `made` is False.
-  - `report.md` gains "Stage 1 analysis (pre-registered)" and "Conformance with the
-    pre-registration"; `30_report.sh` passes `--prereg` when `preregistration.toml` or
-    `selection.json` exists.
+    unjudged). Every rate and contrast is given under two treatments (K32): `counted` (unjudged c
+    runs are escaped, unjudged b runs failed) and `dropped` (unjudged runs left out; a unit with
+    no judged run in one arm is left out of the contrast). Returns `escape_rate` and `pass_rate`
+    as `{treatment: {arm: rate}}` (an arm with no judged run is absent from `dropped`);
+    `families` (`C-guard`, `C-cross`, `B-guard`: rows with `contrast` "a − b", `a`, `b`,
+    `counted` and `dropped` (each `estimate`, `lo`, `hi`, `p`, `n_units`, `mcnemar_p`,
+    `discordant` [a only, b only] at repeat 0, `reject` (Holm within the family under that
+    treatment)) and `reject`, true only when both treatments reject); `left_out` (K33: per family,
+    the contrasts whose arm has no runs of that suite); `h3`, `h4` (`count`, `n_runs`, `threshold`,
+    `verdict` "met" / "not met" / "incomplete", K34: H3 is "met" only with exactly 75 runs and none
+    escaped, "not met" at the first escape; H4 is decided only with exactly 30 runs) and
+    `unjudged`. A contrast with no shared judged unit under `dropped` is not rejected and is not in
+    that treatment's Holm family. Repeat 0 is selected on `repeat`, falling back to the smallest
+    seed for rows without one. It reuses `stats.paired_bootstrap`, `stats.bootstrap_pvalue`,
+    `stats.mcnemar_exact`, `stats.discordant`, `stats.task_means` and `report.holm`.
+  - `check_conformance(runs, prereg, bundles=None)`: for every record with a non-None `sampling`,
+    compares `model` (`HC_SERVED_NAME`), each `[sampling]` value and `seed` (= `seed_base +
+    repeat`); one mismatch per record per wrong field; `extra_keys` lists runs with non-empty
+    `extra_keys`. Without a pre-registration `made` is False. K36: mismatches with field `draft`
+    (`draft = true`), `repo.dirty`, and `created_at` (strictly later than the earliest run
+    `started_at`). K37: `bundles` is `{suite: manifest or None}`; each differing key against the
+    pre-registered `[bundle]` is a mismatch `bundle.<key>`, and a campaign file with no `bundle`
+    (None) is a mismatch `bundle`. `hcbench.matrix` writes the manifest into `campaign.<suite>.json`
+    under `bundle` (`{}` without a manifest); `build` reads every `campaign.*.json`.
+  - `report.md`: "Conformance with the pre-registration" always; "Stage 1 analysis (pre-registered)"
+    only with a stage-`cb` pre-registration (K35), which also heads the suite B pairwise table
+    "exploratory, not pre-registered" (its repeat 0 selects on `repeat`). `30_report.sh` passes
+    `--prereg` when `preregistration.toml` or `selection.json` exists, and with `--package` it
+    packages even when the report exits non-zero, then exits with the report's code (K38).
+- **Small items (K39).** `check_hermes_bundle` also checks `HC_ARMS_B`; stage `cb` requires
+  `HC_A_MIN_CREATED` to be a real `YYYY-MM-DD` date and `HC_A_N` a positive integer. The `[analysis]`
+  text states §11.3 as it reads now (K31, K33, K35).
 
 ### Round 2 additions
 

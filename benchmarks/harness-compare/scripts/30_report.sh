@@ -12,7 +12,10 @@ args=(--campaign "${out}")
 if [[ -f "${prereg}/preregistration.toml" || -f "${prereg}/selection.json" ]]; then
   args+=(--prereg "${prereg}")
 fi
-HC_PY_WITH="--with matplotlib" hc_py hcbench.report "${args[@]}"
+# A failing report (conformance mismatch) must not stop packaging: the package is what gets
+# published together with the logged deviation. The report's exit code is returned at the end.
+report_rc=0
+HC_PY_WITH="--with matplotlib" hc_py hcbench.report "${args[@]}" || report_rc=$?
 
 if [[ "${1:-}" == "--package" ]]; then
   pkg="${out}/publish"
@@ -35,3 +38,4 @@ if [[ "${1:-}" == "--package" ]]; then
   (cd "${pkg}" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 "${hasher[@]}" > SHA256SUMS)
   log "publication bundle: ${pkg}"
 fi
+exit "${report_rc}"
