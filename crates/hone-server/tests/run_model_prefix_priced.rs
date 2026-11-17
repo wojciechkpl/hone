@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use futures::{Stream, stream};
-use hone_proto::{Message, ModelId, ModelInfo, ProviderEvent, ProviderHealth, TokenUsage};
+use hone_proto::{Message, ModelInfo, ProviderEvent, ProviderHealth, TokenUsage};
 use hone_providers::{CompletionRequest, MockProvider, ModelProvider, ProviderError};
 use hone_server::{AppState, router};
 use serde_json::{Value, json};
@@ -227,10 +227,86 @@ async fn test_r3_orchestrate_when_model_prefixed_opus_should_price_lead_call() {
     assert_priced(spent, OPUS_COST, &body);
 }
 
-#[test]
-fn test_r4_model_id_when_prefixed_should_send_bare_name_on_the_wire() {
-    assert_eq!(
-        ModelId::new("anthropic:claude-opus-4-7").model_name(),
-        "claude-opus-4-7"
-    );
+#[tokio::test]
+async fn test_r6_run_when_model_has_surrounding_whitespace_should_trim_and_price() {
+    let (cost, keys, body) = run_and_read_spend(Some(" claude-opus-4-7 ")).await;
+    assert_priced(cost, OPUS_COST, &body);
+    assert_eq!(keys, vec!["anthropic:claude-opus-4-7".to_owned()]);
+}
+
+#[tokio::test]
+async fn test_r6_orchestrate_when_model_has_surrounding_whitespace_should_trim_and_price() {
+    let (spent, body) = orchestrate_lead_cost(Some(" claude-opus-4-7 ")).await;
+    assert_priced(spent, OPUS_COST, &body);
+}
+
+const REJECTED: [&str; 6] = [
+    "openai:claude-opus-4-7",
+    "x:claude-opus-4-7",
+    "ollama:llama3",
+    "",
+    "   ",
+    "\t\n",
+];
+
+/// R5/R6: `POST /run` answers 400 before the stream opens and records nothing.
+#[tokio::test]
+async fn test_r5_r6_run_when_model_rejected_should_answer_400_and_record_no_spend() {
+    install_honed_price_lookup();
+    for model in REJECTED {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(tmp.path()).unwrap();
+        let state = AppState::new(None)
+            .with_provider_key(None)
+            .with_workspace_root(root)
+            .with_mock_provider(Arc::new(Scripted));
+        let governance = Arc::clone(&state.governance);
+
+        let resp = router(state)
+            .oneshot(post("/run", json!({ "prompt": "go", "model": model })))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "model {model:?}");
+        let bytes = to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let text = String::from_utf8_lossy(&bytes).to_string();
+        if !model.trim().is_empty() {
+            assert!(
+                text.contains(model),
+                "message should name {model:?}: {text}"
+            );
+        }
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let u = governance.get_usage().await;
+        assert_eq!(u.total_tokens, 0, "model {model:?}");
+        assert!(u.total_cost_usd.abs() < TOLERANCE, "model {model:?}");
+        assert!(u.by_model.is_empty(), "model {model:?}: {:?}", u.by_model);
+    }
+}
+
+/// R5/R6: `POST /orchestrate` answers 400 for the same ids (dry run and real run).
+#[tokio::test]
+async fn test_r5_r6_orchestrate_when_model_rejected_should_answer_400() {
+    install_honed_price_lookup();
+    for uri in ["/orchestrate?dry_run=true", "/orchestrate"] {
+        for model in REJECTED {
+            let provider: Arc<dyn ModelProvider> =
+                Arc::new(MockProvider::new(vec!["{}".to_owned()]).with_usage(usage()));
+            let tmp = tempfile::tempdir().unwrap();
+            let root = std::fs::canonicalize(tmp.path()).unwrap();
+            let state = AppState::new(None)
+                .with_provider_key(None)
+                .with_workspace_root(root)
+                .with_mock_provider(provider);
+            let resp = router(state)
+                .oneshot(post(uri, json!({ "prompt": "go", "model": model })))
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::BAD_REQUEST,
+                "{uri} model {model:?}"
+            );
+        }
+    }
 }
