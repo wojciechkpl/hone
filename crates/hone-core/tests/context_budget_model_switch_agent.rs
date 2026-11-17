@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
-//! Contract (spec E2): `set_model` re-targets the context budget. Existing
-//! public API only, so these run (and fail on behaviour) before E1/E3 land.
-//! The mock-provider harness is the one from `context_window_override_env.rs`.
+//! Contract (spec F1/F2): a model switch never trims the stored history; each
+//! request is fitted to the model that serves it. Existing public API only.
+//! Mock-provider harness as in `context_window_override_env.rs`.
 
 use std::sync::Arc;
 
@@ -12,15 +12,14 @@ use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
 use tokio::sync::mpsc;
 
-fn msg_tokens(m: &Message) -> u32 {
-    estimate_text_tokens(&m.content.as_text())
-}
-
 fn total_tokens(msgs: &[Message]) -> u32 {
-    msgs.iter().map(msg_tokens).sum()
+    msgs.iter()
+        .map(|m| estimate_text_tokens(&m.content.as_text()))
+        .sum()
 }
 
-/// `n` distinct messages of roughly 3k tokens each (alternating roles).
+/// `n` distinct messages of roughly 6.5k tokens each (alternating roles,
+/// starting with a user message).
 fn history(n: usize) -> Vec<Message> {
     (0..n)
         .map(|i| {
@@ -33,6 +32,9 @@ fn history(n: usize) -> Vec<Message> {
         })
         .collect()
 }
+
+/// About 400K estimated tokens.
+const BIG: usize = 62;
 
 fn agent_config(model: &str, provider: Arc<MockProvider>) -> AgentConfig {
     AgentConfig {
@@ -69,53 +71,140 @@ fn agent_config(model: &str, provider: Arc<MockProvider>) -> AgentConfig {
     }
 }
 
-fn spawn(model: &str) -> (AgentHandle, Arc<MockProvider>) {
+struct Rig {
+    h: AgentHandle,
+    provider: Arc<MockProvider>,
+}
+
+fn spawn(model: &str) -> Rig {
     let provider = Arc::new(MockProvider::new(vec!["ok".to_owned()]));
-    let handle = AgentHandle::spawn(agent_config(model, Arc::clone(&provider)));
-    (handle, provider)
+    let h = AgentHandle::spawn(agent_config(model, Arc::clone(&provider)));
+    Rig { h, provider }
+}
+
+impl Rig {
+    async fn switch(&self, model: &str) {
+        self.h.set_model(ModelId::new(model)).await;
+    }
+
+    /// Run a turn and return the messages the provider received.
+    async fn turn(&self) -> Vec<Message> {
+        let (tx, _rx) = mpsc::channel(64);
+        self.h.run_turn("next question", tx).await.expect("turn");
+        self.provider
+            .last_request
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("request")
+            .messages
+    }
+
+    async fn stored_tokens(&self) -> u32 {
+        total_tokens(&self.h.get_messages().await)
+    }
+}
+
+// F1: stored history
+
+#[tokio::test]
+async fn test_f1_set_model_when_switching_to_smaller_model_should_not_trim_stored_history() {
+    for target in ["anthropic:claude-haiku-5-5", "anthropic:claude-opus-4-5"] {
+        let r = spawn("anthropic:claude-opus-4-7");
+        r.h.load_history(history(BIG)).await;
+        let before = r.stored_tokens().await;
+        assert!(before > 380_000, "precondition: {before}");
+        r.switch(target).await;
+        assert_eq!(r.stored_tokens().await, before, "switch to {target}");
+    }
 }
 
 #[tokio::test]
-async fn test_set_model_when_switching_to_200k_model_should_send_request_within_120k() {
-    let (h, provider) = spawn("anthropic:claude-opus-4-7");
-    h.load_history(history(50)).await;
+async fn test_f1_stored_budget_when_model_set_to_larger_later_should_be_largest_seen() {
+    // Starts on a 120K model, then is set to a 600K one: the stored budget is 600K.
+    let r = spawn("anthropic:claude-opus-4-5");
+    r.switch("anthropic:claude-opus-4-7").await;
+    r.h.load_history(history(BIG)).await;
+    let kept = r.stored_tokens().await;
+    assert!(kept > 380_000, "kept {kept}; 600K budget expected");
+}
+
+#[tokio::test]
+async fn test_f1_stored_budget_when_switched_back_to_small_model_should_stay_largest_seen() {
+    // Opus 4.7 (600K) -> Haiku 4.5 (120K): later loads still use 600K.
+    let r = spawn("anthropic:claude-opus-4-7");
+    r.switch("anthropic:claude-opus-4-5").await;
+    r.h.load_history(history(BIG)).await;
+    let kept = r.stored_tokens().await;
+    assert!(kept > 380_000, "kept {kept}; largest budget seen is 600K");
+}
+
+#[tokio::test]
+async fn test_f1_round_trip_opus_haiku_5_5_opus_should_restore_full_history_in_request() {
+    let r = spawn("anthropic:claude-opus-4-7");
+    r.h.load_history(history(BIG)).await;
+
+    r.switch("anthropic:claude-haiku-5-5").await;
+    let _ = r.turn().await;
+
+    r.switch("anthropic:claude-opus-4-7").await;
+    let req = r.turn().await;
+    let sent = total_tokens(&req);
     assert!(
-        total_tokens(&h.get_messages().await) > 120_000,
-        "precondition"
+        sent > 380_000,
+        "last Opus request carried only {sent} tokens"
     );
+    assert!(
+        req.len() >= BIG,
+        "expected the full history, got {} messages",
+        req.len()
+    );
+}
 
-    h.set_model(ModelId::new("anthropic:claude-opus-4-5")).await;
-    let (tx, _rx) = mpsc::channel(64);
-    h.run_turn("next question", tx).await.expect("turn");
+// F2: each request is fitted to its model; stored history unchanged
 
-    let req = provider
-        .last_request
-        .lock()
-        .unwrap()
-        .clone()
-        .expect("request");
-    let sent = total_tokens(&req.messages);
+#[tokio::test]
+async fn test_f2_request_when_current_model_is_haiku_5_5_should_carry_at_most_60k() {
+    let r = spawn("anthropic:claude-opus-4-7");
+    let h = history(BIG);
+    r.h.load_history(h.clone()).await;
+    r.switch("anthropic:claude-haiku-5-5").await;
+
+    let req = r.turn().await;
+    let sent = total_tokens(&req);
+    assert!(sent <= 60_000, "request carried {sent} tokens (> 60K)");
+    assert!(sent > 30_000, "request over-trimmed: {sent} tokens");
+    assert!(
+        req.iter()
+            .any(|m| m.content.as_text() == h[0].content.as_text()),
+        "first user message must be kept"
+    );
+    assert!(
+        req.iter()
+            .any(|m| m.content.as_text() == h[BIG - 1].content.as_text()),
+        "most recent stored message must be kept"
+    );
+}
+
+#[tokio::test]
+async fn test_f2_request_when_current_model_is_200k_model_should_carry_at_most_120k() {
+    let r = spawn("anthropic:claude-opus-4-7");
+    r.h.load_history(history(BIG)).await;
+    r.switch("anthropic:claude-opus-4-5").await;
+
+    let sent = total_tokens(&r.turn().await);
     assert!(sent <= 120_000, "request carried {sent} tokens (> 120K)");
+    assert!(sent > 60_000, "request over-trimmed: {sent} tokens");
 }
 
 #[tokio::test]
-async fn test_set_model_when_switching_to_haiku_5_5_should_trim_to_60k() {
-    let (h, _p) = spawn("anthropic:claude-opus-4-7");
-    h.load_history(history(50)).await;
-    h.set_model(ModelId::new("anthropic:claude-haiku-5-5"))
-        .await;
-    let kept = total_tokens(&h.get_messages().await);
-    assert!(kept <= 60_000, "kept {kept} tokens (> 60K)");
-}
+async fn test_f2_request_when_trimmed_should_leave_stored_history_unchanged() {
+    let r = spawn("anthropic:claude-opus-4-7");
+    r.h.load_history(history(BIG)).await;
+    let before = r.h.get_messages().await.len();
+    r.switch("anthropic:claude-haiku-5-5").await;
 
-#[tokio::test]
-async fn test_set_model_when_switching_back_to_1m_model_should_restore_600k_budget() {
-    let (h, _p) = spawn("anthropic:claude-haiku-5-5");
-    h.set_model(ModelId::new("anthropic:claude-opus-4-7")).await;
-    h.load_history(history(50)).await;
-    let kept = total_tokens(&h.get_messages().await);
-    assert!(
-        kept > 120_000,
-        "kept only {kept} tokens; 600K budget expected"
-    );
+    let _ = r.turn().await;
+    // The turn adds the user message and the reply; nothing is dropped.
+    assert_eq!(r.h.get_messages().await.len(), before + 2);
 }

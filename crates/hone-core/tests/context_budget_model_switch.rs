@@ -1,36 +1,31 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
-//! Contract: the context budget follows model switches and fallbacks
-//! (spec section E).
-//!
-//! New public API assumed (the implementer must match these signatures):
-//! - `ContextManager::retarget(&mut self, model_name: &str)` (E1; name without
-//!   provider prefix, like `ContextConfig::for_model`)
-//! - `AgentHandle::set_fallback_models(&self, models: Vec<ModelId>)` (E3;
-//!   async, fire-and-forget like `set_model`)
-//!
-//! E4 (`model_context_limit` in `bins/hone/src/main.rs`) is private to a binary
-//! crate and cannot be driven from an integration test; see the report.
+//! Contract (spec F3): the models that may serve a request besides its own
+//! come from `ModelProvider::fallback_models(&self, &ModelId) -> Vec<ModelId>`
+//! (default: none), and each lowers the request budget to 60% of that model's
+//! window (its window only: no Haiku 5.5 cost cap, no other family's ratio).
+//! Does not compile until the trait method exists.
 
+use std::pin::Pin;
 use std::sync::Arc;
 
-use hone_core::{
-    AgentConfig, AgentHandle, AgentMode, ContextConfig, ContextManager, RetryConfig,
-    estimate_text_tokens,
+use async_trait::async_trait;
+use futures::Stream;
+use hone_core::{AgentConfig, AgentHandle, AgentMode, RetryConfig, estimate_text_tokens};
+use hone_proto::{
+    Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth, ToolApprovalPolicy,
 };
-use hone_proto::{Message, ModelId, PricingEntry, ToolApprovalPolicy};
-use hone_providers::MockProvider;
+use hone_providers::{CompletionRequest, MockProvider, ModelProvider, ProviderError};
 use hone_sandbox::NullSandbox;
 use hone_tools::ToolRegistry;
-
-fn msg_tokens(m: &Message) -> u32 {
-    estimate_text_tokens(&m.content.as_text())
-}
+use tokio::sync::mpsc;
 
 fn total_tokens(msgs: &[Message]) -> u32 {
-    msgs.iter().map(msg_tokens).sum()
+    msgs.iter()
+        .map(|m| estimate_text_tokens(&m.content.as_text()))
+        .sum()
 }
 
-/// `n` distinct messages of roughly 3k tokens each (alternating roles).
+/// `n` distinct messages of roughly 6.5k tokens each, starting with a user message.
 fn history(n: usize) -> Vec<Message> {
     (0..n)
         .map(|i| {
@@ -44,79 +39,44 @@ fn history(n: usize) -> Vec<Message> {
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// E1: ContextManager::retarget
-// ---------------------------------------------------------------------------
+/// About 400K estimated tokens.
+const BIG: usize = 62;
 
-fn manager(model: &str) -> ContextManager {
-    ContextManager::with_config(ContextConfig::for_model(model))
+/// A mock provider that reports the given fallback models for every request.
+struct WithFallbacks {
+    inner: Arc<MockProvider>,
+    fallbacks: Vec<ModelId>,
 }
 
-#[test]
-fn test_retarget_when_new_model_should_recompute_budget_as_for_new_agent() {
-    let cases = [
-        ("claude-opus-4-7", "claude-opus-4-5", 120_000),
-        ("claude-opus-4-7", "claude-haiku-5-5", 60_000),
-        ("claude-haiku-5-5", "claude-opus-4-7", 600_000),
-        ("claude-sonnet-4-5", "claude-sonnet-5", 600_000),
-    ];
-    for (from, to, want) in cases {
-        let mut ctx = manager(from);
-        ctx.retarget(to);
-        assert_eq!(ctx.max_context_tokens(), want, "{from} -> {to}");
+#[async_trait]
+impl ModelProvider for WithFallbacks {
+    fn id(&self) -> &str {
+        self.inner.id()
+    }
+    fn display_name(&self) -> &str {
+        "with-fallbacks"
+    }
+    fn supported_models(&self) -> Vec<ModelInfo> {
+        self.inner.supported_models()
+    }
+    async fn complete(
+        &self,
+        request: CompletionRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>, ProviderError> {
+        self.inner.complete(request).await
+    }
+    fn estimate_tokens(&self, messages: &[Message]) -> u32 {
+        self.inner.estimate_tokens(messages)
+    }
+    async fn health(&self) -> ProviderHealth {
+        self.inner.health().await
+    }
+    fn fallback_models(&self, _model: &ModelId) -> Vec<ModelId> {
+        self.fallbacks.clone()
     }
 }
 
-#[test]
-fn test_retarget_when_user_ratio_set_should_keep_ratio_without_cap() {
-    let mut ctx = manager("claude-opus-4-7");
-    ctx.set_budget_ratio(0.30);
-    ctx.retarget("claude-haiku-5-5");
-    assert_eq!(ctx.max_context_tokens(), 300_000, "explicit ratio, no cap");
-    ctx.retarget("claude-opus-4-5");
-    assert_eq!(ctx.max_context_tokens(), 60_000, "0.30 of 200K");
-}
-
-#[test]
-fn test_retarget_when_project_cap_set_should_only_lower() {
-    let mut ctx = manager("claude-opus-4-7");
-    ctx.cap_budget_ratio(0.30);
-    ctx.retarget("claude-opus-4-5");
-    // min(model ratio 0.60, cap 0.30) of 200K
-    assert_eq!(ctx.max_context_tokens(), 60_000);
-    ctx.retarget("claude-opus-4-8");
-    assert_eq!(ctx.max_context_tokens(), 300_000);
-}
-
-#[test]
-fn test_retarget_when_budget_shrinks_should_trim_history_at_once() {
-    let mut ctx = manager("claude-opus-4-7");
-    for m in history(50) {
-        ctx.add_message(m);
-    }
-    assert!(total_tokens(&ctx.messages()) > 120_000, "precondition");
-    ctx.retarget("claude-opus-4-5");
-    let kept = total_tokens(&ctx.messages());
-    assert!(kept <= 120_000, "kept {kept} tokens > 120K after retarget");
-    assert!(!ctx.messages().is_empty());
-}
-
-#[test]
-fn test_retarget_when_budget_grows_should_keep_history() {
-    let mut ctx = manager("claude-opus-4-5");
-    for m in history(10) {
-        ctx.add_message(m);
-    }
-    let before = ctx.messages().len();
-    ctx.retarget("claude-opus-4-7");
-    assert_eq!(ctx.messages().len(), before);
-}
-
-// ---------------------------------------------------------------------------
-// E2/E3: agent harness (mock provider, as in context_window_override_env.rs)
-// ---------------------------------------------------------------------------
-
-fn agent_config(model: &str, provider: Arc<MockProvider>) -> AgentConfig {
+fn agent_config(model: &str, provider: Arc<dyn ModelProvider>) -> AgentConfig {
     AgentConfig {
         provider,
         tools: ToolRegistry::new(),
@@ -151,43 +111,59 @@ fn agent_config(model: &str, provider: Arc<MockProvider>) -> AgentConfig {
     }
 }
 
-fn spawn(model: &str) -> (AgentHandle, Arc<MockProvider>) {
-    let provider = Arc::new(MockProvider::new(vec!["ok".to_owned()]));
-    let handle = AgentHandle::spawn(agent_config(model, Arc::clone(&provider)));
-    (handle, provider)
+/// Request tokens for a turn on `anthropic:claude-opus-4-7` holding ~400K of
+/// history, when the provider reports `fallbacks`.
+async fn request_tokens_with_fallbacks(fallbacks: &[&str]) -> u32 {
+    let mock = Arc::new(MockProvider::new(vec!["ok".to_owned()]));
+    let provider = Arc::new(WithFallbacks {
+        inner: Arc::clone(&mock),
+        fallbacks: fallbacks.iter().map(|m| ModelId::new(*m)).collect(),
+    });
+    let h = AgentHandle::spawn(agent_config("anthropic:claude-opus-4-7", provider));
+    h.load_history(history(BIG)).await;
+    let (tx, _rx) = mpsc::channel(64);
+    h.run_turn("next question", tx).await.expect("turn");
+    let req = mock.last_request.lock().unwrap().clone().expect("request");
+    total_tokens(&req.messages)
 }
 
 #[tokio::test]
-async fn test_fallback_models_when_smaller_window_should_set_budget_to_minimum() {
-    let (h, _p) = spawn("anthropic:claude-opus-4-7");
-    h.set_fallback_models(vec![ModelId::new("anthropic:claude-haiku-4-5")])
-        .await;
-    h.load_history(history(50)).await;
-    let kept = total_tokens(&h.get_messages().await);
-    assert!(kept <= 120_000, "kept {kept} tokens (> 120K)");
+async fn test_f3_request_when_fallback_is_200k_model_should_carry_at_most_120k() {
+    let sent = request_tokens_with_fallbacks(&["anthropic:claude-haiku-4-5"]).await;
+    assert!(sent <= 120_000, "request carried {sent} tokens (> 120K)");
+    assert!(sent > 60_000, "request over-trimmed: {sent} tokens");
+}
+
+#[tokio::test]
+async fn test_f3_request_when_fallback_is_haiku_5_5_should_use_its_window_not_its_cap() {
+    // 60% of the 1M window = 600K: the whole ~400K history is sent.
+    let sent = request_tokens_with_fallbacks(&["anthropic:claude-haiku-5-5"]).await;
     assert!(
-        kept > 60_000,
-        "kept {kept}; budget should be 120K, not less"
+        sent > 380_000,
+        "request carried only {sent} tokens (60K cap leaked)"
     );
 }
 
 #[tokio::test]
-async fn test_fallback_models_when_model_switched_should_keep_fallback_in_minimum() {
-    let (h, _p) = spawn("anthropic:claude-opus-4-7");
-    h.set_fallback_models(vec![ModelId::new("anthropic:claude-haiku-4-5")])
-        .await;
-    h.set_model(ModelId::new("anthropic:claude-opus-4-6")).await;
-    h.load_history(history(50)).await;
-    let kept = total_tokens(&h.get_messages().await);
-    assert!(kept <= 120_000, "kept {kept} tokens (> 120K)");
+async fn test_f3_request_when_fallback_is_gpt_4o_should_carry_at_most_76_8k() {
+    // 60% of 128K, not gpt-4's family ratio of 0.55.
+    let sent = request_tokens_with_fallbacks(&["openai:gpt-4o"]).await;
+    assert!(sent <= 76_800, "request carried {sent} tokens (> 76_800)");
+    assert!(sent > 60_000, "request over-trimmed: {sent} tokens");
 }
 
 #[tokio::test]
-async fn test_fallback_models_when_fallback_is_haiku_5_5_should_apply_its_cap() {
-    let (h, _p) = spawn("anthropic:claude-opus-4-7");
-    h.set_fallback_models(vec![ModelId::new("anthropic:claude-haiku-5-5")])
-        .await;
-    h.load_history(history(50)).await;
-    let kept = total_tokens(&h.get_messages().await);
-    assert!(kept <= 60_000, "kept {kept} tokens (> 60K)");
+async fn test_f3_request_when_several_fallbacks_should_use_the_smallest_limit() {
+    let sent = request_tokens_with_fallbacks(&[
+        "anthropic:claude-haiku-5-5",
+        "anthropic:claude-haiku-4-5",
+    ])
+    .await;
+    assert!(sent <= 120_000, "request carried {sent} tokens (> 120K)");
+}
+
+#[tokio::test]
+async fn test_f3_request_when_no_fallbacks_should_use_current_model_budget() {
+    let sent = request_tokens_with_fallbacks(&[]).await;
+    assert!(sent > 380_000, "request carried only {sent} tokens");
 }
