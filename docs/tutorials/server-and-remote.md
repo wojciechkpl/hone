@@ -411,7 +411,7 @@ honed 7777
 
 ## Running Multiple Daemons
 
-You don't need one daemon per model: `honed` has no `--model` option, and the `hone` CLI can't send work to a daemon. Each `POST /run` request names its model in the `model` field of its JSON body (default `claude-sonnet-4-6`). `/run` always calls the Anthropic API, so pick an Anthropic model:
+You don't need one daemon per model: `honed` has no `--model` option, and the `hone` CLI can't send work to a daemon. Each `POST /run` request names its model in the `model` field of its JSON body (default `anthropic:claude-sonnet-4-6`). `/run` always calls the Anthropic API, so pick an Anthropic model. An id without a provider prefix, such as `claude-opus-4-5`, is taken as an Anthropic id: the run is priced, and its spend recorded, under `anthropic:claude-opus-4-5`:
 
 ```bash
 curl -N -X POST http://localhost:7777/run \
