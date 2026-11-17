@@ -325,6 +325,7 @@ def make_row(meta: Mapping, proxy_summary: Mapping, harness: Mapping, outcome: M
 DROPPED_SAMPLING_KEYS = frozenset({"top_k", "min_p", "repetition_penalty", "presence_penalty",
     "frequency_penalty", "logit_bias", "typical_p", "best_of", "use_beam_search",
     "length_penalty"})
+DROPPED_THINKING_KEYS = frozenset({"reasoning_effort", "reasoning", "thinking", "enable_thinking"})
 def create_app(upstream: str, log_dir: Path, overrides: Mapping[str, Any] | None = None,
                admin_token: str | None = None) -> web.Application
 ```
@@ -345,6 +346,15 @@ Routes:
   `{"error": {"message": ..., "type": "unknown_run"}}` for an unregistered run.
 - `GET /run/{run_id}/v1/models` is passed through to `{upstream}/v1/models`.
 
+**Campaign 1 forced values (K5, K8).** `scripts/03_stack.sh up` starts the proxy with one
+`--override key=<JSON>` per value: `model`, `temperature`, `top_p`, `top_k`, `min_p`,
+`presence_penalty`, `repetition_penalty`, `max_tokens` (all from `HC_*`) and
+`chat_template_kwargs={"enable_thinking": <HC_ENABLE_THINKING>}`. The seed registered for
+repeat `r` is `BenchConfig.seed_base + r` (`HC_SEED_BASE`, default 0). Run ids and
+directories stay keyed by `r` (`s<r>`); `run.json` carries `repeat` (r) and `seed`
+(base + r). Downstream readers (`metrics`, `report`, `grade`) still group by `run["seed"]`,
+which is now the effective seed rather than the repeat index.
+
 Chat completions behaviour:
 1. **Budget.** If the run already has `requests >= max_requests` or
    `sum(prompt+completion) >= max_total_tokens`, the proxy does not contact the upstream.
@@ -354,15 +364,18 @@ Chat completions behaviour:
 2. **Overrides.** The request JSON is shallow-updated with `overrides`. Then the run's
    registered `seed` (if any) is set as `"seed"`, so it takes precedence over the override.
    Then sampling is locked down:
-   - Every key in `DROPPED_SAMPLING_KEYS` is removed from the request, unless that key is
-     itself in `overrides`.
+   - Every key in `DROPPED_SAMPLING_KEYS` and `DROPPED_THINKING_KEYS` is removed from the
+     request, unless that key is itself in `overrides` (campaign 1, K6). Overrides replace
+     the harness's value; a `chat_template_kwargs` object is replaced whole, never merged.
    - `"n"` is forced to `1`.
    - When `"max_tokens"` is in `overrides`, `"max_completion_tokens"` is removed.
 
    Every other key (tools, tool_choice, stop, messages, …) passes through unchanged. The
    record's `sampling` field holds `{k: body[k]}` for each `k` in
    `("model", "temperature", "top_p", "max_tokens", "seed", "n")` that is present in the
-   body as sent upstream.
+   body as sent upstream. Campaign 1 (K7) widens the tuple to `model`, `temperature`,
+   `top_p`, `top_k`, `min_p`, `presence_penalty`, `repetition_penalty`, `max_tokens`, `seed`,
+   `n`, `chat_template_kwargs`.
 3. **Streaming.** When `stream` is true, the proxy forces
    `stream_options.include_usage = true` upstream. If the client did not request usage
    itself, chunks with `choices == []` that carry `usage` are consumed by the proxy and
@@ -431,6 +444,31 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §2, §4.1, §4.4, §4.5.
   outcome for `hermes-guarded`. `edit-basic`, `shell-basic` and `toolchain-probe` expect
   `hermes = "pass"`; `landlock-canary` expects `hermes = "fail"`. `gate smoke` requires at
   least one proxy request for `hermes` runs too (P-H2).
+
+### Campaign 1 additions (K9-K15)
+
+Design: `docs/plans/harness-compare-v2-2026-11.md` §11.2.
+
+- **Stages (K9).** `python -m hcbench.prereg --stage cb|a` (default `a`). `scripts/05_preregister.sh
+  <name> --stage cb [--draft]` forwards the stage; `make prereg NAME=… STAGE=cb` adds
+  `--stage cb` only when `STAGE=cb`.
+- **Stage `cb` has no task list (K10).** `--selection` is optional for `cb` (required for `a`).
+  The script skips `select_tasks` and the image pulls and still writes `DEVIATIONS.md` (an
+  existing one is kept).
+- **Stage `cb` file (K11).** `stage`, `suites_in_scope = ["c", "b"]`,
+  `suites_deferred = ["d", "e", "g"]`; `[config]` (every `ENV_KEYS` entry, which now includes
+  the K1, K2 and K3 keys); `[sampling]` (the eight forced values other than `model`, including
+  `chat_template_kwargs`, plus `seed_base`); `[suite_a_rules]` (`dataset`, `min_split`, `n`,
+  `repeats`, `grader`, `selection_seed` from `HC_SELECTION_SEED`; no task list); `cut_order`
+  (the three §10.5 cuts); `files_sha256` for `arms_toml`, `suite_b`, `suite_c`, `suite_smoke`;
+  `[bundle]`; `[analysis]` with H3, H4 and the Holm family for C.
+- **Placeholders (K12).** A `CHANGE-ME` value in `ENV_KEYS` is refused for both stages unless
+  `--draft`; a draft file says `draft = true`.
+- **Title (K13).** `Hone vs Pi vs Hermes Agent, harness-controlled, one local model`, both stages.
+- **No stale text (K14).** The stage `cb` title and `[analysis]` do not mention SWE-bench, and the
+  file never says `n=40`.
+- **Stage `a` (K15).** Unchanged apart from `stage = "a"`, the K13 title and the extra
+  `[config]` keys.
 
 ### Round 2 additions
 

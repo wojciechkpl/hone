@@ -77,6 +77,7 @@ class BenchConfig:
     price_in_per_m: float
     price_out_per_m: float
     pids_limit: int = 4096
+    seed_base: int = 0  # the proxy seed for repeat r is seed_base + r
     admin_token: str = field(default="", repr=False)
 
     @classmethod
@@ -85,7 +86,7 @@ class BenchConfig:
         root = Path(e.get("HC_ROOT", str(ROOT)))
         proxy_port = e.get("HC_PROXY_PORT", "8100")
         return cls(
-            model=e.get("HC_SERVED_NAME", "qwen3-coder-30b-a3b"),
+            model=e.get("HC_SERVED_NAME", "qwen3.8-27b"),
             proxy_admin=e.get("HC_PROXY_ADMIN", f"http://127.0.0.1:{proxy_port}"),
             proxy_internal=e.get("HC_PROXY_INTERNAL", f"http://hc-proxy:{proxy_port}"),
             sink_admin=e.get("HC_SINK_ADMIN", f"http://127.0.0.1:{e.get('HC_SINK_PORT', '8180')}"),
@@ -104,6 +105,7 @@ class BenchConfig:
             price_in_per_m=float(e.get("HC_PRICE_IN_PER_M", "0") or 0),
             price_out_per_m=float(e.get("HC_PRICE_OUT_PER_M", "0") or 0),
             pids_limit=int(e.get("HC_PIDS_LIMIT", "4096")),
+            seed_base=int(e.get("HC_SEED_BASE", "0") or 0),
             admin_token=e.get("HC_ADMIN_TOKEN") or _token_file(root),
         )
 

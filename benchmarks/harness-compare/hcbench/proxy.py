@@ -40,7 +40,21 @@ DROPPED_SAMPLING_KEYS = frozenset(
         "length_penalty",
     }
 )
-SAMPLING_FIELDS = ("model", "temperature", "top_p", "max_tokens", "seed", "n")
+# Reasoning knobs a harness may send; removed unless overridden (campaign 1, K6).
+DROPPED_THINKING_KEYS = frozenset({"reasoning_effort", "reasoning", "thinking", "enable_thinking"})
+SAMPLING_FIELDS = (
+    "model",
+    "temperature",
+    "top_p",
+    "top_k",
+    "min_p",
+    "presence_penalty",
+    "repetition_penalty",
+    "max_tokens",
+    "seed",
+    "n",
+    "chat_template_kwargs",
+)
 
 
 class _ClientGone(Exception):
@@ -247,7 +261,7 @@ async def _chat(request: web.Request) -> web.StreamResponse:
         body.update(overrides)
         if st.seed is not None:
             body["seed"] = st.seed
-        for key in DROPPED_SAMPLING_KEYS - set(overrides):
+        for key in (DROPPED_SAMPLING_KEYS | DROPPED_THINKING_KEYS) - set(overrides):
             body.pop(key, None)
         body["n"] = 1
         if "max_tokens" in overrides:

@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--suite", required=True, choices=["a", "b", "c", "smoke"])
     ap.add_argument("--out", required=True, type=Path, help="campaign directory")
     ap.add_argument("--arms", required=True, help="comma-separated arm names from arms.toml")
-    ap.add_argument("--seeds", default="0", help="comma-separated repeat indices (sent as seed)")
+    ap.add_argument("--seeds", default="0", help="repeat indices, e.g. 0,1,2 (seed = base + i)")
     ap.add_argument("--arms-file", type=Path, default=ROOT / "config" / "arms.toml")
     ap.add_argument("--suite-file", help="override suite TOML (b, c, smoke)")
     ap.add_argument("--instances", help="suite a: instances.jsonl from select_tasks")

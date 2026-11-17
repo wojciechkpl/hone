@@ -3,6 +3,7 @@ SHELL := /usr/bin/env bash
 S := scripts
 CAMPAIGN ?=
 NAME ?=
+STAGE ?=
 PY := uv run --no-project -q --python 3.12 --with "aiohttp>=3.9"
 
 .PHONY: help test lint check-claims selftest preflight bundle serve serve-down stack stack-down \
@@ -11,7 +12,7 @@ PY := uv run --no-project -q --python 3.12 --with "aiohttp>=3.9"
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | column -t -s $$'\t'
 
-test: ## unit tests (472)
+test: ## unit tests
 	$(PY) --with pytest python -m pytest -q
 lint: ## ruff + shellcheck
 	uv run --no-project -q --with ruff ruff check hcbench harness_bin tests
@@ -36,9 +37,9 @@ stack-down:
 	$(S)/03_stack.sh down
 smoke: ## P1.5 capability probes
 	$(S)/04_smoke.sh
-prereg: ## P1.6 pre-register (NAME=...)
+prereg: ## P1.6 pre-register (NAME=..., STAGE=cb for campaign 1)
 	@test -n "$(NAME)" || (echo "NAME=... required" && exit 2)
-	$(S)/05_preregister.sh $(NAME)
+	$(S)/05_preregister.sh $(NAME)$(if $(filter cb,$(STAGE)), --stage cb)
 run-a: ## P1.8 suite A (CAMPAIGN=...)
 	@test -n "$(CAMPAIGN)" || (echo "CAMPAIGN=... required" && exit 2)
 	$(S)/10_run.sh a $(CAMPAIGN)

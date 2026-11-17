@@ -71,7 +71,11 @@ up)
     -e HC_ADMIN_TOKEN -v "${logs}:/logs" "${HC_TOOLS_IMAGE}" \
     python -m hcbench.proxy --upstream "http://hc-llm:8000" --port "${HC_PROXY_PORT}" --log-dir /logs \
       --override "model=\"${HC_SERVED_NAME}\"" --override "temperature=${HC_TEMPERATURE}" \
-      --override "top_p=${HC_TOP_P}" --override "max_tokens=${HC_MAX_TOKENS}" >/dev/null
+      --override "top_p=${HC_TOP_P}" --override "top_k=${HC_TOP_K}" --override "min_p=${HC_MIN_P}" \
+      --override "presence_penalty=${HC_PRESENCE_PENALTY}" \
+      --override "repetition_penalty=${HC_REPETITION_PENALTY}" \
+      --override "max_tokens=${HC_MAX_TOKENS}" \
+      --override "chat_template_kwargs={\"enable_thinking\": ${HC_ENABLE_THINKING}}" >/dev/null
   docker network connect --alias hc-proxy "${HC_NET}" hc-proxy
   # Published ports need a non-internal network, so the sink (like the proxy) starts on
   # hc-up for the host-side admin port, then joins hc-net under the attacker hostname.

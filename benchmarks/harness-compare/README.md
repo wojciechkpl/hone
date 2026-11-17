@@ -11,7 +11,9 @@ hc-llm (vLLM) ◀── hc-proxy (metering, forced sampling, caps, records) ◀�
 ```
 
 - **Suites**
-  - **A**: SWE-bench Lite, 40 tasks (pre-registered, stratified by repo, official grader)
+  - **A**: SWE-bench Lite, 40 tasks (pre-registered, stratified by repo, official grader).
+    It is retired as the headline suite: stage 2 of campaign 1 replaces it with SWE-rebench
+    once the loader lands (design §10.3 and §11)
   - **B**: the 10-task mini-bench (graded by check commands; never part of the headline)
   - **C**: red team, 20 risky calls + 5 planted injections, judged by tripwires
 - **Arms** (`config/arms.toml`): `pi`, `hone-noinject`, `hone-inject`, `hermes`, plus
@@ -45,6 +47,47 @@ build image pinned by checksum/digest (`HC_UV_SHA256`, `HC_HERMES_BUILD_IMAGE`),
 
 To check the plumbing without a GPU (works on macOS with Docker): `make selftest`.
 
+## Campaign 1 (stage 1: suites C and B)
+
+Campaign 1 runs the safety suites first. Its scope and requirements are in
+[`harness-compare-v2`](../../docs/plans/harness-compare-v2-2026-11.md) §11. Stage 1 needs
+no suite A task list: the pre-registration fixes the model, the sampling and the *rules*
+for suite A, and stage 2 records the task list later.
+
+**Before pre-registering:** ask the Pi and Hermes maintainers, in one public post each,
+to check their arm configuration in `config/arms.toml`.
+
+```bash
+cd benchmarks/harness-compare
+cp config/bench.env.example config/bench.env
+# Fill in every CHANGE-ME: HC_MODEL_REVISION (the weights' commit) and
+# HC_VLLM_IMAGE (vLLM 0.26 or later, pinned by digest). Set HC_HONE_REF to the commit under test.
+make preflight bundle            # host checks; build Hone, Pi and Hermes into the bundle
+make serve stack                 # model server, proxy, sink, images
+make smoke                       # every probe must PASS before you pre-register
+
+make prereg NAME=c1 STAGE=cb     # writes prereg/c1/: no task selection, no image pulls
+git switch -c bench/prereg-c1
+git add prereg/c1
+git commit -m "bench: pre-register campaign 1, stage cb"
+git tag bench-prereg-c1
+git push origin bench/prereg-c1 bench-prereg-c1   # the public timestamp is the point
+
+make run-c CAMPAIGN=c1           # 25 scenarios × 6 arms × 3 repeats
+make run-b CAMPAIGN=c1           # 10 tasks × 6 arms × 3 repeats
+make report CAMPAIGN=c1          # report.md, runs.csv, redteam.csv
+```
+
+Stage 1 is done when all three hold:
+
+1. The tag `bench-prereg-c1` was on GitHub before the first scored run.
+2. `report.md` shows 0 infrastructure errors for C and B. Re-run failed runs with
+   `scripts/10_run.sh c c1 --retry-errors` (and `b`).
+3. Every change made after the tag is listed in `prereg/c1/DEVIATIONS.md`.
+
+If `make serve` fails, it prints the server log. Fix `config/bench.env`; after the tag,
+log the change as a deviation.
+
 ## Day-to-day
 
 | Need | Command |
@@ -60,8 +103,9 @@ To check the plumbing without a GPU (works on macOS with Docker): `make selftest
 
 1. Pre-register (`make prereg`), then commit and tag **before** any suite run. Log every
    later change in `prereg/<name>/DEVIATIONS.md`.
-2. Leave the proxy overrides (model, temperature, top_p, max_tokens, seed) and the caps
-   alone after pre-registration.
+2. Leave the proxy overrides (model, temperature, top_p, top_k, min_p, presence_penalty,
+   repetition_penalty, max_tokens, thinking off, seed) and the caps alone after
+   pre-registration.
 3. Never tune prompts per arm. Every arm gets `config/prompts/swebench.md` verbatim.
 4. Publish everything: `scripts/30_report.sh <campaign> --package` writes the trajectories,
    predictions, grader outcomes and pre-registration, with SHA256SUMS.
