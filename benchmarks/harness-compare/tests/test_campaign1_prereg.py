@@ -1,22 +1,19 @@
 """Spec section 11.2, K9-K15: stage-aware pre-registration (hcbench.prereg).
 
 Assumptions the implementer must honour (the spec leaves them open):
-* inside [suite_a_rules] the five values and the selection seed are checked by VALUE, not key
-  name; `repeats` may be the string "0,1" or the list [0, 1];
+* inside [suite_a_rules] the keys are those named in K11/K25;
 * [sampling] holds the eight non-model forced values and `seed_base` (an `n` key is tolerated);
 * `cut_order` is a list of three items whose text names suite G, then D, then A.
 """
 
 import hashlib
 import json
-import os
 import tomllib
 from pathlib import Path
 
 import pytest
 
 from hcbench import prereg
-from hcbench.config import load_env_file
 
 ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE = ROOT / "config" / "bench.env.example"
@@ -48,25 +45,6 @@ SAMPLING = {
 }
 
 
-@pytest.fixture
-def env(tmp_path, monkeypatch):
-    """Campaign 1 defaults from the example file, placeholders pinned, no ambient HC_*."""
-    for k in [k for k in os.environ if k.startswith("HC_")]:
-        monkeypatch.delenv(k)
-    vals = load_env_file(EXAMPLE, base={"HOME": "/h", "HC_ROOT": str(ROOT)})
-    placeholders = [k for k, v in vals.items() if "CHANGE-ME" in v]
-    bundle = tmp_path / "bundle"
-    bundle.mkdir()
-    manifest = {"hermes_ref": vals["HC_HERMES_REF"], "hermes_sha": vals["HC_HERMES_SHA"], "x": 1}
-    (bundle / "manifest.json").write_text(json.dumps(manifest))
-    monkeypatch.setenv("HC_BUNDLE_DIR", str(bundle))
-    # prereg.main() -> ensure_env() writes os.environ directly; undo that for later tests.
-    saved = dict(os.environ)
-    yield {"placeholders": placeholders, "manifest": manifest, "tmp": tmp_path, "mp": monkeypatch}
-    os.environ.clear()
-    os.environ.update(saved)
-
-
 def pin(env):
     for k in env["placeholders"]:
         env["mp"].setenv(k, "pinned-for-test")
@@ -87,12 +65,6 @@ def load_cb(env):
 
 def flat(value) -> str:
     return json.dumps(value, sort_keys=True)
-
-
-def matches(actual, expected) -> bool:
-    if isinstance(actual, list):
-        actual = ",".join(str(x) for x in actual)
-    return str(actual) == str(expected) or actual == expected
 
 
 # ---- K9 stages / K10 no task list -------------------------------------------------------
@@ -171,25 +143,16 @@ def test_k11_sampling_table_should_hold_the_forced_values_and_seed_base(env):
     assert "model" not in cb["sampling"]
 
 
-def test_k11_suite_a_rules_should_hold_the_k3_values_and_the_selection_seed(env):
+def test_k11_suite_a_rules_should_use_the_named_keys(env):
+    # K11 names the keys; K25 makes repeats a list of integers (round 1 accepted a string).
     cb = load_cb(env)
     rules = cb["suite_a_rules"]
-    values = list(rules.values())
-    for expected in (
-        "nebius/SWE-rebench-leaderboard",
-        "2026_09",
-        60,
-        "0,1",
-        "SWE-rebench/SWE-bench-fork",
-        20261109,
-    ):
-        assert any(matches(v, expected) for v in values), (expected, rules)
-
-    cb = load_cb(env)
-    assert not any(
-        isinstance(v, list) and len(v) > 2 and v != [0, 1] for v in cb["suite_a_rules"].values()
-    )
-    assert "tasks" not in cb["suite_a_rules"]
+    assert rules["dataset"] == "nebius/SWE-rebench-leaderboard"
+    assert rules["min_split"] == "2026_09"
+    assert rules["n"] == 60
+    assert rules["repeats"] == [0, 1]
+    assert rules["grader"] == "SWE-rebench/SWE-bench-fork"
+    assert rules["selection_seed"] == 20261109
 
 
 def test_k11_cut_order_should_be_the_three_cuts_of_section_10_5_in_order(env):

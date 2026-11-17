@@ -28,6 +28,8 @@ args = sys.argv[1:]
 with open({log!r}, "a") as fh:
     fh.write(json.dumps(["uv"] + args) + "\\n")
 i = args.index("-m")
+if args[i + 1] in os.environ.get("FAKE_UV_STUB_MODULES", "").split(","):
+    sys.exit(0)  # stand-in for a module that needs network (e.g. hcbench.select_tasks)
 env = dict(os.environ, PYTHONPATH=os.getcwd())
 sys.exit(subprocess.run([{python!r}, "-m", *args[i + 1:]], env=env).returncode)
 """
@@ -58,11 +60,28 @@ def make_fake_bin(tmp_path: Path) -> tuple[Path, Path]:
     log = tmp_path / "calls.jsonl"
     for name in ("docker", "curl"):
         _write_exec(bindir / name, _RECORDER.format(python=sys.executable, log=str(log), name=name))
+    # scripts call plain `python3`; make it the interpreter running the tests (needs >= 3.11)
+    (bindir / "python3").symlink_to(sys.executable)
     _write_exec(bindir / "uv", _UV.format(python=sys.executable, log=str(log)))
     return bindir, log
 
 
-def run_script(rig: Path, script: str, args: list[str], bindir: Path, env: dict[str, str]):
+def env_file_without(rig: Path, *keys: str) -> Path:
+    """A copy of bench.env.example with the given keys removed (an "old-style" env file)."""
+    src = rig / "config" / "bench.env.example"
+    kept = [
+        ln
+        for ln in src.read_text().splitlines()
+        if not any(ln.lstrip().startswith(f"{k}=") for k in keys)
+    ]
+    dest = rig / "config" / "old.env"
+    dest.write_text("\n".join(kept) + "\n")
+    return dest
+
+
+def run_script(
+    rig: Path, script: str, args: list[str], bindir: Path, env: dict[str, str], shell: str = "bash"
+):
     full_env = {
         "PATH": f"{bindir}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
         "HOME": str(rig.parent),
@@ -70,7 +89,7 @@ def run_script(rig: Path, script: str, args: list[str], bindir: Path, env: dict[
         **env,
     }
     return subprocess.run(
-        ["bash", str(rig / "scripts" / script), *args],
+        [shell, str(rig / "scripts" / script), *args],
         capture_output=True,
         text=True,
         env=full_env,
@@ -88,6 +107,11 @@ def calls(log: Path) -> list[list[str]]:
 
 def docker_calls(log: Path) -> list[list[str]]:
     return [c[1:] for c in calls(log) if c[0] == "docker"]
+
+
+def harmful(log: Path) -> list[list[str]]:
+    """docker calls that remove or start a container."""
+    return [c for c in docker_calls(log) if c[:1] in (["rm"], ["run"])]
 
 
 def real_env(**extra: str) -> dict[str, str]:

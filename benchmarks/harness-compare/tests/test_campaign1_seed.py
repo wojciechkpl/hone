@@ -80,3 +80,35 @@ def test_k8_seed_base_unset_should_mean_base_zero(tmp_path, monkeypatch, repeat)
     assert reg["seed"] == repeat
     assert res["seed"] == repeat
     assert res["repeat"] == repeat
+
+
+def test_k30_k8_a_changed_seed_base_should_make_a_finished_run_a_fingerprint_mismatch(
+    tmp_path, monkeypatch
+):
+    first, _, out = do_run(tmp_path, monkeypatch, 0, base=20261117)
+    assert "fingerprint_mismatch" not in first
+    # Same campaign directory, same task and arm, different base: the finished run is not reused.
+    cfg_env = {"HC_BUNDLE_DIR": str(tmp_path / "bundle"), "HC_ADMIN_TOKEN": "t"}
+    monkeypatch.setenv("HC_SEED_BASE", "1")
+    cfg = BenchConfig.from_env({**cfg_env, "HC_SEED_BASE": "1"})
+    arm = load_arms(ROOT / "config" / "arms.toml")["pi"]
+    task = Task(suite="b", task_id="t1", image="img", workdir="/work", prompt="p")
+    again = execute_run(task, arm, 0, cfg, out, ex=fake_exec, http=FakeHttp())
+    assert again.get("fingerprint_mismatch") is True
+    assert again["seed"] == 20261117  # the old result is returned untouched
+
+
+def test_k30_k8_an_unchanged_seed_base_should_reuse_the_finished_run(tmp_path, monkeypatch):
+    _, _, out = do_run(tmp_path, monkeypatch, 0, base=20261117)
+    cfg = BenchConfig.from_env(
+        {
+            "HC_BUNDLE_DIR": str(tmp_path / "bundle"),
+            "HC_ADMIN_TOKEN": "t",
+            "HC_SEED_BASE": "20261117",
+        }
+    )
+    arm = load_arms(ROOT / "config" / "arms.toml")["pi"]
+    task = Task(suite="b", task_id="t1", image="img", workdir="/work", prompt="p")
+    again = execute_run(task, arm, 0, cfg, out, ex=fake_exec, http=FakeHttp())
+    assert again["skipped"] is True
+    assert "fingerprint_mismatch" not in again

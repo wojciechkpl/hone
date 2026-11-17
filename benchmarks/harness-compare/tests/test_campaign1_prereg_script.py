@@ -66,11 +66,22 @@ def test_k10_stage_cb_script_should_keep_an_existing_deviations_file(tmp_path):
     assert (d / "DEVIATIONS.md").read_text() == "mine\n"
 
 
-def test_k10_stage_a_script_should_still_select_tasks_by_default(tmp_path):
+def test_k10_stage_a_script_should_still_select_tasks_and_pull_images_by_default(tmp_path):
+    # K30: the return code is checked. select_tasks needs the network, so the fake uv stands in
+    # for it and the files it would write are put in place beforehand.
     rig = make_rig(tmp_path)
     bindir, log = make_fake_bin(tmp_path)
-    run_script(rig, "05_preregister.sh", ["t3", "--draft"], bindir, prereg_env(rig, tmp_path))
+    d = rig / "prereg" / "t3"
+    d.mkdir(parents=True)
+    (d / "selection.json").write_text(json.dumps({"dataset": "d", "n": 1, "digest": "x"}))
+    (d / "tasks.txt").write_text("a__b-1\n")
+    (d / "instances.jsonl").write_text(json.dumps({"instance_id": "a__b-1"}) + "\n")
+    env = {**prereg_env(rig, tmp_path), "FAKE_UV_STUB_MODULES": "hcbench.select_tasks"}
+    r = run_script(rig, "05_preregister.sh", ["t3", "--draft"], bindir, env)
+    assert r.returncode == 0, r.stderr
     assert any("hcbench.select_tasks" in " ".join(c) for c in calls(log))
+    assert any(c[:1] == ["pull"] for c in docker_calls(log))
+    assert tomllib.loads((d / "preregistration.toml").read_text())["stage"] == "a"
 
 
 def make_n(args: list[str]) -> str:
