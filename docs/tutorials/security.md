@@ -228,7 +228,9 @@ Both match command text. Shell aliases, interpreters (`python -c …`) and paths
 Hone has no roles and no per-user permissions or budgets. `honed` checks one bearer token, `HONE_AUTH_TOKEN`, and every client that sends it gets the same access. The token is required when `honed` binds a non-loopback address, unless you set `HONE_ALLOW_UNAUTH=1`.
 
 > [!WARNING]
-> With `HONE_ALLOW_UNAUTH=1` and no token, anyone who can reach the port can run the agent on your machine. Bind to loopback (`HONE_BIND=127.0.0.1`) or set a token instead. Permission rules apply to every run: `honed` loads the user file from its own `$HOME` and the project file from the run's working directory. See the [Server Guide](server-and-remote.md).
+> With `HONE_ALLOW_UNAUTH=1` and no token, anyone who can reach the port can run the agent on your machine. Bind to loopback (`HONE_BIND=127.0.0.1`) or set a token instead.
+
+Permission rules apply to every run: `honed` loads the user file from its own `$HOME` and the project file from the run's working directory. See the [Server Guide](server-and-remote.md).
 
 ## Audit Logging
 

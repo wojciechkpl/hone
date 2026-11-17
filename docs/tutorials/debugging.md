@@ -181,7 +181,7 @@ hone session list
 `honed` keeps its sessions in the same file (unless `HONE_SESSION_DB` is set), but in a different table, so they don't appear in `hone session list`. List them through the daemon:
 
 ```bash
-curl http://127.0.0.1:7777/sessions   # with a token: -H "Authorization: Bearer $HONE_AUTH_TOKEN"
+curl http://127.0.0.1:3117/sessions   # honed's port (default 3117); with a token: -H "Authorization: Bearer $HONE_AUTH_TOKEN"
 ```
 
 If `sessions.db` is gone, it was deleted. Hone has no remote backup.

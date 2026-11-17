@@ -81,8 +81,9 @@ Hone runs shell commands under the platform's own sandbox:
 | Linux | bubblewrap, on by default | Landlock (kernel 5.13+), **off by default**; turn it on with `HONE_SANDBOX_ENFORCE=1` |
 | Other | See the Codex docs | No OS sandbox |
 
-The sandbox covers only the `shell` tool. File tools, git tools and `web_fetch` are not
-OS-sandboxed; your permission rules govern them.
+The sandbox covers only the `shell` tool. File tools refuse paths outside the working
+directory but are not OS-sandboxed; permission rules narrow them, the git tools and
+`web_fetch`.
 
 **Real example:** on macOS, shell commands can write only the working directory, `/tmp` and `/dev/null`, and get no network. There is no command that prints the policy; [Permissions and sandbox](../permissions-and-sandbox.md) has the full table per platform.
 
@@ -448,8 +449,8 @@ Not on Linux by default. Codex CLI sandboxes commands by default on macOS and Li
 
 On Hone's side: shell commands run under Seatbelt on macOS (always on). On Linux, Landlock
 is off by default; set `HONE_SANDBOX_ENFORCE=1` to turn it on (kernel 5.13+). Other
-platforms have no OS sandbox. File tools are not OS-sandboxed; your permission rules govern
-them. See [Permissions and sandbox](../permissions-and-sandbox.md).
+platforms have no OS sandbox. File tools refuse paths outside the working directory but are
+not OS-sandboxed; permission rules narrow them further. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ### Do recipes replace approval workflows?
 

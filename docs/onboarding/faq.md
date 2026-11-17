@@ -146,7 +146,7 @@ Kernel sandboxing restricts what the agent's shell commands can touch. Each comm
 
 On macOS, Hone uses **Seatbelt**, which is always on and also blocks network access. On Linux, it uses **Landlock**, which is off unless `HONE_SANDBOX_ENFORCE=1` and restricts files only. Hone doesn't use seccomp.
 
-The sandbox covers shell commands only. File tools such as `read_file` and `write_file` run inside Hone and are limited by permission rules instead. The sandbox sets no CPU, memory or disk limits.
+The sandbox covers shell commands only. File tools such as `read_file` and `write_file` run inside Hone: they refuse paths outside the working directory, and permission rules narrow them further. The sandbox sets no CPU, memory or disk limits.
 
 See [Security Guide](../tutorials/security.md) and [Permissions and sandbox](../permissions-and-sandbox.md).
 
@@ -168,7 +168,7 @@ op = "write"
 decision = "deny"
 ```
 
-A write to `migrations/` is then refused with `denied by policy` and the rule id. Without a matching rule a write is allowed: there is no write allowlist. See [Permissions and sandbox](../permissions-and-sandbox.md).
+A write to `migrations/` is then refused with `denied by policy` and the rule id. Without a matching rule a write inside the working directory is allowed; a write outside it is always refused. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ### Can I run Hone in a Docker container?
 

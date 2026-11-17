@@ -704,8 +704,10 @@ Details, including what is readable and writable, are in
 
 ## MCP servers
 
-MCP servers are configured in JSON, in the same shape as Claude Code's `.mcp.json`,
-so you can copy or symlink an existing file.
+MCP servers are configured in JSON, in the same shape as Claude Code's `.mcp.json`. Only
+stdio servers (with `command`) work: an HTTP or SSE entry (`url`, no `command`) fails to
+parse, and one entry that fails makes Hone skip the whole file, with only a warn-level log
+(`RUST_LOG=hone_config=warn` shows it). Copy only stdio entries from an existing file.
 
 ```json
 {
@@ -729,7 +731,7 @@ so you can copy or symlink an existing file.
 |---|---|---|
 | `command` | required | Executable to spawn (stdio transport) |
 | `args` | `[]` | Arguments |
-| `env` | `{}` | Extra environment; values may reference `${VAR}` |
+| `env` | `{}` | The server's environment besides `PATH` and `HOME`: Hone clears everything else before it starts the server. Values may reference `${VAR}` |
 | `disabled` | `false` | Skip this server at startup |
 | `timeout_ms` | `10000` | Per-request timeout: every call, tool calls included, gives up after it. `0` means no timeout |
 | `handshake_timeout_ms` | `timeout_ms` or 60000, whichever is larger | Timeout for the handshake at startup (an `npx -y …` server may download its package first). `0` means no timeout |
