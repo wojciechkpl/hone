@@ -69,10 +69,9 @@ api_key_env = "MY_ANTHROPIC_KEY"        # read the key from this variable, not A
 
 There is no key setting in this table. The key comes from `ANTHROPIC_API_KEY` (or the variable `api_key_env` names), or from `hone configure`, which saves it in the same file in plain text. `hone configure` replaces the whole file with just a `[provider]` table, so anything else in it, such as this table, `fallback_models`, `[[routing]]` and `[pricing]`, is lost. See [config.toml](../configuration.md#configtoml).
 
-**Available models:**
-- `claude-opus-4-5` — 200K context, best for complex tasks
-- `claude-sonnet-4` — 200K context, fast general-purpose
-- `claude-haiku-3-5` — 200K context, cheapest, good for simple tasks
+**Models:** any Claude model id, for example `claude-opus-5-5`, `claude-sonnet-5-5` or
+`claude-haiku-5-5`. Hone's built-in prices cover every current Claude model (see
+[Pricing and `[budget]`](../configuration.md#pricing-and-budget)).
 
 ### OpenAI API (and Compatible Endpoints)
 
@@ -250,7 +249,7 @@ input_per_million = 3.0
 output_per_million = 15.0
 ```
 
-`cache_read_per_million` and `cache_creation_per_million` are optional. A model with no price counts as free, and Hone says so once per model. See [Pricing and `[budget]`](../configuration.md#pricing-and-budget).
+`cache_read_per_million` and `cache_creation_per_million` are optional. A model with no price counts as free, and Hone says so once per model. The built-in Anthropic prices were checked against Anthropic's pricing page on 2026-11-17; Claude Haiku 5.5 is priced at its rate for prompts up to 100,000 tokens, so longer prompts are under-counted. See [Pricing and `[budget]`](../configuration.md#pricing-and-budget).
 
 After each turn, Hone calculates cost:
 
