@@ -2,6 +2,33 @@ use std::collections::HashMap;
 
 use hone_proto::ModelId;
 
+use crate::date_suffix::strip_date_suffix;
+
+/// Claude windows, inserted under both the `anthropic:` and `claude-cli:` prefixes.
+///
+/// Source: Anthropic's model list (checked 2026-11-17): Claude 4.6 and later
+/// models have a 1M-token context window; 4.5 and earlier are 200K.
+const CLAUDE_WINDOWS: &[(&str, u32)] = &[
+    ("claude-fable-5-2", 1_000_000),
+    ("claude-mythos-5-2", 1_000_000),
+    ("claude-fable-5-1", 1_000_000),
+    ("claude-mythos-5-1", 1_000_000),
+    ("claude-fable-5", 1_000_000),
+    ("claude-mythos-5", 1_000_000),
+    ("claude-opus-5-5", 1_000_000),
+    ("claude-opus-5", 1_000_000),
+    ("claude-opus-4-8", 1_000_000),
+    ("claude-opus-4-7", 1_000_000),
+    ("claude-opus-4-6", 1_000_000),
+    ("claude-sonnet-5-5", 1_000_000),
+    ("claude-sonnet-5", 1_000_000),
+    ("claude-sonnet-4-6", 1_000_000),
+    ("claude-haiku-5-5", 1_000_000),
+    ("claude-opus-4-5", 200_000),
+    ("claude-sonnet-4-5", 200_000),
+    ("claude-haiku-4-5", 200_000),
+];
+
 /// Context window sizes (in tokens) for known models.
 ///
 /// These are consulted by provider adapters to emit
@@ -28,19 +55,16 @@ impl ContextWindowTable {
         };
 
         // ---- Anthropic -------------------------------------------------------
-        // Claude 4.x series: all 200 k
-        t.insert("anthropic:claude-opus-4-5", 200_000);
-        t.insert("anthropic:claude-sonnet-4-5", 200_000);
-        t.insert("anthropic:claude-haiku-4-5", 200_000);
+        for (name, window) in CLAUDE_WINDOWS {
+            t.insert(&format!("anthropic:{name}"), *window);
+            t.insert(&format!("claude-cli:{name}"), *window);
+        }
         // Claude 3.x series: 200 k (sonnet/opus) or 200 k (haiku)
         t.insert("anthropic:claude-3-5-sonnet-20241022", 200_000);
         t.insert("anthropic:claude-3-5-haiku-20241022", 200_000);
         t.insert("anthropic:claude-3-opus-20240229", 200_000);
         t.insert("anthropic:claude-3-sonnet-20240229", 200_000);
         t.insert("anthropic:claude-3-haiku-20240307", 200_000);
-        // Claude CLI mirrors Anthropic
-        t.insert("claude-cli:claude-sonnet-4-5", 200_000);
-        t.insert("claude-cli:claude-opus-4-5", 200_000);
         t.insert("claude-cli:claude-3-5-sonnet-20241022", 200_000);
 
         // ---- OpenAI ----------------------------------------------------------
@@ -76,10 +100,18 @@ impl ContextWindowTable {
     ///
     /// Falls back to the table default (128 000) when the model is unknown.
     pub fn get(&self, model: &ModelId) -> u32 {
+        self.lookup(model).unwrap_or(self.default)
+    }
+
+    /// The window for `model` if the table has an entry for it (an exact id,
+    /// or its base id when it carries a `-YYYY-MM-DD` / `-YYYYMMDD` suffix);
+    /// `None` for an unknown model, unlike [`get`](Self::get).
+    pub fn lookup(&self, model: &ModelId) -> Option<u32> {
+        let id = model.as_str();
         self.entries
-            .get(model.as_str())
+            .get(id)
+            .or_else(|| strip_date_suffix(id).and_then(|base| self.entries.get(base)))
             .copied()
-            .unwrap_or(self.default)
     }
 
     fn insert(&mut self, key: &str, size: u32) {

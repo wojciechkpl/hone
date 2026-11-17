@@ -61,9 +61,9 @@ It depends on your task:
 
 | Task | Model | Why |
 |------|-------|-----|
-| Complex reasoning, architecture | Claude Opus 4.5 | Most capable, 200K context |
-| General-purpose coding | Claude Sonnet 4 | Fast, balanced capability/cost |
-| Simple edits, typos | Claude Haiku 3.5 | Cheapest, 200K context, still powerful |
+| Complex reasoning, architecture | Claude Opus 5.5 | Most capable Opus, 1M context |
+| General-purpose coding | Claude Sonnet 5.5 | Fast, balanced capability/cost, 1M context |
+| Simple edits, typos | Claude Haiku 5.5 | Cheapest Claude; Hone keeps its history under 60K tokens so prompts stay in its lower price tier |
 | Budget-conscious | Ollama llama2 | Free, runs locally |
 | If you prefer OpenAI | gpt-4o | Latest, competitive capability |
 
@@ -454,9 +454,9 @@ HONE_SANDBOX_EXTRA_READ="$HOME/.nvm" hone
 
 ### The model keeps running out of context
 
-The model exhausted its context window (200K tokens for Claude, 128K for GPT-4o, etc.). Solutions:
+The model exhausted its context window (1M tokens for Claude 4.6 and later, 200K for Opus 4.5, Sonnet 4.5 and Haiku 4.5, 128K for GPT-4o, etc.). Solutions:
 
-1. **Switch to a model with more context:** Opus/Sonnet/Haiku (200K), not GPT-4o (128K)
+1. **Switch to a model with more context:** Claude 4.6 or later (1M), not GPT-4o (128K)
 2. **Reduce context window:** `HONE_CONTEXT_WINDOW=100000 hone` (use less than the full limit)
 3. **Enable memory:** Compacts history into learned patterns, freeing up tokens
 4. **Summarize history:** Ask the agent to summarize the first half of the conversation

@@ -269,7 +269,7 @@ written. Without them Hone behaves as before. `hone strategies` shows what is ac
 |---|---|---|---|
 | `[context] sources` | `["memory-index", "recall", "skills", "skeleton"]` | Which context sources are on. The prompt order stays fixed whatever the list's order | intersected with the user's list; a name the user doesn't have is dropped with a warning |
 | `[context] compactor` | `"graduated"` | `graduated` (tool-result dedup, graduated compression, trimming) or `trim-only` (only the trimming needed to fit the budget) | allowed |
-| `[context] budget_ratio` | the per-model ratio | Fraction of the model's context window to use (above 0, at most 1) | a cap: the effective ratio is the smaller of your value (or the model's default) and the project's; a higher value is ignored with a warning |
+| `[context] budget_ratio` | the per-model ratio | Fraction of the model's context window to use (above 0, at most 1). Set in your user file, it also lifts Claude Haiku 5.5's default 60K cap | a cap: the effective ratio is the smaller of your value (or the model's default) and the project's; a higher value is ignored with a warning |
 | `[context.skeleton] use` | `"adaptive"` | `adaptive`, `flat`, `dependency-graph`, `call-graph` or `hybrid` | allowed |
 | `[context.skeleton] max_tokens` | `2000` | Token budget of the injected block | can only lower it |
 | `[context.skeleton] gap_threshold` | `0.4` | Score gap (0–1) above which code snippets are injected | can only raise it |
@@ -956,7 +956,7 @@ Don't attach audit logs or receipts from private work to public bug reports.
 | `HONE_OPENAI_MODEL` | Model name for that endpoint (default `gpt-4o`) |
 | `HONE_CLAUDE_PERMISSION_MODE` | Permission mode passed to the `claude` CLI (default `acceptEdits`) |
 | `HONE_CACHE` | Any value wraps the provider in an in-process LRU response cache (100 entries) |
-| `HONE_CONTEXT_WINDOW` | Override the model's context window in tokens (4096–10000000), e.g. `32768` for a model served with a 32k window. Applies to every agent and model in the process. Hone compacts conversation history at its per-model budget ratio of this value (Qwen: 45%); the system prompt and tool schemas come on top, so windows below about 16k may still overflow. Unset: the window is inferred from the model name. An invalid value is ignored and logged at warn level. |
+| `HONE_CONTEXT_WINDOW` | Override the model's context window in tokens (4096–10000000), e.g. `32768` for a model served with a 32k window. Applies to every agent and model in the process. Hone compacts conversation history at its per-model budget ratio of this value (Qwen: 45%); the system prompt and tool schemas come on top, so windows below about 16k may still overflow. Unset: the window is inferred from the model name. Claude 4.6 and later have 1M tokens, so Hone keeps up to 600K tokens of history (60%); Opus 4.5, Sonnet 4.5 and Haiku 4.5 have 200K (120K of history). Claude Haiku 5.5 is held to 60K, so its prompts stay under its 100K-token price tier; a `[context] budget_ratio` in your user file lifts that cap, and this variable doesn't. When a session uses several models (`/model`, routing tiers), each request is fitted to the model that serves it and the history is kept for the others; with `fallback_models`, the history in every request also fits 60% of the smallest fallback's window (the system prompt and tool schemas come on top). An invalid value is ignored and logged at warn level. |
 
 </details>
 

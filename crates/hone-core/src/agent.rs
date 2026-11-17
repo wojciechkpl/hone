@@ -769,8 +769,9 @@ impl Agent {
                 );
             });
         }
-        let context =
+        let mut context =
             ContextManager::with_config(context_config).with_metrics(Arc::clone(&metrics));
+        context.set_window_override(context_window_override);
 
         // Snapshot the original tool registry before any mode filtering.
         let base_tools = config.tools.clone();
@@ -906,10 +907,19 @@ impl Agent {
         self.cost.total_usd()
     }
 
-    /// Estimated token count of the current context window (stored messages
-    /// only; the system prompt is not counted here).
+    /// Estimated tokens of the context a call uses: the stored messages, at most
+    /// what one request to the current model may carry (the system prompt is not
+    /// counted here).
     pub fn context_token_count(&self) -> u32 {
-        self.context.total_tokens()
+        self.context.total_tokens().min(self.request_budget())
+    }
+
+    /// The most history one request to the current model may carry: its budget,
+    /// lowered by the fallback models the provider says may serve it instead.
+    fn request_budget(&self) -> u32 {
+        let fallbacks = self.config.provider.fallback_models(&self.config.model);
+        self.context
+            .request_budget(self.config.model.model_name(), &fallbacks)
     }
 
     /// Total token usage of every model call this agent made, including calls
@@ -991,7 +1001,7 @@ impl Agent {
             return Vec::new();
         }
         let history = self.context.messages();
-        let budget_tokens = self.context.max_context_tokens();
+        let budget_tokens = self.request_budget();
         let redact = self.redacting();
         let turn = self.turn_count;
         let working_dir = self.config.working_dir.clone();
@@ -2140,9 +2150,14 @@ impl Agent {
             // Build the base message list with the STABLE system prompt.
             // Memories are injected as a separate system-role message right
             // after the base system prompt, so the prefix stays cache-friendly.
-            let (mut messages, mut message_hashes) = self
-                .context
-                .build_messages_hashed(&self.config.system_prompt);
+            // Fitted to the model that serves it (and the fallbacks that may take
+            // over): the request leaves messages out, the stored history keeps them.
+            let request_budget = self.request_budget();
+            let (mut messages, mut message_hashes) = self.context.build_messages_hashed_fitted_for(
+                &self.config.system_prompt,
+                request_budget,
+                self.config.model.as_str(),
+            );
 
             // Gathered sources: one system message each, right after the base
             // system prompt and before the memories and skills.
@@ -4272,6 +4287,9 @@ impl AgentHandle {
                     }
                     AgentCommand::SetModel { model } => {
                         agent.config.model = model;
+                        // Never trims: the stored budget only grows; each request
+                        // is fitted to the model that serves it.
+                        agent.context.note_model(agent.config.model.model_name());
                     }
                     AgentCommand::SetTools { tools } => {
                         // A replacement registry keeps `memory_write` (not in Plan

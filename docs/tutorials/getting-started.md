@@ -341,7 +341,7 @@ hone context show
 
 **What happens behind the scenes:**
 
-1. **Model-aware budgets** — Each model has a learned token budget. claude-opus-4-5 has 200K context; hone reserves 4K for output, 2K for system prompt, leaving ~177K for conversation.
+1. **Model-aware budgets** — Each model has a token budget for the conversation: a share of its context window. Claude Opus 4.7 has a 1M-token window and Hone keeps up to 600K tokens of history; Claude Opus 4.5 has 200K and Hone keeps 120K. The system prompt and tool schemas come on top. See [Configuration](../configuration.md) for `[context] budget_ratio` and `HONE_CONTEXT_WINDOW`.
 
 2. **Automatic reranking** — When context gets large, Hone uses BM25 ranking to keep the most relevant code snippets and memories at the front of the context window.
 

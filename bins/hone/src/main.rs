@@ -3209,7 +3209,6 @@ async fn main() -> Result<()> {
     // candidates, the reviewer loop) is priced the same way.
     hone_core::set_default_price_lookup(Arc::clone(&prices));
     agent.set_price_lookup(Arc::clone(&prices)).await;
-
     // With a session limit, say up front which models it can't limit.
     let budget_warnings = if eff.session_limit_usd.is_some() {
         let mut models: Vec<ModelId> = vec![model_id.clone()];
@@ -3683,6 +3682,15 @@ fn model_context_limit(model: &str) -> u32 {
     let model_lower = model.to_ascii_lowercase();
     // Strip provider prefix (e.g. "anthropic:claude-sonnet-4-5" -> "claude-sonnet-4-5").
     let name = model_lower.split(':').last().unwrap_or(&model_lower);
+
+    // The window table is the source for models it knows.
+    let table = hone_providers::ContextWindowTable::default_table();
+    let bare_anthropic = (!model_lower.contains(':')).then(|| format!("anthropic:{model_lower}"));
+    for id in std::iter::once(model_lower.as_str()).chain(bare_anthropic.as_deref()) {
+        if let Some(window) = table.lookup(&ModelId::new(id)) {
+            return window;
+        }
+    }
 
     if name.contains("claude") {
         // All Claude 3+ models have a 200k context window.

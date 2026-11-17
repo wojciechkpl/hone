@@ -117,7 +117,7 @@ flowchart LR
 
 | Model family | Budget used |
 |---|---|
-| Claude | 60% of 200k |
+| Claude | 60% of the model's window: 1M for Claude 4.6 and later (600k), 200k for Opus 4.5, Sonnet 4.5 and Haiku 4.5 (120k). Claude Haiku 5.5: 60k, to stay under its 100k price tier |
 | GPT-4, o3, o4 | 55% of 128k |
 | Gemini | 50% of 1M |
 | DeepSeek, Qwen, Kimi | 45% of 128k |

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed: Claude 4.6 and later use their 1M-token context window
+
+- **Before:** Hone compacted every Claude model's history at 120K tokens (60% of 200K), although Claude 4.6 and later (Opus 4.6+, Sonnet 4.6+, Haiku 5.5, Fable, Mythos) have a 1M-token window. The window table behind the TUI's context gauge and the `model_info` event didn't list them either, so they showed 128K, and a dated id such as `claude-haiku-4-5-20251001` didn't find its base entry.
+- **Now:** those models keep up to 600K tokens of history (60% of 1M) before Hone compacts, and the gauge shows 1M. Long sessions keep more of the conversation; each call sends more tokens, most of them as prompt-cache reads. Opus 4.5, Sonnet 4.5 and Haiku 4.5 keep 200K windows and the 120K budget, and dated ids resolve to their base entry, as prices do.
+- **Claude Haiku 5.5** is the exception: its history is held to 60K tokens, so its prompts stay under the 100K-token line above which it costs five times as much. A `[context] budget_ratio` in your user file lifts the cap; a project file can only lower it.
+- **Sessions that use more than one model:** each request is fitted to the model that serves it. Switching models (`/model`, `[[routing]]` tiers in the TUI) keeps the whole history; a turn on a smaller model sends a trimmed copy (60K tokens for Haiku 5.5, 120K for a 200K model), and switching back sends the full history again. With `fallback_models`, the history in every request also fits 60% of the smallest fallback's window (a fallback to `openai:gpt-4o`, 128K, keeps it to 76,800 tokens; the system prompt and tool schemas come on top), for one-shot, TUI, orchestrator and ensemble agents alike; with `--model`, fallbacks don't apply and don't limit anything.
+
 ### Fixed: `honed` runs are priced
 
 - **Before:** `POST /run` and `POST /orchestrate` passed the requested model id to the price lookup as given. The web UI sends ids without a provider prefix (`claude-sonnet-4-6`, `claude-opus-4-7`), and the default was unprefixed too, so those runs cost $0 (in `/run`'s spend records and `/orchestrate`'s budget progress) and were reported as using an unpriced model. A request with another provider's prefix (`openai:claude-opus-4-7`) ran the Anthropic model and also cost $0.

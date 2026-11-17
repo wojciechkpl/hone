@@ -20,9 +20,10 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
 use hone_proto::{
-    CompactionStep, Content, Message, Role, Slot, SourceRef, StrategyId, canonical_json_sha256,
-    message_sha256,
+    CompactionStep, Content, Message, ModelId, Role, Slot, SourceRef, StrategyId,
+    canonical_json_sha256, message_sha256,
 };
+use hone_providers::ContextWindowTable;
 use tiktoken_rs::CoreBPE;
 
 use crate::metrics::ContextMetrics;
@@ -94,13 +95,17 @@ pub struct ContextConfig {
     /// Whether to apply BM25 relevance reordering to the middle zone.
     /// Enabled for models with weaker long-context attention.
     pub reorder_middle_zone: bool,
+    /// Default upper bound on the token budget, applied as
+    /// `min(window * ratio, cap)`. `None` means no cap.
+    pub budget_cap: Option<u32>,
 }
 
 impl ContextConfig {
     /// Build a config tuned for the given model name.
     ///
     /// Budget ratios based on RULER and Needle-in-a-Haystack research:
-    /// - Claude: effective at ~60% of advertised 200K
+    /// - Claude: effective at ~60% of the model's window (from the window
+    ///   table; 200K for an unknown Claude name)
     /// - DeepSeek/Qwen: effective at ~45% of advertised 128K
     /// - Llama: effective at ~40% of advertised 128K
     /// - Default: 50% for unknown models
@@ -109,7 +114,10 @@ impl ContextConfig {
 
         // Models with weaker long-context attention benefit from middle-zone reordering.
         let (ratio, context_len, recent, reorder) = if lower.contains("claude") {
-            (0.60, 200_000, 3, false) // Claude has strong attention across the window
+            let window = ContextWindowTable::default_table()
+                .lookup(&ModelId::new(format!("anthropic:{lower}")))
+                .unwrap_or(200_000);
+            (0.60, window, 3, false) // Claude has strong attention across the window
         } else if lower.contains("deepseek") || lower.contains("qwen") {
             (0.45, 128_000, 5, true)
         } else if lower.contains("llama") {
@@ -124,6 +132,12 @@ impl ContextConfig {
             (0.50, 128_000, 4, true) // default: enable for unknown models
         };
 
+        // Haiku 5.5 costs 5x above 100K prompt tokens. Hone's cl100k estimate
+        // counts Claude's newer tokenizer ~30% low, and the system prompt and
+        // tool schemas are sent on top of the history budget, so cap the
+        // history at 60K to keep the real prompt under 100K.
+        let budget_cap = lower.contains("claude-haiku-5-5").then_some(60_000);
+
         Self {
             effective_budget_ratio: ratio,
             advertised_context_length: context_len,
@@ -131,6 +145,7 @@ impl ContextConfig {
             tool_compress_age: 5,
             tool_oneliner_age_offset: 5,
             reorder_middle_zone: reorder,
+            budget_cap,
         }
     }
 
@@ -151,9 +166,10 @@ impl ContextConfig {
         Self::for_model(model_name).with_context_window(ov)
     }
 
-    /// Effective token budget (advertised * ratio).
+    /// Effective token budget: `min(advertised * ratio, budget_cap)`.
     pub fn effective_budget(&self) -> u32 {
-        (self.advertised_context_length as f32 * self.effective_budget_ratio) as u32
+        let budget = (self.advertised_context_length as f32 * self.effective_budget_ratio) as u32;
+        self.budget_cap.map_or(budget, |cap| budget.min(cap))
     }
 
     /// Age threshold at which tool results become one-liners.
@@ -171,6 +187,7 @@ impl Default for ContextConfig {
             tool_compress_age: 5,
             tool_oneliner_age_offset: 5,
             reorder_middle_zone: false,
+            budget_cap: None,
         }
     }
 }
@@ -559,8 +576,20 @@ pub struct ContextManager {
     /// Hash of each stored message (parallel to `messages`), filled lazily and
     /// reset when a message is rewritten.
     hashes: Vec<Option<String>>,
+    /// Estimated token count of each stored message (parallel to `messages`),
+    /// kept in step with every change so the history is never re-tokenized.
+    tokens: Vec<u32>,
     /// Only drop-oldest trimming (no dedup, graduated or phase compaction).
     trim_only: bool,
+    /// `HONE_CONTEXT_WINDOW`: replaces the window of every model on a retarget.
+    window_override: Option<u32>,
+    /// The ratio the user chose (`set_budget_ratio`); kept, without the default
+    /// cap, across retargets.
+    user_ratio: Option<f32>,
+    /// The lowest project-file ratio (`cap_budget_ratio`); kept across retargets.
+    project_cap: Option<f32>,
+    /// History tokens of the last fitted request.
+    last_request_tokens: u32,
 }
 
 impl ContextManager {
@@ -578,7 +607,12 @@ impl ContextManager {
             phase_compaction: phase_compaction_from_env(),
             compaction_log: Vec::new(),
             hashes: Vec::new(),
+            tokens: Vec::new(),
             trim_only: false,
+            window_override: None,
+            user_ratio: None,
+            project_cap: None,
+            last_request_tokens: 0,
         }
     }
 
@@ -597,7 +631,12 @@ impl ContextManager {
             phase_compaction: phase_compaction_from_env(),
             compaction_log: Vec::new(),
             hashes: Vec::new(),
+            tokens: Vec::new(),
             trim_only: false,
+            window_override: None,
+            user_ratio: None,
+            project_cap: None,
+            last_request_tokens: 0,
         }
     }
 
@@ -639,16 +678,81 @@ impl ContextManager {
     /// Lower the budget ratio to at most `cap` (a project file's `budget_ratio`):
     /// `min(current ratio, cap)`, never higher.
     pub fn cap_budget_ratio(&mut self, cap: f32) {
+        self.project_cap = Some(self.project_cap.map_or(cap, |c| c.min(cap)));
         if cap < self.config.effective_budget_ratio {
-            self.set_budget_ratio(cap);
+            // Keeps `budget_cap`: a project file may only lower the budget.
+            self.config.effective_budget_ratio = cap;
+            self.max_context_tokens = self.config.effective_budget();
         }
     }
 
     /// Use `ratio` of the advertised window as the token budget instead of the
-    /// per-model ratio.
+    /// per-model ratio. An explicit choice, so it clears the default budget cap.
     pub fn set_budget_ratio(&mut self, ratio: f32) {
         self.config.effective_budget_ratio = ratio;
+        self.config.budget_cap = None;
+        self.user_ratio = Some(ratio);
         self.max_context_tokens = self.config.effective_budget();
+    }
+
+    /// Remember the `HONE_CONTEXT_WINDOW` override so retargets keep it.
+    pub fn set_window_override(&mut self, window: Option<u32>) {
+        self.window_override = window;
+    }
+
+    /// The config for `model_name` (without provider prefix) as for a new agent,
+    /// keeping the window override, an explicit user ratio (no cap) and a
+    /// project cap (only lowers).
+    fn config_for(&self, model_name: &str) -> ContextConfig {
+        let mut cfg =
+            ContextConfig::for_model(model_name).with_context_window(self.window_override);
+        if let Some(r) = self.user_ratio {
+            cfg.effective_budget_ratio = r;
+            cfg.budget_cap = None;
+        }
+        if let Some(c) = self.project_cap {
+            cfg.effective_budget_ratio = cfg.effective_budget_ratio.min(c);
+        }
+        cfg
+    }
+
+    /// The agent is now set to `model_name`: the stored history's budget becomes
+    /// the largest budget of any model it has been set to. Never trims, and never
+    /// lowers the budget; each request is fitted separately
+    /// ([`build_messages_hashed_fitted`](Self::build_messages_hashed_fitted)).
+    pub fn note_model(&mut self, model_name: &str) {
+        let cfg = self.config_for(model_name);
+        if cfg.effective_budget() > self.max_context_tokens {
+            self.max_context_tokens = cfg.effective_budget();
+            self.config.effective_budget_ratio = cfg.effective_budget_ratio;
+            self.config.advertised_context_length = cfg.advertised_context_length;
+            self.config.budget_cap = cfg.budget_cap;
+        }
+    }
+
+    /// The token budget of one request to `model_name`: that model's budget,
+    /// lowered to 60% of the window of each fallback model that may serve the
+    /// request instead (its window only: no cost cap, no family ratio).
+    pub fn request_budget(&self, model_name: &str, fallbacks: &[ModelId]) -> u32 {
+        let mut budget = self.config_for(model_name).effective_budget();
+        let table = ContextWindowTable::default_table();
+        for fallback in fallbacks {
+            let id = fallback.as_str();
+            let window = self.window_override.unwrap_or_else(|| {
+                table
+                    .lookup(fallback)
+                    .or_else(|| {
+                        (!id.contains(':'))
+                            .then(|| table.lookup(&ModelId::new(format!("anthropic:{id}"))))
+                            .flatten()
+                    })
+                    .unwrap_or_else(|| {
+                        ContextConfig::for_model(fallback.model_name()).advertised_context_length
+                    })
+            });
+            budget = budget.min((window as f32 * 0.60) as u32);
+        }
+        budget
     }
 
     /// Notify the context manager about a tool call (for phase tracking).
@@ -772,6 +876,7 @@ impl ContextManager {
             message
         };
 
+        self.tokens.push(estimate_message_tokens(&message));
         self.messages.push(message);
         self.hashes.push(None);
         self.trim_to_budget();
@@ -794,7 +899,8 @@ impl ContextManager {
             self.compress_old_tool_results();
         }
 
-        if self.total_tokens() <= self.max_context_tokens {
+        let mut total = self.total_tokens();
+        if total <= self.max_context_tokens {
             return;
         }
 
@@ -805,7 +911,7 @@ impl ContextManager {
         // Position each stored message had before this pass started.
         let mut pre_pass: Vec<usize> = (0..self.messages.len()).collect();
         loop {
-            if self.total_tokens() <= self.max_context_tokens {
+            if total <= self.max_context_tokens {
                 break;
             }
 
@@ -820,6 +926,7 @@ impl ContextManager {
 
             let removed = self.messages.remove(idx);
             self.hashes.remove(idx);
+            total = total.saturating_sub(self.tokens.remove(idx));
             let before = pre_pass.remove(idx);
             removed_refs.push(message_ref(before, &removed));
             self.record_dropped_message(removed);
@@ -899,6 +1006,7 @@ impl ContextManager {
                     let before = message_ref(i, &self.messages[i]);
                     self.messages[i].content = Content::Text(compressed);
                     self.hashes[i] = None;
+                    self.tokens[i] = estimate_message_tokens(&self.messages[i]);
                     let after = message_ref(i, &self.messages[i]);
                     self.log_step(
                         "graduated",
@@ -943,6 +1051,7 @@ impl ContextManager {
             let before = message_ref(i, &self.messages[i]);
             self.messages[i].content = Content::Text(structural_summary(&text, path.as_deref()));
             self.hashes[i] = None;
+            self.tokens[i] = estimate_message_tokens(&self.messages[i]);
             let after = message_ref(i, &self.messages[i]);
             self.log_step(
                 "phase",
@@ -1022,6 +1131,7 @@ impl ContextManager {
         {
             let old = self.messages.remove(existing);
             self.hashes.remove(existing);
+            self.tokens.remove(existing);
             replaced = Some(message_ref(
                 pre_pass.get(existing).copied().unwrap_or(existing),
                 &old,
@@ -1047,6 +1157,8 @@ impl ContextManager {
             tool_call_id: None,
         };
         let marker_ref = message_ref(insert_at, &marker);
+        self.tokens
+            .insert(insert_at, estimate_message_tokens(&marker));
         self.messages.insert(insert_at, marker);
         self.hashes.insert(insert_at, None);
 
@@ -1096,6 +1208,141 @@ impl ContextManager {
             messages.push(self.messages[i].clone());
         }
         (messages, hashes)
+    }
+
+    /// Like [`build_messages_hashed`](Self::build_messages_hashed), for a request
+    /// that may carry at most `budget` tokens. See
+    /// [`build_messages_hashed_fitted_for`](Self::build_messages_hashed_fitted_for).
+    pub fn build_messages_hashed_fitted(
+        &mut self,
+        system_prompt: &str,
+        budget: u32,
+    ) -> (Vec<Message>, Vec<String>) {
+        self.build_messages_hashed_fitted_for(system_prompt, budget, "")
+    }
+
+    /// Build the request for `model_name` (recorded in the receipt step) that
+    /// may carry at most `budget` tokens of history.
+    ///
+    /// When the history is larger, the request leaves messages out by the same
+    /// rules as `add_message` trimming (keeps the first system and user messages,
+    /// summary markers and the most recent ones; drops the oldest others first),
+    /// in one pass over the cached token counts. The stored history is not
+    /// changed. A tool result whose call was left out, and a tool call whose
+    /// result was left out, are left out too. The omission is one `fit_request`
+    /// step in the compaction log (listing the stored messages left out), so
+    /// this call's receipt shows it; hashes are those of the messages sent.
+    pub fn build_messages_hashed_fitted_for(
+        &mut self,
+        system_prompt: &str,
+        budget: u32,
+        model_name: &str,
+    ) -> (Vec<Message>, Vec<String>) {
+        let mut total = self.total_tokens();
+        if total <= budget {
+            self.last_request_tokens = total;
+            return self.build_messages_hashed(system_prompt);
+        }
+
+        let n = self.messages.len();
+        let mut left_out = vec![false; n];
+        let preserved = preserved_indices(&self.messages);
+        let protected_from = n.saturating_sub(self.config.recent_window);
+        for (i, out) in left_out.iter_mut().enumerate().take(protected_from) {
+            if total <= budget {
+                break;
+            }
+            if preserved.contains(&i) || is_summary_marker_at(&self.messages, i) {
+                continue;
+            }
+            *out = true;
+            total = total.saturating_sub(self.tokens[i]);
+        }
+
+        // Pairing: no result without its call, no call without its results. A
+        // result belongs to the nearest earlier call with its id (providers such
+        // as Ollama reuse ids).
+        let mut latest_call: HashMap<&str, usize> = HashMap::new();
+        let mut call_of: Vec<Option<usize>> = vec![None; n];
+        let mut results_of: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (i, m) in self.messages.iter().enumerate() {
+            if matches!(m.role, Role::Tool)
+                && let Some(call) = m
+                    .tool_call_id
+                    .as_deref()
+                    .and_then(|id| latest_call.get(id).copied())
+            {
+                call_of[i] = Some(call);
+                results_of.entry(call).or_default().push(i);
+            }
+            for c in &m.tool_calls {
+                latest_call.insert(c.id.as_str(), i);
+            }
+        }
+        loop {
+            let mut changed = false;
+            for i in 0..n {
+                if left_out[i] {
+                    continue;
+                }
+                let orphan_result = call_of[i].is_some_and(|c| left_out[c]);
+                let orphan_call = results_of
+                    .get(&i)
+                    .is_some_and(|rs| rs.iter().any(|&r| left_out[r]));
+                if orphan_result || orphan_call {
+                    left_out[i] = true;
+                    total = total.saturating_sub(self.tokens[i]);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        let replaced: Vec<SourceRef> = (0..n)
+            .filter(|&i| left_out[i])
+            .map(|i| message_ref(i, &self.messages[i]))
+            .collect();
+        if !replaced.is_empty() {
+            self.log_step(
+                "fit_request",
+                serde_json::json!({
+                    "model": model_name,
+                    "budget": budget,
+                    "left_out": replaced.len(),
+                }),
+                replaced,
+                None,
+            );
+        }
+        self.last_request_tokens = total;
+
+        let order = self.request_order();
+        let system = Message::system(system_prompt);
+        let mut messages = Vec::with_capacity(order.len() + 1);
+        let mut hashes = Vec::with_capacity(order.len() + 1);
+        hashes.push(message_sha256(&system));
+        messages.push(system);
+        for i in order.into_iter().filter(|&i| !left_out[i]) {
+            let hash = match &self.hashes[i] {
+                Some(h) => h.clone(),
+                None => {
+                    let h = message_sha256(&self.messages[i]);
+                    self.hashes[i] = Some(h.clone());
+                    h
+                }
+            };
+            hashes.push(hash);
+            messages.push(self.messages[i].clone());
+        }
+        (messages, hashes)
+    }
+
+    /// Estimated tokens of the history in the last request built with
+    /// `build_messages_hashed_fitted*` (what was sent, not what is stored).
+    pub fn last_request_tokens(&self) -> u32 {
+        self.last_request_tokens
     }
 
     /// Stored-message indexes in the order they are sent.
@@ -1202,6 +1449,7 @@ impl ContextManager {
     pub fn clear(&mut self) {
         self.messages.clear();
         self.hashes.clear();
+        self.tokens.clear();
         self.compaction_log.clear();
     }
 
@@ -1213,7 +1461,7 @@ impl ContextManager {
     /// Estimated total token count of all stored messages (excludes the system
     /// prompt, which is supplied at build time and not stored here).
     pub fn total_tokens(&self) -> u32 {
-        self.messages.iter().map(estimate_message_tokens).sum()
+        self.tokens.iter().sum()
     }
 
     /// Return a clone of all messages currently held in the context window.

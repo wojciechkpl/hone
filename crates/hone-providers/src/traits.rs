@@ -168,4 +168,11 @@ pub trait ModelProvider: Send + Sync + 'static {
     fn runs_own_tools(&self) -> bool {
         false
     }
+
+    /// The models that may serve a request for `model` instead, if it fails
+    /// (in order, excluding `model` itself). The agent fits the request to the
+    /// smallest of them. Default: none. Wrappers must forward this.
+    fn fallback_models(&self, _model: &ModelId) -> Vec<ModelId> {
+        Vec::new()
+    }
 }
