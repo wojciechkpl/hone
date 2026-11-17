@@ -87,17 +87,7 @@ Claude Code relies on process isolation. Hone uses kernel-level sandboxing:
 - **Linux:** Landlock (same as systemd)
 - **Other:** seccomp (same as Docker)
 
-Tool calls are auditable and confined:
-
-```bash
-# See the sandbox policy in effect
-hone --show-sandbox-policy
-# Output: Using Seatbelt on macOS
-#   Deny network (except: api.anthropic.com, api.openai.com)
-#   Deny /etc, /var, /tmp (except: /tmp/.hone-*)
-#   Allow read: project root, ~/.local/share/hone
-#   Allow execute: /bin, /usr/bin, cargo, python3
-```
+Tool calls are auditable and confined. There is no command that prints the sandbox policy: [Permissions and sandbox](../permissions-and-sandbox.md) lists what each platform allows (on macOS, shell commands can write only the working directory, `/tmp` and `/dev/null`, and get no network), and your own permission rules live in `~/.config/hone/permissions.toml` and `<repo>/.hone/permissions.toml`.
 
 ### 3. Adaptive Memory
 
@@ -136,12 +126,12 @@ hone --model ollama:llama2
 Claude Code is single-user, single-machine. Hone can run as a server:
 
 ```bash
-# On a shared machine
-honed --port 7070
-
-# From your laptop (another terminal or network)
-hone --remote myserver:7070
+# On a shared machine (a token is required unless honed binds to loopback)
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
+honed 7070
 ```
+
+From your laptop, connect the desktop app (daemon URL and token) or call the HTTP API with `Authorization: Bearer <token>`. The `hone` CLI doesn't connect to a daemon. See [Run the daemon](../getting-started.md#8-run-the-daemon-honed).
 
 Team governance with roles:
 - `admin` — manage settings, users, budgets
@@ -163,7 +153,7 @@ claude --model claude-opus-4-5
 ```bash
 hone --model anthropic:claude-opus-4-5
 # Format: <provider>:<model>
-# Providers: anthropic, openai, ollama, claude-cli, gemini-cli, acp, ...
+# Providers: anthropic, openai, ollama, claude-cli, gemini-cli
 ```
 
 ### 2. Built with Rust (Not Node.js)
@@ -200,8 +190,7 @@ steps:
       prompt: "For each TODO, create a GitHub issue"
       model: anthropic:claude-opus-4-5
 
-# Run it anytime
-hone --recipe scripts/process-todos.yaml
+# Recipe files can't be run yet: --recipe loads only the built-in names (hone --list-recipes)
 ```
 
 Benefits of recipes:
@@ -212,24 +201,15 @@ Benefits of recipes:
 
 See [Recipes Guide](../tutorials/recipes.md).
 
-### 4. Daemon-First Architecture
+### 4. Optional Daemon
 
-Claude Code is CLI-only. Hone defaults to daemon:
+Claude Code is CLI-only. Hone adds an optional daemon, `honed`, that serves a web UI, the desktop app and an HTTP API. The `hone` CLI doesn't connect to it:
 
 ```bash
-# Start the daemon (persists across sessions)
-honed
-
-# In another terminal, connect
-hone --remote localhost:7070
-
-# Sessions are stored, replayable, auditable
+hone  # the CLI and TUI run on their own, no daemon needed
 ```
 
-For local use, the CLI still works:
-```bash
-hone  # Works as before, no daemon needed
-```
+To run the daemon, see [Run the daemon](../getting-started.md#8-run-the-daemon-honed).
 
 ## Step-by-Step Migration
 
@@ -337,9 +317,9 @@ steps:
     message: "fix: resolve failing tests"
 ```
 
-Run it:
+`hone --recipe` can't run this file yet: `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`. The closest built-in is `bug-fix`:
 ```bash
-hone --recipe scripts/fix-tests.yaml
+hone --recipe bug-fix --var test_command="pytest"
 ```
 
 ## FAQ

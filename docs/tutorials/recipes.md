@@ -4,7 +4,7 @@ Recipes are YAML files that define multi-step agent workflows. Each step runs a 
 
 ## Built-in Recipes
 
-Hone includes 4 bundled recipes for common development tasks:
+Hone includes 9 bundled recipes for common development tasks (`hone --list-recipes` lists them). Four are sketched below. The YAML is simplified and illustrative: the real definitions are in `bins/hone/recipes/*.yaml`, and some of them use placeholders such as `{{test_command}}` that you fill with `--var`.
 
 ### tdd-feature
 
@@ -97,22 +97,13 @@ hone --recipe bug-fix
 hone --recipe code-review
 hone --recipe refactor
 
-# Run in non-interactive mode (useful for CI/CD)
-hone --recipe tdd-feature --non-interactive
+# Recipes run every step without pausing, so the same command works in CI/CD
 
-# Override the test command
-hone --recipe tdd-feature --test-cmd "pytest tests/"
+# Set the feature and the test command (tdd-feature's steps use {{feature_name}} and {{test_command}})
+hone --recipe tdd-feature --var feature_name="CSV export" --var test_command="pytest tests/"
 ```
 
-The `--list-recipes` command shows all available recipes with descriptions:
-
-```
-Available recipes:
-  tdd-feature           Implement a feature using Test-Driven Development
-  bug-fix               Fix a bug using systematic debugging with regression test
-  code-review           Perform a comprehensive code review
-  refactor              Safely refactor code with test verification at each step
-```
+The `--list-recipes` command shows all 9 recipes with descriptions; the full output is under [Recipe Directory and Discovery](#recipe-directory-and-discovery).
 
 ## What Are Recipes?
 
@@ -235,7 +226,7 @@ Currently, `when` accepts boolean literals. Future versions will support express
 
 ## TDD Hook: test_cmd and Test Verification
 
-The `test_cmd` field automatically runs tests after each step and feeds test failures back to the agent for fixing. This creates a tight TDD feedback loop.
+`test_cmd` runs after every step. Hone prints `Tests passed.` or `Tests FAILED:` and goes on to the next step; it doesn't feed the failure back, retry or stop.
 
 ```yaml
 name: "Implementation Recipe"
@@ -247,36 +238,15 @@ steps:
   - name: "Add Tests"
     prompt: "Write tests for the feature"
 
-test_cmd: "cargo test && cargo clippy"  # Both must pass after each step
+test_cmd: "cargo test && cargo clippy"  # runs after each step
 ```
 
 **How test verification works:**
 
 1. Agent executes a step (writes code, modifies files)
 2. `test_cmd` runs automatically: `cargo test`
-3. **If tests pass:** → move to next step
-4. **If tests fail:** → feed test output to agent and retry (up to 3 times)
-5. Agent sees the failure and fixes code based on error messages
-
-**Example output:**
-
-```
-Recipe: TDD Implementation
-Step 1: Implement Authentication Function
-  Running: cargo test
-  test auth::test_login ... FAILED
-  error[E0308]: mismatched types
-  
-  [Retry 1/3] Agent re-runs step with test output as context...
-  test auth::test_login ... PASSED ✓
-  
-Step 2: Add Documentation
-  Running: cargo test && cargo clippy
-  test result: ok. 5 passed ✓
-  clippy: no warnings ✓
-
-Recipe result: SUCCESS
-```
+3. Hone prints `Tests passed.`, or `Tests FAILED:` followed by the command's stderr only (its stdout, where most test runners report failures, isn't shown)
+4. The next step starts either way; the agent isn't shown the failure
 
 **Configuration:**
 
@@ -290,20 +260,14 @@ steps:
   
   - name: implement
     prompt: "Implement the feature to pass tests"
-    # test_cmd runs here automatically
-    # If tests fail, agent retries with failure details
+    # test_cmd runs here automatically; a failure is printed, not retried
   
   - name: cleanup
     prompt: "Refactor for clarity"
     # test_cmd runs here too
 ```
 
-**Retry behavior:**
-
-- Default: retry up to 3 times if tests fail
-- Each retry includes the previous test output as context
-- If max retries exhausted, recipe halts with error
-- Successful runs advance to next step immediately
+**Retry behavior:** there is none in recipes. (The TUI has its own test-and-retry loop, up to 3 attempts, after a turn that edits files; it never runs during `--recipe`.)
 
 **When to use test verification:**
 
@@ -316,108 +280,68 @@ steps:
 
 ## Running Recipes
 
-### Interactive Mode
+### What a Run Looks Like
 
 ```bash
-hone --recipe code-review.yaml
+hone --recipe code-review
 ```
 
-Hone runs each step, streaming output. Press `y` at each step to proceed, `n` to skip, or `q` to quit.
+Hone runs each step in order and streams its output; it never pauses for input. When the recipe has a `test_cmd`, Hone runs it after every step, prints `Tests passed.` or `Tests FAILED:` and carries on either way.
 
 ```
-Recipe: Code Review
-Step 1/3: Analyze Changes
-Agent: I found 3 issues...
-[pause] Continue to next step? [y/n/q]
-> y
+Running recipe: code-review (6 steps)
+  Perform a comprehensive code review with security and performance analysis
 
-Step 2/3: Suggest Improvements
-Agent: Top improvements are...
-[pause] Continue to next step? [y/n/q]
-> y
+[1/6] overview
+…the agent's answer…
 
-Step 3/3: Generate Summary
-Agent: Summary of review...
-[pause] Test command: cargo test
-✓ All tests passed
-Recipe completed successfully.
+[2/6] correctness
+…
+
+[6/6] report
+…
+
+Recipe 'code-review' complete.
 ```
 
 ### Batch Mode
 
 ```bash
-hone --recipe code-review.yaml --non-interactive
+hone --recipe code-review
 ```
 
-Runs all steps without pausing. Useful for CI/CD.
+Every recipe run is a batch run: Hone runs all steps without pausing, so there is no separate flag for CI/CD.
 
 ### With Model Override
 
 ```bash
-hone --recipe code-review.yaml --model ollama:llama2
+hone --recipe code-review --model ollama:llama2
 ```
 
 Use a specific model for all steps in the recipe.
 
 ### With Budget Limit
 
-```bash
-hone --recipe code-review.yaml --budget 5.00
+There is no `--budget` flag. Set the limit in `~/.config/hone/config.toml`:
+
+```toml
+[budget]
+session_limit_usd = 5.00
 ```
 
-Stop if the recipe exceeds $5 in API costs.
+Once the recipe has spent more than $5 in API costs, each remaining step fails with `budget exceeded` instead of calling the model.
 
 ## Recipe Output and Export
 
-Each recipe run produces a report:
+A recipe run prints each step's output, its tool calls and the test results to stdout as plain text. There is no `--export-to` flag and no JSON report, and `--json` doesn't apply to `--recipe`. To keep the output, redirect it:
 
 ```bash
-hone --recipe code-review.yaml --export-to review-report.json
-```
-
-Report format:
-
-```json
-{
-  "recipe_name": "Code Review",
-  "started_at": "2026-04-05T14:30:00Z",
-  "completed_at": "2026-04-05T14:32:15Z",
-  "steps": [
-    {
-      "name": "Analyze Changes",
-      "output": "The pull request contains...",
-      "skipped": false,
-      "tokens_input": 1200,
-      "tokens_output": 340,
-      "cost_usd": 0.024
-    },
-    {
-      "name": "Suggest Improvements",
-      "output": "Top 3 improvements: ...",
-      "skipped": false,
-      "tokens_input": 2100,
-      "tokens_output": 520,
-      "cost_usd": 0.035
-    }
-  ],
-  "test_result": {
-    "cmd": "cargo test",
-    "status": "passed",
-    "output": "test result: ok. 5 passed"
-  },
-  "session_cost_usd": 0.059,
-  "status": "success"
-}
+hone --recipe code-review > review-report.txt 2>&1   # errors go to stderr
 ```
 
 ## Recipe Directory and Discovery
 
-Hone looks for recipes in:
-
-1. Current directory (`./*.yaml`)
-2. `~/.config/hone/recipes/` (user recipes)
-3. `/etc/hone/recipes/` (system recipes)
-4. Built-in recipes (bundled with Hone)
+`--recipe` loads only the 9 built-in recipes, by name. It doesn't read recipe files or directories, and any other name (`code-review.yaml` included) fails with `unknown recipe: <name>`.
 
 List all available recipes:
 
@@ -429,15 +353,15 @@ Output:
 
 ```
 Available recipes:
-  user:
-    code-review.yaml — Review a code change and suggest improvements
-    tdd-feature.yaml — Implement a feature test-first
-  system:
-    documentation.yaml — Auto-generate API documentation
-    refactor.yaml — Refactor code safely
-  built-in:
-    unit-test.yaml — Write comprehensive unit tests
-    integration-test.yaml — Write integration tests
+  tdd-feature          Implement a feature using Test-Driven Development
+  bug-fix              Fix a bug with regression test
+  code-review          Comprehensive code review (correctness, security, performance)
+  refactor             Safely refactor with test verification at each step
+  security-audit       Full OWASP Top 10 security audit
+  performance          Profile, analyze, and optimize performance
+  migration            Migrate between frameworks, libraries, or API versions
+  documentation        Generate or update project documentation
+  onboarding           Understand a new codebase (architecture, patterns, entry points)
 ```
 
 ## Writing Your Own Recipe
@@ -462,13 +386,9 @@ test_cmd: "echo 'All done!'"
 EOF
 ```
 
-2. Test it locally:
+2. Test it locally: not yet possible from the CLI. `hone --recipe my-recipe.yaml` fails with `unknown recipe: my-recipe.yaml`, because `--recipe` loads only the built-in names (see [Recipe Directory and Discovery](#recipe-directory-and-discovery)).
 
-```bash
-hone --recipe my-recipe.yaml
-```
-
-3. Share it: Commit to your repo or publish to the Hone marketplace.
+3. Share it: commit it to your repo. There is no recipe marketplace.
 
 ## Best Practices
 
@@ -527,20 +447,6 @@ Always include a test command to catch regressions:
 
 ```yaml
 test_cmd: "cargo test && cargo clippy && cargo fmt --check"
-```
-
-## Marketplace
-
-Share recipes with the community (future feature):
-
-```bash
-hone recipe-publish my-recipe.yaml
-```
-
-This publishes your recipe to the Hone marketplace. Others can then:
-
-```bash
-hone --recipe @username/my-recipe.yaml
 ```
 
 ## Next Steps

@@ -70,43 +70,57 @@ The agent reads the failing output (already in scope), reads the relevant source
 
 ## Mode 2: the `tdd-feature` recipe
 
-This is the full automated loop. Hone takes a feature description and runs five steps:
+This is the full automated loop. Hone takes a feature description and runs five steps. This is the built-in recipe, from `bins/hone/recipes/tdd-feature.yaml`:
 
 ```yaml
 name: tdd-feature
-description: Implement a feature using Test-Driven Development
+description: Implement a feature using Test-Driven Development (Red-Green-Refactor)
 steps:
-  - name: understand
-    prompt: "Read the relevant code and understand the current architecture. Summarize what you find."
+  - name: clarify
+    prompt: >
+      Before writing any code, clarify the requirements for {{feature_name}}.
+      What are the expected inputs, outputs, and edge cases?
+      If anything is ambiguous, state your assumptions.
   - name: red
-    prompt: "Write failing tests that describe the desired behavior. Run them to confirm they fail."
+    prompt: >
+      Write failing tests that describe the desired behavior of {{feature_name}}.
+      Run them with `{{test_command}}` to confirm they fail.
+      Each test should cover one specific behavior.
   - name: green
-    prompt: "Write the minimum code to make the tests pass. Do not add extra features."
+    prompt: >
+      Write the MINIMUM code to make the failing tests pass.
+      Do not add extra features, error handling, or optimizations yet.
+      Run `{{test_command}}` after each change to verify progress.
   - name: refactor
-    prompt: "Refactor the implementation for clarity and quality. All tests must still pass."
+    prompt: >
+      Refactor the implementation for clarity and quality.
+      Extract shared logic, improve naming, remove duplication.
+      Run `{{test_command}}` after each refactoring step — all tests must stay green.
   - name: verify
-    prompt: "Run all tests one final time. Report the results."
-test_cmd: "cargo test"
+    prompt: >
+      Run the full test suite one final time with `{{test_command}}`.
+      Report: tests passed/failed, code coverage if available.
+      Use lsp_diagnostics to check for type errors or warnings.
+test_cmd: "{{test_command}}"
 ```
 
 ### Running it
 
 ```bash
-hone --recipe tdd-feature -i "add a /export-session command that writes the conversation to ./export.json"
+hone --recipe tdd-feature \
+  --var feature_name="a /export-session command that writes the conversation to ./export.json" \
+  --var test_command="cargo test"
 ```
 
-Or interactively, after launching `hone`:
+`--recipe` ignores a prompt argument: the recipe's steps get the feature and the test command through `--var` (`{{feature_name}}`, `{{test_command}}`).
 
-```
-/recipe tdd-feature
-> add a /export-session command that writes the conversation to ./export.json
-```
+There is no `/recipe` command in the TUI; run the recipe from the shell as above.
 
 ### What you get
 
-Each step's transcript is saved under `~/.hone/sessions/<id>/recipes/tdd-feature/<step>.md` so you can review the agent's reasoning at every stage.
+No step transcripts are saved: each step's output goes to stdout (errors to stderr). To review the agent's reasoning afterwards, redirect it: `… > tdd.log 2>&1`.
 
-The `test_cmd` field is enforced — if the `green` step finishes with a failing suite, hone refuses to advance to `refactor` and surfaces the failure. The recipe explicitly aborts rather than papering over a red bar.
+The `test_cmd` field is not a gate: Hone runs it after every step, prints `Tests passed.`, or `Tests FAILED:` followed by the command's stderr only (its stdout, where most test runners report failures, isn't shown), and moves on to the next step either way. Run the tests yourself before you trust the result.
 
 ## Mode 3: the `bug-fix` recipe (regression-first)
 
@@ -163,13 +177,14 @@ Once you're done locally, the same `test_cmd` works in CI:
 - run: cargo test --workspace
 ```
 
-If a recipe was the entry point, save the recipe under `recipes/` and add a CI step:
+If a recipe was the entry point, add a CI step for it. Only the built-in recipe names load (`--recipe` doesn't read a file from `recipes/`), and `hone --recipe` exits 0 even when every step fails and the tests fail, so keep the separate test step: it is the one that fails the build.
 
 ```yaml
-- run: hone --recipe tdd-feature -i "$FEATURE_DESC" --non-interactive
+- run: hone --recipe tdd-feature --var feature_name="$FEATURE_DESC" --var test_command="cargo test"
+- run: cargo test --workspace   # fails the build; the recipe step never does
 ```
 
-`--non-interactive` suppresses the TUI and prints transcripts to stdout, so CI logs capture the agent's chain of reasoning.
+`--recipe` never opens the TUI or pauses between steps: it prints each step's output to stdout, so CI logs capture the agent's chain of reasoning.
 
 ## Common pitfalls
 

@@ -50,19 +50,19 @@ Read, write, edit files with glob pattern matching.
 
 ```bash
 # List files matching a pattern
-hone -i "Find all Python files in src/"
+hone "Find all Python files in src/"
 # Agent calls: glob(pattern="src/**/*.py")
 
 # Read a file
-hone -i "Show me main.rs"
+hone "Show me main.rs"
 # Agent calls: read_file(path="main.rs")
 
 # Write a file
-hone -i "Create a README with instructions"
+hone "Create a README with instructions"
 # Agent calls: write_file(path="README.md", content="...")
 
 # Edit a file (precise edits)
-hone -i "Add error handling to line 42"
+hone "Add error handling to line 42"
 # Agent calls: edit_file(path="main.rs", line=42, replacement="...")
 ```
 
@@ -101,7 +101,7 @@ hone -i "Add error handling to line 42"
 Execute shell commands and capture output.
 
 ```bash
-hone -i "Run the tests and show me any failures"
+hone "Run the tests and show me any failures"
 # Agent calls: shell(cmd="cargo test", cwd="/project")
 ```
 
@@ -123,13 +123,13 @@ hone -i "Run the tests and show me any failures"
 Version control: commit, branch, diff, undo.
 
 ```bash
-hone -i "Commit my changes with a message"
+hone "Commit my changes with a message"
 # Agent calls: git_commit(message="...", files=["main.rs"])
 
-hone -i "Show me what changed"
+hone "Show me what changed"
 # Agent calls: git_diff()
 
-hone -i "Switch to feature branch"
+hone "Switch to feature branch"
 # Agent calls: git_checkout(branch="feature/new-tool")
 ```
 
@@ -147,13 +147,13 @@ hone -i "Switch to feature branch"
 Language server integration for code intelligence. Hone now supports real LSP servers via stdio JSON-RPC. The `StdioLspBridge` auto-spawns a language server based on project type.
 
 ```bash
-hone -i "What does this function do?"
+hone "What does this function do?"
 # Agent calls: lsp_hover(file="main.rs", line=10, col=5)
 
-hone -i "Show me all errors in this file"
+hone "Show me all errors in this file"
 # Agent calls: lsp_diagnostics(file="main.rs")
 
-hone -i "Fix the type error on line 42"
+hone "Fix the type error on line 42"
 # Agent calls: lsp_code_action(file="main.rs", line=42)
 ```
 
@@ -200,7 +200,7 @@ go install golang.org/x/tools/gopls@latest
 Search code by meaning (not keywords).
 
 ```bash
-hone -i "Find functions that handle authentication"
+hone "Find functions that handle authentication"
 # Agent calls: semantic_search(query="authentication", limit=10)
 ```
 
@@ -246,17 +246,17 @@ env = { SLACK_BOT_TOKEN = "xoxb-..." }
 Once configured, MCP tools appear automatically in the agent's tool registry:
 
 ```bash
-hone -i "Open a GitHub issue"
+hone "Open a GitHub issue"
 # Agent lists available tools:
 # - github_create_issue
 # - github_list_repos
 # - github_add_comment
 # ...agent calls: github_create_issue(repo="user/repo", title="...", body="...")
 
-hone -i "Query the database for users"
+hone "Query the database for users"
 # Agent calls: postgres_query(sql="SELECT * FROM users WHERE active=true")
 
-hone -i "Post a message to Slack"
+hone "Post a message to Slack"
 # Agent calls: slack_send_message(channel="general", text="...")
 ```
 
@@ -337,7 +337,7 @@ args = ["/path/to/server.js"]
 Use it:
 
 ```bash
-hone -i "Translate 'hello' to Spanish"
+hone "Translate 'hello' to Spanish"
 # Agent calls: translate(text="hello", language="Spanish")
 # Output: "Hola"
 ```
@@ -355,7 +355,7 @@ Advanced orchestration via agent-generated scripts. The agent generates TypeScri
 ### Example
 
 ```bash
-hone -i "Find all Python files, count lines of code, and report top 10 longest files"
+hone "Find all Python files, count lines of code, and report top 10 longest files"
 ```
 
 Agent generates (pseudocode):
@@ -386,7 +386,7 @@ Hone executes this generated code in a sandboxed subprocess, streaming results b
 
 ## Agents
 
-Agents are specialized personas that combine tools, system prompts, and model preferences. Hone ships with 9 built-in agents and supports custom agents.
+Agents are specialized personas that combine tools, system prompts, and model preferences. Hone ships with 12 built-in agents and supports custom agents.
 
 ### What is an Agent?
 
@@ -417,7 +417,7 @@ You are a senior code reviewer. Perform systematic reviews following this proces
 ```
 
 The YAML frontmatter defines:
-- `name` — Agent identifier (used with `--agent` flag)
+- `name` — Agent identifier (what you type after `@` in the TUI)
 - `description` — One-line summary (used for discovery)
 - `tools` — List of available tools
 - `model` — Default model (e.g., "sonnet", "opus", "haiku")
@@ -428,7 +428,7 @@ The Markdown body becomes the system prompt.
 
 ### Built-in Agents
 
-Hone includes 9 pre-configured agents:
+Hone includes 12 pre-configured agents:
 
 | Agent | Purpose |
 |-------|---------|
@@ -441,18 +441,20 @@ Hone includes 9 pre-configured agents:
 | `tdd-workflow` | Test-Driven Development coach |
 | `rust-expert` | Rust best practices |
 | `python-expert` | Python best practices |
+| `data-engineer` | ETL pipelines, data warehousing, schema design |
+| `ml-engineer` | Model training, evaluation, deployment, MLOps |
+| `researcher` | Literature review, experiment design, paper analysis |
 
 ### Using Built-in Agents
 
-```bash
-# Use an agent by name
-hone --agent code-reviewer -i "Review this code"
+`--agent` is accepted but not applied yet. In the TUI, start a message with `@code-reviewer …` (the exact agent name) to use that persona for the turn:
 
-# Use an agent by searching its description
-hone --agent "test-driven" -i "Implement a feature"  # finds tdd-workflow
+```
+> @code-reviewer Review this code
+> @tdd-workflow Add CSV export with tests first
 ```
 
-The agent registry automatically loads built-in agents and matches descriptions to agent names.
+For that message, the agent's system prompt replaces the default one and its `tools` list, if it has one, limits the tools. The name must match exactly; there is no search by description. If Hone sorts the message as complex (for example it says "implement" or "architecture", or names three or more files), it runs through the orchestrator with the default prompt; only the persona's tool list applies. An unknown name still prints `Switching to @name persona for this turn.` but runs with the default persona. A bare `@name` with no text starts no turn and doesn't carry over to the next message.
 
 ### Creating Custom Agents
 
@@ -481,11 +483,10 @@ Place custom agents in:
 - Project level: `.hone/agents/*.md`
 - User level: `~/.config/hone/agents/*.md`
 
-Custom agents override built-in agents with the same name. Load them automatically:
+Custom agents override built-in agents with the same name and load automatically. Use one in the TUI, started in the project:
 
-```bash
-cd /your/project
-hone --agent my-custom-agent
+```
+> @my-custom-agent Your task
 ```
 
 ### Agent Registry

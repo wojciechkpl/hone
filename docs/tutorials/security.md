@@ -4,11 +4,14 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| Kernel sandbox (Landlock / Seatbelt) | Available | Linux 5.13+ and macOS |
-| Environment variable filtering | Available | Via `sandbox.defaults.allow_env` |
-| Audit logging | Available | JSON log to configurable path |
-| Memory encryption (AES-256-GCM) | Available | Requires `--features encrypted-memory` |
+| Kernel sandbox (Seatbelt / Landlock) | Available | Seatbelt on macOS; Landlock on Linux 5.13+ is opt-in (`HONE_SANDBOX_ENFORCE=1`) |
+| Environment variable filtering | **Not available** | Commands the agent runs inherit Hone's environment, including API keys. See [Environment Variable Filtering](#environment-variable-filtering) |
+| Audit logging | Opt-in | `--audit` or `HONE_AUDIT_LOG=1` writes `.hone/audit.jsonl` |
+| Memory encryption (AES-256-GCM) | Opt-in | `--encrypted-memory` with `HONE_MEMORY_PASSPHRASE` set; built in, no Cargo feature |
 | SQLite at-rest encryption (sqlcipher) | Planned | Not yet implemented |
+
+> [!WARNING]
+> The `[sandbox]`, `[audit]`, `[rbac]` and `[[mcp_servers]]` examples on this page use settings Hone doesn't have (MCP servers are configured in `~/.config/hone/mcp.json` or `.hone/mcp.json`). A `config.toml` that contains them fails to load (`hone strategies --check` shows the error). What Hone enforces, and how to configure it, is in [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ---
 
@@ -16,7 +19,7 @@ Hone implements defense-in-depth security using kernel sandboxing, network polic
 
 ## Linux Landlock Sandbox
 
-On Linux kernel 5.13+, Hone enforces filesystem access via the **Landlock LSM** (Linux Security Module). The sandbox is configured per-tool using fine-grained access rules.
+On Linux kernel 5.13+, Hone can enforce filesystem access for shell commands via the **Landlock LSM** (Linux Security Module). It is opt-in: Landlock applies only when `HONE_SANDBOX_ENFORCE` is exactly `1`. Otherwise Hone logs one warning (at warn level) and runs shell commands unsandboxed on Linux. In `hone` the sandbox covers shell commands only, and the only setting beyond that switch is `HONE_SANDBOX_EXTRA_READ` (see [Permissions and sandbox](../permissions-and-sandbox.md#3-os-sandbox)). The `hone-sandbox` library API looks like this:
 
 ```rust
 use hone_sandbox::{SandboxPolicyBuilder, SandboxMode};
@@ -28,13 +31,7 @@ let policy = SandboxPolicyBuilder::new(SandboxMode::Manual)
     .build()?;
 ```
 
-When a tool runs a subprocess, Landlock is applied via `pre_exec()` so the child cannot access files outside the policy:
-
-```bash
-# If tool reads /etc/passwd (not in allow_read)
-Agent calls: read_file(path="/etc/passwd")
-error: Permission denied (EACCES)
-```
+Only shell commands are sandboxed: the shell tool installs the sandbox on the child process it starts. File tools such as `read_file` and `write_file` run inside the Hone process, so the OS sandbox never applies to them; they are governed by permission rules instead. See [Permissions and sandbox](../permissions-and-sandbox.md#3-os-sandbox).
 
 **Requirements:**
 - Linux kernel 5.13+ (Landlock upstreamed in this release)
@@ -42,56 +39,25 @@ error: Permission denied (EACCES)
   - Output >= 1 means Landlock is available
   - No output or error means unavailable
 
-If Landlock is unavailable, `SandboxError::Unavailable` is returned and the operation is aborted (fail-closed design):
-
-```
-error: Landlock not available on this kernel (< 5.13)
-Set [sandbox] enforce = false to disable sandboxing (not recommended).
-```
+With `HONE_SANDBOX_ENFORCE=1`, if Landlock is unavailable, `SandboxError::Unavailable` is returned and the shell command fails instead of running unsandboxed (fail-closed). Without the variable there is no fail-closed behaviour: commands run unsandboxed.
 
 To require Landlock and fail if unavailable:
 
-```toml
-[sandbox]
-enforce = true  # fail if Landlock not available
-platform = "landlock"
+```bash
+HONE_SANDBOX_ENFORCE=1 hone
 ```
 
 ---
 
 ## Sandbox Architecture Overview
 
-```mermaid
-flowchart TB
-    Agent["Agent executes tool"]
-    
-    subgraph Platform["Platform-Specific Sandbox"]
-        direction LR
-        macOS["macOS: Seatbelt<br/>(sandbox_init)"]
-        Linux["Linux: Landlock +<br/>seccomp-BPF"]
-        Container["Container: seccomp +<br/>no-new-privs"]
-        Fallback["Fallback: setrlimit +<br/>capabilities drop"]
-    end
-    
-    Policy["SandboxPolicy<br/>- allow_read<br/>- allow_write<br/>- allow_exec<br/>- allow_network<br/>- allow_env"]
-    
-    Agent -->|SandboxPolicy| Platform
-    Policy -->|enforced by| Platform
-    Platform -->|success| Exec["Tool Executes<br/>Sandboxed"]
-    Platform -->|failure| Fail["FAIL-CLOSED<br/>Operation Aborted"]
-```
+| Platform | Sandbox | Default |
+|---|---|---|
+| macOS | Seatbelt (via `sandbox-exec`) | On |
+| Linux | Landlock | Opt-in: `HONE_SANDBOX_ENFORCE=1` |
+| Other | None | — |
 
-## Sandbox Platform Matrix
-
-| Platform | Primary | Fallback | Notes |
-|---|---|---|---|
-| **macOS 10.5+** | Seatbelt | `setrlimit` + `no-new-privs` | Mature, production-ready |
-| **Linux 5.13+** | Landlock | seccomp-BPF + `setrlimit` | Modern, fine-grained |
-| **Linux <5.13** | seccomp-BPF | `setrlimit` + `no-new-privs` | Older kernels |
-| **Container** | seccomp + `no-new-privs` | `setrlimit` | Already sandboxed at OS level |
-| **Windows** | Job Objects | Restricted token | Future implementation |
-
-**Fail-closed invariant:** If the desired sandbox tier is unavailable and required by policy, the operation aborts with `SandboxError::PolicyNotMet`. There is no silent downgrade.
+The sandbox covers shell commands only. `SandboxBuilder::detect()` picks Seatbelt, Landlock or no sandbox by platform; there is no seccomp, container or `setrlimit` tier. See [Permissions and sandbox](../permissions-and-sandbox.md#3-os-sandbox).
 
 ## SandboxPolicy
 
@@ -109,7 +75,7 @@ pub struct SandboxPolicy {
 
 ## Configuration
 
-Sandbox policies are configured in `~/.config/hone/config.toml`:
+These `[sandbox]` settings don't exist, and a `config.toml` that contains them fails to load. The only sandbox settings are `HONE_SANDBOX_ENFORCE` and `HONE_SANDBOX_EXTRA_READ`; the example is kept for reference:
 
 ```toml
 [sandbox]
@@ -186,23 +152,13 @@ Tool execution aborted by sandbox.
 
 ## Environment Variable Filtering
 
-Only allow specific environment variables to reach tool processes:
+> [!WARNING]
+> Hone doesn't filter the environment, and there is no `allow_env` setting. Shell commands and other tools the agent runs inherit Hone's environment, including provider API keys, so the model can read a key with a command such as `echo $ANTHROPIC_API_KEY`.
 
-```toml
-[sandbox.defaults]
-allow_env = ["PATH", "HOME", "USER", "SHELL"]
+To limit what the model can read:
 
-[sandbox.tools.git]
-allow_env = ["PATH", "HOME", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"]
-```
-
-Attempt to access other env vars from a tool:
-
-```bash
-$ hone -i "Print ANTHROPIC_API_KEY"
-Agent calls: shell(cmd="echo $ANTHROPIC_API_KEY")
-Output: (empty — variable not accessible)
-```
+- Export only the keys Hone needs, and don't start Hone from a shell that holds other credentials.
+- `HONE_POLICY_BUILTINS=1` loads the built-in permission rules (including pipe-to-shell denial and tool-level asks) and turns on redaction: secret-shaped values in tool output (Anthropic and OpenAI keys, among other formats) are replaced with `[REDACTED:<kind>]` before the model sees them. The matching is pattern-based, so an encoded or unusually shaped secret still gets through. See [Permissions and sandbox](../permissions-and-sandbox.md).
 
 ## File System Restrictions
 
@@ -372,26 +328,14 @@ grep "alice@example.com" /var/log/hone/audit.log | jq .
 
 > **Status: Available** — Application-layer AES-256-GCM encryption of memory content is implemented in `crates/hone-memory/src/encrypted.rs`. This encrypts the `content` field of each memory record using a key derived from a user passphrase via Argon2id. Full SQLite file encryption via sqlcipher is **not yet implemented** (Planned).
 
-Enable optional memory encryption to protect sensitive session data:
-
-```bash
-cargo build --features encrypted-memory
-```
-
-Configuration:
-
-```toml
-[memory]
-encrypted = true
-cipher = "aes256-gcm"
-```
+Enable optional memory encryption with the `--encrypted-memory` flag. It is built in: there is no Cargo feature and no `config.toml` setting.
 
 The encryption key is derived from a user passphrase via Argon2id:
 
 ```bash
-hone --init-encryption
-# Enter passphrase: ****
-# Passphrase stored securely in system keychain.
+export HONE_MEMORY_PASSPHRASE="your-strong-passphrase"
+hone --encrypted-memory
+# The passphrase is read from the environment on every run; nothing is stored in a keychain.
 ```
 
 Memory content (conversation history) is encrypted at rest. The SQLite file structure itself is not encrypted — for full disk encryption, use OS-level tools or ephemeral mode.
@@ -402,8 +346,6 @@ Run a session with all data immediately discarded after completion:
 
 ```bash
 hone --ephemeral
-# or
-hone -E
 ```
 
 In ephemeral mode:
@@ -420,16 +362,16 @@ By default, session memories are stored in SQLite at `~/.local/share/hone/memory
 
 ```bash
 ls -la ~/.local/share/hone/
-# memory.db            - session memories (content encrypted if --features encrypted-memory)
+# memory.db            - session memories (content encrypted with --encrypted-memory)
 # sessions.db          - session metadata (if HONE_SESSION_DB set)
 ```
 
-When built with `--features encrypted-memory`, the content field of each memory record is encrypted with AES-256-GCM before being written to disk (see [Memory Encryption](#memory-encryption-encrypted-memory-feature) above).
+With `--encrypted-memory`, the content field of each memory record is encrypted with AES-256-GCM before being written to disk (see [Memory Encryption](#memory-encryption-encrypted-memory-feature) above).
 
 Full SQLite file encryption via sqlcipher is planned for a future release. Until then, for sensitive workloads where even encrypted content fields are insufficient, use `--ephemeral` to disable persistence entirely:
 
 ```bash
-hone --ephemeral -i "Sensitive query"
+hone --ephemeral "Sensitive query"
 ```
 
 Or clear memories manually:
@@ -491,7 +433,7 @@ hash = "sha256:abc123..."  # verify before running
 6. **Use ephemeral mode for sensitive prompts:**
 
 ```bash
-hone -E -i "Analyze this sensitive document"
+hone --ephemeral "Analyze this sensitive document"
 ```
 
 ## Troubleshooting

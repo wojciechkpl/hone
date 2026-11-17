@@ -282,18 +282,7 @@ The agent chooses which tools to use based on your request.
 
 Hone runs code in a sandbox. If the agent tries to do something unsafe (delete system files, access the network without permission, etc.), the sandbox stops it:
 
-```bash
-# Show the sandbox policy
-hone --show-sandbox-policy
-
-# Output:
-# Sandbox: Seatbelt (macOS)
-#   Allow: Read files in /Users/you/project
-#   Allow: Execute /bin/bash, /usr/bin/python3
-#   Deny: Read /etc/passwd
-#   Deny: Access the network (except api.openai.com, github.com)
-#   Deny: Access /private/var, /tmp (except /tmp/.hone-*)
-```
+There is no command that prints the sandbox policy. [Permissions and sandbox](../permissions-and-sandbox.md) lists what it allows on each platform: on macOS, shell commands can write only the working directory, `/tmp` and `/dev/null`, and get no network.
 
 The sandbox uses your operating system's native security (Seatbelt on macOS, Landlock on Linux). It's the same technology Safari uses.
 
@@ -336,7 +325,7 @@ An agent is a specialized AI persona. Instead of saying "fix this code," you can
 
 ### Built-in Agents
 
-Hone ships with 9 pre-trained agents:
+Hone ships with 12 pre-trained agents:
 
 | Agent | Use When |
 |-------|----------|
@@ -349,26 +338,20 @@ Hone ships with 9 pre-trained agents:
 | `api-designer` | You're designing an API |
 | `performance-optimizer` | You need to optimize code |
 | `documentation-agent` | You need to write docs |
+| `data-engineer` | You're building ETL pipelines or designing schemas |
+| `ml-engineer` | You're training, evaluating or deploying models |
+| `researcher` | You need a literature review or an experiment design |
 
 ### Using an Agent
 
-```bash
-# Use a specific agent
-hone --agent code-reviewer -i "Review this code for security issues"
-
-# Find an agent by keyword
-hone --agent "test-driven" -i "Implement a new feature"
-# This finds "tdd-workflow" automatically
-
-# Use an agent in a recipe (we'll cover recipes next)
-hone --recipe tdd-feature --agent rust-expert
-```
-
-During the session, you can also switch agents:
+`--agent` is accepted but not applied yet. In the TUI, start a message with `@code-reviewer …` (the exact agent name) to use that persona for the turn:
 
 ```
-/agent debugger
+> @code-reviewer Review this code for security issues
+> @tdd-workflow Add CSV export with tests first
 ```
+
+The persona applies to that one message; the next message without an `@` prefix uses the default again. If Hone sorts the message as complex (for example it says "implement" or "architecture", or names three or more files), it runs through the orchestrator with the default prompt; only the persona's tool list applies. An unknown name still prints `Switching to @name persona for this turn.` but runs with the default persona. A bare `@name` with no text starts no turn and doesn't carry over to the next message. There is no `/agent` command, and recipes always run with the default persona.
 
 ### What's a Recipe?
 
@@ -376,68 +359,58 @@ A recipe is a structured workflow. Instead of manually running steps one by one,
 
 1. What to do in each step
 2. The order to do them
-3. Whether to run tests at the end
+3. Which test command to run after every step
 
-Hone ships with 4 built-in recipes:
+Hone ships with 9 built-in recipes (`hone --list-recipes` lists them all), including:
 
 | Recipe | What It Does |
 |--------|-------------|
 | `tdd-feature` | Implement a feature with Red-Green-Refactor |
 | `bug-fix` | Fix a bug with a regression test |
-| `code-review` | Comprehensive code review (5 steps) |
+| `code-review` | Comprehensive code review (6 steps) |
 | `refactor` | Safely refactor with test verification |
 
 ### Running a Recipe
 
 ```bash
-# Run a built-in recipe
-hone --recipe tdd-feature
-hone --recipe bug-fix
+# Run a built-in recipe; --var fills the {{placeholders}} in its prompts
+hone --recipe tdd-feature --var feature_name="CSV export" --var test_command="cargo test"
+hone --recipe bug-fix --var test_command="cargo test"
 ```
 
 Here's what a TDD feature run looks like:
 
 ```
-Recipe: tdd-feature
-Step 1/5: Understand
-  Prompt: Read the relevant code and understand the current architecture...
-  Agent: [reads files, summarizes the codebase]
-  Continue? (y/n) y
+Running recipe: tdd-feature (5 steps)
+  Implement a feature using Test-Driven Development (Red-Green-Refactor)
 
-Step 2/5: Red
-  Prompt: Write failing tests that describe the desired behavior...
-  Agent: [writes tests, runs them to confirm failure]
-  Continue? (y/n) y
+[1/5] clarify
+[agent clarifies the requirements]
 
-Step 3/5: Green
-  Prompt: Write the minimum code to make tests pass...
-  Agent: [writes implementation]
-  Continue? (y/n) y
+  Running tests: cargo test
+  Tests passed.
 
-Step 4/5: Refactor
-  Prompt: Refactor for clarity and quality...
-  Agent: [improves code]
-  Continue? (y/n) y
+[2/5] red
+[agent writes failing tests and runs them]
 
-Step 5/5: Verify
-  Prompt: Run all tests...
-  Agent: [runs full test suite, reports success]
-  
-Test command: cargo test
-Result: PASSED (all 12 tests)
+  Running tests: cargo test
+  Tests FAILED:
+  [the test command's stderr; its stdout isn't shown]
 
-Recipe completed successfully.
+[3/5] green
+...
+
+[5/5] verify
+...
+
+Recipe 'tdd-feature' complete.
 ```
+
+The run never pauses for input. The test command runs after every step; a failure is printed and the next step starts anyway.
 
 ### Combining Agents and Recipes
 
-You can use an agent with a recipe. For example, TDD in Rust:
-
-```bash
-hone --recipe tdd-feature --agent rust-expert
-```
-
-The `rust-expert` agent will apply Rust best practices (Arc, ownership, etc.) while following the TDD workflow.
+Not yet: `--agent` isn't applied, so `hone --recipe tdd-feature --agent rust-expert` runs the recipe with the default persona. For Rust-specific help, send the TUI message `@rust-expert …` instead.
 
 ### Creating a Custom Agent
 
@@ -464,10 +437,10 @@ You are a specialized agent for [your domain].
 [Your system prompt...]
 ```
 
-Then use it:
+Then use it in the TUI:
 
-```bash
-hone --agent my-agent -i "Your task"
+```
+> @my-agent Your task
 ```
 
 See [Tools and MCP Guide](../tutorials/tools-and-mcp.md#agents) for detailed examples.
@@ -476,10 +449,12 @@ See [Tools and MCP Guide](../tutorials/tools-and-mcp.md#agents) for detailed exa
 
 ## Common Workflows
 
+The agent workflows below use the `@agent` prefix in the TUI (see [Using an Agent](#using-an-agent)); the recipe ones run from the shell.
+
 ### Bug Fixing with the Debugger
 
-```bash
-hone --agent debugger -i "The login form throws 'TypeError: cannot read password'. Fix it."
+```
+> @debugger The login form throws 'TypeError: cannot read password'. Fix it.
 ```
 
 The debugger agent uses a systematic approach:
@@ -493,8 +468,8 @@ You review and approve the fix.
 
 ### Code Review with Security Focus
 
-```bash
-hone --agent security-auditor -i "Review this code for vulnerabilities"
+```
+> @security-auditor Review this code for vulnerabilities
 ```
 
 The security auditor scans for:
@@ -507,10 +482,10 @@ The security auditor scans for:
 ### Implement a Feature with TDD
 
 ```bash
-hone --recipe tdd-feature --agent rust-expert
+hone --recipe tdd-feature --var feature_name="rate limiting for the login endpoint" --var test_command="cargo test"
 ```
 
-This combines the TDD workflow with Rust expertise. The agent:
+This runs the TDD workflow with the default persona (recipes take no `@agent`). The agent:
 1. Understands the architecture
 2. Writes failing tests
 3. Implements the minimum code to pass
@@ -520,22 +495,22 @@ This combines the TDD workflow with Rust expertise. The agent:
 ### Refactor Code Safely
 
 ```bash
-hone --recipe refactor
+hone --recipe refactor --var test_command="cargo test"
 ```
 
-The refactor recipe enforces test verification at each step:
+The refactor recipe runs your test command after each step:
 1. Establish a green baseline
 2. Plan the refactoring
 3. Execute changes one at a time
 4. Run tests after each change
 5. Report before/after metrics
 
-You approve each step incrementally.
+It runs every step without pausing for approval, and doesn't stop when the tests fail.
 
 ### Code Review (General)
 
-```bash
-hone --agent code-reviewer -i "Review this PR"
+```
+> @code-reviewer Review this PR
 ```
 
 The code reviewer performs a systematic review:
@@ -547,8 +522,8 @@ The code reviewer performs a systematic review:
 
 ### Add Documentation
 
-```bash
-hone --agent documentation-agent -i "Generate API documentation"
+```
+> @documentation-agent Generate API documentation
 ```
 
 The documentation agent can:
@@ -738,13 +713,7 @@ api_key = "sk-ant-..."
 
 ### "Model not supported"
 
-List available models:
-
-```bash
-hone --list-models
-```
-
-Use one from the list.
+Hone has no command that lists models. Check the ID against your provider's own model list (`ollama list` for local models), and give it a provider prefix: `anthropic:`, `openai:`, `ollama:`, `claude-cli:` or `gemini-cli:`.
 
 ### "Network error"
 

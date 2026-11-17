@@ -8,11 +8,11 @@ You know OpenCode. You're comfortable with 75+ providers, LSP integration, clien
 |----------|-----------------|-------|
 | 75+ provider support | 75+ providers (same breadth) | Full compatibility |
 | OpenCode LSP bridge | LSP bridges (same approach) | Embedded in Hone |
-| OpenCode web UI | hone TUI + honed daemon | TUI instead of web (faster) |
+| OpenCode web UI | hone TUI, or the web UI served by honed | TUI is the main interface; the web UI needs `honed` |
 | OpenCode client-server | hone CLI + honed daemon | HTTP/2 + SSE instead of WebSocket |
 | OpenCode cost tracking | Real-time cost tracking | Per-turn granularity |
-| Custom integrations | MCP + ACP + Layer 2 tools | More modular |
-| OpenCode recipes | YAML recipes (same format) | 100% compatible |
+| Custom integrations | MCP + Layer 2 tools (ACP is library-only) | More modular |
+| OpenCode recipes | 9 built-in recipes | Not compatible: `--recipe` runs only built-in names, not recipe files |
 
 ## Before and After
 
@@ -35,14 +35,12 @@ opencode serve --port 3000
 ### Hone Workflow
 
 ```bash
-# Start daemon
-honed --port 7070
+# Option 1: TUI (faster, no web browser or daemon needed)
+hone
 
-# Option 1: TUI (faster, no web browser needed)
-hone --remote localhost:7070
-
-# Option 2: Web UI (planned, not yet)
-# hone serve --port 3000
+# Option 2: Web UI, served by the daemon (build it in first: make webui, then rebuild honed)
+HONE_BIND=127.0.0.1 honed 7070
+open http://127.0.0.1:7070/ui
 
 # In TUI:
 # 1. Select provider and model (or use default)
@@ -52,7 +50,7 @@ hone --remote localhost:7070
 # 5. Review diffs (git-native, not custom viewer)
 ```
 
-**Key difference:** Hone uses TUI + daemon (faster) instead of web UI (more familiar).
+**Key difference:** Hone's TUI runs on its own (faster); the web UI needs the `honed` daemon.
 
 ## What You Gain
 
@@ -164,11 +162,11 @@ OpenCode embeds LSP bridges. Hone standardizes and extends them:
 - Cost accounting for LSP calls
 
 ```bash
-hone -i "What's the return type of authenticate()?"
+hone "What's the return type of authenticate()?"
 # Agent calls: lsp_hover(file="auth.rs", line=42, col=10)
 # Hone tracks: 1 LSP call (no cost, local)
 
-hone -i "Find all calls to the deprecated API"
+hone "Find all calls to the deprecated API"
 # Agent calls: semantic_search(query="deprecated API")
 # Hone returns: 12 matching locations
 ```
@@ -212,17 +210,7 @@ OpenCode has custom integrations. Hone standardizes via ACP:
 - Full tool support (not limited to JSON-RPC)
 - Better for complex integrations
 
-```bash
-# config.toml
-[providers.acp]
-server_path = "/path/to/my-custom-agent"
-server_args = ["--port", "9000"]
-
-# CLI
-hone --model acp:my-service
-```
-
-Your custom agent can implement complex logic, not limited to tool schemas.
+ACP providers are library-only for now: `hone` can't select one. There is no `acp:` model prefix, and a `[providers.acp]` table makes `config.toml` fail to load. See [ACP](../tutorials/acp.md).
 
 ## What's Different
 
@@ -236,7 +224,7 @@ Your custom agent can implement complex logic, not limited to tool schemas.
 - Web UI: Better for non-technical users, remote collaboration
 - TUI: Better for developers, lower latency, no browser overhead
 
-Web UI is planned for Hone (not yet implemented).
+Hone also has a web UI, served by `honed` at `/ui` (build it in first: `make webui`, then rebuild `honed`).
 
 ### 2. Daemon Architecture
 
@@ -348,26 +336,27 @@ enabled = true
 
 ### 3. Start the Daemon
 
+The daemon is optional: it serves the web UI, the desktop app and the HTTP API. The `hone` CLI doesn't connect to it.
+
 ```bash
-# If running locally
-honed --port 7070
+# If running locally (loopback only, no token needed)
+HONE_BIND=127.0.0.1 honed 7070
+# Web UI: http://127.0.0.1:7070/ui (build it in first: make webui, then rebuild honed)
 
-# In another terminal
-hone --remote localhost:7070
-
-# Or remotely on a server
+# Or remotely on a server (a token is required off loopback)
 ssh myserver
-honed --config ~/.config/hone/config.toml
-
-# From your laptop
-hone --remote myserver:7070
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
+honed 7070
+# From your laptop: the desktop app (daemon URL and token) or the HTTP API
 ```
+
+`honed` has no `--config` option; its settings are environment variables, listed in [Environment variables](../configuration.md#environment-variables) (`honed --help` lists only some of them).
 
 ### 4. Test Your First Session
 
 ```bash
 cd /your/opencode/project
-hone --remote localhost:7070
+hone
 ```
 
 Try a familiar task:
@@ -407,23 +396,17 @@ When refactoring:
 
 ### 6. Migrate Your Recipes (If Any)
 
-If you had OpenCode recipes, copy them over:
-
-```bash
-cp ~/.opencode/recipes/* ~/.config/hone/recipes/
-```
-
-Hone recipes are YAML (same format as OpenCode). Update tool names if needed.
+Hone can't run your OpenCode recipes yet: `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`, and it reads no recipes directory. Use the closest built-in recipe instead.
 
 ## FAQ
 
 ### Can I still use the web UI?
 
-Not yet. Hone currently has a TUI. Web UI is planned.
+Yes, through `honed`: it serves a web UI at `/ui` once you build it in (`make webui`, then rebuild `honed`). See [What about the web UI? I prefer it.](#what-about-the-web-ui-i-prefer-it) below.
 
 ### Do my OpenCode recipes work in Hone?
 
-Mostly. Recipe syntax is similar. Tool names may differ. Copy recipes and test.
+No. `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`.
 
 ### How do I set per-user budgets like OpenCode?
 
@@ -435,11 +418,7 @@ alice = { budget = "unlimited" }
 bob = { budget = "$500/month" }
 ```
 
-Or enforce at daemon level:
-
-```bash
-honed --user-budget 500 --budget-period month
-```
+`honed` has no budget options: `--user-budget` and `--budget-period` don't exist.
 
 ### Is Hone faster than OpenCode?
 
@@ -463,18 +442,18 @@ Sessions are also stored in memory database:
 
 ### What about the web UI? I prefer it.
 
-Web UI is on the roadmap. For now, TUI is the primary interface. SSH tunneling works well for remote use:
+`honed` serves one at `/ui` (build it in first: `make webui`, then rebuild `honed`). SSH tunneling works well for remote use: run `HONE_BIND=127.0.0.1 honed 7070` on the server, then from your laptop:
 
 ```bash
 ssh -L 7070:localhost:7070 myserver
-hone --remote localhost:7070
+open http://localhost:7070/ui   # the web UI, if it was built into that honed
 ```
 
 ## Next Steps
 
 1. **Install:** Follow step 1 above
 2. **Config:** Migrate your OpenCode config to TOML
-3. **Daemon:** Run `honed` locally and connect via `hone --remote`
+3. **Daemon (optional):** Run `honed` for the web UI, the desktop app or the HTTP API (`hone` itself doesn't connect to it)
 4. **Test:** Try a familiar task
 5. **Recipes:** Read [Recipes Guide](../tutorials/recipes.md) for automation
 6. **Team:** Read [Server and Remote](../tutorials/server-and-remote.md) for multi-user setup

@@ -5,30 +5,12 @@ Hone can run as a daemon (`honed`) that exposes an HTTP/2 REST API with Server-S
 ## Starting the Daemon
 
 ```bash
-honed --port 7777
+HONE_BIND=127.0.0.1 honed 7777
 ```
 
-The daemon listens on `http://localhost:7777`.
+The daemon listens on `http://localhost:7777`. The port is a positional argument (default 3117). Without `HONE_BIND=127.0.0.1`, `honed` binds `0.0.0.0` and refuses to start unless `HONE_AUTH_TOKEN` is set.
 
-**Configuration via config.toml:**
-
-```toml
-[server]
-host = "0.0.0.0"  # listen on all interfaces
-port = 7777
-auth_token = "your-bearer-token"  # optional auth
-enable_https = true
-cert_path = "/path/to/cert.pem"
-key_path = "/path/to/key.pem"
-```
-
-**Configuration via environment:**
-
-```bash
-HONE_SERVER_PORT=7777 \
-HONE_SERVER_AUTH_TOKEN="secret" \
-honed
-```
+`honed` has no config file of its own and serves plain HTTP only (from your `config.toml` it reads only `[pricing]`, plus the `[context]`, `[memory]` and `[retrieval]` tables, from your file and the working directory's `.hone/config.toml`, when it runs as a distributed worker); see [Daemon Configuration](#daemon-configuration) for the environment variables it reads.
 
 ## REST API Overview
 
@@ -227,47 +209,15 @@ HTTP/1.1 401 Unauthorized
 
 ## Tunnel Support for Remote Access
 
-Access the daemon over the internet securely using a tunnel.
+`honed` has no tunnel options (there is no `--enable-tunnel` or `--tunnel-provider`), and the `hone` CLI can't connect to a daemon, local or remote. Two things exist:
 
-### Built-in Tunnel
+- `POST /tunnel` with `{"local_port": 7777}` (plus `GET` and `DELETE`; the web UI's settings drawer uses them) starts a `bore` tunnel to `bore.pub` when the `bore` CLI is on the daemon's `PATH`, and returns its plain-HTTP `http://bore.pub:<port>` URL. Without `bore` it returns a placeholder URL that doesn't work.
+- Any tunnel you run yourself, for example `ngrok http 7777` next to `HONE_AUTH_TOKEN=… honed 7777`.
 
-Hone has built-in tunnel support (Cloudflare Tunnel, Ngrok, etc.):
+Clients then use the public URL from the desktop app (URL and token) or the HTTP API (`Authorization: Bearer <token>`).
 
-```bash
-honed --enable-tunnel --tunnel-provider cloudflare
-```
-
-The daemon prints a public URL:
-
-```
-Daemon started on http://localhost:7777
-Tunnel: https://hone-abc123.trycloudflare.com
-Share this URL to allow remote access.
-```
-
-Remote clients can now use:
-
-```bash
-HONE_SERVER_URL=https://hone-abc123.trycloudflare.com hone
-```
-
-### Manual Tunnel (Ngrok)
-
-Alternatively, use Ngrok manually:
-
-```bash
-# Terminal 1: start daemon
-honed
-
-# Terminal 2: tunnel
-ngrok http 7777
-```
-
-Ngrok gives you a public URL. Use it in the Hone client:
-
-```bash
-hone --server-url https://abc123.ngrok.io --auth-token "your-token"
-```
+> [!WARNING]
+> A bore tunnel is public, plain HTTP. Never open one to a daemon without `HONE_AUTH_TOKEN`: anyone could run the agent. With a token, the token is sent unencrypted, so prefer an HTTPS tunnel (ngrok) or `ssh -L`. The web UI's tunnel button always tunnels port 3117, and because the web UI sends no token it only works on a daemon without one, so don't use the web UI's tunnel button.
 
 ## Health Checks
 
@@ -326,12 +276,14 @@ Hone includes a web-based UI (Progressive Web App) that connects to the daemon:
 
 ```bash
 # Daemon starts on port 7777
-honed --port 7777
+HONE_BIND=127.0.0.1 honed 7777
 
 # Open browser to localhost
-# The PWA is served by the daemon
-open http://localhost:7777
+# The PWA is served by the daemon at /ui (build it in first: make webui, then rebuild honed)
+open http://localhost:7777/ui
 ```
+
+Without that build step, `GET /` serves a simpler built-in chat page, on a daemon without `HONE_AUTH_TOKEN` (with a token, a browser gets 401).
 
 The web UI provides:
 - Session management
@@ -342,25 +294,18 @@ The web UI provides:
 
 ## Persistent Sessions with SQLite
 
-By default, sessions are stored in memory and lost when the daemon restarts. To persist sessions across restarts, configure a SQLite database:
+By default, `honed` persists sessions in SQLite at `~/.local/share/hone/sessions.db` (created if absent). To use another file, set `HONE_SESSION_DB`:
 
 ```bash
-HONE_SESSION_DB=~/.local/share/hone/sessions.db honed
+HONE_BIND=127.0.0.1 HONE_SESSION_DB=/srv/hone/sessions.db honed
 ```
 
-Or via config.toml:
-
-```toml
-[storage]
-sessions_db = "~/.local/share/hone/sessions.db"
-```
-
-When `HONE_SESSION_DB` is set:
+There is no `[storage]` setting in `config.toml`. With persistence on (the default):
 - New sessions are persisted immediately
 - Sessions survive daemon restarts
 - Session history is queryable via the API
 
-Without this setting, sessions live only in memory for the duration of the daemon process.
+To keep sessions in memory only, set `HONE_EPHEMERAL` (any value, even `0`, turns it on); they are then lost when the daemon stops. If the default file can't be opened, `honed` logs a warning (at warn level) and falls back to memory.
 
 ---
 
@@ -377,18 +322,20 @@ cargo install bore-cli
 Run the daemon — it auto-detects Bore on PATH:
 
 ```bash
-honed
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"   # never tunnel a daemon without one
+honed 7777
 ```
 
-The daemon detects `bore` in PATH and uses `BoreTunnelManager` to spawn it as a subprocess. The tunnel URL is printed on startup:
+At startup the daemon only detects `bore` on PATH; it doesn't start a tunnel or print a URL. The tunnel starts when a client calls `POST /tunnel` with `{"local_port": 7777}`, which spawns `bore local 7777 --to bore.pub` and returns the URL, `http://bore.pub:<port>` (plain HTTP; see the warning under [Tunnel Support](#tunnel-support-for-remote-access)):
 
-```
-Daemon started on http://localhost:7777
-Tunnel: https://tunnel-abc123.bore.pub
-Share this URL to allow remote access.
+```bash
+curl -X POST http://127.0.0.1:7777/tunnel \
+  -H "Authorization: Bearer $HONE_AUTH_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"local_port": 7777}'
 ```
 
-If `bore` is not on PATH, the daemon falls back to `MockTunnelManager` (local-only access). No error is thrown — tunneling is optional.
+If `bore` is not on PATH, the daemon falls back to `MockTunnelManager`: `POST /tunnel` returns a placeholder URL that doesn't work. No error is thrown — tunneling is optional.
 
 ---
 
@@ -398,7 +345,7 @@ The daemon handles `SIGINT` and `SIGTERM` gracefully, draining in-flight request
 
 ```bash
 # Start daemon
-honed
+HONE_BIND=127.0.0.1 honed
 
 # In another terminal, send signal
 kill -TERM <pid>
@@ -454,63 +401,26 @@ Collaborators see each other's prompts and the agent's responses in real-time vi
 
 ## Daemon Configuration
 
-Full config.toml example:
-
-```toml
-[server]
-host = "0.0.0.0"
-port = 7777
-auth_token = "bearer_token_here"
-enable_https = false
-enable_tunnel = false
-
-[server.tunnel]
-provider = "cloudflare"
-auth_token = "cf_token"
-
-[providers.anthropic]
-api_key = "sk-ant-..."
-
-[providers.ollama]
-base_url = "http://localhost:11434"
-
-[[mcp_servers]]
-name = "github"
-command = "npx"
-args = ["@modelcontextprotocol/server-github"]
-env = { GITHUB_TOKEN = "ghp_..." }
-```
-
-Start with custom config:
+`honed` has no config-file option (there is no `--config`) and doesn't apply a `[server]` table. Its settings are the port argument and environment variables: `HONE_BIND`, `HONE_AUTH_TOKEN`, `HONE_SESSION_DB` and the others in [Environment variables](../configuration.md#environment-variables) (`honed --help` lists only some of them). From the `~/.config/hone/config.toml` of the user it runs as, it reads `[pricing]`. `POST /run` always uses the Anthropic API with the daemon's `ANTHROPIC_API_KEY`.
 
 ```bash
-honed --config ~/.config/hone/config.toml
+export ANTHROPIC_API_KEY="sk-ant-..."
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
+honed 7777
 ```
 
 ## Running Multiple Daemons
 
-Run multiple daemons with different models for workload distribution:
+You don't need one daemon per model: `honed` has no `--model` option, and the `hone` CLI can't send work to a daemon. Each `POST /run` request names its model in the `model` field of its JSON body (default `claude-sonnet-4-6`). `/run` always calls the Anthropic API, so pick an Anthropic model:
 
 ```bash
-# Terminal 1: fast responses
-honed --port 7777 --model ollama:llama2
-
-# Terminal 2: high quality
-honed --port 7778 --model anthropic:claude-opus-4-5
-
-# Terminal 3: budget conscious
-honed --port 7779 --model openai:gpt-3.5-turbo
+curl -N -X POST http://localhost:7777/run \
+  -H "Authorization: Bearer $HONE_AUTH_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt": "Analyze this complex code", "model": "claude-opus-4-5"}'
 ```
 
-Route requests to different daemons based on needs:
-
-```bash
-# Fast response for simple tasks
-hone --server-url http://localhost:7777 -i "Quick question"
-
-# High quality for complex tasks
-hone --server-url http://localhost:7778 -i "Analyze this complex code"
-```
+To run several daemons anyway, give each its own port: `honed 7777`, `honed 7778`.
 
 ## Systemd Service
 
@@ -525,7 +435,9 @@ After=network.target
 [Service]
 Type=simple
 User=hone
-ExecStart=/usr/local/bin/honed --config /etc/hone/config.toml
+# /etc/hone/honed.env holds HONE_AUTH_TOKEN=… and ANTHROPIC_API_KEY=…
+EnvironmentFile=/etc/hone/honed.env
+ExecStart=/usr/local/bin/honed 7777
 Restart=on-failure
 StandardOutput=journal
 StandardError=journal

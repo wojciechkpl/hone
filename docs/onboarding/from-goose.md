@@ -7,9 +7,9 @@ You know Goose. You're comfortable with MCP-native architecture, recipes, extens
 | Goose | Hone Equivalent | Notes |
 |-------|-----------------|-------|
 | Extensions (custom tools) | Layer 2 native tools + Layer 1 MCP | Hone has faster native layer + MCP |
-| Recipes (YAML workflows) | Recipes (same YAML format) | 100% compatible with Goose recipes |
+| Recipes (YAML workflows) | 9 built-in recipes | Not compatible: `--recipe` runs only built-in names, not recipe files |
 | Providers | Providers (same abstraction) | 75+ providers, same flexibility |
-| CLI providers (custom agents) | ACP providers (Agent Client Protocol) | More formalized, better integration |
+| CLI providers (custom agents) | `claude-cli:` / `gemini-cli:` pass-through | ACP providers are library-only; `hone` can't select one yet |
 | MCP servers | MCP Layer 1 (JSON-RPC) | Same protocol, same servers work |
 | Goose config | HONE.md + config.toml | Config is TOML, conventions are HONE.md |
 
@@ -52,7 +52,7 @@ steps:
     body: "{output}"
 EOF
 
-hone --recipe recipes/analyze.yaml
+# Not yet: --recipe runs only built-in recipe names, so this file fails with "unknown recipe"
 ```
 
 **Key difference:** Hone splits tools into layers:
@@ -65,17 +65,7 @@ hone --recipe recipes/analyze.yaml
 
 Goose relies on process isolation. Hone adds kernel-level containment:
 
-```bash
-# See what Hone's sandbox allows
-hone --show-sandbox-policy
-
-# Example output:
-# Sandbox: Seatbelt (macOS)
-#   Allow read: /Users/you/project (allow-list)
-#   Allow execute: /usr/bin/python3, /usr/local/bin/cargo
-#   Deny network: (except whitelisted: api.openai.com, github.com)
-#   Deny environment: (except whitelisted: PATH, PYTHONPATH)
-```
+There is no command that prints the sandbox policy. On macOS, shell commands can write only the working directory, `/tmp` and `/dev/null`, and get no network; [Permissions and sandbox](../permissions-and-sandbox.md) lists what each platform allows, and your own rules live in `~/.config/hone/permissions.toml` and `<repo>/.hone/permissions.toml`.
 
 Tool calls are confined at kernel level. No privilege escalation possible.
 
@@ -95,12 +85,12 @@ extension: file_reader
 **Hone approach:**
 ```bash
 # Direct Rust function call, <1ms latency
-hone -i "Read main.rs"
+hone "Read main.rs"
 # Agent calls: read_file(path="main.rs")
 # Latency: <1ms (no IPC)
 
 # For MCP tools (if needed):
-hone -i "Open a GitHub issue"
+hone "Open a GitHub issue"
 # Agent calls: github_create_issue(...)
 # Latency: 10-100ms (JSON-RPC)
 ```
@@ -112,7 +102,7 @@ Layer 2 (native) is ~100x faster than Layer 1 (MCP). You get both.
 Goose has basic repo context. Hone has adaptive semantic indexing:
 
 ```bash
-hone -i "Find functions that handle authentication"
+hone "Find functions that handle authentication"
 # Hone searches by meaning (not keywords)
 # Result: Returns auth() in auth.rs, verify_token() in middleware.rs, etc.
 ```
@@ -127,11 +117,11 @@ Powered by:
 Goose has no built-in LSP. Hone bridges to language servers:
 
 ```bash
-hone -i "What's the type of this variable?"
+hone "What's the type of this variable?"
 # Agent calls: lsp_hover(file="main.rs", line=10, col=5)
 # Returns: type information from language server
 
-hone -i "Show me all errors in this file"
+hone "Show me all errors in this file"
 # Agent calls: lsp_diagnostics(file="main.rs")
 ```
 
@@ -142,23 +132,23 @@ Supports Python, Rust, TypeScript, Go, Java, etc.
 Goose is single-user. Hone can be multi-user:
 
 ```bash
-# Start daemon on a shared machine
-honed --port 7070
+# Start daemon on a shared machine (a token is required unless it binds to loopback)
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
+honed 7070
 
-# From your laptop
-hone --remote myserver:7070
+# From your laptop: the desktop app (daemon URL and token) or the HTTP API.
+# The hone CLI doesn't connect to a daemon.
 
-# In HONE.md or config, define roles
-[team.roles]
-alice = "admin"      # manage settings, users
-bob = "operator"     # run sessions, read code
-charlie = "viewer"   # read-only access
+# There are no per-user roles to define: every client uses the one HONE_AUTH_TOKEN,
+# and a [team.roles] table makes config.toml fail to load.
 ```
 
-Audit logging tracks who did what:
+There is no `--audit-log` option. To keep a tamper-evident log of every run, point `HONE_PROVENANCE_DIR` at an existing directory:
 ```bash
-honed --audit-log /var/log/hone/audit.log
-# Logs: user, session_id, timestamp, tools_called, files_accessed
+mkdir -p /var/log/hone/provenance
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
+HONE_PROVENANCE_DIR=/var/log/hone/provenance honed 7070
+# One hash-chained JSONL file per POST /run: the prompt, tool calls and results
 ```
 
 ## What's Different
@@ -220,16 +210,7 @@ Goose has CLI providers (spawn a subprocess). Hone formalizes this as ACP:
 goose --provider cli:/path/to/my-agent --model custom
 ```
 
-**Hone ACP provider:**
-```bash
-# config.toml
-[providers.acp]
-server_path = "/path/to/my-agent"
-server_args = ["--port", "9000"]
-
-# CLI
-hone --model acp:my-custom-agent
-```
+**Hone ACP provider:** ACP providers are library-only for now. `hone` can't select one: there is no `acp:` model prefix, and a `[providers.acp]` table makes `config.toml` fail to load. See [ACP](../tutorials/acp.md).
 
 ACP is the Agent Client Protocol (same idea, standardized).
 
@@ -403,14 +384,14 @@ mcp_trace_file = "/tmp/hone-mcp.log"
 
 ### Is Hone backward-compatible with Goose recipes?
 
-Mostly. Recipe syntax is similar; tool names may differ. Test your recipes and adjust as needed.
+No. `--recipe` runs only the 9 built-in recipes by name (`hone --list-recipes`); a recipe file fails with `unknown recipe: <name>`.
 
 ## Next Steps
 
 1. **Install:** Follow step 1 above
-2. **Config:** Migrate your Goose config to HONE.toml
-3. **Recipes:** Copy your recipes and test
-4. **Test:** Run `hone --recipe your-recipe.yaml`
+2. **Config:** Move your Goose settings to `~/.config/hone/config.toml`
+3. **Recipes:** your Goose recipe files can't be run yet; use the closest built-in (`hone --list-recipes`)
+4. **Test:** Run a built-in recipe, e.g. `hone --recipe code-review` (recipe files can't be run yet)
 5. **Extend:** Read [Tools and MCP](../tutorials/tools-and-mcp.md) for advanced integrations
 6. **Team:** Read [Server and Remote](../tutorials/server-and-remote.md) for remote daemon setup
 

@@ -19,11 +19,11 @@ Start here if you're new to Hone:
 
 - **[Tools and MCP](tools-and-mcp.md)** — Layer architecture (L0–L3), native tools (file, shell, git, LSP, semantic index), MCP integration (JSON-RPC, external tools), Code Mode (agent-generated orchestration), skills (HONE.md conventions), tool registry and dispatch, writing custom tools
 
-- **[Recipes](recipes.md)** — YAML recipe system, recipe format with annotations, conditional steps, TDD hook (test_cmd), running recipes interactively or in batch mode, recipe output and export, writing and sharing recipes
+- **[Recipes](recipes.md)** — YAML recipe system, recipe format with annotations, conditional steps, TDD hook (test_cmd), running the built-in recipes (runs never pause), recipe output, writing and sharing recipes
 
 - **[Orchestration GUI](orchestration-gui.md)** — `/plan` plan-preview gate (TUI + web UI), `/budget` and `/permit` per-run governance, `/workflows` saved-recipe drawer, the `POST /orchestrate?dry_run=true` and `POST /recipes` daemon endpoints. Pairs with the [research doc](../research/gui-for-non-cli-users-2026-05.md) and [TDD plan](../plans/orchestration-gui-tdd-2026-05.md).
 
-- **[ACP: Bidirectional Tool Dispatch](acp.md)** — Configure ACP providers (`claude --acp`, `gemini --acp`), the full lifecycle (initialize → schema announce → tool_call → toolResult → continuation → done), running the integration suite, schema authoring tips, cancellation semantics, troubleshooting
+- **[ACP: Bidirectional Tool Dispatch](acp.md)** — ACP providers (`claude --acp`, `gemini --acp`; library-only, not selectable from `hone` yet), the full lifecycle (initialize → schema announce → tool_call → toolResult → continuation → done), running the integration suite, schema authoring tips, cancellation semantics, troubleshooting
 
 - **[TUI Keybindings and Themes](tui-keybindings-and-themes.md)** — Layout overview, every keybinding, the command palette, autocomplete with descriptions, switching themes (`crimson`, `neon`, `chalk`, `minimal`), `~/.config/hone/theme.toml` overrides, accessibility flags (`HONE_NO_COLOR`, `HONE_REDUCED_MOTION`, `HONE_ASCII_ONLY`), vim-style bindings, mouse selection
 
@@ -31,7 +31,7 @@ Start here if you're new to Hone:
 
 - **[TDD with Hone](tdd-with-hone.md)** — `/tdd` watcher (auto-detected test commands, status badges, fix-on-failure flow), `tdd-feature` recipe (full Red-Green-Refactor automation), `bug-fix` recipe (regression-first), separating test author from implementer via `@`-agents, fast inner loops (single-crate, `cargo nextest`), CI integration
 
-- **[Debugging and Troubleshooting](debugging.md)** — `--doctor` first checks, provider issues (API keys, rate limits, model not found, hot-swap), tool dispatch (no calls, timeouts, ACP-specific failures), TUI issues (size, theme, mouse), sessions and state (memory, daemon crash), sandbox failures, recipes/TDD pitfalls, logging and observability, bug reports
+- **[Debugging and Troubleshooting](debugging.md)** — first checks, provider issues (API keys, rate limits, model not found, hot-swap), tool dispatch (no calls, timeouts, ACP-specific failures), TUI issues (size, theme, mouse), sessions and state (memory, daemon crash), sandbox failures, recipes/TDD pitfalls, logging and observability, bug reports
 
 - **[Memory and Pass-Through Caching](memory.md)** — the five layers (persistent store, HONE.md, context injection, Anthropic prompt-cache pass-through, local LRU), inspecting recalls in the TUI (`Ctrl+M`), `--ephemeral` mode, deleting memories, optional `EncryptedStore` (AES-256-GCM + Argon2id), Anthropic `cache_control` markers, debugging surprising recalls. Pairs with [`../architecture/memory.md`](../architecture/memory.md) for the design reference.
 
@@ -81,45 +81,35 @@ You can now build custom applications on top of Hone.
 
 ### Use Case: Code Review
 
-Start with [Getting Started](getting-started.md), then use [Recipes](recipes.md) to automate the review process:
-
-```yaml
-name: "Code Review"
-steps:
-  - name: "Analyze Changes"
-    prompt: "Review the diff and identify issues"
-  - name: "Suggest Improvements"
-    prompt: "What are the top 3 improvements?"
-  - name: "Generate Summary"
-    prompt: "Write a review summary"
-test_cmd: "cargo test"
-```
-
-Run it:
+Start with [Getting Started](getting-started.md), then use the built-in `code-review` recipe ([Recipes](recipes.md)) to automate the review process. It runs six steps: overview, correctness, security, performance, tests and report.
 
 ```bash
-hone --recipe code-review.yaml
+hone --recipe code-review
 ```
+
+`--recipe` runs built-in recipes by name only, so a recipe file such as `code-review.yaml` can't be run this way yet.
 
 ### Use Case: Semantic Code Search
 
 Start with [Getting Started](getting-started.md), then use [Tools and MCP](tools-and-mcp.md) to access the semantic index:
 
 ```bash
-hone -i "Find functions that handle authentication"
+hone "Find functions that handle authentication"
 ```
 
 The agent calls the `semantic_search` tool (Layer 2 native) to search by meaning.
 
 ### Use Case: Multi-User Team Workspace
 
-Start with [Server and Remote](server-and-remote.md), then configure [Security](security.md) for RBAC:
+Start with [Server and Remote](server-and-remote.md). There are no per-user roles: every client uses the daemon's one `HONE_AUTH_TOKEN`.
 
 ```bash
-honed --port 7777 --config /etc/hone/config.toml
+# honed has no config-file option; its settings are environment variables (docs/configuration.md)
+export HONE_AUTH_TOKEN="$(openssl rand -hex 32)"
+honed 7777
 ```
 
-Multiple users can now create sessions and collaborate via the REST API.
+Multiple users can now create sessions through the REST API or the desktop app (the web UI sends no token, so it can't use this daemon). Each client keeps its own conversation; `POST /run` is stateless.
 
 ### Use Case: Custom Tool Integration
 
@@ -180,22 +170,23 @@ docs/
 hone
 
 # One-shot command
-hone -i "List files in src/"
+hone "List files in src/"
 
-# Run a recipe
-hone --recipe my-recipe.yaml
+# Run a built-in recipe (hone --list-recipes shows the names)
+hone --recipe code-review
 
 # Switch model
 hone --model ollama:llama2
 
-# Set budget limit
-hone --budget 10.00
+# Set budget limit: [budget] session_limit_usd = 10.00 in ~/.config/hone/config.toml,
+# or /budget 10 in the TUI
 
-# Run daemon
-honed --port 7777
+# Run daemon (loopback only; set HONE_AUTH_TOKEN to listen on other interfaces)
+HONE_BIND=127.0.0.1 honed 7777
 
-# Connect to remote daemon
-hone --server-url https://hone.example.com --auth-token "token"
+# Use the daemon: web UI at http://127.0.0.1:7777/ui, the desktop app, or the HTTP API
+# (the hone CLI doesn't connect to a daemon)
+curl -N -X POST http://127.0.0.1:7777/run -H 'Content-Type: application/json' -d '{"prompt": "List files in src/"}'
 ```
 
 ### Configuration

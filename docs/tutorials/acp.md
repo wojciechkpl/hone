@@ -1,6 +1,15 @@
 # ACP: Bidirectional Tool Dispatch
 
-The Agent Client Protocol (ACP) lets hone drive any external agent process — `claude --acp`, `gemini --acp`, or any custom binary that speaks JSON-RPC 2.0 over stdin/stdout — and round-trip tool calls through hone's own dispatcher. This guide walks through configuring an ACP provider, what the message exchange looks like, and how to verify that tools actually round-trip end-to-end.
+> [!IMPORTANT]
+> **ACP is library-only for now: you can't select an ACP provider from `hone`.** There is no
+> `--provider` or `--acp-endpoint` flag and no `acp:` model prefix; the model prefixes `hone`
+> accepts are `anthropic:`, `openai:`, `ollama:`, `claude-cli:` and `gemini-cli:`. A
+> `[providers.<name>]` table accepts only `api_key_env`, `base_url` and `model`, so ACP keys
+> such as `kind`, `command` or `args` make `config.toml` fail to load.
+> What exists is the `AcpProvider` in the `hone-providers` crate and its integration test,
+> described below for code that embeds it.
+
+The Agent Client Protocol (ACP) lets hone drive any external agent process — `claude --acp`, `gemini --acp`, or any custom binary that speaks JSON-RPC 2.0 over stdin/stdout — and round-trip tool calls through hone's own dispatcher. This guide describes what the message exchange looks like and how the integration test verifies that tools round-trip end-to-end.
 
 For the full wire-format reference, see [`docs/api/acp-protocol.md`](../api/acp-protocol.md).
 
@@ -18,29 +27,9 @@ The contract is symmetric: any agent that speaks ACP can use any tool hone expos
 
 ## Configuring an ACP provider
 
-Edit `~/.config/hone/config.toml`:
-
-```toml
-[providers.claude_acp]
-kind = "acp"
-command = "claude"
-args = ["--acp"]
-default_model = "claude-sonnet-4-5"
-
-[providers.gemini_acp]
-kind = "acp"
-command = "gemini"
-args = ["--acp"]
-default_model = "gemini-2.5-pro"
-```
-
-Then select it at startup:
-
-```bash
-hone --provider claude_acp
-# or hot-swap mid-session:
-# /configure provider claude_acp
-```
+You can't yet: see the note at the top. `hone` has no ACP settings in `config.toml` and no
+flag or model prefix that selects ACP, and `/configure provider` in the TUI only notes the
+name (a provider change needs a restart).
 
 ## The lifecycle in one diagram
 
@@ -111,16 +100,7 @@ cargo test -p hone-providers --test acp_full_lifecycle -- --nocapture
 
 This drives a mock ACP agent through every step of the lifecycle (schema announcement → tool call → result → continuation → done) and asserts every invariant.
 
-For a manual smoke test against a real binary:
-
-```bash
-hone --provider claude_acp -i "use fs.read to show me README.md, then summarise it"
-```
-
-Watch for:
-- A `tool_call` log line in `~/.hone/logs/<session>.log` mentioning `fs.read`.
-- A matching `session/toolResult` entry.
-- A final assistant message that quotes content from `README.md`.
+There is no manual smoke test through `hone`: it can't select an ACP provider (see the note at the top).
 
 ## Tool schemas: keep them sharp
 
@@ -138,10 +118,9 @@ Issuing `Esc` (or sending `request.cancel` programmatically) propagates to the A
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `supports_tools: false` in `/configure` | Old provider config loaded | `hone --provider claude_acp` (do not use the legacy `claude` provider for tool dispatch) |
-| Agent never calls a tool | Schema rejected at `initialize` | Run with `RUST_LOG=hone_providers::acp=debug` and inspect the `initialize` response |
+| Agent never calls a tool | Schema rejected at `initialize` | Inspect the `initialize` response in your embedding code (the ACP module doesn't log, so `RUST_LOG` shows nothing) |
 | Tool call hangs | Result channel never produced a value | Check the dispatcher log; the tool's runtime probably panicked |
-| `tool_call_update` never arrives | Agent doesn't emit terminal status | Set `acp.expect_terminal_status = false` in config — `ObservedToolEnd` will be inferred from `prompt-finished` |
+| `tool_call_update` never arrives | Agent doesn't emit terminal status | No setting changes this (there is no `acp.expect_terminal_status` key): `ObservedToolEnd` is emitted only for a `tool_call_update` |
 | `session/toolResult` errors back | `sessionId` mismatch | Ensure you're not running two parallel prompts on the same agent process |
 
 ## Related
