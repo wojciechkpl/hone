@@ -212,6 +212,19 @@ def test_k25_stratify_if_fewer_and_grader_pin_should_state_the_section_10_3_rule
         "mcnemar",
         "0 of 75",
         "24 of 30",
+        # round 3: K31 unjudged text, K33 left-out rule, K34 verdicts, K32/K35 claim rule
+        "infrastructure error",
+        "re-run",
+        "instrumentation error",
+        "not re-run",
+        "counted",
+        "dropped",
+        "left out",
+        "both treatments",
+        "incomplete",
+        "per-scenario outcome table",
+        "wall time",
+        "tool calls",
     ],
 )
 def test_k29_stage_cb_analysis_should_state(env, needle):
@@ -222,3 +235,8 @@ def test_k29_analysis_should_no_longer_carry_the_round_1_wording(env):
     text = squash(load_cb(env)["analysis"])
     assert "n=40" not in text
     assert "swe" not in text
+
+
+@pytest.mark.parametrize("phrase", ["asks and blocks", "benign calls", "guard events"])
+def test_k35_analysis_should_not_list_descriptive_items_the_report_does_not_produce(env, phrase):
+    assert phrase not in squash(load_cb(env)["analysis"])
