@@ -230,6 +230,14 @@ def test_k25_stratify_if_fewer_and_grader_pin_should_state_the_section_10_3_rule
         # K46: the longer descriptive list
         "outcome counts",
         "injection",
+        # K52: what the suite B table shows
+        "pass@1",
+        "across repeats",
+        "doom-loop",
+        "context-full",
+        "budget",
+        "timeout",
+        "against",
         "incomplete",
         "per-scenario outcome table",
         "wall time",

@@ -188,10 +188,18 @@ def test_k40_unjudged_runs_never_turn_a_non_claim_into_a_claim(arm):
 # ---- K42 dirty tree ----------------------------------------------------------------------
 
 
+def clean_git_env():
+    """Environment for git helpers: no inherited repository, no user or system config."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "HC_"))}
+    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    return env
+
+
 def git(rig, *args):
     return subprocess.run(
         ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
-        cwd=rig, capture_output=True, text=True, check=True,
+        cwd=rig, capture_output=True, text=True, check=True, env=clean_git_env(),
     )  # fmt: skip
 
 
@@ -203,17 +211,17 @@ def git_rig(tmp_path):
     return rig
 
 
-def prereg_cli(rig, tmp_path, *extra, revision=SHA40):
+def prereg_cli(rig, tmp_path, *extra, revision=SHA40, out=None):
     vals = load_env_file(
         rig / "config" / "bench.env.example", base={"HOME": "/h", "HC_ROOT": str(rig)}
     )
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("HC_", "GIT_"))}
+    env = clean_git_env()
     for k, v in vals.items():
         if "CHANGE-ME" in v:
             env[k] = revision if k == "HC_MODEL_REVISION" else "pinned-for-test"
     env.update(prereg_env(rig, tmp_path))
     env["PYTHONPATH"] = str(rig)
-    out = rig / "prereg" / "t" / "preregistration.toml"
+    out = out or rig / "prereg" / "t" / "preregistration.toml"
     r = subprocess.run(
         [sys.executable, "-m", "hcbench.prereg", "--stage", "cb", "--out", str(out),
          "--env-file", str(rig / "config" / "bench.env.example"), *extra],
@@ -309,6 +317,7 @@ def test_k43_every_matrix_invocation_appends_bundle_files_head_and_dirty(tmp_pat
         assert line["files"] == {key: sha(rel) for key, rel in HASHED.items()}
         assert isinstance(line["head"], str)
         assert isinstance(line["dirty"], bool)
+        assert isinstance(line["dirty_paths"], list)  # K48: prereg/ is left out of both
 
 
 PRE43 = {
