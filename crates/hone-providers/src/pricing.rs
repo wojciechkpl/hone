@@ -41,79 +41,50 @@ impl PricingTable {
             entries: HashMap::new(),
         };
 
-        // Anthropic models (Claude 4.x)
-        table.insert(PricingEntry {
-            model: ModelId::new("anthropic:claude-opus-4-7"),
-            input_per_million: 15.0,
-            output_per_million: 75.0,
-            cache_read_per_million: Some(1.50),
-            cache_creation_per_million: Some(18.75),
-        });
-        table.insert(PricingEntry {
-            model: ModelId::new("anthropic:claude-sonnet-4-6"),
-            input_per_million: 3.0,
-            output_per_million: 15.0,
-            cache_read_per_million: Some(0.30),
-            cache_creation_per_million: Some(3.75),
-        });
-        table.insert(PricingEntry {
-            model: ModelId::new("anthropic:claude-haiku-4-5-20251001"),
-            input_per_million: 0.80,
-            output_per_million: 4.0,
-            cache_read_per_million: Some(0.08),
-            cache_creation_per_million: Some(1.00),
-        });
-        // Claude 4.5 generation (still in service)
-        table.insert(PricingEntry {
-            model: ModelId::new("anthropic:claude-opus-4-5"),
-            input_per_million: 15.0,
-            output_per_million: 75.0,
-            cache_read_per_million: Some(1.50),
-            cache_creation_per_million: Some(18.75),
-        });
-        table.insert(PricingEntry {
-            model: ModelId::new("anthropic:claude-sonnet-4-5"),
-            input_per_million: 3.0,
-            output_per_million: 15.0,
-            cache_read_per_million: Some(0.30),
-            cache_creation_per_million: Some(3.75),
-        });
+        // Source: https://platform.claude.com/docs/en/about-claude/pricing (2026-11-17).
+        // `cache_creation` is the 5-minute write price: Hone uses the default ephemeral cache.
+        // The Claude CLI mirrors Anthropic pricing, so both prefixes come from one list.
+        // (id, input, output, cache_read, cache_creation) per million tokens.
+        const CLAUDE_PRICES: &[(&str, f64, f64, f64, f64)] = &[
+            ("claude-fable-5-2", 8.0, 40.0, 0.20, 10.0),
+            ("claude-mythos-5-2", 8.0, 40.0, 0.20, 10.0),
+            ("claude-fable-5-1", 10.0, 50.0, 0.25, 12.50),
+            ("claude-mythos-5-1", 10.0, 50.0, 0.25, 12.50),
+            ("claude-fable-5", 10.0, 50.0, 1.0, 12.50),
+            ("claude-mythos-5", 10.0, 50.0, 1.0, 12.50),
+            ("claude-opus-5-5", 4.0, 20.0, 0.20, 5.0),
+            ("claude-opus-5", 5.0, 25.0, 0.50, 6.25),
+            ("claude-opus-4-8", 5.0, 25.0, 0.50, 6.25),
+            ("claude-opus-4-7", 5.0, 25.0, 0.50, 6.25),
+            ("claude-opus-4-6", 5.0, 25.0, 0.50, 6.25),
+            ("claude-opus-4-5", 5.0, 25.0, 0.50, 6.25),
+            ("claude-sonnet-5-5", 2.0, 10.0, 0.10, 2.50),
+            ("claude-sonnet-5", 2.0, 10.0, 0.20, 2.50),
+            ("claude-sonnet-4-6", 3.0, 15.0, 0.30, 3.75),
+            ("claude-sonnet-4-5", 3.0, 15.0, 0.30, 3.75),
+            // Haiku 5.5 is priced at the <=100K-token rate. Prompts over 100K tokens
+            // cost 0.50 / 2.50 / 0.05 / 0.625; tier support is a follow-up.
+            ("claude-haiku-5-5", 0.10, 0.50, 0.01, 0.125),
+            // Keyed by alias; dated ids resolve via `strip_date_suffix`.
+            ("claude-haiku-4-5", 1.0, 5.0, 0.10, 1.25),
+        ];
+        for prefix in ["anthropic", "claude-cli"] {
+            for &(id, input, output, cache_read, cache_write) in CLAUDE_PRICES {
+                table.insert(PricingEntry {
+                    model: ModelId::new(format!("{prefix}:{id}")),
+                    input_per_million: input,
+                    output_per_million: output,
+                    cache_read_per_million: Some(cache_read),
+                    cache_creation_per_million: Some(cache_write),
+                });
+            }
+        }
         table.insert(PricingEntry {
             model: ModelId::new("anthropic:claude-haiku-3-5"),
             input_per_million: 0.80,
             output_per_million: 4.0,
             cache_read_per_million: Some(0.08),
             cache_creation_per_million: Some(1.00),
-        });
-
-        // Claude CLI models (mirrors Anthropic pricing)
-        table.insert(PricingEntry {
-            model: ModelId::new("claude-cli:claude-opus-4-7"),
-            input_per_million: 15.0,
-            output_per_million: 75.0,
-            cache_read_per_million: Some(1.50),
-            cache_creation_per_million: Some(18.75),
-        });
-        table.insert(PricingEntry {
-            model: ModelId::new("claude-cli:claude-sonnet-4-6"),
-            input_per_million: 3.0,
-            output_per_million: 15.0,
-            cache_read_per_million: Some(0.30),
-            cache_creation_per_million: Some(3.75),
-        });
-        table.insert(PricingEntry {
-            model: ModelId::new("claude-cli:claude-opus-4-5"),
-            input_per_million: 15.0,
-            output_per_million: 75.0,
-            cache_read_per_million: Some(1.50),
-            cache_creation_per_million: Some(18.75),
-        });
-        table.insert(PricingEntry {
-            model: ModelId::new("claude-cli:claude-sonnet-4-5"),
-            input_per_million: 3.0,
-            output_per_million: 15.0,
-            cache_read_per_million: Some(0.30),
-            cache_creation_per_million: Some(3.75),
         });
 
         // Gemini CLI models
