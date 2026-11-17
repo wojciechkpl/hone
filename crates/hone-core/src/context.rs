@@ -576,6 +576,9 @@ pub struct ContextManager {
     /// Hash of each stored message (parallel to `messages`), filled lazily and
     /// reset when a message is rewritten.
     hashes: Vec<Option<String>>,
+    /// Estimated token count of each stored message (parallel to `messages`),
+    /// kept in step with every change so the history is never re-tokenized.
+    tokens: Vec<u32>,
     /// Only drop-oldest trimming (no dedup, graduated or phase compaction).
     trim_only: bool,
     /// `HONE_CONTEXT_WINDOW`: replaces the window of every model on a retarget.
@@ -585,6 +588,8 @@ pub struct ContextManager {
     user_ratio: Option<f32>,
     /// The lowest project-file ratio (`cap_budget_ratio`); kept across retargets.
     project_cap: Option<f32>,
+    /// History tokens of the last fitted request.
+    last_request_tokens: u32,
 }
 
 impl ContextManager {
@@ -602,10 +607,12 @@ impl ContextManager {
             phase_compaction: phase_compaction_from_env(),
             compaction_log: Vec::new(),
             hashes: Vec::new(),
+            tokens: Vec::new(),
             trim_only: false,
             window_override: None,
             user_ratio: None,
             project_cap: None,
+            last_request_tokens: 0,
         }
     }
 
@@ -624,10 +631,12 @@ impl ContextManager {
             phase_compaction: phase_compaction_from_env(),
             compaction_log: Vec::new(),
             hashes: Vec::new(),
+            tokens: Vec::new(),
             trim_only: false,
             window_override: None,
             user_ratio: None,
             project_cap: None,
+            last_request_tokens: 0,
         }
     }
 
@@ -724,16 +733,22 @@ impl ContextManager {
     /// The token budget of one request to `model_name`: that model's budget,
     /// lowered to 60% of the window of each fallback model that may serve the
     /// request instead (its window only: no cost cap, no family ratio).
-    pub fn request_budget(&self, model_name: &str, fallbacks: &[String]) -> u32 {
+    pub fn request_budget(&self, model_name: &str, fallbacks: &[ModelId]) -> u32 {
         let mut budget = self.config_for(model_name).effective_budget();
-        for name in fallbacks {
+        let table = ContextWindowTable::default_table();
+        for fallback in fallbacks {
+            let id = fallback.as_str();
             let window = self.window_override.unwrap_or_else(|| {
-                ContextWindowTable::default_table()
-                    .lookup(&ModelId::new(format!("anthropic:{name}")))
+                table
+                    .lookup(fallback)
                     .or_else(|| {
-                        ContextWindowTable::default_table().lookup(&ModelId::new(name.as_str()))
+                        (!id.contains(':'))
+                            .then(|| table.lookup(&ModelId::new(format!("anthropic:{id}"))))
+                            .flatten()
                     })
-                    .unwrap_or_else(|| ContextConfig::for_model(name).advertised_context_length)
+                    .unwrap_or_else(|| {
+                        ContextConfig::for_model(fallback.model_name()).advertised_context_length
+                    })
             });
             budget = budget.min((window as f32 * 0.60) as u32);
         }
@@ -861,6 +876,7 @@ impl ContextManager {
             message
         };
 
+        self.tokens.push(estimate_message_tokens(&message));
         self.messages.push(message);
         self.hashes.push(None);
         self.trim_to_budget();
@@ -883,7 +899,8 @@ impl ContextManager {
             self.compress_old_tool_results();
         }
 
-        if self.total_tokens() <= self.max_context_tokens {
+        let mut total = self.total_tokens();
+        if total <= self.max_context_tokens {
             return;
         }
 
@@ -894,7 +911,7 @@ impl ContextManager {
         // Position each stored message had before this pass started.
         let mut pre_pass: Vec<usize> = (0..self.messages.len()).collect();
         loop {
-            if self.total_tokens() <= self.max_context_tokens {
+            if total <= self.max_context_tokens {
                 break;
             }
 
@@ -909,6 +926,7 @@ impl ContextManager {
 
             let removed = self.messages.remove(idx);
             self.hashes.remove(idx);
+            total = total.saturating_sub(self.tokens.remove(idx));
             let before = pre_pass.remove(idx);
             removed_refs.push(message_ref(before, &removed));
             self.record_dropped_message(removed);
@@ -988,6 +1006,7 @@ impl ContextManager {
                     let before = message_ref(i, &self.messages[i]);
                     self.messages[i].content = Content::Text(compressed);
                     self.hashes[i] = None;
+                    self.tokens[i] = estimate_message_tokens(&self.messages[i]);
                     let after = message_ref(i, &self.messages[i]);
                     self.log_step(
                         "graduated",
@@ -1032,6 +1051,7 @@ impl ContextManager {
             let before = message_ref(i, &self.messages[i]);
             self.messages[i].content = Content::Text(structural_summary(&text, path.as_deref()));
             self.hashes[i] = None;
+            self.tokens[i] = estimate_message_tokens(&self.messages[i]);
             let after = message_ref(i, &self.messages[i]);
             self.log_step(
                 "phase",
@@ -1111,6 +1131,7 @@ impl ContextManager {
         {
             let old = self.messages.remove(existing);
             self.hashes.remove(existing);
+            self.tokens.remove(existing);
             replaced = Some(message_ref(
                 pre_pass.get(existing).copied().unwrap_or(existing),
                 &old,
@@ -1136,6 +1157,8 @@ impl ContextManager {
             tool_call_id: None,
         };
         let marker_ref = message_ref(insert_at, &marker);
+        self.tokens
+            .insert(insert_at, estimate_message_tokens(&marker));
         self.messages.insert(insert_at, marker);
         self.hashes.insert(insert_at, None);
 
@@ -1188,40 +1211,138 @@ impl ContextManager {
     }
 
     /// Like [`build_messages_hashed`](Self::build_messages_hashed), for a request
-    /// that may carry at most `budget` tokens. When the history is larger, a copy
-    /// is trimmed by the same rules as `add_message` (keeps the first system and
-    /// user messages and the most recent ones) and the stored history is left
-    /// alone. The copy's compaction steps are added to this manager's log, so the
-    /// receipt names what was dropped from this request; hashes come from the
-    /// copy, so they match the messages sent.
+    /// that may carry at most `budget` tokens. See
+    /// [`build_messages_hashed_fitted_for`](Self::build_messages_hashed_fitted_for).
     pub fn build_messages_hashed_fitted(
         &mut self,
         system_prompt: &str,
         budget: u32,
     ) -> (Vec<Message>, Vec<String>) {
-        if self.total_tokens() <= budget {
+        self.build_messages_hashed_fitted_for(system_prompt, budget, "")
+    }
+
+    /// Build the request for `model_name` (recorded in the receipt step) that
+    /// may carry at most `budget` tokens of history.
+    ///
+    /// When the history is larger, the request leaves messages out by the same
+    /// rules as `add_message` trimming (keeps the first system and user messages,
+    /// summary markers and the most recent ones; drops the oldest others first),
+    /// in one pass over the cached token counts. The stored history is not
+    /// changed. A tool result whose call was left out, and a tool call whose
+    /// result was left out, are left out too. The omission is one `fit_request`
+    /// step in the compaction log (listing the stored messages left out), so
+    /// this call's receipt shows it; hashes are those of the messages sent.
+    pub fn build_messages_hashed_fitted_for(
+        &mut self,
+        system_prompt: &str,
+        budget: u32,
+        model_name: &str,
+    ) -> (Vec<Message>, Vec<String>) {
+        let mut total = self.total_tokens();
+        if total <= budget {
+            self.last_request_tokens = total;
             return self.build_messages_hashed(system_prompt);
         }
-        let mut fitted = Self {
-            config: self.config.clone(),
-            max_context_tokens: budget,
-            messages: self.messages.clone(),
-            dropped_count: self.dropped_count,
-            dropped_role_hints: self.dropped_role_hints.clone(),
-            metrics: None,
-            content_hashes: self.content_hashes.clone(),
-            phase_tracker: PhaseTracker::new(),
-            phase_compaction: false,
-            compaction_log: Vec::new(),
-            hashes: self.hashes.clone(),
-            trim_only: self.trim_only,
-            window_override: self.window_override,
-            user_ratio: self.user_ratio,
-            project_cap: self.project_cap,
-        };
-        fitted.trim_to_budget();
-        self.compaction_log.append(&mut fitted.compaction_log);
-        fitted.build_messages_hashed(system_prompt)
+
+        let n = self.messages.len();
+        let mut left_out = vec![false; n];
+        let preserved = preserved_indices(&self.messages);
+        let protected_from = n.saturating_sub(self.config.recent_window);
+        for (i, out) in left_out.iter_mut().enumerate().take(protected_from) {
+            if total <= budget {
+                break;
+            }
+            if preserved.contains(&i) || is_summary_marker_at(&self.messages, i) {
+                continue;
+            }
+            *out = true;
+            total = total.saturating_sub(self.tokens[i]);
+        }
+
+        // Pairing: no result without its call, no call without its results.
+        let mut call_at: HashMap<&str, usize> = HashMap::new();
+        let mut results_of: HashMap<&str, Vec<usize>> = HashMap::new();
+        for (i, m) in self.messages.iter().enumerate() {
+            for c in &m.tool_calls {
+                call_at.insert(c.id.as_str(), i);
+            }
+            if matches!(m.role, Role::Tool)
+                && let Some(id) = m.tool_call_id.as_deref()
+            {
+                results_of.entry(id).or_default().push(i);
+            }
+        }
+        loop {
+            let mut changed = false;
+            for i in 0..n {
+                if left_out[i] {
+                    continue;
+                }
+                let m = &self.messages[i];
+                let orphan_result = matches!(m.role, Role::Tool)
+                    && m.tool_call_id
+                        .as_deref()
+                        .and_then(|id| call_at.get(id))
+                        .is_some_and(|&c| left_out[c]);
+                let orphan_call = m.tool_calls.iter().any(|c| {
+                    results_of
+                        .get(c.id.as_str())
+                        .is_some_and(|rs| rs.iter().any(|&r| left_out[r]))
+                });
+                if orphan_result || orphan_call {
+                    left_out[i] = true;
+                    total = total.saturating_sub(self.tokens[i]);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        let replaced: Vec<SourceRef> = (0..n)
+            .filter(|&i| left_out[i])
+            .map(|i| message_ref(i, &self.messages[i]))
+            .collect();
+        if !replaced.is_empty() {
+            self.log_step(
+                "fit_request",
+                serde_json::json!({
+                    "model": model_name,
+                    "budget": budget,
+                    "left_out": replaced.len(),
+                }),
+                replaced,
+                None,
+            );
+        }
+        self.last_request_tokens = total;
+
+        let order = self.request_order();
+        let system = Message::system(system_prompt);
+        let mut messages = Vec::with_capacity(order.len() + 1);
+        let mut hashes = Vec::with_capacity(order.len() + 1);
+        hashes.push(message_sha256(&system));
+        messages.push(system);
+        for i in order.into_iter().filter(|&i| !left_out[i]) {
+            let hash = match &self.hashes[i] {
+                Some(h) => h.clone(),
+                None => {
+                    let h = message_sha256(&self.messages[i]);
+                    self.hashes[i] = Some(h.clone());
+                    h
+                }
+            };
+            hashes.push(hash);
+            messages.push(self.messages[i].clone());
+        }
+        (messages, hashes)
+    }
+
+    /// Estimated tokens of the history in the last request built with
+    /// `build_messages_hashed_fitted*` (what was sent, not what is stored).
+    pub fn last_request_tokens(&self) -> u32 {
+        self.last_request_tokens
     }
 
     /// Stored-message indexes in the order they are sent.
@@ -1328,6 +1449,7 @@ impl ContextManager {
     pub fn clear(&mut self) {
         self.messages.clear();
         self.hashes.clear();
+        self.tokens.clear();
         self.compaction_log.clear();
     }
 
@@ -1339,7 +1461,7 @@ impl ContextManager {
     /// Estimated total token count of all stored messages (excludes the system
     /// prompt, which is supplied at build time and not stored here).
     pub fn total_tokens(&self) -> u32 {
-        self.messages.iter().map(estimate_message_tokens).sum()
+        self.tokens.iter().sum()
     }
 
     /// Return a clone of all messages currently held in the context window.

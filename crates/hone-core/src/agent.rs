@@ -907,10 +907,19 @@ impl Agent {
         self.cost.total_usd()
     }
 
-    /// Estimated token count of the current context window (stored messages
-    /// only; the system prompt is not counted here).
+    /// Estimated tokens of the context a call uses: the stored messages, at most
+    /// what one request to the current model may carry (the system prompt is not
+    /// counted here).
     pub fn context_token_count(&self) -> u32 {
-        self.context.total_tokens()
+        self.context.total_tokens().min(self.request_budget())
+    }
+
+    /// The most history one request to the current model may carry: its budget,
+    /// lowered by the fallback models the provider says may serve it instead.
+    fn request_budget(&self) -> u32 {
+        let fallbacks = self.config.provider.fallback_models(&self.config.model);
+        self.context
+            .request_budget(self.config.model.model_name(), &fallbacks)
     }
 
     /// Total token usage of every model call this agent made, including calls
@@ -992,7 +1001,7 @@ impl Agent {
             return Vec::new();
         }
         let history = self.context.messages();
-        let budget_tokens = self.context.max_context_tokens();
+        let budget_tokens = self.request_budget();
         let redact = self.redacting();
         let turn = self.turn_count;
         let working_dir = self.config.working_dir.clone();
@@ -2142,20 +2151,13 @@ impl Agent {
             // Memories are injected as a separate system-role message right
             // after the base system prompt, so the prefix stays cache-friendly.
             // Fitted to the model that serves it (and the fallbacks that may take
-            // over): a copy is trimmed, the stored history is not.
-            let fallback_names: Vec<String> = self
-                .config
-                .provider
-                .fallback_models(&self.config.model)
-                .iter()
-                .map(|m| m.model_name().to_owned())
-                .collect();
-            let request_budget = self
-                .context
-                .request_budget(self.config.model.model_name(), &fallback_names);
-            let (mut messages, mut message_hashes) = self
-                .context
-                .build_messages_hashed_fitted(&self.config.system_prompt, request_budget);
+            // over): the request leaves messages out, the stored history keeps them.
+            let request_budget = self.request_budget();
+            let (mut messages, mut message_hashes) = self.context.build_messages_hashed_fitted_for(
+                &self.config.system_prompt,
+                request_budget,
+                self.config.model.as_str(),
+            );
 
             // Gathered sources: one system message each, right after the base
             // system prompt and before the memories and skills.

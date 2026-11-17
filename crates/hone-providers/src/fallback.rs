@@ -116,6 +116,15 @@ impl ModelProvider for FallbackChain {
         self.providers.iter().any(|p| p.runs_own_tools())
     }
 
+    /// The members after the first: the ones that take over when it fails.
+    fn fallback_models(&self, _model: &hone_proto::ModelId) -> Vec<hone_proto::ModelId> {
+        self.providers
+            .iter()
+            .skip(1)
+            .map(|p| hone_proto::ModelId::new(p.id()))
+            .collect()
+    }
+
     fn id(&self) -> &str {
         "fallback-chain"
     }
