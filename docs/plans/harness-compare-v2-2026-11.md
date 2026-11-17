@@ -902,13 +902,37 @@ before the first report is published.
     time, tool calls, and the doom-loop, context-full, budget and timeout counts.
   - In each family, the "tested" row names the bound it was tested under.
 
-### 11.8 Known gaps after this change
+### 11.8 Requirements, round 6 (from the fifth review of 2026-11-17)
+
+After the tag, every change to the rig's code is a mismatch, including a fix to the
+report. So these report-side fixes land before the pre-registration.
+
+- **K53 The code check never goes quiet.**
+  - When the pre-registration's `repo.head` is not a commit in the repository, that is a
+    `code.head` mismatch named `preregistration`. The section no longer just notes it.
+  - The dirty checks for every invocation and for the report run are made whether or not
+    that head resolves.
+- **K54 Code paths and other paths.** The code state covers these paths of the rig
+  directory: `hcbench/`, `harness_bin/`, `scripts/`, `config/`, `suites/`, `docker/`,
+  `Makefile` and `pyproject.toml`.
+  - A change or a dirty path under one of them is a `code.changed` or `code.dirty`
+    mismatch, as K48 says.
+  - A change or a dirty path elsewhere in the rig directory (for example `README.md`,
+    `SPEC.md`, `tests/`) is listed in the "Conformance" section as information and is not
+    a mismatch.
+  - `prereg/` stays left out of both.
+- **K55 Wording.** The "Conformance" section says what it compares for each invocation.
+  It no longer says the head and dirty flag are "shown, not compared".
+
+### 11.9 Known gaps after this change
 
 | Gap | Risk | Until it is closed |
 |---|---|---|
 | The model server is not checked against the pre-registration (weights revision, image, context length, speculative config). `make serve` leaves a running server alone | An edited `bench.env` with an old server still running | Run `make serve-down serve` after any change to `bench.env`, before the tag |
 | Campaign settings in `campaign.<suite>.json` (caps, limits, arms, repeats) are not compared with `[config]` | A changed cap after the tag is caught only by the run fingerprint | Don't edit `bench.env` after the tag; log any change in `DEVIATIONS.md` |
 | Nothing checks that the tag was public before the first run, only that the file was created before it | The public timestamp is the point of pre-registering | Push the tag before `make run-c`; the push time on GitHub is the evidence |
+| The code check looks at the checkout, not at the running proxy and task images | A stack built from an older commit and left running passes the check | Run `make stack` after the tag and before `make run-c`; it rebuilds the images and restarts the proxy |
+| Evidence is recorded per invocation, not per run | A bundle rebuilt while an invocation is running isn't seen | Don't run `make bundle` during a campaign |
 | `grade.py` names grading groups by seed | Odd names in the published suite A package; results are unaffected | Stage 2 |
 | Stage `a` has no validation and still reads SWE-bench Lite | Stage 2 can't be pre-registered yet | The SWE-rebench loader (§10.6 item 4) |
 

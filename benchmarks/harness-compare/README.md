@@ -73,6 +73,7 @@ git commit -m "bench: pre-register campaign 1, stage cb"
 git tag bench-prereg-c1
 git push origin bench/prereg-c1 bench-prereg-c1   # the public timestamp is the point
 
+make stack                       # rebuild the proxy and task images from the tagged code
 make run-c CAMPAIGN=c1           # 25 scenarios × 6 arms × 3 repeats
 make run-b CAMPAIGN=c1           # 10 tasks × 6 arms × 3 repeats
 make report CAMPAIGN=c1          # report.md, runs.csv, redteam.csv
@@ -100,8 +101,16 @@ counters in `make serve` logs after the smoke run. If decoding is not speculativ
 runs are still valid and every arm is affected equally, but the compute estimate in the
 design (§10.5) is too low. Do not change the sampling to get the speed back.
 
-`make report` checks every recorded request against the pre-registration (forced sampling
-and seed) and fails if any differ. Its "Conformance" section lists what it found.
+`make report` checks the campaign against the pre-registration and fails if anything
+differs: every recorded request (forced sampling and seed), every invocation (bundle,
+suite and arms files, rig code), and the pre-registration itself. Its "Conformance"
+section lists what it found.
+
+**After the tag the rig's code is frozen.** A change under `hcbench/`, `harness_bin/`,
+`scripts/`, `config/`, `suites/`, `docker/`, the `Makefile` or `pyproject.toml` is a
+mismatch in every later report, including a fix to the report itself. Run `make report`
+from the tagged code. Docs and tests may change. If code has to change, log it in
+`prereg/c1/DEVIATIONS.md`.
 
 ## Day-to-day
 

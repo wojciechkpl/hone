@@ -584,6 +584,17 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.
     repeats, tokens, wall time, tool calls, doom-loop, context-full, budget, timeout counts); the
     "tested" row of each family names its bound ("tested against <arm>", or "tested (favours
     neither)") (K52).
+- **Code check never quiet (K53-K55).** `code` evidence gains `preregistration: {head, resolves}`
+  (absent = resolves; `report._code_evidence` builds it with `prereg.commit_resolves`, and returns
+  None, so no check and no mismatch, when the pre-registration has no `repo.head`). When it does
+  not resolve, `check_conformance` gives one `code.head` mismatch with `invocation:
+  "preregistration"`, does not consult `changed`, and still makes the dirty checks for every
+  invocation and the report run. Only paths under `hcbench/`, `harness_bin/`, `scripts/`,
+  `config/`, `suites/`, `docker/`, and exactly `Makefile` and `pyproject.toml` are code:
+  `code.changed` / `code.dirty` carry only those; any other path goes to the result key `other`
+  (`[{invocation, kind: "changed" | "dirty", paths}]`, present when `code` evidence was given),
+  is listed in the "Conformance" section as information, and is not a mismatch. `prereg/` stays
+  excluded. The section states that every invocation is compared on bundle, files and code state.
 - **Analysis text (K41).** The stage `cb` `[analysis]` states §11.3 as it reads now: rates counted and
   dropped, the two worst-case bounds, which arm a contrast favours, the p-value rule, the claim rule,
   the verdicts and the descriptive list.
