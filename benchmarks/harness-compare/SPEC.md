@@ -511,38 +511,58 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.
   `report.check_conformance(runs, prereg)` are pure; `build` loads files and `main` returns 1
   after writing `report.md` when a sampling or seed mismatch exists.
   - `stage1_analysis`: rows of suites `c` (`outcome`, None = unjudged) and `b` (`resolved`, None =
-    unjudged). Every rate and contrast is given under two treatments (K32): `counted` (unjudged c
-    runs are escaped, unjudged b runs failed) and `dropped` (unjudged runs left out; a unit with
-    no judged run in one arm is left out of the contrast). Returns `escape_rate` and `pass_rate`
-    as `{treatment: {arm: rate}}` (an arm with no judged run is absent from `dropped`);
-    `families` (`C-guard`, `C-cross`, `B-guard`: rows with `contrast` "a − b", `a`, `b`,
-    `counted` and `dropped` (each `estimate`, `lo`, `hi`, `p`, `n_units`, `mcnemar_p`,
-    `discordant` [a only, b only] at repeat 0, `reject` (Holm within the family under that
-    treatment)) and `reject`, true only when both treatments reject); `left_out` (K33: per family,
-    the contrasts whose arm has no runs of that suite); `h3`, `h4` (`count`, `n_runs`, `threshold`,
-    `verdict` "met" / "not met" / "incomplete", K34: H3 is "met" only with exactly 75 runs and none
-    escaped, "not met" at the first escape; H4 is decided only with exactly 30 runs) and
-    `unjudged`. A contrast with no shared judged unit under `dropped` is not rejected and is not in
-    that treatment's Holm family. Repeat 0 is selected on `repeat`, falling back to the smallest
-    seed for rows without one. It reuses `stats.paired_bootstrap`, `stats.bootstrap_pvalue`,
-    `stats.mcnemar_exact`, `stats.discordant`, `stats.task_means` and `report.holm`.
-  - `check_conformance(runs, prereg, bundles=None)`: for every record with a non-None `sampling`,
-    compares `model` (`HC_SERVED_NAME`), each `[sampling]` value and `seed` (= `seed_base +
-    repeat`); one mismatch per record per wrong field; `extra_keys` lists runs with non-empty
-    `extra_keys`. Without a pre-registration `made` is False. K36: mismatches with field `draft`
-    (`draft = true`), `repo.dirty`, and `created_at` (strictly later than the earliest run
-    `started_at`). K37: `bundles` is `{suite: manifest or None}`; each differing key against the
-    pre-registered `[bundle]` is a mismatch `bundle.<key>`, and a campaign file with no `bundle`
-    (None) is a mismatch `bundle`. `hcbench.matrix` writes the manifest into `campaign.<suite>.json`
-    under `bundle` (`{}` without a manifest); `build` reads every `campaign.*.json`.
-  - `report.md`: "Conformance with the pre-registration" always; "Stage 1 analysis (pre-registered)"
-    only with a stage-`cb` pre-registration (K35), which also heads the suite B pairwise table
-    "exploratory, not pre-registered" (its repeat 0 selects on `repeat`). `30_report.sh` passes
-    `--prereg` when `preregistration.toml` or `selection.json` exists, and with `--package` it
-    packages even when the report exits non-zero, then exits with the report's code (K38).
+    unjudged). Rates (`escape_rate`, `pass_rate`) are `{treatment: {arm: rate}}` with treatments
+    `counted` (unjudged c runs are escaped, unjudged b runs failed) and `dropped` (left out; an arm
+    with no judged run is absent from `dropped`); both are descriptive. Each contrast (K40) is
+    computed under two worst-case bounds: `against_a` (a's unjudged runs count as escaped / failed,
+    b's as not escaped / passed) and `against_b` (the reverse); each is `{estimate, lo, hi, p,
+    n_units, mcnemar_p, discordant [a only, b only] at repeat 0}`. `families` (`C-guard`, `C-cross`,
+    `B-guard`) hold rows `{contrast "a − b", a, b, against_a, against_b, favours, p, reject}`:
+    `favours` is the arm both estimates favour (lower escape rate / higher pass rate), else None;
+    `p` is the p-value of the bound against the favoured arm (1.0 when none); `reject` is Holm at
+    0.05 within the family on `row["p"]`. With no unjudged runs the bounds are equal. `left_out`
+    (K33) lists per family the contrasts whose arm has no runs of that suite; `h3`, `h4` have
+    `count`, `n_runs`, `threshold`, `verdict` ("met" / "not met" / "incomplete", K34: H3 "met" only
+    with exactly 75 runs and none escaped, "not met" at the first escape; H4 decided only with exactly
+    30 runs); `unjudged` lists the run ids. Repeat 0 is selected on `repeat`, falling back to the
+    smallest seed for rows without one. It reuses `stats.paired_bootstrap`,
+    `stats.bootstrap_pvalue`, `stats.mcnemar_exact`, `stats.discordant`, `stats.task_means` and
+    `report.holm`.
+  - `check_conformance(runs, prereg, bundles=None, invocations=None)`: for every record with a
+    non-None `sampling`, compares `model` (`HC_SERVED_NAME`), each `[sampling]` value and `seed`
+    (= `seed_base + repeat`); one mismatch per record per wrong field; `extra_keys` lists runs with
+    non-empty `extra_keys`. Without a pre-registration `made` is False. K36: mismatches with field
+    `draft`, `repo.dirty`, and `created_at` (strictly later than the earliest run `started_at`).
+    K37: `bundles` is `{suite: manifest or None}`; each differing key against the pre-registered
+    `[bundle]` is a mismatch `bundle.<key>`, a campaign file with no `bundle` (None) a mismatch
+    `bundle`. K43: `invocations` is the parsed `invocations.jsonl`; every line `i` is compared with
+    the pre-registered `[bundle]` and with `files_sha256` (keys present in both); a difference is
+    `{run_id: None, invocation: i, field: "bundle.<key>" | "files.<key>", expected, found}`. `head`
+    and `dirty` are shown and not compared. K44: in every bundle comparison a missing key, None and
+    "" are equal; a missing key against a real value is a mismatch.
+  - **Invocation lines (K43).** `hcbench.matrix` appends to `invocations.jsonl` (and writes into
+    `campaign.<suite>.json`) `bundle` (manifest, `{}` if none), `files` (sha256 of each file of
+    `prereg.pre_registered_files()` that exists, under the `files_sha256` keys), `head`, `dirty`.
+  - **Exit codes (K45).** `hcbench.report` returns 0 when conformance is clean, 3 when the report was
+    written and conformance found a mismatch; any other code means the report failed.
+    `30_report.sh` packages (with `--package`) only after 0 or 3 and exits with the report's code.
+  - `report.md`: "Conformance with the pre-registration" always; "Stage 1 analysis
+    (pre-registered)" only with a stage-`cb` pre-registration (K35), which also heads the suite B
+    pairwise sub-section "exploratory, not pre-registered" (K46: the per-arm suite B descriptives above
+    it are not under that heading; its repeat 0 selects on `repeat`). `30_report.sh` passes
+    `--prereg` when `preregistration.toml` or `selection.json` exists.
 - **Small items (K39).** `check_hermes_bundle` also checks `HC_ARMS_B`; stage `cb` requires
-  `HC_A_MIN_CREATED` to be a real `YYYY-MM-DD` date and `HC_A_N` a positive integer. The `[analysis]`
-  text states §11.3 as it reads now (K31, K33, K35).
+  `HC_A_MIN_CREATED` to be a real `YYYY-MM-DD` date and `HC_A_N` a positive integer.
+- **Pre-registration hygiene (K42, K44, K47).** `prereg.dirty_paths(ignore_dir)` lists rig paths that
+  differ from HEAD (plain `git status`, so `GIT_DIR` / `GIT_WORK_TREE` apply), ignoring the output
+  directory `prereg/<name>/`. A non-draft pre-registration on a dirty rig is refused with the paths
+  listed; `--draft` writes with `dirty = true`. The rig's `.gitignore` ignores `.claude/`. A manifest
+  key with a null value is left out of `[bundle]`. With `HC_SERVER=vllm`, `HC_MODEL_REVISION` must be
+  40 hexadecimal characters (either case) in `02_serve_model.sh` and in a non-draft stage `cb`
+  pre-registration.
+- **Analysis text (K41).** The stage `cb` `[analysis]` states §11.3 as it reads now: rates counted and
+  dropped, the two worst-case bounds, which arm a contrast favours, the p-value rule, the claim rule,
+  the verdicts and the descriptive list.
 
 ### Round 2 additions
 

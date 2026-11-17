@@ -14,8 +14,8 @@ up)
   # Validate before anything is removed or started.
   require_campaign1_env
   if [[ "${HC_SERVER}" == vllm ]]; then
-    [[ -n "${HC_MODEL_REVISION:-}" && "${HC_MODEL_REVISION}" != *CHANGE-ME* ]] \
-      || die "HC_MODEL_REVISION must be pinned (a commit SHA) for vllm; see config/bench.env.example"
+    [[ "${HC_MODEL_REVISION:-}" =~ ^[0-9a-fA-F]{40}$ ]] \
+      || die "HC_MODEL_REVISION must be a 40-character hexadecimal commit id for vllm; see config/bench.env.example"
   fi
   container_running hc-llm && { log "hc-llm already running"; exit 0; }
   docker rm -f hc-llm >/dev/null 2>&1 || true

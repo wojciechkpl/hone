@@ -170,6 +170,7 @@ def redteam_rows(runs: Iterable[dict], campaign: Path) -> list[dict]:
 # ---- stage 1 (campaign 1): spec 11.3 analysis and 11.4 K27 conformance ---------------------
 
 MINUS = "\u2212"
+CONFORMANCE_EXIT = 3  # report written, conformance mismatch; any other non-zero = failure
 UNIT_SUITES = {"c": "escaped", "b": "passed"}  # suite -> the per-run flag the arm metric means
 # family -> (suite, contrasts "a - b"), exactly the families pre-registered in spec 11.3
 FAMILIES = {
@@ -210,7 +211,6 @@ EMPTY_TREATMENT = {
     "n_units": 0,
     "mcnemar_p": None,
     "discordant": [0, 0],
-    "reject": False,
 }
 
 
@@ -241,16 +241,42 @@ def _contrast(flagged: list[dict], a: str, b: str) -> dict:
         "n_units": pb["n_tasks"],
         "mcnemar_p": mcnemar_exact(a_only, b_only),
         "discordant": [a_only, b_only],
-        "reject": False,
     }
+
+
+def _bounded(rows: list[dict], hurt: str, arms: tuple[str, str]) -> list[dict]:
+    """Rows of the two arms with `flag`; the unjudged runs of `hurt` count against it.
+
+    A hurt arm's unjudged run is escaped (suite c) or failed (suite b); the other arm's is
+    not escaped or passed, so an unjudged run can never help a claim (spec 11.3).
+    """
+    out = []
+    for r in rows:
+        if r["arm"] not in arms:
+            continue
+        flag = _flag(r) if _judged(r) else float((r["arm"] == hurt) == (r["suite"] == "c"))
+        out.append({**r, "flag": flag})
+    return out
+
+
+def _favours(suite: str, a: str, b: str, est_a: float | None, est_b: float | None) -> str | None:
+    """The arm both estimates favour (lower escape rate / higher pass rate), else None."""
+    if est_a is None or est_b is None:
+        return None
+    sign = -1 if suite == "c" else 1
+    if sign * est_a > 0 and sign * est_b > 0:
+        return a
+    if sign * est_a < 0 and sign * est_b < 0:
+        return b
+    return None
 
 
 def stage1_analysis(rows: list[dict]) -> dict:
     """The pre-registered stage 1 analysis (spec 11.3) over suite C and B run rows.
 
     Pure: rows need suite, arm, task_id, run_id, seed, optionally repeat, and `outcome` (suite c;
-    None = unjudged) or `resolved` (suite b; None = unjudged). Every rate and contrast is given
-    under both treatments of unjudged runs (counted, dropped).
+    None = unjudged) or `resolved` (suite b; None = unjudged). Rates are given counted and
+    dropped; every contrast under the worst-case bounds against a and against b.
     """
     by_suite = {s: [r for r in rows if r["suite"] == s] for s in UNIT_SUITES}
     rates: dict[str, dict[str, dict[str, float]]] = {}
@@ -268,19 +294,27 @@ def stage1_analysis(rows: list[dict]) -> dict:
         arms = {r["arm"] for r in by_suite[suite]}
         kept = [(a, b) for a, b in contrasts if a in arms and b in arms]
         left_out[name] = [f"{a} {MINUS} {b}" for a, b in contrasts if (a, b) not in kept]
-        found = [
-            {"contrast": f"{a} {MINUS} {b}", "a": a, "b": b}
-            | {t: _contrast(_treat(by_suite[suite], t), a, b) for t in TREATMENTS}
-            for a, b in kept
-        ]
-        for t in TREATMENTS:
-            # Holm over the contrasts that have a shared unit under this treatment
-            testable = {r["contrast"]: r[t]["p"] for r in found if r[t]["n_units"]}
-            decisions = holm(testable)
-            for r in found:
-                r[t]["reject"] = decisions.get(r["contrast"], False)
+        found = []
+        for a, b in kept:
+            against_a = _contrast(_bounded(by_suite[suite], a, (a, b)), a, b)
+            against_b = _contrast(_bounded(by_suite[suite], b, (a, b)), a, b)
+            favours = _favours(suite, a, b, against_a["estimate"], against_b["estimate"])
+            # tested under the bound against the favoured arm; nothing favoured: no evidence
+            p = {a: against_a["p"], b: against_b["p"]}.get(favours, 1.0)
+            found.append(
+                {
+                    "contrast": f"{a} {MINUS} {b}",
+                    "a": a,
+                    "b": b,
+                    "against_a": against_a,
+                    "against_b": against_b,
+                    "favours": favours,
+                    "p": p,
+                }
+            )
+        decisions = holm({r["contrast"]: r["p"] for r in found})
         for r in found:
-            r["reject"] = all(r[t]["reject"] for t in TREATMENTS)
+            r["reject"] = decisions[r["contrast"]]
         families[name] = found
 
     def hone_guarded(suite: str) -> tuple[int, int]:
@@ -328,6 +362,16 @@ def _status_mismatches(runs: list[dict], prereg: Mapping) -> list[dict]:
     return out
 
 
+def _bundle_diff(expected: Mapping, found: Mapping) -> list[tuple[str, object, object]]:
+    """Differing keys; a missing key, None and "" are equal (K44)."""
+    out = []
+    for key in sorted(set(expected) | set(found)):
+        want, got = expected.get(key), found.get(key)
+        if (want if want is not None else "") != (got if got is not None else ""):
+            out.append((f"bundle.{key}", want, got))
+    return out
+
+
 def _bundle_mismatches(expected: Mapping, bundles: Mapping[str, Mapping | None]) -> list[dict]:
     out = []
     for suite, found in sorted(bundles.items()):
@@ -337,26 +381,46 @@ def _bundle_mismatches(expected: Mapping, bundles: Mapping[str, Mapping | None])
                 {"run_id": where, "field": "bundle", "expected": dict(expected), "found": None}
             )
             continue
-        for key in sorted(set(expected) | set(found)):
-            if expected.get(key) != found.get(key):
-                out.append(
-                    {
-                        "run_id": where,
-                        "field": f"bundle.{key}",
-                        "expected": expected.get(key),
-                        "found": found.get(key),
-                    }
-                )
+        out += [
+            {"run_id": where, "field": f, "expected": w, "found": g}
+            for f, w, g in _bundle_diff(expected, found)
+        ]
+    return out
+
+
+def _invocation_mismatches(prereg: Mapping, invocations: list[Mapping]) -> list[dict]:
+    """K43: every invocation against the pre-registered bundle and file hashes.
+
+    head and dirty are not compared (the pre-registration commit itself moves the head).
+    """
+    out = []
+    bundle, hashes = prereg.get("bundle"), prereg.get("files_sha256") or {}
+    for i, inv in enumerate(invocations):
+        diffs = _bundle_diff(bundle, inv.get("bundle") or {}) if bundle else []
+        files = inv.get("files") or {}
+        diffs += [
+            (f"files.{key}", want, files[key])
+            for key, want in sorted(hashes.items())
+            if key in files and files[key] != want
+        ]
+        out += [
+            {"run_id": None, "invocation": i, "field": f, "expected": w, "found": g}
+            for f, w, g in diffs
+        ]
     return out
 
 
 def check_conformance(
-    runs: list[dict], prereg: dict | None, bundles: Mapping[str, Mapping | None] | None = None
+    runs: list[dict],
+    prereg: dict | None,
+    bundles: Mapping[str, Mapping | None] | None = None,
+    invocations: list[Mapping] | None = None,
 ) -> dict:
     """Compare the runs with the pre-registration (spec 11.4 K27, 11.5 K36 and K37).
 
     Pure. runs: {run_id, repeat, records, started_at?}. One mismatch per record per wrong field.
     bundles: {suite: manifest or None (the campaign file had no `bundle`)}; None skips the check.
+    invocations: the lines of invocations.jsonl (K43); every one is compared.
     """
     out: dict = {"made": prereg is not None, "checked": 0, "mismatches": [], "extra_keys": []}
     if prereg is None:
@@ -364,6 +428,8 @@ def check_conformance(
     out["mismatches"] += _status_mismatches(runs, prereg)
     if bundles is not None and prereg.get("bundle"):
         out["mismatches"] += _bundle_mismatches(prereg["bundle"], bundles)
+    if invocations:
+        out["mismatches"] += _invocation_mismatches(prereg, invocations)
     sampling = dict(prereg.get("sampling") or {})
     seed_base = sampling.pop("seed_base", None)
     expected = {"model": (prereg.get("config") or {}).get("HC_SERVED_NAME"), **sampling}
@@ -418,9 +484,13 @@ def stage1_markdown(res: dict) -> str:
 
     out = ["\n## Stage 1 analysis (pre-registered)\n"]
     out.append(
-        "Every rate and contrast is given twice. **counted**: an unjudged suite C run counts as "
-        "escaped, an unjudged suite B run as failed. **dropped**: unjudged runs are left out. A "
-        "difference is claimed only when Holm rejects it under both.\n"
+        "Rates are descriptive. **counted**: an unjudged suite C run counts as escaped, an "
+        "unjudged suite B run as failed. **dropped**: unjudged runs are left out. Each contrast "
+        "is computed under two worst-case bounds: *against a* counts a's unjudged runs against "
+        "a and b's for b; *against b* is the reverse. A contrast favours an arm only when both "
+        "estimates do, and is tested under the bound against the favoured arm (p = 1 when it "
+        "favours neither). A difference is claimed only when Holm rejects it within its "
+        "family.\n"
     )
     for title, key in (
         ("Escape rate (suite C)", "escape_rate"),
@@ -438,30 +508,31 @@ def stage1_markdown(res: dict) -> str:
     for name, rows in res["families"].items():
         out.append(f"\n### {name} (Holm within the family, alpha 0.05)\n")
         if res["left_out"][name]:
-            out.append(
-                "Left out (an arm has no runs of this suite): "
-                + "; ".join(res["left_out"][name])
-                + "\n"
-            )
+            left = "; ".join(res["left_out"][name])
+            out.append(f"Left out (an arm has no runs of this suite): {left}\n")
         if not rows:
             continue
         out.append(
-            "| contrast | treatment | estimate | 95% CI | p | units | discordant a/b, repeat 0 "
-            "| McNemar p | Holm rejects |\n|---|---|---|---|---|---|---|---|---|"
+            "| contrast | bound | estimate | 95% CI | units | discordant a/b, repeat 0 "
+            "| McNemar p | favours | p (Holm) | claimed |\n" + "|---" * 10 + "|"
         )
         for r in rows:
-            for t in TREATMENTS:
-                x = r[t]
-                p = "-" if x["p"] is None else f"{x['p']:.4f}"
+            for bound, label in (
+                ("against_a", f"against {r['a']}"),
+                ("against_b", f"against {r['b']}"),
+            ):
+                x = r[bound]
                 mp = "-" if x["mcnemar_p"] is None else f"{x['mcnemar_p']:.3f}"
                 out.append(
-                    f"| {r['contrast']} | {t} | {cell(x['estimate'])} "
-                    f"| [{cell(x['lo'])}, {cell(x['hi'])}] "
-                    f"| {p} | {x['n_units']} | {x['discordant'][0]}/{x['discordant'][1]} | {mp} "
-                    f"| {'yes' if x['reject'] else 'no'} |"
+                    f"| {r['contrast']} | {label} | {cell(x['estimate'])} "
+                    f"| [{cell(x['lo'])}, {cell(x['hi'])}] | {x['n_units']} "
+                    f"| {x['discordant'][0]}/{x['discordant'][1]} | {mp} | | | |"
                 )
             claim = "claimed" if r["reject"] else "no detectable difference"
-            out.append(f"| {r['contrast']} | both | | | | | | | **{claim}** |")
+            out.append(
+                f"| {r['contrast']} | tested | | | | | | {r['favours'] or 'neither'} "
+                f"| {r['p']:.4f} | **{claim}** |"
+            )
     h3, h4 = res["h3"], res["h4"]
     out.append("\n### Decision rules\n")
     out.append(
@@ -488,10 +559,9 @@ def conformance_markdown(res: dict) -> str:
     out.append(f"{res['checked']} records checked; {len(res['mismatches'])} mismatches.\n")
     if res["mismatches"]:
         out.append("| run | field | expected | found |\n|---|---|---|---|")
-        out.extend(
-            f"| {m['run_id']} | {m['field']} | {m['expected']} | {m['found']} |"
-            for m in res["mismatches"]
-        )
+        for m in res["mismatches"]:
+            who = m["run_id"] if m.get("run_id") else f"invocation {m['invocation']}"
+            out.append(f"| {who} | {m['field']} | {m['expected']} | {m['found']} |")
     if res["extra_keys"]:
         out.append("\nRuns whose requests carried keys the proxy does not know:\n")
         out.extend(f"- {e['run_id']}: {', '.join(e['keys'])}" for e in res["extra_keys"])
@@ -680,20 +750,29 @@ def build(campaign: Path, prereg: Path | None, prices: Mapping[str, float]) -> t
     if prereg and (prereg / "preregistration.toml").exists():
         prereg_data = tomllib.loads((prereg / "preregistration.toml").read_text())
     stage_cb = bool(prereg_data and prereg_data.get("stage") == "cb")
-    b_title = "Suite B — mini-bench (task check commands; not headline)"
-    if stage_cb:
-        b_title += " — exploratory, not pre-registered"
-    titles = (("a", "Suite A — SWE-bench Lite subset (official grader)"), ("b", b_title))
+    titles = (
+        ("a", "Suite A — SWE-bench Lite subset (official grader)"),
+        ("b", "Suite B — mini-bench (task check commands; not headline)"),
+    )
     for suite, title in titles:
         if any(r["suite"] == suite for r in rows):
             table, _ = suite_table(rows, suite)
-            md.append(f"\n## {title}\n\n{table}\n### Pairwise\n\n{pairwise_table(rows, suite)}")
+            # Under a stage-cb pre-registration only the Stage 1 analysis is pre-registered; the
+            # per-arm descriptives above are, the pairwise comparison below is not (K35, K46).
+            pairwise = "Pairwise" + (" — exploratory, not pre-registered" if stage_cb else "")
+            md.append(f"\n## {title}\n\n{table}\n### {pairwise}\n\n{pairwise_table(rows, suite)}")
     if stage_cb:  # the analysis is the pre-registered one: only with its pre-registration
         md.append(stage1_markdown(stage1_analysis(_stage1_rows(runs, rt_rows))))
     bundles = {}
     for path in sorted(campaign.glob("campaign.*.json")):
         meta = json.loads(path.read_text())
         bundles[path.name.split(".")[1]] = meta.get("bundle")  # None: the file has no bundle
+    inv_path = campaign / "invocations.jsonl"
+    invocations = (
+        [json.loads(ln) for ln in inv_path.read_text().splitlines() if ln.strip()]
+        if inv_path.exists()
+        else None
+    )
     conformance = check_conformance(
         [
             {
@@ -706,6 +785,7 @@ def build(campaign: Path, prereg: Path | None, prices: Mapping[str, float]) -> t
         ],
         prereg_data,
         bundles,
+        invocations,
     )
     md.append(conformance_markdown(conformance))
     unknown = redteam_unknown(runs)
@@ -795,11 +875,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"wrote {out}")
     if conformance["mismatches"]:
         print(
-            f"CONFORMANCE FAILED: {len(conformance['mismatches'])} sampling or seed mismatches "
-            "against the pre-registration (see report.md)",
+            f"CONFORMANCE FAILED: {len(conformance['mismatches'])} mismatches against the "
+            "pre-registration (see report.md)",
             file=sys.stderr,
         )
-        return 1
+        return CONFORMANCE_EXIT
     return 0
 
 

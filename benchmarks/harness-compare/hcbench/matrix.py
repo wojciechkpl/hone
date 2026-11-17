@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .arms import load_arms, render
 from .config import ROOT, BenchConfig, ensure_env
+from .prereg import dirty_paths, pre_registered_files, repo_head, sha256_file
 from .runner import execute_run
 from .suites import Task, load_redteam_suite, load_swebench_suite, load_task_suite
 
@@ -102,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         bundle = json.loads(manifest.read_text())
     except (OSError, json.JSONDecodeError):
         bundle = {}
+    files = {k: sha256_file(p) for k, p in pre_registered_files().items() if p.exists()}
     invocation = {
         "suite": args.suite,
         "arms": arm_names,
@@ -112,7 +114,11 @@ def main(argv: list[str] | None = None) -> int:
         "tasks_file": args.tasks_file,
         "prompt": args.prompt if args.suite == "a" else None,
         "config": cfg.as_dict(),
-        "bundle": bundle,  # compared with the pre-registered [bundle] by the report
+        # Evidence for the report's conformance check (spec 11.6 K43).
+        "bundle": bundle,
+        "files": files,
+        "head": repo_head(),
+        "dirty": bool(dirty_paths()),
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "argv": sys.argv,
     }

@@ -12,10 +12,16 @@ args=(--campaign "${out}")
 if [[ -f "${prereg}/preregistration.toml" || -f "${prereg}/selection.json" ]]; then
   args+=(--prereg "${prereg}")
 fi
-# A failing report (conformance mismatch) must not stop packaging: the package is what gets
+# A report with a conformance mismatch must not stop packaging: the package is what gets
 # published together with the logged deviation. The report's exit code is returned at the end.
 report_rc=0
 HC_PY_WITH="--with matplotlib" hc_py hcbench.report "${args[@]}" || report_rc=$?
+# hcbench.report exits 0 (clean) or 3 (written, conformance mismatch); anything else means the
+# report itself failed, and a package of a missing or stale report would mislead.
+case "${report_rc}" in
+0 | 3) ;;
+*) exit "${report_rc}" ;;
+esac
 
 if [[ "${1:-}" == "--package" ]]; then
   pkg="${out}/publish"
