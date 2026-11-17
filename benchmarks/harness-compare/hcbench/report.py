@@ -18,6 +18,7 @@ from pathlib import Path
 from .config import ROOT, ensure_env
 from .ids import parse_run_id
 from .metrics import COLUMNS, make_row
+from .prereg import changed_between, commit_resolves, dirty_paths, repo_head
 from .proxy_log import iter_message_texts
 from .redteam import (
     OUTCOMES,
@@ -410,17 +411,77 @@ def _invocation_mismatches(prereg: Mapping, invocations: list[Mapping]) -> list[
     return out
 
 
+def _code_mismatches(invocations: list[Mapping], code: Mapping) -> list[dict]:
+    """K48: the rig code behind every invocation, and behind the report run itself.
+
+    `code["changed"][head]` = rig files (outside prereg/) that differ between the
+    pre-registration's head and `head`, None when git cannot resolve it.
+    """
+    out = []
+    subjects = [
+        (i, inv.get("head"), inv.get("dirty_paths") or []) for i, inv in enumerate(invocations)
+    ]
+    rep = code.get("report") or {}
+    subjects.append(("report", rep.get("head"), rep.get("dirty_paths") or []))
+    for who, head, dirty in subjects:
+        changed = (code.get("changed") or {}).get(head)
+        base = {"run_id": None, "invocation": who}
+        if head is None or changed is None:
+            out.append(
+                {
+                    **base,
+                    "field": "code.head",
+                    "expected": "a commit in this repository",
+                    "found": head,
+                }
+            )
+        elif changed:
+            out.append({**base, "field": "code.changed", "expected": [], "found": sorted(changed)})
+        if dirty:
+            out.append({**base, "field": "code.dirty", "expected": [], "found": sorted(dirty)})
+    return out
+
+
+def _arms_mismatches(
+    runs: list[dict], prereg: Mapping, left_out: Mapping[str, list[str]]
+) -> list[dict]:
+    """K51: a contrast left out although both its arms were pre-registered for a suite with runs."""
+    config = prereg.get("config") or {}
+    registered_key = {"c": "HC_ARMS_REDTEAM", "b": "HC_ARMS_B"}
+    out = []
+    for family, labels in left_out.items():
+        suite = FAMILIES[family][0]
+        if not any(str(r["run_id"]).split(".")[0] == suite for r in runs):
+            continue
+        registered = [a.strip() for a in str(config.get(registered_key[suite]) or "").split(",")]
+        for label in labels:
+            a, b = label.split(f" {MINUS} ")
+            if a in registered and b in registered:
+                out.append(
+                    {
+                        "run_id": None,
+                        "field": f"arms.{family}",
+                        "expected": f"runs of both {a} and {b}",
+                        "found": label,
+                    }
+                )
+    return out
+
+
 def check_conformance(
     runs: list[dict],
     prereg: dict | None,
     bundles: Mapping[str, Mapping | None] | None = None,
     invocations: list[Mapping] | None = None,
+    code: Mapping | None = None,
+    left_out: Mapping[str, list[str]] | None = None,
 ) -> dict:
     """Compare the runs with the pre-registration (spec 11.4 K27, 11.5 K36 and K37).
 
     Pure. runs: {run_id, repeat, records, started_at?}. One mismatch per record per wrong field.
     bundles: {suite: manifest or None (the campaign file had no `bundle`)}; None skips the check.
     invocations: the lines of invocations.jsonl (K43); every one is compared.
+    code: git evidence for K48 (see _code_mismatches); left_out: stage1_analysis()["left_out"].
     """
     out: dict = {"made": prereg is not None, "checked": 0, "mismatches": [], "extra_keys": []}
     if prereg is None:
@@ -430,6 +491,10 @@ def check_conformance(
         out["mismatches"] += _bundle_mismatches(prereg["bundle"], bundles)
     if invocations:
         out["mismatches"] += _invocation_mismatches(prereg, invocations)
+    if code is not None:
+        out["mismatches"] += _code_mismatches(invocations or [], code)
+    if left_out is not None:
+        out["mismatches"] += _arms_mismatches(runs, prereg, left_out)
     sampling = dict(prereg.get("sampling") or {})
     seed_base = sampling.pop("seed_base", None)
     expected = {"model": (prereg.get("config") or {}).get("HC_SERVED_NAME"), **sampling}
@@ -529,8 +594,11 @@ def stage1_markdown(res: dict) -> str:
                     f"| {x['discordant'][0]}/{x['discordant'][1]} | {mp} | | | |"
                 )
             claim = "claimed" if r["reject"] else "no detectable difference"
+            tested = (
+                f"tested against {r['favours']}" if r["favours"] else "tested (favours neither)"
+            )
             out.append(
-                f"| {r['contrast']} | tested | | | | | | {r['favours'] or 'neither'} "
+                f"| {r['contrast']} | {tested} | | | | | | {r['favours'] or 'neither'} "
                 f"| {r['p']:.4f} | **{claim}** |"
             )
     h3, h4 = res["h3"], res["h4"]
@@ -551,7 +619,9 @@ def stage1_markdown(res: dict) -> str:
     return "\n".join(out) + "\n"
 
 
-def conformance_markdown(res: dict) -> str:
+def conformance_markdown(
+    res: dict, invocations: list[Mapping] | None = None, code_note: str | None = None
+) -> str:
     out = ["\n## Conformance with the pre-registration\n"]
     if not res["made"]:
         out.append("The check was not made: no pre-registration was given.\n")
@@ -560,8 +630,18 @@ def conformance_markdown(res: dict) -> str:
     if res["mismatches"]:
         out.append("| run | field | expected | found |\n|---|---|---|---|")
         for m in res["mismatches"]:
-            who = m["run_id"] if m.get("run_id") else f"invocation {m['invocation']}"
+            inv = m.get("invocation")
+            who = m["run_id"] or (f"invocation {inv}" if isinstance(inv, int) else str(inv or "-"))
             out.append(f"| {who} | {m['field']} | {m['expected']} | {m['found']} |")
+    if invocations:
+        out.append("\nInvocations (head and dirty flag are shown, not compared):\n")
+        for i, inv in enumerate(invocations):
+            dirty = "yes" if inv.get("dirty") else "no"
+            out.append(
+                f"- invocation {i} ({inv.get('suite')}): head {inv.get('head')}, dirty: {dirty}"
+            )
+    if code_note:
+        out.append(f"\n{code_note}\n")
     if res["extra_keys"]:
         out.append("\nRuns whose requests carried keys the proxy does not know:\n")
         out.extend(f"- {e['run_id']}: {', '.join(e['keys'])}" for e in res["extra_keys"])
@@ -696,6 +776,30 @@ def _csv_columns() -> list[str]:
     return cols
 
 
+def _code_evidence(
+    prereg: Mapping | None, invocations: list[Mapping] | None
+) -> tuple[dict | None, str | None]:
+    """Git evidence for K48: what changed in the rig since the pre-registration's head.
+
+    Skipped, with a note, when that head is not a commit of this repository (nothing to compare
+    against).
+    """
+    base = ((prereg or {}).get("repo") or {}).get("head")
+    if not base:
+        return None, None
+    if not commit_resolves(base):
+        return (
+            None,
+            f"Code state not checked: the pre-registered head {base} is not in this repository.",
+        )
+    here = repo_head()
+    heads = {inv.get("head") for inv in invocations or [] if inv.get("head")} | ({here} - {""})
+    return {
+        "changed": {h: changed_between(base, h) for h in heads},
+        "report": {"head": here or None, "dirty_paths": dirty_paths(ignore_dir=ROOT / "prereg")},
+    }, None
+
+
 def build(campaign: Path, prereg: Path | None, prices: Mapping[str, float]) -> tuple[Path, dict]:
     """Write the report files; returns (report.md, conformance result)."""
     runs = load_runs(campaign)
@@ -761,8 +865,9 @@ def build(campaign: Path, prereg: Path | None, prices: Mapping[str, float]) -> t
             # per-arm descriptives above are, the pairwise comparison below is not (K35, K46).
             pairwise = "Pairwise" + (" — exploratory, not pre-registered" if stage_cb else "")
             md.append(f"\n## {title}\n\n{table}\n### {pairwise}\n\n{pairwise_table(rows, suite)}")
-    if stage_cb:  # the analysis is the pre-registered one: only with its pre-registration
-        md.append(stage1_markdown(stage1_analysis(_stage1_rows(runs, rt_rows))))
+    analysis = stage1_analysis(_stage1_rows(runs, rt_rows)) if stage_cb else None
+    if analysis:  # the analysis is the pre-registered one: only with its pre-registration
+        md.append(stage1_markdown(analysis))
     bundles = {}
     for path in sorted(campaign.glob("campaign.*.json")):
         meta = json.loads(path.read_text())
@@ -773,6 +878,7 @@ def build(campaign: Path, prereg: Path | None, prices: Mapping[str, float]) -> t
         if inv_path.exists()
         else None
     )
+    code, code_note = _code_evidence(prereg_data, invocations)
     conformance = check_conformance(
         [
             {
@@ -786,8 +892,10 @@ def build(campaign: Path, prereg: Path | None, prices: Mapping[str, float]) -> t
         prereg_data,
         bundles,
         invocations,
+        code,
+        analysis["left_out"] if analysis else None,
     )
-    md.append(conformance_markdown(conformance))
+    md.append(conformance_markdown(conformance, invocations, code_note))
     unknown = redteam_unknown(runs)
     if rt_rows or unknown:
         md.append(f"\n## Suite C — red-team outcomes\n\n{redteam_tables(rt_rows)}")

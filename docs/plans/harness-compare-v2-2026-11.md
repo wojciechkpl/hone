@@ -634,9 +634,11 @@ is applied to the contrasts that remain, and the report names the ones left out.
 - **H4.** `hone-guarded` passes at least 24 of its 30 suite B runs, with unjudged runs
   counted as failed. The verdict is "met" or "not met" with exactly 30 runs, and
   "incomplete" otherwise.
-- **Descriptive only:** for suite C, the outcome counts per arm, the per-scenario outcome
-  table for every arm, and whether each planted injection reached the model; for suite B,
-  tokens, wall time and tool calls per arm.
+- **Descriptive only:**
+  - for suite C: the outcome counts per arm, the per-scenario outcome table for every
+    arm, and whether each planted injection reached the model;
+  - for suite B, per arm: pass@1 with its 95% interval, the SD across repeats, tokens,
+    wall time, tool calls, and the doom-loop, context-full, budget and timeout counts.
 
 ### 11.4 Requirements, round 2 (from the review of 2026-11-17)
 
@@ -850,7 +852,57 @@ not under the treatment least favourable to the favoured arm.
   calls per arm) are not under the "exploratory, not pre-registered" heading. The
   `[analysis]` "descriptive" text is the list of §11.3.
 
-### 11.7 Known gaps after this change
+### 11.7 Requirements, round 5 (from the fourth review of 2026-11-17)
+
+The fourth review approved a stage-`cb` pre-registration for tagging and asked for these
+before the first report is published.
+
+**The code that judges the runs is pinned too**
+
+- **K48 Code state.** Suite C outcomes are judged by rig code at report time, so a change
+  after the tag could change a verdict.
+  - Each `hcbench.matrix` invocation records `head`, and `dirty` and `dirty_paths` with
+    `prereg/` left out.
+  - For every invocation, and for the report run itself, conformance requires:
+    - no file under the rig directory, outside `prereg/`, differs between the
+      pre-registration's `repo.head` and that head;
+    - the rig directory, outside `prereg/`, is not dirty.
+  - Each violation is a mismatch that names the invocation or `report`, with field
+    `code.changed` (found: the paths), `code.dirty` (found: the paths) or `code.head`
+    (a head that git can't resolve).
+  - The "Conformance" section lists each invocation's head and dirty flag.
+
+**The files actually used**
+
+- **K49 Overrides.** Each invocation hashes the suite file and the arms file it actually
+  used, under the pre-registered keys, and records their paths. A run started with
+  `--suite-file` or `--arms-file` pointing at different content is a `files.<key>`
+  mismatch.
+
+**No quiet way round the refusals**
+
+- **K50 Draft and scope.**
+  - A file written with `--draft` always records `draft = true`.
+  - The dirty check ignores `prereg/<name>/` in the rig directory and nothing else,
+    wherever `--out` points.
+  - A non-draft pre-registration is refused when the repository head can't be read.
+
+**Arms that should have run**
+
+- **K51 Missing arms.** When a suite has runs, and a contrast is left out although the
+  pre-registered arms list for that suite (`HC_ARMS_REDTEAM` for C, `HC_ARMS_B` for B)
+  names both of its arms, conformance reports a mismatch with field `arms.<family>` that
+  names the contrast.
+
+**Labels**
+
+- **K52.**
+  - The "descriptive" text of §11.3 and of `[analysis]` lists what the suite B table
+    shows: per arm, pass@1 with its 95% interval, the SD across repeats, tokens, wall
+    time, tool calls, and the doom-loop, context-full, budget and timeout counts.
+  - In each family, the "tested" row names the bound it was tested under.
+
+### 11.8 Known gaps after this change
 
 | Gap | Risk | Until it is closed |
 |---|---|---|

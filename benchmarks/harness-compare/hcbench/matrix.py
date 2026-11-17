@@ -103,7 +103,19 @@ def main(argv: list[str] | None = None) -> int:
         bundle = json.loads(manifest.read_text())
     except (OSError, json.JSONDecodeError):
         bundle = {}
-    files = {k: sha256_file(p) for k, p in pre_registered_files().items() if p.exists()}
+    # Hash the suite and arms files actually used (K49), the rest from the rig.
+    used = pre_registered_files()
+    paths: dict[str, str] = {}
+    suite_key = {"b": "suite_b", "c": "suite_c", "smoke": "suite_smoke"}.get(args.suite)
+    if suite_key:
+        used[suite_key] = (
+            Path(args.suite_file) if args.suite_file else DEFAULT_SUITE_FILES[args.suite]
+        )
+        paths[suite_key] = str(used[suite_key])
+    used["arms_toml"] = args.arms_file
+    paths["arms_toml"] = str(args.arms_file)
+    files = {k: sha256_file(p) for k, p in used.items() if p.exists()}
+    dirty = dirty_paths(ignore_dir=ROOT / "prereg")  # prereg/ is where the pre-registration lives
     invocation = {
         "suite": args.suite,
         "arms": arm_names,
@@ -117,8 +129,10 @@ def main(argv: list[str] | None = None) -> int:
         # Evidence for the report's conformance check (spec 11.6 K43).
         "bundle": bundle,
         "files": files,
+        "paths": paths,
         "head": repo_head(),
-        "dirty": bool(dirty_paths()),
+        "dirty": bool(dirty),
+        "dirty_paths": dirty,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "argv": sys.argv,
     }

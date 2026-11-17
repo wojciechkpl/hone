@@ -560,6 +560,30 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.
   key with a null value is left out of `[bundle]`. With `HC_SERVER=vllm`, `HC_MODEL_REVISION` must be
   40 hexadecimal characters (either case) in `02_serve_model.sh` and in a non-draft stage `cb`
   pre-registration.
+- **Code state and scope (K48-K52).**
+  - Each matrix invocation line also holds `dirty_paths` (rig-relative, everything under `prereg/`
+    left out; `dirty` is true exactly when it is non-empty) and `paths` (the suite file and arms file
+    actually used, under `suite_b` / `suite_c` / `suite_smoke` and `arms_toml`); `files[key]` is the
+    hash of the file actually used, so a `--suite-file` or `--arms-file` with other content is a
+    `files.<key>` mismatch (K49).
+  - `check_conformance(..., code=None, left_out=None)`. `code` is `{"changed": {head: [paths] | None},
+    "report": {"head", "dirty_paths"}}`, computed by `report._code_evidence` with plain git calls
+    (`prereg.changed_between`: files outside `prereg/` that differ between the pre-registration's
+    `repo.head` and each distinct head). For every invocation and for the report run (`invocation`
+    "report") it yields `code.changed` (found: paths), `code.dirty` (found: paths) and `code.head`
+    (a head git cannot resolve, including an unreadable head at report time). When the
+    pre-registered head is not a commit of this repository the code check is skipped and the
+    "Conformance" section says so. The section also lists each invocation's head and dirty flag.
+  - `left_out` is `stage1_analysis()["left_out"]`: a left-out contrast whose two arms are both in
+    the pre-registered `HC_ARMS_REDTEAM` (C) or `HC_ARMS_B` (B) list, for a suite that has runs,
+    is a mismatch `arms.<family>` naming the contrast (K51).
+  - `hcbench.prereg`: `--draft` always records `draft = true`; the dirty check ignores `prereg/<name>/`
+    only when `--out` is in it (nothing otherwise); a non-draft pre-registration is refused when git
+    cannot read a head (`repo_head()` is "" without a repository or a commit) (K50).
+  - The suite B descriptive text lists what the table shows (pass@1 with its interval, SD across
+    repeats, tokens, wall time, tool calls, doom-loop, context-full, budget, timeout counts); the
+    "tested" row of each family names its bound ("tested against <arm>", or "tested (favours
+    neither)") (K52).
 - **Analysis text (K41).** The stage `cb` `[analysis]` states §11.3 as it reads now: rates counted and
   dropped, the two worst-case bounds, which arm a contrast favours, the p-value rule, the claim rule,
   the verdicts and the descriptive list.
