@@ -26,6 +26,8 @@ use serde_json::json;
 use tower::ServiceExt;
 
 const MODEL: &str = "claude-sonnet-4-6";
+/// The key a run is recorded under: an unprefixed requested id is an Anthropic id (R1).
+const RECORDED_MODEL: &str = "anthropic:claude-sonnet-4-6";
 
 struct Metered {
     /// First call asks for a write (which pauses under AskRisky); otherwise plain text.
@@ -177,7 +179,7 @@ async fn test_r9b_run_when_client_disconnects_at_approval_prompt_should_still_re
 
     assert_eq!(usage.total_tokens, 150);
     assert!((usage.total_cost_usd - expected_cost_per_call()).abs() < 1e-9);
-    let m = usage.by_model.get(MODEL).expect("per-model entry");
+    let m = usage.by_model.get(RECORDED_MODEL).expect("per-model entry");
     assert_eq!(m.tokens, 150);
 }
 
