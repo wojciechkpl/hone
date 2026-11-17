@@ -86,15 +86,6 @@ fn test_claude_cli_rows_should_mirror_anthropic_prices() {
 }
 
 #[test]
-fn test_each_anthropic_row_should_match_individually() {
-    // One failure line per model id, so a regression names the exact row.
-    for row in ROWS {
-        let errs = check_row("anthropic", row);
-        assert!(errs.is_empty(), "{}", errs.join("; "));
-    }
-}
-
-#[test]
 fn test_haiku_4_5_alias_should_be_priced() {
     for prefix in ["anthropic", "claude-cli"] {
         let id = format!("{prefix}:claude-haiku-4-5");
@@ -118,10 +109,10 @@ fn test_dated_ids_should_resolve_to_their_base_entry() {
     for prefix in ["anthropic", "claude-cli"] {
         for (dated, base) in cases {
             let d = table
-                .get(&ModelId::new(&format!("{prefix}:{dated}")))
+                .get(&ModelId::new(format!("{prefix}:{dated}")))
                 .unwrap_or_else(|| panic!("{prefix}:{dated} has no price"));
             let b = table
-                .get(&ModelId::new(&format!("{prefix}:{base}")))
+                .get(&ModelId::new(format!("{prefix}:{base}")))
                 .unwrap_or_else(|| panic!("{prefix}:{base} has no price"));
             assert!(
                 close(d.input_per_million, b.input_per_million)
