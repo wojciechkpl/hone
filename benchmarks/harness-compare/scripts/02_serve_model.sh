@@ -11,20 +11,44 @@ docker network inspect "${HC_UPNET}" >/dev/null 2>&1 || docker network create "$
 
 case "${cmd}" in
 up)
+  # Validate before anything is removed or started.
+  require_campaign1_env
+  if [[ "${HC_SERVER}" == vllm ]]; then
+    [[ "${HC_MODEL_REVISION:-}" =~ ^[0-9a-fA-F]{40}$ ]] \
+      || die "HC_MODEL_REVISION must be a 40-character hexadecimal commit id for vllm; see config/bench.env.example"
+  fi
+  # The image the smoke step uses must be the one the pre-registration records: a digest.
+  case "${HC_SERVER}" in
+  vllm) image_key=HC_VLLM_IMAGE; image="${HC_VLLM_IMAGE:-}" ;;
+  llamacpp) image_key=HC_LLAMACPP_IMAGE; image="${HC_LLAMACPP_IMAGE:-}" ;;
+  *) image_key=""; image="" ;;
+  esac
+  if [[ -n "${image_key}" ]]; then
+    [[ "${image}" =~ @sha256:[0-9a-f]{64}$ ]] \
+      || die "${image_key} must be pinned by digest (<name>:<tag>@sha256:<64 lowercase hex>), got '${image}'; see config/bench.env.example"
+  fi
   container_running hc-llm && { log "hc-llm already running"; exit 0; }
   docker rm -f hc-llm >/dev/null 2>&1 || true
   case "${HC_SERVER}" in
   vllm)
     [[ "${HC_MODEL_HF}" == *CHANGE-ME* || "${HC_VLLM_IMAGE}" == *CHANGE-ME* ]] && die "set HC_MODEL_HF and HC_VLLM_IMAGE in bench.env"
-    rev=(); [[ -n "${HC_MODEL_REVISION}" && "${HC_MODEL_REVISION}" != *CHANGE-ME* ]] && rev=(--revision "${HC_MODEL_REVISION}")
+    # Optional flags (campaign 1). macOS bash 3.2 + `set -u` aborts on a bare "${arr[@]}" of an
+    # empty array, so the expansion below uses the ${arr[@]+"${arr[@]}"} form.
+    opt=()
+    [[ "${HC_ENFORCE_EAGER:-0}" == 1 ]] && opt+=(--enforce-eager)
+    [[ "${HC_LANGUAGE_MODEL_ONLY:-0}" == 1 ]] && opt+=(--language-model-only)
+    [[ -n "${HC_REASONING_PARSER:-}" ]] && opt+=(--reasoning-parser "${HC_REASONING_PARSER}")
+    [[ -n "${HC_SPECULATIVE_CONFIG:-}" ]] && opt+=(--speculative-config "${HC_SPECULATIVE_CONFIG}")
+    [[ "${HC_ENABLE_THINKING:-}" == false ]] && opt+=(--default-chat-template-kwargs '{"enable_thinking": false}')
     docker run -d --name hc-llm --network "${HC_UPNET}" --gpus all --ipc=host \
       -p "127.0.0.1:${HC_LLM_PORT}:8000" -v "${HC_HF_CACHE}:/root/.cache/huggingface" \
       "${HC_VLLM_IMAGE}" \
-      --model "${HC_MODEL_HF}" "${rev[@]}" --served-model-name "${HC_SERVED_NAME}" \
+      --model "${HC_MODEL_HF}" --revision "${HC_MODEL_REVISION}" --served-model-name "${HC_SERVED_NAME}" \
       --max-model-len "${HC_MAX_MODEL_LEN}" --gpu-memory-utilization "${HC_GPU_MEM_UTIL}" \
       --kv-cache-dtype "${HC_KV_CACHE_DTYPE}" --max-num-seqs "${HC_MAX_NUM_SEQS}" \
       --enable-auto-tool-choice --tool-call-parser "${HC_TOOL_PARSER}" \
       --generation-config vllm \
+      ${opt[@]+"${opt[@]}"} \
       --seed 0 >/dev/null
     # --generation-config vllm: ignore the model's generation_config.json defaults (e.g.
     # repetition_penalty 1.05) so the only sampling knobs are the ones the proxy forces.

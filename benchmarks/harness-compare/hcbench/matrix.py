@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .arms import load_arms, render
 from .config import ROOT, BenchConfig, ensure_env
+from .prereg import dirty_paths, pre_registered_files, repo_head, sha256_file
 from .runner import execute_run
 from .suites import Task, load_redteam_suite, load_swebench_suite, load_task_suite
 
@@ -49,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--suite", required=True, choices=["a", "b", "c", "smoke"])
     ap.add_argument("--out", required=True, type=Path, help="campaign directory")
     ap.add_argument("--arms", required=True, help="comma-separated arm names from arms.toml")
-    ap.add_argument("--seeds", default="0", help="comma-separated repeat indices (sent as seed)")
+    ap.add_argument("--seeds", default="0", help="repeat indices, e.g. 0,1,2 (seed = base + i)")
     ap.add_argument("--arms-file", type=Path, default=ROOT / "config" / "arms.toml")
     ap.add_argument("--suite-file", help="override suite TOML (b, c, smoke)")
     ap.add_argument("--instances", help="suite a: instances.jsonl from select_tasks")
@@ -97,6 +98,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     args.out.mkdir(parents=True, exist_ok=True)
+    manifest = Path(cfg.bundle_dir) / "manifest.json"
+    try:
+        bundle = json.loads(manifest.read_text())
+    except (OSError, json.JSONDecodeError):
+        bundle = {}
+    # Hash the suite and arms files actually used (K49), the rest from the rig.
+    used = pre_registered_files()
+    paths: dict[str, str] = {}
+    suite_key = {"b": "suite_b", "c": "suite_c", "smoke": "suite_smoke"}.get(args.suite)
+    if suite_key:
+        used[suite_key] = (
+            Path(args.suite_file) if args.suite_file else DEFAULT_SUITE_FILES[args.suite]
+        )
+        paths[suite_key] = str(used[suite_key])
+    used["arms_toml"] = args.arms_file
+    paths["arms_toml"] = str(args.arms_file)
+    files = {k: sha256_file(p) for k, p in used.items() if p.exists()}
+    dirty = dirty_paths(ignore_dir=ROOT / "prereg")  # prereg/ is where the pre-registration lives
     invocation = {
         "suite": args.suite,
         "arms": arm_names,
@@ -107,6 +126,13 @@ def main(argv: list[str] | None = None) -> int:
         "tasks_file": args.tasks_file,
         "prompt": args.prompt if args.suite == "a" else None,
         "config": cfg.as_dict(),
+        # Evidence for the report's conformance check (spec 11.6 K43).
+        "bundle": bundle,
+        "files": files,
+        "paths": paths,
+        "head": repo_head(),
+        "dirty": bool(dirty),
+        "dirty_paths": dirty,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "argv": sys.argv,
     }

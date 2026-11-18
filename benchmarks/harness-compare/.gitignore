@@ -7,3 +7,10 @@ __pycache__/
 *.egg-info/
 uv.lock
 config/bench.env
+.claude/
+*.swp
+*.swo
+*~
+.#*
+\#*#
+.DS_Store

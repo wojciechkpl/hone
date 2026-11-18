@@ -38,6 +38,19 @@ load_env() {
   fi
 }
 
+# Campaign 1 keys the model server and the proxy depend on. An env file written for an earlier
+# version lacks them; stop with the key's name before anything is removed or started.
+require_campaign1_env() {
+  local key
+  for key in HC_TOP_K HC_MIN_P HC_PRESENCE_PENALTY HC_REPETITION_PENALTY HC_ENABLE_THINKING; do
+    [[ -n "${!key:-}" ]] || die "${key} is unset or empty; copy it from config/bench.env.example"
+  done
+  case "${HC_ENABLE_THINKING}" in
+  true | false) ;;
+  *) die "HC_ENABLE_THINKING must be exactly true or false, got '${HC_ENABLE_THINKING}'" ;;
+  esac
+}
+
 admin_curl() { # curl with the admin bearer token
   curl -fsS -H "Authorization: Bearer ${HC_ADMIN_TOKEN:-}" "$@"
 }

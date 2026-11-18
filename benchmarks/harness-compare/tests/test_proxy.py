@@ -696,8 +696,7 @@ def test_sampling_lockdown_should_pass_other_keys_through_unchanged(tmp_path):
         "tools": tools,
         "tool_choice": "auto",
         "stop": ["END"],
-        "chat_template_kwargs": {"enable_thinking": False},
-    }
+    }  # not chat_template_kwargs: K23 removes it unless overridden
 
     async def go():
         async with proxy_stack(tmp_path, up, overrides={"temperature": 0}) as st:

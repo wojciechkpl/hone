@@ -1,4 +1,4 @@
-"""Execute one (task, arm, seed) run in a fresh container.
+"""Execute one (task, arm, repeat) run in a fresh container.
 
 Lifecycle: register run with the proxy → start container (internal network,
 read-only harness bundle, hardened) → setup → [snapshot] → write arm files →
@@ -240,7 +240,7 @@ def _clear(rdir: Path) -> None:
 def execute_run(
     task: Task,
     arm: Arm,
-    seed: int,
+    repeat: int,
     cfg: BenchConfig,
     out_root: Path,
     *,
@@ -249,10 +249,11 @@ def execute_run(
     force: bool = False,
     retry_errors: bool = False,
 ) -> dict:
-    run_id = make_run_id(task.suite, arm.name, seed, task.task_id)
+    seed = cfg.seed_base + repeat  # sent upstream; ids and directories stay keyed by repeat
+    run_id = make_run_id(task.suite, arm.name, repeat, task.task_id)
     nonce = campaign_nonce(out_root)
     proxy_key = f"{run_id}~{nonce}"
-    rdir = run_dir(out_root, task, arm.name, seed)
+    rdir = run_dir(out_root, task, arm.name, repeat)
     result_path = rdir / "run.json"
 
     ctx = {
@@ -284,6 +285,7 @@ def execute_run(
         "suite": task.suite,
         "arm": arm.name,
         "arm_kind": arm.kind,
+        "repeat": repeat,
         "seed": seed,
         "task_id": task.task_id,
         "image": task.image,
