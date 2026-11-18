@@ -26,6 +26,27 @@ impl CostAccumulator {
         self.total_usage = self.total_usage + usage;
     }
 
+    /// Record one usage event of a provider call whose prompt (input + cache reads +
+    /// cache writes, summed over the call's events so far, including this one) is
+    /// `prompt_tokens` long. The tier comes from `prompt_tokens`, not from `usage` alone,
+    /// so an output-only event of a long request pays the long output rate.
+    pub fn add_with_prompt(
+        &mut self,
+        usage: TokenUsage,
+        pricing: &PricingEntry,
+        prompt_tokens: u64,
+    ) {
+        let cost = pricing.calculate_cost_with_prompt(
+            prompt_tokens,
+            usage.input,
+            usage.output,
+            usage.cache_read,
+            usage.cache_creation,
+        );
+        self.total_usd += cost;
+        self.total_usage = self.total_usage + usage;
+    }
+
     /// Record usage that has no price: counted, but costs nothing.
     pub fn add_unpriced(&mut self, usage: TokenUsage) {
         self.total_usage = self.total_usage + usage;
@@ -67,6 +88,7 @@ mod tests {
             output_per_million: 15.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         }
     }
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use hone_proto::{ModelId, PricingEntry};
+use hone_proto::{LongPromptRates, ModelId, PricingEntry};
 
 use crate::date_suffix::strip_date_suffix;
 
@@ -19,6 +19,9 @@ impl PricingTable {
         // Source: https://platform.claude.com/docs/en/about-claude/pricing (2026-11-17).
         // `cache_creation` is the 5-minute write price: Hone uses the default ephemeral cache.
         // The Claude CLI mirrors Anthropic pricing, so both prefixes come from one list.
+        // Haiku 5.5 also has a long-prompt tier (below); only the `anthropic:` entry carries it.
+        // The CLI reports one usage total per turn, over many requests, so a tier chosen from
+        // that total would overcharge most tool-using turns: `claude-cli:` stays at base rates.
         // (id, input, output, cache_read, cache_creation) per million tokens.
         const CLAUDE_PRICES: &[(&str, f64, f64, f64, f64)] = &[
             ("claude-fable-5-2", 8.0, 40.0, 0.20, 10.0),
@@ -37,12 +40,20 @@ impl PricingTable {
             ("claude-sonnet-5", 2.0, 10.0, 0.20, 2.50),
             ("claude-sonnet-4-6", 3.0, 15.0, 0.30, 3.75),
             ("claude-sonnet-4-5", 3.0, 15.0, 0.30, 3.75),
-            // Haiku 5.5 is priced at the <=100K-token rate. Prompts over 100K tokens
-            // cost 0.50 / 2.50 / 0.05 / 0.625; tier support is a follow-up.
+            // Haiku 5.5: these are the rates for prompts up to 100,000 tokens. Requests with
+            // a longer prompt (input + cache reads + cache writes) pay 0.50 / 2.50 / 0.05 /
+            // 0.625 for everything; see `HAIKU_5_5_LONG_PROMPT`.
             ("claude-haiku-5-5", 0.10, 0.50, 0.01, 0.125),
             // Keyed by alias; dated ids resolve via `strip_date_suffix`.
             ("claude-haiku-4-5", 1.0, 5.0, 0.10, 1.25),
         ];
+        const HAIKU_5_5_LONG_PROMPT: LongPromptRates = LongPromptRates {
+            above_prompt_tokens: 100_000,
+            input_per_million: 0.50,
+            output_per_million: 2.50,
+            cache_read_per_million: Some(0.05),
+            cache_creation_per_million: Some(0.625),
+        };
         for prefix in ["anthropic", "claude-cli"] {
             for &(id, input, output, cache_read, cache_write) in CLAUDE_PRICES {
                 table.insert(PricingEntry {
@@ -51,6 +62,8 @@ impl PricingTable {
                     output_per_million: output,
                     cache_read_per_million: Some(cache_read),
                     cache_creation_per_million: Some(cache_write),
+                    long_prompt: (prefix == "anthropic" && id == "claude-haiku-5-5")
+                        .then_some(HAIKU_5_5_LONG_PROMPT),
                 });
             }
         }
@@ -60,6 +73,7 @@ impl PricingTable {
             output_per_million: 4.0,
             cache_read_per_million: Some(0.08),
             cache_creation_per_million: Some(1.00),
+            long_prompt: None,
         });
 
         // Gemini CLI models
@@ -69,6 +83,7 @@ impl PricingTable {
             output_per_million: 10.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         });
         table.insert(PricingEntry {
             model: ModelId::new("gemini-cli:gemini-2.5-flash"),
@@ -76,6 +91,7 @@ impl PricingTable {
             output_per_million: 0.60,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         });
 
         // OpenAI models
@@ -85,6 +101,7 @@ impl PricingTable {
             output_per_million: 10.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         });
         table.insert(PricingEntry {
             model: ModelId::new("openai:gpt-4o-mini"),
@@ -92,6 +109,7 @@ impl PricingTable {
             output_per_million: 0.60,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         });
 
         table

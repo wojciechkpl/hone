@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed: Claude Haiku 5.5's long-prompt price
+
+- **Before:** Hone priced every Claude Haiku 5.5 request at the rates for prompts up to 100,000 tokens, so a longer prompt (five times the price) was under-counted in session cost, `[budget] session_limit_usd` and `honed` spend.
+- **Now:** a request whose prompt (input, cache reads and cache writes) is over 100,000 tokens is priced at 0.50 / 2.50 / 0.05 / 0.625 per million tokens for the whole request, output included; each provider call is priced on its own. A `[pricing."anthropic:claude-haiku-5-5"]` entry of your own still replaces the built-in price with one flat rate. `claude-cli:claude-haiku-5-5` stays at the standard rate, so its requests over 100,000 tokens are still under-counted, by up to five times: the CLI reports one usage total per turn, over all of its requests, and a tier on that total would overcharge most tool-using turns.
+
 ### Fixed: Claude 4.6 and later use their 1M-token context window
 
 - **Before:** Hone compacted every Claude model's history at 120K tokens (60% of 200K), although Claude 4.6 and later (Opus 4.6+, Sonnet 4.6+, Haiku 5.5, Fable, Mythos) have a 1M-token window. The window table behind the TUI's context gauge and the `model_info` event didn't list them either, so they showed 128K, and a dated id such as `claude-haiku-4-5-20251001` didn't find its base entry.
@@ -22,7 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - **Before:** the built-in table charged Claude Opus 4.5 and Opus 4.7 at $15 / $75 per million input / output tokens (Anthropic charges $5 / $25) and Claude Haiku 4.5 at $0.80 / $4 ($1 / $5). The `claude-haiku-4-5` alias had no price, because the entry was keyed by its dated id, and `claude-cli:` had no Haiku price at all. Opus 5.5, Opus 5, Opus 4.8, Opus 4.6, Sonnet 5.5, Sonnet 5, Haiku 5.5 and the Fable and Mythos models had no price at all, so their cost showed as unknown. Opus spend was over-reported threefold, and `[budget] session_limit_usd` stopped Opus runs early.
 - **Now:** every current Claude model has its first-party price from Anthropic's pricing page (checked 2026-11-17), as `anthropic:` and as `claude-cli:`, both built from one list. Cache reads use each model's own rate (0.025× input for Fable and Mythos 5.1 / 5.2, 0.05× for Opus 5.5 and Sonnet 5.5, 0.1× otherwise); cache writes use the 5-minute price. Dated ids such as `claude-haiku-4-5-20251001` resolve to their base entry.
-- **Known gap:** Claude Haiku 5.5 costs five times as much for prompts over 100,000 tokens. Hone prices every Haiku 5.5 call at the lower rate for now. If most of your prompts are longer, set `[pricing."anthropic:claude-haiku-5-5"]` (and the `claude-cli:` key if you use it) to 0.50 / 2.50 with `cache_read_per_million = 0.05` and `cache_creation_per_million = 0.625`; see [Pricing and `[budget]`](docs/configuration.md#pricing-and-budget).
+- Claude Haiku 5.5's higher price for prompts over 100,000 tokens is priced too; see "Claude Haiku 5.5's long-prompt price" above.
 
 ### `hone --version` and `honed --version` name the commit
 

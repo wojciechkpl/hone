@@ -11,7 +11,7 @@ pub mod step_action;
 mod tool;
 
 pub use content::{Content, ContentPart};
-pub use cost::{CostEstimate, PricingEntry};
+pub use cost::{CostEstimate, LongPromptRates, PricingEntry};
 pub use error::ProtoError;
 pub use event::{
     AgentEvent, ProviderEvent, StepAction, StreamErrorKind, WorkerRef, is_transient_status,

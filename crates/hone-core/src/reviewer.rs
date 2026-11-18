@@ -27,6 +27,8 @@ pub struct ReviewResult {
     pub response: String,
     /// Token usage for this review turn.
     pub usage: TokenUsage,
+    /// Cost of this review turn in USD, priced per provider call by the reviewer agent.
+    pub cost_usd: f64,
 }
 
 /// A single issue found during review.
@@ -186,6 +188,7 @@ impl ReviewerAgent {
             approved,
             response: turn.response,
             usage: turn.usage,
+            cost_usd: turn.cost_usd,
         })
     }
 }
