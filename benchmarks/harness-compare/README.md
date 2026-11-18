@@ -118,12 +118,14 @@ change, log it in `prereg/c1/DEVIATIONS.md`.
 refuses an unpinned `FROM`. The Debian packages they install, and the dependencies of
 `pytest` and `aiohttp`, are not pinned: build the images before smoke (`make stack`) and
 rebuild on the same box, where Docker reuses the cached layers. Don't prune the build cache
-(`docker builder prune`, `docker system prune`) until the campaign ends.
+(`docker builder prune`, `docker system prune`) until the campaign ends, and keep disk space
+free: Docker can also evict the cache by itself when the disk fills. If `make stack` after
+the tag rebuilds an image from scratch, log it in `prereg/c1/DEVIATIONS.md`.
 
 Before the tag, `git status --ignored --short .` should list only build outputs, caches
 and tool folders (`.bundle/`, `.build/`, `results/`, `.venv/`, `__pycache__/`,
-`.pytest_cache/`, `.ruff_cache/`, `.claude/`, `uv.lock`), editor swap or backup files, and
-`config/bench.env`: the code check can't see ignored files.
+`.pytest_cache/`, `.ruff_cache/`, `.claude/`, `uv.lock`), editor swap or backup files,
+`.DS_Store`, and `config/bench.env`: the code check can't see ignored files.
 
 ## Day-to-day
 
