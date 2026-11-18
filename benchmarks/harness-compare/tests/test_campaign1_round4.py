@@ -195,6 +195,9 @@ def clean_git_env():
     env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "HC_"))}
     env["GIT_CONFIG_GLOBAL"] = "/dev/null"
     env["GIT_CONFIG_NOSYSTEM"] = "1"
+    # git also reads $XDG_CONFIG_HOME/git/ignore (a user's global ignore file): without this the
+    # rig's own .gitignore is not what the tests exercise.
+    env["XDG_CONFIG_HOME"] = "/nonexistent-xdg"
     return env
 
 
