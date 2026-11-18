@@ -119,47 +119,47 @@ def mv_and_commit(rig, src, dst):
 
 def test_k61_changed_between_returns_both_sides_of_a_committed_rename(tmp_path):
     rig, h1 = code_rig(tmp_path)
-    h2 = mv_and_commit(rig, "hcbench/stats.py", "tests/stats_moved.py")
+    h2 = mv_and_commit(rig, "hcbench/sink.py", "tests/sink_moved.py")
     got = in_rig(rig, f"p.changed_between({h1!r}, {h2!r})")
-    assert sorted(got) == ["hcbench/stats.py", "tests/stats_moved.py"]
+    assert sorted(got) == ["hcbench/sink.py", "tests/sink_moved.py"]
 
 
 def test_k61_a_committed_move_out_of_code_exits_3_naming_the_source(tmp_path):
     rig, h1 = code_rig(tmp_path)
-    h2 = mv_and_commit(rig, "hcbench/stats.py", "tests/stats_moved.py")
+    h2 = mv_and_commit(rig, "hcbench/sink.py", "tests/sink_moved.py")
     camp, pre = code_campaign(rig, h1, [{"head": h2}])
     r, md = run_cli(rig, camp, pre)
     assert r.returncode == 3
     rows = code_rows(md, "code.changed")
-    assert rows and all("hcbench/stats.py" in ln for ln in rows)
-    assert "tests/stats_moved.py" in section(md, "Conformance")  # the destination is information
+    assert rows and all("hcbench/sink.py" in ln for ln in rows)
+    assert "tests/sink_moved.py" in section(md, "Conformance")  # the destination is information
 
 
 def test_k61_dirty_paths_returns_both_sides_of_a_staged_rename(tmp_path):
     rig, _ = code_rig(tmp_path)
-    git(rig, "mv", "hcbench/stats.py", "tests/stats_moved.py")
-    assert sorted(in_rig(rig, "p.dirty_paths()")) == ["hcbench/stats.py", "tests/stats_moved.py"]
+    git(rig, "mv", "hcbench/sink.py", "tests/sink_moved.py")
+    assert sorted(in_rig(rig, "p.dirty_paths()")) == ["hcbench/sink.py", "tests/sink_moved.py"]
 
 
 def test_k61_a_staged_move_out_of_code_exits_3_with_code_dirty(tmp_path):
     rig, h1 = code_rig(tmp_path)
-    git(rig, "mv", "hcbench/stats.py", "tests/stats_moved.py")
+    git(rig, "mv", "hcbench/sink.py", "tests/sink_moved.py")
     camp, pre = code_campaign(rig, h1, [{"head": h1}])
     r, md = run_cli(rig, camp, pre)
     assert r.returncode == 3
     rows = code_rows(md, "code.dirty")
-    assert rows and all("hcbench/stats.py" in ln for ln in rows)
-    assert "tests/stats_moved.py" in section(md, "Conformance")
+    assert rows and all("hcbench/sink.py" in ln for ln in rows)
+    assert "tests/sink_moved.py" in section(md, "Conformance")
 
 
 def test_k61_a_rename_between_two_code_paths_names_both(tmp_path):
     rig, h1 = code_rig(tmp_path)
-    h2 = mv_and_commit(rig, "hcbench/stats.py", "scripts/stats_moved.py")
+    h2 = mv_and_commit(rig, "hcbench/sink.py", "scripts/sink_moved.py")
     camp, pre = code_campaign(rig, h1, [{"head": h2}])
     r, md = run_cli(rig, camp, pre)
     assert r.returncode == 3
     rows = code_rows(md, "code.changed")
-    assert any("hcbench/stats.py" in ln and "scripts/stats_moved.py" in ln for ln in rows)
+    assert any("hcbench/sink.py" in ln and "scripts/sink_moved.py" in ln for ln in rows)
 
 
 def test_k61_a_rename_between_two_non_code_paths_stays_information(tmp_path):
