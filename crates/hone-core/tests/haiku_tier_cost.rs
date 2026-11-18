@@ -36,7 +36,7 @@ fn u(input: u32, output: u32, cache_read: u32, cache_creation: u32) -> TokenUsag
 fn test_h5_add_should_price_its_usage_as_one_request_with_the_tier_chosen_by_its_prompt() {
     let mut acc = CostAccumulator::new();
     acc.add(u(60_000, 1_000, 0, 50_000), &tiered()); // prompt 110,000 -> long
-                                                     // 60,000 x 10 + 1,000 x 20 + 50,000 x 12.5 per million
+    // 60,000 x 10 + 1,000 x 20 + 50,000 x 12.5 per million
     assert!(
         (acc.total_usd() - 1.245).abs() < 1e-12,
         "{}",

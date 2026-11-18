@@ -15,6 +15,11 @@ fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-12
 }
 
+/// Relative tolerance, for results in the thousands where one f64 step exceeds 1e-12.
+fn close_rel(a: f64, b: f64) -> bool {
+    (a - b).abs() <= 1e-9 * b.abs().max(1.0)
+}
+
 fn tier() -> LongPromptRates {
     LongPromptRates {
         above_prompt_tokens: 100_000,
@@ -128,11 +133,11 @@ fn test_h2_output_tokens_should_not_count_toward_the_prompt_length() {
 fn test_h2_the_prompt_sum_should_not_overflow_u32() {
     // MAX + 10 wraps to 9 in u32: a wrapping sum would pick the base rates.
     let got = tiered().calculate_cost(u32::MAX, 0, 10, 0);
-    assert!(close(got, long_cost(u32::MAX, 0, 10, 0)), "{got}");
+    assert!(close_rel(got, long_cost(u32::MAX, 0, 10, 0)), "{got}");
     // Three near-MAX fields must not panic (debug) either.
     let got = tiered().calculate_cost(u32::MAX, 0, u32::MAX, u32::MAX);
     assert!(
-        close(got, long_cost(u32::MAX, 0, u32::MAX, u32::MAX)),
+        close_rel(got, long_cost(u32::MAX, 0, u32::MAX, u32::MAX)),
         "{got}"
     );
 }

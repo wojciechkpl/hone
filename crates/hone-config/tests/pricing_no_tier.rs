@@ -3,7 +3,7 @@
 //! entry resolves with no tier, so the user's flat rates apply to every prompt length, and the
 //! config schema does not gain a tier key.
 
-use hone_config::resolve::{resolve, ConfigLayer};
+use hone_config::resolve::{ConfigLayer, resolve};
 
 const USER: &str = "/home/u/.config/hone/config.toml";
 

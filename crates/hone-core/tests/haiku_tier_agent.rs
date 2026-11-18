@@ -12,12 +12,12 @@
 //! attempt (usage then error, before any output) and its retry are two script entries.
 
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::{stream, Stream};
+use futures::{Stream, stream};
 use hone_core::{AgentConfig, AgentHandle, AgentMode, PriceLookup, RetryConfig};
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,

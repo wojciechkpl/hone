@@ -17,11 +17,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
 
 use async_trait::async_trait;
-use futures::{stream, Stream};
+use futures::{Stream, stream};
 use hone_core::ralph_loop::{RalphConfig, RalphLoop};
 use hone_core::{
-    set_default_price_lookup, AgentConfig, AgentHandle, AgentMode, PriceLookup, RetryConfig,
-    ReviewerAgent,
+    AgentConfig, AgentHandle, AgentMode, PriceLookup, RetryConfig, ReviewerAgent,
+    set_default_price_lookup,
 };
 use hone_proto::{
     AgentEvent, Message, ModelId, ModelInfo, PricingEntry, ProviderEvent, ProviderHealth,
