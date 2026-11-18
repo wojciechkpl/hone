@@ -11,8 +11,9 @@ Changes to the K48 evidence shape (round 6):
 * resolves False: one mismatch {run_id None, invocation "preregistration", field "code.head",
   found = the head}. `changed` is not consulted, but the dirty checks for every invocation and
   for the report run are still made.
-* K54: check_conformance splits every changed / dirty path. Under hcbench/, harness_bin/,
-  scripts/, config/, suites/, docker/ or exactly Makefile or pyproject.toml, it is code:
+* K54 (superseded by K56, see test_campaign1_round7.py): check_conformance splits every
+  changed / dirty path. Under hcbench/, harness_bin/, scripts/, config/, suites/, docker/ or
+  exactly Makefile or pyproject.toml, it is code:
   `code.changed` / `code.dirty` (found: the code paths only, sorted). Anything else is
   information: the result gains "other": [{"invocation": i | "report", "kind": "changed" |
   "dirty", "paths": [sorted non-code paths]}] and the Conformance section lists them. They are
@@ -119,14 +120,9 @@ CODE_PATHS = [
     "Makefile",
     "pyproject.toml",
 ]
-OTHER_PATHS = [
-    "README.md",
-    "SPEC.md",
-    "tests/test_x.py",
-    "hcbench_notes.md",
-    "Makefile.bak",
-    "docs/a.md",
-]
+# K56 replaced the K54 path list: only README.md and SPEC.md at the rig root and tests/ are not
+# code. The old OTHER_PATHS entries hcbench_notes.md, Makefile.bak and docs/a.md are code now.
+OTHER_PATHS = ["README.md", "SPEC.md", "tests/test_x.py", "tests/sub/deep/y.py"]
 
 
 def evidence(changed=(), dirty=()):

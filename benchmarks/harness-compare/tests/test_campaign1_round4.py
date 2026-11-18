@@ -17,8 +17,10 @@ from pathlib import Path
 
 import pytest
 from fakebin import (
+    LLAMA_PINNED,
     ROOT,
     SHA40,
+    VLLM_PINNED,
     calls,
     docker_calls,
     harmful,
@@ -218,7 +220,8 @@ def prereg_cli(rig, tmp_path, *extra, revision=SHA40, out=None):
     env = clean_git_env()
     for k, v in vals.items():
         if "CHANGE-ME" in v:
-            env[k] = revision if k == "HC_MODEL_REVISION" else "pinned-for-test"
+            pinned = {"HC_MODEL_REVISION": revision, "HC_VLLM_IMAGE": VLLM_PINNED}
+            env[k] = pinned.get(k, "pinned-for-test")
     env.update(prereg_env(rig, tmp_path))
     env["PYTHONPATH"] = str(rig)
     out = out or rig / "prereg" / "t" / "preregistration.toml"
@@ -520,7 +523,7 @@ def test_k46_suite_b_descriptives_are_not_under_the_exploratory_heading(tmp_path
 
 # ---- K47 pinned revision ------------------------------------------------------------------
 
-IMAGE = {"HC_VLLM_IMAGE": "vllm/vllm-openai:test", "HC_MODEL_HF": "org/model"}
+IMAGE = {"HC_VLLM_IMAGE": VLLM_PINNED, "HC_MODEL_HF": "org/model"}
 
 
 @pytest.mark.parametrize(
@@ -552,7 +555,11 @@ def test_k47_mock_and_llamacpp_servers_are_not_blocked(tmp_path, server):
     rig = make_rig(tmp_path)
     bindir, log = make_fake_bin(tmp_path)
     r = run_script(
-        rig, "02_serve_model.sh", ["up"], bindir, {"HC_SERVER": server, "HC_MODEL_REVISION": "main"}
+        rig,
+        "02_serve_model.sh",
+        ["up"],
+        bindir,
+        {"HC_SERVER": server, "HC_MODEL_REVISION": "main", "HC_LLAMACPP_IMAGE": LLAMA_PINNED},
     )
     assert r.returncode == 0, r.stderr
     assert any(c[:1] == ["run"] for c in docker_calls(log))
@@ -585,6 +592,7 @@ def test_k47_a_40_hex_revision_is_accepted(env):
 def test_k47_other_servers_do_not_need_a_pinned_revision(env):
     pin(env)
     env["mp"].setenv("HC_SERVER", "llamacpp")
+    env["mp"].setenv("HC_LLAMACPP_IMAGE", LLAMA_PINNED)
     env["mp"].setenv("HC_MODEL_REVISION", "main")
     rc, _ = run_cb(env)
     assert rc == 0

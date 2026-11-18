@@ -15,6 +15,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+DIGEST = "sha256:" + "ab" * 32  # a well-formed image digest (K58)
+VLLM_PINNED = f"vllm/vllm-openai:test@{DIGEST}"
+LLAMA_PINNED = f"ghcr.io/ggml-org/llama.cpp:server-cuda@{DIGEST}"
 SHA40 = "0123456789abcdef0123456789abcdef01234567"  # a pinned commit id (K47)
 
 _RECORDER = """#!{python}
