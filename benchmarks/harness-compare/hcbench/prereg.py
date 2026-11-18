@@ -180,7 +180,7 @@ def changed_between(base: str, head: str) -> list[str] | None:
     """Rig files (rig-relative, outside prereg/) that differ between two commits; None when git
     cannot resolve either."""
     r = subprocess.run(
-        ["git", "diff", "--name-only", "--relative", base, head, "--", "."],
+        ["git", "diff", "--name-only", "--no-renames", "--relative", base, head, "--", "."],
         capture_output=True, text=True, cwd=ROOT, check=False,
     )  # fmt: skip
     if r.returncode != 0:
@@ -212,18 +212,29 @@ def dirty_paths(ignore_dir: Path | None = None) -> list[str]:
             skip = None
     out = []
     status = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all", "--", "."],
+        ["git", "status", "--porcelain", "-z", "--untracked-files=all", "--", "."],
         capture_output=True,
         text=True,
         cwd=ROOT,
         check=False,
     ).stdout  # not _git(): its strip() would eat the first line's leading space
-    for line in status.splitlines():
-        path = line[3:].split(" -> ")[-1].strip('"')
-        rel = path[len(prefix) :] if prefix and path.startswith(prefix) else path
-        if skip and (rel + "/").startswith(skip):
+    # -z: unquoted paths, NUL-separated; a rename or copy is "XY dest" then "source" (K61).
+    fields = status.split("\0")
+    k = 0
+    while k < len(fields):
+        entry = fields[k]
+        k += 1
+        if len(entry) < 4:
             continue
-        out.append(rel)
+        paths = [entry[3:]]
+        if entry[0] in "RC" or entry[1] in "RC":
+            paths.append(fields[k])
+            k += 1
+        for path in paths:
+            rel = path[len(prefix) :] if prefix and path.startswith(prefix) else path
+            if skip and (rel + "/").startswith(skip):
+                continue
+            out.append(rel)
     return out
 
 
@@ -332,7 +343,11 @@ def check_pinned_images(env: dict[str, str]) -> None:
 
 
 def validate_stage_cb(env: dict[str, str], draft: bool = False) -> None:
-    """K19/K20/K47: stop with a message that names the key (never a traceback)."""
+    """K19/K20/K47/K62: stop with a message that names the key (never a traceback)."""
+    if not draft and env.get("HC_SERVER") not in ("vllm", "llamacpp", "mock"):
+        raise SystemExit(
+            f"HC_SERVER must be exactly vllm, llamacpp or mock, got {env.get('HC_SERVER')!r}"
+        )
     revision = env.get("HC_MODEL_REVISION", "")
     if (
         not draft

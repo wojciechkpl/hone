@@ -8,3 +8,9 @@ __pycache__/
 uv.lock
 config/bench.env
 .claude/
+*.swp
+*.swo
+*~
+.#*
+\#*#
+.DS_Store
