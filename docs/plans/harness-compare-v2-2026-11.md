@@ -933,8 +933,8 @@ report. So these report-side fixes land before the pre-registration.
 | Nothing checks that the tag was public before the first run, only that the file was created before it | The public timestamp is the point of pre-registering | Push the tag before `make run-c`; the push time on GitHub is the evidence |
 | The code check looks at the checkout, not at the running proxy and task images | A stack built from an older commit and left running passes the check | Run `make stack` after the tag and before `make run-c`; it rebuilds the images and restarts the proxy |
 | Evidence is recorded per invocation, not per run | A bundle rebuilt while an invocation is running isn't seen | Don't run `make bundle` during a campaign |
-| Files that git ignores are not seen by the dirty check: the rig's `.gitignore`, the repository's and the user's global one all apply (closed in part by K56: a change to the rig's `.gitignore` is now code) | An ignored file in the rig directory is invisible to the code check | Before the tag, `git status --ignored --short .` in the rig directory should list only build outputs and caches (`.bundle/`, `.build/`, `results/`, `.venv/`, `__pycache__/`, `.pytest_cache/`, `.ruff_cache/`, `uv.lock`) and `config/bench.env` |
-| The images install Debian packages at build time without pinned versions (the base images are pinned by K57) | A rebuild from an empty build cache can pick up newer packages | Build the images before smoke and rebuild on the same box: Docker reuses the cached layers while the Dockerfiles are unchanged |
+| Files that git ignores are not seen by the dirty check: the rig's `.gitignore`, the repository's and the user's global one all apply (closed in part by K56: a change to the rig's `.gitignore` is now code) | An ignored file in the rig directory is invisible to the code check | Before the tag, `git status --ignored --short .` in the rig directory should list only build outputs, caches and tool folders (`.bundle/`, `.build/`, `results/`, `.venv/`, `__pycache__/`, `.pytest_cache/`, `.ruff_cache/`, `.claude/`, `uv.lock`), editor leftovers (K60) and `config/bench.env` |
+| The images install Debian packages, and the pip dependencies of `pytest` and `aiohttp`, without pinned versions (the base images are pinned by K57) | A rebuild from an empty build cache can pick up newer packages | Build the images before smoke and rebuild on the same box: Docker reuses the cached layers while the Dockerfiles are unchanged. Don't prune the build cache (`docker builder prune`, `docker system prune`) until the campaign ends |
 | `grade.py` names grading groups by seed | Odd names in the published suite A package; results are unaffected | Stage 2 |
 | Stage `a` has no validation and still reads SWE-bench Lite | Stage 2 can't be pre-registered yet | The SWE-rebench loader (§10.6 item 4) |
 
@@ -969,7 +969,7 @@ model server image, which the runbook already says to pin but nothing checked.
     image is allowed. A `FROM` whose image comes from a build argument (`FROM ${BASE}`)
     counts as unpinned.
   - A non-draft pre-registration refuses an unpinned `FROM` and names each file and
-    line. A draft records it and goes on.
+    line. A draft skips the check.
 - **K58 The model server image pinned by digest.**
   - With `HC_SERVER=vllm`, `HC_VLLM_IMAGE` must contain `@sha256:` and 64 lowercase
     hexadecimal characters; with `HC_SERVER=llamacpp`, `HC_LLAMACPP_IMAGE` must. `mock`
@@ -981,6 +981,35 @@ model server image, which the runbook already says to pin but nothing checked.
   - `config/bench.env.example` shows the form: `vllm/vllm-openai:<tag>@sha256:<digest>`.
 - **K59 Docs.** `README.md`, `SPEC.md` and §11.9 say what K56–K58 changed. The runbook
   tells the user how to look up a digest (`docker buildx imagetools inspect <image>`).
+- **Added in implementation:** `python -m hcbench.<tool>` puts the working directory first
+  on `sys.path`, so a stray `json.py` at the rig root replaced the standard library and the
+  report crashed instead of reporting the K56 mismatch. `hcbench/__init__.py` moves the
+  working directory to the end of `sys.path` when the process was started that way.
+
+### 11.11 Requirements, round 8 (from the review of round 7, 2026-11-18)
+
+The round-7 review approved and listed follow-ups. The ones that touch rig code can't land
+after the tag without becoming a mismatch, so they land here.
+
+- **K60 Editor and system leftovers are ignored.** The rig's `.gitignore` ignores `*.swp`,
+  `*.swo`, `*~`, `.#*`, `#*#` and `.DS_Store`, so opening `config/bench.env` in an editor
+  during a campaign is not a `code.dirty` mismatch. None of these names can be imported as a
+  Python module.
+- **K61 Renames show both paths.** `changed_between` and `dirty_paths` report a rename by
+  its source and its destination, so `git mv hcbench/x.py tests/x.py` is a code mismatch
+  (the source is code) and not only information. `changed_between` passes `--no-renames`;
+  the status parser keeps both sides of `old -> new`.
+- **K62 The server is one the rig knows.** A non-draft stage-`cb` pre-registration refuses
+  an `HC_SERVER` other than `vllm`, `llamacpp` or `mock`, so a misspelling (`vLLM`) can't
+  skip the revision and image checks. `mock` stays allowed for no-GPU dry runs; it is
+  visible in `[config]`.
+- **K63 Docs.**
+  - SPEC.md mentions the `sys.path` guard.
+  - The README's list of expected ignored paths includes `.claude/`.
+  - The Debian packages and the pip dependencies of `pytest` and `aiohttp` are unpinned;
+    the README and §11.9 say so, and say not to prune the Docker build cache
+    (`docker builder prune`, `docker system prune`) between smoke and the end of the
+    campaign.
 
 ## Sources
 
