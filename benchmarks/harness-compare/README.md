@@ -61,7 +61,9 @@ to check their arm configuration in `config/arms.toml`.
 cd benchmarks/harness-compare
 cp config/bench.env.example config/bench.env
 # Fill in every CHANGE-ME: HC_MODEL_REVISION (the weights' commit) and
-# HC_VLLM_IMAGE (vLLM 0.26 or later, pinned by digest). Set HC_HONE_REF to the commit under test.
+# HC_VLLM_IMAGE (vLLM 0.26 or later, as <image>:<tag>@sha256:<digest>; serve and prereg refuse
+# it without the digest). Set HC_HONE_REF to the commit under test.
+docker buildx imagetools inspect vllm/vllm-openai:<tag>   # its "Digest:" line is sha256:<digest>
 make preflight bundle            # host checks; build Hone, Pi and Hermes into the bundle
 make serve stack                 # model server, proxy, sink, images
 make smoke                       # every probe must PASS before you pre-register
@@ -106,11 +108,19 @@ differs: every recorded request (forced sampling and seed), every invocation (bu
 suite and arms files, rig code), and the pre-registration itself. Its "Conformance"
 section lists what it found.
 
-**After the tag the rig's code is frozen.** A change under `hcbench/`, `harness_bin/`,
-`scripts/`, `config/`, `suites/`, `docker/`, the `Makefile` or `pyproject.toml` is a
-mismatch in every later report, including a fix to the report itself. Run `make report`
-from the tagged code. Docs and tests may change. If code has to change, log it in
-`prereg/c1/DEVIATIONS.md`.
+**After the tag the rig's code is frozen.** Everything in this directory is code except
+`README.md`, `SPEC.md` and `tests/` (and `prereg/`, which the check leaves out). Any other
+change, including a fix to the report itself, a `.gitignore` edit or a new file, is a
+mismatch in every later report. Run `make report` from the tagged code. If code has to
+change, log it in `prereg/c1/DEVIATIONS.md`.
+
+**Images.** The three Dockerfiles pin `python:3.12-slim` by digest, and the pre-registration
+refuses an unpinned `FROM`. The Debian packages they install are not pinned: build the
+images before smoke (`make stack`) and rebuild on the same box, where Docker reuses the
+cached layers. Before the tag, `git status --ignored --short .` should list only build
+outputs and caches (`.bundle/`, `.build/`, `results/`, `.venv/`, `__pycache__/`,
+`.pytest_cache/`, `.ruff_cache/`, `uv.lock`) and `config/bench.env`: the code check can't
+see ignored files.
 
 ## Day-to-day
 
