@@ -64,6 +64,7 @@ fn lookup() -> PriceLookup {
             output_per_million: 1.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         })
     })
 }
@@ -85,6 +86,7 @@ async fn handle() -> AgentHandle {
             output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: std::env::temp_dir(),
         memory_store: None,

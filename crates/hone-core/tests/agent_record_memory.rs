@@ -48,6 +48,7 @@ fn make_agent_with_store() -> (Agent, Arc<dyn hone_memory::MemoryStore>) {
             output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: std::path::PathBuf::from("/tmp"),
         memory_store: Some(Arc::clone(&store)),

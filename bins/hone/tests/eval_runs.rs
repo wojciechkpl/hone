@@ -168,6 +168,7 @@ fn agent_for(b: &AgentBuild, rounds: Vec<Vec<ToolCallRequest>>, hang: bool) -> A
             // unset creation rate would be billed at 1.25x input by `calculate_cost`.
             cache_read_per_million: Some(0.0),
             cache_creation_per_million: Some(0.0),
+            long_prompt: None,
         },
         working_dir: b.workdir.clone(),
         memory_store: Some(b.memory.clone()),

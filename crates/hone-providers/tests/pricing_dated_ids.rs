@@ -93,6 +93,7 @@ fn test_u16_a_listed_dated_entry_should_still_win() {
         output_per_million: 1.0,
         cache_read_per_million: None,
         cache_creation_per_million: None,
+        long_prompt: None,
     });
     let dated = table
         .get(&ModelId::new("anthropic:claude-haiku-4-5-20251001"))

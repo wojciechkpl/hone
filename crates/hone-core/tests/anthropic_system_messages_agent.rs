@@ -84,6 +84,7 @@ async fn agent_turn_sends_relevant_memories_in_anthropic_system_field() {
             output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: std::path::PathBuf::from("/tmp"),
         memory_store: Some(Arc::clone(&store)),

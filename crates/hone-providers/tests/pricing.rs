@@ -28,6 +28,7 @@ fn test_insert_overrides_existing() {
         output_per_million: 2.0,
         cache_read_per_million: None,
         cache_creation_per_million: None,
+        long_prompt: None,
     });
     let entry = table
         .get(&ModelId::new("anthropic:claude-opus-4-5"))

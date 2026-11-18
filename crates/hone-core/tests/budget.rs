@@ -16,6 +16,7 @@ fn real_pricing() -> PricingEntry {
         output_per_million: 15.0,
         cache_read_per_million: None,
         cache_creation_per_million: None,
+        long_prompt: None,
     }
 }
 

@@ -242,6 +242,7 @@ fn make_agent(record_delay: Duration, recall_delay: Duration) -> (Agent, Arc<dyn
             output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: std::path::PathBuf::from("/tmp"),
         memory_store: Some(store_arc_for_config),

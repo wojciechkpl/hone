@@ -94,6 +94,7 @@ fn base_config(provider: Arc<dyn ModelProvider>) -> AgentConfig {
             output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: PathBuf::from("."),
         memory_store: None,

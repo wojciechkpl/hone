@@ -219,6 +219,7 @@ fn setup(file_content: &str, edit_fails: bool, builtins: bool) -> Setup {
             output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: dir.clone(),
         memory_store: None,
