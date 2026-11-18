@@ -185,6 +185,7 @@ async fn ensemble_candidates_fail_closed_instead_of_prompting_on_a_shared_channe
             output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: workdir,
         memory_store: None,

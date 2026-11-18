@@ -94,6 +94,7 @@ fn agent_for(b: &AgentBuild) -> Agent {
             output_per_million: 2.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: b.workdir.clone(),
         memory_store: Some(b.memory.clone()),

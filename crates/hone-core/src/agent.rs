@@ -1562,8 +1562,10 @@ impl Agent {
 
     /// Add `usage` of a call served by `model` to the session: priced by the
     /// lookup (or `config.pricing` without one); no price means no cost, the
-    /// usage still counts and the model is remembered.
-    fn add_priced(&mut self, usage: TokenUsage, model: &ModelId) {
+    /// usage still counts and the model is remembered. `prompt_tokens` is the
+    /// call's prompt length so far (it picks a long-prompt price tier); `None`
+    /// prices the usage as one request of its own.
+    fn add_priced(&mut self, usage: TokenUsage, model: &ModelId, prompt_tokens: Option<u64>) {
         // The agent's own lookup, else the process default, else the config's price.
         let lookup = self.price_lookup.clone().or_else(default_price_lookup);
         let entry = match lookup {
@@ -1571,7 +1573,10 @@ impl Agent {
             None => Some(self.config.pricing.clone()),
         };
         match entry {
-            Some(price) => self.cost.add(usage, &price),
+            Some(price) => match prompt_tokens {
+                Some(prompt) => self.cost.add_with_prompt(usage, &price, prompt),
+                None => self.cost.add(usage, &price),
+            },
             None => {
                 self.cost.add_unpriced(usage);
                 if let Ok(mut seen) = UNPRICED_SEEN.lock() {
@@ -1595,12 +1600,13 @@ impl Agent {
     }
 
     /// Count `Usage` events of failed attempts in the turn and the session cost.
+    /// Each event is a separate attempt's request, priced on its own (never summed).
     fn count_usage(&mut self, events: Vec<ProviderEvent>, turn_usage: &mut TokenUsage) {
         for event in events {
             if let ProviderEvent::Usage(usage) = event {
                 *turn_usage = *turn_usage + usage;
                 let model = self.config.model.clone();
-                self.add_priced(usage, &model);
+                self.add_priced(usage, &model, None);
             }
         }
     }
@@ -2343,6 +2349,9 @@ impl Agent {
             // The model serving this call: the session's, or a fallback's.
             let mut call_model = self.config.model.clone();
             let mut call_usage_seen = false;
+            // Prompt of the request being priced: the prompt of the latest usage event that
+            // reported prompt tokens. 0 at the start of every provider call.
+            let mut call_prompt: u64 = 0;
 
             while let Some(event) = stream.next().await {
                 match event {
@@ -2359,7 +2368,17 @@ impl Agent {
                     ProviderEvent::Usage(usage) => {
                         turn_usage = turn_usage + usage;
                         call_usage_seen = true;
-                        self.add_priced(usage, &call_model);
+                        // An event with prompt tokens starts a new request (a fallback
+                        // member's, after carried usage of failed ones): its own prompt
+                        // replaces the last one, never adds to it. An output-only event
+                        // keeps the current prompt.
+                        let prompt = usage.input as u64
+                            + usage.cache_read as u64
+                            + usage.cache_creation as u64;
+                        if prompt > 0 {
+                            call_prompt = prompt;
+                        }
+                        self.add_priced(usage, &call_model, Some(call_prompt));
                         self.announce_unpriced(&events).await;
                     }
 
@@ -2460,6 +2479,7 @@ impl Agent {
                         reason,
                     } => {
                         call_model = ModelId::new(fallback.clone());
+                        call_prompt = 0;
                         let _ = events
                             .send(AgentEvent::ModelFallback {
                                 requested,

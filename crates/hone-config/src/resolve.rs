@@ -836,6 +836,7 @@ pub fn resolve(
                         output_per_million: p.output_per_million,
                         cache_read_per_million: p.cache_read_per_million,
                         cache_creation_per_million: p.cache_creation_per_million,
+                        long_prompt: None,
                     })
                     .collect()
             })

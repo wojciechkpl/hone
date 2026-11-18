@@ -54,6 +54,7 @@ fn agent_config() -> AgentConfig {
             output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: std::path::PathBuf::from("."),
         memory_store: None,

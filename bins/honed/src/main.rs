@@ -448,6 +448,7 @@ async fn main() -> Result<()> {
                         output_per_million: 0.0,
                         cache_read_per_million: None,
                         cache_creation_per_million: None,
+                        long_prompt: None,
                     };
                     let working_dir = std::env::current_dir().unwrap_or_default();
 

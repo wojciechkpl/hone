@@ -331,6 +331,7 @@ fn pricing_entry_calculate_cost() {
         output_per_million: 75.0,
         cache_read_per_million: Some(1.5),
         cache_creation_per_million: None,
+        long_prompt: None,
     };
     // 1000 input tokens = $0.015
     // 500 output tokens = $0.0375
@@ -348,6 +349,7 @@ fn pricing_entry_no_cache_rate() {
         output_per_million: 0.0,
         cache_read_per_million: None,
         cache_creation_per_million: None,
+        long_prompt: None,
     };
     let cost = entry.calculate_cost(10000, 5000, 1000, 0);
     assert_eq!(cost, 0.0);

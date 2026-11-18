@@ -336,6 +336,7 @@ pub fn lead_config(
             output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: working_dir.to_path_buf(),
         memory_store: None,

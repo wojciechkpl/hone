@@ -249,7 +249,7 @@ input_per_million = 3.0
 output_per_million = 15.0
 ```
 
-`cache_read_per_million` and `cache_creation_per_million` are optional. A model with no price counts as free, and Hone says so once per model. The built-in Anthropic prices were checked against Anthropic's pricing page on 2026-11-17; Claude Haiku 5.5 is priced at its rate for prompts up to 100,000 tokens, so longer prompts are under-counted. See [Pricing and `[budget]`](../configuration.md#pricing-and-budget).
+`cache_read_per_million` and `cache_creation_per_million` are optional. A model with no price counts as free, and Hone says so once per model. The built-in Anthropic prices were checked against Anthropic's pricing page on 2026-11-17; Claude Haiku 5.5 requests with a prompt over 100,000 tokens are priced at its higher rates (not through `claude-cli:`, which reports one total per turn, so its requests over 100,000 tokens are under-counted, by up to five times). See [Pricing and `[budget]`](../configuration.md#pricing-and-budget).
 
 After each turn, Hone calculates cost:
 

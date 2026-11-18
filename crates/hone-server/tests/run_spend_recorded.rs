@@ -102,6 +102,7 @@ fn expected_cost_per_call() -> f64 {
         output_per_million: 15.0,
         cache_read_per_million: None,
         cache_creation_per_million: None,
+        long_prompt: None,
     });
     entry.calculate_cost(100, 50, 0, 0)
 }

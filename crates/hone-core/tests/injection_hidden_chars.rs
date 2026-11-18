@@ -316,6 +316,7 @@ async fn history_message_for(text: &str) -> String {
             output_per_million: 0.0,
             cache_read_per_million: None,
             cache_creation_per_million: None,
+            long_prompt: None,
         },
         working_dir: std::env::temp_dir(),
         memory_store: None,

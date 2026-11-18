@@ -664,6 +664,7 @@ fn test_cache_cost_ordering() {
         output_per_million: 15.0,
         cache_read_per_million: Some(0.30),
         cache_creation_per_million: Some(3.75),
+        long_prompt: None,
     };
 
     let one_million = 1_000_000u32;
