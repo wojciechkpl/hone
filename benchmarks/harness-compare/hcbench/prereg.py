@@ -289,6 +289,48 @@ def check_hermes_bundle(env: dict[str, str], manifest_path: Path) -> None:
         raise SystemExit(f"bundle hermes_sha {sha} != HC_HERMES_SHA {env['HC_HERMES_SHA']!r}")
 
 
+_FROM = re.compile(r"^\s*FROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?\s*$", re.IGNORECASE)
+_DIGEST_PINNED = re.compile(r".+@sha256:[0-9a-f]{64}$")
+
+
+def unpinned_froms(text: str) -> list[tuple[int, str]]:
+    """(line number, image) of each FROM not pinned by digest (K57).
+
+    A FROM naming an earlier stage of the same file, and `scratch`, need no digest; a build-argument
+    image (`${BASE}`) counts as unpinned.
+    """
+    stages: set[str] = set()
+    out = []
+    for n, line in enumerate(text.splitlines(), 1):
+        m = _FROM.match(line)
+        if not m:
+            continue
+        image = m.group(1)
+        if image.lower() not in stages | {"scratch"} and not _DIGEST_PINNED.match(image):
+            out.append((n, image))
+        if m.group(2):
+            stages.add(m.group(2).lower())
+    return out
+
+
+def check_pinned_images(env: dict[str, str]) -> None:
+    """K57, K58: Dockerfile bases and the model server image are pinned by digest."""
+    problems = []
+    key = {"vllm": "HC_VLLM_IMAGE", "llamacpp": "HC_LLAMACPP_IMAGE"}.get(env.get("HC_SERVER", ""))
+    if key and not re.search(r"@sha256:[0-9a-f]{64}$", env.get(key, "")):
+        problems.append(
+            f"{key} must be pinned by digest (<name>:<tag>@sha256:<64 lowercase hex>), "
+            f"got {env.get(key, '')!r}"
+        )
+    for path in sorted((ROOT / "docker").glob("*.Dockerfile")):
+        for n, image in unpinned_froms(path.read_text()):
+            problems.append(f"{path.relative_to(ROOT).as_posix()}:{n}: FROM {image} has no digest")
+    if problems:
+        raise SystemExit(
+            "refusing to pre-register with unpinned images:\n  " + "\n  ".join(problems)
+        )
+
+
 def validate_stage_cb(env: dict[str, str], draft: bool = False) -> None:
     """K19/K20/K47: stop with a message that names the key (never a traceback)."""
     revision = env.get("HC_MODEL_REVISION", "")
@@ -300,6 +342,8 @@ def validate_stage_cb(env: dict[str, str], draft: bool = False) -> None:
         raise SystemExit(
             f"HC_MODEL_REVISION must be a 40-character hexadecimal commit id, got {revision!r}"
         )
+    if not draft:
+        check_pinned_images(env)
     for key in REQUIRED_CB:
         if not env.get(key, "").strip():
             raise SystemExit(f"{key} is unset or empty; copy it from config/bench.env.example")

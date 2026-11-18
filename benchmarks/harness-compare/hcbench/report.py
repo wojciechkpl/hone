@@ -411,12 +411,13 @@ def _invocation_mismatches(prereg: Mapping, invocations: list[Mapping]) -> list[
     return out
 
 
-CODE_DIRS = ("hcbench/", "harness_bin/", "scripts/", "config/", "suites/", "docker/")
-CODE_FILES = ("Makefile", "pyproject.toml")
+# K56: everything in the rig is code except its docs and tests. (prereg/ is left out upstream.)
+NON_CODE_FILES = ("README.md", "SPEC.md")  # at the rig root only
+NON_CODE_DIRS = ("tests/",)
 
 
 def _is_code(path: str) -> bool:
-    return path.startswith(CODE_DIRS) or path in CODE_FILES
+    return not (path in NON_CODE_FILES or path.startswith(NON_CODE_DIRS))
 
 
 def _code_mismatches(invocations: list[Mapping], code: Mapping) -> tuple[list[dict], list[dict]]:
@@ -667,7 +668,9 @@ def conformance_markdown(res: dict, invocations: list[Mapping] | None = None) ->
     if invocations:
         out.append(
             "\nEvery invocation is compared with the pre-registration: its bundle, its files "
-            "(sha256) and its code state (changed and dirty rig paths). Head and dirty flag:\n"
+            "(sha256) and its code state (changed and dirty rig paths). Every path of the rig "
+            "is code except README.md and SPEC.md at the rig root and everything under tests/ "
+            "(and prereg/, which is left out). Head and dirty flag:\n"
         )
         for i, inv in enumerate(invocations):
             dirty = "yes" if inv.get("dirty") else "no"
