@@ -1,6 +1,10 @@
 # Execution plan: trust, then defaults, then the daemon (Nov 2026 – Jan 2027)
 
-- **Status:** draft for review
+- **Status:** draft for review. **Priorities superseded on 2026-11-17** by
+  [`docs/research/pmf-niche-2026-11.md`](../research/pmf-niche-2026-11.md):
+  - Phase 1 runs first, as campaign 1: suites C and B, then A
+    ([`harness-compare-v2`](harness-compare-v2-2026-11.md) §11).
+  - Phases 2.4–2.8 and 3, and the messaging channel, wait for the first published results.
 - **Created:** 2026-11-08
 - **Source:** a priority call from a shared Claude conversation, pasted 2026-11-08.
 - **Automation:** [`benchmarks/harness-compare/`](../../benchmarks/harness-compare/) holds the scripts, module contracts in `SPEC.md`, and 336 unit tests.
