@@ -589,15 +589,44 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.
   None, so no check and no mismatch, when the pre-registration has no `repo.head`). When it does
   not resolve, `check_conformance` gives one `code.head` mismatch with `invocation:
   "preregistration"`, does not consult `changed`, and still makes the dirty checks for every
-  invocation and the report run. Only paths under `hcbench/`, `harness_bin/`, `scripts/`,
-  `config/`, `suites/`, `docker/`, and exactly `Makefile` and `pyproject.toml` are code:
-  `code.changed` / `code.dirty` carry only those; any other path goes to the result key `other`
-  (`[{invocation, kind: "changed" | "dirty", paths}]`, present when `code` evidence was given),
-  is listed in the "Conformance" section as information, and is not a mismatch. `prereg/` stays
-  excluded. The section states that every invocation is compared on bundle, files and code state.
+  invocation and the report run. Every rig path is code except exactly `README.md` and
+  `SPEC.md` at the rig root and paths under `tests/` (K56, replacing K54's list):
+  `code.changed` / `code.dirty` carry the code paths; the three exceptions go to the result key
+  `other` (`[{invocation, kind: "changed" | "dirty", paths}]`, present when `code` evidence was
+  given), are listed in the "Conformance" section as information, and are not a mismatch.
+  `prereg/` stays excluded. The section states that every invocation is compared on bundle,
+  files and code state, and names the paths that are not code.
 - **Analysis text (K41).** The stage `cb` `[analysis]` states §11.3 as it reads now: rates counted and
   dropped, the two worst-case bounds, which arm a contrast favours, the p-value rule, the claim rule,
   the verdicts and the descriptive list.
+
+### Campaign 1, round 7 (K56-K58)
+
+- **Code state (K56).** As above: everything in the rig except `README.md`, `SPEC.md` and
+  `tests/` is code, so `.gitignore` and any new file or directory are compared too.
+- **Standard library first.** When started as `python -m hcbench.<tool>` (read from
+  `sys.orig_argv`), `hcbench/__init__.py` moves the working directory to the end of
+  `sys.path`, so a stray `json.py` at the rig root can't replace the standard library inside
+  the tool that judges the runs. Pytest and in-process imports are unaffected.
+- **Base images (K57).** Every `FROM` in `docker/*.Dockerfile` names its image by
+  `@sha256:<64 lowercase hex>`; the three use `python:3.12-slim@sha256:5e2bdb1b…a4fa5b`
+  (multi-platform index). A `FROM` naming an earlier stage of the same file, or `scratch`, needs
+  no digest; `--platform=` is allowed; an image from a build argument (`FROM ${BASE}`) is
+  unpinned. A non-draft pre-registration refuses an unpinned `FROM`, naming file and line.
+- **Server image (K58).** `HC_VLLM_IMAGE` (with `HC_SERVER=vllm`) or `HC_LLAMACPP_IMAGE` (with
+  `HC_SERVER=llamacpp`) must contain `@sha256:<64 lowercase hex>`. `scripts/02_serve_model.sh up`
+  refuses an unpinned one before removing or starting any container; a non-draft
+  pre-registration refuses it too. `mock` needs no image.
+
+### Campaign 1, round 8 (K60-K62)
+
+- **Editor leftovers (K60).** The rig's `.gitignore` ignores `*.swp`, `*.swo`, `*~`, `.#*`,
+  `#*#` and `.DS_Store`.
+- **Renames (K61).** `prereg.changed_between` runs `git diff --no-renames`, and
+  `prereg.dirty_paths` keeps both sides of `old -> new`, so a rename out of a code path is a
+  code mismatch.
+- **Known servers (K62).** A non-draft stage-`cb` pre-registration refuses an `HC_SERVER`
+  other than `vllm`, `llamacpp` or `mock`.
 
 ### Round 2 additions
 

@@ -2,12 +2,12 @@
 
 import json
 
-from fakebin import SHA40, docker_calls, make_fake_bin, make_rig, run_script
+from fakebin import SHA40, VLLM_PINNED, docker_calls, make_fake_bin, make_rig, run_script
 
 SPEC = '{"method":"mtp","num_speculative_tokens":3}'
 BASE = {
     "HC_SERVER": "vllm",
-    "HC_VLLM_IMAGE": "vllm/vllm-openai:test",
+    "HC_VLLM_IMAGE": VLLM_PINNED,
     "HC_MODEL_HF": "org/model",
     # Pinned so the script never expands an empty array: macOS bash 3.2 + `set -u` dies on that.
     "HC_MODEL_REVISION": SHA40,
@@ -32,7 +32,7 @@ def run_argv(tmp_path, **env):
     assert r.returncode == 0, r.stderr
     assert len(runs) == 1, runs
     argv = runs[0]
-    return argv[argv.index("vllm/vllm-openai:test") + 1 :]  # arguments handed to vLLM
+    return argv[argv.index(VLLM_PINNED) + 1 :]  # arguments handed to vLLM
 
 
 def test_k4_flags_should_be_absent_when_switched_off(tmp_path):
@@ -103,11 +103,11 @@ def test_k4_example_defaults_should_produce_the_campaign_1_command(tmp_path):
         "02_serve_model.sh",
         ["up"],
         bindir,
-        {"HC_VLLM_IMAGE": "vllm/vllm-openai:test", "HC_MODEL_REVISION": SHA40},
+        {"HC_VLLM_IMAGE": VLLM_PINNED, "HC_MODEL_REVISION": SHA40},
     )
     assert r.returncode == 0, r.stderr
     run = next(c for c in docker_calls(log) if c[:1] == ["run"] and "hc-llm" in c)
-    args = run[run.index("vllm/vllm-openai:test") + 1 :]
+    args = run[run.index(VLLM_PINNED) + 1 :]
     assert args[args.index("--model") + 1] == "Inferact/Qwen3.8-27B-NVFP4"
     assert args[args.index("--served-model-name") + 1] == "qwen3.8-27b"
     assert args[args.index("--reasoning-parser") + 1] == "qwen3"

@@ -9,8 +9,10 @@ import subprocess
 
 import pytest
 from fakebin import (
+    LLAMA_PINNED,
     ROOT,
     SHA40,
+    VLLM_PINNED,
     calls,
     docker_calls,
     env_file_without,
@@ -20,7 +22,7 @@ from fakebin import (
     run_script,
 )
 
-IMAGE = {"HC_VLLM_IMAGE": "vllm/vllm-openai:test", "HC_MODEL_REVISION": SHA40}
+IMAGE = {"HC_VLLM_IMAGE": VLLM_PINNED, "HC_MODEL_REVISION": SHA40}
 REQUIRED = [
     "HC_TOP_K",
     "HC_MIN_P",
@@ -107,7 +109,11 @@ def test_k21_vllm_without_a_pinned_revision_should_stop_before_any_container(tmp
 
 
 def test_k21_llamacpp_does_not_need_a_pinned_revision(tmp_path):
-    env = {"HC_SERVER": "llamacpp", "HC_MODEL_REVISION": "CHANGE-ME-commit-sha"}
+    env = {
+        "HC_SERVER": "llamacpp",
+        "HC_MODEL_REVISION": "CHANGE-ME-commit-sha",
+        "HC_LLAMACPP_IMAGE": LLAMA_PINNED,
+    }
     _, log, r = go(tmp_path, "02_serve_model.sh", ["up"], env)
     assert r.returncode == 0, r.stderr
     assert any(c[:1] == ["run"] for c in docker_calls(log))

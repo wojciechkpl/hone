@@ -180,7 +180,7 @@ def changed_between(base: str, head: str) -> list[str] | None:
     """Rig files (rig-relative, outside prereg/) that differ between two commits; None when git
     cannot resolve either."""
     r = subprocess.run(
-        ["git", "diff", "--name-only", "--relative", base, head, "--", "."],
+        ["git", "diff", "--name-only", "--no-renames", "--relative", base, head, "--", "."],
         capture_output=True, text=True, cwd=ROOT, check=False,
     )  # fmt: skip
     if r.returncode != 0:
@@ -212,18 +212,29 @@ def dirty_paths(ignore_dir: Path | None = None) -> list[str]:
             skip = None
     out = []
     status = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all", "--", "."],
+        ["git", "status", "--porcelain", "-z", "--untracked-files=all", "--", "."],
         capture_output=True,
         text=True,
         cwd=ROOT,
         check=False,
     ).stdout  # not _git(): its strip() would eat the first line's leading space
-    for line in status.splitlines():
-        path = line[3:].split(" -> ")[-1].strip('"')
-        rel = path[len(prefix) :] if prefix and path.startswith(prefix) else path
-        if skip and (rel + "/").startswith(skip):
+    # -z: unquoted paths, NUL-separated; a rename or copy is "XY dest" then "source" (K61).
+    fields = status.split("\0")
+    k = 0
+    while k < len(fields):
+        entry = fields[k]
+        k += 1
+        if len(entry) < 4:
             continue
-        out.append(rel)
+        paths = [entry[3:]]
+        if entry[0] in "RC" or entry[1] in "RC":
+            paths.append(fields[k])
+            k += 1
+        for path in paths:
+            rel = path[len(prefix) :] if prefix and path.startswith(prefix) else path
+            if skip and (rel + "/").startswith(skip):
+                continue
+            out.append(rel)
     return out
 
 
@@ -289,8 +300,54 @@ def check_hermes_bundle(env: dict[str, str], manifest_path: Path) -> None:
         raise SystemExit(f"bundle hermes_sha {sha} != HC_HERMES_SHA {env['HC_HERMES_SHA']!r}")
 
 
+_FROM = re.compile(r"^\s*FROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?\s*$", re.IGNORECASE)
+_DIGEST_PINNED = re.compile(r".+@sha256:[0-9a-f]{64}$")
+
+
+def unpinned_froms(text: str) -> list[tuple[int, str]]:
+    """(line number, image) of each FROM not pinned by digest (K57).
+
+    A FROM naming an earlier stage of the same file, and `scratch`, need no digest; a build-argument
+    image (`${BASE}`) counts as unpinned.
+    """
+    stages: set[str] = set()
+    out = []
+    for n, line in enumerate(text.splitlines(), 1):
+        m = _FROM.match(line)
+        if not m:
+            continue
+        image = m.group(1)
+        if image.lower() not in stages | {"scratch"} and not _DIGEST_PINNED.match(image):
+            out.append((n, image))
+        if m.group(2):
+            stages.add(m.group(2).lower())
+    return out
+
+
+def check_pinned_images(env: dict[str, str]) -> None:
+    """K57, K58: Dockerfile bases and the model server image are pinned by digest."""
+    problems = []
+    key = {"vllm": "HC_VLLM_IMAGE", "llamacpp": "HC_LLAMACPP_IMAGE"}.get(env.get("HC_SERVER", ""))
+    if key and not re.search(r"@sha256:[0-9a-f]{64}$", env.get(key, "")):
+        problems.append(
+            f"{key} must be pinned by digest (<name>:<tag>@sha256:<64 lowercase hex>), "
+            f"got {env.get(key, '')!r}"
+        )
+    for path in sorted((ROOT / "docker").glob("*.Dockerfile")):
+        for n, image in unpinned_froms(path.read_text()):
+            problems.append(f"{path.relative_to(ROOT).as_posix()}:{n}: FROM {image} has no digest")
+    if problems:
+        raise SystemExit(
+            "refusing to pre-register with unpinned images:\n  " + "\n  ".join(problems)
+        )
+
+
 def validate_stage_cb(env: dict[str, str], draft: bool = False) -> None:
-    """K19/K20/K47: stop with a message that names the key (never a traceback)."""
+    """K19/K20/K47/K62: stop with a message that names the key (never a traceback)."""
+    if not draft and env.get("HC_SERVER") not in ("vllm", "llamacpp", "mock"):
+        raise SystemExit(
+            f"HC_SERVER must be exactly vllm, llamacpp or mock, got {env.get('HC_SERVER')!r}"
+        )
     revision = env.get("HC_MODEL_REVISION", "")
     if (
         not draft
@@ -300,6 +357,8 @@ def validate_stage_cb(env: dict[str, str], draft: bool = False) -> None:
         raise SystemExit(
             f"HC_MODEL_REVISION must be a 40-character hexadecimal commit id, got {revision!r}"
         )
+    if not draft:
+        check_pinned_images(env)
     for key in REQUIRED_CB:
         if not env.get(key, "").strip():
             raise SystemExit(f"{key} is unset or empty; copy it from config/bench.env.example")

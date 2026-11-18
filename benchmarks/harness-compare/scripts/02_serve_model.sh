@@ -17,6 +17,16 @@ up)
     [[ "${HC_MODEL_REVISION:-}" =~ ^[0-9a-fA-F]{40}$ ]] \
       || die "HC_MODEL_REVISION must be a 40-character hexadecimal commit id for vllm; see config/bench.env.example"
   fi
+  # The image the smoke step uses must be the one the pre-registration records: a digest.
+  case "${HC_SERVER}" in
+  vllm) image_key=HC_VLLM_IMAGE; image="${HC_VLLM_IMAGE:-}" ;;
+  llamacpp) image_key=HC_LLAMACPP_IMAGE; image="${HC_LLAMACPP_IMAGE:-}" ;;
+  *) image_key=""; image="" ;;
+  esac
+  if [[ -n "${image_key}" ]]; then
+    [[ "${image}" =~ @sha256:[0-9a-f]{64}$ ]] \
+      || die "${image_key} must be pinned by digest (<name>:<tag>@sha256:<64 lowercase hex>), got '${image}'; see config/bench.env.example"
+  fi
   container_running hc-llm && { log "hc-llm already running"; exit 0; }
   docker rm -f hc-llm >/dev/null 2>&1 || true
   case "${HC_SERVER}" in
