@@ -935,6 +935,8 @@ report. So these report-side fixes land before the pre-registration.
 | Evidence is recorded per invocation, not per run | A bundle rebuilt while an invocation is running isn't seen | Don't run `make bundle` during a campaign |
 | Files that git ignores are not seen by the dirty check: the rig's `.gitignore`, the repository's and the user's global one all apply (closed in part by K56: a change to the rig's `.gitignore` is now code) | An ignored file in the rig directory is invisible to the code check | Before the tag, `git status --ignored --short .` in the rig directory should list only build outputs, caches and tool folders (`.bundle/`, `.build/`, `results/`, `.venv/`, `__pycache__/`, `.pytest_cache/`, `.ruff_cache/`, `.claude/`, `uv.lock`), editor leftovers (K60) and `config/bench.env` |
 | The images install Debian packages, and the pip dependencies of `pytest` and `aiohttp`, without pinned versions (the base images are pinned by K57) | A rebuild from an empty build cache can pick up newer packages | Build the images before smoke and rebuild on the same box: Docker reuses the cached layers while the Dockerfiles are unchanged. Don't prune the build cache (`docker builder prune`, `docker system prune`) until the campaign ends, and keep disk space free, since Docker can evict the cache by itself. Recording the built image IDs would close this; it is a code change, so it waits for the next campaign |
+| npm does not pin Pi's dependency tree (K65) | A rebuild can resolve different dependency versions | The manifest's `pi_lock_sha256` makes a change visible as a bundle mismatch. Don't rebuild the bundle after the tag |
+| The pre-registration checks the Pi and Hermes bundles (K73, K79) but not Hone's: nothing compares the manifest's `hone_sha` with `HC_HONE_REF`, and `--skip-hone` writes `hone_sha: null` | A partial rebuild before the tag records no Hone commit in the bundle | Run a full `make bundle` (no `--skip-*`) before the tag and check `hone_sha` in the runbook's bundle step |
 | `grade.py` names grading groups by seed | Odd names in the published suite A package; results are unaffected | Stage 2 |
 | Stage `a` has no validation and still reads SWE-bench Lite | Stage 2 can't be pre-registered yet | The SWE-rebench loader (§10.6 item 4) |
 
@@ -1010,6 +1012,182 @@ after the tag without becoming a mismatch, so they land here.
     the README and §11.9 say so, and say not to prune the Docker build cache
     (`docker builder prune`, `docker system prune`) between smoke and the end of the
     campaign.
+
+### 11.12 Requirements, round 9 (pre-tag pins, 2026-11-20)
+
+Two problems found on 2026-11-20, before the tag. Both are rig code, so they land now.
+
+- **Hone is not told the served window.** Pi gets `contextWindow` and Hermes gets
+  `context_length` from `{{context_window}}`, but the Hone arms set no
+  `HONE_CONTEXT_WINDOW`. Hone then assumes 128k for any "qwen" model and budgets
+  0.45 × 128k = 57.6k. That breaks §4.4 rule 5 and §10.1 (every harness is told the
+  served window). The override has existed since a94da57 (8 Nov), so the comment in
+  `bench.env.example` that says "no override" is stale.
+- **Pi is six months old.** The rig installs `@mariozechner/pi-coding-agent@0.73.1`. npm
+  marks that package deprecated ("use @earendil-works/pi-coding-agent"); 0.73.1 dates from
+  about 7 May 2026. The new package has had 65 releases since, 0.74.0 to 1.6.0
+  (2026-11-20). A study of harnesses on local models that runs a six-month-old Pi is easy to
+  dismiss. Pi 1.x needs Node 22.19 or newer; the rig pins 22.11.0.
+
+Requirements:
+
+- **K64 Hone is told the served window.**
+  - Every arm with `kind = "hone"` (`hone-noinject`, `hone-inject`, `hone-guarded`,
+    `hone-callgraph`) sets `HONE_CONTEXT_WINDOW = "{{context_window}}"` in its `env`. A
+    rendered Hone arm carries the configured window (65536 by default).
+  - Hone keeps its own policy for using the window: its budget is 0.45 × the window (about
+    29.5k at 65,536), and compaction is as shipped. Only the input changes, as for Pi and
+    Hermes.
+  - The comment above `HC_MAX_MODEL_LEN` in `config/bench.env.example` says the window is
+    passed to every harness, to Hone through `HONE_CONTEXT_WINDOW`. The "no override" text
+    goes.
+- **K65 Pi from its current package.**
+  - `scripts/01_build_bundle.sh` installs `@earendil-works/pi-coding-agent@${HC_PI_VERSION}`
+    and the `bin/pi` wrapper points into that package. No code path of the rig names
+    `@mariozechner/pi-coding-agent` any more.
+  - `npm install` runs with `--ignore-scripts`, as Pi's own install instructions do; Pi
+    needs no dependency lifecycle scripts.
+  - `config/bench.env.example` sets `HC_PI_VERSION=1.5.0`. Its comment says this is the
+    newest release at least two weeks old on 2026-11-20 (published 2026-11-02), and that the
+    old package stopped at 0.73.1.
+  - The manifest records `pi_package` (the npm name) and `pi_lock_sha256`, the SHA-256 of the
+    `package-lock.json` npm wrote into the Pi prefix. npm's install does not pin Pi's
+    dependencies, so a rebuild that resolves differently becomes a bundle mismatch in the
+    report instead of going unseen.
+- **K66 Node meets Pi's minimum.**
+  - `config/bench.env.example` sets `HC_NODE_VERSION=22.23.4`, the newest Node 22 LTS
+    release at least two weeks old on 2026-11-20 (published 2026-10-20). Pi 1.5.0 declares
+    `engines.node` `>=22.19.0`.
+  - After installing Pi, the build reads the package's `engines.node`. It fails, naming both
+    versions, when `HC_NODE_VERSION` is below a `>=X.Y.Z` minimum. It also fails when the
+    field has any other form, saying it must be checked by hand. A missing field passes.
+- **K67 Pi's guard extensions come from the pinned package only.**
+  - The build copies `permission-gate.ts`, `protected-paths.ts` and
+    `confirm-destructive.ts` from the installed package's `examples/extensions/`. If one is
+    missing, the build fails and names it. Nothing is downloaded from a branch.
+  - `HC_PI_EXT_REF` goes from the script, `bench.env.example` and the docs.
+  - The extensions are present in `@earendil-works/pi-coding-agent@1.5.0` (checked on
+    unpkg on 2026-11-20).
+- **K68 Hermes stays at v0.21.5, and the comment says why** (the user decided this on
+  2026-11-20; background in the note below this list).
+  - `HC_HERMES_REF=v2026.9.24` and `HC_HERMES_SHA=f97608f178d1ffeca59860195ab7da295f7c8e5f`
+    don't change.
+  - The comment above `HC_HERMES_REF` in `config/bench.env.example` no longer says
+    "latest". It says the following:
+    - the tag is Hermes Agent v0.21.5 of 2026-09-24;
+    - later releases use `v0.x` tags;
+    - since v0.22.1, one-shot `hermes chat --format stream-json` runs through a gateway
+      process;
+    - so campaign 1 keeps v0.21.5, and current Hermes goes into the follow-up campaign.
+  - The README's campaign 1 section says the same in one or two sentences. The write-up
+    must say it too.
+- **K69 Docs.**
+  - The README's campaign 1 section, `SPEC.md` and the runbook name the Pi package, Pi
+    1.5.0, Node 22.23.4 and the window passed to Hone.
+  - §11.9 gains a row for the Pi dependency tree: npm does not pin it; K65's lock hash makes
+    a change visible; don't rebuild the bundle after the tag.
+
+Hermes note (2026-11-20). The pinned tag `v2026.9.24` is Hermes Agent v0.21.5 of
+24 Sep 2026. The `bench.env.example` comment called it "latest tag on 2026-11-09", but
+later releases use `v0.x` tags (v0.21.6 to v0.23.3). GitHub's tag list sorts by name, so
+`v2026.*` sorts above them. The newest release at least two weeks old is v0.23.0 (5 Nov).
+Since v0.22.1, `hermes chat` with `--format stream-json` runs through a separate gateway
+process (`hermes_cli/gateway_chat.py`) instead of an in-process agent. So moving to
+v0.23.0 changes how the Hermes arms run, not only a pin. Adapting the rig to that could only
+be checked on the GPU box and would put G0 at risk. So campaign 1 keeps v0.21.5 (K68), and
+the follow-up campaign tests current Hermes.
+
+### 11.13 Requirements, round 10 (from the review of round 9, 2026-11-20)
+
+The review of round 9 found two bugs that appear only on a box that already has a
+`.bundle/`, plus gaps in the tests. All of them are rig code, so they land before the tag.
+
+- **K70 The bundle's Node is the pinned one.**
+  - `01_build_bundle.sh` runs `${B}/node/bin/node --version`. It downloads, verifies and
+    unpacks Node again whenever the result isn't `v${HC_NODE_VERSION}`: Node missing,
+    broken, or another version.
+  - npm runs with `--engine-strict`, so every package's `engines` is checked against the
+    Node that actually runs. The K66 check stays: it gives the clear message.
+- **K71 A clean Pi install every build.** Before `npm install`, the build removes
+  `${B}/pi` and `${B}/pi-ext` and creates `${B}/pi-ext` again. An earlier install (the
+  `@mariozechner` package, an old `pi/package.json` or lock, a stray `*.ts`) can't survive
+  into the bundle, the lock hash or `pi_ext_sha256`.
+- **K72 The manifest's Pi fields describe the bundle on disk.**
+  - Whenever `${B}/pi` exists, whatever the flags, the manifest takes `pi_package`,
+    `pi_installed_version` and `pi_lock_sha256` from the bundle:
+    - the name and version come from `node_modules/<PI_PACKAGE>/package.json`;
+    - the hash is of `package-lock.json`.
+  - Nothing is merged from an earlier manifest. Without `${B}/pi`, the three fields are
+    null.
+  - `pi_manifest_fields` returns all three. `pi_installed_version` is None when the package
+    isn't installed.
+- **K73 The pre-registration refuses a Pi bundle it can't vouch for.** When a non-draft
+  pre-registration lists a `pi` or `pi-guarded` arm in `HC_ARMS_MAIN`, `HC_ARMS_REDTEAM`
+  or `HC_ARMS_B`, it refuses unless all of these hold:
+  - the manifest's `pi_package` equals `PI_PACKAGE`;
+  - `pi_installed_version` equals `HC_PI_VERSION`;
+  - `pi_lock_sha256` is 64 lowercase hexadecimal characters.
+
+  The refusal names the field, as `check_hermes_bundle` does. A draft skips the check.
+- **K74 The helpers fail clearly.**
+  - The `manifest-fields` CLI exits with an error when the lock is missing.
+  - `check-node` gives the "check it by hand" message, not a traceback, for each of these:
+    - `engines` is null, a list or a string;
+    - `engines.node` isn't a string.
+- **K75 The Pi install container is pinned.** It runs `${HC_HERMES_BUILD_IMAGE}`, which is
+  the `ubuntu:22.04` index pinned by digest, with `--platform linux/amd64`. The build
+  fails if that variable is unset. `bench.env.example` says the image is shared.
+- **K76 Tests that can't pass on a wrong implementation.**
+  - The `--ignore-scripts` and `--engine-strict` checks look inside the npm command, not
+    the whole file.
+  - The `hcbench.bundle` checks look for each subcommand call on a non-comment line.
+  - The CLI (`main`) has tests.
+  - An offline run of `01_build_bundle.sh --skip-hone --skip-hermes` uses the fake
+    binaries of `tests/fakebin.py`. A fake `docker` writes a fake Pi package (`bin`,
+    `engines`, the three extensions) and a lock into the mounted prefix, and a fake Node
+    binary reports its version. The run shows:
+    1. a leftover `@mariozechner` prefix and a stray `pi-ext/*.ts` are gone;
+    2. a bundle Node of another version is downloaded again;
+    3. the manifest has `pi_package`, `pi_installed_version` and the fake lock's hash;
+    4. `--skip-pi` on a built bundle keeps those fields, because they are read from disk;
+    5. an `engines.node` of `>=99.0.0` stops the build before the manifest is written.
+- **K77 Docs.**
+  - The `HC_MAX_MODEL_LEN` comment says the 0.45 ratio is Hone's for a served name
+    containing "qwen".
+  - The README notes what `--skip-pi` keeps.
+  - The runbook's bundle step expects `pi_package`, `pi_installed_version`,
+    `pi_lock_sha256` and `node_version` in the manifest.
+  - The runbook adds a smoke check that Hone's largest prompt in `proxy.jsonl` stays well
+    under 65,536 tokens. Hone logs nothing about the override at its default log level.
+
+### 11.14 Requirements, round 11 (from the review of round 10, 2026-11-20)
+
+- **K78 A failed build leaves no manifest.** Right after the `--helpers-only` block,
+  `01_build_bundle.sh` removes `${B}/manifest.json`. A build that stops part-way, for
+  example when npm fails after K71 cleared `pi/`, leaves no manifest. Both pre-registration
+  checks then refuse.
+- **K79 The manifest's Node is the one on disk.**
+  - The manifest records `node_installed_version`, the output of
+    `${B}/node/bin/node --version` (for example `v22.23.4`), whatever the flags. It is null
+    when there is no Node in the bundle or the probe fails.
+  - `node_version` stays the env value.
+  - K73's check also refuses, naming the field, when a Pi arm is listed and
+    `node_installed_version` isn't `v${HC_NODE_VERSION}`.
+- **K80 Tests that catch the round-9 bugs coming back** (K76 left two of them uncaught).
+  - In the offline build, the fake npm container fails if the Pi prefix still exists when
+    it starts, as real npm would merge into it. It also logs the version of the bundle Node
+    it ran under.
+  - The tests assert that npm ran under `v22.23.4` after a stale Node was replaced. They
+    also assert that a sentinel file in the old `node/` tree is gone after the
+    re-download.
+  - A test shows that a build failing at npm leaves no `manifest.json`.
+- **K81 `check-node` on a broken `package.json`.** When the file isn't valid JSON or isn't
+  a JSON object, the CLI exits with the "check it by hand" message, not a traceback or a
+  silent pass.
+- **K82 Docs.** The Pi bullet in `SPEC.md` names the five manifest Pi and Node fields
+  (`pi_package`, `pi_installed_version`, `pi_lock_sha256`, `node_version`,
+  `node_installed_version`). It also covers the Pi pre-registration refusal (K73, K79), the
+  Node probe with `--engine-strict` (K70), the shared pinned install image (K75) and K78.
 
 ## Sources
 
