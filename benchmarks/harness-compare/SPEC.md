@@ -450,6 +450,20 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §2, §4.1, §4.4, §4.5.
   `/opt/harness`, so Hermes must be a self-contained Python (e.g. python-build-standalone
   via `uv`) built at that same absolute path (`/opt/harness/...`), with `bin/hermes` a
   wrapper that never touches the image's Python.
+- **Pi in the bundle (K64-K67, K70-K79):** Pi comes from `@earendil-works/pi-coding-agent`
+  (`HC_PI_VERSION=1.5.0`) on Node 22.23.4. The build reuses the bundle's Node only if
+  `node --version` prints `v${HC_NODE_VERSION}`. npm runs with `--ignore-scripts` and
+  `--engine-strict`, in the pinned `HC_HERMES_BUILD_IMAGE` that Hermes also uses (K75), on a
+  clean `pi/` and `pi-ext/`. `hcbench.bundle` checks `engines.node`, copies the guard
+  extensions from the installed package and reads the Pi fields from disk. The manifest
+  records `pi_package`, `pi_installed_version`, `pi_lock_sha256`, `node_version` (the env
+  value) and `node_installed_version` (the probe output, null if there is no working Node).
+  The build deletes the old manifest first, so a failed build leaves none (K78). A non-draft
+  pre-registration with a `pi` or `pi-guarded` arm refuses unless the package is
+  `@earendil-works/pi-coding-agent`, `pi_installed_version` is `HC_PI_VERSION`,
+  `pi_lock_sha256` is 64 lowercase hex and `node_installed_version` is
+  `v${HC_NODE_VERSION}` (K73, K79). Every Hone arm sets
+  `HONE_CONTEXT_WINDOW = "{{context_window}}"`, so Hone is told the served window.
 - **Smoke probes:** `suites/smoke.toml` has one task per probe, id `p-h1-…` to `p-h7-…`.
   P-H1, 2, 3, 5, 7 pin `expect.hermes`; P-H4 and P-H6 are observations with no pinned
   outcome for `hermes-guarded`. `edit-basic`, `shell-basic` and `toolchain-probe` expect

@@ -41,6 +41,9 @@ at the final path `/opt/harness/hermes/venv`, because arm containers are SWE-ben
 their own Python and the bundle is mounted read-only. `bin/hermes` runs the venv's Python on a
 console script kept alone in `hermes/entry/` (Hermes prepends that dir to the tool shells' PATH,
 so the venv's `bin/` must not be it). Skip it with `--skip-hermes` (the manifest then keeps the existing build's ref and SHA).
+Skip Pi with `--skip-pi`: the manifest still gets `pi_package`, `pi_installed_version` and
+`pi_lock_sha256`, read from the Pi install on disk (null if there is none), never from an old
+manifest. `node_installed_version` is likewise read from the bundle's Node, whatever the flags.
 The Hermes build runs as `linux/amd64` (slow under emulation on Apple silicon), with uv and the
 build image pinned by checksum/digest (`HC_UV_SHA256`, `HC_HERMES_BUILD_IMAGE`), and checks that
 `HC_HERMES_REF` (a tag or full SHA) resolves to `HC_HERMES_SHA`.
@@ -53,6 +56,12 @@ Campaign 1 runs the safety suites first. Its scope and requirements are in
 [`harness-compare-v2`](../../docs/plans/harness-compare-v2-2026-11.md) §11. Stage 1 needs
 no suite A task list: the pre-registration fixes the model, the sampling and the *rules*
 for suite A, and stage 2 records the task list later.
+
+**Pinned versions.** Pi is `@earendil-works/pi-coding-agent` 1.5.0 on Node 22.23.4 (Pi
+needs Node 22.19 or newer; the build checks it). Every harness is told the served window; Hone
+gets it as `HONE_CONTEXT_WINDOW`. Hermes stays at v0.21.5 (`v2026.9.24`): since v0.22.1 one-shot
+`hermes chat --format stream-json` runs through a gateway process, so current Hermes goes into
+the follow-up campaign.
 
 **Before pre-registering:** ask the Pi and Hermes maintainers, in one public post each,
 to check their arm configuration in `config/arms.toml`.

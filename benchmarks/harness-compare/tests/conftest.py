@@ -22,7 +22,16 @@ def env(tmp_path, monkeypatch):
     placeholders = [k for k, v in vals.items() if "CHANGE-ME" in v]
     bundle = tmp_path / "bundle"
     bundle.mkdir()
-    manifest = {"hermes_ref": vals["HC_HERMES_REF"], "hermes_sha": vals["HC_HERMES_SHA"], "x": 1}
+    manifest = {
+        "hermes_ref": vals["HC_HERMES_REF"],
+        "hermes_sha": vals["HC_HERMES_SHA"],
+        # K73: a non-draft pre-registration with Pi arms needs these three Pi fields
+        "pi_package": "@earendil-works/pi-coding-agent",
+        "pi_installed_version": vals["HC_PI_VERSION"],
+        "pi_lock_sha256": "ab" * 32,
+        "node_installed_version": "v" + vals["HC_NODE_VERSION"],
+        "x": 1,
+    }
     (bundle / "manifest.json").write_text(json.dumps(manifest))
     monkeypatch.setenv("HC_BUNDLE_DIR", str(bundle))
     # K42: a non-draft pre-registration is refused when the rig directory is dirty, and the

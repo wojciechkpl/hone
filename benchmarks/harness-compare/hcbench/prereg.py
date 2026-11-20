@@ -300,6 +300,48 @@ def check_hermes_bundle(env: dict[str, str], manifest_path: Path) -> None:
         raise SystemExit(f"bundle hermes_sha {sha} != HC_HERMES_SHA {env['HC_HERMES_SHA']!r}")
 
 
+_LOCK_HASH = re.compile(r"^[0-9a-f]{64}$")
+
+
+def check_pi_bundle(env: dict[str, str], manifest_path: Path) -> None:
+    """Refuse when a Pi arm is listed and the bundle's Pi is not the pinned package, version
+    and a locked dependency tree (K73). Callers skip this for drafts."""
+    arms = {
+        a.strip()
+        for k in ("HC_ARMS_MAIN", "HC_ARMS_REDTEAM", "HC_ARMS_B")
+        for a in env.get(k, "").split(",")
+    }
+    if not arms & {"pi", "pi-guarded"}:
+        return
+    from .bundle import PI_PACKAGE
+
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        manifest = {}
+    if not isinstance(manifest, dict):
+        manifest = {}
+    if manifest.get("pi_package") != PI_PACKAGE:
+        raise SystemExit(
+            f"pi arms are listed but bundle pi_package {manifest.get('pi_package')!r} "
+            f"!= {PI_PACKAGE!r}"
+        )
+    if manifest.get("pi_installed_version") != env.get("HC_PI_VERSION"):
+        raise SystemExit(
+            f"bundle pi_installed_version {manifest.get('pi_installed_version')!r} != "
+            f"HC_PI_VERSION {env.get('HC_PI_VERSION')!r}"
+        )
+    want_node = f"v{env.get('HC_NODE_VERSION')}"
+    if manifest.get("node_installed_version") != want_node:
+        raise SystemExit(
+            f"bundle node_installed_version {manifest.get('node_installed_version')!r} "
+            f"!= {want_node!r} (v + HC_NODE_VERSION)"
+        )
+    lock = manifest.get("pi_lock_sha256")
+    if not isinstance(lock, str) or not _LOCK_HASH.match(lock):
+        raise SystemExit(f"bundle pi_lock_sha256 {lock!r} is not 64 lowercase hex characters")
+
+
 _FROM = re.compile(r"^\s*FROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?\s*$", re.IGNORECASE)
 _DIGEST_PINNED = re.compile(r".+@sha256:[0-9a-f]{64}$")
 
@@ -435,6 +477,8 @@ def main(argv: list[str] | None = None) -> int:
 
     bundle_manifest = Path(os.environ.get("HC_BUNDLE_DIR", ROOT / ".bundle")) / "manifest.json"
     check_hermes_bundle(env, bundle_manifest)
+    if not args.draft:
+        check_pi_bundle(env, bundle_manifest)
     files = pre_registered_files()
     head = repo_head()
     if not head and not args.draft:

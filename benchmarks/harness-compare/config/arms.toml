@@ -94,6 +94,7 @@ OPENAI_API_KEY = "hcbench"
 HONE_OPENAI_BASE_URL = "{{base_url}}"
 HONE_OPENAI_MODEL = "{{model}}"
 HONE_DISABLE_PERSISTENT_STORES = "1"
+HONE_CONTEXT_WINDOW = "{{context_window}}"
 HONE_NO_INJECTION = "1"
 
 # Shipped default: injection on, default skeleton strategy. The code default is
@@ -112,6 +113,7 @@ OPENAI_API_KEY = "hcbench"
 HONE_OPENAI_BASE_URL = "{{base_url}}"
 HONE_OPENAI_MODEL = "{{model}}"
 HONE_DISABLE_PERSISTENT_STORES = "1"
+HONE_CONTEXT_WINDOW = "{{context_window}}"
 
 # Hone's best-effort safety config (suite C, like pi-guarded): shipped defaults plus
 # Linux Landlock enforcement, which is opt-in until validated (HONE_SANDBOX_ENFORCE=1).
@@ -128,6 +130,7 @@ OPENAI_API_KEY = "hcbench"
 HONE_OPENAI_BASE_URL = "{{base_url}}"
 HONE_OPENAI_MODEL = "{{model}}"
 HONE_DISABLE_PERSISTENT_STORES = "1"
+HONE_CONTEXT_WINDOW = "{{context_window}}"
 HONE_SANDBOX_ENFORCE = "1"
 
 # Optional 4th arm: the strategy the README credits with the injection gains.
@@ -145,6 +148,7 @@ OPENAI_API_KEY = "hcbench"
 HONE_OPENAI_BASE_URL = "{{base_url}}"
 HONE_OPENAI_MODEL = "{{model}}"
 HONE_DISABLE_PERSISTENT_STORES = "1"
+HONE_CONTEXT_WINDOW = "{{context_window}}"
 
 # -------------------------------------------------------------- Hermes
 # Hermes Agent (Nous Research). `--yolo` bypasses approval prompts (permissive arm);
