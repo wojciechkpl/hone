@@ -2,7 +2,8 @@
 # Step P1.2 — build the read-only harness bundle mounted at /opt/harness:
 #   bin/hone            Hone at ${HC_HONE_REF}, built in a clean worktree, glibc ≤ 2.31
 #   node/ + pi/         Node ${HC_NODE_VERSION} (official tarball) + Pi ${HC_PI_VERSION}
-#   pi-ext/             Pi's example guardrail extensions (pi-guarded arm)
+#                       (@earendil-works/pi-coding-agent, installed with --ignore-scripts)
+#   pi-ext/             Pi's example guardrail extensions, from the installed package
 #   bin/hermes + hermes/ + hermes-python/
 #                       Hermes Agent ${HC_HERMES_REF} (core install, no gateway/messaging extras),
 #                       built for linux/amd64 in its own python-build-standalone interpreter (uv,
@@ -47,6 +48,8 @@ m["helpers_only"] = True
 PY
   exit 0
 fi
+# A build that stops part-way must leave no manifest, so the pre-registration refuses it (K78).
+rm -f "${B}/manifest.json"
 
 # ---------------------------------------------------------------- Hone
 hone_sha=""
@@ -72,10 +75,16 @@ fi
 
 # ------------------------------------------------------------ Node + Pi
 pi_bin_rel=""
+PI_PKG="@earendil-works/pi-coding-agent"
+# Pi build logic lives in hcbench.bundle (spec 11.12 K65-K67).
+hc_bundle() { PYTHONPATH="${HC_ROOT}" python3 -m hcbench.bundle "$@"; }
+pi_fields='{"pi_package": null, "pi_installed_version": null, "pi_lock_sha256": null}'
 if (( ! skip_pi )); then
+  : "${HC_HERMES_BUILD_IMAGE:?HC_HERMES_BUILD_IMAGE is not set (the Pi install runs in it too)}"
   nv="v${HC_NODE_VERSION}"; tarball="node-${nv}-linux-x64.tar.xz"
   dl="${HC_ROOT}/.build/dl"; mkdir -p "${dl}"
-  if [[ ! -x "${B}/node/bin/node" ]]; then
+  # Reuse the bundle's Node only when it reports the pinned version (K70).
+  if [[ "$("${B}/node/bin/node" --version 2>/dev/null || true)" != "${nv}" ]]; then
     log "downloading Node ${nv}"
     curl -fsSLo "${dl}/${tarball}" "https://nodejs.org/dist/${nv}/${tarball}"
     curl -fsSLo "${dl}/SHASUMS256.txt" "https://nodejs.org/dist/${nv}/SHASUMS256.txt"
@@ -83,30 +92,34 @@ if (( ! skip_pi )); then
     rm -rf "${B}/node"; mkdir -p "${B}/node"
     tar -xJf "${dl}/${tarball}" -C "${B}/node" --strip-components=1
   fi
-  log "installing @mariozechner/pi-coding-agent@${HC_PI_VERSION} (inside ubuntu:22.04 for glibc parity)"
-  docker run --rm -v "${B}:/opt/harness" --user "$(id -u):$(id -g)" \
-    -e HOME=/tmp -e npm_config_cache=/tmp/.npm ubuntu:22.04 \
+  # A clean Pi install every build: nothing from an earlier one reaches the bundle (K71).
+  rm -rf "${B}/pi" "${B}/pi-ext"; mkdir -p "${B}/pi-ext"
+  log "installing ${PI_PKG}@${HC_PI_VERSION} (inside ${HC_HERMES_BUILD_IMAGE} for glibc parity)"
+  docker run --rm --platform linux/amd64 -v "${B}:/opt/harness" --user "$(id -u):$(id -g)" \
+    -e HOME=/tmp -e npm_config_cache=/tmp/.npm "${HC_HERMES_BUILD_IMAGE}" \
     /opt/harness/node/bin/node /opt/harness/node/lib/node_modules/npm/bin/npm-cli.js \
-    install --prefix /opt/harness/pi --no-audit --no-fund --omit=dev \
-    "@mariozechner/pi-coding-agent@${HC_PI_VERSION}"
-  pkg="${B}/pi/node_modules/@mariozechner/pi-coding-agent"
+    install --prefix /opt/harness/pi --no-audit --no-fund --omit=dev --ignore-scripts --engine-strict \
+    "@earendil-works/pi-coding-agent@${HC_PI_VERSION}"
+  pkg="${B}/pi/node_modules/${PI_PKG}"
+  # Pi's engines.node must be met by the pinned Node (K66).
+  hc_bundle check-node "${HC_NODE_VERSION}" "${pkg}/package.json"
   pi_bin_rel="$(python3 -c 'import json,sys; b=json.load(open(sys.argv[1]))["bin"]; print(b["pi"] if isinstance(b,dict) else b)' "${pkg}/package.json")"
   cat > "${B}/bin/pi" << EOF
 #!/bin/sh
-exec /opt/harness/node/bin/node /opt/harness/pi/node_modules/@mariozechner/pi-coding-agent/${pi_bin_rel} "\$@"
+exec /opt/harness/node/bin/node /opt/harness/pi/node_modules/@earendil-works/pi-coding-agent/${pi_bin_rel} "\$@"
 EOF
   chmod 0755 "${B}/bin/pi"
 
-  for ext in permission-gate protected-paths confirm-destructive; do
-    if [[ -f "${pkg}/examples/extensions/${ext}.ts" ]]; then
-      cp "${pkg}/examples/extensions/${ext}.ts" "${B}/pi-ext/"
-    else
-      curl -fsSLo "${B}/pi-ext/${ext}.ts" \
-        "https://raw.githubusercontent.com/badlogic/pi-mono/${HC_PI_EXT_REF}/packages/coding-agent/examples/extensions/${ext}.ts"
-    fi
-  done
+  # Guard extensions come from the pinned package only; nothing is downloaded from a branch (K67).
+  hc_bundle copy-ext "${pkg}" "${B}/pi-ext"
   log "pi wrapper + guardrail extensions ready"
 fi
+
+# The manifest's Pi fields describe whatever Pi is on disk, whatever the flags (K72).
+# The Node on disk, whatever the flags: empty (null) when there is none or the probe fails (K79).
+node_installed="$("${B}/node/bin/node" --version 2>/dev/null || true)"
+node_installed="$(printf '%s' "${node_installed}" | tr -d '[:space:]')"
+if [[ -d "${B}/pi" ]]; then pi_fields="$(hc_bundle manifest-fields "${B}/pi")"; fi
 
 # --------------------------------------------------------------- Hermes
 # Arm containers are SWE-bench task images with their own Python, and the bundle is mounted
@@ -209,7 +222,7 @@ fi
 # the SHA is cross-checked against the checkout in hermes/src.
 hermes_head=""
 [[ -d "${B}/hermes/src/.git" ]] && hermes_head="$(git -C "${B}/hermes/src" rev-parse HEAD 2>/dev/null || true)"
-python3 - "${B}" "${hone_sha}" "${hermes_head}" << 'PY'
+python3 - "${B}" "${hone_sha}" "${hermes_head}" "${pi_fields}" "${node_installed}" << 'PY'
 import hashlib, json, os, pathlib, sys
 b = pathlib.Path(sys.argv[1])
 def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
@@ -217,12 +230,16 @@ try:
     hb = json.loads((b / "hermes" / "build-info.json").read_text())
 except (OSError, ValueError):
     hb = {}
+# Pi fields come from hcbench.bundle, read from the Pi install on disk (nothing from an old manifest).
+pf = json.loads(sys.argv[4])
 if hb and hb.get("hermes_sha") != sys.argv[3]:
     sys.exit(f"hermes/build-info.json sha {hb.get('hermes_sha')} != hermes/src HEAD {sys.argv[3]!r}")
 m = {
     "hone_ref": os.environ.get("HC_HONE_REF"), "hone_sha": sys.argv[2] or None,
     "hone_bin_sha256": sha(b / "bin" / "hone"),
     "pi_version": os.environ.get("HC_PI_VERSION"), "node_version": os.environ.get("HC_NODE_VERSION"),
+    "node_installed_version": sys.argv[5] or None,
+    **pf,
     "pi_ext_sha256": {p.name: sha(p) for p in sorted((b / "pi-ext").glob("*.ts"))},
     "helpers_sha256": {p.name: sha(p) for p in sorted((b / "bin").glob("*.py"))},
     "rust_image": os.environ.get("HC_RUST_IMAGE"),
