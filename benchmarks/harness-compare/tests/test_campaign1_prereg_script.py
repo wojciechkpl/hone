@@ -20,7 +20,17 @@ def prereg_env(rig, tmp_path):
     bundle = tmp_path / "bundle"
     bundle.mkdir()
     (bundle / "manifest.json").write_text(
-        json.dumps({"hermes_ref": vals["HC_HERMES_REF"], "hermes_sha": vals["HC_HERMES_SHA"]})
+        json.dumps(
+            {
+                "hermes_ref": vals["HC_HERMES_REF"],
+                "hermes_sha": vals["HC_HERMES_SHA"],
+                # K73: Pi fields a non-draft pre-registration needs
+                "pi_package": "@earendil-works/pi-coding-agent",
+                "pi_installed_version": vals["HC_PI_VERSION"],
+                "pi_lock_sha256": "ab" * 32,
+                "node_installed_version": "v" + vals["HC_NODE_VERSION"],
+            }
+        )
     )
     # Dataset revision pinned so the script never expands an empty array (bash 3.2 + set -u).
     return {"HC_BUNDLE_DIR": str(bundle), "HC_SWE_DATASET_REVISION": "abc"}
