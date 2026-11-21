@@ -8,6 +8,7 @@ Assumptions the implementer must honour (the spec leaves them open):
 
 import hashlib
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -67,6 +68,19 @@ def load_cb(env):
     return tomllib.loads(out.read_text())
 
 
+def strings(value):
+    """Every string in a nested structure, keys and values."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield from strings(k)
+            yield from strings(v)
+    elif isinstance(value, list | tuple):
+        for v in value:
+            yield from strings(v)
+
+
 def flat(value) -> str:
     return json.dumps(value, sort_keys=True)
 
@@ -108,7 +122,14 @@ def test_k10_stage_cb_should_not_include_a_task_list(env):
     cb = load_cb(env)
     assert "tasks" not in cb or not any(cb["tasks"].values())
     assert "tasks_txt" not in cb["files_sha256"]
-    assert "instance_id" not in flat(cb)
+    # K90 lets the rule sentences name the field; everything else must not.
+    rest = {**cb, "suite_a_rules": dict(cb["suite_a_rules"])}
+    for key in ("eligible", "stratify", "contamination", "if_fewer", "grader_pin"):
+        rest["suite_a_rules"].pop(key, None)
+    assert "instance_id" not in flat(rest)
+    # No value anywhere (the sentences included) looks like a SWE-bench-style instance id.
+    pattern = re.compile(r"[\w.-]+__[\w.-]+-\d+")
+    assert not [s for s in strings(cb) if pattern.search(s)]
 
 
 # ---- K11 contents -----------------------------------------------------------------------
@@ -152,7 +173,7 @@ def test_k11_suite_a_rules_should_use_the_named_keys(env):
     cb = load_cb(env)
     rules = cb["suite_a_rules"]
     assert rules["dataset"] == "nebius/SWE-rebench-leaderboard"
-    assert rules["min_split"] == "2026_09"
+    assert rules["min_split"] == "2026_03"
     assert rules["n"] == 60
     assert rules["repeats"] == [0, 1]
     assert rules["grader"] == "SWE-rebench/SWE-bench-fork"

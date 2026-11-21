@@ -50,6 +50,27 @@ def stratified_sample(
     return sorted(chosen)
 
 
+def select_suite_a(instances: Sequence[Mapping[str, str]], n: int, seed: int) -> list[str]:
+    """Suite A rule (spec 11.15 K86): one task from each of ``n`` drawn repositories."""
+    if n < 1:
+        raise ValueError(f"n must be at least 1, got {n}")
+    ids = [inst["instance_id"] for inst in instances]
+    if len(set(ids)) != len(ids):
+        raise ValueError("instance_id values must be unique")
+    if n >= len(ids):
+        return sorted(ids)
+    repos: dict[str, list[str]] = defaultdict(list)
+    for inst in instances:
+        repos[inst["repo"]].append(inst["instance_id"])
+    if len(repos) < n:
+        return stratified_sample(instances, n, seed)
+    drawn = random.Random(f"{seed}:repos").sample(sorted(repos), n)
+    chosen: list[str] = []
+    for repo in drawn:
+        chosen.extend(random.Random(f"{seed}:{repo}").sample(sorted(repos[repo]), 1))
+    return sorted(chosen)
+
+
 def manifest_digest(ids: Iterable[str]) -> str:
     payload = "\n".join(sorted(ids)) + "\n"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

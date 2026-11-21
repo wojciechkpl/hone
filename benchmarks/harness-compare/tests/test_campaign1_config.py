@@ -94,7 +94,7 @@ def test_k2_sampling_default_should_be_pinned(env, key, value):
     ("key", "value"),
     [
         ("HC_A_DATASET", "nebius/SWE-rebench-leaderboard"),
-        ("HC_A_MIN_SPLIT", "2026_09"),
+        ("HC_A_MIN_SPLIT", "2026_03"),
         ("HC_A_N", "60"),
         ("HC_A_REPEATS", "0,1"),
         ("HC_A_GRADER", "SWE-rebench/SWE-bench-fork"),

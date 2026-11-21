@@ -30,6 +30,7 @@ def parse_run_id(run_id: str) -> tuple[str, str, int, str]   # (suite, arm, seed
 def allocate(sizes: Mapping[str, int], n: int) -> dict[str, int]
 def stratified_sample(instances: Sequence[Mapping[str, str]], n: int, seed: int,
                       key: str = "repo") -> list[str]
+def select_suite_a(instances: Sequence[Mapping[str, str]], n: int, seed: int) -> list[str]
 def manifest_digest(ids: Iterable[str]) -> str
 ```
 
@@ -53,6 +54,19 @@ the other six.
 `random.Random(f"{seed}:{stratum}").sample(sorted(ids_in_stratum), k)`. Return all chosen
 `instance_id`s **sorted**. The result is deterministic for a given input and seed, and
 does not depend on the order of `instances`.
+
+`select_suite_a` (the suite A rule of campaign 1, design §11.15 K86). SWE-rebench has about
+1.4 tasks per repository, so `allocate`'s floor of one per repository can't hold for
+`n = 60`. Each instance needs `instance_id` and `repo`.
+1. `ValueError` if `n < 1` or an `instance_id` repeats.
+2. `n >= len(instances)`: every `instance_id`.
+3. Otherwise, with at least `n` repositories: draw the repositories with
+   `random.Random(f"{seed}:repos").sample(sorted(repos), n)`, then one task from each with
+   `random.Random(f"{seed}:{repo}").sample(sorted(ids_in_repo), 1)`.
+4. Otherwise: `stratified_sample(instances, n, seed)`.
+
+The result is sorted and does not depend on the order of `instances`. Nothing calls it yet; the
+SWE-rebench loader uses it at stage `a`.
 
 `manifest_digest`: SHA-256 hex of `"\n".join(sorted(ids)) + "\n"` (UTF-8).
 
@@ -516,7 +530,19 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.3 and §11.4.
   `HC_A_MIN_CREATED`. `files_sha256` adds the four `docker/` files under their rig-relative paths
   as quoted TOML keys (`dump_toml` quotes any key that is not `[A-Za-z0-9_-]+`).
   `[suite_a_rules]` has `repeats` as a list of integers, `min_created`, and the sentences
-  `stratify`, `if_fewer`, `grader_pin`.
+  `stratify`, `if_fewer`, `grader_pin`, `contamination` and `eligible`.
+- **Suite A window and selection (K83–K91).** `bench.env.example` sets `HC_A_MIN_SPLIT=2026_03`
+  and `HC_A_MIN_CREATED=2026-03-01`: no public SWE-rebench task is from September 2026 or later,
+  so suite A takes the newest ones, which predate Qwen3.8.
+  - `eligible`: splits named `YYYY_MM`, `min_split` or later as text (`test` is ignored); the
+    date of `created_at` `min_created` or later, and no date means not eligible; splits
+    published before stage `a` count, and stage `a` records the dataset revision.
+  - `contamination`: every task eligible on 2026-11-20 predates Qwen3.8, so suite A is reported
+    as possibly contaminated; stage `a` records each task's creation date.
+  - `stratify`: the `select_suite_a` rule (§2), with `seed` = `selection_seed` and the two
+    draws written as runnable calls; a test runs them against the code.
+  - Stage `cb` refuses an `HC_A_MIN_SPLIT` that isn't exactly `YYYY_MM` with a month from 01 to
+    12 (no whitespace), drafts included.
 - **Analysis text (K29).** The stage `cb` `[analysis]` states the metrics, the unjudged-run rule,
   the three families and their contrasts, the interval, the p-value, the claim rule, and the H3
   (0 of 75) and H4 (24 of 30) thresholds of §11.3.

@@ -147,11 +147,11 @@ def test_k25_example_should_define_min_created():
     from hcbench.config import load_env_file
 
     vals = load_env_file(EXAMPLE, base={"HOME": "/h"})
-    assert vals["HC_A_MIN_CREATED"] == "2026-09-01"
+    assert vals["HC_A_MIN_CREATED"] == "2026-03-01"
 
 
 def test_k25_config_should_record_min_created(env):
-    assert load_cb(env)["config"]["HC_A_MIN_CREATED"] == "2026-09-01"
+    assert load_cb(env)["config"]["HC_A_MIN_CREATED"] == "2026-03-01"
 
 
 def test_k25_repeats_should_be_a_list_of_integers(env):
@@ -161,7 +161,7 @@ def test_k25_repeats_should_be_a_list_of_integers(env):
 
 
 def test_k25_min_created_should_be_recorded(env):
-    assert load_cb(env)["suite_a_rules"]["min_created"] == "2026-09-01"
+    assert load_cb(env)["suite_a_rules"]["min_created"] == "2026-03-01"
 
 
 def test_k25_stratify_if_fewer_and_grader_pin_should_state_the_section_10_3_rules(env):

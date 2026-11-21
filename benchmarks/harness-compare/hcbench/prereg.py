@@ -128,10 +128,28 @@ NUMERIC_KEYS = [
 INT_KEYS = ["HC_SEED_BASE", "HC_SELECTION_SEED", "HC_A_N"]
 
 SUITE_A_TEXT = {
-    "stratify": "Stratified by repository with the largest-remainder rule, and at least one task "
-    "per repository.",
-    "if_fewer": "If fewer than n tasks are eligible on pre-registration day, all eligible tasks "
-    "are used.",
+    "eligible": "A task is eligible when its split is named YYYY_MM (four digits, an underscore, "
+    "a month from 01 to 12), the split name is min_split or later compared as text, and the date "
+    "of its created_at is min_created or later. Other splits, such as test, are ignored. A task "
+    "with no creation date is not eligible. Splits published before stage a is pre-registered "
+    "count, and stage a records the dataset revision.",
+    "stratify": "Here seed is selection_seed, repos is the distinct values of the eligible tasks' "
+    "repo field, and ids is the instance_id values of that repo. The if_fewer rule applies "
+    "first. Otherwise draw n repositories with "
+    'random.Random(f"{seed}:repos").sample(sorted(repos), n), '
+    "then one task from each drawn repo with "
+    'random.Random(f"{seed}:{repo}").sample(sorted(ids), 1). '
+    "If the eligible tasks come from fewer than n repositories, use "
+    "hcbench.sampling.stratified_sample at the recorded repo.head instead (largest-remainder "
+    "rule, at least one task per repository). "
+    "The code of the whole rule is hcbench.sampling.select_suite_a.",
+    "contamination": "Every task eligible on 2026-11-20 was created before Qwen3.8 was released in "
+    "August 2026, so the model may have seen these tasks or their fixes in training. A later "
+    "split may add tasks created after that release, and stage a records each task's creation "
+    "date. Suite A results are reported as possibly contaminated. Every arm runs the same model, "
+    "so the harness contrasts compare harnesses under the same exposure.",
+    "if_fewer": "If n or fewer tasks are eligible on stage a's pre-registration day, all eligible "
+    "tasks are used.",
     "grader_pin": "The grading fork is pinned by commit at stage a, together with each task "
     "image digest.",
 }
@@ -425,6 +443,10 @@ def validate_stage_cb(env: dict[str, str], draft: bool = False) -> None:
         raise SystemExit(
             f"HC_A_MIN_CREATED is not a real date, got {env['HC_A_MIN_CREATED']!r}"
         ) from None
+    if not re.fullmatch(r"[0-9]{4}_(0[1-9]|1[0-2])", env["HC_A_MIN_SPLIT"]):
+        raise SystemExit(
+            f"HC_A_MIN_SPLIT must be YYYY_MM (month 01 to 12), got {env['HC_A_MIN_SPLIT']!r}"
+        )
     if not re.fullmatch(r"[1-9]\d*", env["HC_A_N"].strip()):
         raise SystemExit(f"HC_A_N must be a positive integer, got {env['HC_A_N']!r}")
     for key in INT_KEYS:
