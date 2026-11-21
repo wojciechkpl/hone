@@ -1985,6 +1985,19 @@ can't change after the stage-`a` tag, so they land now.
   would delete that evidence. Before the harness starts it is an `infra_error`, as before.
   This replaces "every suite" in K151.
 
+#### Round 16e: from the review of round 16d (K163–K164)
+
+The review of round 16d approved it. Two loose ends remain, one of them in report code.
+
+- **K163 No SWE-bench Lite size caveat under stage `a`.** The report's caveat "Suite A has
+  N tasks; the pre-registered size is 40." dates from SWE-bench Lite. Under a stage-`a`
+  pre-registration (K148) it is not written: the pre-registered size is the run list in
+  the stage-`a` file, and K152 checks every run of it. The plain report keeps the caveat.
+- **K164 Tests and docs.**
+  - A test pins that the "left out" count of K158 counts suite A runs only (the mutant
+    that survived the review of round 16d).
+  - SPEC says that K160 holds for every suite A report, the plain one too.
+
 **Not checked off the GPU box.** The image check, the runs and the fork's grading need
 Docker and the images (about 1.4–2.1 GB each). Before the stage-`a` tag, the runbook runs
 the image check, then one task on one arm, then grades it, then a `make report` dry run.
