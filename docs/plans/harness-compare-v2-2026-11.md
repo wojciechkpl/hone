@@ -1801,7 +1801,7 @@ The review of round 15c found that the K134 anchor never matches a log the fork 
   - In fork mode, `scripts/20_grade.sh` refuses a missing stage-`a` file with its own
     message, not a Python traceback.
 
-#### Round 16: the stage-`a` report (K110–K113)
+#### Round 16: the stage-`a` report (K110–K113, K141–K143)
 
 - **K110 Label.** With a stage-`a` pre-registration, the suite A heading is
   "Suite A — SWE-rebench (SWE-rebench grading fork), possibly contaminated".
@@ -1825,6 +1825,21 @@ The review of round 15c found that the K134 anchor never matches a log the fork 
     `run_digest`);
   - a suite A run's image differs from its task's entry in `[task_images]`;
   - an arm's repeats differ from `HC_A_REPEATS`.
+
+- **From the review of round 15d (K141–K143).** The first two are promised by the frozen
+  exclusions text (K130, K135, K139).
+  - **K141 Show the tasks left out.** For each contrast, the H1 and H2 tables give the
+    number of tasks used and the number left out because one arm has no judged run there.
+  - **K142 No report over pending re-grades.**
+    - With a stage-`a` pre-registration, a suite A run whose grade status is `ungraded`,
+      `stale`, `grader_infra`, `ambiguous` or `missing` is a conformance mismatch, listed
+      by run.
+    - Only `grader_infra_final` runs, listed as unjudged, and runs with infrastructure
+      errors that were re-run may be absent from the analysis.
+  - **K143 Apply failure from the harness's own line.**
+    - In fork mode, `apply_failed` needs a `run_instance.log` line that begins with the
+      K138 prefix followed by `INFO - >>>>> Patch Apply Failed`.
+    - The marker in the agent's diff, or in any other log, doesn't count.
 
 **Not checked off the GPU box.** The image check, the runs and the fork's grading need
 Docker and the images (about 1.4–2.1 GB each). Before the stage-`a` tag, the runbook runs
