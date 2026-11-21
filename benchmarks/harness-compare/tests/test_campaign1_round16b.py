@@ -9,8 +9,9 @@ Contract choices made here (the spec leaves them open):
   `instrumentation_error` and resolved `0`, and it is not sent to the grader. The report lists
   it on a line with its run id and the status.
 * K146: the suite A table note is "all judged runs' tokens ÷ resolved runs".
-* K147: the H1 and H2 headings say "not final: N runs pending re-grade" and no `- ` claim
-  line ("difference claimed" / "no detectable difference") is written in those sections.
+* K147 (heading text replaced by K153): the H1 and H2 headings say "not final: N runs pending
+  grading" and no `- ` claim line ("difference claimed" / "no detectable difference") is
+  written in those sections.
 """
 # ruff: noqa: F401
 
@@ -301,7 +302,7 @@ def claim_lines(lines):
 @pytest.mark.parametrize("marker", ["H1", "H2"])
 def test_k147_headings_should_say_the_report_is_not_final(tmp_path, marker):
     text, _ = build(graded(tmp_path, PENDING), prereg_a(tmp_path))
-    assert "not final: 2 runs pending re-grade" in subsection(text, marker)[0]
+    assert "not final: 2 runs pending grading" in subsection(text, marker)[0]
 
 
 @pytest.mark.parametrize("marker", ["H1", "H2"])
@@ -313,7 +314,7 @@ def test_k147_no_claim_lines_should_be_written_while_re_grades_are_pending(tmp_p
 @pytest.mark.parametrize("status", ["ungraded", "stale", "missing"])
 def test_k147_every_pending_status_should_count(tmp_path, status):
     text, _ = build(graded(tmp_path, {("pi", "t3", 0): status}), prereg_a(tmp_path))
-    assert "not final: 1 runs pending re-grade" in subsection(text, "H1")[0]
+    assert "not final: 1 run pending grading" in subsection(text, "H1")[0]
 
 
 @pytest.mark.parametrize("marker", ["H1", "H2"])

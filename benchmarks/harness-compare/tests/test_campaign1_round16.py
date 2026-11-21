@@ -139,7 +139,11 @@ def prereg_a(
         "created_at": "2026-01-01T00:00:00Z",
         "draft": False,
         "repo": {"head": "", "dirty": False},
-        "config": {"HC_SERVED_NAME": "qwen3.8-27b", "HC_A_REPEATS": repeats},
+        "config": {
+            "HC_SERVED_NAME": "qwen3.8-27b",
+            "HC_A_REPEATS": repeats,
+            "HC_ARMS_MAIN": ",".join(ARMS),  # K152: the arms every task is expected to have run
+        },
         "bundle": {"x": 1},
         "tasks": tasks_table,
         "task_created_at": {t: CREATED[t] for t in tasks},
@@ -569,7 +573,8 @@ def test_k113_the_repeats_should_come_from_the_prereg_config(tmp_path):
     _, ok = build(camp, prereg_a(tmp_path, repeats="0"))
     assert ok["mismatches"] == []
     _, bad = build(camp, prereg_a(tmp_path, repeats="0,1"))
-    assert {m["field"] for m in bad["mismatches"]} == {f"repeats.{a}" for a in ARMS}
+    # K152: the repeat-1 runs the file expects are missing too, as `run` mismatches
+    assert {m["field"] for m in bad["mismatches"]} == {f"repeats.{a}" for a in ARMS} | {"run"}
 
 
 # ---- K143 apply failure from the harness's own line ----
