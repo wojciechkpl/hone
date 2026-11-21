@@ -18,27 +18,42 @@ dir="${HC_ROOT}/prereg/${name}"
 
 # --stage cb | --stage=cb | --stage a | --stage=a; anything else stops before any file is made.
 stage=a
-expect=0
+expect=""
 draft=0
-rules=0
+rules_path=""
+accept=()
 for arg in "$@"; do
-  if (( expect )); then stage="${arg}"; expect=0; continue; fi
+  if [[ -n "${expect}" ]]; then
+    case "${expect}" in
+    stage) stage="${arg}" ;;
+    rules) rules_path="${arg}" ;;
+    accept) accept+=(--accept-diff "${arg}") ;;
+    esac
+    expect=""; continue
+  fi
   case "${arg}" in
-  --stage) expect=1 ;;
+  --stage) expect=stage ;;
   --stage=*) stage="${arg#--stage=}" ;;
+  --rules) expect=rules ;;
+  --rules=*) rules_path="${arg#--rules=}" ;;
+  --accept-diff) expect=accept ;;
+  --accept-diff=*) accept+=(--accept-diff "${arg#--accept-diff=}") ;;
   --draft) draft=1 ;;
-  --rules | --rules=*) rules=1 ;;
   *) ;;
   esac
 done
-(( expect )) && die "--stage needs a value: a or cb"
+[[ "${expect}" == stage ]] && die "--stage needs a value: a or cb"
+[[ -n "${expect}" ]] && die "--${expect/accept/accept-diff} needs a value"
 case "${stage}" in
 a | cb) ;;
 *) die "unknown --stage '${stage}': use a or cb" ;;
 esac
 if [[ "${stage}" == a ]]; then
-  (( rules )) || die "stage a needs --rules prereg/<cb name>/preregistration.toml (the stage cb file)"
+  [[ -n "${rules_path}" ]] || die "stage a needs --rules prereg/<cb name>/preregistration.toml (the stage cb file)"
   [[ "${HC_SKIP_PULL:-0}" != 1 ]] || (( draft )) || die "HC_SKIP_PULL=1 is accepted only with --draft"
+  # K117: check the rules, config, bundle and files against the stage cb file before any work.
+  pf=(); (( draft )) && pf=(--draft)
+  hc_py hcbench.prereg --stage a --rules "${rules_path}" --preflight ${pf[@]+"${pf[@]}"} ${accept[@]+"${accept[@]}"}
 fi
 mkdir -p "${dir}"
 

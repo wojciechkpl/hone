@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import ROOT, ensure_env
+from .sampling import manifest_digest
 
 ANALYSIS_PLAN = {
     "primary_metric": "pass@1 on suite A: resolved by the official swebench harness, one attempt "
@@ -143,11 +144,14 @@ ENV_KEYS = [
 # Stage a also records these (K99); stage cb's recorded config does not change.
 A_ENV_KEYS = ["HC_A_REVISION", "HC_A_GRADER_REF", "HC_A_NAMESPACE"]
 GRADER_REF = re.compile(r"[0-9a-f]{40}")
-# What a stage-a selection repeats from the stage-cb [suite_a_rules]: (selection key, rules key).
+# What a stage-a run repeats from the stage-cb [suite_a_rules]: (env key, selection key, rules key).
 RULE_FIELDS = [
-    ("dataset", "dataset"), ("min_split", "min_split"), ("min_created", "min_created"),
-    ("n", "n"), ("seed", "selection_seed"), ("grader", "grader"),
+    ("HC_A_DATASET", "dataset", "dataset"), ("HC_A_MIN_SPLIT", "min_split", "min_split"),
+    ("HC_A_MIN_CREATED", "min_created", "min_created"), ("HC_A_N", "n", "n"),
+    ("HC_SELECTION_SEED", "seed", "selection_seed"), ("HC_A_GRADER", "grader", "grader"),
 ]  # fmt: skip
+RULE_ENV_KEYS = {env_key for env_key, _, _ in RULE_FIELDS}
+CUT_N = ("suite A tasks 60 -> 40", 60, 40)  # K114: the pre-registered cut, recorded n, cut n
 DIGEST_LINE = re.compile(r"\S+ \S+@sha256:[0-9a-f]{64}")
 
 # Stage cb refuses these when unset or empty (spec 11.4 K20); the first group is also checked
@@ -494,15 +498,45 @@ def validate_stage_cb(env: dict[str, str], draft: bool = False) -> None:
         )
 
 
-def check_rules(selection: dict[str, Any], cb: dict[str, Any]) -> None:
-    """K97: the selection repeats the stage-cb suite A rules. Nothing overrides this."""
+def check_rules_env(env: dict[str, str], cb: dict[str, Any]) -> str | None:
+    """K97, K114: the environment repeats the stage-cb suite A rules. Nothing overrides this,
+    except n = 40 when the stage-cb cut_order has exactly the pre-registered cut. Returns that
+    cut when it applies."""
     rules = cb.get("suite_a_rules", {})
-    for sel_key, rule_key in RULE_FIELDS:
-        if selection.get(sel_key) != rules.get(rule_key):
-            raise SystemExit(
-                f"selection.json {sel_key} {selection.get(sel_key)!r} differs from the stage cb "
-                f"suite_a_rules {rule_key} {rules.get(rule_key)!r}"
-            )
+    cut = None
+    for env_key, _, rule_key in RULE_FIELDS:
+        have, want = str(env.get(env_key, "")).strip(), rules.get(rule_key)
+        if have == str(want):
+            continue
+        entry, recorded, cut_n = CUT_N
+        if (
+            env_key == "HC_A_N"
+            and have == str(cut_n)
+            and want == recorded
+            and entry in cb.get("cut_order", [])
+        ):
+            cut = entry
+            continue
+        raise SystemExit(
+            f"{env_key} {env.get(env_key, '')!r} differs from the stage cb suite_a_rules "
+            f"{rule_key} {want!r}"
+        )
+    return cut
+
+
+def check_selection(selection: dict[str, Any], env: dict[str, str], cb: dict[str, Any]) -> None:
+    """K97: the selection repeats the rules (with the K114 cut) and the environment's n."""
+    rules = cb.get("suite_a_rules", {})
+    for _, sel_key, rule_key in RULE_FIELDS:
+        have, want = selection.get(sel_key), rules.get(rule_key)
+        if sel_key == "n":
+            want = int(env["HC_A_N"].strip())  # check_rules_env accepted this n (or the cut)
+        if have == want:
+            continue
+        raise SystemExit(
+            f"selection.json {sel_key} {have!r} differs from the stage cb "
+            f"suite_a_rules {rule_key} {want!r}"
+        )
 
 
 def read_rules(path: Path) -> tuple[dict[str, Any], str]:
@@ -520,15 +554,24 @@ def read_rules(path: Path) -> tuple[dict[str, Any], str]:
 
 
 def diff_against_cb(
-    cb: dict[str, Any], env: dict[str, str], bundle: dict[str, Any], accepted_keys: list[str]
+    cb: dict[str, Any],
+    env: dict[str, str],
+    bundle: dict[str, Any],
+    hashes: dict[str, str],
+    accepted_keys: list[str],
 ) -> list[str]:
-    """K97: config keys and the bundle that differ from the stage-cb file. Refuses a difference
-    that --accept-diff does not name; returns the accepted ones, with both values."""
-    diffs = {
-        k: (v, env.get(k)) for k, v in cb.get("config", {}).items() if str(env.get(k, "")) != str(v)
-    }
+    """K97, K120: config keys, the bundle and the shared file hashes that differ from the
+    stage-cb file. Refuses a difference that --accept-diff does not name; returns the accepted
+    ones, with both values. The rule keys are checked by check_rules_env, never accepted."""
+    diffs: dict[str, tuple[Any, Any]] = {}
+    for k, v in cb.get("config", {}).items():
+        if k not in RULE_ENV_KEYS and str(env.get(k, "")) != str(v):
+            diffs[k] = (v, env.get(k, ""))
     if cb.get("bundle", {}) != bundle:
         diffs["bundle"] = (cb.get("bundle", {}), bundle)
+    for k, v in cb.get("files_sha256", {}).items():
+        if k in hashes and hashes[k] != v:
+            diffs[f"files_sha256.{k}"] = (v, hashes[k])
     refused = [k for k in diffs if k not in accepted_keys]
     if refused:
         raise SystemExit(
@@ -555,10 +598,30 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
 
 
+def check_image_check_done(sel_dir: Path, selection: dict[str, Any], ids: list[str]) -> None:
+    """K116: a non-draft stage a needs a finished image check."""
+    excluded = selection.get("excluded") or {}
+    if not (sel_dir / "images.check.json").exists():
+        raise SystemExit("images.check.json is missing: run check-images first")
+    if not selection.get("run_digest"):
+        raise SystemExit("selection.json has no run_digest: run check-images first")
+    if selection["run_digest"] != manifest_digest(ids):
+        raise SystemExit("selection.json run_digest differs from the digest of tasks.txt")
+    listed = sorted(set(ids) & set(excluded))
+    if listed:
+        raise SystemExit(f"tasks excluded by the image check are still in tasks.txt: {listed}")
+    if manifest_digest([*ids, *excluded]) != selection.get("digest"):
+        raise SystemExit(
+            "tasks.txt plus the excluded tasks do not match the drawn list (selection.json digest)"
+        )
+
+
 def stage_a_tables(sel_dir: Path, selection: dict[str, Any], draft: bool) -> dict[str, Any]:
     """K98, K103: [tasks], [task_created_at], [task_images], [excluded_tasks]."""
     tasks = {k: v for k, v in selection.items() if k not in ("created_at", "excluded")}
     ids = [ln for ln in (sel_dir / "tasks.txt").read_text().splitlines() if ln.strip()]
+    if not draft:
+        check_image_check_done(sel_dir, selection, ids)
     recs = {r["instance_id"]: r for r in read_jsonl(sel_dir / "instances.jsonl")}
     pinned: dict[str, str] = {}
     problems = []
@@ -620,11 +683,19 @@ def main(argv: list[str] | None = None) -> int:
         "--accept-diff", action="append", default=[], metavar="KEY",
         help="stage a: let a named difference from the stage cb file through (repeatable)",
     )  # fmt: skip
-    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--out", type=Path, help="the pre-registration to write")
+    ap.add_argument(
+        "--preflight", action="store_true",
+        help="stage a: run the checks that need no selection, write nothing",
+    )  # fmt: skip
     ap.add_argument("--draft", action="store_true", help="allow CHANGE-ME placeholders")
     ap.add_argument("--env-file", type=Path)
     args = ap.parse_args(argv)
-    if args.stage == "a" and args.selection is None:
+    if args.preflight and args.stage != "a":
+        ap.error("--preflight is only for stage a")
+    if not args.preflight and args.out is None:
+        ap.error("--out is required")
+    if args.stage == "a" and args.selection is None and not args.preflight:
         ap.error("--selection is required for stage a")
     if args.stage == "a" and args.rules is None:
         ap.error("--rules is required for stage a")
@@ -633,17 +704,26 @@ def main(argv: list[str] | None = None) -> int:
     env = {k: os.environ.get(k, "") for k in ENV_KEYS}
     if args.stage == "a":
         env.update({k: os.environ.get(k, "") for k in A_ENV_KEYS})
+    bundle_manifest = Path(os.environ.get("HC_BUNDLE_DIR", ROOT / ".bundle")) / "manifest.json"
+    manifest = json.loads(bundle_manifest.read_text()) if bundle_manifest.exists() else {}
+    bundle = {k: v for k, v in manifest.items() if v is not None}  # null: not in TOML
+    files = pre_registered_files()
+    if args.preflight:
+        cb, _ = read_rules(args.rules)
+        check_rules_env(env, cb)
+        hashes = {k: sha256_file(p) for k, p in files.items() if p.exists()}
+        diff_against_cb(cb, env, bundle, hashes, args.accept_diff)
+        print("preflight: the rules, config, bundle and files match the stage cb file")
+        return 0
     if args.stage == "cb":
         validate_stage_cb(env, draft=args.draft)
     placeholders = [k for k, v in env.items() if "CHANGE-ME" in v]
     if placeholders and not args.draft:
         raise SystemExit(f"refusing to pre-register with placeholders: {placeholders}")
 
-    bundle_manifest = Path(os.environ.get("HC_BUNDLE_DIR", ROOT / ".bundle")) / "manifest.json"
     check_hermes_bundle(env, bundle_manifest)
     if not args.draft:
         check_pi_bundle(env, bundle_manifest)
-    files = pre_registered_files()
     head = repo_head()
     if not head and not args.draft:
         raise SystemExit("refusing to pre-register: git cannot read the repository head")
@@ -682,6 +762,25 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sel_dir = args.selection.parent
         selection = json.loads(args.selection.read_text())
+        if not args.draft:
+            validate_stage_a(env)
+        cb, cb_sha = read_rules(args.rules)
+        cut = check_rules_env(env, cb)
+        check_selection(selection, env, cb)
+        hashes = {k: sha256_file(p) for k, p in files.items() if p.exists()}
+        accepted = diff_against_cb(cb, env, bundle, hashes, args.accept_diff)
+        data["rules_check"] = {
+            "path": str(args.rules), "sha256": cb_sha, "repo_head": cb["repo"]["head"],
+            "accepted": accepted,
+        }  # fmt: skip
+        if cut:
+            data["rules_check"]["cut"] = cut
+        data.update(stage_a_tables(sel_dir, selection, args.draft or bool(placeholders)))
+        data["grader"] = {
+            "repo": env["HC_A_GRADER"], "commit": env["HC_A_GRADER_REF"],
+            "namespace": env["HC_A_NAMESPACE"],
+        }  # fmt: skip
+        data["analysis"] = ANALYSIS_PLAN_A
         files["prompt_swebench"] = ROOT / "config" / "prompts" / "swebench.md"
         files.update(
             {
@@ -692,25 +791,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             }
         )  # fmt: skip
-        if not args.draft:
-            validate_stage_a(env)
-        data["analysis"] = ANALYSIS_PLAN_A
-    manifest = json.loads(bundle_manifest.read_text()) if bundle_manifest.exists() else {}
-    data["bundle"] = {k: v for k, v in manifest.items() if v is not None}  # null: not in TOML
-    if args.stage == "a":
-        cb, cb_sha = read_rules(args.rules)
-        check_rules(selection, cb)
-        accepted = diff_against_cb(cb, env, data["bundle"], args.accept_diff)
-        data["rules_check"] = {
-            "path": str(args.rules), "sha256": cb_sha, "repo_head": cb["repo"]["head"],
-            "accepted": accepted,
-        }  # fmt: skip
-        data.update(stage_a_tables(sel_dir, selection, args.draft or bool(placeholders)))
-        data["grader"] = {
-            "repo": env["HC_A_GRADER"], "commit": env["HC_A_GRADER_REF"],
-            "namespace": env["HC_A_NAMESPACE"],
-        }  # fmt: skip
     data["files_sha256"] = {k: sha256_file(p) for k, p in files.items() if p.exists()}
+    data["bundle"] = bundle
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
         "# Pre-registration. Commit and tag BEFORE any suite A/B/C run.\n"

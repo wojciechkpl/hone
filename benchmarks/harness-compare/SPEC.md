@@ -544,6 +544,34 @@ Design: `docs/plans/harness-compare-v2-2026-11.md` §11.17.
   `ANALYSIS_PLAN_A`. `files_sha256` adds `prompt_swebench`, `tasks_txt`, `instances_jsonl`,
   `dataset_json`, `selection_json`, `images_digests` and `images_check_json`. Stage `cb` is
   unchanged.
+- **Round 14b (K114-K122).**
+  - *Cut (K114).* `n = 40` replaces the recorded `n = 60` only when the stage-`cb` `cut_order`
+    has exactly `"suite A tasks 60 -> 40"`. The stage-`a` file then records
+    `[rules_check] cut`. Any other `n` is refused, and `--accept-diff` can't let it through. The
+    selection's `n` must equal `HC_A_N`.
+  - *Docker errors (K115, K119).* In `check-images`, a `docker run` exit of 125 stops the check
+    with a message naming the task and writes nothing; exits 126, 127 and failures inside the
+    container still exclude the task, with the exit code in the reason. A re-run merges its
+    results into `images.check.json`, so earlier results are kept.
+  - *Finished check (K116).* A non-draft stage `a` refuses unless `images.check.json` exists,
+    `run_digest` is in `selection.json` and equals `manifest_digest` of `tasks.txt`, no task of
+    `tasks.txt` is in `excluded`, and `tasks.txt` together with `excluded` has the digest `digest`.
+  - *Preflight (K117).* `python -m hcbench.prereg --stage a --rules <file> --preflight
+    [--accept-diff KEY]...` runs the checks that need no selection (rules file, `HC_A_*` and
+    `HC_SELECTION_SEED` against `[suite_a_rules]`, `[config]`, bundle, K120 files) and writes
+    nothing. `scripts/05_preregister.sh` runs it before it creates the directory, selects or
+    pulls.
+  - *Stage `cb` (K118).* Its output is unchanged byte for byte: `[bundle]` comes after
+    `[files_sha256]`.
+  - *Files (K120).* Every `files_sha256` key both files record (`arms.toml` and the Dockerfiles
+    among them) must have the same hash, unless `--accept-diff files_sha256.<key>` names it; it
+    is then recorded under `[rules_check] accepted` with both hashes.
+  - *Selection environment (K121).* `resolve_revision` returns `None` on any exception.
+    `selection.json` adds `datasets_version` and `huggingface_hub_version`
+    (`importlib.metadata.version`, empty when not installed), and `splits` lists every eligible
+    split name at the revision.
+  - *Small fixes (K122).* A stage-`cb` `[config]` key missing from the environment compares and
+    records as `""`; `dataset.json` rows carry no `split` field.
 
 ### Campaign 1, round 2 (K18-K29)
 

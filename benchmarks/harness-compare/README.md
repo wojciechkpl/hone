@@ -157,18 +157,31 @@ git tag bench-prereg-c1-a
 git push origin HEAD bench-prereg-c1-a
 ```
 
-`scripts/05_preregister.sh` runs, in order: `python -m hcbench.rebench select` (eligible
+`make prereg` doesn't pass `--accept-diff`. When a difference from the stage-`cb` file has to go
+through, call the script directly:
+
+```bash
+scripts/05_preregister.sh c1-a --stage a --rules prereg/c1/preregistration.toml --accept-diff KEY
+```
+
+`scripts/05_preregister.sh` first runs `hcbench.prereg --preflight`, which checks the rules, the
+config, the bundle and the file hashes against the stage-`cb` file before it creates a
+directory, selects or pulls anything. Then it runs, in order: `python -m hcbench.rebench select` (eligible
 splits and dates, then `select_suite_a`; the dataset revision from `HC_A_REVISION`, empty
 meaning the hub's main, is resolved to a commit); the image pulls and their digests
 (`images.digests`); `python -m hcbench.rebench check-images` (each pinned image runs once
 with no network; a task whose HEAD is not the base commit, whose `git status` is not empty or
-whose Python doesn't run is excluded and listed); then `hcbench.prereg --stage a`.
+whose Python doesn't run is excluded and listed; a Docker error, exit 125, stops the check
+instead, and the whole check is run again); then `hcbench.prereg --stage a`.
 `HC_SKIP_PULL=1` is accepted only with `--draft`. The images are large (1.4 to 2.1 GB each).
 
 `hcbench.prereg --stage a --rules <stage-cb file>` refuses when the file is missing, not
 stage `cb`, or a draft; when the selection's dataset, `min_split`, `min_created`, `n`, seed
 or grader differ from the stage-`cb` `[suite_a_rules]` (nothing overrides this); and when a
-`[config]` key or the bundle differs from the stage-`cb` file. `--accept-diff KEY` (`bundle`
+`[config]` key, the bundle or a shared `files_sha256` hash (`arms.toml` and the Dockerfiles among
+them) differs from the stage-`cb` file; accept a hash with `--accept-diff files_sha256.<key>`.
+`n = 40` is accepted without `--accept-diff` when the stage-`cb` `cut_order` has exactly
+"suite A tasks 60 -> 40"; the file then records `[rules_check] cut`. `--accept-diff KEY` (`bundle`
 for the bundle) lets a named difference through. It is then listed under
 `[rules_check] accepted` with both values, and it must also be logged in
 `prereg/c1/DEVIATIONS.md`. A non-draft file also refuses an `HC_A_GRADER_REF` that isn't 40
